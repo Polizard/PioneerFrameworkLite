@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- ════════════════════════════════════════════════════════════════
+       天体 PlanetLayerSettingsDef
+       半径按 CelestialBodyDef 比例缩放（基准：地球 5000km → radius=100）。
+       subdivisions=5（比地球 Surface 的 10 粗一个档位）。
+       ════════════════════════════════════════════════════════════════ -->
+
+  <!-- ── 火星：半径 3500km / 5000km × 100 = 70 ── -->
+  <PlanetLayerSettingsDef>
+    <defName>Mars</defName>
+    <label>火星地表</label>
+    <settings>
+      <radius>70</radius>
+      <subdivisions>5</subdivisions>
+      <useSurfaceViewAngle>true</useSurfaceViewAngle>
+    </settings>
+  </PlanetLayerSettingsDef>
+
+  <!-- ── 月球：半径 1737km / 5000km × 100 ≈ 35 ── -->
+  <PlanetLayerSettingsDef>
+    <defName>Moon</defName>
+    <label>月球地表</label>
+    <settings>
+      <radius>35</radius>
+      <subdivisions>5</subdivisions>
+      <useSurfaceViewAngle>true</useSurfaceViewAngle>
+    </settings>
+  </PlanetLayerSettingsDef>
+</Defs>

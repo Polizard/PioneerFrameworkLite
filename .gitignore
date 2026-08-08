@@ -1,0 +1,34 @@
+# Visual Studio / Cursor
+.vs/
+**/.vs/
+
+# Build outputs
+**/bin/
+**/obj/
+
+# Debug symbols (keep DLL, ignore PDB)
+1.6/Assemblies/*.pdb
+**/*.pdb
+
+# User-specific files
+*.user
+*.suo
+*.cache
+*.csproj.user
+
+# Logs / temp
+*.log
+*.tmp
+*~
+
+# OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
+Source/PioneerFramework/packages.config
+/Source/PioneerFramework/packages/Microsoft.Bcl.HashCode.6.0.0
+AGENTS.md
+
+# IDE / 工具生成
+.trae/
+/Docs

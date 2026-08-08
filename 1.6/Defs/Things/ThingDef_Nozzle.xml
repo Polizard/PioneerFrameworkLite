@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Nozzle_Test</defName>
+    <label>test nozzle</label>
+    <description>A test nozzle building. Fires to produce thrust. Requires chemfuel.</description>
+    <thingClass>Building</thingClass>
+    <tickerType>Normal</tickerType>
+    <graphicData>
+      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+      <drawSize>(1,1)</drawSize>
+      <shadowData>
+        <volume>(1.83, 0.5, 1.73)</volume>
+        <offset>(0,0,-0.05)</offset>
+      </shadowData>
+    </graphicData>
+    <size>(1,1)</size>
+    <altitudeLayer>Building</altitudeLayer>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <designationCategory>Power</designationCategory>
+    <uiOrder>100</uiOrder>
+    <costList>
+      <Steel>50</Steel>
+      <ComponentIndustrial>2</ComponentIndustrial>
+    </costList>
+    <constructionSkillPrerequisite>6</constructionSkillPrerequisite>
+    <researchPrerequisites>
+      <li>MicroelectronicsBasics</li>
+    </researchPrerequisites>
+    <comps>
+      <!-- 推进器组件 -->
+      <li Class="PioneerFramework.CompProperties_Nozzle">
+        <thrustForce>500</thrustForce>
+        <thrustAngle>0</thrustAngle>
+        <consumesFuel>true</consumesFuel>
+        <fuelPerPush>0.5</fuelPerPush>
+        <fireIntervalTicks>60</fireIntervalTicks>
+      </li>
+      <!-- 燃料槽 -->
+      <li Class="CompProperties_Refuelable">
+        <fuelFilter>
+          <thingDefs>
+            <li>Chemfuel</li>
+          </thingDefs>
+        </fuelFilter>
+        <fuelCapacity>50</fuelCapacity>
+        <fuelConsumptionRate>0</fuelConsumptionRate>
+        <initialFuelPercent>0.5</initialFuelPercent>
+      </li>
+    </comps>
+  </ThingDef>
+</Defs>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- 正方体部件 -->
+  <ShipPartDef>
+    <defName>PF_ShipPart_Cube</defName>
+    <label>正方体</label>
+    <description>一个标准的正方体结构件。</description>
+    <shapeType>Cube</shapeType>
+    <bounds>(2,2,2)</bounds>
+    <massBase>1.0</massBase>
+    <previewColor>(0.3, 0.6, 1.0)</previewColor>
+  </ShipPartDef>
+
+  <!-- 角球体部件 -->
+  <ShipPartDef>
+    <defName>PF_ShipPart_SphericalCorner</defName>
+    <label>角球体</label>
+    <description>一个八分之一球面的角球体结构件。</description>
+    <shapeType>SphericalCorner</shapeType>
+    <bounds>(2,2,2)</bounds>
+    <massBase>1.0</massBase>
+    <previewColor>(1.0, 0.5, 0.2)</previewColor>
+  </ShipPartDef>
+</Defs>

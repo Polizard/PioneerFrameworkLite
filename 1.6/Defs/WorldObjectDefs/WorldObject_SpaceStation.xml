@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <WorldObjectDef>
+    <defName>PF_SpaceStation</defName>
+    <label>space station parent</label>
+    <worldObjectClass>PioneerFramework.SpaceStationMapParent</worldObjectClass>
+  </WorldObjectDef>
+</Defs>
