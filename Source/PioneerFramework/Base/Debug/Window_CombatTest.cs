@@ -31,12 +31,6 @@ namespace PioneerFramework.Debug
         private readonly Dictionary<int, List<GameObject>> partBoundsObjects = new Dictionary<int, List<GameObject>>();
         private bool showPartBounds = true;
 
-        // Morton 网格可视化
-        private GameObject mortonGridContainer;
-        private readonly Dictionary<int, List<GameObject>> mortonCellObjects = new Dictionary<int, List<GameObject>>();
-        private bool showMortonGrid = false;
-        private Material mortonGridMat;
-
         // 射弹轨迹可视化
         private GameObject trailContainer;
         private readonly Dictionary<int, LineRenderer> projectileTrails = new Dictionary<int, LineRenderer>();
@@ -108,10 +102,6 @@ namespace PioneerFramework.Debug
             {
                 hitEffectMat = MaterialPool.MatFrom(BaseContent.WhiteTex, ShaderDatabase.Cutout, new Color(1.0f, 0.5f, 0.0f));
             }
-            if (mortonGridMat == null)
-            {
-                mortonGridMat = MaterialPool.MatFrom(BaseContent.WhiteTex, ShaderDatabase.WorldOverlayCutout, new Color(0.3f, 0.7f, 1.0f, 0.4f));
-            }
             if (laserBeamMat == null)
             {
                 // 使用 Unity 原生 Sprites/Default shader，确保 LineRenderer 可靠渲染
@@ -169,7 +159,6 @@ namespace PioneerFramework.Debug
             }
 
             partBoundsObjects.Clear();
-            mortonCellObjects.Clear();
             projectileTrails.Clear();
             projectileTrailPoints.Clear();
 
@@ -253,9 +242,6 @@ namespace PioneerFramework.Debug
 
             // 更新 Part AABB 可视化
             UpdatePartBoundsVisuals();
-
-            // 更新 Morton 网格可视化
-            UpdateMortonGridVisuals();
 
             // 更新命中效果
             UpdateHitEffect();
@@ -341,10 +327,6 @@ namespace PioneerFramework.Debug
             partBoundsContainer = new GameObject("PartBounds");
             partBoundsContainer.transform.SetParent(sceneRoot.transform);
             partBoundsContainer.layer = SceneLayer;
-
-            mortonGridContainer = new GameObject("MortonGrid");
-            mortonGridContainer.transform.SetParent(sceneRoot.transform);
-            mortonGridContainer.layer = SceneLayer;
 
             trailContainer = new GameObject("Trails");
             trailContainer.transform.SetParent(sceneRoot.transform);
@@ -627,13 +609,13 @@ namespace PioneerFramework.Debug
             list.Label("射弹数: " + GetActiveProjectiles().Count);
             list.Label("细网格格数: " + GetGridActiveCells());
 
-            // Morton/Part 状态
+            // Part 状态
             if (spaceGame != null)
             {
                 var e1 = spaceGame.GetEntityById(10001);
                 var e2 = spaceGame.GetEntityById(10002);
-                if (e1 != null) list.Label("Entity1 Parts: " + e1.Parts.Count + " | " + e1.DebugGetMortonStats());
-                if (e2 != null) list.Label("Entity2 Parts: " + e2.Parts.Count + " | " + e2.DebugGetMortonStats());
+                if (e1 != null) list.Label("Entity1 Parts: " + e1.Parts.Count);
+                if (e2 != null) list.Label("Entity2 Parts: " + e2.Parts.Count);
             }
 
             string tickStr = Find.TickManager != null ? Find.TickManager.TicksAbs.ToString() : "?";
@@ -732,19 +714,6 @@ namespace PioneerFramework.Debug
                 }
             }
 
-            bool prevShowMorton = showMortonGrid;
-            list.CheckboxLabeled("Morton网格 (蓝框)", ref showMortonGrid);
-            if (prevShowMorton != showMortonGrid)
-            {
-                if (!showMortonGrid)
-                {
-                    foreach (var kv in mortonCellObjects)
-                        foreach (var obj in kv.Value)
-                            if (obj != null) Object.Destroy(obj);
-                    mortonCellObjects.Clear();
-                }
-            }
-
             bool prevShowTrails = showProjectileTrails;
             list.CheckboxLabeled("射弹轨迹 (黄线)", ref showProjectileTrails);
             if (prevShowTrails != showProjectileTrails)
@@ -755,24 +724,6 @@ namespace PioneerFramework.Debug
                         if (kv.Value != null) Object.Destroy(kv.Value.gameObject);
                     projectileTrails.Clear();
                     projectileTrailPoints.Clear();
-                }
-            }
-
-            if (list.ButtonText("打印Morton详细统计"))
-            {
-                if (spaceGame != null)
-                {
-                    foreach (int eid in new[] { 10001, 10002 })
-                    {
-                        var entity = spaceGame.GetEntityById(eid);
-                        if (entity == null) continue;
-                        LogToStatus("Entity " + eid + ": " + entity.DebugGetMortonStats());
-                        var cells = entity.DebugGetMortonCells();
-                        LogToStatus("  Morton cells: " + cells.Count);
-                        foreach (var (center, size) in cells)
-                            LogToStatus(string.Format("    cell center=({0:F0},{1:F0},{2:F0}) size={3:F0}m",
-                                center.x, center.y, center.z, size));
-                    }
                 }
             }
 
@@ -1071,8 +1022,6 @@ namespace PioneerFramework.Debug
                 LogToStatus("  飞船2 [敌方]: Group 1002, Entity 10002, 轨道半径=" + (TestOrbitRadiusMeters / 1000.0).ToString("F0") + "km, 武器=激光炮, Part数=" + testParts2.Count);
                 LogToStatus("  两船距离: " + (ShipSeparationMeters / 1000.0).ToString("F0") + "km");
                 LogToStatus("  碰撞箱: " + entity1.BoundsSize.x.ToString("F0") + "m × " + entity1.BoundsSize.y.ToString("F0") + "m × " + entity1.BoundsSize.z.ToString("F0") + "m (从Part自动计算)");
-                LogToStatus("  " + entity1.DebugGetMortonStats());
-                LogToStatus("  " + entity2.DebugGetMortonStats());
 
                 // 立即更新视觉位置和相机目标
                 LogToStatus("[创建] 更新视觉位置...");
@@ -1664,67 +1613,6 @@ namespace PioneerFramework.Debug
             else
                 posMeters = group.RenderPosition;
             return (Vector3)posMeters * (float)SpaceConstants.UnitsPerMeter;
-        }
-
-        // ── Morton 网格可视化 ──
-
-        private void UpdateMortonGridVisuals()
-        {
-            if (spaceGame == null || mortonGridContainer == null || !showMortonGrid) return;
-            EnsureMaterialsInitialized();
-
-            var group1 = spaceGame.GetGroupById(1001);
-            var group2 = spaceGame.GetGroupById(1002);
-
-            DrawEntityMortonCells(10001, group1);
-            DrawEntityMortonCells(10002, group2);
-        }
-
-        private void DrawEntityMortonCells(int entityId, SpaceEntityGroup group)
-        {
-            if (group == null) return;
-            var entity = spaceGame.GetEntityById(entityId);
-            if (entity == null || entity.Parts.Count == 0) return;
-
-            var cells = entity.DebugGetMortonCells();
-            if (cells.Count == 0) return;
-
-            Vector3 groupPosUnity = GetGroupVisualPosition(group);
-            Vector3 entityOffsetUnity = (Vector3)entity.Position * (float)SpaceConstants.UnitsPerMeter;
-            Vector3 entityWorldPos = groupPosUnity + entityOffsetUnity;
-
-            if (!mortonCellObjects.TryGetValue(entityId, out var objList))
-            {
-                objList = new List<GameObject>();
-                mortonCellObjects[entityId] = objList;
-            }
-
-            while (objList.Count < cells.Count)
-            {
-                var obj = CreateWireframeCubeWithColor(new Color(0.3f, 0.7f, 1.0f, 0.35f), 0.15f);
-                obj.name = "MortonCell_" + entityId + "_" + objList.Count;
-                obj.transform.SetParent(mortonGridContainer.transform);
-                obj.layer = SceneLayer;
-                objList.Add(obj);
-            }
-            while (objList.Count > cells.Count && objList.Count > 0)
-            {
-                int last = objList.Count - 1;
-                if (objList[last] != null) Object.Destroy(objList[last]);
-                objList.RemoveAt(last);
-            }
-
-            for (int i = 0; i < cells.Count && i < objList.Count; i++)
-            {
-                var (center, size) = cells[i];
-                var obj = objList[i];
-                if (obj == null) continue;
-
-                Vector3 cellLocalPos = (Vector3)center * (float)SpaceConstants.UnitsPerMeter;
-                obj.transform.position = entityWorldPos + cellLocalPos;
-                float unitySize = (float)(size * SpaceConstants.UnitsPerMeter) * 50f;
-                obj.transform.localScale = new Vector3(unitySize, unitySize, unitySize);
-            }
         }
 
         // ── 射弹轨迹可视化 ──

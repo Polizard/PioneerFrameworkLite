@@ -429,11 +429,6 @@ namespace PioneerFramework
             // 恢复双向映射
             SpaceMapGenerator.LinkEntityToMap(entity, op.NewMap);
 
-            // 解冻地图 tick（取档完成，恢复时间流动）
-            var stationController = op.NewMap?.GetComponent<SpaceStationController>();
-            if (stationController != null && stationController.Frozen)
-                stationController.Unfreeze();
-
             // 删除封存文件
             if (op.ArchiveFilePath != null && File.Exists(op.ArchiveFilePath))
                 File.Delete(op.ArchiveFilePath);

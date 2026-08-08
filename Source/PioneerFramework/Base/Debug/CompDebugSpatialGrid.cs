@@ -3,7 +3,6 @@ using RimWorld;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using PioneerFramework.ThreadSafety;
 using PioneerFramework.Debug;
 
 namespace PioneerFramework
@@ -157,22 +156,6 @@ namespace PioneerFramework
                 defaultDesc = "显示所有从XML Defs加载的注册天体。",
                 icon = TexButton.Rename,
                 action = () => ListCelestialBodies()
-            };
-
-            // ── 多线程安全检测 ──
-            yield return new Command_Action
-            {
-                defaultLabel = "多线程安全检测",
-                defaultDesc = "打开多线程安全检测窗口，验证确定性、竞态条件、性能和压力测试。",
-                icon = TexButton.Rename,
-                action = () =>
-                {
-                    var existing = Find.WindowStack.Windows
-                        .FirstOrDefault(w => w is Window_ThreadSafetyTest);
-                    if (existing != null)
-                        existing.Close();
-                    Find.WindowStack.Add(new Window_ThreadSafetyTest());
-                }
             };
 
             // ── 战斗系统测试 ──

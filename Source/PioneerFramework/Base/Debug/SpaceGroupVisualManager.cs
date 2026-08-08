@@ -1000,12 +1000,12 @@ namespace PioneerFramework
                 }
                 else
                 {
-                    // 有活跃地图 → 封存 + 冻结按钮
-                    Rect archiveRect = new Rect(rect.x + 10f, rect.yMax - 22f, rect.width * 0.48f - 5f, 22f);
+                    // 有活跃地图 → 封存按钮（Lite 裁剪：冻结功能已删除）
+                    Rect archiveRect = new Rect(rect.x + 10f, rect.yMax - 22f, rect.width - 20f, 22f);
                     if (Widgets.ButtonText(archiveRect, "封存Map"))
                     {
-                        var controller = GetStationControllerForGroup(group);
-                        if (controller != null && controller.map.mapPawns.AllPawns.Any())
+                        var pocketMap = SpaceMapGenerator.FindPocketMap(mapEntity.MapId);
+                        if (pocketMap != null && pocketMap.mapPawns.AllPawns.Any())
                         {
                             Messages.Message("Cannot archive: pawns still present on the station.",
                                 MessageTypeDefOf.RejectInput, false);
@@ -1013,28 +1013,6 @@ namespace PioneerFramework
                         else
                         {
                             spaceGame.BeginArchiveMap(mapEntity);
-                        }
-                    }
-
-                    var controller2 = GetStationControllerForGroup(group);
-                    if (controller2 != null)
-                    {
-                        Rect freezeRect = new Rect(rect.x + rect.width * 0.52f + 5f, rect.yMax - 22f, rect.width * 0.48f - 15f, 22f);
-                        string freezeLabel;
-                        System.Action freezeAction;
-                        if (controller2.Frozen)
-                        {
-                            freezeLabel = "解冻";
-                            freezeAction = delegate { controller2.Unfreeze(); };
-                        }
-                        else
-                        {
-                            freezeLabel = "冻结";
-                            freezeAction = delegate { controller2.Freeze(); };
-                        }
-                        if (Widgets.ButtonText(freezeRect, freezeLabel))
-                        {
-                            freezeAction();
                         }
                     }
                 }
@@ -1055,28 +1033,6 @@ namespace PioneerFramework
                 if (entity == null) continue;
                 if (entity.HasMap || entity.IsMapArchived)
                     return entity;
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// 从选中的 group 查找关联地图的 SpaceStationController。
-        /// </summary>
-        private static SpaceStationController GetStationControllerForGroup(SpaceEntityGroup group)
-        {
-            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
-            if (spaceGame == null) return null;
-
-            foreach (int entityId in group.GetEntityIds())
-            {
-                var entity = spaceGame.GetEntityById(entityId);
-                if (entity == null || !entity.HasMap || entity.MapId < 0) continue;
-
-                var map = SpaceMapGenerator.FindPocketMap(entity.MapId);
-                if (map == null) continue;
-
-                var controller = map.GetComponent<SpaceStationController>();
-                if (controller != null) return controller;
             }
             return null;
         }

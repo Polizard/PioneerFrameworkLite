@@ -16,25 +16,40 @@ function Assert-True {
 }
 
 $modRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-$gameManagedDirectory = (Resolve-Path (
-    Join-Path $modRoot '..\..\RimWorldWin64_Data\Managed')).Path
+$gameManagedDirectory = Join-Path $modRoot '..\..\RimWorldWin64_Data\Managed'
+if (-not (Test-Path -LiteralPath $gameManagedDirectory)) {
+    $gameManagedDirectory = $null
+}
 if ([string]::IsNullOrWhiteSpace($AssemblyPath)) {
-    $AssemblyPath = Join-Path $modRoot '1.6\Assemblies\PioneerFramework.dll'
+    $AssemblyPath = Join-Path $modRoot '1.6\Assemblies\PioneerFrameworkLite.dll'
 }
 
 $dependencyDirectories = @(
     (Join-Path $modRoot 'Source\PioneerFramework\Libs\RimWorld'),
     (Join-Path $modRoot 'Source\PioneerFramework\Libs\Unity'),
     (Join-Path $modRoot 'Source\PioneerFramework\Libs\0Harmony'),
-    $gameManagedDirectory,
     (Split-Path -Parent $AssemblyPath)
 )
+if (-not [string]::IsNullOrWhiteSpace($gameManagedDirectory)) {
+    $dependencyDirectories += $gameManagedDirectory
+}
+
+# Fallback for machines without the game folder: .NET Framework compatible netstandard facade from the SDK
+$dotnetSdk = 'C:\Program Files\dotnet\sdk'
+if (Test-Path $dotnetSdk) {
+    $sdkDir = Get-ChildItem $dotnetSdk -Directory |
+        Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+    if ($null -ne $sdkDir) {
+        $netstandardDir = Join-Path $sdkDir.FullName 'Microsoft\Microsoft.NET.Build.Extensions\net461\lib'
+        if (Test-Path $netstandardDir) { $dependencyDirectories += $netstandardDir }
+    }
+}
 
 [System.AppDomain]::CurrentDomain.add_AssemblyResolve({
     param($sender, $eventArgs)
 
     $fileName = ([System.Reflection.AssemblyName]$eventArgs.Name).Name + '.dll'
-    foreach ($directory in $dependencyDirectories) {
+    foreach ($directory in $script:dependencyDirectories) {
         $candidate = Join-Path $directory $fileName
         if (Test-Path -LiteralPath $candidate) {
             return [System.Reflection.Assembly]::LoadFrom($candidate)
@@ -57,7 +72,8 @@ $assembly = [System.Reflection.Assembly]::LoadFrom(
 $layerDefsPath = Join-Path $modRoot (
     '1.6\Defs\PlanetLayerDefs\PlanetLayers_Celestial.xml')
 [xml]$layerDefs = Get-Content -Raw -Encoding UTF8 -LiteralPath $layerDefsPath
-foreach ($defName in @('Moon', 'Mars')) {
+# Lite 裁剪：火星已删除（跨行星系不做），仅验证月球
+foreach ($defName in @('Moon')) {
     $layerDef = $layerDefs.Defs.PlanetLayerDef |
         Where-Object { $_.defName -eq $defName }
     Assert-True ($null -ne $layerDef) "$defName PlanetLayerDef is missing."

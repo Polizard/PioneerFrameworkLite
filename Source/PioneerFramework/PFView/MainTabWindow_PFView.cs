@@ -219,7 +219,7 @@ namespace PioneerFramework
             sphereMeshLOD0 = BuildSphereMesh(48, 36);
             sphereMeshLOD1 = BuildSphereMesh(24, 18);
             sphereMeshLOD2 = BuildSphereMesh(12, 9);
-            cubeMesh = ShipPartMeshGenerator.GetMesh(ShipPartShape.Cube);
+            cubeMesh = BuildCubeMesh();
             quadMesh = BuildQuadMesh();
 
             renderMat = new Material(Shader.Find("Standard")) { color = Color.white };
@@ -282,6 +282,28 @@ namespace PioneerFramework
                 new Vector3(-0.5f, 0.5f, 0), new Vector3(0.5f, 0.5f, 0)
             };
             m.triangles = new[] { 0, 2, 1, 2, 3, 1 };
+            m.RecalculateNormals();
+            return m;
+        }
+
+        /// <summary>单位立方体 Mesh（替代已删除的 ShipPartMeshGenerator，单 part 船统一盒体绘制）。</summary>
+        private static Mesh BuildCubeMesh()
+        {
+            var m = new Mesh();
+            m.vertices = new[] {
+                new Vector3(-0.5f, -0.5f, -0.5f), new Vector3(0.5f, -0.5f, -0.5f),
+                new Vector3(0.5f, 0.5f, -0.5f), new Vector3(-0.5f, 0.5f, -0.5f),
+                new Vector3(-0.5f, -0.5f, 0.5f), new Vector3(0.5f, -0.5f, 0.5f),
+                new Vector3(0.5f, 0.5f, 0.5f), new Vector3(-0.5f, 0.5f, 0.5f)
+            };
+            m.triangles = new[] {
+                0, 2, 1, 0, 3, 2,       // -Z
+                4, 5, 6, 4, 6, 7,       // +Z
+                0, 1, 5, 0, 5, 4,       // -Y
+                2, 3, 7, 2, 7, 6,       // +Y
+                1, 2, 6, 1, 6, 5,       // +X
+                3, 0, 4, 3, 4, 7        // -X
+            };
             m.RecalculateNormals();
             return m;
         }
@@ -825,34 +847,9 @@ namespace PioneerFramework
 
                 if (!SphereInFrustum(eVp, 10f * scale)) continue;
 
-                if (entity.shipDesign != null && entity.shipDesign.parts.Count > 0)
-                    DrawDesignParts(entity.shipDesign, eVp, gRot, scale);
-                else if (entity.Parts.Count > 0)
+                // 单 part 化：无设计数据分支，统一按运行时 Parts 绘制盒体（§5.4 C4）
+                if (entity.Parts.Count > 0)
                     DrawRuntimeParts(entity, eVp, gRot, scale);
-            }
-        }
-
-        private static void DrawDesignParts(Ship3D design, Vector3 eVp, Quaternion gRot, float scale = 1f)
-        {
-            Material partMat = ToonMat ?? renderMat;
-            if (ToonMat != null)
-                matBlock.SetFloat("_OutlineWidth", 0f); // 飞船部件不需要轮廓线
-
-            foreach (var part in design.parts)
-            {
-                var shape = part.ShapeType;
-                var mesh = ShipPartMeshGenerator.GetMesh(shape);
-
-                Vector3 pv = part.position * 10f * MetersToView * scale;
-                Vector3 sv = part.EffectiveBounds * 10f * MetersToView * scale;
-                if (sv.x < 0.1f) sv.x = 0.1f;
-                if (sv.y < 0.1f) sv.y = 0.1f;
-                if (sv.z < 0.1f) sv.z = 0.1f;
-
-                Vector3 wp = eVp + gRot * pv;
-                Matrix4x4 mtx = Matrix4x4.TRS(wp, part.rotation * gRot, sv);
-                matBlock.SetColor("_Color", part.PreviewColor);
-                Graphics.DrawMesh(mesh, mtx, partMat, SceneLayer, null, 0, matBlock);
             }
         }
 
@@ -866,10 +863,7 @@ namespace PioneerFramework
             {
                 if (part.isDestroyed) continue;
 
-                var pDef = ShipPartDefs.GetDef(part.defName);
-                var mesh = pDef != null
-                    ? ShipPartMeshGenerator.GetMesh(pDef.shapeType)
-                    : cubeMesh;
+                var mesh = cubeMesh;
 
                 Vector3 pv = (Vector3)part.localPosition * MetersToView * scale;
                 Vector3 sv = (Vector3)part.localBoundsSize * MetersToView * scale;
@@ -879,7 +873,7 @@ namespace PioneerFramework
 
                 Vector3 wp = eVp + gRot * pv;
                 Matrix4x4 mtx = Matrix4x4.TRS(wp, gRot, sv);
-                var col = pDef != null ? pDef.previewColor : new Color(0.3f, 0.6f, 1.0f);
+                var col = new Color(0.3f, 0.6f, 1.0f);
                 matBlock.SetColor("_Color", col);
                 Graphics.DrawMesh(mesh, mtx, partMat, SceneLayer, null, 0, matBlock);
             }
@@ -1435,13 +1429,6 @@ namespace PioneerFramework
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return;
 
-            var ship = Ship3D.LoadFromFile("测试飞船");
-            if (ship == null)
-            {
-                Log.Warning("[PFView] 未找到测试设计 '测试飞船'（ShipBlueprints/测试飞船.ship），请先在飞船设计师中保存该名称");
-                return;
-            }
-
             int gidA = GetNextGroupId(spaceGame);
             int gidB = gidA + 1;
             int eidA = GetNextEntityId(spaceGame);
@@ -1455,8 +1442,8 @@ namespace PioneerFramework
             double speed = System.Math.Sqrt(mu / orbitRadius);
             DVector3 vel = new DVector3(-System.Math.Sin(angle) * speed, 0, System.Math.Cos(angle) * speed);
 
-            CreateTestShip(spaceGame, gidA, eidA, ship, basePos, vel, 0, bodyId);
-            CreateTestShip(spaceGame, gidB, eidB, ship, basePos + new DVector3(200, 0, 0), vel, 1, bodyId);
+            CreateTestShip(spaceGame, gidA, eidA, basePos, vel, 0, bodyId);
+            CreateTestShip(spaceGame, gidB, eidB, basePos + new DVector3(200, 0, 0), vel, 1, bodyId);
 
             selectedGroupId = gidA;
             targetGroupId = gidB;
@@ -1466,7 +1453,8 @@ namespace PioneerFramework
                 gidA, gidB, orbitRadius / 1000.0));
         }
 
-        private static void CreateTestShip(SpaceGameComp spaceGame, int groupId, int entityId, Ship3D ship,
+        /// <summary>创建单 part 测试船（Lite 裁剪：无 Ship3D 蓝本，直接构造唯一 part 盒体）。</summary>
+        private static void CreateTestShip(SpaceGameComp spaceGame, int groupId, int entityId,
             DVector3 pos, DVector3 vel, int factionId, int bodyId)
         {
             var group = new SpaceEntityGroup(groupId, factionId)
@@ -1488,8 +1476,16 @@ namespace PioneerFramework
             };
             entity.SetPositionVelocity(DVector3.zero, DVector3.zero);
             entity.SetRotation(Quaternion.identity);
-            entity.SetParts(ship.ToSpaceParts());
-            entity.shipDesign = ship;
+            entity.SetParts(new List<SpacePart>
+            {
+                new SpacePart
+                {
+                    partId = 1,
+                    defName = "PF_TestShip",
+                    localPosition = DVector3.zero,
+                    localBoundsSize = new DVector3(100.0, 40.0, 100.0)
+                }
+            });
             spaceGame.RegisterEntity(entity);
 
             entity.RemainingDeltaV = 10000000f;

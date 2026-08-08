@@ -8,7 +8,7 @@
        ════════════════════════════════════════════════════════════════ -->
 
   <!-- ── 恒星：太阳 ── -->
-  <CelestialBodyDef>
+  <PioneerFramework.CelestialBodyDef>
     <defName>Sun</defName>
     <bodyId>0</bodyId>
     <label>太阳</label>
@@ -17,10 +17,10 @@
     <gravitationalParameter>2.0e16</gravitationalParameter>  <!-- GM -->
     <hasSurface>false</hasSurface>
     <atmosphereThickness>0</atmosphereThickness>
-  </CelestialBodyDef>
+  </PioneerFramework.CelestialBodyDef>
 
   <!-- ── 行星：地球 ── -->
-  <CelestialBodyDef>
+  <PioneerFramework.CelestialBodyDef>
     <defName>Earth</defName>
     <bodyId>1</bodyId>
     <label>地球</label>
@@ -36,10 +36,10 @@
     <orbitNormal>(0, 1, 0)</orbitNormal>       <!-- 赤道面 -->
     <initialPhase>0</initialPhase>
     <parentBodyDefName>Sun</parentBodyDefName>
-  </CelestialBodyDef>
+  </PioneerFramework.CelestialBodyDef>
 
   <!-- ── 卫星：月球（绕地球）── -->
-  <CelestialBodyDef>
+  <PioneerFramework.CelestialBodyDef>
     <defName>Moon</defName>
     <bodyId>2</bodyId>
     <label>月球</label>
@@ -55,24 +55,7 @@
     <orbitNormal>(0, 1, 0)</orbitNormal>       <!-- 同赤道面 -->
     <initialPhase>1.5</initialPhase>
     <parentBodyDefName>Earth</parentBodyDefName>
-  </CelestialBodyDef>
+  </PioneerFramework.CelestialBodyDef>
 
-  <!-- ── 行星：火星（供测试双行星系统）── -->
-  <CelestialBodyDef>
-    <defName>Mars</defName>
-    <bodyId>3</bodyId>
-    <label>火星</label>
-    <bodyType>Planet</bodyType>
-    <radius>3500000</radius>                  <!-- 3500 km -->
-    <gravitationalParameter>8.0e13</gravitationalParameter>  <!-- GM -->
-    <hasSurface>true</hasSurface>
-    <planetLayerDefName>Mars</planetLayerDefName>            <!-- 绑到火星 layer -->
-    <dayLengthTicks>61500</dayLengthTicks>                    <!-- 火星一天 ~24h37m -->
-    <atmosphereThickness>50000</atmosphereThickness>         <!-- 50 km -->
-    <orbitRadius>180000000</orbitRadius>      <!-- 180,000 km 轨道半径 -->
-    <orbitPeriod>340000</orbitPeriod>         <!-- 周期 ~340,000 tick -->
-    <orbitNormal>(0, 1, 0)</orbitNormal>       <!-- 同赤道面 -->
-    <initialPhase>3.0</initialPhase>
-    <parentBodyDefName>Sun</parentBodyDefName>
-  </CelestialBodyDef>
+  <!-- Lite 裁剪：火星（跨行星系不做，仅留 Sun/Earth/Moon）已删除 -->
 </Defs>

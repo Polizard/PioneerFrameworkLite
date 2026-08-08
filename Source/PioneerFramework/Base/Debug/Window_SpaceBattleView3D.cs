@@ -72,7 +72,6 @@ namespace PioneerFramework
         private static Material moonMat;
         private static Material billboardMat;
         private static Material designerCubeMat;
-        private static Material designerCornerMat;
 
         static Window_SpaceBattleView3D()
         {
@@ -195,7 +194,6 @@ namespace PioneerFramework
             }
             // 设计器部件材质
             if (designerCubeMat == null) designerCubeMat = new Material(Shader.Find("Standard")) { color = new Color(0.3f, 0.6f, 1.0f) };
-            if (designerCornerMat == null) designerCornerMat = new Material(Shader.Find("Standard")) { color = new Color(1.0f, 0.5f, 0.2f) };
         }
 
         private static Material CreateTransparentMaterial(Color color)
@@ -213,15 +211,6 @@ namespace PioneerFramework
             mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
             mat.renderQueue = 3000;
             return mat;
-        }
-
-        private static Material GetDesignerMaterial(ShipPartShape shape)
-        {
-            switch (shape)
-            {
-                case ShipPartShape.SphericalCorner: return designerCornerMat;
-                default: return designerCubeMat;
-            }
         }
 
         private void EnsureRenderTextureSize(float w, float h)
@@ -357,13 +346,12 @@ namespace PioneerFramework
         // ════════════════════════════════════════════════
 
         /// <summary>
-        /// 渲染观察者飞船。有设计数据时渲染部件，有运行时 Parts 时从 Parts 渲染，
-        /// 否则用半透明长方体。
+        /// 渲染观察者飞船。有运行时 Parts 时从 Parts 渲染，否则用半透明长方体。
+        /// （Lite 裁剪：Ship3D 设计分支已删除）
         /// </summary>
         private void SyncObserverShip()
         {
             SpaceEntity observerEntity = GetFirstEntity(observerGroup);
-            Ship3D design = observerEntity?.shipDesign;
 
             if (observerShipContainer != null)
             {
@@ -375,11 +363,7 @@ namespace PioneerFramework
             observerShipContainer.layer = SceneLayer;
             observerShipContainer.transform.SetParent(sceneRoot.transform);
 
-            if (design != null && design.parts.Count > 0)
-            {
-                BuildShipFromDesign(observerShipContainer, design, observerPosUnity, forwardDirection, true);
-            }
-            else if (observerEntity != null && observerEntity.Parts.Count > 0)
+            if (observerEntity != null && observerEntity.Parts.Count > 0)
             {
                 BuildShipFromParts(observerShipContainer, observerEntity, true);
             }
@@ -399,8 +383,8 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 渲染其他飞船。有设计数据时渲染部件，有运行时 Parts 时从 Parts 渲染，
-        /// 否则用不透明长方体。
+        /// 渲染其他飞船。有运行时 Parts 时从 Parts 渲染，否则用不透明长方体。
+        /// （Lite 裁剪：Ship3D 设计分支已删除）
         /// </summary>
         private void SyncOtherShips()
         {
@@ -438,13 +422,8 @@ namespace PioneerFramework
                     otherShipContainers[g.GroupId] = container;
 
                     SpaceEntity entity = GetFirstEntity(g);
-                    Ship3D design = entity?.shipDesign;
 
-                    if (design != null && design.parts.Count > 0)
-                    {
-                        BuildShipFromDesign(container, design, otherPos, otherForward, false);
-                    }
-                    else if (entity != null && entity.Parts.Count > 0)
+                    if (entity != null && entity.Parts.Count > 0)
                     {
                         BuildShipFromParts(container, entity, false);
                     }
@@ -472,29 +451,6 @@ namespace PioneerFramework
                 // 远处飞船缩放
                 float sizeFactor = Mathf.Max(1f, dist * 0.02f);
                 container.transform.localScale = Vector3.one * sizeFactor;
-            }
-        }
-
-        /// <summary>
-        /// 从 Ship3D 设计数据构建飞船部件 GameObject。
-        /// </summary>
-        private void BuildShipFromDesign(GameObject container, Ship3D design, Vector3 worldPos, Vector3 forward, bool isObserver)
-        {
-            foreach (var part in design.parts)
-            {
-                Vector3 bounds = part.EffectiveBounds;
-                var go = new GameObject("Part_" + part.ShapeType);
-                go.layer = SceneLayer;
-                var mf = go.AddComponent<MeshFilter>();
-                var mr = go.AddComponent<MeshRenderer>();
-
-                mf.mesh = ShipPartMeshGenerator.GetMesh(part.ShapeType);
-                mr.material = GetDesignerMaterial(part.ShapeType);
-
-                go.transform.localPosition = part.position;
-                go.transform.localRotation = part.rotation;
-                go.transform.localScale = bounds;
-                go.transform.SetParent(container.transform);
             }
         }
 
@@ -888,23 +844,11 @@ namespace PioneerFramework
             float y = rect.y + 30f;
             float lineHeight = 20f;
 
-            // 飞船设计信息
+            // 飞船部件信息（Lite 裁剪：无 Ship3D 设计数据，仅显示部件数）
             SpaceEntity observerEntity = GetFirstEntity(observerGroup);
-            Ship3D design = observerEntity?.shipDesign;
-            if (design != null)
-            {
-                Widgets.Label(new Rect(rect.x, y, rect.width, lineHeight),
-                    "设计: " + (design.shipName ?? "未命名"));
-                y += lineHeight;
-                Widgets.Label(new Rect(rect.x, y, rect.width, lineHeight),
-                    "部件数: " + design.parts.Count);
-                y += lineHeight;
-            }
-            else
-            {
-                Widgets.Label(new Rect(rect.x, y, rect.width, lineHeight), "（无设计数据，显示长方体）");
-                y += lineHeight;
-            }
+            Widgets.Label(new Rect(rect.x, y, rect.width, lineHeight),
+                string.Format("部件数: {0}", observerEntity?.Parts.Count ?? 0));
+            y += lineHeight;
 
             y += 4f;
             Widgets.Label(new Rect(rect.x, y, rect.width, lineHeight),

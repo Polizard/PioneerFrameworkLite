@@ -115,15 +115,7 @@ namespace PioneerFramework
                 map.components.Add(mapComp);
             }
 
-            // 5. 添加 SpaceStationController（冻结/解冻管理）
-            var controller = map.GetComponent<SpaceStationController>();
-            if (controller == null)
-            {
-                controller = new SpaceStationController(map);
-                map.components.Add(controller);
-            }
-
-            // 6. 注册到 SpaceGameComp，便于后续查找
+            // 5. 注册到 SpaceGameComp，便于后续查找
             var spaceGame = Current.Game.GetComponent<SpaceGameComp>();
             if (spaceGame != null)
                 spaceGame.RegisterMapComponent(map.uniqueID, mapComp);
@@ -234,13 +226,6 @@ namespace PioneerFramework
             {
                 mapComp = new SpaceMapComp(map);
                 map.components.Add(mapComp);
-            }
-
-            var controller = map.GetComponent<SpaceStationController>();
-            if (controller == null)
-            {
-                controller = new SpaceStationController(map);
-                map.components.Add(controller);
             }
 
             // 注册

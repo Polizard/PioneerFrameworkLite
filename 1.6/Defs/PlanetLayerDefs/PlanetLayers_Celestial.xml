@@ -1,39 +1,10 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Defs>
   <!-- ════════════════════════════════════════════════════════════════
        天体表面 PlanetLayerDef
-       火星和月球各自拥有独立的 layer，通过"查看天体"Gizmo 切换。
+       月球拥有独立 layer，通过"查看天体"Gizmo 切换。
+       Lite 裁剪：火星 layer 已删除（跨行星系不做）。
        ════════════════════════════════════════════════════════════════ -->
-  <!-- ── 火星地表 layer ── -->
-  <PlanetLayerDef>
-    <defName>Mars</defName>
-    <label>火星</label>
-    <viewGizmoTooltip>查看火星地表。</viewGizmoTooltip>
-    <viewGizmoTexPath>UI/Commands/ViewPlanet</viewGizmoTexPath>
-    <layerType>SurfaceLayer</layerType>
-    <tileType>SurfaceTile</tileType>
-    <elevationString>{0}m</elevationString>
-    <gerundLabel>在火星</gerundLabel>
-    <backgroundBiome>Desert</backgroundBiome>
-    <worldGenSteps>
-      <li>PF_MoonTiles</li>
-    </worldGenSteps>
-    <worldDrawLayers>
-      <li>WorldDrawLayer_CurrentMapTile</li>
-      <li>WorldDrawLayer_SelectedTile</li>
-      <li>WorldDrawLayer_MouseTile</li>
-      <li>PioneerFramework.WorldDrawLayer_MoonUngeneratedPlanetParts</li>
-      <li>WorldDrawLayer_WorldObjects_Expandable</li>
-      <li>WorldDrawLayer_WorldObjects_NonExpandable</li>
-      <li>WorldDrawLayer_Glow</li>
-      <li>WorldDrawLayer_Terrain</li>
-      <li>WorldDrawLayer_Clouds</li>
-    </worldDrawLayers>
-    <worldTabs>
-      <li>WITab_Terrain</li>
-      <li>WITab_Planet</li>
-    </worldTabs>
-  </PlanetLayerDef>
   <!-- ── 月球地表 layer ── -->
   <PlanetLayerDef>
     <defName>Moon</defName>

@@ -21,7 +21,7 @@ if (-not (Test-Path -LiteralPath $gameManagedDirectory)) {
     $gameManagedDirectory = $null
 }
 if ([string]::IsNullOrWhiteSpace($AssemblyPath)) {
-    $AssemblyPath = Join-Path $modRoot '1.6\Assemblies\PioneerFramework.dll'
+    $AssemblyPath = Join-Path $modRoot '1.6\Assemblies\PioneerFrameworkLite.dll'
 }
 
 $dependencyDirectories = @(
@@ -50,7 +50,7 @@ if (Test-Path $dotnetSdk) {
     param($sender, $eventArgs)
 
     $fileName = ([System.Reflection.AssemblyName]$eventArgs.Name).Name + '.dll'
-    foreach ($directory in $dependencyDirectories) {
+    foreach ($directory in $script:dependencyDirectories) {
         $candidate = Join-Path $directory $fileName
         if (Test-Path -LiteralPath $candidate) {
             return [System.Reflection.Assembly]::LoadFrom($candidate)
@@ -70,20 +70,23 @@ Get-ChildItem -LiteralPath (Join-Path $modRoot 'Source\PioneerFramework\Libs\Uni
 $assembly = [System.Reflection.Assembly]::LoadFrom((Resolve-Path $AssemblyPath).Path)
 
 # ---- Type resolution ----
-$spacePartType = $assembly.GetType('PioneerFramework.Combat.SpacePart', $true)
-$shipPartDefType = $assembly.GetType('PioneerFramework.ShipPartDef', $true)
-$engineType = $assembly.GetType('PioneerFramework.Components.EngineComponentData', $true)
-$tankType = $assembly.GetType('PioneerFramework.Components.PropellantTankComponentData', $true)
-$cargoType = $assembly.GetType('PioneerFramework.Components.CargoComponentData', $true)
-$weaponMountType = $assembly.GetType('PioneerFramework.Components.WeaponMountComponentData', $true)
-$roomType = $assembly.GetType('PioneerFramework.Components.RoomComponentData', $true)
-$registryType = $assembly.GetType('PioneerFramework.Components.ComponentRegistry', $true)
-$statsType = $assembly.GetType('PioneerFramework.Components.ShipStats', $true)
+# Lite 裁剪：SpacePart 已从 Combat 命名空间迁出；ShipPartDef/ShipPartShape/WeaponMountComponentData 已删除；
+# Engine/PropellantTank/Cargo 组件已删除（F1 dV 体系前提前置，Lite 首发不用），仅剩 Room 组件
+$allTypes = @()
+try {
+    $allTypes = $assembly.GetTypes()
+} catch {
+    $allTypes = $_.Exception.Types | Where-Object { $null -ne $_ }
+}
+$spacePartType = $allTypes | Where-Object { $_.FullName -eq 'PioneerFramework.SpacePart' } | Select-Object -First 1
+$roomType = $allTypes | Where-Object { $_.FullName -eq 'PioneerFramework.Components.RoomComponentData' } | Select-Object -First 1
+$registryType = $allTypes | Where-Object { $_.FullName -eq 'PioneerFramework.Components.ComponentRegistry' } | Select-Object -First 1
+$statsType = $allTypes | Where-Object { $_.FullName -eq 'PioneerFramework.Components.ShipStats' } | Select-Object -First 1
 
 $flagsInstance = [System.Reflection.BindingFlags]'Public,Instance'
 
 # ---- Trigger component static constructors (no StaticConstructorOnStartup in pure reflection) ----
-foreach ($compType in @($engineType, $tankType, $cargoType, $weaponMountType, $roomType)) {
+foreach ($compType in @($roomType)) {
     [System.Runtime.CompilerServices.RuntimeHelpers]::RunClassConstructor($compType.TypeHandle)
 }
 
@@ -91,12 +94,11 @@ foreach ($compType in @($engineType, $tankType, $cargoType, $weaponMountType, $r
 Assert-True ($null -ne $registryType) 'ComponentRegistry type is missing.'
 $registryCount = $registryType.GetProperty('Count', [System.Reflection.BindingFlags]'Public,Static')
 Assert-True ($registryCount -ne $null) 'ComponentRegistry.Count is missing.'
-Assert-True ([int]$registryCount.GetValue($null, $null) -ge 5) `
-    "ComponentRegistry must register at least 5 framework components, got $($registryCount.GetValue($null, $null))."
+Assert-True ([int]$registryCount.GetValue($null, $null) -ge 1) `
+    "ComponentRegistry must register at least 1 framework component (only Room in Lite), got $($registryCount.GetValue($null, $null))."
 
 $createMethod = $registryType.GetMethod('Create', [System.Reflection.BindingFlags]'Public,Static')
-foreach ($typeId in @('EngineComponentData', 'PropellantTankComponentData', 'CargoComponentData',
-        'WeaponMountComponentData', 'RoomComponentData')) {
+foreach ($typeId in @('RoomComponentData')) {
     $comp = $createMethod.Invoke($null, @($typeId))
     Assert-True ($null -ne $comp) "ComponentRegistry.Create('$typeId') returned null."
     $typeIdProp = $comp.GetType().GetProperty('TypeId')
@@ -104,27 +106,17 @@ foreach ($typeId in @('EngineComponentData', 'PropellantTankComponentData', 'Car
 }
 
 # ---- 2. Part-level stats aggregation ----
-$def = [Activator]::CreateInstance($shipPartDefType)
-$shipPartDefType.GetField('massBase', $flagsInstance).SetValue($def, [single]100.0)
-
-$part = [Activator]::CreateInstance($spacePartType)
+$part = [Activator]::CreateInstance([type]$spacePartType)
 Assert-True ($null -ne $part) 'SpacePart creation returned null.'
-$spacePartType.GetField('cachedDef', $flagsInstance).SetValue($part, $def)
 
 $componentsField = $spacePartType.GetField('components', $flagsInstance)
 # SpacePart ctor already initialized List<PartComponentData>; use it directly
 $componentsList = $componentsField.GetValue($part)
 
-$engine = [Activator]::CreateInstance($engineType)
-$engineType.GetField('exhaustVelocity', $flagsInstance).SetValue($engine, [single]30000.0)
-$engineType.GetField('massFlowRate', $flagsInstance).SetValue($engine, [single]5.0)
-$engineType.GetField('dryMass', $flagsInstance).SetValue($engine, [single]500.0)
-$componentsList.Add($engine)
-
-$tank = [Activator]::CreateInstance($tankType)
-$tankType.GetField('dryMass', $flagsInstance).SetValue($tank, [single]500.0)
-$tankType.GetField('wetMass', $flagsInstance).SetValue($tank, [single]5000.0)
-$componentsList.Add($tank)
+$room = [Activator]::CreateInstance([type]$roomType)
+$roomType.GetField('roomTypeDefName', $flagsInstance).SetValue($room, 'PF_RoomModule')
+$roomType.GetField('dryMass', $flagsInstance).SetValue($room, [single]400.0)
+$componentsList.Add($room)
 
 $statsProp = $spacePartType.GetProperty('Stats')
 $stats = $statsProp.GetValue($part, $null)
@@ -134,42 +126,27 @@ function Get-StatsField {
     return [double]$statsType.GetField($field).GetValue($stats)
 }
 
-# mass = massBase(100) + engine dry(500) + tank wet(5000) = 5600
-$expectedMass = 100.0 + 500.0 + 5000.0
+# Lite：唯一组件 Room，质量 = room dryMass(400)
+$expectedMass = 400.0
 Assert-True ([Math]::Abs((Get-StatsField $stats 'mass') - $expectedMass) -lt 0.01) `
     "Stats.mass mismatch: expected $expectedMass, got $(Get-StatsField $stats 'mass')."
-# thrust = ve * mdot = 30000 * 5 = 150000
-$expectedThrust = 30000.0 * 5.0
-Assert-True ([Math]::Abs((Get-StatsField $stats 'thrust') - $expectedThrust) -lt 0.01) `
-    "Stats.thrust mismatch: expected $expectedThrust, got $(Get-StatsField $stats 'thrust')."
-# propellant = wet - dry = 4500
-$expectedPropellant = 5000.0 - 500.0
-Assert-True ([Math]::Abs((Get-StatsField $stats 'propellant') - $expectedPropellant) -lt 0.01) `
-    "Stats.propellant mismatch: expected $expectedPropellant, got $(Get-StatsField $stats 'propellant')."
 
 # ---- 3. Invalidation boundary: component removal must trigger recalculation ----
 $removeMethod = $spacePartType.GetMethod('RemoveComponent', [System.Reflection.BindingFlags]'Public,Instance')
-$removed = [bool]$removeMethod.Invoke($part, @($tank))
+$removed = [bool]$removeMethod.Invoke($part, @($room))
 Assert-True $removed 'RemoveComponent returned false.'
 $stats2 = $statsProp.GetValue($part, $null)
-# mass = massBase(100) + engine dry(500) = 600
-$expectedMass2 = 100.0 + 500.0
+# 无组件 → mass 兜底 1kg
+$expectedMass2 = 1.0
 Assert-True ([Math]::Abs((Get-StatsField $stats2 'mass') - $expectedMass2) -lt 0.01) `
     "InvalidateStats not effective: expected mass $expectedMass2, got $(Get-StatsField $stats2 'mass')."
 
 # ---- 4. Clone deep-copy (template -> runtime) ----
-$cloneMethod = $engineType.GetMethod('Clone')
-$clone = $cloneMethod.Invoke($engine, $null)
+$cloneMethod = $roomType.GetMethod('Clone')
+$clone = $cloneMethod.Invoke($room, $null)
 Assert-True ($null -ne $clone) 'Clone returned null.'
-Assert-True (-not [object]::ReferenceEquals($clone, $engine)) 'Clone must return a new instance.'
-Assert-True ([Math]::Abs([single]$engineType.GetField('exhaustVelocity', $flagsInstance).GetValue($clone) - 30000.0) -lt 0.01) `
-    'Clone did not preserve exhaustVelocity.'
-
-# ---- 5. Geometry enum is pure ----
-$shapeType = $assembly.GetType('PioneerFramework.ShipPartShape', $true)
-$shapeNames = [System.Enum]::GetNames($shapeType)
-Assert-True ($shapeNames.Count -eq 2) "ShipPartShape must be pure geometry (2 members), got $($shapeNames -join ', ')."
-Assert-True ($shapeNames -contains 'Cube') 'ShipPartShape.Cube missing.'
-Assert-True ($shapeNames -contains 'SphericalCorner') 'ShipPartShape.SphericalCorner missing.'
+Assert-True (-not [object]::ReferenceEquals($clone, $room)) 'Clone must return a new instance.'
+Assert-True ([string]$roomType.GetField('roomTypeDefName', $flagsInstance).GetValue($clone) -eq 'PF_RoomModule') `
+    'Clone did not preserve roomTypeDefName.'
 
 Write-Output 'Assert-ShipStats assertions passed.'

@@ -9,9 +9,8 @@ namespace PioneerFramework.Combat
     public class CombatManager : GameComponent
     {
         private readonly List<ProjectileInstance> activeProjectiles = new List<ProjectileInstance>();
+        // 群组武器列表（Lite 裁剪后：实体级武器收集已删除，此容器由 M4 Map 炮塔桥接填充）
         private readonly Dictionary<int, List<WeaponInstance>> groupWeapons = new Dictionary<int, List<WeaponInstance>>();
-        // groupId → Σ 实体武器版本（#2：武器列表脏检测，版本不变则不重建）
-        private readonly Dictionary<int, int> groupWeaponVersions = new Dictionary<int, int>();
         private readonly HashSet<SpaceEntityGroup> projectileQueryResults = new HashSet<SpaceEntityGroup>();
         // 命中诊断：已记录过的射弹 id（每个射弹只打印一次）
         private readonly HashSet<int> hitDiagnosticLogged = new HashSet<int>();
@@ -54,8 +53,8 @@ namespace PioneerFramework.Combat
         // 战斗阶段耗时 + 事件计数（每 LOG_INTERVAL 汇总输出，用于日志分析）
         private readonly System.Diagnostics.Stopwatch stageStopwatch = new System.Diagnostics.Stopwatch();
         private double projMsAccum, weaponsMsAccum, syncMsAccum;
-        private long projSpawnedTotal, projDestroyedTotal, weaponRebuildTotal;
-        private long lastProjSpawned, lastProjDestroyed, lastWeaponRebuild, lastCellCross;
+        private long projSpawnedTotal, projDestroyedTotal;
+        private long lastProjSpawned, lastProjDestroyed, lastCellCross;
 #endif
 
         // 射弹在飞 → 自动降速到 1/60（Combat 档）。限频防抖：每 60 tick 最多请求一次。
@@ -405,7 +404,7 @@ namespace PioneerFramework.Combat
                     Log.Message(string.Format("[命中调试] slab HIT tEntry={0:F3} tExit={1:F3}", tEntry, tExit));
 #endif
 
-                // Entity AABB 被命中，检查 Part 级碰撞
+                // Entity AABB 被命中，检查 Part 级碰撞（单 part 化：唯一 part slab 直判，§5.3）
                 if (entity.Parts.Count > 0 && segmentLength > 0.001)
                 {
                     DVector3 worldDirNorm = worldDir / segmentLength;
@@ -414,18 +413,23 @@ namespace PioneerFramework.Combat
                     DVector3 localDir = worldDirNorm;
                     double localMaxDist = (tExit - tEntry) * segmentLength;
 
-                    var hits = entity.QueryRayHit(localOrigin, localDir, localMaxDist);
+                    var hitPart = entity.Parts[0];
+                    DVector3 partMin = hitPart.localPosition - hitPart.localBoundsSize * 0.5;
+                    DVector3 partMax = hitPart.localPosition + hitPart.localBoundsSize * 0.5;
+                    bool partHit = CombatGrid.RaySlabIntersection(localOrigin, localOrigin + localDir * localMaxDist,
+                        partMin, partMax, out double partTEntry, out _, out _);
+                    partHit = partHit && partTEntry >= 0 && partTEntry <= localMaxDist;
 #if DEBUG
                     if (verboseHit)
                         Log.Message(string.Format(
-                            "[命中调试] QueryRayHit origin=({0:F0},{1:F0},{2:F0}) dir=({3:F3},{4:F3},{5:F3}) maxDist={6:F0} hits={7}",
+                            "[命中调试] PartSlab origin=({0:F0},{1:F0},{2:F0}) dir=({3:F3},{4:F3},{5:F3}) maxDist={6:F0} partHit={7} t={8:F3}",
                             localOrigin.x, localOrigin.y, localOrigin.z,
-                            localDir.x, localDir.y, localDir.z, localMaxDist, hits.Count));
+                            localDir.x, localDir.y, localDir.z, localMaxDist, partHit, partTEntry));
 #endif
-                    if (hits.Count > 0)
+                    if (partHit)
                     {
-                        var firstHit = hits[0];
-                        var hitPart = entity.Parts[firstHit.partIndex];
+                        var firstHitPartIndex = 0;
+                        var firstHitT = partTEntry;
                         DVector3 entityWorldPos = groupPos + entity.Position;
                         lastHitPosition = proj.position;
                         lastHitGroupId = group.GroupId;
@@ -435,8 +439,8 @@ namespace PioneerFramework.Combat
                             "[命中Part!] Tick={8} 射弹{0}→Group{1} Entity{2} Part[{3}]\"{4}\" " +
                             "hitT={5:F3} PartHP={6:F0}→{7:F0} 飞行秒={18:F2} " +
                             "EntityPos=({9:F0},{10:F0},{11:F0}) PartLocalPos=({12:F0},{13:F0},{14:F0}) PartSize=({15:F0},{16:F0},{17:F0})",
-                            proj.id, group.GroupId, entityId, firstHit.partIndex, hitPart.defName,
-                            firstHit.hitT, hitPart.hp, hitPart.hp - proj.damage,
+                            proj.id, group.GroupId, entityId, firstHitPartIndex, hitPart.defName,
+                            firstHitT, hitPart.hp, hitPart.hp - proj.damage,
                             lastHitTick,
                             entityWorldPos.x, entityWorldPos.y, entityWorldPos.z,
                             hitPart.localPosition.x, hitPart.localPosition.y, hitPart.localPosition.z,
@@ -448,7 +452,7 @@ namespace PioneerFramework.Combat
                         {
                             entity.MarkPartDestroyed(hitPart.partId);
                             Log.Message(string.Format("[Part摧毁] Entity{0} Part[{1}]\"{2}\" 已被摧毁",
-                                entityId, firstHit.partIndex, hitPart.defName));
+                                entityId, firstHitPartIndex, hitPart.defName));
                         }
                         return true;
                     }
@@ -752,50 +756,18 @@ namespace PioneerFramework.Combat
 
         private void UpdateWeapons(int currentTick)
         {
-            // #2：武器列表只在版本变化时重建（复用 List 实例）。稳态下仅做 Σ版本 int 比较，
-            // 零 List 分配、零武器遍历。版本失效点由 SpaceEntity.InvalidateWeapons 统一递增。
+            // Lite 裁剪（§5.5）：实体级武器收集（WeaponMountComponentData 链路）已删除，
+            // groupWeapons 暂为空容器，等待 M4 的 Map 炮塔桥接新接口填充。
+            // 仅对既有武器实例做每 tick 冷却/过热更新。
             var spaceGame = GetSpaceGameComp();
             if (spaceGame != null)
             {
-                foreach (var group in spaceGame.GetAllGroups())
+                foreach (var kv in groupWeapons)
                 {
-                    if (!group.IsActive) continue;
-
-                    int version = 0;
-                    foreach (int entityId in group.GetEntityIds())
+                    foreach (var weapon in kv.Value)
                     {
-                        var entity = spaceGame.GetEntityById(entityId);
-                        if (entity != null)
-                            version += entity.WeaponsVersion;
+                        weapon.Update(currentTick);
                     }
-
-                    if (groupWeaponVersions.TryGetValue(group.GroupId, out int prevVersion) && prevVersion == version)
-                        continue;
-
-                    if (!groupWeapons.TryGetValue(group.GroupId, out var weapons))
-                    {
-                        weapons = new List<WeaponInstance>();
-                        groupWeapons[group.GroupId] = weapons;
-                    }
-                    weapons.Clear(); // Clear 保留底层数组容量，复用零分配
-                    foreach (int entityId in group.GetEntityIds())
-                    {
-                        var entity = spaceGame.GetEntityById(entityId);
-                        if (entity == null) continue;
-                        weapons.AddRange(entity.GetWeapons());
-                    }
-                    groupWeaponVersions[group.GroupId] = version;
-#if DEBUG
-                    weaponRebuildTotal++;
-#endif
-                }
-            }
-
-            foreach (var kv in groupWeapons)
-            {
-                foreach (var weapon in kv.Value)
-                {
-                    weapon.Update(currentTick);
                 }
             }
 
@@ -882,18 +854,15 @@ namespace PioneerFramework.Combat
                 collisionSamples = 0;
             }
 
-            // 事件计数（增量：射弹生/灭、武器重建、船跨格）
+            // 事件计数（增量：射弹生/灭、船跨格）
             long dSpawned = projSpawnedTotal - lastProjSpawned;
             long dDestroyed = projDestroyedTotal - lastProjDestroyed;
-            long dRebuild = weaponRebuildTotal - lastWeaponRebuild;
             long dCross = combatGrid != null ? combatGrid.debugCellCrossCount - lastCellCross : 0;
             lastProjSpawned = projSpawnedTotal;
             lastProjDestroyed = projDestroyedTotal;
-            lastWeaponRebuild = weaponRebuildTotal;
             if (combatGrid != null) lastCellCross = combatGrid.debugCellCrossCount;
             sb.Append(" 弹生=").Append(dSpawned)
               .Append(" 弹灭=").Append(dDestroyed)
-              .Append(" 武重建=").Append(dRebuild)
               .Append(" 跨格=").Append(dCross);
 
             // 圆轨解析缓存统计（增量：仅本次 LOG_INTERVAL 内的命中/未命中）
@@ -994,24 +963,7 @@ namespace PioneerFramework.Combat
             if (groupWeapons.TryGetValue(groupId, out var weapons))
                 return weapons;
 
-            // 字典未填充（如刚部署的船）：即时从实体收集，保证 UI 立即可用
-            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
-            if (spaceGame != null)
-            {
-                var group = spaceGame.GetGroupById(groupId);
-                if (group != null)
-                {
-                    weapons = new List<WeaponInstance>();
-                    foreach (int eid in group.GetEntityIds())
-                    {
-                        var entity = spaceGame.GetEntityById(eid);
-                        if (entity != null)
-                            weapons.AddRange(entity.GetWeapons());
-                    }
-                    groupWeapons[groupId] = weapons;
-                    return weapons;
-                }
-            }
+            // Lite 裁剪（§5.5）：实体级武器收集已删除；M4 前返回空列表（Map 炮塔桥接填充后立即可用）
             return new List<WeaponInstance>();
         }
 
@@ -1232,15 +1184,18 @@ namespace PioneerFramework.Combat
                         hitGroupId = targetGroup.GroupId;
                         hitEntity = entity;
 
-                        // Part 级精确检测
+                        // Part 级精确检测（单 part 化：唯一 part slab 直判，§5.3）
                         if (entity.Parts.Count > 0)
                         {
                             DVector3 hitEntryPoint = startPos + dir * tEntry;
                             DVector3 localOrigin = hitEntryPoint - entityWorldPos;
                             double localMaxDist = (tExit - tEntry) * weapon.def.maxRange;
-                            var hits = entity.QueryRayHit(localOrigin, dir, localMaxDist);
-                            if (hits.Count > 0)
-                                hitPartIndex = hits[0].partIndex;
+                            var part = entity.Parts[0];
+                            DVector3 partMin = part.localPosition - part.localBoundsSize * 0.5;
+                            DVector3 partMax = part.localPosition + part.localBoundsSize * 0.5;
+                            if (CombatGrid.RaySlabIntersection(localOrigin, localOrigin + dir * localMaxDist,
+                                    partMin, partMax, out double _, out _, out _))
+                                hitPartIndex = 0;
                         }
                     }
                 }
@@ -1308,7 +1263,6 @@ namespace PioneerFramework.Combat
         public void OnGroupDestroyed(int groupId)
         {
             groupWeapons.Remove(groupId);
-            groupWeaponVersions.Remove(groupId);
             shipLastPositions.Remove(groupId);
             // 射弹继续飞行，不清理
         }

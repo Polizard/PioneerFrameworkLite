@@ -96,11 +96,6 @@ namespace PioneerFramework
                 return null;
             }
 
-            // 冻结地图 tick，防止取档中途触发电网/温度等系统
-            var stationController = map.GetComponent<SpaceStationController>();
-            if (stationController != null && !stationController.Frozen)
-                stationController.Freeze();
-
             // 3. 创建取档操作（后续由 SpaceGameComp 多 tick 执行）
             var op = new MapRestoreOperation
             {

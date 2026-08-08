@@ -16,10 +16,12 @@ function Assert-True {
 }
 
 $modRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-$gameManagedDirectory = (Resolve-Path (
-    Join-Path $modRoot '..\..\RimWorldWin64_Data\Managed')).Path
+$gameManagedDirectory = Join-Path $modRoot '..\..\RimWorldWin64_Data\Managed'
+if (-not (Test-Path -LiteralPath $gameManagedDirectory)) {
+    $gameManagedDirectory = $null
+}
 if ([string]::IsNullOrWhiteSpace($AssemblyPath)) {
-    $AssemblyPath = Join-Path $modRoot '1.6\Assemblies\PioneerFramework.dll'
+    $AssemblyPath = Join-Path $modRoot '1.6\Assemblies\PioneerFrameworkLite.dll'
 }
 
 $dependencyDirectories = @(
@@ -27,15 +29,28 @@ $dependencyDirectories = @(
     (Join-Path $modRoot 'Source\PioneerFramework\Libs\Unity'),
     (Join-Path $modRoot 'Source\PioneerFramework\Libs\0Harmony'),
     (Join-Path $modRoot 'Source\PioneerFramework\packages\Microsoft.Bcl.HashCode.6.0.0\lib\net462'),
-    $gameManagedDirectory,
     (Split-Path -Parent $AssemblyPath)
 )
+if (-not [string]::IsNullOrWhiteSpace($gameManagedDirectory)) {
+    $dependencyDirectories += $gameManagedDirectory
+}
+
+# Fallback for machines without the game folder: .NET Framework compatible netstandard facade from the SDK
+$dotnetSdk = 'C:\Program Files\dotnet\sdk'
+if (Test-Path $dotnetSdk) {
+    $sdkDir = Get-ChildItem $dotnetSdk -Directory |
+        Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+    if ($null -ne $sdkDir) {
+        $netstandardDir = Join-Path $sdkDir.FullName 'Microsoft\Microsoft.NET.Build.Extensions\net461\lib'
+        if (Test-Path $netstandardDir) { $dependencyDirectories += $netstandardDir }
+    }
+}
 
 [System.AppDomain]::CurrentDomain.add_AssemblyResolve({
     param($sender, $eventArgs)
 
     $fileName = ([System.Reflection.AssemblyName]$eventArgs.Name).Name + '.dll'
-    foreach ($directory in $dependencyDirectories) {
+    foreach ($directory in $script:dependencyDirectories) {
         $candidate = Join-Path $directory $fileName
         if (Test-Path -LiteralPath $candidate) {
             return [System.Reflection.Assembly]::LoadFrom($candidate)
@@ -53,8 +68,18 @@ $gameAssembly = [System.Reflection.Assembly]::LoadFrom(
     (Join-Path $modRoot 'Source\PioneerFramework\Libs\RimWorld\Assembly-CSharp.dll'))
 
 $assembly = [System.Reflection.Assembly]::LoadFrom((Resolve-Path $AssemblyPath).Path)
-$specType = $assembly.GetType('PioneerFramework.RuntimePlanetLayerSpec', $false)
-$serviceType = $assembly.GetType('PioneerFramework.RuntimePlanetLayerService', $false)
+$allTypes = @()
+try {
+    $allTypes = $assembly.GetTypes()
+} catch {
+    $allTypes = $_.Exception.Types | Where-Object { $null -ne $_ }
+}
+function Get-PFType {
+    param([string]$FullName)
+    return $allTypes | Where-Object { $_.FullName -eq $FullName } | Select-Object -First 1
+}
+$specType = Get-PFType 'PioneerFramework.RuntimePlanetLayerSpec'
+$serviceType = Get-PFType 'PioneerFramework.RuntimePlanetLayerService'
 
 Assert-True ($null -ne $specType) 'RuntimePlanetLayerSpec type is missing.'
 Assert-True ($null -ne $serviceType) 'RuntimePlanetLayerService type is missing.'

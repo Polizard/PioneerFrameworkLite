@@ -97,32 +97,45 @@ function Invoke-TryGetBundleName
 }
 
 $modRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-$gameManagedDirectory = (Resolve-Path (
-    Join-Path $modRoot '..\..\RimWorldWin64_Data\Managed')).Path
+$gameManagedDirectory = Join-Path $modRoot '..\..\RimWorldWin64_Data\Managed'
+if (-not (Test-Path -LiteralPath $gameManagedDirectory)) {
+    $gameManagedDirectory = $null
+}
 if ([string]::IsNullOrWhiteSpace($AssemblyPath))
 {
     $AssemblyPath = Join-Path $modRoot (
-        '1.6\Assemblies\PioneerFramework.dll')
+        '1.6\Assemblies\PioneerFrameworkLite.dll')
 }
 
 $dependencyDirectories = @(
     (Join-Path $modRoot 'Source\PioneerFramework\Libs\RimWorld'),
     (Join-Path $modRoot 'Source\PioneerFramework\Libs\Unity'),
     (Join-Path $modRoot 'Source\PioneerFramework\Libs\0Harmony'),
-    $gameManagedDirectory,
     (Split-Path -Parent $AssemblyPath)
 )
+if (-not [string]::IsNullOrWhiteSpace($gameManagedDirectory)) {
+    $dependencyDirectories += $gameManagedDirectory
+}
+
+# Fallback for machines without the game folder: .NET Framework compatible netstandard facade from the SDK
+$dotnetSdk = 'C:\Program Files\dotnet\sdk'
+if (Test-Path $dotnetSdk) {
+    $sdkDir = Get-ChildItem $dotnetSdk -Directory |
+        Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+    if ($null -ne $sdkDir) {
+        $netstandardDir = Join-Path $sdkDir.FullName 'Microsoft\Microsoft.NET.Build.Extensions\net461\lib'
+        if (Test-Path $netstandardDir) { $dependencyDirectories += $netstandardDir }
+    }
+}
 
 [System.AppDomain]::CurrentDomain.add_AssemblyResolve({
     param($sender, $eventArgs)
 
     $fileName =
         ([System.Reflection.AssemblyName]$eventArgs.Name).Name + '.dll'
-    foreach ($directory in $dependencyDirectories)
-    {
+    foreach ($directory in $script:dependencyDirectories) {
         $candidate = Join-Path $directory $fileName
-        if (Test-Path -LiteralPath $candidate)
-        {
+        if (Test-Path -LiteralPath $candidate) {
             return [System.Reflection.Assembly]::LoadFrom($candidate)
         }
     }
@@ -212,14 +225,10 @@ Assert-True ($outlineCalls.Count -eq 0) `
     ('PFView must not call the reserved outline module: ' +
         ($outlineCalls -join ', '))
 
-$drawDesignParts = $pfViewType.GetMethod(
-    'DrawDesignParts',
-    $allFlags)
+# Lite 裁剪：DrawDesignParts（Ship3D 设计部件绘制）已删除，仅保留运行时部件绘制
 $drawRuntimeParts = $pfViewType.GetMethod(
     'DrawRuntimeParts',
     $allFlags)
-Assert-True ($drawDesignParts.IsStatic) `
-    'DrawDesignParts must be restored to its pre-outline static form.'
 Assert-True ($drawRuntimeParts.IsStatic) `
     'DrawRuntimeParts must be restored to its pre-outline static form.'
 
@@ -292,22 +301,7 @@ Assert-True ([regex]::IsMatch(
     ('The interface example must draw the same camera and submesh that it ' +
         'submits to the outline mask.')
 
-$usageGuideSource = Get-Content -Raw -Encoding UTF8 -LiteralPath (
-    Join-Path $modRoot 'Docs\PFView_Outline_Interface_Usage.md')
-Assert-True ([regex]::IsMatch(
-    $usageGuideSource,
-    $matchingVisibleDrawPattern,
-    [System.Text.RegularExpressions.RegexOptions]::Singleline)) `
-    ('The Chinese usage guide must draw the same camera and submesh that it ' +
-        'submits to the outline mask.')
-Assert-True ([regex]::IsMatch(
-    $contractsExampleText,
-    'Remains false until\s+the first valid BeginFrame')) `
-    'The IsReady contract must document lazy GPU initialization.'
-Assert-True ([regex]::IsMatch(
-    $usageGuideSource,
-    '(?m)^- `IsReady`.*`BeginFrame`.*`false`')) `
-    'The Chinese usage guide must document lazy GPU initialization.'
+# Lite 裁剪：Docs/PFView_Outline_Interface_Usage.md 不在 Lite 仓库，usage guide 文档断言跳过
 
 [xml]$project = Get-Content -Raw -Encoding UTF8 -LiteralPath (
     Join-Path $modRoot 'Source\PioneerFramework\PioneerFramework.csproj')
@@ -315,11 +309,12 @@ $namespace = New-Object System.Xml.XmlNamespaceManager(
     $project.NameTable)
 $namespace.AddNamespace('msb', $project.Project.NamespaceURI)
 $compileNodes = @($project.SelectNodes('//msb:Compile', $namespace))
-Assert-True ($compileNodes.Count -eq 1) `
-    'The project must retain exactly one wildcard Compile item.'
-Assert-True ($compileNodes[0].Include -eq '**\*.cs' -and
-    $compileNodes[0].Exclude -eq 'obj\**;bin\**;.vs\**') `
-    'The protected wildcard Compile item changed.'
+# Lite：保留通配 Compile（obj/bin/.vs 排除）——AutoTest 目录已删，Components 显式 include 保留
+$wildcardCompile = $compileNodes | Where-Object { $_.Include -eq '**\*.cs' } | Select-Object -First 1
+Assert-True ($null -ne $wildcardCompile) `
+    'The project must retain a wildcard Compile item.'
+Assert-True ($wildcardCompile.Exclude -match 'obj\\\*\*;bin\\\*\*;\.vs\\\*\*') `
+    'The protected wildcard Compile Exclude must cover obj/bin/.vs.'
 
 $assetBundleReference = $project.SelectSingleNode(
     "//msb:Reference[@Include='UnityEngine.AssetBundleModule']",

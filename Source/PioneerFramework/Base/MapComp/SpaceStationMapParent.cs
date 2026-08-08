@@ -23,38 +23,8 @@ namespace PioneerFramework
 
         public override IEnumerable<Gizmo> GetGizmos()
         {
-            foreach (var g in base.GetGizmos())
-                yield return g;
-
-            if (!HasMap)
-                yield break;
-
-            var controller = Map.GetComponent<SpaceStationController>();
-            if (controller == null)
-                yield break;
-
-            if (controller.Frozen)
-            {
-                // 解冻
-                yield return new Command_Action
-                {
-                    defaultLabel = "解冻空间站",
-                    defaultDesc = "解冻空间站，恢复活动。",
-                    icon = TexCommand.Attack,
-                    action = controller.Unfreeze
-                };
-            }
-            else
-            {
-                // 冻结
-                yield return new Command_Action
-                {
-                    defaultLabel = "冻结空间站",
-                    defaultDesc = "冻结空间站。\n要求：空间站上不能有角色。",
-                    icon = TexCommand.DesirePower,
-                    action = delegate { controller.Freeze(); }
-                };
-            }
+            // Lite 裁剪：冻结/解冻（SpaceStationController）已删除，仅保留基类 Gizmo。
+            return base.GetGizmos();
         }
     }
 }

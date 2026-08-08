@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ModMetaData>
-  <name>PioneerFramework</name>
-  <packageId>NewFrontierTeam.PioneerFramework</packageId>
+  <name>先驱框架Lite</name>
+  <packageId>NewFrontierTeam.PioneerFrameworkLite</packageId>
   <author>新边疆团队</author>
   <supportedVersions>
     <li>1.6</li>
@@ -14,5 +14,5 @@
       <steamWorkshopUrl>https://steamcommunity.com/workshop/filedetails/?id=2009463077</steamWorkshopUrl>
     </li>
   </modDependencies>
-  <description>新边疆与无乡者使用的太空框架</description>
+  <description>新边疆与无乡者使用的地月系太空框架（Lite 前置版：地月系 + 单 part 船 + 空间站对射）。独立存档前缀，请勿与 PioneerFramework 混用。</description>
 </ModMetaData>
