@@ -44,7 +44,7 @@
     <bodyId>2</bodyId>
     <label>月球</label>
     <bodyType>Moon</bodyType>
-    <radius>1737000</radius>                  <!-- 1737 km（真实值，按地球 5000km 比例缩放） -->
+    <radius>1500000</radius>                  <!-- 1500 km（Lite 设定：便于 1800km 绕月轨道测试入轨） -->
     <gravitationalParameter>5.0e12</gravitationalParameter>  <!-- GM -->
     <hasSurface>true</hasSurface>
     <planetLayerDefName>Moon</planetLayerDefName>            <!-- 绑到月球 layer -->

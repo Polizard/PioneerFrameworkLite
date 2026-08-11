@@ -68,4 +68,34 @@
       <li Class="PioneerFramework.CompProperties_DebugShipSpawner" />
     </comps>
   </ThingDef>
+  <!-- 空间站信息台：选中显示所属空间站地图的 MapComp 概况（工质向量、dV 等） -->
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_StationInfo</defName>
+    <label>空间站信息台</label>
+    <description>调试建筑：选中时显示所属空间站地图的 SpaceMapComp 概况（归属实体、工质向量、dV）。</description>
+    <thingClass>Building</thingClass>
+    <tickerType>Normal</tickerType>
+    <graphicData>
+      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+      <drawSize>(1,1)</drawSize>
+      <shadowData>
+        <volume>(1.83, 0.5, 1.73)</volume>
+        <offset>(0,0,-0.05)</offset>
+      </shadowData>
+    </graphicData>
+    <size>(1,1)</size>
+    <altitudeLayer>Building</altitudeLayer>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <designationCategory>Power</designationCategory>
+    <uiOrder>104</uiOrder>
+    <costList>
+      <Steel>10</Steel>
+    </costList>
+    <constructionSkillPrerequisite>1</constructionSkillPrerequisite>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_DebugStationInfo" />
+    </comps>
+  </ThingDef>
 </Defs>

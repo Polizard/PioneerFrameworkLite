@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+
+  <PioneerFramework.PropellantDef>
+    <defName>PF_Propellant_Hydrogen</defName>
+    <label>液氢</label>
+    <description>核热引擎工质，高比冲。适合长航程机动与轨道转移。</description>
+  </PioneerFramework.PropellantDef>
+
+  <PioneerFramework.PropellantDef>
+    <defName>PF_Propellant_Chemical</defName>
+    <label>化学推进剂</label>
+    <description>通用化学推进剂，大推力低比冲。适合大质量船与逃逸机动。</description>
+  </PioneerFramework.PropellantDef>
+
+  <PioneerFramework.PropellantDef>
+    <defName>PF_Propellant_Xenon</defName>
+    <label>氙</label>
+    <description>电推进工质，极高比冲极低推力。适合精细轨道调整。</description>
+  </PioneerFramework.PropellantDef>
+
+</Defs>

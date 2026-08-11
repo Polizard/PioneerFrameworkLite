@@ -8,12 +8,12 @@
 
   <!-- Lite 裁剪：火星（跨行星系不做）WorldLayerSettings 已删除 -->
 
-  <!-- ── 月球：半径 1737km / 5000km × 100 ≈ 35 ── -->
+  <!-- ── 月球：半径 1500km / 5000km × 100 = 30 ── -->
   <PlanetLayerSettingsDef>
     <defName>Moon</defName>
     <label>月球地表</label>
     <settings>
-      <radius>35</radius>
+      <radius>30</radius>
       <subdivisions>5</subdivisions>
       <useSurfaceViewAngle>true</useSurfaceViewAngle>
     </settings>

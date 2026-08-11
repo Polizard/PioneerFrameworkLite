@@ -1,4 +1,4 @@
-# 部署脚本：把 Lite 裁剪后的运行时资产同步到游戏 Mods 目录。
+﻿# 部署脚本：把 Lite 裁剪后的运行时资产同步到游戏 Mods 目录。
 # 用法：在 PowerShell 中运行本脚本（路径含空格，建议用管理员权限执行一次以确保写入 Program Files 下的 Mods）。
 #   .\Tools\Deploy-LiteToGame.ps1
 # 说明：

@@ -315,8 +315,8 @@ namespace PioneerFramework
             DVector3 moonPos = celestialMgr.GetBodyLocalPosition(MOON_BODY_ID, currentTick);
             DVector3 moonVel = celestialMgr.GetBodyLocalVelocity(MOON_BODY_ID, currentTick);
 
-            // 绕月轨道半径 30 Unity 单位 = 1,500,000 米（约月球物理半径 + 一些高度）
-            double radiusUnity = 30.0;
+            // 绕月轨道半径 36 Unity 单位 = 1,800,000 米（月球半径 1500km + 300km 轨道高度）
+            double radiusUnity = 36.0;
             double radiusMeters = radiusUnity * SpaceConstants.MetersPerUnit;
             double speedMps = System.Math.Sqrt(SpaceConstants.PrimaryGravitationalParameter / radiusMeters);
 
