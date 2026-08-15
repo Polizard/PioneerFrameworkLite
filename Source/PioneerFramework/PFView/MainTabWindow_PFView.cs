@@ -1417,7 +1417,8 @@ namespace PioneerFramework
             double len = toShooter.magnitude;
             if (len < 1e-6) return;
             toShooter /= len;
-            target.CurrentOrbit.velocity += toShooter * dv;
+            // 手动 ΔV 走合冲量累积器：物理步首统一施加（与 burn/碰撞同入口，避免一步内多次改速度）
+            target.pendingImpulse += toShooter * dv;
             target.OrbitDirty = true;
 
             Log.Message(string.Format("[PFView] G{0} 速度沿射向 G{1} 方向调整 {2:+#;-#;0} m/s", target.GroupId, shooter.GroupId, dv));
@@ -1487,9 +1488,6 @@ namespace PioneerFramework
                 }
             });
             spaceGame.RegisterEntity(entity);
-
-            entity.RemainingDeltaV = 10000000f;
-            entity.MaxDeltaV = 10000000f;
         }
 
         private static int GetNextGroupId(SpaceGameComp spaceGame)

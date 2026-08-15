@@ -196,8 +196,8 @@ namespace PioneerFramework
             if (selfGroup.IsCircularOrbit)
             {
                 DVector3 pos = selfGroup.GetCircularPositionAtTick(nowTick);
-                // CurrentOrbit.velocity 已经包含了中心天体的轨道速度（EnterCircularOrbit 中设置）
-                return (pos, selfGroup.CurrentOrbit.velocity);
+                // 解析速度（当前相位切线），不能裸读 CurrentOrbit.velocity（会停在入轨瞬间）
+                return (pos, selfGroup.GetCircularVelocityAtTick(nowTick));
             }
 
             return (selfGroup.CurrentOrbit.position, selfGroup.CurrentOrbit.velocity);

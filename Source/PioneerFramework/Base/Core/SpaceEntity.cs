@@ -48,8 +48,46 @@ namespace PioneerFramework
         private DVector3 velocityMeters;
         private Quaternion rotation;
 
-        public float MaxDeltaV = 0f;
-        public float RemainingDeltaV = 0f;
+        /// <summary>
+        /// 当前剩余工质全部燃烧可获得的总 ΔV（显示值，Tsiolkovsky 理想公式）。
+        /// 由「推进器等效排气速度 ve + 干质量 + 当前工质总量」推导，不落盘、不被消耗——
+        /// 真实推进是推进器每 tick 消耗工质，质量变化后此值自然下降。
+        /// 无推进器 / 无工质 / 无 Map（导弹等纯物理实体）返回 0。
+        /// </summary>
+        public float RemainingDeltaV
+        {
+            get
+            {
+                var mc = GetMapComp();
+                if (mc == null || mc.EffectiveVe <= 0f) return 0f;
+                double dry = TotalMass;                     // 干质量：部件结构质量
+                double wet = dry + mc.TotalPropellantMass;  // 当前质量 = 干 + 剩余工质
+                if (wet <= dry) return 0f;
+                return (float)(mc.EffectiveVe * System.Math.Log(wet / dry));
+            }
+        }
+
+        /// <summary>满箱工质全部燃烧可获得的总 ΔV（显示值；储罐全满时的上限）。</summary>
+        public float MaxDeltaV
+        {
+            get
+            {
+                var mc = GetMapComp();
+                if (mc == null || mc.EffectiveVe <= 0f) return 0f;
+                double dry = TotalMass;
+                double wet = dry + mc.TotalPropellantCapacity;
+                if (wet <= dry) return 0f;
+                return (float)(mc.EffectiveVe * System.Math.Log(wet / dry));
+            }
+        }
+
+        /// <summary>实体 → 所属地图的 SpaceMapComp（无 Map 时返回 null）。</summary>
+        private SpaceMapComp GetMapComp()
+        {
+            if (MapId < 0) return null;
+            var sg = Current.Game?.GetComponent<SpaceGameComp>();
+            return sg?.GetMapComponent<SpaceMapComp>(MapId);
+        }
 
         public int MapId = -1;
 
@@ -142,18 +180,6 @@ namespace PioneerFramework
 
         public void SetRotation(Quaternion rot) => rotation = rot;
 
-        public bool TryConsumeDeltaV(float amountMps)
-        {
-            if (RemainingDeltaV >= amountMps)
-            {
-                RemainingDeltaV -= amountMps;
-                return true;
-            }
-            return false;
-        }
-
-        public void RefillDeltaV() => RemainingDeltaV = MaxDeltaV;
-
         // ── 部件管理 ──
 
         /// <summary>
@@ -230,8 +256,6 @@ namespace PioneerFramework
             DVector3.Scribe("positionMeters", ref positionMeters);
             DVector3.Scribe("velocityMeters", ref velocityMeters);
             Scribe_Values.Look(ref rotation, "rotation");
-            Scribe_Values.Look(ref MaxDeltaV, "maxDeltaV", 0f);
-            Scribe_Values.Look(ref RemainingDeltaV, "remainingDeltaV", 0f);
             Scribe_Values.Look(ref MapId, "mapId", -1);
             Scribe_Values.Look(ref IsMapArchived, "isMapArchived", false);
 

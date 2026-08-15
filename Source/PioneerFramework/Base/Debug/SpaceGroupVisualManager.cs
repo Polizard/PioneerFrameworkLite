@@ -55,7 +55,6 @@ namespace PioneerFramework
         // GUI 面板
         private const float PanelWidth = 260f;
         private const float PanelHeight = 354f;
-        private const float PanelGapX = 76f;
         private const float PanelOffsetY = -44f;
         private static GUIStyle panelLabelStyle;
 
@@ -630,31 +629,11 @@ namespace PioneerFramework
             DVector3 posMetersD, velMetersD;
             if (group.IsCircularOrbit)
             {
-                var timeScaleManager = Current.Game?.GetComponent<TimeScaleManager>();
-                double physicsTick = timeScaleManager != null ? timeScaleManager.GetPhysicsTick() : (double)Find.TickManager.TicksGame;
+                double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
                 posMetersD = group.GetCircularPositionAtTick(physicsTick);
-                // 圆轨近似速度（切向）
-                double circRadius = group.circularRadius;
-                double v = Math.Sqrt(OrbitMath.GM / circRadius);
-                DVector3 radial = group.circularRadialRef.normalized;
-                DVector3 normal = group.circularOrbitNormal.normalized;
-                DVector3 yDir = DVector3.Cross(normal, radial).normalized;
-                velMetersD = yDir * v;
-
-                // 中心天体不是行星时，速度要加回中心天体的轨道速度
-                if (group.circularCentralBodyId >= 0)
-                {
-                    var celestialMgrVis = Current.Game?.GetComponent<CelestialBodyManager>();
-                    if (celestialMgrVis != null)
-                    {
-                        var centralDefVis = celestialMgrVis.GetBodyById(group.circularCentralBodyId);
-                        if (centralDefVis != null && centralDefVis.bodyType != CelestialBodyType.Planet)
-                        {
-                            velMetersD += celestialMgrVis.GetBodyLocalVelocity(
-                                group.circularCentralBodyId, (int)physicsTick);
-                        }
-                    }
-                }
+                // 用解析速度（当前相位切线），保证 pos/vel 相位一致；
+                // 否则裸用固定 radialRef/yDir 会算出随相位旋转的虚假偏心率，导致 Pe/Ap 标记漂移。
+                velMetersD = group.GetCircularVelocityAtTick(physicsTick);
             }
             else
             {
@@ -789,13 +768,8 @@ namespace PioneerFramework
 
         private static Rect CalculatePanelRect(Vector2 anchor)
         {
-            float x = anchor.x + PanelGapX;
-            float y = anchor.y + PanelOffsetY;
-            if (x + PanelWidth > UI.screenWidth - 24f)
-                x = anchor.x - PanelWidth - PanelGapX;
-            x = Mathf.Clamp(x, 24f, UI.screenWidth - PanelWidth - 24f);
-            y = Mathf.Clamp(y, 80f, UI.screenHeight - PanelHeight - 110f);
-            return new Rect(x, y, PanelWidth, PanelHeight);
+            // 固定边栏：贴屏幕左侧，完全静止（不跟随 Group 位置），与顶部游戏 UI 保持间距
+            return new Rect(24f, 80f, PanelWidth, PanelHeight);
         }
 
         private static void DrawInfoPanel(SpaceGameComp spaceGame)

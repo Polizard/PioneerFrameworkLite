@@ -285,10 +285,6 @@ namespace PioneerFramework
             entity.IsMovable = true;
             spaceGame.RegisterEntity(entity);
 
-            // 给测试实体分配 dV 以便 OrbitKeeping 正常工作
-            entity.RemainingDeltaV = 10000000f;
-            entity.MaxDeltaV = 10000000f;
-
             if (spaceGame.GetPlanetGrids() != null)
                 foreach (var grid in spaceGame.GetPlanetGrids().Values)
                     grid.ApplyChanges();
@@ -362,14 +358,10 @@ namespace PioneerFramework
             entity.IsMovable = true;
             spaceGame.RegisterEntity(entity);
 
-            entity.MaxDeltaV = 10000000f;
-            entity.RemainingDeltaV = 10000000f;
-
             if (spaceGame.GetPlanetGrids() != null)
                 foreach (var grid in spaceGame.GetPlanetGrids().Values)
                     grid.ApplyChanges();
-            Messages.Message(string.Format("Created lunar orbit group {0} at r={1:F0} km around Moon",
-                groupId, radiusMeters / 1000f), MessageTypeDefOf.TaskCompletion);
+            Messages.Message(string.Format("Created Moon-orbiting group {0} at radius {1} km", groupId, radiusMeters / 1000f), MessageTypeDefOf.TaskCompletion);
         }
 
         /// <summary>
@@ -417,9 +409,6 @@ namespace PioneerFramework
             entity.IsMovable = true;
             spaceGame.RegisterEntity(entity);
 
-            entity.MaxDeltaV = 10000000f;
-            entity.RemainingDeltaV = 10000000f;
-
             if (spaceGame.GetPlanetGrids() != null)
                 foreach (var grid in spaceGame.GetPlanetGrids().Values)
                     grid.ApplyChanges();
@@ -449,8 +438,6 @@ namespace PioneerFramework
             entity.CanInteract = true;
             entity.IsSelectable = true;
             entity.IsMovable = true;
-            entity.MaxDeltaV = 100f;    // 100 m/s delta-V
-            entity.RemainingDeltaV = 100f;
 
             int finalGroupId;
             if (groupId == 0)
@@ -529,8 +516,6 @@ namespace PioneerFramework
                 entity.GroupId = groupId;
                 entity.CanInteract = true;
                 entity.IsMovable = true;
-                entity.MaxDeltaV = 100f;
-                entity.RemainingDeltaV = 100f;
                 spaceGame.RegisterEntity(entity);
                 group.AddEntity(entityId);
             }

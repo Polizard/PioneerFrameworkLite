@@ -362,12 +362,13 @@ namespace PioneerFramework
             centralGM = spaceGame.GetBodyGM(group.CelestialBodyId);
             centralOffset = plannedCentralOffset;
 
-            int now = Find.TickManager.TicksGame;
+            // 圆轨位置必须用 physicsTick 基准（与物理/EnterCircularOrbit 一致，TicksGame 会差常量偏移导致相位错）
+            double now = TimeScaleManager.GetPhysicsTickSafe();
             DVector3 pos, vel;
             if (group.IsCircularOrbit)
             {
                 pos = group.GetCircularPositionAtTick(now);
-                vel = group.CurrentOrbit.velocity;
+                vel = group.GetCircularVelocityAtTick(now); // 解析速度（当前相位切线）
             }
             else
             {
@@ -511,13 +512,13 @@ namespace PioneerFramework
             double toUnity = SpaceConstants.UnitsPerMeter;
             orbitSegments = new List<OrbitSegment>();
 
-            // 获取当前轨道状态，支持圆轨+标准模式
-            int now = Find.TickManager.TicksGame;
+            // 获取当前轨道状态，支持圆轨+标准模式（圆轨用 physicsTick 基准 + 解析速度）
+            double now = TimeScaleManager.GetPhysicsTickSafe();
             DVector3 pos, vel;
             if (group.IsCircularOrbit)
             {
                 pos = group.GetCircularPositionAtTick(now);
-                vel = group.CurrentOrbit.velocity;
+                vel = group.GetCircularVelocityAtTick(now); // 解析速度（当前相位切线）
             }
             else
             {
@@ -623,13 +624,14 @@ namespace PioneerFramework
         /// </summary>
         private void ConfirmManeuver()
         {
+            // 圆轨位置/速度用 physicsTick 基准 + 解析速度（与物理一致）
             double physicsTickNow = TimeScaleManager.GetPhysicsTickSafe();
             int now = Find.TickManager.TicksGame;
             DVector3 pos, vel;
             if (group.IsCircularOrbit)
             {
-                pos = group.GetCircularPositionAtTick(now);
-                vel = group.CurrentOrbit.velocity;
+                pos = group.GetCircularPositionAtTick(physicsTickNow);
+                vel = group.GetCircularVelocityAtTick(physicsTickNow); // 解析速度（当前相位切线）
             }
             else
             {

@@ -218,11 +218,11 @@ namespace PioneerFramework.Debug
             // 更新相机变换
             UpdateCameraTransform();
 
-            // 每 tick 更新一次 Group 位置
+            // 每 tick 更新一次 Group 位置（圆轨位置必须用 physicsTick 基准，TicksGame 会相位错位）
             int currentTick = 0;
             if (Find.TickManager != null)
             {
-                currentTick = Find.TickManager.TicksGame;
+                currentTick = (int)System.Math.Round(TimeScaleManager.GetPhysicsTickSafe());
             }
             if (currentTick != lastUpdateTick && lastUpdateTick >= 0)
             {

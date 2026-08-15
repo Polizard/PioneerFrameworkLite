@@ -607,13 +607,18 @@ namespace PioneerFramework.Combat
             return Math.Max(m, 1.0);
         }
 
-        /// <summary>任何速度修正都需先退出圆轨（圆轨是解析位置，速度修正会被覆盖）。</summary>
+        /// <summary>
+        /// 速度冲量（碰撞动量交换/爆炸径向）入合冲量累积器：物理步首由 SpaceGameComp
+        /// 统一施加到速度。任何速度修正都需先退出圆轨（圆轨是解析位置，速度修正会被覆盖）；
+        /// 位置分离（防穿透）保持即时，不在此处理。
+        /// </summary>
         private void ApplyGroupVelocity(SpaceEntityGroup group, DVector3 newVel)
         {
             if (group.IsCircularOrbit)
                 group.ExitCircularOrbit();
-            group.CurrentOrbit.velocity = newVel;
-            group.OrbitDirty = true;
+            DVector3 delta = newVel - group.CurrentOrbit.velocity;
+            if (delta.sqrMagnitude <= 0.0) return;
+            group.pendingImpulse += delta;
         }
 
         /// <summary>

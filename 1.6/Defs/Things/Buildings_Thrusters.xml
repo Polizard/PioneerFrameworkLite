@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+
+  <ThingDef>
+    <defName>PF_Building_Thruster_Chemical</defName>
+    <label>化学推进器</label>
+    <description>大推力化学推进器，消耗化学推进剂。推力 F = ve·ṁ。</description>
+    <category>Building</category>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>400</MaxHitPoints>
+      <Flammability>0.05</Flammability>
+      <Mass>2000</Mass>
+      <Beauty>-8</Beauty>
+      <WorkToBuild>800</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>300</Steel>
+    </costList>
+    <designationCategory>Power</designationCategory>
+    <uiOrder>105</uiOrder>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_Thruster">
+        <propellantDefName>PF_Propellant_Chemical</propellantDefName>
+        <exhaustVelocity>3500</exhaustVelocity>
+        <massFlowRate>20</massFlowRate>
+      </li>
+    </comps>
+  </ThingDef>
+
+  <ThingDef>
+    <defName>PF_Building_Thruster_NuclearThermal</defName>
+    <label>核热推进器</label>
+    <description>高比冲核热推进器，消耗液氢工质。适合长航程机动。</description>
+    <category>Building</category>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>400</MaxHitPoints>
+      <Flammability>0.05</Flammability>
+      <Mass>3000</Mass>
+      <Beauty>-8</Beauty>
+      <WorkToBuild>1000</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>400</Steel>
+    </costList>
+    <designationCategory>Power</designationCategory>
+    <uiOrder>106</uiOrder>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_Thruster">
+        <propellantDefName>PF_Propellant_Hydrogen</propellantDefName>
+        <exhaustVelocity>9000</exhaustVelocity>
+        <massFlowRate>5</massFlowRate>
+      </li>
+    </comps>
+  </ThingDef>
+
+  <ThingDef>
+    <defName>PF_Building_Thruster_Ion</defName>
+    <label>离子推进器</label>
+    <description>极高比冲电推，消耗氙工质。推力小，适合精细轨道调整。</description>
+    <category>Building</category>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>200</MaxHitPoints>
+      <Flammability>0.02</Flammability>
+      <Mass>500</Mass>
+      <Beauty>-8</Beauty>
+      <WorkToBuild>600</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>200</Steel>
+    </costList>
+    <designationCategory>Power</designationCategory>
+    <uiOrder>107</uiOrder>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_Thruster">
+        <propellantDefName>PF_Propellant_Xenon</propellantDefName>
+        <exhaustVelocity>30000</exhaustVelocity>
+        <massFlowRate>0.2</massFlowRate>
+      </li>
+    </comps>
+  </ThingDef>
+
+</Defs>

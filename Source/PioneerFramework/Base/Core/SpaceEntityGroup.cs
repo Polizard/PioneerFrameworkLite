@@ -83,8 +83,30 @@ namespace PioneerFramework
         public DVector3 burnDirection;
         /// <summary>本次燃烧剩余 dV (m/s)。</summary>
         public double remainingBurnDV;
-        /// <summary>最大燃烧加速度 (m/s²)，测试用写死大值。未来替换为真实推重比。</summary>
-        public const double MAX_BURN_ACCEL = 500.0;
+        /// <summary>本次 burn 开始时的总质量（kg，首次 burn tick 记录，实际 ΔV 评估用）。</summary>
+        public double burnStartMass;
+        /// <summary>本次 burn 已实际消耗的工质（kg，主线程累计）。</summary>
+        public double burnConsumedPropellant;
+
+        /// <summary>
+        /// 本物理步累积的合冲量（速度 ΔV，m/s）。
+        /// 并行物理区 / 战斗层只累积（每 group 独占写自己的字段），主线程在下一物理步
+        /// 开头统一施加并清零。多来源（burn / 碰撞动量交换 / 爆炸 / 手动 ΔV）顺序无关地
+        /// 累加，避免一步内多次直接改 CurrentOrbit.velocity 的顺序混乱与并行写冲突。
+        /// 瞬态字段，不序列化（物理步间即清空）。
+        /// </summary>
+        public DVector3 pendingImpulse;
+        /// <summary>
+        /// 机动燃烧策略：启用的工质网络（键 = 工质 Def）。null/空 = 全启用。
+        /// 玩家可在机动队列 UI 调整；burn 只烧启用网络。
+        /// </summary>
+        public HashSet<PropellantDef> burnEnabledNetworks;
+
+        /// <summary>
+        /// 空间站「当前网络」（单选）：此后加入的机动都继承此单一网络（null = 全启用）。
+        /// 在机动队列窗口顶部切换。
+        /// </summary>
+        public PropellantDef currentNetwork;
 
         // 机动规划队列（顺序执行）
         public List<PlannedManeuver> plannedManeuvers = new List<PlannedManeuver>();
@@ -172,8 +194,15 @@ namespace PioneerFramework
             public float radialDV;
             public float tangentialDV;
             public float normalDV;
-            public int executeTick;   // 绝对 Tick 数
+            /// <summary>执行时刻（physicsTick 基准，与 SpaceGameComp 到期检查一致；Fast 档 TicksGame 会失真）。</summary>
+            public int executeTick;
             public bool active;
+
+            /// <summary>
+            /// 本次机动使用的工质网络（键 = 工质 Def）。null/空 = 全启用。
+            /// 规划机动时选择，执行 burn 只烧这些网络。
+            /// </summary>
+            public HashSet<PropellantDef> useNetworks;
 
             // 预览缓存 (不序列化，确认机动时由 Planner 填充)
             public List<Vector3> previewCurrentOrbit;
@@ -187,6 +216,9 @@ namespace PioneerFramework
                 Scribe_Values.Look(ref normalDV, "normalDV", 0f);
                 Scribe_Values.Look(ref executeTick, "executeTick", 0);
                 Scribe_Values.Look(ref active, "active", false);
+                Scribe_Collections.Look(ref useNetworks, "useNetworks", LookMode.Def);
+                if (Scribe.mode == LoadSaveMode.PostLoadInit && useNetworks != null && useNetworks.Count == 0)
+                    useNetworks = null; // 空 = 全启用
                 // 预览缓存不序列化
             }
 
@@ -211,30 +243,57 @@ namespace PioneerFramework
         public bool ContainsEntity(int entityId) => entityIds.Contains(entityId);
         public IReadOnlyCollection<int> GetEntityIds() => entityIds;
 
+        /// <summary>取 group 任一实体所属地图的 SpaceMapComp（无 Map 实体 / 未关联时返回 null）。</summary>
+        public SpaceMapComp GetLinkedMapComp()
+        {
+            var sg = Current.Game?.GetComponent<SpaceGameComp>();
+            if (sg == null) return null;
+            foreach (int eid in GetEntityIds())
+            {
+                var e = sg.GetEntityById(eid);
+                if (e != null && e.MapId >= 0)
+                    return sg.GetMapComponent<SpaceMapComp>(e.MapId);
+            }
+            return null;
+        }
+
         #region 机动队列管理
 
         /// <summary>
-        /// 向队列末尾添加一个机动规划。
+        /// 向队列末尾添加一个机动规划。新机动自动继承空间站「当前网络」配置
+        /// （null/空 = 全启用）。
         /// </summary>
         public void QueueManeuver(PlannedManeuver maneuver)
         {
+            maneuver.useNetworks = InheritNetworks();
             plannedManeuvers.Add(maneuver);
         }
 
         /// <summary>
-        /// 添加一个机动规划（指定 dV 和相对时间）。
+        /// 添加一个机动规划（指定 dV 和相对时间）。同样继承「当前网络」。
+        /// 注意：executeTick 使用 physicsTick 基准（与 ManeuverPlanner 一致）；
+        /// 检查/执行在 SpaceGameComp 中用 physicsTick 判定，两基准错位会导致 Fast 档到期失真。
         /// </summary>
         public void QueueManeuver(float radDV, float tanDV, float normDV, int deltaTicks)
         {
-            int execTick = Find.TickManager.TicksGame + deltaTicks;
+            int execTick = (int)System.Math.Round(TimeScaleManager.GetPhysicsTickSafe()) + deltaTicks;
             plannedManeuvers.Add(new PlannedManeuver
             {
                 radialDV = radDV,
                 tangentialDV = tanDV,
                 normalDV = normDV,
                 executeTick = execTick,
-                active = true
+                active = true,
+                useNetworks = InheritNetworks()
             });
+        }
+
+        /// <summary>把「当前网络」继承到新机动；null = 全启用。</summary>
+        private HashSet<PropellantDef> InheritNetworks()
+        {
+            if (currentNetwork == null)
+                return null;
+            return new HashSet<PropellantDef> { currentNetwork };
         }
 
         /// <summary>
@@ -279,6 +338,8 @@ namespace PioneerFramework
             HasActiveBurn = true;
             burnDirection = dV.normalized;
             remainingBurnDV = dV.magnitude;
+            burnStartMass = 0.0;      // 首次 burn tick 时记录（此时质量已知）
+            burnConsumedPropellant = 0.0;
         }
 
         /// <summary>
@@ -398,13 +459,8 @@ namespace PioneerFramework
             }
 
             DVector3 radialDir = pos.normalized;
-            DVector3 tangentVel = vel - radialDir * DVector3.Dot(vel, radialDir);
-            double v_tan = tangentVel.magnitude;
-            if (v_tan < 0.001)
-            {
-                Log.Warning(string.Format("SpaceEntityGroup {0}: Tangential velocity too small for circular orbit.", GroupId));
-                return;
-            }
+            // 不校验切向速度：调用方（空间站/飞船部署等）可能只提供位置、速度为零。
+            // 下方会强制用中心天体 GM 重算圆轨速度 sqrt(mu/r)，零速度也能入轨。
 
             // 用中心天体的 GM 重新计算正确的环轨速度，避免入轨速度用了错误 GM
             double mu = SpaceConstants.PrimaryGravitationalParameter;
@@ -414,13 +470,13 @@ namespace PioneerFramework
                 if (centralDef != null && centralDef.gravitationalParameter > 0.0)
                     mu = centralDef.gravitationalParameter;
             }
-            v_tan = System.Math.Sqrt(mu / r);
+            double v_tan = System.Math.Sqrt(mu / r);
             double omega = v_tan / r;
 
-            // 轨道平面法线 = pos × vel 的方向
+            // 轨道平面法线 = pos × vel 的方向；速度为零 / 纯径向时退化为默认平面（up）
             DVector3 normal = DVector3.Cross(pos, vel).normalized;
             if (normal.sqrMagnitude < 0.01)
-                normal = DVector3.up; // 退化情况（纯径向速度）
+                normal = DVector3.up; // 退化情况（纯径向速度 / 零速度）
 
             IsCircularOrbit = true;
             circularCentralBodyId = centralBodyId;
@@ -434,6 +490,12 @@ namespace PioneerFramework
 
             // 将 CurrentOrbit.velocity 同步为圆轨切向速度
             DVector3 tangentDir = DVector3.Cross(normal, radialDir).normalized;
+            if (tangentDir.sqrMagnitude < 0.01)
+            {
+                // 极罕见：radialDir 与轨道平面法线平行（位置沿法线方向且速度为零）
+                DVector3 refVec = System.Math.Abs(radialDir.y) < 0.9 ? DVector3.up : DVector3.forward;
+                tangentDir = DVector3.Cross(refVec, radialDir).normalized;
+            }
             DVector3 circularVel = tangentDir * v_tan;
 
             // 更新中心天体相对坐标（用于 R/T/N 基向量）
@@ -656,6 +718,9 @@ namespace PioneerFramework
             Scribe_Collections.Look(ref plannedManeuvers, "plannedManeuvers", LookMode.Deep);
             if (Scribe.mode == LoadSaveMode.PostLoadInit && plannedManeuvers == null)
                 plannedManeuvers = new List<PlannedManeuver>();
+
+            // 空间站「当前网络」（单选，新机动继承）序列化
+            Scribe_Defs.Look(ref currentNetwork, "currentNetwork");
 
             // 轨道保持序列化
             Scribe_Values.Look(ref HasOrbitKeeping, "hasOrbitKeeping", false);
