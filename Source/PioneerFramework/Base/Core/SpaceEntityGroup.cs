@@ -202,7 +202,8 @@ namespace PioneerFramework
             public float radialDV;
             public float tangentialDV;
             public float normalDV;
-            /// <summary>执行时刻（physicsTick 基准，与 SpaceGameComp 到期检查一致；Fast 档 TicksGame 会失真）。</summary>
+            /// <summary>节点时刻（冲量模型的瞬间，即燃烧中点；physicsTick 基准，与 SpaceGameComp 点火检查一致；Fast 档 TicksGame 会失真）。
+            /// 燃烧居中：实际点火时刻 = executeTick − 半程燃烧时长。</summary>
             public int executeTick;
             public bool active;
 
@@ -211,6 +212,14 @@ namespace PioneerFramework
             /// 规划机动时选择，执行 burn 只烧这些网络。
             /// </summary>
             public HashSet<PropellantDef> useNetworks;
+
+            /// <summary>规划时刻算好的世界系 dV 向量（节点帧）。执行时直接用作惯性方向，
+            /// 避免在点火时刻用实际状态换算产生的帧旋转误差（MechJeb 同款）。零 = 未设置（退回分量换算）。</summary>
+            public DVector3 plannedWorldDv;
+
+            /// <summary>本条机动点火时激活群组上已登记的"待激活交会引导"（精确交会：出发段执行后才开始引导）。
+            /// 出发段被阻止/取消时引导自动作废。</summary>
+            public bool armRendezvousGuidance;
 
             // 预览缓存 (不序列化，确认机动时由 Planner 填充)
             public List<Vector3> previewCurrentOrbit;
@@ -224,18 +233,12 @@ namespace PioneerFramework
                 Scribe_Values.Look(ref normalDV, "normalDV", 0f);
                 Scribe_Values.Look(ref executeTick, "executeTick", 0);
                 Scribe_Values.Look(ref active, "active", false);
+                Scribe_Values.Look(ref armRendezvousGuidance, "armRendezvousGuidance", false);
+                DVector3.Scribe("plannedWorldDv", ref plannedWorldDv);
                 Scribe_Collections.Look(ref useNetworks, "useNetworks", LookMode.Def);
                 if (Scribe.mode == LoadSaveMode.PostLoadInit && useNetworks != null && useNetworks.Count == 0)
                     useNetworks = null; // 空 = 全启用
                 // 预览缓存不序列化
-            }
-
-            /// <summary>
-            /// 判断此机动是否已到期执行。
-            /// </summary>
-            public bool IsDue(int currentTick)
-            {
-                return active && currentTick >= executeTick;
             }
         }
 
@@ -274,6 +277,7 @@ namespace PioneerFramework
         public void QueueManeuver(PlannedManeuver maneuver)
         {
             maneuver.useNetworks = InheritNetworks();
+            ClearRendezvousGuidance(); // 玩家新排队机动 = 手动接管，交会引导让位
             plannedManeuvers.Add(maneuver);
         }
 
@@ -285,6 +289,7 @@ namespace PioneerFramework
         public void QueueManeuver(float radDV, float tanDV, float normDV, int deltaTicks)
         {
             int execTick = (int)System.Math.Round(TimeScaleManager.GetPhysicsTickSafe()) + deltaTicks;
+            ClearRendezvousGuidance(); // 玩家手动机动 = 接管，引导让位
             plannedManeuvers.Add(new PlannedManeuver
             {
                 radialDV = radDV,
@@ -310,17 +315,27 @@ namespace PioneerFramework
         public void ClearManeuvers()
         {
             plannedManeuvers.Clear();
+            ClearRendezvousGuidance();
         }
 
         /// <summary>
-        /// 获取第一个已到期的机动，无则返回 null。
+        /// 取消从指定索引（含）到末尾的所有机动规划（保留前面的）。
         /// </summary>
-        public PlannedManeuver? PeekNextManeuver(int currentTick)
+        public void CancelManeuversFrom(int index)
+        {
+            if (index < 0 || index >= plannedManeuvers.Count) return;
+            plannedManeuvers.RemoveRange(index, plannedManeuvers.Count - index);
+            ClearRendezvousGuidance(); // 取消出发段 = 交会计划作废
+        }
+
+        /// <summary>
+        /// 获取队列中第一个启用的机动（不判断是否到期；点火时机由执行循环按"燃烧居中"计算）。
+        /// </summary>
+        public PlannedManeuver? PeekNextManeuver()
         {
             if (plannedManeuvers.Count == 0) return null;
             var next = plannedManeuvers[0];
             if (!next.active) return null;
-            if (!next.IsDue(currentTick)) return null;
             return next;
         }
 
@@ -386,6 +401,60 @@ namespace PioneerFramework
                 orbitKeepingWhitelist.Clear();
                 orbitKeepingWhitelist = null;
             }
+        }
+
+        #endregion
+
+        #region 交会引导 (Rendezvous Guidance)
+
+        /// <summary>交会引导状态已登记（精确交会模式）。<see cref="rendezvousArmed"/> 为 false 时表示等待出发段执行。</summary>
+        public bool HasRendezvousGuidance = false;
+        /// <summary>出发段已点火执行，引导生效（闭环修正开始）。false = 等待出发段。</summary>
+        public bool rendezvousArmed = false;
+        /// <summary>目标群 ID。</summary>
+        public int rendezvousTargetId = -1;
+        /// <summary>到达时刻（physicsTick 基准）。</summary>
+        public double rendezvousArrivalTick;
+        /// <summary>转移方向（ShortWay/LongWay）。</summary>
+        public bool rendezvousPrograde = true;
+        /// <summary>引导修正烧使用的工质网络（继承出发机动；null = 全启用）。</summary>
+        public HashSet<PropellantDef> rendezvousUseNetworks;
+        /// <summary>上次引导检查的 physicsTick（节流用，不序列化；载入后首次检查立即进行即可）。</summary>
+        public double rendezvousLastCheckTick = double.NegativeInfinity;
+        /// <summary>上次引导修正烧开始的 physicsTick（冷却用，不序列化）。</summary>
+        public double rendezvousLastBurnTick = double.NegativeInfinity;
+
+        /// <summary>
+        /// 登记交会引导（精确交会）。出发段机动需带 <see cref="PlannedManeuver.armRendezvousGuidance"/>，
+        /// 其点火时调用 <see cref="ArmRendezvousGuidance"/> 使引导生效；出发段被阻止/取消则引导自动作废。
+        /// </summary>
+        public void RegisterRendezvousGuidance(int targetId, double arrivalTick, bool prograde, HashSet<PropellantDef> useNetworks)
+        {
+            HasRendezvousGuidance = true;
+            rendezvousArmed = false;
+            rendezvousTargetId = targetId;
+            rendezvousArrivalTick = arrivalTick;
+            rendezvousPrograde = prograde;
+            rendezvousUseNetworks = useNetworks != null ? new HashSet<PropellantDef>(useNetworks) : null;
+            rendezvousLastCheckTick = double.NegativeInfinity;
+            rendezvousLastBurnTick = double.NegativeInfinity;
+        }
+
+        /// <summary>出发段点火执行，引导生效。</summary>
+        public void ArmRendezvousGuidance()
+        {
+            rendezvousArmed = true;
+        }
+
+        /// <summary>清除交会引导（玩家手动接管 / 出发段失败 / 交会完成）。</summary>
+        public void ClearRendezvousGuidance()
+        {
+            HasRendezvousGuidance = false;
+            rendezvousArmed = false;
+            rendezvousTargetId = -1;
+            rendezvousArrivalTick = 0.0;
+            rendezvousPrograde = true;
+            rendezvousUseNetworks = null;
         }
 
         #endregion
@@ -749,6 +818,21 @@ namespace PioneerFramework
                     orbitKeepingWhitelist.Clear();
                     orbitKeepingWhitelist.UnionWith(whitelistList);
                 }
+            }
+
+            // 交会引导序列化
+            Scribe_Values.Look(ref HasRendezvousGuidance, "hasRendezvousGuidance", false);
+            Scribe_Values.Look(ref rendezvousArmed, "rendezvousArmed", false);
+            Scribe_Values.Look(ref rendezvousTargetId, "rendezvousTargetId", -1);
+            Scribe_Values.Look(ref rendezvousArrivalTick, "rendezvousArrivalTick", 0.0);
+            Scribe_Values.Look(ref rendezvousPrograde, "rendezvousPrograde", true);
+            Scribe_Collections.Look(ref rendezvousUseNetworks, "rendezvousUseNetworks", LookMode.Def);
+            if (Scribe.mode == LoadSaveMode.PostLoadInit && !HasRendezvousGuidance)
+            {
+                // 旧存档 / 无效状态兜底：清空残留引导字段
+                rendezvousArmed = false;
+                rendezvousTargetId = -1;
+                rendezvousUseNetworks = null;
             }
         }
     }

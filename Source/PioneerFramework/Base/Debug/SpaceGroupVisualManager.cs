@@ -53,10 +53,17 @@ namespace PioneerFramework
         private static readonly Color MarkerColorDn = new Color(0.7f, 0.3f, 1f, 0.8f);                // DN：紫色
 
         // GUI 面板
-        private const float PanelWidth = 260f;
-        private const float PanelHeight = 354f;
-        private const float PanelOffsetY = -44f;
-        private static GUIStyle panelLabelStyle;
+        private const float PanelWidth = 320f;
+        private const float PanelHeight = 500f;          // 基础高度（无 burn 区）
+        private const float BurnSectionHeight = 112f;    // 机动执行区附加高度
+
+        // 面板配色（与机动队列窗口一致）
+        private static readonly Color CyanColor = new Color(0.25f, 0.9f, 1f, 0.9f);
+        private static readonly Color WarnColor = new Color(1f, 0.42f, 0.3f, 0.95f);
+        private static readonly Color OkColor = new Color(0.35f, 1f, 0.55f, 0.95f);
+        private static readonly Color DimColor = new Color(0.6f, 0.66f, 0.72f, 1f);
+        /// <summary>普通按钮的统一灰色（未特别着色按钮）。</summary>
+        private static readonly Color GrayButton = new Color(0.46f, 0.49f, 0.53f, 1f);
 
         /// <summary>预创建的球体网格，用于天体球体渲染。</summary>
         private static Mesh sphereMesh;
@@ -768,8 +775,13 @@ namespace PioneerFramework
 
         private static Rect CalculatePanelRect(Vector2 anchor)
         {
-            // 固定边栏：贴屏幕左侧，完全静止（不跟随 Group 位置），与顶部游戏 UI 保持间距
-            return new Rect(24f, 80f, PanelWidth, PanelHeight);
+            // 固定边栏：贴屏幕左侧，完全静止（不跟随 Group 位置），与顶部游戏 UI 保持间距。
+            // burn 执行时加高，容纳机动执行区。
+            float h = PanelHeight;
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var grp = selectedGroupId != -1 ? spaceGame?.GetGroupById(selectedGroupId) : null;
+            if (grp != null && grp.HasActiveBurn) h += BurnSectionHeight;
+            return new Rect(24f, 80f, PanelWidth, h);
         }
 
         private static void DrawInfoPanel(SpaceGameComp spaceGame)
@@ -781,15 +793,21 @@ namespace PioneerFramework
             if (!GetPanelAnchor(group, out Vector2 anchor, out bool occluded)) return;
             Rect rect = CalculatePanelRect(anchor);
             DrawPanelBackground(rect, occluded);
-            DrawPanelText(group, rect, occluded);
-            DrawPanelButton(rect, group, spaceGame);
+
+            float y = rect.y + 10f;
+            DrawPanelHeader(group, rect, ref y);
+            DrawPanelInfo(group, rect, ref y, spaceGame);
+            if (group.HasActiveBurn)
+                DrawPanelBurn(group, rect, ref y, spaceGame);
+            DrawPanelActions(group, rect, ref y, spaceGame);
+            DrawPanelMap(group, rect, ref y, spaceGame);
         }
 
         private static void DrawPanelBackground(Rect rect, bool occluded)
         {
-            Color bg = occluded ? new Color(0.02f, 0.04f, 0.06f, 0.62f) : new Color(0.02f, 0.06f, 0.09f, 0.74f);
-            Color border = occluded ? new Color(0.25f, 0.9f, 1f, 0.45f) : new Color(0.25f, 0.9f, 1f, 0.8f);
-            Color accent = occluded ? new Color(0.25f, 0.9f, 1f, 0.35f) : new Color(0.25f, 0.9f, 1f, 0.85f);
+            Color bg = occluded ? new Color(0.03f, 0.05f, 0.07f, 0.72f) : new Color(0.04f, 0.06f, 0.09f, 0.85f);
+            Color border = occluded ? new Color(0.25f, 0.9f, 1f, 0.4f) : new Color(0.25f, 0.9f, 1f, 0.7f);
+            Color accent = occluded ? new Color(0.25f, 0.9f, 1f, 0.35f) : new Color(0.25f, 0.9f, 1f, 0.8f);
             GUI.color = bg;
             Widgets.DrawBoxSolid(rect, GUI.color);
             GUI.color = border;
@@ -798,21 +816,47 @@ namespace PioneerFramework
             GUI.color = Color.white;
         }
 
-        private static void DrawPanelText(SpaceEntityGroup group, Rect rect, bool occluded)
+        private static void DrawSectionTitle(Rect panel, ref float y, string title, Color accent)
         {
-            if (panelLabelStyle == null)
-            {
-                panelLabelStyle = new GUIStyle(Text.CurFontStyle);
-                panelLabelStyle.fontSize = 12;
-                panelLabelStyle.wordWrap = true;
-            }
+            Text.Font = GameFont.Tiny;
+            GUI.color = accent;
+            Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, 18f), title);
+            Widgets.DrawLineHorizontal(panel.x + 12f, y + 18f, panel.width - 24f);
+            GUI.color = Color.white;
+            Text.Font = GameFont.Small;
+            y += 28f;
+        }
 
-            string title = string.Format("Group {0}", group.GroupId);
+        private static void DrawPanelHeader(SpaceEntityGroup group, Rect panel, ref float y)
+        {
+            string status = group.HasActiveBurn ? "燃烧中"
+                : group.plannedManeuvers.Count > 0 ? "机动待执行"
+                : group.IsActive ? "运行中" : "离线";
+            Color statusColor = group.HasActiveBurn ? WarnColor
+                : group.plannedManeuvers.Count > 0 ? OkColor
+                : group.IsActive ? OkColor : DimColor;
+
+            Text.Font = GameFont.Medium;
+            GUI.color = statusColor;
+            Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, 28f),
+                string.Format("Group {0}", group.GroupId));
+            GUI.color = Color.white;
+
             string typeInfo = group.HasGravityWell ? "引力源" : (group.IsMovable ? "可移动" : "静态");
             string orbitInfo = group.IsCircularOrbit ? "圆轨" : "积分";
-            string status = group.IsActive ? "运行中" : "离线";
+            Text.Font = GameFont.Tiny;
+            GUI.color = DimColor;
+            Widgets.Label(new Rect(panel.x + 12f, y + 30f, panel.width - 24f, 18f),
+                string.Format("{0} · {1} · {2}", typeInfo, orbitInfo, status));
+            GUI.color = Color.white;
+            Text.Font = GameFont.Small;
+            y += 54f;
+        }
 
-            // 中心天体
+        private static void DrawPanelInfo(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)
+        {
+            DrawSectionTitle(panel, ref y, "轨道信息", CyanColor);
+
             string centerInfo = "天体: ";
             if (group.CelestialBodyId >= 0)
             {
@@ -824,42 +868,100 @@ namespace PioneerFramework
             }
             else
             {
-                centerInfo += "无";
+                centerInfo += "深空";
             }
 
-            string detail = string.Format("{0} | {1} | {2}", typeInfo, orbitInfo, status);
-            string posInfo = string.Format("位置: {0:F0}, {1:F0}, {2:F0}",
-                group.CurrentOrbit.position.x, group.CurrentOrbit.position.y, group.CurrentOrbit.position.z);
+            DVector3 pos = group.CurrentOrbit.position;
+            double radiusKm = pos.magnitude / 1000.0;
+            double speed = group.IsCircularOrbit
+                ? group.GetCircularVelocityAtTick(TimeScaleManager.GetPhysicsTickSafe()).magnitude
+                : group.CurrentOrbit.velocity.magnitude;
+            var (remainingDv, maxDv, propMass, propCap) = spaceGame.GetGroupDeltaV(group);
 
-            Rect inner = rect.ContractedBy(10f);
-            Text.Font = GameFont.Medium;
-            Text.Anchor = TextAnchor.UpperLeft;
-            Widgets.Label(new Rect(inner.x, inner.y - 2f, inner.width, 30f), title);
-            Text.Font = GameFont.Small;
-            Widgets.Label(new Rect(inner.x, inner.y + 20f, inner.width, 20f), detail);
-            Widgets.Label(new Rect(inner.x, inner.y + 44f, inner.width, 20f), centerInfo);
-            Widgets.Label(new Rect(inner.x, inner.y + 66f, inner.width, 20f), posInfo);
-            Text.Anchor = TextAnchor.UpperLeft;
+            float rowH = 21f;
+            float leftW = panel.width * 0.5f - 6f;
+            float rightX = panel.x + panel.width * 0.5f;
+
+            // 行1：天体 | 距中心
+            Widgets.Label(new Rect(panel.x + 12f, y, leftW, rowH), centerInfo);
+            GUI.color = DimColor;
+            Widgets.Label(new Rect(rightX, y, panel.width * 0.5f - 12f, rowH),
+                string.Format("距中心 {0:F0} km", radiusKm));
+            GUI.color = Color.white;
+            y += rowH;
+
+            // 行2：速度 | 位置
+            Widgets.Label(new Rect(panel.x + 12f, y, leftW, rowH),
+                string.Format("速度 {0:F0} m/s", speed));
+            GUI.color = DimColor;
+            Widgets.Label(new Rect(rightX, y, panel.width * 0.5f - 12f, rowH),
+                string.Format("({0:F0},{1:F0},{2:F0})", pos.x / 1000.0, pos.y / 1000.0, pos.z / 1000.0));
+            GUI.color = Color.white;
+            y += rowH;
+
+            // 行3：剩余 dV
+            GUI.color = remainingDv > 0f ? Color.white : DimColor;
+            Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
+                string.Format("剩余 dV: {0:F0} / 最大 {1:F0} m/s", remainingDv, maxDv));
+            GUI.color = Color.white;
+            y += rowH;
+
+            // 行4：工质
+            Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
+                string.Format("工质: {0:F0} / {1:F0} kg", propMass, propCap));
+            y += rowH + 12f;
         }
 
-        private static void DrawPanelButton(Rect rect, SpaceEntityGroup group, SpaceGameComp spaceGame)
+        private static void DrawPanelBurn(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)
         {
-            // --- 第零排：切换至该Group视角（太空战） ---
-            Rect battleRect = new Rect(rect.x + 10f, rect.yMax - 160f, rect.width - 20f, 22f);
-            if (Widgets.ButtonText(battleRect, "切换至该Group视角"))
-            {
-                Find.WindowStack.Add(new Window_SpaceBattleView3D(group));
-            }
+            DrawSectionTitle(panel, ref y, "机动执行中", WarnColor);
 
-            // --- 第一排：跟随 ---
-            Rect followRect = new Rect(rect.x + 10f, rect.yMax - 134f, rect.width - 20f, 22f);
+            double applied = group.appliedBurnDV;
+            double planned = applied + group.remainingBurnDV;
+            float frac = planned > 0.001 ? (float)(applied / planned) : 0f;
+            Rect barRect = new Rect(panel.x + 12f, y, panel.width - 24f, 16f);
+            Widgets.DrawBoxSolid(barRect, new Color(0.02f, 0.03f, 0.05f, 0.9f));
+            float fillW = barRect.width * Mathf.Clamp01(frac);
+            if (fillW > 2f)
+                Widgets.DrawBoxSolid(new Rect(barRect.x, barRect.y, fillW, barRect.height), WarnColor);
+            Widgets.DrawBox(barRect, 1);
+            y += 22f;
+
+            Text.Font = GameFont.Tiny;
+            Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, 18f),
+                string.Format("已消耗 dV: {0:F1} / {1:F1} m/s ({2:P0}) · 工质 {3:F1} kg",
+                    applied, planned, frac, group.burnConsumedPropellant));
+            Text.Font = GameFont.Small;
+            y += 24f;
+
+            GUI.color = new Color(0.85f, 0.28f, 0.24f);
+            if (Widgets.ButtonText(new Rect(panel.x + 12f, y, panel.width - 24f, 28f), "紧急终止当前机动"))
+            {
+                spaceGame.EmergencyStopBurn(group);
+            }
+            GUI.color = Color.white;
+            y += 36f;
+        }
+
+        private static void DrawPanelActions(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)
+        {
+            DrawSectionTitle(panel, ref y, "行动", CyanColor);
+            GUI.color = GrayButton; // 普通按钮统一灰色
+
+            float btnW = (panel.width - 24f - 10f) * 0.5f;
+            float rowH = 28f;
+            float rowGap = 6f;
+            float leftX = panel.x + 12f;
+            float rightX = panel.x + 12f + btnW + 10f;
+
+            // 行1：3D 视角 | 跟随
+            if (Widgets.ButtonText(new Rect(leftX, y, btnW, rowH), "切换至3D视角"))
+                Find.WindowStack.Add(new Window_SpaceBattleView3D(group));
             string followLabel = isFollowing && selectedGroupId == group.GroupId ? "停止跟随" : "跟随";
-            if (Widgets.ButtonText(followRect, followLabel))
+            if (Widgets.ButtonText(new Rect(rightX, y, btnW, rowH), followLabel))
             {
                 if (isFollowing && selectedGroupId == group.GroupId)
-                {
                     isFollowing = false;
-                }
                 else
                 {
                     selectedGroupId = group.GroupId;
@@ -867,132 +969,114 @@ namespace PioneerFramework
                     lastFollowTime = Time.time;
                 }
             }
+            y += rowH + rowGap;
 
-            // --- 第二排：圆轨/退出圆轨 ---
-            Rect circularRect = new Rect(rect.x + 10f, rect.yMax - 108f, rect.width - 20f, 22f);
+            // 行2：圆轨/退出圆轨 | 机动规划
             if (group.IsCircularOrbit)
             {
-                if (Widgets.ButtonText(circularRect, "退出圆轨"))
-                {
+                if (Widgets.ButtonText(new Rect(leftX, y, btnW, rowH), "退出圆轨"))
                     group.ExitCircularOrbit();
-                }
             }
             else
             {
-                if (Widgets.ButtonText(circularRect, "圆轨"))
+                if (Widgets.ButtonText(new Rect(leftX, y, btnW, rowH), "圆轨 (消耗dV)"))
                 {
                     var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
                     if (celestialMgr == null) return;
-
                     var bodies = celestialMgr.GetGravitySources();
                     if (bodies.Count == 0) return;
-
                     var options = new List<FloatMenuOption>();
                     foreach (var body in bodies)
                     {
                         string label = body.label;
-                        // 标记默认选中
                         if (body.bodyId == group.CelestialBodyId)
                             label += " (当前系统)";
-
                         int capturedId = body.bodyId;
                         options.Add(new FloatMenuOption(label, () =>
                         {
-                            // 圆轨 = 两段式 dV 机动（节点 burn → 二次计算 → 残差扣工质入轨），不再是免费置态
-                            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
-                            if (spaceGame != null)
-                                spaceGame.BeginCircularize(group, capturedId);
+                            var sg = Current.Game?.GetComponent<SpaceGameComp>();
+                            if (sg != null)
+                                sg.BeginCircularize(group, capturedId);
                         }));
                     }
                     Find.WindowStack.Add(new FloatMenu(options));
                 }
             }
-
-            // --- 第三排：机动规划 ---
-            Rect planRect = new Rect(rect.x + 10f, rect.yMax - 82f, rect.width - 20f, 22f);
-            if (Widgets.ButtonText(planRect, "机动规划"))
-            {
+            if (Widgets.ButtonText(new Rect(rightX, y, btnW, rowH), "机动规划"))
                 Find.WindowStack.Add(new ManeuverPlanner(group));
-            }
+            y += rowH + rowGap;
 
-            // --- 第四排：交会规划 ---
-            Rect rendezvousRect = new Rect(rect.x + 10f, rect.yMax - 56f, rect.width - 20f, 22f);
-            if (Widgets.ButtonText(rendezvousRect, "交会规划"))
-            {
+            // 行3：交会规划 | 转移到圆轨
+            if (Widgets.ButtonText(new Rect(leftX, y, btnW, rowH), "交会规划"))
                 Find.WindowStack.Add(new RendezvousPlanner(group, spaceGame));
-            }
-
-            // --- 第五排：转移到目标圆轨 + 机动队列 ---
-            Rect matchRect = new Rect(rect.x + 10f, rect.yMax - 44f, rect.width * 0.48f - 5f, 22f);
-            if (Widgets.ButtonText(matchRect, "转移到圆轨"))
-            {
+            if (Widgets.ButtonText(new Rect(rightX, y, btnW, rowH), "转移到圆轨"))
                 Find.WindowStack.Add(new OrbitTransferPlanner(group, spaceGame));
-            }
-            Rect queueRect = new Rect(rect.x + rect.width * 0.52f + 5f, rect.yMax - 44f, rect.width * 0.48f - 15f, 22f);
+            y += rowH + rowGap;
+
+            // 行4：机动队列（全宽）
             string queueLabel = group.plannedManeuvers.Count > 0
                 ? string.Format("机动队列 ({0})", group.plannedManeuvers.Count)
                 : "机动队列 (0)";
-            if (Widgets.ButtonText(queueRect, queueLabel))
-            {
+            if (Widgets.ButtonText(new Rect(leftX, y, panel.width - 24f, rowH), queueLabel))
                 Find.WindowStack.Add(new ManeuverQueueWindow(group));
-            }
+            GUI.color = Color.white;
+            y += rowH + 12f;
+        }
 
-            // --- 第六排：封存/取出（如果关联了地图） ---
+        private static void DrawPanelMap(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)
+        {
             var mapEntity = GetMapEntityForGroup(group);
-            if (mapEntity != null)
+            if (mapEntity == null) return;
+
+            DrawSectionTitle(panel, ref y, "空间站地图", CyanColor);
+            GUI.color = GrayButton; // 普通按钮统一灰色
+
+            float btnW = (panel.width - 24f - 10f) * 0.5f;
+            float rowH = 28f;
+            float leftX = panel.x + 12f;
+            float rightX = panel.x + 12f + btnW + 10f;
+
+            // 进入空间站
+            if (Widgets.ButtonText(new Rect(leftX, y, btnW, rowH), "进入空间站"))
+                SpaceMapGenerator.EnterStation(mapEntity);
+
+            // 取档/封存中 → 进度条；否则 取出/封存 按钮
+            if (spaceGame.ActiveRestoreOperation != null && spaceGame.ActiveRestoreOperation.TargetEntity == mapEntity)
             {
-                // 取档进行中 → 显示进度条
-                if (spaceGame.ActiveRestoreOperation != null &&
-                    spaceGame.ActiveRestoreOperation.TargetEntity == mapEntity)
+                Rect progressRect = new Rect(rightX, y, btnW, rowH);
+                float progress = spaceGame.ActiveRestoreOperation.Progress;
+                Widgets.FillableBar(progressRect, progress, Texture2D.linearGrayTexture, Texture2D.whiteTexture, false);
+                Text.Anchor = TextAnchor.MiddleCenter;
+                Widgets.Label(progressRect, string.Format("取出中 {0:P0}", progress));
+                Text.Anchor = TextAnchor.UpperLeft;
+            }
+            else if (spaceGame.ActiveArchiveOperation != null && spaceGame.ActiveArchiveOperation.TargetEntity == mapEntity)
+            {
+                Rect progressRect = new Rect(rightX, y, btnW, rowH);
+                float progress = spaceGame.ActiveArchiveOperation.Progress;
+                Widgets.FillableBar(progressRect, progress, Texture2D.linearGrayTexture, Texture2D.whiteTexture, false);
+                Text.Anchor = TextAnchor.MiddleCenter;
+                Widgets.Label(progressRect, string.Format("封存中 {0:P0}", progress));
+                Text.Anchor = TextAnchor.UpperLeft;
+            }
+            else if (mapEntity.IsMapArchived)
+            {
+                if (Widgets.ButtonText(new Rect(rightX, y, btnW, rowH), "取出Map"))
+                    spaceGame.BeginRestoreMap(mapEntity);
+            }
+            else
+            {
+                if (Widgets.ButtonText(new Rect(rightX, y, btnW, rowH), "封存Map"))
                 {
-                    Rect progressRect = new Rect(rect.x + 10f, rect.yMax - 22f, rect.width - 20f, 22f);
-                    float progress = spaceGame.ActiveRestoreOperation.Progress;
-                    Widgets.FillableBar(progressRect, progress, Texture2D.linearGrayTexture,
-                        Texture2D.whiteTexture, false);
-                    Text.Anchor = TextAnchor.MiddleCenter;
-                    Widgets.Label(progressRect, string.Format("取出中... {0:P0}", progress));
-                    Text.Anchor = TextAnchor.UpperLeft;
-                }
-                else if (spaceGame.ActiveArchiveOperation != null &&
-                    spaceGame.ActiveArchiveOperation.TargetEntity == mapEntity)
-                {
-                    // 封存进行中 → 显示进度条
-                    Rect progressRect = new Rect(rect.x + 10f, rect.yMax - 22f, rect.width - 20f, 22f);
-                    float progress = spaceGame.ActiveArchiveOperation.Progress;
-                    Widgets.FillableBar(progressRect, progress, Texture2D.linearGrayTexture,
-                        Texture2D.whiteTexture, false);
-                    Text.Anchor = TextAnchor.MiddleCenter;
-                    Widgets.Label(progressRect, string.Format("封存中... {0:P0}", progress));
-                    Text.Anchor = TextAnchor.UpperLeft;
-                }
-                else if (mapEntity.IsMapArchived)
-                {
-                    // 已封存 → 显示取出按钮
-                    Rect restoreRect = new Rect(rect.x + 10f, rect.yMax - 22f, rect.width - 20f, 22f);
-                    if (Widgets.ButtonText(restoreRect, "取出Map"))
-                    {
-                        spaceGame.BeginRestoreMap(mapEntity);
-                    }
-                }
-                else
-                {
-                    // 有活跃地图 → 封存按钮（Lite 裁剪：冻结功能已删除）
-                    Rect archiveRect = new Rect(rect.x + 10f, rect.yMax - 22f, rect.width - 20f, 22f);
-                    if (Widgets.ButtonText(archiveRect, "封存Map"))
-                    {
-                        var pocketMap = SpaceMapGenerator.FindPocketMap(mapEntity.MapId);
-                        if (pocketMap != null && pocketMap.mapPawns.AllPawns.Any())
-                        {
-                            Messages.Message("Cannot archive: pawns still present on the station.",
-                                MessageTypeDefOf.RejectInput, false);
-                        }
-                        else
-                        {
-                            spaceGame.BeginArchiveMap(mapEntity);
-                        }
-                    }
+                    var pocketMap = SpaceMapGenerator.FindPocketMap(mapEntity.MapId);
+                    if (pocketMap != null && pocketMap.mapPawns.AllPawns.Any())
+                        Messages.Message("Cannot archive: pawns still present on the station.", MessageTypeDefOf.RejectInput, false);
+                    else
+                        spaceGame.BeginArchiveMap(mapEntity);
                 }
             }
+            GUI.color = Color.white;
+            y += rowH + 8f;
         }
 
         /// <summary>

@@ -24,6 +24,9 @@ namespace PioneerFramework
         private double departureDelayFraction = 0.0;
         private const double MaxDepartureDelayFraction = 1.5;
         private bool progradeTransfer = true;
+        /// <summary>精确交会（默认）：到达段启用闭环引导（飞行中按实际状态修正）。
+        /// false = 粗交会：两段开环机动（出发+到达），沿用旧行为。</summary>
+        private bool preciseRendezvous = true;
 
         private bool solutionValid;
         private bool computeAttempted;
@@ -197,6 +200,21 @@ namespace PioneerFramework
             }
             y += LabelHeight + 6f;
 
+            // ── 交会模式：精确（闭环引导）/ 粗（两段开环）──
+            if (Widgets.ButtonText(new Rect(0f, y, inRect.width * 0.48f, LabelHeight),
+                preciseRendezvous ? "[精确交会]" : "精确交会"))
+            {
+                preciseRendezvous = true;
+                previewComputed = false;
+            }
+            if (Widgets.ButtonText(new Rect(inRect.width * 0.52f, y, inRect.width * 0.48f, LabelHeight),
+                !preciseRendezvous ? "[粗交会]" : "粗交会"))
+            {
+                preciseRendezvous = false;
+                previewComputed = false;
+            }
+            y += LabelHeight + 6f;
+
             if (Widgets.ButtonText(new Rect(0f, y, inRect.width, ButtonHeight), "计算转移轨道"))
             {
                 ComputeTransfer(targetGroup);
@@ -242,7 +260,7 @@ namespace PioneerFramework
                 y += LabelHeight + 4f;
 
                 if (Widgets.ButtonText(new Rect(0f, y, inRect.width, ButtonHeight),
-                    "确认交会 (出发+到达两段机动)"))
+                    preciseRendezvous ? "确认交会 (精确·闭环引导)" : "确认交会 (粗·两段机动)"))
                 {
                     ConfirmRendezvous(targetGroup);
                 }
@@ -578,6 +596,10 @@ namespace PioneerFramework
                 normalDV = (float)normDV1,
                 executeTick = departureTick,
                 active = true,
+                // 规划时刻的世界系 dV：执行时直接用作惯性方向，避免点火时刻换算的帧旋转误差
+                plannedWorldDv = dV1,
+                // 精确交会：出发段点火后激活闭环引导
+                armRendezvousGuidance = preciseRendezvous,
                 previewCurrentOrbit = currentOrbitPts.ConvertAll(p => (Vector3)p),
                 previewNodePosition = departurePos,
                 previewPostOrbit = transferOrbitPoints != null
@@ -589,6 +611,30 @@ namespace PioneerFramework
             DVector3 dV2 = vTargetAtArrival - v2Transfer;
             int arrivalTick = departureTick + UnityEngine.Mathf.RoundToInt((float)transferTimeSeconds);
 
+            if (preciseRendezvous)
+            {
+                // ── 精确交会：到达段交给闭环引导 ──
+                // 不再排队固定到达机动；出发段点火后（armRendezvousGuidance）引导生效，
+                // 飞行中按实际状态逐次 Lambert 修正，接近终点时消相对速度。
+                var networks = selfGroup.plannedManeuvers.Count > 0
+                    ? selfGroup.plannedManeuvers[0].useNetworks : null;
+                selfGroup.RegisterRendezvousGuidance(targetGroup.GroupId, arrivalTick, progradeTransfer, networks);
+
+                if (selfGroup.CelestialBodyId >= 0)
+                {
+                    selfGroup.EnterOrbitKeeping(new HashSet<int> { selfGroup.CelestialBodyId });
+                    Log.Message(string.Format("[Rendezvous] OrbitKeeping enabled for Group {0}: primary body {1} whitelisted.",
+                        selfGroup.GroupId, selfGroup.CelestialBodyId));
+                }
+
+                Log.Message(string.Format("[Rendezvous] Confirmed (PRECISE)! Group {0} -> {1}: departure burn queued, arrival guidance active. " +
+                    "Depart dV={2:F1} m/s arrivalTick={3} prograde={4}",
+                    selfGroup.GroupId, targetGroup.GroupId, departureDV, arrivalTick, progradeTransfer));
+                Close();
+                return;
+            }
+
+            // ── 粗交会：两段开环机动（出发 + 到达）──
             double radDV2, tanDV2, normDV2;
             DVector3 arrivalCentralOffset = selfGroup.GetCentralBodyOffset(arrivalTick);
             DVector3 relArrivalPos = arrivalPos - arrivalCentralOffset;
@@ -609,6 +655,7 @@ namespace PioneerFramework
                 normalDV = (float)normDV2,
                 executeTick = arrivalTick,
                 active = true,
+                plannedWorldDv = dV2,
                 previewCurrentOrbit = transferOrbitPoints != null
                     ? new List<Vector3>(transferOrbitPoints)
                     : new List<Vector3>(),
@@ -625,7 +672,7 @@ namespace PioneerFramework
                     selfGroup.GroupId, selfGroup.CelestialBodyId));
             }
 
-            Log.Message(string.Format("[Rendezvous] Confirmed! Group {0} -> {1}: queued 2 maneuvers. " +
+            Log.Message(string.Format("[Rendezvous] Confirmed (COARSE)! Group {0} -> {1}: queued 2 maneuvers. " +
                 "Depart dV={2:F1} Arrive dV={3:F1} dt={4:F0}s",
                 selfGroup.GroupId, targetGroup.GroupId, departureDV, arrivalDV, transferTimeSeconds));
 

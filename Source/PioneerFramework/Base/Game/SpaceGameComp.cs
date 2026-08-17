@@ -28,6 +28,22 @@ namespace PioneerFramework
         private const int UPDATE_INTERVAL_TICKS = 2;
         private int lastUpdateTick = 0;
 
+        /// <summary>机动预点火窗口（physicsTick 秒）：进入节点前提前这么久开始处理机动
+        /// （估燃烧时长 → 等待点火时刻），需覆盖最长燃烧的半程，保证"燃烧居中"生效。</summary>
+        private const double ManeuverPreBurnLookaheadTicks = 600;
+
+        /// <summary>交会引导：修正烧死区（修正量低于此不点火，m/s；终端消速用）。</summary>
+        private const double GuidanceBurnDeadband = 2.0;
+        /// <summary>交会引导：进入终端模式（消相对速度）的剩余时间窗口（physicsTick 秒）。
+        /// Lambert 在 tof→0 时数值不稳，接近终点改用直接消相对速度；到达点过后立即结束引导。</summary>
+        private const double GuidanceTerminalWindow = 60.0;
+        /// <summary>交会引导：巡航检查间隔（physicsTick 秒）。未到间隔不重算（省算力、防高频点火）。</summary>
+        private const double GuidanceCheckInterval = 30.0;
+        /// <summary>交会引导：修正烧后冷却（physicsTick 秒）。让轨迹稳定再评估，避免追逐残差。</summary>
+        private const double GuidanceBurnCooldown = 60.0;
+        /// <summary>交会引导：预测脱靶量门控（米）。传播当前状态到到达时刻，脱靶低于此视为 on-course（零烧）。</summary>
+        private const double GuidanceMissThreshold = 2000.0; // 2 km
+
         // ── 地图封存/取档异步操作 ──
         public MapRestoreOperation ActiveRestoreOperation { get; private set; }
         public MapArchiveOperation ActiveArchiveOperation { get; private set; }
@@ -988,57 +1004,27 @@ namespace PioneerFramework
                 if (group.plannedManeuvers.Count == 0)
                     continue;
 
-                var nextManeuver = group.PeekNextManeuver((int)Math.Round(physicsTick));
+                var nextManeuver = group.PeekNextManeuver();
                 if (nextManeuver == null)
                     continue;
 
                 var pm = nextManeuver.Value;
 
-                bool hadOrbitKeeping = group.HasOrbitKeeping;
-                HashSet<int> savedWhitelist = group.orbitKeepingWhitelist != null
-                    ? new HashSet<int>(group.orbitKeepingWhitelist) : null;
-
-                if (group.IsCircularOrbit)
-                    group.ExitCircularOrbit();
-
-                if (hadOrbitKeeping)
-                {
-                    group.HasOrbitKeeping = true;
-                    group.orbitKeepingWhitelist = savedWhitelist;
-                }
-
-                DVector3 relPos2 = group.localPosition;
-                DVector3 relVel2 = group.localVelocity;
-
-                Log.Message(string.Format("[Maneuver] Group {0} localFrame: |pos|={1:F0}km |vel|={2:F1} m/s bodyId={3}",
-                    group.GroupId, relPos2.magnitude / 1000.0, relVel2.magnitude, group.CelestialBodyId));
-
-                DVector3 dV = OrbitMath.GetWorldDeltaV(
-                    relPos2, relVel2,
-                    pm.radialDV, pm.tangentialDV, pm.normalDV);
-
-                double safeRadius = GetBodySafeRadius(group.CelestialBodyId);
-                double mu = GetBodyGM(group.CelestialBodyId);
-                DVector3 relVelSafe = group.localVelocity + dV;
-                bool safe = OrbitMath.IsOrbitSafe(group.localPosition, relVelSafe, safeRadius, mu);
-                if (!safe)
-                {
-                    double sma = OrbitMath.SemiMajorAxis(group.localPosition, relVelSafe);
-                    OrbitMath.GetEccentricity(group.localPosition, relVelSafe, out _, out double ecc);
-                    double pe = sma > 0 ? sma * (1.0 - ecc) : -1.0;
-                    Log.Message(string.Format("[Maneuver] BLOCKED: G{0} sma={1:F0} e={2:F4} pe={3:F0}km safeR={4:F0}km |pos|={5:F0} |v|={6:F0} |dv|={7:F0}",
-                        group.GroupId, sma, ecc, pe / 1000.0, safeRadius / 1000.0,
-                        group.localPosition.magnitude / 1000.0,
-                        relVelSafe.magnitude, dV.magnitude));
-                    Messages.Message(string.Format("Group {0} 机动已跳过（将撞击行星）", group.GroupId), MessageTypeDefOf.RejectInput);
-                    group.PopExecutedManeuver();
+                // 上一段机动仍在燃烧时，等待其结束再点火（防止覆盖 burn 状态）
+                if (group.HasActiveBurn)
                     continue;
-                }
+
+                // 预点火窗口：进入节点前 ManeuverPreBurnLookaheadTicks 才开始处理本条机动
+                if (physicsTick < pm.executeTick - ManeuverPreBurnLookaheadTicks)
+                    continue;
 
                 // ── 机动可行性校验（按本条机动选用的工质网络），区分失败原因 ──
+                // 提前到点火判断之前：既用于拒绝不可行机动，也用于计算燃烧时长（燃烧居中需要）
+                float dvMag = (float)Math.Sqrt(
+                    pm.radialDV * pm.radialDV + pm.tangentialDV * pm.tangentialDV + pm.normalDV * pm.normalDV);
                 var maneuverSrc = GetGroupPropulsionSource(group);
                 double mDry = GetGroupMass(group, null); // 干质量（不含工质）
-                var mEst = BurnCalculator.Estimate((float)dV.magnitude, (float)mDry, maneuverSrc,
+                var mEst = BurnCalculator.Estimate(dvMag, (float)mDry, maneuverSrc,
                     maneuverSrc != null ? maneuverSrc.Networks : null, pm.useNetworks);
                 if (!mEst.Feasible)
                 {
@@ -1071,9 +1057,61 @@ namespace PioneerFramework
                     continue;
                 }
 
+                // ── 燃烧居中：点火时刻 = 节点时刻 − 半程燃烧时长，让冲量模型的"瞬间"落在燃烧中点 ──
+                // 与 MechJeb 一致（ignitionUT = node.UT − halfBurnTime），抵消有限时长燃烧的时序误差。
+                double ignitionTick = pm.executeTick - mEst.BurnSeconds / 2.0;
+                if (physicsTick < ignitionTick)
+                    continue;
+
+                bool hadOrbitKeeping = group.HasOrbitKeeping;
+                HashSet<int> savedWhitelist = group.orbitKeepingWhitelist != null
+                    ? new HashSet<int>(group.orbitKeepingWhitelist) : null;
+
+                if (group.IsCircularOrbit)
+                    group.ExitCircularOrbit();
+
+                if (hadOrbitKeeping)
+                {
+                    group.HasOrbitKeeping = true;
+                    group.orbitKeepingWhitelist = savedWhitelist;
+                }
+
+                DVector3 relPos2 = group.localPosition;
+                DVector3 relVel2 = group.localVelocity;
+
+                Log.Message(string.Format("[Maneuver] Group {0} localFrame: |pos|={1:F0}km |vel|={2:F1} m/s bodyId={3}",
+                    group.GroupId, relPos2.magnitude / 1000.0, relVel2.magnitude, group.CelestialBodyId));
+
+                // 优先用规划时刻的世界系 dV（惯性方向，避免点火时刻换算的帧旋转误差）；
+                // 旧存档/手动机动未设置时退回点火时刻分量换算
+                DVector3 dV = pm.plannedWorldDv.sqrMagnitude > 0.0
+                    ? pm.plannedWorldDv
+                    : OrbitMath.GetWorldDeltaV(relPos2, relVel2, pm.radialDV, pm.tangentialDV, pm.normalDV);
+
+                double safeRadius = GetBodySafeRadius(group.CelestialBodyId);
+                double mu = GetBodyGM(group.CelestialBodyId);
+                DVector3 relVelSafe = group.localVelocity + dV;
+                bool safe = OrbitMath.IsOrbitSafe(group.localPosition, relVelSafe, safeRadius, mu);
+                if (!safe)
+                {
+                    double sma = OrbitMath.SemiMajorAxis(group.localPosition, relVelSafe);
+                    OrbitMath.GetEccentricity(group.localPosition, relVelSafe, out _, out double ecc);
+                    double pe = sma > 0 ? sma * (1.0 - ecc) : -1.0;
+                    Log.Message(string.Format("[Maneuver] BLOCKED: G{0} sma={1:F0} e={2:F4} pe={3:F0}km safeR={4:F0}km |pos|={5:F0} |v|={6:F0} |dv|={7:F0}",
+                        group.GroupId, sma, ecc, pe / 1000.0, safeRadius / 1000.0,
+                        group.localPosition.magnitude / 1000.0,
+                        relVelSafe.magnitude, dV.magnitude));
+                    Messages.Message(string.Format("Group {0} 机动已跳过（将撞击行星）", group.GroupId), MessageTypeDefOf.RejectInput);
+                    group.PopExecutedManeuver();
+                    continue;
+                }
+
                 // 本条机动的推进配置：burn 只烧选用的工质网络（null = 全启用）
                 group.burnEnabledNetworks = pm.useNetworks;
                 group.StartBurn(dV);
+                // 精确交会：出发段点火执行 → 激活闭环引导
+                if (pm.armRendezvousGuidance)
+                    group.ArmRendezvousGuidance();
                 // 推进器喷焰表现：burn 期间地图内推进器标记为燃烧状态
                 group.GetLinkedMapComp()?.SetThrustersBurning(true);
                 group.PopExecutedManeuver();
@@ -1085,6 +1123,163 @@ namespace PioneerFramework
                 Log.Message(string.Format("[Maneuver] Group {0} started gradual burn! dv={1:F1} m/s remaining={2}",
                     group.GroupId, dV.magnitude, remaining));
             }
+
+            // ── 交会引导（精确交会：到达段按实际状态闭环修正）──
+            UpdateRendezvousGuidance(physicsTick);
+        }
+
+        /// <summary>
+        /// 交会引导：为处于精确交会的群组按实际状态修正到达轨迹（MechJeb 式"评估→修正→冷却"节奏）。
+        /// 无引导 / 燃烧中 / 队列里还有未执行机动（出发段或玩家接管）时跳过。
+        /// 巡航段：检查节流（30s）+ 预测脱靶量门控（&lt; 2km 视为 on-course 零烧），脱靶才 Lambert 修正；
+        /// 终端段（tof &lt; 60s）：一次消相对速度，到达点过后立即结束（不追打）。
+        /// 修正烧后冷却 60s，避免追逐残差。修正烧复用 StartBurn（固定惯性方向 + 工质消耗 + 撞行星保护）。
+        /// 计算成本：节流后每次检查 = 1~2 次解析传播 + 偶尔 1 次 Lambert（µs 级），无性能压力。
+        /// </summary>
+        private void UpdateRendezvousGuidance(double physicsTick)
+        {
+            foreach (var group in groups.Values)
+            {
+                if (!group.HasRendezvousGuidance) continue;
+                if (!group.IsMovable) continue;
+                if (group.HasActiveBurn) continue;
+
+                // 队列里还有未执行机动（出发段在排队 / 玩家新排队）→ 引导让位
+                if (group.plannedManeuvers.Count > 0) continue;
+
+                // 出发段尚未执行：若机动已被弹出（被阻止/取消）则引导作废
+                if (!group.rendezvousArmed)
+                {
+                    Log.Message(string.Format("[Guidance] Group {0} departure maneuver never executed, rendezvous guidance cancelled.",
+                        group.GroupId));
+                    group.ClearRendezvousGuidance();
+                    continue;
+                }
+
+                if (!groups.TryGetValue(group.rendezvousTargetId, out var target) || !target.IsActive)
+                {
+                    Log.Message(string.Format("[Guidance] Group {0} rendezvous target {1} gone, guidance cancelled.",
+                        group.GroupId, group.rendezvousTargetId));
+                    group.ClearRendezvousGuidance();
+                    continue;
+                }
+
+                // 修正烧后冷却 + 检查节流：避免追逐残差与高频点火（on-course 时大多更新直接跳过）
+                if (physicsTick < group.rendezvousLastBurnTick + GuidanceBurnCooldown) continue;
+                if (physicsTick < group.rendezvousLastCheckTick + GuidanceCheckInterval) continue;
+                group.rendezvousLastCheckTick = physicsTick;
+
+                double arrivalTick = group.rendezvousArrivalTick;
+                double tof = arrivalTick - physicsTick;
+                if (tof <= 0.0)
+                {
+                    // 到达点已过：交会完成（终端消速已在上个检查周期内完成），不追打
+                    Log.Message(string.Format("[Guidance] Group {0} rendezvous complete (arrival passed).", group.GroupId));
+                    group.ClearRendezvousGuidance();
+                    continue;
+                }
+
+                DVector3 r1Rel = group.localPosition;
+                DVector3 v1Rel = group.localVelocity;
+                double gm = GetBodyGM(group.CelestialBodyId);
+                double missM = double.NaN;
+                DVector3 dv;
+
+                if (tof < GuidanceTerminalWindow)
+                {
+                    // 终端：一次消相对速度（Lambert 在 tof→0 时数值不稳；巡航门控已把船带到目标附近）
+                    if (!TryPredictTargetAtTick(target, arrivalTick, out _, out var vTargetRel))
+                        continue;
+                    dv = vTargetRel - v1Rel;
+                }
+                else
+                {
+                    // 巡航：预测脱靶量门控 → 只有真的会脱靶才修，on-course 零烧
+                    if (!TryPredictTargetAtTick(target, arrivalTick, out var r2Rel, out _))
+                        continue;
+                    DVector3 r1ArrivalPred = OrbitMath.GetPositionAtTimeDelta(r1Rel, v1Rel, tof, gm);
+                    missM = (r1ArrivalPred - r2Rel).magnitude;
+                    if (double.IsNaN(missM) || missM < GuidanceMissThreshold)
+                        continue;
+                    TransferGeometry geom = group.rendezvousPrograde
+                        ? TransferGeometry.ShortWay : TransferGeometry.LongWay;
+                    DVector3 vi;
+                    try
+                    {
+                        (vi, _) = Gooding.Solve(gm, r1Rel, r2Rel, tof, geom);
+                    }
+                    catch (Exception)
+                    {
+                        continue; // 本次无解，下次再试
+                    }
+                    dv = vi - v1Rel;
+                }
+
+                if (dv.magnitude < GuidanceBurnDeadband) continue; // 修正量可忽略
+
+                // 可行性（继承出发机动的工质网络）
+                var src = GetGroupPropulsionSource(group);
+                double mDry = GetGroupMass(group, null);
+                var est = BurnCalculator.Estimate((float)dv.magnitude, (float)mDry, src,
+                    src != null ? src.Networks : null, group.rendezvousUseNetworks);
+                if (!est.Feasible)
+                {
+                    Log.Message(string.Format("[Guidance] Group {0} correction infeasible (dv={1:F1} m/s), guidance cancelled.",
+                        group.GroupId, dv.magnitude));
+                    Messages.Message(string.Format("Group {0} 交会修正工质不足，精确交会已终止", group.GroupId), MessageTypeDefOf.RejectInput);
+                    group.ClearRendezvousGuidance();
+                    continue;
+                }
+
+                // 撞行星保护：修正烧后轨道近地点不低于安全半径
+                double safeRadius = GetBodySafeRadius(group.CelestialBodyId);
+                double mu = GetBodyGM(group.CelestialBodyId);
+                if (!OrbitMath.IsOrbitSafe(r1Rel, v1Rel + dv, safeRadius, mu))
+                {
+                    Log.Message(string.Format("[Guidance] Group {0} correction skipped (would impact planet).", group.GroupId));
+                    continue;
+                }
+
+                group.StartBurn(dv);
+                group.rendezvousLastBurnTick = physicsTick; // 冷却：烧完等一个冷却期再评估
+                group.GetLinkedMapComp()?.SetThrustersBurning(true);
+                if (trackedManeuvers.ContainsKey(group.GroupId))
+                    trackedManeuvers[group.GroupId] = new ManeuverTracker { ExecutePhysicsTick = physicsTick, IsActive = true };
+                Log.Message(string.Format("[Guidance] Group {0} correction burn started: dv={1:F1} m/s miss={2:F0}m tof={3:F0}s {4}",
+                    group.GroupId, dv.magnitude, missM, tof, tof < GuidanceTerminalWindow ? "(terminal)" : ""));
+            }
+        }
+
+        /// <summary>
+        /// 预测目标群在指定 physicsTick 的中心天体相对位置/速度（与 RendezvousPlanner 相同的坐标约定）。
+        /// 圆轨：解析式（位置减中心天体偏移；速度取圆轨切向）。非圆轨：从当前相对状态开普勒传播。
+        /// </summary>
+        private bool TryPredictTargetAtTick(SpaceEntityGroup target, double tick,
+            out DVector3 posRel, out DVector3 velRel)
+        {
+            posRel = DVector3.zero;
+            velRel = DVector3.zero;
+            if (target == null) return false;
+
+            if (target.IsCircularOrbit)
+            {
+                posRel = target.GetCircularPositionAtTick(tick) - target.GetCentralBodyOffset(tick);
+                DVector3 radialDir = posRel.normalized;
+                DVector3 tangentDir = DVector3.Cross(target.circularOrbitNormal, radialDir).normalized;
+                velRel = tangentDir * (target.circularAngularVelocity * target.circularRadius);
+                return true;
+            }
+
+            if (target.CelestialBodyId < 0) return false;
+            double gm = GetBodyGM(target.CelestialBodyId);
+            double physicsTickNow = TimeScaleManager.GetPhysicsTickSafe();
+            int nowTick = (int)Math.Round(physicsTickNow);
+            DVector3 relPos = target.CurrentOrbit.position - target.GetCentralBodyOffset(nowTick);
+            DVector3 relVel = target.CurrentOrbit.velocity - target.GetCentralBodyVelocity(nowTick);
+            double tof = tick - physicsTickNow;
+            posRel = OrbitMath.GetPositionAtTimeDelta(relPos, relVel, tof, gm);
+            velRel = OrbitMath.GetVelocityAtTimeDelta(relPos, relVel, tof, gm);
+            return true;
         }
 
         private void UpdateCombatInterpolation(int currentTick, TimeScaleManager timeScaleManager)
@@ -1364,6 +1559,44 @@ namespace PioneerFramework
                 group.GroupId, dv, dm));
         }
 
+        /// <summary>
+        /// 紧急终止当前缓释 burn：丢弃剩余 dV（已烧的工质不退，已累积未施加的冲量照常施加），
+        /// 恢复网络/喷焰表现，清掉圆轨结算标记与机动追踪。
+        /// </summary>
+        public void EmergencyStopBurn(SpaceEntityGroup group)
+        {
+            if (group == null || !group.HasActiveBurn) return;
+            double applied = group.appliedBurnDV;
+            double planned = applied + group.remainingBurnDV;
+            group.EndBurn();
+            group.burnEnabledNetworks = null;
+            group.GetLinkedMapComp()?.SetThrustersBurning(false);
+            trackedManeuvers.Remove(group.GroupId);
+            if (group.HasPendingCircularize)
+            {
+                group.HasPendingCircularize = false;
+                group.pendingCircularizeBodyId = -1;
+            }
+            Log.Message(string.Format("[Burn] Group {0} burn EMERGENCY STOPPED by player (applied {1:F1} / {2:F1} m/s)",
+                group.GroupId, applied, planned));
+            Messages.Message(string.Format("Group {0} 机动已紧急终止（已施加 {1:F1} / {2:F1} m/s）。",
+                group.GroupId, applied, planned), MessageTypeDefOf.NeutralEvent, false);
+        }
+
+        /// <summary>
+        /// 取消 group 从指定索引（含）开始的机动规划（保留前面的）。
+        /// 队列清空时同时移除机动追踪，避免自动降速卡在 Normal。
+        /// </summary>
+        public void CancelGroupManeuvers(SpaceEntityGroup group, int index)
+        {
+            if (group == null || index < 0) return;
+            group.CancelManeuversFrom(index);
+            if (group.plannedManeuvers.Count == 0)
+                trackedManeuvers.Remove(group.GroupId);
+            Messages.Message(string.Format("Group {0} 已取消第 {1} 段及以后的机动规划。",
+                group.GroupId, index + 1), MessageTypeDefOf.NeutralEvent, false);
+        }
+
         #endregion
 
         #region 行星碰撞
@@ -1490,6 +1723,25 @@ namespace PioneerFramework
             if (src != null)
                 mass += src.TotalPropellantMass;
             return mass;
+        }
+
+        /// <summary>
+        /// group 级 dV 显示数据（剩余/最大/工质），供信息面板展示。
+        /// 与实体 RemainingDeltaV 同口径：ve·ln(wet/dry)。
+        /// </summary>
+        public (float remainingDv, float maxDv, float propellantMass, float propellantCapacity) GetGroupDeltaV(SpaceEntityGroup group)
+        {
+            if (group == null) return (0f, 0f, 0f, 0f);
+            var src = GetGroupPropulsionSource(group);
+            if (src == null) return (0f, 0f, 0f, 0f);
+            if (src.EffectiveVe <= 0f)
+                return (0f, 0f, src.TotalPropellantMass, src.TotalPropellantCapacity);
+            double dry = GetGroupMass(group, null);
+            double wet = dry + src.TotalPropellantMass;
+            double wetMax = dry + src.TotalPropellantCapacity;
+            float remaining = wet > dry ? (float)(src.EffectiveVe * Math.Log(wet / dry)) : 0f;
+            float maxDv = wetMax > dry ? (float)(src.EffectiveVe * Math.Log(wetMax / dry)) : 0f;
+            return (remaining, maxDv, src.TotalPropellantMass, src.TotalPropellantCapacity);
         }
 
         #endregion
