@@ -1,6 +1,8 @@
 using System;
+#if !PURE_MATH
 using UnityEngine;
 using Verse;
+#endif
 
 namespace PioneerFramework
 {
@@ -78,8 +80,10 @@ namespace PioneerFramework
         public static bool operator !=(DVector3 a, DVector3 b) => !(a == b);
 
         // 与 Unity Vector3 互转
+#if !PURE_MATH
         public static implicit operator Vector3(DVector3 v) => new Vector3((float)v.x, (float)v.y, (float)v.z);
         public static explicit operator DVector3(Vector3 v) => new DVector3(v.x, v.y, v.z);
+#endif
 
         #endregion
 
@@ -131,10 +135,12 @@ namespace PioneerFramework
         /// <summary>
         /// 从 Unity Quaternion 旋转。
         /// </summary>
+#if !PURE_MATH
         public static DVector3 Rotate(DVector3 v, Quaternion q)
         {
             return Rotate(v, (DQuaternion)q);
         }
+#endif
 
         #endregion
 
@@ -179,6 +185,7 @@ namespace PioneerFramework
 
         #endregion
 
+#if !PURE_MATH
         #region 序列化辅助
 
         /// <summary>
@@ -225,6 +232,7 @@ namespace PioneerFramework
         }
 
         #endregion
+#endif
     }
 
     /// <summary>
@@ -244,8 +252,10 @@ namespace PioneerFramework
 
         public static readonly DQuaternion identity = new DQuaternion(0, 0, 0, 1);
 
+#if !PURE_MATH
         public static implicit operator Quaternion(DQuaternion q) => new Quaternion((float)q.x, (float)q.y, (float)q.z, (float)q.w);
         public static explicit operator DQuaternion(Quaternion q) => new DQuaternion(q.x, q.y, q.z, q.w);
+#endif
 
         public bool Equals(DQuaternion other) => x == other.x && y == other.y && z == other.z && w == other.w;
         public override bool Equals(object obj) => obj is DQuaternion other && Equals(other);
@@ -282,7 +292,9 @@ namespace PioneerFramework
         /// <summary>
         /// 从 Unity Quaternion 显式转换。
         /// </summary>
+#if !PURE_MATH
         public static DQuaternion FromQuaternion(Quaternion q) => new DQuaternion(q.x, q.y, q.z, q.w);
         public Quaternion ToQuaternion() => new Quaternion((float)x, (float)y, (float)z, (float)w);
+#endif
     }
 }

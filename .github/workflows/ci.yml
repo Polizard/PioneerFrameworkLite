@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.100
+          cache: true
+          cache-dependency-path: |
+            Source/PioneerFramework/PioneerFramework.csproj
+            Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj
+            Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.csproj
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build PioneerFrameworkLite (Debug)
+        run: dotnet build Source/PioneerFramework/PioneerFramework.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_debug -p:AppendTargetFrameworkToOutputPath=false
+
+      - name: Build PioneerFrameworkLite (Release)
+        run: dotnet build Source/PioneerFramework/PioneerFramework.csproj --configuration Release -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_release -p:AppendTargetFrameworkToOutputPath=false
+
+      - name: Verify deterministic Release build
+        shell: pwsh
+        run: |
+          dotnet build Source/PioneerFramework/PioneerFramework.csproj --configuration Release -v:minimal -t:Rebuild -p:OutputPath=$env:RUNNER_TEMP/pfl_det_a -p:AppendTargetFrameworkToOutputPath=false
+          dotnet build Source/PioneerFramework/PioneerFramework.csproj --configuration Release -v:minimal -t:Rebuild -p:OutputPath=$env:RUNNER_TEMP/pfl_det_b -p:AppendTargetFrameworkToOutputPath=false
+          $hashA = (Get-FileHash "$env:RUNNER_TEMP/pfl_det_a/PioneerFrameworkLite.dll").Hash
+          $hashB = (Get-FileHash "$env:RUNNER_TEMP/pfl_det_b/PioneerFrameworkLite.dll").Hash
+          if ($hashA -ne $hashB) {
+            Write-Host "hashA=$hashA"
+            Write-Host "hashB=$hashB"
+            throw "Deterministic build check failed: same source produced different DLL bytes"
+          }
+
+      - name: Verify committed DLL consistency
+        shell: pwsh
+        run: |
+          $committed = (Get-FileHash "1.6/Assemblies/PioneerFrameworkLite.dll").Hash
+          $built = (Get-FileHash "$env:RUNNER_TEMP/pfl_det_a/PioneerFrameworkLite.dll").Hash
+          if ($committed -ne $built) {
+            Write-Host "committed=$committed"
+            Write-Host "built    =$built"
+            throw "Committed 1.6/Assemblies/PioneerFrameworkLite.dll differs from CI Release build. Rebuild with tools/rebuild-dll.ps1 using the pinned SDK and commit separately."
+          }
+
+      - name: Run game integration tests
+        run: dotnet test Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_test_game -p:AppendTargetFrameworkToOutputPath=false
+
+      - name: Run pure math tests
+        run: dotnet test Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_test_pure -p:AppendTargetFrameworkToOutputPath=false
+
+      - name: Validate XML / DefOf / localization
+        run: python tools/validate_config.py
+
+      - name: Verify committed runtime assets
+        shell: pwsh
+        run: |
+          $required = @(
+            "1.6/Assemblies/PioneerFrameworkLite.dll",
+            "1.6/AssetBundles/pfview_outline_win",
+            "1.6/AssetBundles/pfview_outline_mac",
+            "1.6/AssetBundles/pfview_outline_linux",
+            "Shaders/PFView_OutlineMask.shader",
+            "Shaders/PFView_OutlineDilate.shader",
+            "Shaders/PFView_OutlineComposite.shader"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Required committed asset is missing: $path"
+            }
+          }

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <DefineConstants>$(DefineConstants);PURE_MATH</DefineConstants>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Pure\DVector3.cs" />
+    <Compile Include="..\PioneerFramework\Base\Core\DVector3Extensions.cs" Link="Pure\DVector3Extensions.cs" />
+    <Compile Include="..\PioneerFramework\Base\Core\MJStatics.cs" Link="Pure\MJStatics.cs" />
+    <Compile Include="..\PioneerFramework\Base\Core\SpaceConstants.cs" Link="Pure\SpaceConstants.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\OrbitMath.cs" Link="Pure\OrbitMath.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\Gooding.cs" Link="Pure\Gooding.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\NBodyIntegrator.cs" Link="Pure\NBodyIntegrator.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\BurnCore.cs" Link="Pure\BurnCore.cs" />
+  </ItemGroup>
+
+</Project>

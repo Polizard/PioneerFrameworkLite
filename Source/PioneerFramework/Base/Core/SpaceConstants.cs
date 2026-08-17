@@ -1,4 +1,6 @@
+#if !PURE_MATH
 using RimWorld.Planet;
+#endif
 
 namespace PioneerFramework
 {
@@ -36,6 +38,7 @@ namespace PioneerFramework
         /// </summary>
         public static double PrimaryGravitationalParameter = 8.0 * (PlanetRadiusMeters * PlanetRadiusMeters);
 
+#if !PURE_MATH
         /// <summary>
         /// 与 RimWorld 世界同步行星参数。
         /// RimWorld 的世界半径恒为 WorldGrid.PlanetRadius (100 tiles)，
@@ -47,5 +50,6 @@ namespace PioneerFramework
             // WorldGrid.PlanetRadius 是 RimWorld 的编译时常量 100f
             PlanetRadiusMeters = WorldGrid.PlanetRadius * MetersPerUnit;
         }
+#endif
     }
 }

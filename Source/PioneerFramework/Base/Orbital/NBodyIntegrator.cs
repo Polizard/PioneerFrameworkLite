@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+#if !PURE_MATH
 using RimWorld;
+#endif
 
 namespace PioneerFramework
 {
@@ -72,6 +74,7 @@ namespace PioneerFramework
         
         private static double EffectiveMu(double defMu) => defMu > 0.0 ? defMu : SpaceConstants.PrimaryGravitationalParameter;
         
+#if !PURE_MATH
         public static void MultiBodyAccelJerk(
             DVector3 scPos, DVector3 scVel,
             int tick,
@@ -169,6 +172,7 @@ namespace PioneerFramework
             
             return Math.Sqrt(ax * ax + ay * ay + az * az);
         }
+#endif
         
         private static void ComputeBodyAccelJerk_Expanded(
             double scX, double scY, double scZ,
