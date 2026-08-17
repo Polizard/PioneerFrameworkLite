@@ -70,58 +70,44 @@ namespace PioneerFramework
             if (active.Count == 0 || dvMps <= 0f)
                 return est; // 无启用网络 / 无计划 → 不可行
 
-            // 当前质量 = 干 + 启用网络可用工质
-            double mDry = Math.Max(dryMass, 1.0);
-            double m0 = mDry;
-            foreach (var n in active)
-                m0 += n.AvailableMass(src);
-
-            float fTotal = 0f, mfTotal = 0f;
+            // 交给纯逻辑核计算（数学部分与 BurnCore 保持单一来源）
+            var inputs = new List<BurnNetworkInput>(active.Count);
             foreach (var n in active)
             {
-                fTotal += n.Thrust;
-                mfTotal += n.MassFlow;
+                inputs.Add(new BurnNetworkInput(
+                    n.Thrust,
+                    n.MassFlow,
+                    n.Ve,
+                    n.AvailableMass(src)));
             }
-            if (mfTotal <= 0f)
-                return est;
 
-            est.Networks = new List<NetworkEstimate>(active.Count);
-            float veEff = fTotal / mfTotal;
-            bool allFeasible = true;
+            var core = BurnCore.Estimate(dvMps, dryMass, inputs);
+            est.Feasible = core.Feasible;
+            est.RequiredPropellant = core.RequiredPropellant;
+            est.BurnSeconds = core.BurnSeconds;
+            est.MaxDeltaV = core.MaxDeltaV;
 
-            foreach (var n in active)
+            if (core.Networks != null)
             {
-                float fI = n.Thrust;
-                float dvI = fTotal > 0f ? dvMps * (fI / fTotal) : 0f; // 按推力比例分配
-                float veI = n.Ve;
-                float availI = n.AvailableMass(src);
-
-                // 该网络所需工质：Δm_i = m0·(1 − e^(−ΔV_i/ve_i))
-                float dmI = veI > 0f ? (float)(m0 * (1.0 - Math.Exp(-dvI / veI))) : 0f;
-                // 该网络单独全部烧完的最大 ΔV（近似，m0 基准）
-                float maxDvI = veI > 0f && m0 > mDry ? (float)(veI * Math.Log(m0 / mDry)) : 0f;
-                float tI = n.MassFlow > 0f ? dmI / n.MassFlow : 0f;
-
-                var ne = new NetworkEstimate
+                est.Networks = new List<NetworkEstimate>(core.Networks.Count);
+                for (int i = 0; i < core.Networks.Count; i++)
                 {
-                    Propellant = n.propellant,
-                    Ve = veI,
-                    MassFlow = n.MassFlow,
-                    AllocatedDv = dvI,
-                    RequiredPropellant = dmI,
-                    Available = availI,
-                    MaxDv = maxDvI,
-                    Feasible = dmI <= availI
-                };
-                est.Networks.Add(ne);
-                est.RequiredPropellant += dmI;
-                if (tI > est.BurnSeconds) est.BurnSeconds = tI;
-                if (!ne.Feasible) allFeasible = false;
+                    var n = active[i];
+                    var r = core.Networks[i];
+                    est.Networks.Add(new NetworkEstimate
+                    {
+                        Propellant = n.propellant,
+                        Ve = n.Ve,
+                        MassFlow = n.MassFlow,
+                        AllocatedDv = r.AllocatedDv,
+                        RequiredPropellant = r.RequiredPropellant,
+                        Available = r.Available,
+                        MaxDv = r.MaxDv,
+                        Feasible = r.Feasible
+                    });
+                }
             }
 
-            // 等效网络最大可达 ΔV
-            est.MaxDeltaV = m0 > mDry ? (float)(veEff * Math.Log(m0 / mDry)) : 0f;
-            est.Feasible = allFeasible;
             return est;
         }
     }
