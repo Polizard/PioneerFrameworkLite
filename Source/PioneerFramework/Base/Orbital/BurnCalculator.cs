@@ -48,10 +48,10 @@ namespace PioneerFramework
         /// </summary>
         /// <param name="dvMps">计划 ΔV（m/s，标量）。</param>
         /// <param name="dryMass">干质量（kg，结构质量，不含工质）。</param>
-        /// <param name="mapComp">船级 SpaceMapComp（取工质存量）。</param>
+        /// <param name="src">推进源（SpaceMapComp 或实体自带推进数据，取工质存量）。</param>
         /// <param name="networks">全部已注册工质网络。</param>
         /// <param name="enabled">玩家启用的工质集合（null/空 = 全启用）。</param>
-        public static BurnEstimate Estimate(float dvMps, float dryMass, SpaceMapComp mapComp,
+        public static BurnEstimate Estimate(float dvMps, float dryMass, IPropulsionSource src,
             IReadOnlyList<PropellantNetwork> networks, HashSet<PropellantDef> enabled = null)
         {
             var est = new BurnEstimate();
@@ -74,7 +74,7 @@ namespace PioneerFramework
             double mDry = Math.Max(dryMass, 1.0);
             double m0 = mDry;
             foreach (var n in active)
-                m0 += n.AvailableMass(mapComp);
+                m0 += n.AvailableMass(src);
 
             float fTotal = 0f, mfTotal = 0f;
             foreach (var n in active)
@@ -94,7 +94,7 @@ namespace PioneerFramework
                 float fI = n.Thrust;
                 float dvI = fTotal > 0f ? dvMps * (fI / fTotal) : 0f; // 按推力比例分配
                 float veI = n.Ve;
-                float availI = n.AvailableMass(mapComp);
+                float availI = n.AvailableMass(src);
 
                 // 该网络所需工质：Δm_i = m0·(1 − e^(−ΔV_i/ve_i))
                 float dmI = veI > 0f ? (float)(m0 * (1.0 - Math.Exp(-dvI / veI))) : 0f;

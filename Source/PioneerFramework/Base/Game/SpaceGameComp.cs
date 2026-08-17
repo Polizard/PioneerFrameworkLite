@@ -580,7 +580,6 @@ namespace PioneerFramework
             public DVector3 NewPosition;
             public DVector3 NewVelocity;
             public bool HasActiveBurn;
-            public double BurnDvConsumed;
             public bool BurnExhausted;
             /// <summary>本次 tick 应消耗的工质总量（kg），主线程按各网络 ṁ 比例分配扣除。</summary>
             public double PropellantConsumed;
@@ -600,17 +599,17 @@ namespace PioneerFramework
             {
                 // 多工质网络并行烧：F = Σ(ve·ṁ)，a = F/m_now，各网络按 ṁ 比例消耗各自工质
                 // （质量随工质消耗减小，加速度自然增大，无需对数记账）
-                var burnMapComp = GetGroupMapComp(group);
+                var burnSrc = GetGroupPropulsionSource(group);
 
                 // 收集活动网络（启用策略 + 有工质）
                 var activeNetworks = new List<PropellantNetwork>();
-                if (burnMapComp != null)
+                if (burnSrc != null)
                 {
-                    foreach (var n in burnMapComp.Networks)
+                    foreach (var n in burnSrc.Networks)
                     {
                         if (n.MassFlow <= 0f) continue;
                         if (group.burnEnabledNetworks != null && !group.burnEnabledNetworks.Contains(n.propellant)) continue;
-                        if (n.AvailableMass(burnMapComp) <= 0f) continue; // 工质已尽的网络熄火
+                        if (n.AvailableMass(burnSrc) <= 0f) continue; // 工质已尽的网络熄火
                         activeNetworks.Add(n);
                     }
                 }
@@ -629,7 +628,7 @@ namespace PioneerFramework
                         mfTotal += activeNetworks[i].MassFlow;
                     }
 
-                    double groupMass = GetGroupMass(group, burnMapComp);
+                    double groupMass = GetGroupMass(group, burnSrc);
                     if (group.burnStartMass <= 0.0)
                         group.burnStartMass = groupMass; // burn 起始质量（实际 ΔV 评估基准）
                     double accel = fTotal / Math.Max(groupMass, 1.0); // m/s²
@@ -638,7 +637,6 @@ namespace PioneerFramework
                     if (burnDv > 0.0)
                     {
                         result.HasActiveBurn = true;
-                        result.BurnDvConsumed = burnDv;
                         result.BurnExhausted = (group.remainingBurnDV - burnDv) <= 1e-9;
                         // 总工质消耗：ṁ·dt 按实际 ΔV 折算（提前达成计划 ΔV 时按比例少烧）
                         result.PropellantConsumed = mfTotal * dtSeconds * (dvThisTick > 0.0 ? burnDv / dvThisTick : 0.0);
@@ -647,6 +645,7 @@ namespace PioneerFramework
                         // （避免并行区直接改 CurrentOrbit.velocity，消除多冲量顺序依赖）
                         group.pendingImpulse += group.burnDirection * burnDv;
                         group.remainingBurnDV -= burnDv;
+                        group.appliedBurnDV += burnDv; // 累计已施加 dV（诊断/日志）
                     }
                     else
                     {
@@ -820,6 +819,8 @@ namespace PioneerFramework
             {
                 if (!groups.TryGetValue(result.GroupId, out var group)) continue;
 
+                bool burnEndedThisStep = false;
+
                 if (result.HasActiveBurn)
                 {
                     // 多网络按 ṁ 比例分配消耗并扣各自工质；全部网络工质尽 → 燃烧终止
@@ -847,7 +848,7 @@ namespace PioneerFramework
                     if (allNetworksExhausted || result.BurnExhausted)
                     {
                         // 实际 ΔV 评估（质量口径）：ve·ln(m0/m1)，验证 ṁ/推力模型与火箭方程一致性
-                        float veEff = GetGroupMapComp(group)?.EffectiveVe ?? 0f;
+                        float veEff = GetGroupPropulsionSource(group)?.EffectiveVe ?? 0f;
                         double actualDv = veEff > 0f && group.burnStartMass > 0.0 && group.burnConsumedPropellant > 0.0
                             ? veEff * Math.Log(group.burnStartMass / Math.Max(group.burnStartMass - group.burnConsumedPropellant, 1.0))
                             : 0.0;
@@ -856,7 +857,8 @@ namespace PioneerFramework
                         group.GetLinkedMapComp()?.SetThrustersBurning(false);
                         trackedManeuvers.Remove(group.GroupId);
                         Log.Message(string.Format("[Burn] Group {0} burn completed: appliedDv={1:F1} m/s actualDv(mass)={2:F1} m/s propellant={3:F1} kg (propellantOut={4})",
-                            group.GroupId, result.BurnDvConsumed, actualDv, group.burnConsumedPropellant, allNetworksExhausted));
+                            group.GroupId, group.appliedBurnDV, actualDv, group.burnConsumedPropellant, allNetworksExhausted));
+                        burnEndedThisStep = true;
                     }
                 }
                 else if (result.BurnExhausted)
@@ -865,6 +867,7 @@ namespace PioneerFramework
                     // burn 结束：推进器退出燃烧状态（表现层）
                     group.GetLinkedMapComp()?.SetThrustersBurning(false);
                     trackedManeuvers.Remove(group.GroupId);
+                    burnEndedThisStep = true;
                 }
 
                 if (result.NeedsUpdate)
@@ -878,11 +881,15 @@ namespace PioneerFramework
                     UpdateGroupOrbit(group.GroupId, newOrbit);
                 }
 
+                // 圆轨两段式机动：仅当本步 burn 结束 → 轨道已落位（NeedsUpdate），再按当前轨道二次计算并结算入轨
+                if (burnEndedThisStep && group.HasPendingCircularize)
+                    TryCompleteCircularize(group, group.pendingCircularizeBodyId);
+
                 if (result.HasOrbitKeeping && result.OrbitKeepingDvCost > 0.0)
                 {
                     // 轨道保持消耗工质：Δm ≈ m·ΔV/ve（小 ΔV 线性近似，避免对数），按启用网络 ṁ 比例分配
-                    var okComp = GetGroupMapComp(group);
-                    float okVe = okComp != null ? okComp.EffectiveVe : 0f;
+                    var okSrc = GetGroupPropulsionSource(group);
+                    float okVe = okSrc != null ? okSrc.EffectiveVe : 0f;
                     bool okExhausted;
                     if (okVe <= 0f)
                     {
@@ -890,11 +897,11 @@ namespace PioneerFramework
                     }
                     else
                     {
-                        double okMass = GetGroupMass(group, okComp);
+                        double okMass = GetGroupMass(group, okSrc);
                         double dmTotal = okMass * result.OrbitKeepingDvCost / okVe;
                         // 分配到启用网络
                         float mfTotal = 0f;
-                        foreach (var n in okComp.Networks)
+                        foreach (var n in okSrc.Networks)
                         {
                             if (n.MassFlow <= 0f) continue;
                             if (group.burnEnabledNetworks != null && !group.burnEnabledNetworks.Contains(n.propellant)) continue;
@@ -909,7 +916,7 @@ namespace PioneerFramework
                         {
                             double consumedTotal = 0.0;
                             int okActive = 0, okExhaustedCount = 0;
-                            foreach (var n in okComp.Networks)
+                            foreach (var n in okSrc.Networks)
                             {
                                 if (n.MassFlow <= 0f) continue;
                                 if (group.burnEnabledNetworks != null && !group.burnEnabledNetworks.Contains(n.propellant)) continue;
@@ -1029,10 +1036,10 @@ namespace PioneerFramework
                 }
 
                 // ── 机动可行性校验（按本条机动选用的工质网络），区分失败原因 ──
-                var maneuverComp = group.GetLinkedMapComp();
+                var maneuverSrc = GetGroupPropulsionSource(group);
                 double mDry = GetGroupMass(group, null); // 干质量（不含工质）
-                var mEst = BurnCalculator.Estimate((float)dV.magnitude, (float)mDry, maneuverComp,
-                    maneuverComp != null ? maneuverComp.Networks : null, pm.useNetworks);
+                var mEst = BurnCalculator.Estimate((float)dV.magnitude, (float)mDry, maneuverSrc,
+                    maneuverSrc != null ? maneuverSrc.Networks : null, pm.useNetworks);
                 if (!mEst.Feasible)
                 {
                     string reason;
@@ -1153,6 +1160,212 @@ namespace PioneerFramework
             };
         }
 
+        #region 圆轨进入（两段式 dV 机动）
+
+        /// <summary>
+        /// 圆轨进入的残差阈值（m/s）：第二段一次性消耗允许的最大残差；
+        /// 第一段 dV 可行性检查时也固定加此余量（两段机动最坏消耗 = 机动所需 + 阈值）。
+        /// </summary>
+        public const double CircularizeDvThreshold = 10.0;
+
+        /// <summary>
+        /// 发起进入圆轨的两段式机动（取代直接 EnterCircularOrbit 的免费置态）：
+        /// ① 按当前轨道计算圆轨机动节点 ΔV → 检查工质（所需+阈值）→ 有则立即开始缓释 burn；
+        /// ② burn 完成后由 <see cref="TryCompleteCircularize"/> 按当前轨道二次计算圆轨，
+        ///    残差 ≤ 阈值则一次性扣除对应工质并入轨（第二次计算的圆轨），否则保持正常轨道。
+        /// </summary>
+        public bool BeginCircularize(SpaceEntityGroup group, int bodyId)
+        {
+            if (group == null) return false;
+            if (group.IsCircularOrbit)
+            {
+                Messages.Message(string.Format("Group {0} 已在圆轨。", group.GroupId), MessageTypeDefOf.RejectInput, false);
+                return false;
+            }
+            if (group.HasActiveBurn || group.HasPendingCircularize)
+            {
+                Messages.Message(string.Format("Group {0} 正在执行机动，请稍候。", group.GroupId), MessageTypeDefOf.RejectInput, false);
+                return false;
+            }
+
+            int realTick = Find.TickManager.TicksGame;
+            if (!TryComputeCircularState(bodyId, group.CurrentOrbit.position, group.CurrentOrbit.velocity, realTick,
+                out DVector3 vCircWorld, out double r))
+            {
+                Messages.Message(string.Format("Group {0} 无法计算天体 {1} 的圆轨状态。", group.GroupId, bodyId), MessageTypeDefOf.RejectInput, false);
+                return false;
+            }
+
+            DVector3 dvVec = vCircWorld - group.CurrentOrbit.velocity;
+            double nodeDV = dvVec.magnitude;
+            if (nodeDV < 0.5)
+            {
+                // 已接近圆轨（<0.5 m/s）：免 burn，直接走第二段结算
+                return TryCompleteCircularize(group, bodyId, vCircWorld);
+            }
+
+            // ── 工质检查：所需 + 阈值（两段机动最坏消耗 = 机动所需 + 残差阈值）──
+            var src = GetGroupPropulsionSource(group);
+            if (src == null || src.Networks.Count == 0)
+            {
+                Messages.Message(string.Format("Group {0} 无推进能力，无法消耗 dV 进入圆轨。", group.GroupId), MessageTypeDefOf.RejectInput, false);
+                return false;
+            }
+            double mDry = GetGroupMass(group, null);
+            var est = BurnCalculator.Estimate((float)(nodeDV + CircularizeDvThreshold), (float)mDry, src, src.Networks, null);
+            if (!est.Feasible)
+            {
+                string reason = est.Networks == null || est.Networks.Count == 0
+                    ? "未安装引擎或未启用任何工质网络"
+                    : string.Format("工质不足（需约 {0:F0} kg，最大可达 ΔV {1:F0} m/s）", est.RequiredPropellant, est.MaxDeltaV);
+                Messages.Message(string.Format("Group {0} 无法进入圆轨：{1}。", group.GroupId, reason), MessageTypeDefOf.RejectInput, false);
+                return false;
+            }
+
+            // ── 立即执行节点：退出圆轨残留，开始缓释 burn（全网络）──
+            if (group.IsCircularOrbit)
+                group.ExitCircularOrbit();
+            group.burnEnabledNetworks = null;
+            group.StartBurn(dvVec);
+            group.GetLinkedMapComp()?.SetThrustersBurning(true);
+            group.HasPendingCircularize = true;
+            group.pendingCircularizeBodyId = bodyId;
+            // 机动追踪：进入圆轨 burn 期间自动降速到 Normal
+            trackedManeuvers[group.GroupId] = new ManeuverTracker
+            {
+                ExecutePhysicsTick = TimeScaleManager.GetPhysicsTickSafe(),
+                IsActive = true
+            };
+
+            Log.Message(string.Format("[Circularize] Group {0} 圆轨机动开始: body={1} r={2:F0}km 节点ΔV={3:F1}m/s（检查含阈值余量 {4:F1}）",
+                group.GroupId, bodyId, r / 1000.0, nodeDV, CircularizeDvThreshold));
+            return true;
+        }
+
+        /// <summary>
+        /// 圆轨第二段结算（在缓释 burn 完成后调用）：按当前轨道二次计算圆轨，
+        /// 当前速度与圆轨速度残差 ≤ 阈值则一次性扣除对应工质并入轨（第二次计算的圆轨）；
+        /// 残差过大则放弃入轨，保持正常轨道（可再次点击圆轨重试）。
+        /// </summary>
+        /// <param name="precomputedVCirc">已接近圆轨时直接传入的圆轨速度（避免重复计算）。</param>
+        private bool TryCompleteCircularize(SpaceEntityGroup group, int bodyId, DVector3? precomputedVCirc = null)
+        {
+            if (group == null) return false;
+            group.HasPendingCircularize = false;
+            group.pendingCircularizeBodyId = -1;
+
+            int realTick = Find.TickManager.TicksGame;
+            // 最后一步 burn 冲量尚未施加：并入当前速度得到真实速度
+            DVector3 vNow = group.CurrentOrbit.velocity + group.pendingImpulse;
+
+            DVector3 vCirc;
+            double r;
+            if (precomputedVCirc.HasValue)
+            {
+                vCirc = precomputedVCirc.Value;
+                r = 0.0;
+            }
+            else if (!TryComputeCircularState(bodyId, group.CurrentOrbit.position, vNow, realTick, out vCirc, out r))
+            {
+                Log.Warning(string.Format("[Circularize] Group {0} 二次计算圆轨失败，保持正常轨道。", group.GroupId));
+                return false;
+            }
+
+            double residual = (vCirc - vNow).magnitude;
+            if (residual > CircularizeDvThreshold)
+            {
+                Log.Message(string.Format("[Circularize] Group {0} 残差 {1:F1} m/s 超过阈值 {2:F1}，未进入圆轨（保持正常轨道，可重试）。",
+                    group.GroupId, residual, CircularizeDvThreshold));
+                Messages.Message(string.Format("Group {0} 圆轨失败：残差 {1:F1} m/s 超过阈值 {2:F1} m/s。",
+                    group.GroupId, residual, CircularizeDvThreshold), MessageTypeDefOf.RejectInput, false);
+                return false;
+            }
+
+            // ── 成功：真实速度（含最后冲量）落位 → 清空 pending → 一次性扣残差工质 → 进入圆轨 ──
+            group.CurrentOrbit.velocity = vNow;
+            group.pendingImpulse = DVector3.zero; // 已并入 vNow，不再叠加
+            ConsumeDeltaVOneShot(group, residual);
+            group.EnterCircularOrbit(realTick, bodyId);
+
+            Log.Message(string.Format("[Circularize] Group {0} 进入圆轨: body={1} r={2:F0}km 残差ΔV={3:F1} m/s（≤阈值 {4:F1}）已一次性扣工质",
+                group.GroupId, bodyId, r > 0.0 ? r / 1000.0 : group.circularRadius / 1000.0, residual, CircularizeDvThreshold));
+            return true;
+        }
+
+        /// <summary>
+        /// 计算某天体在当前状态下的圆轨速度向量（世界系）与轨道半径。
+        /// 数学与 EnterCircularOrbit 一致（含月球等非行星天体的坐标换算）。
+        /// </summary>
+        private bool TryComputeCircularState(int bodyId, DVector3 worldPos, DVector3 worldVel, int realTick,
+            out DVector3 vCircWorld, out double radiusMeters)
+        {
+            vCircWorld = DVector3.zero;
+            radiusMeters = 0.0;
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (mgr == null) return false;
+            var body = mgr.GetBodyById(bodyId);
+            if (body == null) return false;
+
+            DVector3 relPos = worldPos, relVel = worldVel;
+            if (body.bodyType != CelestialBodyType.Planet)
+            {
+                relPos -= mgr.GetBodyLocalPosition(bodyId, realTick);
+                relVel -= mgr.GetBodyLocalVelocity(bodyId, realTick);
+            }
+            radiusMeters = relPos.magnitude;
+            if (radiusMeters < 0.01) return false;
+
+            double mu = body.gravitationalParameter > 0.0
+                ? body.gravitationalParameter : SpaceConstants.PrimaryGravitationalParameter;
+            double vTan = System.Math.Sqrt(mu / radiusMeters);
+
+            DVector3 radialDir = relPos.normalized;
+            DVector3 normal = DVector3.Cross(relPos, relVel).normalized;
+            if (normal.sqrMagnitude < 0.01)
+                normal = DVector3.up; // 速度为零/纯径向退化
+            DVector3 tangentDir = DVector3.Cross(normal, radialDir).normalized;
+            if (tangentDir.sqrMagnitude < 0.01)
+            {
+                DVector3 refVec = System.Math.Abs(radialDir.y) < 0.9 ? DVector3.up : DVector3.forward;
+                tangentDir = DVector3.Cross(refVec, radialDir).normalized;
+            }
+            vCircWorld = tangentDir * vTan;
+            if (body.bodyType != CelestialBodyType.Planet)
+                vCircWorld += mgr.GetBodyLocalVelocity(bodyId, realTick);
+            return true;
+        }
+
+        /// <summary>
+        /// 一次性按火箭方程把残差 dV 换算为工质并扣除（按各网络 ṁ 比例分配，与 burn/轨道保持一致）。
+        /// 对应「小于阈值就一次性减去 dV（减去对应工质）」。
+        /// </summary>
+        private void ConsumeDeltaVOneShot(SpaceEntityGroup group, double dv)
+        {
+            if (dv <= 0.001) return;
+            var src = GetGroupPropulsionSource(group);
+            if (src == null) return;
+            double ve = src.EffectiveVe;
+            if (ve <= 0.0) return;
+            double m0 = GetGroupMass(group, src);
+            // Δm = m0·(1 − e^(−ΔV/ve))
+            double dm = m0 * (1.0 - Math.Exp(-dv / ve));
+            if (dm <= 0.0) return;
+
+            float mfTotal = 0f;
+            foreach (var n in src.Networks)
+                mfTotal += n.MassFlow;
+            if (mfTotal <= 0f) return;
+            foreach (var n in src.Networks)
+            {
+                double share = dm * (n.MassFlow / mfTotal);
+                ConsumeGroupPropellant(group, n.propellant, (float)share);
+            }
+            Log.Message(string.Format("[Circularize] Group {0} 残差 dV 一次性消耗: {1:F1} m/s → 工质 {2:F1} kg",
+                group.GroupId, dv, dm));
+        }
+
+        #endregion
+
         #region 行星碰撞
 
         public double GetBodySafeRadius(int celestialBodyId)
@@ -1237,22 +1450,36 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 从 group 的船级工质池扣除工质。返回实际扣除量（kg，受存量截断）。
-        /// 实际扣除 < 需求表示工质已耗尽（或船无工质池）。
+        /// 从 group 的推进源工质池扣除工质。返回实际扣除量（kg，受存量截断）。
+        /// 实际扣除 < 需求表示工质已耗尽（或无推进源）。
         /// </summary>
         private float ConsumeGroupPropellant(SpaceEntityGroup group, PropellantDef def, float kg)
         {
             if (def == null || kg <= 0f) return 0f;
-            var mapComp = GetGroupMapComp(group);
-            if (mapComp == null) return 0f; // 无工质池 → 扣 0
-            return mapComp.TryConsumePropellant(def, kg);
+            var src = GetGroupPropulsionSource(group);
+            if (src == null) return 0f; // 无推进源 → 扣 0
+            return src.TryConsumePropellant(def, kg);
         }
 
-        /// <summary>取 group 任一实体所属地图的 SpaceMapComp（并行只读安全：只读聚合缓存）。</summary>
-        private SpaceMapComp GetGroupMapComp(SpaceEntityGroup group) => group.GetLinkedMapComp();
+        /// <summary>
+        /// 取 group 的推进源：优先任一实体关联的 SpaceMapComp（Map 建筑引擎/工质），
+        /// 无 Map 时回退第一个带自带推进数据的实体（导弹/载荷等纯物理实体，PropulsionData）。
+        /// 并行只读安全：只读聚合缓存 / 只读实体推进字段。
+        /// </summary>
+        public IPropulsionSource GetGroupPropulsionSource(SpaceEntityGroup group)
+        {
+            var mapComp = group.GetLinkedMapComp();
+            if (mapComp != null) return mapComp;
+            foreach (int eid in group.GetEntityIds())
+            {
+                var e = GetEntityById(eid);
+                if (e != null && e.HasPropulsionData) return e;
+            }
+            return null;
+        }
 
-        /// <summary>group 当前质量（kg）= Σ 实体结构质量 + 船级工质总量。</summary>
-        private double GetGroupMass(SpaceEntityGroup group, SpaceMapComp mapComp)
+        /// <summary>group 当前质量（kg）= Σ 实体结构质量 + 推进源工质总量。</summary>
+        private double GetGroupMass(SpaceEntityGroup group, IPropulsionSource src)
         {
             double mass = 0.0;
             foreach (int eid in group.GetEntityIds())
@@ -1260,8 +1487,8 @@ namespace PioneerFramework
                 if (entities.TryGetValue(eid, out var e))
                     mass += e.TotalMass;
             }
-            if (mapComp != null)
-                mass += mapComp.TotalPropellantMass;
+            if (src != null)
+                mass += src.TotalPropellantMass;
             return mass;
         }
 

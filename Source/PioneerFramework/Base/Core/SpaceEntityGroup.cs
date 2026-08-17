@@ -49,6 +49,12 @@ namespace PioneerFramework
         /// <summary>圆轨的中心天体 ID。-1 表示沿用 CelestialBodyId（旧存档兼容）。</summary>
         public int circularCentralBodyId = -1;
 
+        // ── 圆轨进入的两段式机动状态（第一段 burn 完成后由 SpaceGameComp 结算第二段）──
+        /// <summary>是否有等待 burn 完成后结算的圆轨进入请求（BeginCircularize 置位）。</summary>
+        public bool HasPendingCircularize = false;
+        /// <summary>待结算圆轨的中心天体 ID。</summary>
+        public int pendingCircularizeBodyId = -1;
+
         // ── ISpatialEntity（粗网格索引） ──
         int ISpatialEntity.EntityId => GroupId;
         int ISpatialEntity.GroupId => GroupId;
@@ -83,6 +89,8 @@ namespace PioneerFramework
         public DVector3 burnDirection;
         /// <summary>本次燃烧剩余 dV (m/s)。</summary>
         public double remainingBurnDV;
+        /// <summary>本次 burn 已累计施加的 dV (m/s，诊断/日志用；StartBurn 清零)。</summary>
+        public double appliedBurnDV;
         /// <summary>本次 burn 开始时的总质量（kg，首次 burn tick 记录，实际 ΔV 评估用）。</summary>
         public double burnStartMass;
         /// <summary>本次 burn 已实际消耗的工质（kg，主线程累计）。</summary>
@@ -338,6 +346,7 @@ namespace PioneerFramework
             HasActiveBurn = true;
             burnDirection = dV.normalized;
             remainingBurnDV = dV.magnitude;
+            appliedBurnDV = 0.0;
             burnStartMass = 0.0;      // 首次 burn tick 时记录（此时质量已知）
             burnConsumedPropellant = 0.0;
         }

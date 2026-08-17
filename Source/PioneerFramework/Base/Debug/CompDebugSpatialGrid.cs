@@ -242,6 +242,43 @@ namespace PioneerFramework
         }
 
         // 实现方法
+
+        /// <summary>
+        /// 给无 Map 调试实体挂「单 part 结构 + 化学工质自带推进」，使其能参与 burn/机动。
+        /// part 提供干质量与碰撞体（AABB）；PropulsionData 提供引擎参数（ve/ṁ）与燃料（存量/容量）。
+        /// 有 Map 实体不走此方法（推进由 Map 建筑承载）。
+        /// </summary>
+        private static void GivePropulsion(SpaceEntity entity)
+        {
+            entity.IsCollidable = true;
+            entity.SetParts(new List<SpacePart>
+            {
+                new SpacePart
+                {
+                    partId = 1,
+                    defName = "PF_DebugProbe",
+                    localPosition = DVector3.zero,
+                    localBoundsSize = new DVector3(200.0, 100.0, 200.0)
+                }
+            });
+
+            var chem = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Chemical");
+            if (chem == null)
+            {
+                Log.Warning("[CompDebugSpatialGrid] PF_Propellant_Chemical not found; no-map entity deployed without propulsion.");
+                return;
+            }
+            // 参数与化学推进器建筑一致（ve=3500, ṁ=20），燃料满箱 50t
+            entity.AddPropulsion(new PropulsionData
+            {
+                propellant = chem,
+                ve = 3500f,
+                massFlow = 20f,
+                mass = 50000f,
+                capacity = 50000f
+            });
+        }
+
         private void CreateOrbitingGroup()
         {
             if (spaceGame == null) return;
@@ -283,6 +320,7 @@ namespace PioneerFramework
             entity.GroupId = groupId;
             entity.CanInteract = true;
             entity.IsMovable = true;
+            GivePropulsion(entity); // 无 Map 实体：挂结构 part + 化学工质推进
             spaceGame.RegisterEntity(entity);
 
             if (spaceGame.GetPlanetGrids() != null)
@@ -356,6 +394,7 @@ namespace PioneerFramework
             entity.GroupId = groupId;
             entity.CanInteract = true;
             entity.IsMovable = true;
+            GivePropulsion(entity); // 无 Map 实体：挂结构 part + 化学工质推进
             spaceGame.RegisterEntity(entity);
 
             if (spaceGame.GetPlanetGrids() != null)
@@ -407,6 +446,7 @@ namespace PioneerFramework
             entity.GroupId = groupId;
             entity.CanInteract = true;
             entity.IsMovable = true;
+            GivePropulsion(entity); // 无 Map 实体：挂结构 part + 化学工质推进
             spaceGame.RegisterEntity(entity);
 
             if (spaceGame.GetPlanetGrids() != null)
@@ -438,6 +478,7 @@ namespace PioneerFramework
             entity.CanInteract = true;
             entity.IsSelectable = true;
             entity.IsMovable = true;
+            GivePropulsion(entity); // 无 Map 实体：挂结构 part + 化学工质推进
 
             int finalGroupId;
             if (groupId == 0)
