@@ -45,11 +45,12 @@ namespace PioneerFramework
             y += 22f;
 
             // 船的推进参数（MechJeb 式 burn 估算用，每帧一次）
-            var mapComp = group.GetLinkedMapComp();
+            IPropulsionSource src = null;
             float dryMass = 0f;
             var sg = Current.Game?.GetComponent<SpaceGameComp>();
             if (sg != null)
             {
+                src = sg.GetGroupPropulsionSource(group);
                 foreach (int eid in group.GetEntityIds())
                 {
                     var e = sg.GetEntityById(eid);
@@ -58,7 +59,7 @@ namespace PioneerFramework
             }
 
             // ── 当前网络区（单选：切换后加入的机动都按此网络判定）──
-            if (mapComp != null && mapComp.Networks.Count > 0)
+            if (src != null && src.Networks.Count > 0)
             {
                 Widgets.Label(new Rect(0f, y, inRect.width, 18f), "当前网络（新机动继承，单选）：");
                 y += 18f;
@@ -70,7 +71,7 @@ namespace PioneerFramework
                     group.currentNetwork = null;
 
                 float nx = allW + 6f;
-                foreach (var n in mapComp.Networks)
+                foreach (var n in src.Networks)
                 {
                     bool on = group.currentNetwork == n.propellant;
                     string label = (on ? "☑ " : "☐ ") + n.propellant.label;
@@ -127,8 +128,8 @@ namespace PioneerFramework
 
                     // 行3：burn 估算（按本条机动的网络配置）
                     float dvMag = Mathf.Sqrt(pm.radialDV * pm.radialDV + pm.tangentialDV * pm.tangentialDV + pm.normalDV * pm.normalDV);
-                    var est = BurnCalculator.Estimate(dvMag, dryMass, mapComp,
-                        mapComp != null ? mapComp.Networks : null, pm.useNetworks);
+                    var est = BurnCalculator.Estimate(dvMag, dryMass, src,
+                        src != null ? src.Networks : null, pm.useNetworks);
                     if (est.Feasible)
                     {
                         Widgets.Label(new Rect(entryRect.x + 4f, entryRect.y + 38f, entryRect.width - 8f, 16f),

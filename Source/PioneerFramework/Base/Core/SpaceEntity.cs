@@ -8,8 +8,9 @@ namespace PioneerFramework
     /// <summary>
     /// 空间实体（载具：船/空间站 = 单 part + 可选内部地图；无 Map part 如导弹为纯物理实体）。
     /// Lite 裁剪：装配系统（Ship3D）已删除；武器缓存与 Morton 部件索引已删除（§5.4 C1）。
+    /// 实现 IPropulsionSource：无 Map 实体自带推进数据（PropulsionData），有 Map 时 burn 走 SpaceMapComp。
     /// </summary>
-    public class SpaceEntity : IExposable
+    public class SpaceEntity : IExposable, IPropulsionSource
     {
         private int entityId;
         public int EntityId => entityId;
@@ -52,18 +53,18 @@ namespace PioneerFramework
         /// 当前剩余工质全部燃烧可获得的总 ΔV（显示值，Tsiolkovsky 理想公式）。
         /// 由「推进器等效排气速度 ve + 干质量 + 当前工质总量」推导，不落盘、不被消耗——
         /// 真实推进是推进器每 tick 消耗工质，质量变化后此值自然下降。
-        /// 无推进器 / 无工质 / 无 Map（导弹等纯物理实体）返回 0。
+        /// 无推进器 / 无工质 / 无任何推进源返回 0。
         /// </summary>
         public float RemainingDeltaV
         {
             get
             {
-                var mc = GetMapComp();
-                if (mc == null || mc.EffectiveVe <= 0f) return 0f;
+                var src = GetPropulsionSource();
+                if (src == null || src.EffectiveVe <= 0f) return 0f;
                 double dry = TotalMass;                     // 干质量：部件结构质量
-                double wet = dry + mc.TotalPropellantMass;  // 当前质量 = 干 + 剩余工质
+                double wet = dry + src.TotalPropellantMass; // 当前质量 = 干 + 剩余工质
                 if (wet <= dry) return 0f;
-                return (float)(mc.EffectiveVe * System.Math.Log(wet / dry));
+                return (float)(src.EffectiveVe * System.Math.Log(wet / dry));
             }
         }
 
@@ -72,13 +73,24 @@ namespace PioneerFramework
         {
             get
             {
-                var mc = GetMapComp();
-                if (mc == null || mc.EffectiveVe <= 0f) return 0f;
+                var src = GetPropulsionSource();
+                if (src == null || src.EffectiveVe <= 0f) return 0f;
                 double dry = TotalMass;
-                double wet = dry + mc.TotalPropellantCapacity;
+                double wet = dry + src.TotalPropellantCapacity;
                 if (wet <= dry) return 0f;
-                return (float)(mc.EffectiveVe * System.Math.Log(wet / dry));
+                return (float)(src.EffectiveVe * System.Math.Log(wet / dry));
             }
+        }
+
+        /// <summary>
+        /// 实体推进源：优先 Map 建筑（SpaceMapComp）；无 Map 时回退自带推进数据（PropulsionData）。
+        /// 与 group 级 burn 的解析规则（GetGroupPropulsionSource）保持一致。
+        /// </summary>
+        private IPropulsionSource GetPropulsionSource()
+        {
+            var mc = GetMapComp();
+            if (mc != null) return mc;
+            return HasPropulsionData ? this : null;
         }
 
         /// <summary>实体 → 所属地图的 SpaceMapComp（无 Map 时返回 null）。</summary>
@@ -140,6 +152,127 @@ namespace PioneerFramework
         public void InvalidateStats()
         {
             statsDirty = true;
+        }
+
+        // ── 无 Map 实体的自带推进数据（IPropulsionSource）──
+        // 导弹/载荷等纯物理实体没有内部地图，引擎参数与工质直接挂在实体上。
+        // 有 Map 的实体忽略此数据：burn/机动估算统一走 SpaceMapComp（见 GetPropulsionSource）。
+        public List<PropulsionData> propulsion = new List<PropulsionData>();
+        public bool HasPropulsionData => propulsion.Count > 0;
+
+        // 运行时缓存（并行物理线程只读；propulsion 变更时重建）
+        private List<PropellantNetwork> cachedPropulsionNetworks = new List<PropellantNetwork>();
+        private bool propulsionDirty = true;
+        private float totalPropulsionMass;
+        private float totalPropulsionCapacity;
+
+        /// <summary>全部自带工质网络（由 propulsion 数据懒构建；ve/ṁ 变更需 InvalidatePropulsion）。</summary>
+        public IReadOnlyList<PropellantNetwork> Networks
+        {
+            get
+            {
+                if (propulsionDirty)
+                {
+                    var list = new List<PropellantNetwork>(propulsion.Count);
+                    for (int i = 0; i < propulsion.Count; i++)
+                    {
+                        var d = propulsion[i];
+                        if (d == null || d.massFlow <= 0f) continue;
+                        var net = new PropellantNetwork { propellant = d.propellant };
+                        net.RegisterEngine(d.ve, d.massFlow);
+                        list.Add(net);
+                    }
+                    cachedPropulsionNetworks = list;
+                    propulsionDirty = false;
+                }
+                return cachedPropulsionNetworks;
+            }
+        }
+
+        /// <summary>某工质自带存量（kg）。</summary>
+        public float GetPropellantMass(PropellantDef def)
+        {
+            if (def == null) return 0f;
+            for (int i = 0; i < propulsion.Count; i++)
+            {
+                var d = propulsion[i];
+                if (d.propellant == def) return d.mass;
+            }
+            return 0f;
+        }
+
+        /// <summary>消耗自带工质（kg），返回实际扣除量（受存量截断）。</summary>
+        public float TryConsumePropellant(PropellantDef def, float kg)
+        {
+            if (def == null || kg <= 0f) return 0f;
+            for (int i = 0; i < propulsion.Count; i++)
+            {
+                var d = propulsion[i];
+                if (d.propellant != def) continue;
+                float actual = Mathf.Min(kg, d.mass);
+                if (actual <= 0f) return 0f;
+                d.mass -= actual;
+                totalPropulsionMass = Mathf.Max(0f, totalPropulsionMass - actual);
+                return actual;
+            }
+            return 0f;
+        }
+
+        /// <summary>自带工质总质量（kg）。</summary>
+        public float TotalPropellantMass => totalPropulsionMass;
+
+        /// <summary>自带燃料总容量（kg，MaxDeltaV 用）。</summary>
+        public float TotalPropellantCapacity => totalPropulsionCapacity;
+
+        /// <summary>等效排气速度 ve = Σ(ve·ṁ)/Σṁ（m/s，全网络并行烧的加权平均）。</summary>
+        public float EffectiveVe
+        {
+            get
+            {
+                float f = 0f, mf = 0f;
+                var nets = Networks;
+                for (int i = 0; i < nets.Count; i++)
+                {
+                    f += nets[i].Thrust;
+                    mf += nets[i].MassFlow;
+                }
+                return mf > 0f ? f / mf : 0f;
+            }
+        }
+
+        /// <summary>添加/合并一条自带推进配置（同工质合并 ve/ṁ，累加存量与容量）。</summary>
+        public void AddPropulsion(PropulsionData d)
+        {
+            if (d == null || d.propellant == null) return;
+            for (int i = 0; i < propulsion.Count; i++)
+            {
+                if (propulsion[i].propellant == d.propellant)
+                {
+                    var existing = propulsion[i];
+                    existing.ve = d.ve;
+                    existing.massFlow = d.massFlow;
+                    existing.mass += d.mass;
+                    existing.capacity += d.capacity;
+                    InvalidatePropulsion();
+                    return;
+                }
+            }
+            propulsion.Add(d);
+            InvalidatePropulsion();
+        }
+
+        /// <summary>自带推进数据变更入口：重建网络缓存与总量。</summary>
+        public void InvalidatePropulsion()
+        {
+            propulsionDirty = true;
+            totalPropulsionMass = 0f;
+            totalPropulsionCapacity = 0f;
+            if (propulsion == null) return; // 旧存档无此节点
+            for (int i = 0; i < propulsion.Count; i++)
+            {
+                totalPropulsionMass += propulsion[i].mass;
+                totalPropulsionCapacity += propulsion[i].capacity;
+            }
         }
 
         // 物理状态
@@ -259,11 +392,17 @@ namespace PioneerFramework
             Scribe_Values.Look(ref MapId, "mapId", -1);
             Scribe_Values.Look(ref IsMapArchived, "isMapArchived", false);
 
+            // 无 Map 实体自带推进数据序列化
+            Scribe_Collections.Look(ref propulsion, "propulsion", LookMode.Deep);
+            if (Scribe.mode == LoadSaveMode.LoadingVars)
+                InvalidatePropulsion();
+
             // 部件列表序列化
             Scribe_Collections.Look(ref parts, "parts", LookMode.Deep);
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
                 if (parts == null) parts = new List<SpacePart>();
+                if (propulsion == null) propulsion = new List<PropulsionData>();
                 InvalidateStats();
                 foreach (var part in parts)
                 {
@@ -273,6 +412,37 @@ namespace PioneerFramework
                 if (parts.Count > 0)
                     RecalculateBoundsFromParts();
             }
+        }
+    }
+
+    /// <summary>
+    /// 无 Map 实体的单工质推进配置（工质种类 + 引擎参数 + 燃料存量/容量）。
+    /// burn 通过 SpaceEntity（IPropulsionSource）读取；有 Map 实体忽略此数据（走 SpaceMapComp）。
+    /// </summary>
+    public class PropulsionData : IExposable
+    {
+        /// <summary>工质种类。</summary>
+        public PropellantDef propellant;
+
+        /// <summary>排气速度 ve（m/s）。</summary>
+        public float ve;
+
+        /// <summary>质量流率 ṁ（kg/s），推力 F = ve·ṁ。</summary>
+        public float massFlow;
+
+        /// <summary>燃料存量（kg）。</summary>
+        public float mass;
+
+        /// <summary>燃料容量（kg，MaxDeltaV / 补给上限用）。</summary>
+        public float capacity;
+
+        public void ExposeData()
+        {
+            Scribe_Defs.Look(ref propellant, "propellant");
+            Scribe_Values.Look(ref ve, "ve", 0f);
+            Scribe_Values.Look(ref massFlow, "massFlow", 0f);
+            Scribe_Values.Look(ref mass, "mass", 0f);
+            Scribe_Values.Look(ref capacity, "capacity", 0f);
         }
     }
 }

@@ -898,8 +898,10 @@ namespace PioneerFramework
                         int capturedId = body.bodyId;
                         options.Add(new FloatMenuOption(label, () =>
                         {
-                            int currentTick = Find.TickManager.TicksGame;
-                            group.EnterCircularOrbit(currentTick, capturedId);
+                            // 圆轨 = 两段式 dV 机动（节点 burn → 二次计算 → 残差扣工质入轨），不再是免费置态
+                            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+                            if (spaceGame != null)
+                                spaceGame.BeginCircularize(group, capturedId);
                         }));
                     }
                     Find.WindowStack.Add(new FloatMenu(options));

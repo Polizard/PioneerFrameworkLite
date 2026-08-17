@@ -48,10 +48,10 @@ namespace PioneerFramework
         /// </summary>
         /// <param name="dvMps">计划 ΔV（m/s，标量）。</param>
         /// <param name="dryMass">干质量（kg，结构质量，不含工质）。</param>
-        /// <param name="mapComp">船级 SpaceMapComp（取工质存量）。</param>
+        /// <param name="src">推进源（SpaceMapComp 或实体自带推进数据，取工质存量）。</param>
         /// <param name="networks">全部已注册工质网络。</param>
         /// <param name="enabled">玩家启用的工质集合（null/空 = 全启用）。</param>
-        public static BurnEstimate Estimate(float dvMps, float dryMass, SpaceMapComp mapComp,
+        public static BurnEstimate Estimate(float dvMps, float dryMass, IPropulsionSource src,
             IReadOnlyList<PropellantNetwork> networks, HashSet<PropellantDef> enabled = null)
         {
             var est = new BurnEstimate();
@@ -78,7 +78,7 @@ namespace PioneerFramework
                     n.Thrust,
                     n.MassFlow,
                     n.Ve,
-                    n.AvailableMass(mapComp)));
+                    n.AvailableMass(src)));
             }
 
             var core = BurnCore.Estimate(dvMps, dryMass, inputs);

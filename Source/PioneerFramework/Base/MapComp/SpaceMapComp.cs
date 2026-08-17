@@ -5,6 +5,33 @@ using Verse;
 namespace PioneerFramework
 {
     /// <summary>
+    /// 推进源抽象：一组工质网络 + 工质池的提供者。
+    /// 两个实现：<see cref="SpaceMapComp"/>（Map 建筑引擎/储罐聚合）与 <see cref="SpaceEntity"/>
+    /// （无 Map 实体自带推进数据，见 PropulsionData）。burn / 机动估算统一走此接口，
+    /// 调用方不再区分「Map 建筑」还是「实体字段」。
+    /// </summary>
+    public interface IPropulsionSource
+    {
+        /// <summary>全部工质网络（引擎聚合：ve/ṁ/推力）。</summary>
+        IReadOnlyList<PropellantNetwork> Networks { get; }
+
+        /// <summary>某工质当前存量（kg）。未记录返回 0。</summary>
+        float GetPropellantMass(PropellantDef def);
+
+        /// <summary>消耗工质（kg），返回实际扣除量（受存量截断，用于判定耗尽）。</summary>
+        float TryConsumePropellant(PropellantDef def, float kg);
+
+        /// <summary>工质总质量（kg）。</summary>
+        float TotalPropellantMass { get; }
+
+        /// <summary>燃料总容量（kg，MaxDeltaV 用）。</summary>
+        float TotalPropellantCapacity { get; }
+
+        /// <summary>等效排气速度 ve = Σ(ve·ṁ)/Σṁ（m/s，全网络并行烧时的加权平均）。</summary>
+        float EffectiveVe { get; }
+    }
+
+    /// <summary>
     /// 工质网络：一种工质 + 使用它的所有推进器引擎的聚合。
     /// 记录「以排气速度 ve 喷射质量流 ṁ」：推力 F = ve·ṁ。
     /// 一条船可同时携带多个工质网络（核热网络/化学网络/离子网络…），
@@ -26,10 +53,10 @@ namespace PioneerFramework
         /// <summary>总推力 F = ve·ṁ（N）。</summary>
         public float Thrust => Ve * sumMf;
 
-        /// <summary>该网络工质的当前可用存量（kg，动态查船级工质池）。</summary>
-        public float AvailableMass(SpaceMapComp mapComp)
+        /// <summary>该网络工质的当前可用存量（kg，动态查推进源工质池）。</summary>
+        public float AvailableMass(IPropulsionSource src)
         {
-            return mapComp != null ? mapComp.GetPropellantMass(propellant) : 0f;
+            return src != null ? src.GetPropellantMass(propellant) : 0f;
         }
 
         public void RegisterEngine(float ve, float mf)
@@ -47,7 +74,7 @@ namespace PioneerFramework
         public bool Empty => sumMf <= 0f;
     }
 
-    public class SpaceMapComp : MapComponent
+    public class SpaceMapComp : MapComponent, IPropulsionSource
     {
         // 可扩展的持久化数据，例如空间站名称、内部建筑列表等
         private string stationName = "Unnamed Station";
