@@ -63,4 +63,5 @@ dotnet test Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.cspro
 
 ## 许可证
 
-见 [LICENSE](./LICENSE)。
+PioneerFrameworkLite 使用 **GNU General Public License v3.0（GPL v3）** 授权。
+完整文本见 [LICENSE](./LICENSE)。
