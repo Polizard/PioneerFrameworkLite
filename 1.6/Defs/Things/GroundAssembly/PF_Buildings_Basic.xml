@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Building_AssemblyPad_Basic</defName>
+    <label>基础总装发射台</label>
+    <description>PFL 基础总装发射台，用于验证设计 -> 框架 -> 口袋地图 -> 发射 -> 回收链路。</description>
+    <thingClass>PioneerFramework.GroundAssembly.Building_AssemblyPad</thingClass>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/LaunchPadS</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>FloorEmplacement</altitudeLayer>
+    <size>(3,3)</size>
+    <passability>Standable</passability>
+    <selectable>true</selectable>
+    <building>
+      <isEdifice>false</isEdifice>
+      <hasFuelingPort>true</hasFuelingPort>
+      <expandHomeArea>false</expandHomeArea>
+    </building>
+    <statBases>
+      <MaxHitPoints>1000</MaxHitPoints>
+      <Flammability>0.1</Flammability>
+      <WorkToBuild>500</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>200</Steel>
+    </costList>
+    <designationCategory>Misc</designationCategory>
+    <uiOrder>2200</uiOrder>
+    <comps>
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_AssemblyPad" />
+    </comps>
+  </ThingDef>
+
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Building_RocketFrame_Basic</defName>
+    <label>基础火箭框架</label>
+    <description>未完工火箭框架。施工到 100% 后代表火箭外壳和 Part 都已造好。</description>
+    <thingClass>Frame</thingClass>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/R7_Rocket</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>BuildingOnTop</altitudeLayer>
+    <size>(3,3)</size>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>2000</MaxHitPoints>
+      <Flammability>0.1</Flammability>
+      <WorkToBuild>2000</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>300</Steel>
+    </costList>
+    <designationCategory>Misc</designationCategory>
+    <uiOrder>2201</uiOrder>
+    <comps>
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_UnfinishedRocket" />
+    </comps>
+  </ThingDef>
+
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Building_Rocket_Basic</defName>
+    <label>基础火箭</label>
+    <description>PFL 基础不可回收火箭，用于测试地面总装和发射入轨。</description>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/R7_Rocket</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>BuildingOnTop</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>800</MaxHitPoints>
+      <Flammability>0.1</Flammability>
+      <WorkToBuild>1000</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>200</Steel>
+    </costList>
+    <designationCategory>Misc</designationCategory>
+    <uiOrder>2202</uiOrder>
+  </ThingDef>
+
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Building_Rocket_Recoverable_Basic</defName>
+    <label>基础可回收火箭</label>
+    <description>PFL 基础可回收火箭，用于测试发射、第一级回收和重建。</description>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/ZQ_Rocket</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>BuildingOnTop</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>1200</MaxHitPoints>
+      <Flammability>0.1</Flammability>
+      <WorkToBuild>1200</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>300</Steel>
+    </costList>
+    <designationCategory>Misc</designationCategory>
+    <uiOrder>2203</uiOrder>
+  </ThingDef>
+
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Building_Booster_Returned_Basic</defName>
+    <label>基础回收第一级</label>
+    <description>回收回来的基础第一级助推器，可运回总装发射台重建。</description>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/R7ReturnCarbin</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>BuildingOnTop</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>600</MaxHitPoints>
+      <Flammability>0.1</Flammability>
+      <Mass>200</Mass>
+      <WorkToBuild>500</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>50</Steel>
+    </costList>
+    <minifiedDef>MinifiedThing</minifiedDef>
+    <minifiedDrawScale>1.2</minifiedDrawScale>
+    <thingCategories>
+      <li>Buildings</li>
+    </thingCategories>
+    <designationCategory>Misc</designationCategory>
+    <uiOrder>2204</uiOrder>
+    <comps>
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_ReturnedBooster" />
+    </comps>
+  </ThingDef>
+
+</Defs>

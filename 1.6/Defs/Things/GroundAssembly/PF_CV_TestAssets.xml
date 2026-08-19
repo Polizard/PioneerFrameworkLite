@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+
+  <!-- 小型总装发射台（迁移自 DMS:NF 小型发射台，去除成本/科技依赖） -->
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Building_Launchpad_Small</defName>
+    <label>小型总装发射台</label>
+    <description>迁移自 DMS:NF 小型发射台的 PFL 测试资产。</description>
+    <thingClass>PioneerFramework.GroundAssembly.Building_AssemblyPad</thingClass>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/LaunchPadS</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(8,8)</drawSize>
+      <damageData>
+        <enabled>true</enabled>
+        <rect>(0,0,7,7)</rect>
+      </damageData>
+    </graphicData>
+    <drawerType>MapMeshAndRealTime</drawerType>
+    <size>(7,7)</size>
+    <rotatable>false</rotatable>
+    <altitudeLayer>FloorEmplacement</altitudeLayer>
+    <passability>Standable</passability>
+    <designationCategory>Misc</designationCategory>
+    <uiOrder>2200</uiOrder>
+    <canOverlapZones>true</canOverlapZones>
+    <terrainAffordanceNeeded>Heavy</terrainAffordanceNeeded>
+    <building>
+      <isEdifice>false</isEdifice>
+      <hasFuelingPort>true</hasFuelingPort>
+      <expandHomeArea>false</expandHomeArea>
+    </building>
+    <statBases>
+      <MaxHitPoints>700</MaxHitPoints>
+      <Flammability>0.5</Flammability>
+    </statBases>
+    <comps>
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_AssemblyPad" />
+      <li Class="CompProperties_Refuelable">
+        <fuelCapacity>1000.0</fuelCapacity>
+        <targetFuelLevelConfigurable>true</targetFuelLevelConfigurable>
+        <initialConfigurableTargetFuelLevel>75</initialConfigurableTargetFuelLevel>
+        <fuelFilter>
+          <thingDefs>
+            <li>Chemfuel</li>
+          </thingDefs>
+        </fuelFilter>
+        <consumeFuelOnlyWhenUsed>true</consumeFuelOnlyWhenUsed>
+        <autoRefuelPercent>1</autoRefuelPercent>
+        <showFuelGizmo>false</showFuelGizmo>
+        <drawOutOfFuelOverlay>false</drawOutOfFuelOverlay>
+        <drawFuelGaugeInMap>false</drawFuelGaugeInMap>
+        <showAllowAutoRefuelToggle>true</showAllowAutoRefuelToggle>
+      </li>
+    </comps>
+    <placeWorkers>
+      <li>PlaceWorker_FuelingPort</li>
+      <li>PlaceWorker_NotUnderRoof</li>
+    </placeWorkers>
+    <drawPlaceWorkersWhileSelected>true</drawPlaceWorkersWhileSelected>
+  </ThingDef>
+
+  <!-- CV-1 基础火箭（迁移自 DMS:NF，去除成本/科技依赖） -->
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Building_Rocket_CVOne</defName>
+    <dropPodActive>PF_ActivePod_CVOne</dropPodActive>
+    <dropPodFaller>PF_Skyfaller_Incoming_CVOne</dropPodFaller>
+    <label>CV-1 基础火箭</label>
+    <description>PFL 测试用 CV-1 火箭。</description>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/R7_Rocket</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(10,10)</drawSize>
+      <drawOffset>(0,0,4)</drawOffset>
+    </graphicData>
+    <size>(1,1)</size>
+    <rotatable>false</rotatable>
+    <tickerType>Normal</tickerType>
+    <altitudeLayer>BuildingOnTop</altitudeLayer>
+    <passability>PassThroughOnly</passability>
+    <castEdgeShadows>false</castEdgeShadows>
+    <fillPercent>0.5</fillPercent>
+    <uiOrder>2201</uiOrder>
+    <terrainAffordanceNeeded>Medium</terrainAffordanceNeeded>
+    <statBases>
+      <MaxHitPoints>800</MaxHitPoints>
+      <Flammability>0.5</Flammability>
+    </statBases>
+    <comps>
+      <li Class="CompProperties_Transporter">
+        <restEffectiveness>0.8</restEffectiveness>
+        <massCapacity>2000</massCapacity>
+      </li>
+      <li Class="CompProperties_Launchable_TransportPod">
+        <activeTransporterDef>PF_ActivePod_CVOne</activeTransporterDef>
+        <skyfallerLeaving>PF_Skyfaller_Leaving_CVOne</skyfallerLeaving>
+      </li>
+    </comps>
+    <inspectorTabs>
+      <li>ITab_ContentsTransporter</li>
+    </inspectorTabs>
+    <placeWorkers>
+      <li>PlaceWorker_NeedsFuelingPort</li>
+      <li>PlaceWorker_NotUnderRoof</li>
+    </placeWorkers>
+  </ThingDef>
+
+  <!-- CV-3 基础火箭（迁移自 DMS:NF，去除成本/科技依赖） -->
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Building_Rocket_CVThree</defName>
+    <dropPodActive>PF_ActivePod_CVThree</dropPodActive>
+    <dropPodFaller>PF_Skyfaller_Incoming_CVThree</dropPodFaller>
+    <label>CV-3 基础火箭</label>
+    <description>PFL 测试用 CV-3 火箭。</description>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/ZQ_Rocket</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(10,10)</drawSize>
+      <drawOffset>(0,0,4)</drawOffset>
+    </graphicData>
+    <size>(1,1)</size>
+    <rotatable>false</rotatable>
+    <tickerType>Normal</tickerType>
+    <altitudeLayer>BuildingOnTop</altitudeLayer>
+    <passability>PassThroughOnly</passability>
+    <castEdgeShadows>false</castEdgeShadows>
+    <fillPercent>0.5</fillPercent>
+    <uiOrder>2202</uiOrder>
+    <terrainAffordanceNeeded>Heavy</terrainAffordanceNeeded>
+    <statBases>
+      <MaxHitPoints>1500</MaxHitPoints>
+      <Flammability>0.5</Flammability>
+    </statBases>
+    <comps>
+      <li Class="CompProperties_Transporter">
+        <restEffectiveness>0.8</restEffectiveness>
+        <massCapacity>15000</massCapacity>
+      </li>
+      <li Class="CompProperties_Launchable_TransportPod">
+        <activeTransporterDef>PF_ActivePod_CVThree</activeTransporterDef>
+        <skyfallerLeaving>PF_Skyfaller_Leaving_CVThree</skyfallerLeaving>
+      </li>
+    </comps>
+    <inspectorTabs>
+      <li>ITab_ContentsTransporter</li>
+    </inspectorTabs>
+    <placeWorkers>
+      <li>PlaceWorker_NeedsFuelingPort</li>
+      <li>PlaceWorker_NotUnderRoof</li>
+    </placeWorkers>
+  </ThingDef>
+
+  <!-- CV-1 离港/入轨/落地 -->
+  <ThingDef ParentName="DropPodLeaving">
+    <defName>PF_Skyfaller_Leaving_CVOne</defName>
+    <label>CV-1 rocket (leaving)</label>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/R7_Rocket</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <shaderType>CutoutFlying</shaderType>
+      <drawRotated>false</drawRotated>
+      <drawSize>(10,10)</drawSize>
+      <drawOffset>(0,0,4)</drawOffset>
+    </graphicData>
+    <comps>
+      <li Class="PioneerFramework.Launch.CompProperties_RocketTangentGraphic" />
+      <li Class="PioneerFramework.Launch.CompProperties_RocketExhaustTrail">
+        <delayTicks>5</delayTicks>
+        <centerToEngineBackset>1.0</centerToEngineBackset>
+        <exhaustFleck>Smoke</exhaustFleck>
+        <smokeFleck>Smoke</smokeFleck>
+      </li>
+    </comps>
+  </ThingDef>
+
+  <ThingDef ParentName="DropPodIncoming">
+    <defName>PF_Skyfaller_Incoming_CVOne</defName>
+    <label>CV-1 capsule (incoming)</label>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/R7ReturnCarbin</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <shaderType>CutoutFlying</shaderType>
+      <drawRotated>false</drawRotated>
+      <drawSize>(3,3)</drawSize>
+      <drawOffset>(0,0,0.5)</drawOffset>
+    </graphicData>
+    <skyfaller>
+      <movementType>Decelerate</movementType>
+      <ticksToImpactRange>
+        <min>120</min>
+        <max>120</max>
+      </ticksToImpactRange>
+      <speed>1.0</speed>
+    </skyfaller>
+    <comps>
+      <li Class="PioneerFramework.Launch.CompProperties_RocketTangentGraphic" />
+      <li Class="PioneerFramework.Launch.CompProperties_RocketLandingBurn">
+        <burnDurationSeconds>0.5</burnDurationSeconds>
+        <engineBackset>1.0</engineBackset>
+        <flameFleck>Smoke</flameFleck>
+        <smokePuffsPerTick>2</smokePuffsPerTick>
+        <flameBurstsPerTick>1</flameBurstsPerTick>
+      </li>
+    </comps>
+  </ThingDef>
+
+  <ThingDef ParentName="ActiveDropPod">
+    <defName>PF_ActivePod_CVOne</defName>
+    <label>CV-1 active pod</label>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/R7ReturnCarbin</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(2,2)</drawSize>
+    </graphicData>
+  </ThingDef>
+
+  <!-- CV-3 离港/入轨/落地 -->
+  <ThingDef ParentName="DropPodLeaving">
+    <defName>PF_Skyfaller_Leaving_CVThree</defName>
+    <label>CV-3 rocket (leaving)</label>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/ZQ_Rocket</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <shaderType>CutoutFlying</shaderType>
+      <drawRotated>false</drawRotated>
+      <drawSize>(10,10)</drawSize>
+      <drawOffset>(0,0,4)</drawOffset>
+    </graphicData>
+    <comps>
+      <li Class="PioneerFramework.Launch.CompProperties_RocketTangentGraphic" />
+      <li Class="PioneerFramework.Launch.CompProperties_RocketExhaustTrail">
+        <delayTicks>5</delayTicks>
+        <centerToEngineBackset>1.0</centerToEngineBackset>
+        <exhaustFleck>Smoke</exhaustFleck>
+        <smokeFleck>Smoke</smokeFleck>
+      </li>
+    </comps>
+  </ThingDef>
+
+  <ThingDef ParentName="DropPodIncoming">
+    <defName>PF_Skyfaller_Incoming_CVThree</defName>
+    <label>CV-3 capsule (incoming)</label>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/ZQReturnCarbin</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <shaderType>CutoutFlying</shaderType>
+      <drawRotated>false</drawRotated>
+      <drawSize>(3,3)</drawSize>
+      <drawOffset>(0,0,0.5)</drawOffset>
+    </graphicData>
+    <skyfaller>
+      <movementType>Decelerate</movementType>
+      <ticksToImpactRange>
+        <min>120</min>
+        <max>120</max>
+      </ticksToImpactRange>
+      <speed>1.0</speed>
+    </skyfaller>
+    <comps>
+      <li Class="PioneerFramework.Launch.CompProperties_RocketTangentGraphic" />
+      <li Class="PioneerFramework.Launch.CompProperties_RocketLandingBurn">
+        <burnDurationSeconds>0.5</burnDurationSeconds>
+        <engineBackset>1.0</engineBackset>
+        <flameFleck>Smoke</flameFleck>
+        <smokePuffsPerTick>2</smokePuffsPerTick>
+        <flameBurstsPerTick>1</flameBurstsPerTick>
+      </li>
+    </comps>
+  </ThingDef>
+
+  <ThingDef ParentName="ActiveDropPod">
+    <defName>PF_ActivePod_CVThree</defName>
+    <label>CV-3 active pod</label>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/ZQReturnCarbin</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(2,2)</drawSize>
+    </graphicData>
+  </ThingDef>
+
+</Defs>

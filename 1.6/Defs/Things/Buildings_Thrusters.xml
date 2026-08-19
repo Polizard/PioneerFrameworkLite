@@ -8,7 +8,7 @@
     <category>Building</category>
     <thingClass>Building</thingClass>
     <graphicData>
-      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <texPath>Things/Building/SpaceLaunchTechnology/ZQ_Rocket</texPath>
       <graphicClass>Graphic_Multi</graphicClass>
     </graphicData>
     <altitudeLayer>Building</altitudeLayer>
@@ -43,7 +43,7 @@
     <category>Building</category>
     <thingClass>Building</thingClass>
     <graphicData>
-      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <texPath>Things/Building/SpaceLaunchTechnology/ZQ_Rocket</texPath>
       <graphicClass>Graphic_Multi</graphicClass>
     </graphicData>
     <altitudeLayer>Building</altitudeLayer>
@@ -78,7 +78,7 @@
     <category>Building</category>
     <thingClass>Building</thingClass>
     <graphicData>
-      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <texPath>Things/Building/SpaceLaunchTechnology/ZQ_Rocket</texPath>
       <graphicClass>Graphic_Multi</graphicClass>
     </graphicData>
     <altitudeLayer>Building</altitudeLayer>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+
+  <PioneerFramework.Launch.RocketRecoveryDef>
+    <defName>PF_RocketRecovery_Basic</defName>
+    <launchedRocketDef>PF_Building_Rocket_Recoverable_Basic</launchedRocketDef>
+    <frameDef>PF_Building_RocketFrame_Basic</frameDef>
+    <returnedThingDef>PF_Building_Booster_Returned_Basic</returnedThingDef>
+    <incomingSkyfallerDef>PF_Skyfaller_Incoming_Basic</incomingSkyfallerDef>
+    <activePodDef>PF_ActivePod_Basic</activePodDef>
+    <rebuildCost>
+      <li>
+        <thingDef>Steel</thingDef>
+        <count>100</count>
+      </li>
+    </rebuildCost>
+  </PioneerFramework.Launch.RocketRecoveryDef>
+
+</Defs>

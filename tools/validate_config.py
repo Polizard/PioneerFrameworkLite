@@ -38,7 +38,14 @@ def main():
         for child in root:
             def_name = child.findtext("defName")
             if def_name:
-                def_names.add(def_name.strip())
+                def_name = def_name.strip()
+                def_names.add(def_name)
+                # Rule 1: ThingDef defName must not end with a numerical digit.
+                if child.tag == "ThingDef" and def_name[-1].isdigit():
+                    fail(
+                        f"{xml_path.relative_to(ROOT)}: ThingDef defName '{def_name}' "
+                        "ends with a numerical digit, which is not allowed on ThingDefs."
+                    )
 
     patches_dir = ROOT / "1.6" / "Patches"
     if patches_dir.exists():
@@ -159,6 +166,33 @@ def main():
             ET.parse(load_folders)
         except ET.ParseError as e:
             fail(f"LoadFolders.xml: XML parse error: {e}")
+
+    # 7. Rule 2: every graphicData/texPath must resolve to an actual texture.
+    #    Check PFL 1.6/Textures first. Base-game textures are packed in Unity assets
+    #    (no loose file on disk), so valid base references are tracked via an allowlist.
+    KNOWN_BASE_TEX = {
+        # 原版酿造桶贴图（打包在 Unity 资源里，无法用文件系统校验）
+        "Things/Building/Production/FermentingBarrel",
+    }
+
+    def texture_file(tex_path):
+        local = ROOT / "1.6" / "Textures" / f"{tex_path}.png"
+        if local.is_file():
+            return local
+        return None
+
+    for xml_path, root in xml_roots:
+        for child in root:
+            tex = child.findtext("graphicData/texPath")
+            if tex:
+                tex = tex.strip()
+                if texture_file(tex) is None and tex not in KNOWN_BASE_TEX:
+                    fail(
+                        f"{xml_path.relative_to(ROOT)}: def '{child.findtext('defName')}' "
+                        f"references missing texture '{tex}' (not in 1.6/Textures or "
+                        "known base textures)."
+                    )
+
 
     print(
         f"OK: {len(def_names)} defs, {len(fields)} DefOf fields, "

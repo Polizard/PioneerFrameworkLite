@@ -8,7 +8,7 @@
     <thingClass>Building</thingClass>
     <tickerType>Normal</tickerType>
     <graphicData>
-      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <texPath>Things/Building/SpaceLaunchTechnology/LaunchPadS</texPath>
       <graphicClass>Graphic_Multi</graphicClass>
       <drawSize>(1,1)</drawSize>
       <shadowData>
@@ -43,7 +43,7 @@
     <thingClass>Building</thingClass>
     <tickerType>Normal</tickerType>
     <graphicData>
-      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <texPath>Things/Building/SpaceLaunchTechnology/LaunchPadS</texPath>
       <graphicClass>Graphic_Multi</graphicClass>
       <drawSize>(1,1)</drawSize>
       <shadowData>
@@ -76,7 +76,7 @@
     <thingClass>Building</thingClass>
     <tickerType>Normal</tickerType>
     <graphicData>
-      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <texPath>Things/Building/SpaceLaunchTechnology/LaunchPadS</texPath>
       <graphicClass>Graphic_Multi</graphicClass>
       <drawSize>(1,1)</drawSize>
       <shadowData>
