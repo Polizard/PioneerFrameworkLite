@@ -17,11 +17,13 @@ namespace PioneerFramework.Launch
         private const int EarthBodyId = 1;
 
         /// <summary>生成一份 PFL 调试火箭设计，供发射台调试 Gizmo 使用。</summary>
-        public static RocketDesignSpec CreateDebugDesign()
+        public static RocketDesignSpec CreateDebugDesign(bool recoverable = true)
         {
             return new RocketDesignSpec
             {
-                rocketDefName = "PF_Building_Rocket_Recoverable_Basic",
+                rocketDefName = recoverable
+                    ? "PF_Building_Rocket_Recoverable_Basic"
+                    : "PF_Building_Rocket_Basic",
                 frameSize = 3,
                 mapWidth = 40,
                 mapHeight = 40,
@@ -47,14 +49,37 @@ namespace PioneerFramework.Launch
             if (map == null || spec == null)
                 return false;
 
-            ThingDef frameDef = DefDatabase<ThingDef>.GetNamedSilentFail("PF_Building_RocketFrame_Basic");
-            if (frameDef == null)
+            ThingDef rocketDef = DefDatabase<ThingDef>.GetNamedSilentFail(spec.rocketDefName);
+            if (rocketDef == null)
             {
-                Log.Error("[PioneerFramework] Missing debug rocket frame def: PF_Building_RocketFrame_Basic");
+                Log.Error($"[PioneerFramework] Missing rocket def for frame: {spec.rocketDefName}");
                 return false;
             }
 
-            Thing frame = ThingMaker.MakeThing(frameDef);
+            string frameDefName = rocketDef.defName == "PF_Building_Rocket_Basic"
+                ? "PF_Building_RocketFrame_Basic_NonRecoverable"
+                : "PF_Building_RocketFrame_Basic";
+            ThingDef frameDef = DefDatabase<ThingDef>.GetNamedSilentFail(frameDefName);
+            if (frameDef == null)
+            {
+                Log.Error($"[PioneerFramework] Missing debug rocket frame def: {frameDefName}");
+                return false;
+            }
+
+            if (frameDef.entityDefToBuild != rocketDef)
+            {
+                Log.Error($"[PioneerFramework] Frame {frameDef.defName} is bound to {frameDef.entityDefToBuild?.defName ?? "null"}, not {spec.rocketDefName}.");
+                return false;
+            }
+
+            Frame frame = ThingMaker.MakeThing(frameDef) as Frame;
+            if (frame == null)
+            {
+                Log.Error($"[PioneerFramework] {frameDef.defName} is not a RimWorld.Frame; cannot spawn rocket frame.");
+                return false;
+            }
+
+            frame.SetFactionDirect(Faction.OfPlayer);
             GenSpawn.Spawn(frame, center, map, Rot4.North, WipeMode.VanishOrMoveAside);
             if (!frame.Spawned)
             {
@@ -77,6 +102,13 @@ namespace PioneerFramework.Launch
         {
             if (groundMap == null || spec == null)
                 return null;
+
+            ThingDef rocketDef = DefDatabase<ThingDef>.GetNamedSilentFail(spec.rocketDefName);
+            if (rocketDef == null)
+            {
+                Log.Error($"[PioneerFramework] Missing rocket def for launch: {spec.rocketDefName}");
+                return null;
+            }
 
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null)
@@ -129,13 +161,40 @@ namespace PioneerFramework.Launch
 
             group.EnterCircularOrbit(Find.TickManager.TicksGame, EarthBodyId);
 
-            DestroyGroundRocket(groundMap, center);
+            DestroyGroundRocket(groundMap, center, rocketDef);
+            TrySpawnLeavingSkyfaller(groundMap, center, rocketDef);
             TryTriggerLaunchFx(groundMap, center);
             TryTriggerBoosterRecovery(groundMap, center, spec.rocketDefName);
 
             Log.Message($"[PioneerFramework] Launch complete: entity={entityId}, group={groupId}, map={entity.MapId}, rocket={spec.rocketDefName}");
             Messages.Message("火箭已入轨。", MessageTypeDefOf.TaskCompletion, false);
             return entity;
+        }
+
+        /// <summary>发射瞬间生成 DMS 风格的离港 Skyfaller，让火箭贴图沿轨迹飞离而不是直接消失。</summary>
+        private static void TrySpawnLeavingSkyfaller(Map map, IntVec3 center, ThingDef rocketDef)
+        {
+            if (map == null || rocketDef?.comps == null)
+                return;
+
+            CompProperties_Launchable launchable = null;
+            for (int i = 0; i < rocketDef.comps.Count; i++)
+            {
+                if (rocketDef.comps[i] is CompProperties_Launchable la)
+                {
+                    launchable = la;
+                    break;
+                }
+            }
+
+            ThingDef skyfallerDef = launchable?.skyfallerLeaving;
+            if (skyfallerDef == null)
+            {
+                Log.Warning($"[PioneerFramework] No skyfallerLeaving for {rocketDef.defName}; launch animation skipped.");
+                return;
+            }
+
+            SkyfallerMaker.SpawnSkyfaller(skyfallerDef, center, map);
         }
 
         private static void TryTriggerLaunchFx(Map map, IntVec3 center)
@@ -171,8 +230,8 @@ namespace PioneerFramework.Launch
             RocketBoosterReturnUtility.TrySpawnReturnedBooster(launchpad, rocketDef);
         }
 
-        /// <summary>移除地面上的调试火箭框架（发射后地面火箭消失，发射台保留）。</summary>
-        private static void DestroyGroundRocket(Map map, IntVec3 center)
+        /// <summary>移除地面上的火箭/调试火箭框架（发射后地面火箭消失，发射台保留）。</summary>
+        private static void DestroyGroundRocket(Map map, IntVec3 center, ThingDef rocketDef)
         {
             if (map == null)
                 return;
@@ -181,7 +240,13 @@ namespace PioneerFramework.Launch
             for (int i = things.Count - 1; i >= 0; i--)
             {
                 Thing t = things[i];
-                if (t != null && !t.Destroyed && t.def.defName == "PF_Building_RocketFrame_Basic")
+                if (t == null || t.Destroyed)
+                    continue;
+
+                bool isTargetRocket = t.def == rocketDef
+                    || t.def.defName == "PF_Building_RocketFrame_Basic"
+                    || LaunchPadUtility.IsRocket(t.def);
+                if (isTargetRocket)
                 {
                     t.Destroy(DestroyMode.Vanish);
                 }

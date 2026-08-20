@@ -40,7 +40,8 @@ namespace PioneerFramework.GroundAssembly.Patches
                 if (launchpad == null)
                     return;
 
-                bool canPlace = LaunchPadUtility.CanRebuildOnPad(def, launchpad.def);
+                bool canPlace = LaunchPadUtility.IsWithinBuildableArea(launchpad, center, def, rot)
+                    && LaunchPadUtility.CanRebuildOnPad(def, launchpad.def);
                 Color markerColor = canPlace ? ValidCenterColor : InvalidCenterColor;
                 Vector3 drawPos = center.ToVector3ShiftedWithAltitude(AltitudeLayer.MetaOverlays);
                 Material mat = SolidColorMaterials.SimpleSolidColorMaterial(markerColor);

@@ -29,7 +29,7 @@ namespace PioneerFramework.GroundAssembly
             if (!LaunchPadUtility.CanRebuildOnPad(building.def, launchpad.def))
                 return false;
 
-            if (building.Position != launchpad.Position)
+            if (!LaunchPadUtility.IsWithinBuildableArea(launchpad, building.Position, building.def, building.Rotation))
                 return false;
 
             if (building.Map.designationManager.DesignationOn(building, PFLaunchDefOf.PF_DesignateRebuildRocket) == null)

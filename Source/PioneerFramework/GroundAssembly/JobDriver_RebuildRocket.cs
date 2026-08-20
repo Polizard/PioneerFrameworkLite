@@ -32,7 +32,7 @@ namespace PioneerFramework.GroundAssembly
             this.FailOnDestroyedOrNull(ReturnedRocketInd);
             this.FailOn(() => ReturnedRocket == null || Map.designationManager.DesignationOn(ReturnedRocket, PFLaunchDefOf.PF_DesignateRebuildRocket) == null);
             this.FailOn(() => Launchpad == null || !LaunchPadUtility.IsAssemblyPad(Launchpad.def));
-            this.FailOn(() => ReturnedRocket.Position != Launchpad.Position);
+            this.FailOn(() => !LaunchPadUtility.IsWithinBuildableArea(Launchpad, ReturnedRocket.Position, ReturnedRocket.def, ReturnedRocket.Rotation));
 
             yield return Toils_Goto.GotoThing(ReturnedRocketInd, PathEndMode.Touch);
             yield return Toils_General.Wait(ConvertWaitTicks).WithProgressBarToilDelay(ReturnedRocketInd).FailOnCannotTouch(ReturnedRocketInd, PathEndMode.Touch);

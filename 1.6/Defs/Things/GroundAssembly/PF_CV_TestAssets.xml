@@ -10,7 +10,7 @@
     <graphicData>
       <texPath>Things/Building/SpaceLaunchTechnology/LaunchPadS</texPath>
       <graphicClass>Graphic_Single</graphicClass>
-      <drawSize>(8,8)</drawSize>
+      <drawSize>(9,9)</drawSize>
       <damageData>
         <enabled>true</enabled>
         <rect>(0,0,7,7)</rect>
@@ -151,7 +151,7 @@
   </ThingDef>
 
   <!-- CV-1 离港/入轨/落地 -->
-  <ThingDef ParentName="DropPodLeaving">
+  <ThingDef ParentName="PF_RocketLeavingBase">
     <defName>PF_Skyfaller_Leaving_CVOne</defName>
     <label>CV-1 rocket (leaving)</label>
     <graphicData>
@@ -162,15 +162,6 @@
       <drawSize>(10,10)</drawSize>
       <drawOffset>(0,0,4)</drawOffset>
     </graphicData>
-    <comps>
-      <li Class="PioneerFramework.Launch.CompProperties_RocketTangentGraphic" />
-      <li Class="PioneerFramework.Launch.CompProperties_RocketExhaustTrail">
-        <delayTicks>5</delayTicks>
-        <centerToEngineBackset>1.0</centerToEngineBackset>
-        <exhaustFleck>Smoke</exhaustFleck>
-        <smokeFleck>Smoke</smokeFleck>
-      </li>
-    </comps>
   </ThingDef>
 
   <ThingDef ParentName="DropPodIncoming">
@@ -215,7 +206,7 @@
   </ThingDef>
 
   <!-- CV-3 离港/入轨/落地 -->
-  <ThingDef ParentName="DropPodLeaving">
+  <ThingDef ParentName="PF_RocketLeavingBase">
     <defName>PF_Skyfaller_Leaving_CVThree</defName>
     <label>CV-3 rocket (leaving)</label>
     <graphicData>
@@ -226,15 +217,6 @@
       <drawSize>(10,10)</drawSize>
       <drawOffset>(0,0,4)</drawOffset>
     </graphicData>
-    <comps>
-      <li Class="PioneerFramework.Launch.CompProperties_RocketTangentGraphic" />
-      <li Class="PioneerFramework.Launch.CompProperties_RocketExhaustTrail">
-        <delayTicks>5</delayTicks>
-        <centerToEngineBackset>1.0</centerToEngineBackset>
-        <exhaustFleck>Smoke</exhaustFleck>
-        <smokeFleck>Smoke</smokeFleck>
-      </li>
-    </comps>
   </ThingDef>
 
   <ThingDef ParentName="DropPodIncoming">

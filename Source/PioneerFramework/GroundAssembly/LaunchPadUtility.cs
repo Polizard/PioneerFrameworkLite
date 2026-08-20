@@ -62,6 +62,38 @@ namespace PioneerFramework.GroundAssembly
             return null;
         }
 
+        /// <summary>
+        /// 发射台可建造区域。
+        /// 当前固定为发射台中心的 3×3 区域；后续可扩展为发射台等级/大小配置。
+        /// </summary>
+        public static CellRect GetBuildableArea(Building pad)
+        {
+            if (pad == null || !pad.Spawned)
+                return CellRect.Empty;
+
+            CellRect occupied = pad.OccupiedRect();
+            return CellRect.CenteredOn(occupied.CenterCell, 3, 3);
+        }
+
+        /// <summary>
+        /// 判断一个待放置物（含多格建筑）是否完全落在发射台可建造区域内。
+        /// </summary>
+        public static bool IsWithinBuildableArea(Building pad, IntVec3 center, ThingDef def, Rot4 rot)
+        {
+            if (pad == null || def == null)
+                return false;
+
+            CellRect area = GetBuildableArea(pad);
+            CellRect rect = GenAdj.OccupiedRect(center, rot, def.Size);
+            foreach (IntVec3 cell in rect.Cells)
+            {
+                if (!area.Contains(cell))
+                    return false;
+            }
+
+            return true;
+        }
+
         /// <summary>返回舱是否可在该发射台上重建。当前统一允许所有 PFL 总装台，后续可加尺寸限制。</summary>
         public static bool CanRebuildOnPad(ThingDef returnedDef, ThingDef padDef)
         {

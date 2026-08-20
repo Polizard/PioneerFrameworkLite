@@ -56,6 +56,14 @@ namespace PioneerFramework.GroundAssembly
             state = LaunchPadState.Designing;
         }
 
+        /// <summary>直接登记一座已完工火箭（调试重建用），让发射台可直接发射它。</summary>
+        public void SetCompletedRocket(RocketDesignSpec newDesign, Thing rocket)
+        {
+            design = newDesign ?? new RocketDesignSpec();
+            builtRocket = rocket;
+            state = LaunchPadState.Completed;
+        }
+
         /// <summary>确认设计，生成未完工火箭框架。</summary>
         public bool TryStartBuild()
         {
@@ -70,12 +78,13 @@ namespace PioneerFramework.GroundAssembly
             if (parent == null || parent.Map == null)
                 return false;
 
-            if (!LaunchService.SpawnDebugRocketFrame(parent.Map, parent.Position, design))
+            IntVec3 center = parent.OccupiedRect().CenterCell;
+            if (!LaunchService.SpawnDebugRocketFrame(parent.Map, center, design))
                 return false;
 
             state = LaunchPadState.Building;
-            builtRocket = parent.Map.thingGrid.ThingsListAt(parent.Position)
-                .FirstOrDefault(t => t.def.defName == "PF_Building_RocketFrame_Basic");
+            builtRocket = parent.Map.thingGrid.ThingsListAt(center)
+                .FirstOrDefault(t => LaunchPadUtility.IsRocket(t.def));
             return true;
         }
 
@@ -85,7 +94,10 @@ namespace PioneerFramework.GroundAssembly
             if (design == null || parent == null || parent.Map == null)
                 return false;
 
-            var entity = LaunchService.LaunchFromGround(parent.Map, parent.Position, design);
+            IntVec3 rocketPos = builtRocket != null && builtRocket.Spawned
+                ? builtRocket.Position
+                : parent.OccupiedRect().CenterCell;
+            var entity = LaunchService.LaunchFromGround(parent.Map, rocketPos, design);
             if (entity == null)
                 return false;
 
@@ -105,7 +117,11 @@ namespace PioneerFramework.GroundAssembly
                 LaunchPadState.Completed => "已完工",
                 _ => "未知"
             };
-            string designText = design != null ? design.rocketDefName : "无设计";
+            string designText = design != null
+                ? (design.rocketDefName == "PF_Building_Rocket_Recoverable_Basic" ? "可回收火箭"
+                    : design.rocketDefName == "PF_Building_Rocket_Basic" ? "不可回收火箭"
+                    : design.rocketDefName)
+                : "无设计";
             return "发射台状态: " + stateText + "\n设计: " + designText;
         }
 
@@ -119,13 +135,25 @@ namespace PioneerFramework.GroundAssembly
 
             yield return new Command_Action
             {
-                defaultLabel = "新建调试设计",
-                defaultDesc = "为发射台创建一份 PFL 调试火箭设计。",
+                defaultLabel = "新建可回收火箭设计",
+                defaultDesc = "创建一份可回收火箭设计，之后可确认并生成框架。",
                 icon = TexCommand.DesirePower,
                 action = delegate
                 {
-                    SetDesign(LaunchService.CreateDebugDesign());
-                    Messages.Message("调试火箭设计已创建。", MessageTypeDefOf.SilentInput, false);
+                    SetDesign(LaunchService.CreateDebugDesign(true));
+                    Messages.Message("可回收火箭设计已创建。", MessageTypeDefOf.SilentInput, false);
+                }
+            };
+
+            yield return new Command_Action
+            {
+                defaultLabel = "新建不可回收火箭设计",
+                defaultDesc = "创建一份不可回收火箭设计，之后可确认并生成框架。",
+                icon = TexCommand.DesirePower,
+                action = delegate
+                {
+                    SetDesign(LaunchService.CreateDebugDesign(false));
+                    Messages.Message("不可回收火箭设计已创建。", MessageTypeDefOf.SilentInput, false);
                 }
             };
 

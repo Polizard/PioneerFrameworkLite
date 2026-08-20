@@ -7,7 +7,7 @@ using Verse;
 namespace PioneerFramework.GroundAssembly.Patches
 {
     /// <summary>
-    /// PlaceWorker_NeedsFuelingPort 补丁：PFL 火箭/返回舱必须放在总装发射台中心。
+    /// PlaceWorker_NeedsFuelingPort 补丁：PFL 火箭/返回舱必须放在总装发射台可建造区域内。
     /// </summary>
     public static class PlaceWorker_NeedsFuelingPortPatches
     {
@@ -39,9 +39,9 @@ namespace PioneerFramework.GroundAssembly.Patches
                 {
                     if (LaunchPadUtility.IsReturnedBooster(thingDef))
                     {
-                        if (center != fuelingPortGiver.Position)
+                        if (!LaunchPadUtility.IsWithinBuildableArea(fuelingPortGiver, center, thingDef, rot))
                         {
-                            __result = new AcceptanceReport("回收第一级必须放在总装发射台中心。");
+                            __result = new AcceptanceReport("回收第一级必须放在总装发射台可建造区域内。");
                             return false;
                         }
 
@@ -51,7 +51,7 @@ namespace PioneerFramework.GroundAssembly.Patches
                             return false;
                         }
 
-                        if (IsOccupied(map, center, thingDef))
+                        if (IsOccupied(map, fuelingPortGiver, thingDef))
                         {
                             __result = new AcceptanceReport("总装发射台已被占用。");
                             return false;
@@ -63,9 +63,9 @@ namespace PioneerFramework.GroundAssembly.Patches
 
                     if (LaunchPadUtility.IsRocket(thingDef))
                     {
-                        if (center != fuelingPortGiver.Position)
+                        if (!LaunchPadUtility.IsWithinBuildableArea(fuelingPortGiver, center, thingDef, rot))
                         {
-                            __result = new AcceptanceReport("火箭必须放在总装发射台中心。");
+                            __result = new AcceptanceReport("火箭必须放在总装发射台可建造区域内。");
                             return false;
                         }
 
@@ -75,7 +75,7 @@ namespace PioneerFramework.GroundAssembly.Patches
                             return false;
                         }
 
-                        if (IsOccupied(map, center, thingDef))
+                        if (IsOccupied(map, fuelingPortGiver, thingDef))
                         {
                             __result = new AcceptanceReport("总装发射台已被占用。");
                             return false;
@@ -91,16 +91,20 @@ namespace PioneerFramework.GroundAssembly.Patches
                 return true;
             }
 
-            private static bool IsOccupied(Map map, IntVec3 center, ThingDef placingDef)
+            private static bool IsOccupied(Map map, Building pad, ThingDef placingDef)
             {
-                List<Thing> thingsAtCell = map.thingGrid.ThingsListAt(center);
-                for (int i = 0; i < thingsAtCell.Count; i++)
+                CellRect area = LaunchPadUtility.GetBuildableArea(pad);
+                foreach (IntVec3 cell in area.Cells)
                 {
-                    Thing t = thingsAtCell[i];
-                    if (t is Building && t.def != placingDef &&
-                        (LaunchPadUtility.IsRocket(t.def) || LaunchPadUtility.IsReturnedBooster(t.def)))
+                    List<Thing> thingsAtCell = map.thingGrid.ThingsListAt(cell);
+                    for (int i = 0; i < thingsAtCell.Count; i++)
                     {
-                        return true;
+                        Thing t = thingsAtCell[i];
+                        if (t is Building && t.def != placingDef &&
+                            (LaunchPadUtility.IsRocket(t.def) || LaunchPadUtility.IsReturnedBooster(t.def)))
+                        {
+                            return true;
+                        }
                     }
                 }
 
@@ -137,9 +141,10 @@ namespace PioneerFramework.GroundAssembly.Patches
                 if (launchpad == null)
                     return false;
 
-                bool canPlace = LaunchPadUtility.IsReturnedBooster(def)
-                    ? LaunchPadUtility.CanRebuildOnPad(def, launchpad.def)
-                    : LaunchPadUtility.CanLaunchFromPad(def, launchpad.def);
+                bool canPlace = LaunchPadUtility.IsWithinBuildableArea(launchpad, center, def, rot)
+                    && (LaunchPadUtility.IsReturnedBooster(def)
+                        ? LaunchPadUtility.CanRebuildOnPad(def, launchpad.def)
+                        : LaunchPadUtility.CanLaunchFromPad(def, launchpad.def));
 
                 Color color = canPlace ? ValidColor : InvalidColor;
                 Vector3 drawPos = center.ToVector3ShiftedWithAltitude(AltitudeLayer.MetaOverlays);

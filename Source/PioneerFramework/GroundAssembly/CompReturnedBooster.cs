@@ -73,6 +73,69 @@ namespace PioneerFramework.GroundAssembly
                     }
                 };
             }
+
+            Command_Action directRebuild = new Command_Action
+            {
+                defaultLabel = "直接重建完成 (调试)",
+                defaultDesc = "跳过施工，立即把回收第一级重建为已完工火箭。",
+                icon = TexCommand.Install,
+                action = delegate
+                {
+                    DebugDirectRebuild();
+                }
+            };
+            if (!CanRebuildNow(out string directDisableReason))
+                directRebuild.Disable(directDisableReason);
+            yield return directRebuild;
+        }
+
+        private void DebugDirectRebuild()
+        {
+            if (parent == null || parent.Map == null || parent.Destroyed)
+                return;
+
+            RocketRecoveryDef recovery = FindRecovery(parent.def);
+            if (recovery == null)
+            {
+                Messages.Message("找不到回收配置。", MessageTypeDefOf.RejectInput);
+                return;
+            }
+
+            Map map = parent.Map;
+            Building launchpad = map.thingGrid.ThingsListAt(parent.Position)
+                .OfType<Building>()
+                .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
+            if (launchpad == null || !LaunchPadUtility.IsWithinBuildableArea(launchpad, parent.Position, parent.def, parent.Rotation))
+            {
+                Messages.Message("回收第一级不在发射台可建造区域内。", MessageTypeDefOf.RejectInput);
+                return;
+            }
+
+            ThingDef rocketDef = recovery.launchedRocketDef ?? DefDatabase<ThingDef>.GetNamedSilentFail(recovery.defName);
+            if (rocketDef == null)
+            {
+                Messages.Message("找不到目标火箭 Def。", MessageTypeDefOf.RejectInput);
+                return;
+            }
+
+            IntVec3 pos = parent.Position;
+            Rot4 rot = rocketDef.rotatable ? parent.Rotation : Rot4.North;
+            Thing rocket = ThingMaker.MakeThing(rocketDef);
+            if (Faction.OfPlayer != null)
+                rocket.SetFactionDirect(Faction.OfPlayer);
+
+            parent.Destroy(DestroyMode.Vanish);
+            GenSpawn.Spawn(rocket, pos, map, rot, WipeMode.VanishOrMoveAside);
+
+            CompAssemblyPad padComp = launchpad.TryGetComp<CompAssemblyPad>();
+            if (padComp != null)
+            {
+                RocketDesignSpec spec = LaunchService.CreateDebugDesign(true);
+                spec.rocketDefName = rocketDef.defName;
+                padComp.SetCompletedRocket(spec, rocket);
+            }
+
+            Messages.Message("回收第一级已直接重建完成。", MessageTypeDefOf.PositiveEvent);
         }
 
         private bool CanRebuildNow(out string disableReason)
@@ -94,9 +157,9 @@ namespace PioneerFramework.GroundAssembly
                 return false;
             }
 
-            if (parent.Position != launchpad.Position)
+            if (!LaunchPadUtility.IsWithinBuildableArea(launchpad, parent.Position, parent.def, parent.Rotation))
             {
-                disableReason = "不在发射台中心。";
+                disableReason = "不在发射台可建造区域内。";
                 return false;
             }
 
