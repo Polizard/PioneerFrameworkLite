@@ -9,10 +9,7 @@
     <incomingSkyfallerDef>PF_Skyfaller_Incoming_Basic_Booster</incomingSkyfallerDef>
     <activePodDef>PF_ActivePod_Basic_Booster</activePodDef>
     <rebuildCost>
-      <li>
-        <thingDef>Steel</thingDef>
-        <count>100</count>
-      </li>
+      <Steel>100</Steel>
     </rebuildCost>
   </PioneerFramework.Launch.RocketRecoveryDef>
 

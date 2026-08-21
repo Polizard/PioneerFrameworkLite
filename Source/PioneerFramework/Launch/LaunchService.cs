@@ -194,7 +194,25 @@ namespace PioneerFramework.Launch
                 return;
             }
 
-            SkyfallerMaker.SpawnSkyfaller(skyfallerDef, center, map);
+            Skyfaller skyfaller = launchable?.activeTransporterDef != null
+                ? SkyfallerMaker.MakeSkyfaller(skyfallerDef, launchable.activeTransporterDef)
+                : SkyfallerMaker.MakeSkyfaller(skyfallerDef);
+
+            // PFL 的离港动画只是视觉演出，不创建真实运输舱世界物体；
+            // 若不关掉 createWorldObject，FlyShipLeaving 会在离图时因 groupID=-1 报错。
+            if (skyfaller is RimWorld.FlyShipLeaving flyLeaving)
+            {
+                if (launchable?.activeTransporterDef == null)
+                {
+                    Log.Warning($"[PioneerFramework] {skyfallerDef.defName} is FlyShipLeaving but has no activeTransporterDef; skipping launch animation.");
+                    skyfaller.Destroy(DestroyMode.Vanish);
+                    return;
+                }
+
+                flyLeaving.createWorldObject = false;
+            }
+
+            GenSpawn.Spawn(skyfaller, center, map);
         }
 
         private static void TryTriggerLaunchFx(Map map, IntVec3 center)

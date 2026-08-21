@@ -116,7 +116,7 @@
 | LA-11 | P1 | 对接口预留 | 为 Pawn↔Pawn、Pawn↔非Pawn、非Pawn↔非Pawn 三种对接预留结构 | ⬜ 待办 |
 | LA-12 | P0 | 发射条件校验 | 至少 1 有人控制台；房间封闭；燃料足够；气体系统可选 | ⬜ 待办 |
 | LA-13 | P1 | 燃料加注 | 玩家把燃料搬到发射台，写入 Part 储罐参数；保留 RimPipe 扩展点 | ⬜ 待办 |
-| LA-14 | P0 | 发射入轨 | 校验通过后主地图火箭消失、发射台保留；生成/关联 `SpaceEntity` + 单 `SpacePart`；参数来自 spec；口袋地图继续作舱内地图 | 🔵 进行中 |
+| LA-14 | P0 | 发射入轨 | 调试级已打通：主地图火箭消失、发射台保留，生成/关联 `SpaceEntity` + 单 `SpacePart` 并瞬间进入圆轨；待完善：发射条件校验、燃料/dV 消耗、正式入轨机动 | 🔵 进行中 |
 | LA-15 | P1 | Part 数据建模 | Part 不是地面/地图实体，数据保存在 `RocketDesignSpec`；施工代表建造 | 🔵 进行中 |
 | LA-16 | P2 | 检修口 | 口袋地图内可建造；可指定检修 Part 类型；维护 Job 抽象恢复耐久/消耗材料时间 | ⬜ 待办 |
 | LA-17 | P2 | 载荷配置与入轨 | 装配界面配置类型+数量+安装位置；首发只保存并随火箭入轨 | ⬜ 待办 |
@@ -125,11 +125,13 @@
 
 ---
 
-## 6. 已知问题（待查）
+## 6. 已知问题（已处理）
 
 | 问题 | 日志 | 状态 |
 |------|------|------|
-| `Could not resolve cross-reference: No Verse.ThingDef named Steel100 found to give to Verse.ThingDefCountClass (1x null)` | 游戏启动加载 Def 阶段出现 | 🔴 待查；PFL/DMS:NF/本地 Mods 目录均未找到 `Steel100` 字面量，疑似外部 mod 或旧存档/运行时拼接生成 |
+| `Could not resolve cross-reference: No Verse.ThingDef named Steel100 found to give to Verse.ThingDefCountClass (1x null)` | 游戏启动加载 Def 阶段出现 | ✅ 已查明并修复：`PF_RocketRecovery_Basic.xml` 的 `rebuildCost` 误用 `<li><thingDef>Steel</thingDef><count>100</count></li>`，RimWorld 的 `ThingDefCountClass` 会把 `<li>` 的 InnerText 拼成 `Steel100` 当作 defName 解析；已改为正确的 `<Steel>100</Steel>` |
+| `Drop pod left the map, but its group ID is -1` | 测试火箭发射后离港动画结束时报错 | ✅ 已修复：PFL 的离港 `FlyShipLeaving` 只是视觉演出，未走原版 `CompLaunchable.TryLaunch` 初始化 groupID/目的地；现在生成离港 Skyfaller 时放入 `activeTransporterDef` 并设置 `createWorldObject=false`，不再尝试创建真实运输舱世界物体 |
+| `Type CompThruster probably needs a StaticConstructorOnStartup attribute, because it has a field flameMaterial of type Material` | 启动期静态资源检查警告 | ✅ 已修复：`CompThruster` 添加 `[StaticConstructorOnStartup]`，`flameMaterial` 改为 `static readonly` 并在静态构造函数中创建 |
 
 ## 7. 变更日志
 
@@ -141,4 +143,6 @@
 | 2026-08-19 | 把《航天器地面建设与发射流程设计v1.md》拆成 19 项目标，新增“发射台总装（Design v1 拆解）”章节（LA-1~LA-19） |
 | 2026-08-20 | 修复火箭框架 Frame 缺少 `entityDefToBuild` 导致的循环 NRE；火箭框架移出建造菜单；LA-1 发射台可建造区域从中心 1 格改为发射台占地区域；按 DMS:NF 补齐 `PF_Buildings_Basic` 美术 Def 的 `drawSize`/`size`；删除重复的 `PF_Building_AssemblyPad_Basic`（保留 `PF_Building_Launchpad_Small`）；迁移 DMS:NF 离港 Skyfaller 轨迹并让 PFL 发射时生成离港动画 |
 | 2026-08-20 | 小型总装发射台区分可回收/不可回收火箭，各自提供设计 Gizmo 链路；回收第一级增加“直接重建完成 (调试)”按钮 |
-| 2026-08-20 | 小型发射台可建造区域限制为中心 3×3；同一发射台仅允许一座火箭/运输仓，修复多运输仓同台发射崩溃；`Steel100` 交叉引用经查不在 PFL/DMS:NF 源码中，判断为外部 mod/旧存档问题 |
+| 2026-08-20 | 小型发射台可建造区域限制为中心 3×3；同一发射台仅允许一座火箭/运输仓，修复多运输仓同台发射崩溃；`Steel100` 交叉引用初步未在 PFL/DMS:NF 源码中找到字面量（后查明为 `rebuildCost` XML 列表格式错误） |
+| 2026-08-20 | 查明并修复 `Steel100`（`rebuildCost` 的 `ThingDefCountClass` 列表格式错误）与 `Drop pod left the map`（离港动画未初始化 transport 字段）；调试用的 0 造价已按原值恢复，`rebuildCost` 用正确格式恢复为 `100 Steel` |
+| 2026-08-20 | 修复 `CompThruster` 启动期静态资源警告：添加 `[StaticConstructorOnStartup]`，`flameMaterial` 改为 `static readonly` 并在静态构造函数中创建；重新编译 `PioneerFrameworkLite.dll` |
