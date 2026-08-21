@@ -176,7 +176,7 @@
       <drawOffset>(0,0,4)</drawOffset>
     </graphicData>
     <altitudeLayer>BuildingOnTop</altitudeLayer>
-    <size>(1,1)</size>
+    <size>(3,3)</size>
     <rotatable>false</rotatable>
     <passability>PassThroughOnly</passability>
     <castEdgeShadows>false</castEdgeShadows>
@@ -222,7 +222,7 @@
       <drawOffset>(0,0,4)</drawOffset>
     </graphicData>
     <altitudeLayer>BuildingOnTop</altitudeLayer>
-    <size>(1,1)</size>
+    <size>(3,3)</size>
     <rotatable>false</rotatable>
     <passability>PassThroughOnly</passability>
     <castEdgeShadows>false</castEdgeShadows>

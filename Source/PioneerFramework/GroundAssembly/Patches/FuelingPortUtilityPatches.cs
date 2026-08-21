@@ -17,7 +17,7 @@ namespace PioneerFramework.GroundAssembly.Patches
             {
                 if (LaunchPadUtility.IsAssemblyPad(podLauncher.def))
                 {
-                    __result = podLauncher.Position;
+                    __result = podLauncher.OccupiedRect().CenterCell;
                     return false;
                 }
 
@@ -39,7 +39,7 @@ namespace PioneerFramework.GroundAssembly.Patches
                     .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
                 if (pad != null)
                 {
-                    __result = pad.Position;
+                    __result = pad.OccupiedRect().CenterCell;
                 }
             }
         }

@@ -26,6 +26,9 @@ namespace PioneerFramework.GroundAssembly
             if (def.comps != null && def.comps.Any(c => c is CompProperties_UnfinishedRocket))
                 return true;
 
+            if (def.comps != null && def.comps.Any(c => c is CompProperties_RocketBlueprint))
+                return true;
+
             if (RocketRecoveryDefFor(def) != null)
                 return true;
 

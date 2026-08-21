@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using RimWorld;
 using Verse;
 
@@ -42,12 +43,48 @@ namespace PioneerFramework.GroundAssembly
         }
 
         /// <summary>
-        /// 框架施工完成时调用。当前只改状态；口袋地图生成由发射流程/完工流程后续接入。
+        /// 框架施工完成时调用。调试标记会直接调用原版 Frame.CompleteConstruction，
+        /// 把 Frame 真正替换成已完工火箭建筑，并通知所属发射台进入已完工状态。
+        /// 口袋地图生成由后续完工流程/发射流程接入。
         /// </summary>
         public void NotifyConstructionCompleted()
         {
             if (isCompleted)
                 return;
+
+            if (parent is Frame frame)
+            {
+                IntVec3 pos = frame.Position;
+                Map map = frame.Map;
+                Pawn worker = map?.mapPawns?.FreeColonistsSpawned?.FirstOrDefault();
+                if (worker == null)
+                {
+                    Log.Warning("[PioneerFramework] 标记完工：找不到可用施工者，无法完成框架。");
+                    return;
+                }
+
+                frame.CompleteConstruction(worker);
+                isCompleted = true;
+                Log.Message($"[PioneerFramework] Rocket frame completed: {Spec.rocketDefName}");
+
+                // 通知总装发射台：框架已变为已完工火箭。
+                ThingDef rocketDef = DefDatabase<ThingDef>.GetNamedSilentFail(Spec.rocketDefName);
+                Thing built = null;
+                if (rocketDef != null && map != null)
+                {
+                    built = map.thingGrid.ThingsListAt(pos)
+                        .FirstOrDefault(t => !t.Destroyed && t.def == rocketDef);
+                }
+                if (built != null)
+                {
+                    Building pad = built.Map?.thingGrid.ThingsListAt(pos)
+                        .OfType<Building>()
+                        .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
+                    pad?.TryGetComp<CompAssemblyPad>()?.NotifyRocketCompleted(built);
+                }
+                return;
+            }
+
             isCompleted = true;
             Log.Message($"[PioneerFramework] Rocket frame completed: {Spec.rocketDefName}");
         }

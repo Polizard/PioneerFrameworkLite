@@ -56,38 +56,33 @@ namespace PioneerFramework.Launch
                 return false;
             }
 
-            string frameDefName = rocketDef.defName == "PF_Building_Rocket_Basic"
-                ? "PF_Building_RocketFrame_Basic_NonRecoverable"
-                : "PF_Building_RocketFrame_Basic";
-            ThingDef frameDef = DefDatabase<ThingDef>.GetNamedSilentFail(frameDefName);
-            if (frameDef == null)
+            // 走原版建造流程：先生成 Blueprint，pawn 搬运建材后再生成 Frame。
+            // 这样玩家能正常看到“搬运建材 → 建造框架”的完整施工链。
+            if (rocketDef.frameDef == null || rocketDef.blueprintDef == null)
             {
-                Log.Error($"[PioneerFramework] Missing debug rocket frame def: {frameDefName}");
+                Log.Error($"[PioneerFramework] Rocket def {rocketDef.defName} has no frameDef/blueprintDef; cannot spawn construction blueprint.");
                 return false;
             }
 
-            if (frameDef.entityDefToBuild != rocketDef)
+            if (rocketDef.frameDef.comps == null)
+                rocketDef.frameDef.comps = new List<CompProperties>();
+            if (!rocketDef.frameDef.comps.Any(c => c is CompProperties_UnfinishedRocket))
+                rocketDef.frameDef.comps.Add(new CompProperties_UnfinishedRocket());
+
+            if (rocketDef.blueprintDef.comps == null)
+                rocketDef.blueprintDef.comps = new List<CompProperties>();
+            if (!rocketDef.blueprintDef.comps.Any(c => c is CompProperties_RocketBlueprint))
+                rocketDef.blueprintDef.comps.Add(new CompProperties_RocketBlueprint());
+
+            Blueprint_Build blueprint = GenConstruct.PlaceBlueprintForBuild(
+                rocketDef, center, map, Rot4.North, Faction.OfPlayer, null);
+            if (blueprint == null || !blueprint.Spawned)
             {
-                Log.Error($"[PioneerFramework] Frame {frameDef.defName} is bound to {frameDef.entityDefToBuild?.defName ?? "null"}, not {spec.rocketDefName}.");
+                Log.Error($"[PioneerFramework] Failed to spawn construction blueprint for {rocketDef.defName} at {center}.");
                 return false;
             }
 
-            Frame frame = ThingMaker.MakeThing(frameDef) as Frame;
-            if (frame == null)
-            {
-                Log.Error($"[PioneerFramework] {frameDef.defName} is not a RimWorld.Frame; cannot spawn rocket frame.");
-                return false;
-            }
-
-            frame.SetFactionDirect(Faction.OfPlayer);
-            GenSpawn.Spawn(frame, center, map, Rot4.North, WipeMode.VanishOrMoveAside);
-            if (!frame.Spawned)
-            {
-                Log.Error($"[PioneerFramework] Failed to spawn debug rocket frame at {center}.");
-                return false;
-            }
-
-            var comp = frame.TryGetComp<CompUnfinishedRocket>();
+            var comp = blueprint.TryGetComp<CompRocketBlueprint>();
             if (comp != null)
                 comp.AssignSpec(spec);
 
@@ -95,10 +90,14 @@ namespace PioneerFramework.Launch
         }
 
         /// <summary>
-        /// 地面发射入口：创建太空实体/群组/口袋地图，并把实体放入绕地圆轨道。
-        /// 当前是调试级“瞬间入轨”，不包含倒计时、燃料消耗、发射条件校验。
+        /// 地面发射入口：创建太空实体/群组/口袋地图，注入 Part 推进参数，
+        /// 校验发射条件后进入「正式入轨机动」（两段式圆轨化，而不是瞬间免费入轨）。
         /// </summary>
-        public static SpaceEntity LaunchFromGround(Map groundMap, IntVec3 center, RocketDesignSpec spec)
+        /// <param name="debug">
+        /// true = 调试直发：跳过「有人控制台 / 舱室封闭」两项人员校验；
+        /// false = 正式发射：执行完整发射条件校验。
+        /// </param>
+        public static SpaceEntity LaunchFromGround(Map groundMap, IntVec3 center, RocketDesignSpec spec, bool debug = false)
         {
             if (groundMap == null || spec == null)
                 return null;
@@ -121,13 +120,20 @@ namespace PioneerFramework.Launch
             int entityId = GetNextEntityId(spaceGame);
             int factionId = Faction.OfPlayer?.loadID ?? 0;
 
-            // 简单占位轨道：500km 圆轨道，角度随机。
+            // 发射入轨初始状态：500km 高度的近圆插入轨道。
+            // 速度给到圆轨速度的 92%，让圆轨化机动保留真实 dV 消耗（而不是瞬间免费入轨）。
             double orbitRadiusMeters = SpaceConstants.PlanetRadiusMeters + 500000.0;
             double angle = Rand.Value * Math.PI * 2.0;
             var pos = new DVector3(
                 Math.Cos(angle) * orbitRadiusMeters,
                 0,
                 Math.Sin(angle) * orbitRadiusMeters);
+            double mu = SpaceConstants.PrimaryGravitationalParameter;
+            double vCircular = Math.Sqrt(mu / orbitRadiusMeters);
+            double vInsert = vCircular * 0.92;
+            DVector3 radialDir = pos.normalized;
+            DVector3 tangentDir = DVector3.Cross(DVector3.up, radialDir).normalized;
+            DVector3 insertVelocity = tangentDir * vInsert;
 
             var group = new SpaceEntityGroup(groupId, factionId)
             {
@@ -138,7 +144,7 @@ namespace PioneerFramework.Launch
             group.CurrentOrbit = new OrbitState
             {
                 position = pos,
-                velocity = DVector3.zero,
+                velocity = insertVelocity,
                 rotation = UnityEngine.Quaternion.identity
             };
             spaceGame.RegisterGroup(group);
@@ -156,10 +162,28 @@ namespace PioneerFramework.Launch
             }
 
             SpaceMapGenerator.LinkEntityToMap(entity, map);
+            ConfigureRocketPropulsion(map, spec);
+
+            // 发射条件校验（机制层硬条件始终生效；人员相关项在 debug 模式跳过）
+            List<string> errors = RocketLaunchConditions.Validate(spec, map, debug);
+            if (errors.Count > 0)
+            {
+                foreach (string error in errors)
+                    Messages.Message(error, MessageTypeDefOf.RejectInput, false);
+                CleanupFailedLaunch(spaceGame, groupId, map);
+                return null;
+            }
+
             spaceGame.RegisterEntity(entity);
             group.AddEntity(entityId);
 
-            group.EnterCircularOrbit(Find.TickManager.TicksGame, EarthBodyId);
+            // 正式入轨机动：两段式圆轨化，burn 完成后进入 500km 圆轨。
+            // 这一步会真实消耗注入到 SpaceMapComp 的工质（对应设计稿 §8/§9 的 dV 消耗）。
+            if (!spaceGame.BeginCircularize(group, EarthBodyId))
+            {
+                CleanupFailedLaunch(spaceGame, groupId, map);
+                return null;
+            }
 
             DestroyGroundRocket(groundMap, center, rocketDef);
             TrySpawnLeavingSkyfaller(groundMap, center, rocketDef);
@@ -167,8 +191,86 @@ namespace PioneerFramework.Launch
             TryTriggerBoosterRecovery(groundMap, center, spec.rocketDefName);
 
             Log.Message($"[PioneerFramework] Launch complete: entity={entityId}, group={groupId}, map={entity.MapId}, rocket={spec.rocketDefName}");
-            Messages.Message("火箭已入轨。", MessageTypeDefOf.TaskCompletion, false);
+            Messages.Message("火箭已入轨（圆轨化机动已开始）。", MessageTypeDefOf.TaskCompletion, false);
             return entity;
+        }
+        /// <summary>
+        /// 把 RocketDesignSpec 中的 Part 数据注入舱内地图的 SpaceMapComp，
+        /// 使火箭在入轨后拥有真实的推进器/储罐聚合（Part 不以地图实体出现）。
+        /// </summary>
+        private static void ConfigureRocketPropulsion(Map map, RocketDesignSpec spec)
+        {
+            if (map == null || spec?.parts == null)
+                return;
+
+            var mapComp = map.GetComponent<SpaceMapComp>();
+            if (mapComp == null)
+                return;
+
+            PropellantDef propellant = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Chemical");
+            if (propellant == null)
+            {
+                Log.Warning("[PioneerFramework] PF_Propellant_Chemical missing; rocket propulsion not configured.");
+                return;
+            }
+
+            // ── 推进器聚合：优先读 Part 对应的 ThingDef 参数；调试 Part 无 Def 时用 PFL 调试值 ──
+            float totalMassFlow = 0f;
+            float ve = 3000f;
+            int thrusterCount = 0;
+            for (int i = 0; i < spec.parts.Count; i++)
+            {
+                var part = spec.parts[i];
+                if (part == null || part.category != "thruster")
+                    continue;
+
+                int qty = Math.Max(1, part.quantity);
+                ThingDef partDef = DefDatabase<ThingDef>.GetNamedSilentFail(part.defName);
+                var thrusterProps = partDef?.comps?.OfType<CompProperties_Thruster>().FirstOrDefault();
+                if (thrusterProps != null)
+                {
+                    ve = thrusterProps.exhaustVelocity;
+                    totalMassFlow += thrusterProps.massFlowRate * qty;
+                }
+                else
+                {
+                    totalMassFlow += 10f * qty;
+                }
+
+                thrusterCount += qty;
+            }
+
+            // ── 储罐/燃料：debug spec.fuelAmount 直接作为化学工质 kg；正式 Part Def 可覆写容量 ──
+            float capacity = 0f;
+            for (int i = 0; i < spec.parts.Count; i++)
+            {
+                var part = spec.parts[i];
+                if (part == null || part.category != "tank")
+                    continue;
+
+                int qty = Math.Max(1, part.quantity);
+                ThingDef partDef = DefDatabase<ThingDef>.GetNamedSilentFail(part.defName);
+                var tankProps = partDef?.comps?.OfType<CompProperties_PropellantTank>().FirstOrDefault();
+                if (tankProps != null)
+                    capacity += tankProps.capacity * qty;
+                else
+                    capacity += 1000f * qty;
+            }
+
+            float fuelMass = Math.Max(0f, spec.fuelAmount);
+            if (capacity <= 0f)
+                capacity = fuelMass;
+
+            // 统一交给 SpaceMapComp：注册虚拟推进 + 持久化 RocketDesignSpec/燃料/引擎参数。
+            mapComp.SetVirtualRocketPropulsion(spec, propellant, ve, totalMassFlow, fuelMass, capacity);
+            Log.Message($"[PioneerFramework] Rocket propulsion injected: thrusters={thrusterCount}, ve={ve:0.#} m/s, massFlow={totalMassFlow:0.#} kg/s");
+        }
+
+        /// <summary>发射失败清理：销毁群组/实体/口袋地图，地面火箭保留。</summary>
+        private static void CleanupFailedLaunch(SpaceGameComp spaceGame, int groupId, Map map)
+        {
+            spaceGame?.DestroyGroup(groupId);
+            SpaceMapGenerator.DestroyPocketMap(map);
         }
 
         /// <summary>发射瞬间生成 DMS 风格的离港 Skyfaller，让火箭贴图沿轨迹飞离而不是直接消失。</summary>

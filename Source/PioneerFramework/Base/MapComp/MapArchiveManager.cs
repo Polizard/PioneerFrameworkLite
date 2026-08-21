@@ -41,6 +41,11 @@ namespace PioneerFramework
             _curXmlParentField ??= typeof(ScribeLoader).GetField("curXmlParent",
                 BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
+        // Scribe 静态状态：封存/取出会临时替换 Scribe.saver/loader；
+        // 结束后必须恢复原始实例，否则后续正常存档/读档会因 null 而 NRE。
+        private static ScribeSaver originalScribeSaver;
+        private static ScribeLoader originalScribeLoader;
+
         // ═══════════════════════════════════════════════
         //  公共接口
         // ═══════════════════════════════════════════════
@@ -516,6 +521,7 @@ namespace PioneerFramework
 
             try
             {
+                PreserveOriginalScribeState();
                 var saver = new ScribeSaver();
                 SetScribeSaver(saver);
                 saver.InitSaving(tmpPath, "CompRoot");
@@ -534,7 +540,7 @@ namespace PioneerFramework
             {
                 if (Scribe.mode != LoadSaveMode.Inactive)
                     Scribe.ForceStop();
-                SetScribeSaver(null);
+                RestoreOriginalScribeState();
             }
         }
 
@@ -555,6 +561,7 @@ namespace PioneerFramework
 
             try
             {
+                PreserveOriginalScribeState();
                 // 从内存解析 XML（跳过 InitLoading 的文件写→读）
                 var doc = new XmlDocument();
                 using (var ms = new MemoryStream(xmlData))
@@ -582,7 +589,7 @@ namespace PioneerFramework
             {
                 if (Scribe.mode != LoadSaveMode.Inactive)
                     Scribe.ForceStop();
-                SetScribeLoader(null);
+                RestoreOriginalScribeState();
             }
         }
 
@@ -599,6 +606,20 @@ namespace PioneerFramework
         private static void SetScribeLoader(ScribeLoader loader)
         {
             LoaderField?.SetValue(null, loader);
+        }
+
+        private static void PreserveOriginalScribeState()
+        {
+            originalScribeSaver ??= Scribe.saver;
+            originalScribeLoader ??= Scribe.loader;
+        }
+
+        private static void RestoreOriginalScribeState()
+        {
+            SetScribeSaver(originalScribeSaver ?? new ScribeSaver());
+            SetScribeLoader(originalScribeLoader ?? new ScribeLoader());
+            originalScribeSaver = null;
+            originalScribeLoader = null;
         }
     }
 

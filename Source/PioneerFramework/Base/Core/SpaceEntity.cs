@@ -98,7 +98,13 @@ namespace PioneerFramework
         {
             if (MapId < 0) return null;
             var sg = Current.Game?.GetComponent<SpaceGameComp>();
-            return sg?.GetMapComponent<SpaceMapComp>(MapId);
+            var mc = sg?.GetMapComponent<SpaceMapComp>(MapId);
+            if (mc != null)
+                return mc;
+
+            // mapComponents 不随存档恢复；兜底直接从地图取 SpaceMapComp。
+            Map map = SpaceMapGenerator.FindPocketMap(MapId);
+            return map?.GetComponent<SpaceMapComp>();
         }
 
         public int MapId = -1;

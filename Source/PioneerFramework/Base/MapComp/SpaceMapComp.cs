@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Verse;
+using PioneerFramework.GroundAssembly;
 
 namespace PioneerFramework
 {
@@ -84,6 +85,21 @@ namespace PioneerFramework
 
         /// <summary>Map → Part：此地图对应的 SpacePart.partId（在 ownerEntity 的 Parts 列表中）。</summary>
         public int linkedPartId = -1;
+
+        // ── PFL 火箭虚拟推进持久化（LA-18）──
+        // RocketDesignSpec 与虚拟推进参数不依赖地图建筑，因此需要显式落盘；
+        // 读档后在 FinalizeInit 中重新注册到本 MapComponent 的推进聚合。
+        private RocketDesignSpec rocketSpec;
+        private bool hasVirtualPropulsion;
+        private string virtualPropellantDefName;
+        private float virtualVe;
+        private float virtualMassFlow;
+        private float virtualFuelMass;
+        private float virtualFuelCapacity;
+        private bool virtualPropulsionRegistered;
+
+        /// <summary>当前火箭设计规格（入轨后随地图保存）。</summary>
+        public RocketDesignSpec RocketSpec => rocketSpec;
 
         // ── 工质聚合向量（dV 体系）──
         // 键 = 工质 Def，值 = 该工质在当前地图（=船）内的总质量（kg）。
@@ -272,14 +288,83 @@ namespace PioneerFramework
             CompPropellantTank.TickDifferenceSync(map);
         }
 
+        /// <summary>
+        /// 设置并注册 PFL 火箭的虚拟推进数据（LA-18）。
+        /// 该数据没有对应地图建筑，必须由本组件负责持久化与重建。
+        /// </summary>
+        public void SetVirtualRocketPropulsion(RocketDesignSpec spec, PropellantDef def,
+            float ve, float massFlow, float fuelMass, float capacity)
+        {
+            rocketSpec = spec;
+            hasVirtualPropulsion = true;
+            virtualPropellantDefName = def?.defName;
+            virtualVe = ve;
+            virtualMassFlow = massFlow;
+            virtualFuelMass = fuelMass;
+            virtualFuelCapacity = capacity;
+            virtualPropulsionRegistered = false;
+            RegisterVirtualPropulsion();
+        }
+
+        /// <summary>把保存的虚拟推进参数重新注册到本 MapComponent（新建/读档共用）。</summary>
+        private void RegisterVirtualPropulsion()
+        {
+            if (!hasVirtualPropulsion || virtualPropulsionRegistered)
+                return;
+
+            PropellantDef def = DefDatabase<PropellantDef>.GetNamedSilentFail(virtualPropellantDefName);
+            if (def == null || virtualMassFlow <= 0f)
+                return;
+
+            RegisterEngine(def, virtualVe, virtualMassFlow);
+            AddPropellantCapacity(virtualFuelCapacity);
+            AddPropellantMass(def, virtualFuelMass);
+            virtualPropulsionRegistered = true;
+        }
+
+        public override void FinalizeInit()
+        {
+            base.FinalizeInit();
+
+            // mapComponents 是 SpaceGameComp 的运行时缓存，不随存档恢复；
+            // 读档后必须把自己重新登记，否则群组/实体无法找到本地图的推进源。
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame != null)
+                spaceGame.RegisterMapComponent(map.uniqueID, this);
+
+            if (hasVirtualPropulsion)
+                RegisterVirtualPropulsion();
+        }
+
         public override void ExposeData()
         {
             base.ExposeData();
+
+            // 保存前把虚拟燃料同步为当前工质向量中的真实剩余量。
+            if (Scribe.mode == LoadSaveMode.Saving && hasVirtualPropulsion
+                && !string.IsNullOrEmpty(virtualPropellantDefName))
+            {
+                PropellantDef currentDef = DefDatabase<PropellantDef>.GetNamedSilentFail(virtualPropellantDefName);
+                if (currentDef != null)
+                    virtualFuelMass = GetPropellantMass(currentDef);
+            }
+
             Scribe_Values.Look(ref stationName, "stationName", "Unnamed Station");
             Scribe_Values.Look(ref ownerEntityId, "ownerEntityId", -1);
             Scribe_Values.Look(ref linkedPartId, "linkedPartId", -1);
-            // propellantMass / networks / 各聚合缓存均为运行时聚合缓存，不序列化
-            // （由储罐与引擎建筑在 Spawn/DeSpawn 时重建）。
+            Scribe_Deep.Look(ref rocketSpec, "rocketSpec");
+            Scribe_Values.Look(ref hasVirtualPropulsion, "hasVirtualPropulsion", false);
+            Scribe_Values.Look(ref virtualPropellantDefName, "virtualPropellantDefName");
+            Scribe_Values.Look(ref virtualVe, "virtualVe", 0f);
+            Scribe_Values.Look(ref virtualMassFlow, "virtualMassFlow", 0f);
+            Scribe_Values.Look(ref virtualFuelMass, "virtualFuelMass", 0f);
+            Scribe_Values.Look(ref virtualFuelCapacity, "virtualFuelCapacity", 0f);
+
+            if (Scribe.mode == LoadSaveMode.LoadingVars)
+                virtualPropulsionRegistered = false;
+
+            // propellantMass / networks / 各聚合缓存均为运行时聚合缓存，不序列化；
+            // 普通地图建筑在 Spawn/DeSpawn 时重建，虚拟推进在 FinalizeInit 重建。
         }
     }
 }

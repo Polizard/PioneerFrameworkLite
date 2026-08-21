@@ -113,10 +113,13 @@ namespace PioneerFramework.GroundAssembly.Patches
         }
 
         [HarmonyPatch(typeof(PlaceWorker_NeedsFuelingPort), "DrawGhost")]
+        [StaticConstructorOnStartup]
         public static class DrawGhost_Patch
         {
             private static readonly Color ValidColor = new Color(0.2f, 1f, 0.2f, 0.5f);
             private static readonly Color InvalidColor = new Color(1f, 0.2f, 0.2f, 0.5f);
+            private static readonly Material FuelingPortCellMaterial =
+                MaterialPool.MatFrom("UI/Overlays/FuelingPort", ShaderDatabase.Transparent);
 
             public static bool Prefix(ThingDef def, IntVec3 center, Rot4 rot, Color ghostCol, Thing thing = null!)
             {
@@ -126,6 +129,21 @@ namespace PioneerFramework.GroundAssembly.Patches
                 Map map = Find.CurrentMap;
                 if (map == null)
                     return true;
+
+                // 在所有 PFL 总装发射台中心绘制真实燃料口图标，固定不偏移。
+                if (map.listerBuildings?.allBuildingsColonist != null)
+                {
+                    for (int i = 0; i < map.listerBuildings.allBuildingsColonist.Count; i++)
+                    {
+                        Building pad = map.listerBuildings.allBuildingsColonist[i];
+                        if (pad == null || pad.Destroyed || !LaunchPadUtility.IsAssemblyPad(pad.def))
+                            continue;
+
+                        Vector3 iconPos = pad.OccupiedRect().CenterCell.ToVector3ShiftedWithAltitude(AltitudeLayer.MetaOverlays);
+                        if (FuelingPortCellMaterial != null)
+                            Graphics.DrawMesh(MeshPool.plane10, iconPos, Quaternion.identity, FuelingPortCellMaterial, 0);
+                    }
+                }
 
                 Building launchpad = null;
                 List<Thing> things = map.thingGrid.ThingsListAt(center);

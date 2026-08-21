@@ -262,8 +262,21 @@ namespace PioneerFramework
             foreach (int eid in GetEntityIds())
             {
                 var e = sg.GetEntityById(eid);
-                if (e != null && e.MapId >= 0)
-                    return sg.GetMapComponent<SpaceMapComp>(e.MapId);
+                if (e == null || e.MapId < 0)
+                    continue;
+
+                var mc = sg.GetMapComponent<SpaceMapComp>(e.MapId);
+                if (mc != null)
+                    return mc;
+
+                // mapComponents 不随存档恢复；兜底直接从地图取 SpaceMapComp。
+                Map map = SpaceMapGenerator.FindPocketMap(e.MapId);
+                if (map != null)
+                {
+                    mc = map.GetComponent<SpaceMapComp>();
+                    if (mc != null)
+                        return mc;
+                }
             }
             return null;
         }

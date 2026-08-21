@@ -11,18 +11,21 @@ namespace PioneerFramework.GroundAssembly.Patches
     public static class PlaceWorker_FuelingPortPatches
     {
         [HarmonyPatch(typeof(PlaceWorker_FuelingPort), "DrawGhost")]
+        [StaticConstructorOnStartup]
         public static class DrawGhost_Patch
         {
+            private static readonly Material FuelingPortCellMaterial =
+                MaterialPool.MatFrom("UI/Overlays/FuelingPort", ShaderDatabase.Transparent);
+
             public static bool Prefix(ThingDef def, IntVec3 center, Rot4 rot, Color ghostCol, Thing thing = null!)
             {
                 if (!LaunchPadUtility.IsAssemblyPad(def))
                     return true;
 
                 Vector3 drawPos = center.ToVector3ShiftedWithAltitude(AltitudeLayer.MetaOverlays);
-                Material mat = SolidColorMaterials.SimpleSolidColorMaterial(new Color(1f, 0.8f, 0f, 0.5f));
-                if (mat != null)
+                if (FuelingPortCellMaterial != null)
                 {
-                    Graphics.DrawMesh(MeshPool.plane10, drawPos, Quaternion.identity, mat, 0);
+                    Graphics.DrawMesh(MeshPool.plane10, drawPos, Quaternion.identity, FuelingPortCellMaterial, 0);
                 }
 
                 return false;

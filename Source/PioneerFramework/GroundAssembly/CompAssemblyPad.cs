@@ -64,6 +64,15 @@ namespace PioneerFramework.GroundAssembly
             state = LaunchPadState.Completed;
         }
 
+        /// <summary>框架施工完成/调试标记完工后，通知发射台登记已完工火箭。</summary>
+        public void NotifyRocketCompleted(Thing rocket)
+        {
+            if (rocket == null || rocket.Destroyed)
+                return;
+            builtRocket = rocket;
+            state = LaunchPadState.Completed;
+        }
+
         /// <summary>确认设计，生成未完工火箭框架。</summary>
         public bool TryStartBuild()
         {
@@ -89,15 +98,16 @@ namespace PioneerFramework.GroundAssembly
         }
 
         /// <summary>发射当前火箭。成功后回到空闲。</summary>
-        public bool TryLaunch()
+        /// <param name="debug">true 时跳过「有人控制台 / 舱室封闭」人员校验。</param>
+        public bool TryLaunch(bool debug = false)
         {
             if (design == null || parent == null || parent.Map == null)
                 return false;
 
             IntVec3 rocketPos = builtRocket != null && builtRocket.Spawned
-                ? builtRocket.Position
+                ? builtRocket.OccupiedRect().CenterCell
                 : parent.OccupiedRect().CenterCell;
-            var entity = LaunchService.LaunchFromGround(parent.Map, rocketPos, design);
+            var entity = LaunchService.LaunchFromGround(parent.Map, rocketPos, design, debug);
             if (entity == null)
                 return false;
 
@@ -167,7 +177,7 @@ namespace PioneerFramework.GroundAssembly
                     action = delegate
                     {
                         if (TryStartBuild())
-                            Messages.Message("未完工火箭框架已生成。", MessageTypeDefOf.TaskCompletion, false);
+                            Messages.Message("火箭建造蓝图已生成，等待搬运建材。", MessageTypeDefOf.TaskCompletion, false);
                     }
                 };
             }
@@ -181,7 +191,7 @@ namespace PioneerFramework.GroundAssembly
                     icon = TexCommand.FireAtWill,
                     action = delegate
                     {
-                        if (TryLaunch())
+                        if (TryLaunch(true))
                             Messages.Message("火箭已入轨。", MessageTypeDefOf.TaskCompletion, false);
                     }
                 };
