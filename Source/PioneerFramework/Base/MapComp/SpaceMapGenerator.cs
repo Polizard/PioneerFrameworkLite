@@ -126,6 +126,76 @@ namespace PioneerFramework
         }
 
         /// <summary>
+        /// 生成航天器独立地图（非口袋地图语义）。
+        /// 使用 SpacecraftMapParent，不加入 Find.World.pocketMaps。
+        /// </summary>
+        public static Map GenerateSpacecraftMap(int width, int height, Map sourceMap, string spacecraftId, string generatorDefName)
+        {
+            if (sourceMap == null)
+                return null;
+
+            var generatorDef = DefDatabase<MapGeneratorDef>.GetNamedSilentFail(generatorDefName);
+            if (generatorDef == null || generatorDef.pocketMapProperties == null)
+            {
+                Log.Error("[PioneerFramework] Spacecraft map generator missing or has no pocketMapProperties: " + generatorDefName);
+                return null;
+            }
+
+            var spacecraftDef = DefDatabase<WorldObjectDef>.GetNamedSilentFail("PF_SpacecraftMap");
+            if (spacecraftDef == null)
+            {
+                Log.Error("[PioneerFramework] PF_SpacecraftMap WorldObjectDef not found.");
+                return null;
+            }
+
+            var parent = WorldObjectMaker.MakeWorldObject(spacecraftDef) as SpacecraftMapParent;
+            if (parent == null)
+            {
+                Log.Error("[PioneerFramework] Failed to create SpacecraftMapParent.");
+                return null;
+            }
+
+            parent.sourceMap = sourceMap;
+            parent.mapGenerator = generatorDef;
+            parent.spacecraftId = spacecraftId;
+            parent.state = SpacecraftState.Ground;
+
+            // 注意：isPocketMap 必须为 true。这是 RimWorld 引擎对 Tile=-1 地图的技术要求，
+            // 用于使用 pocketTileInfo 而不是访问 Find.WorldGrid[-1]。
+            // 架构上我们已使用 SpacecraftMapParent + SpacecraftMapRegistry，不依赖口袋地图语义。
+            var map = MapGenerator.GenerateMap(
+                new IntVec3(width, 1, height),
+                parent,
+                generatorDef,
+                null,
+                null,
+                true,
+                false
+            );
+
+            if (map == null)
+            {
+                Log.Error("[PioneerFramework] Failed to generate spacecraft map.");
+                return null;
+            }
+
+            var mapComp = map.GetComponent<SpaceMapComp>();
+            if (mapComp == null)
+            {
+                mapComp = new SpaceMapComp(map);
+                map.components.Add(mapComp);
+            }
+
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame != null)
+                spaceGame.RegisterMapComponent(map.uniqueID, mapComp);
+
+            Log.Message(string.Format("[PioneerFramework] Generated spacecraft map ID {0} for spacecraft {1}, {2}x{3}",
+                map.uniqueID, spacecraftId, width, height));
+            return map;
+        }
+
+        /// <summary>
         /// 获取锚点地图（用于所有空间站共享tile）
         /// 优先返回玩家殖民地地图，如果没有则返回当前地图
         /// </summary>
@@ -201,6 +271,9 @@ namespace PioneerFramework
             parent.sourceMap = anchorMap;
             parent.mapGenerator = generatorDef;
 
+            // 注意：isPocketMap 必须为 true。这是 RimWorld 引擎对 Tile=-1 地图的技术要求，
+            // 用于使用 pocketTileInfo 而不是访问 Find.WorldGrid[-1]。
+            // 架构上我们已使用 SpacecraftMapParent + SpacecraftMapRegistry，不依赖口袋地图语义。
             var map = MapGenerator.GenerateMap(
                 new IntVec3(width, 1, height),
                 parent,

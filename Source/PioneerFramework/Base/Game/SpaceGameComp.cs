@@ -1750,6 +1750,18 @@ namespace PioneerFramework
 
         #region 持久化
 
+        public override void LoadedGame()
+        {
+            base.LoadedGame();
+            SpacecraftMapRegistry.Reconcile();
+        }
+
+        public override void StartedNewGame()
+        {
+            base.StartedNewGame();
+            SpacecraftMapRegistry.Reconcile();
+        }
+
         public override void ExposeData()
         {
             base.ExposeData();

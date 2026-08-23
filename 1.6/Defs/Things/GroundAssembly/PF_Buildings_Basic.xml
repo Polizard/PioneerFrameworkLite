@@ -197,6 +197,7 @@
         <restEffectiveness>0.8</restEffectiveness>
         <massCapacity>2000</massCapacity>
       </li>
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketPocketMap" />
       <li Class="CompProperties_Launchable_TransportPod">
         <activeTransporterDef>PF_ActivePod_Basic</activeTransporterDef>
         <skyfallerLeaving>PF_Skyfaller_Leaving_Basic</skyfallerLeaving>
@@ -243,6 +244,7 @@
         <restEffectiveness>0.8</restEffectiveness>
         <massCapacity>15000</massCapacity>
       </li>
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketPocketMap" />
       <li Class="CompProperties_Launchable_TransportPod">
         <activeTransporterDef>PF_ActivePod_Basic</activeTransporterDef>
         <skyfallerLeaving>PF_Skyfaller_Leaving_Recoverable_Basic</skyfallerLeaving>

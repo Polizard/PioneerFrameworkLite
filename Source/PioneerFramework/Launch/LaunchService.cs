@@ -24,9 +24,10 @@ namespace PioneerFramework.Launch
                 rocketDefName = recoverable
                     ? "PF_Building_Rocket_Recoverable_Basic"
                     : "PF_Building_Rocket_Basic",
+                CabinType = recoverable ? RocketCabinType.Spacecraft : RocketCabinType.None,
                 frameSize = 3,
-                mapWidth = 40,
-                mapHeight = 40,
+                mapWidth = 50,
+                mapHeight = 50,
                 fuelAmount = 1000f,
                 parts = new List<RocketPartSpec>
                 {
@@ -154,15 +155,28 @@ namespace PioneerFramework.Launch
             entity.SetPositionVelocity(DVector3.zero, DVector3.zero);
             entity.SetRotation(UnityEngine.Quaternion.identity);
 
-            var map = RocketPocketMapGenerator.GenerateRocketMap(spec);
-            if (map == null)
+            bool hasCabinMap = spec.CabinType == RocketCabinType.Spacecraft;
+            Map map = null;
+            bool hadExistingMap = false;
+            if (hasCabinMap)
             {
-                spaceGame.UnregisterGroup(group);
-                return null;
-            }
+                map = FindExistingRocketMap(groundMap, center);
+                hadExistingMap = map != null;
+                if (map == null)
+                {
+                    Messages.Message("尚未登上火箭，未生成舱内地图，无法进行发射。", MessageTypeDefOf.RejectInput, false);
+                    spaceGame.UnregisterGroup(group);
+                    return null;
+                }
 
-            SpaceMapGenerator.LinkEntityToMap(entity, map);
-            ConfigureRocketPropulsion(map, spec);
+                SpaceMapGenerator.LinkEntityToMap(entity, map);
+                ConfigureRocketPropulsion(map, spec);
+            }
+            else
+            {
+                // 普通运输仓：无舱内地图，使用实体级自带推进数据。
+                ConfigureEntityPropulsion(entity, spec);
+            }
 
             // 发射条件校验（机制层硬条件始终生效；人员相关项在 debug 模式跳过）
             List<string> errors = RocketLaunchConditions.Validate(spec, map, debug);
@@ -170,7 +184,7 @@ namespace PioneerFramework.Launch
             {
                 foreach (string error in errors)
                     Messages.Message(error, MessageTypeDefOf.RejectInput, false);
-                CleanupFailedLaunch(spaceGame, groupId, map);
+                CleanupFailedLaunch(spaceGame, groupId, map, hasCabinMap && !hadExistingMap);
                 return null;
             }
 
@@ -181,7 +195,7 @@ namespace PioneerFramework.Launch
             // 这一步会真实消耗注入到 SpaceMapComp 的工质（对应设计稿 §8/§9 的 dV 消耗）。
             if (!spaceGame.BeginCircularize(group, EarthBodyId))
             {
-                CleanupFailedLaunch(spaceGame, groupId, map);
+                CleanupFailedLaunch(spaceGame, groupId, map, !hadExistingMap);
                 return null;
             }
 
@@ -266,11 +280,117 @@ namespace PioneerFramework.Launch
             Log.Message($"[PioneerFramework] Rocket propulsion injected: thrusters={thrusterCount}, ve={ve:0.#} m/s, massFlow={totalMassFlow:0.#} kg/s");
         }
 
+        /// <summary>为无舱内地图的普通运输仓配置实体级自带推进数据。</summary>
+        private static void ConfigureEntityPropulsion(SpaceEntity entity, RocketDesignSpec spec)
+        {
+            if (entity == null || spec?.parts == null)
+                return;
+
+            PropellantDef propellant = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Chemical");
+            if (propellant == null)
+            {
+                Log.Warning("[PioneerFramework] PF_Propellant_Chemical missing; rocket propulsion not configured.");
+                return;
+            }
+
+            float totalMassFlow = 0f;
+            float ve = 3000f;
+            int thrusterCount = 0;
+            for (int i = 0; i < spec.parts.Count; i++)
+            {
+                var part = spec.parts[i];
+                if (part == null || part.category != "thruster")
+                    continue;
+
+                int qty = Math.Max(1, part.quantity);
+                ThingDef partDef = DefDatabase<ThingDef>.GetNamedSilentFail(part.defName);
+                var thrusterProps = partDef?.comps?.OfType<CompProperties_Thruster>().FirstOrDefault();
+                if (thrusterProps != null)
+                {
+                    ve = thrusterProps.exhaustVelocity;
+                    totalMassFlow += thrusterProps.massFlowRate * qty;
+                }
+                else
+                {
+                    totalMassFlow += 10f * qty;
+                }
+
+                thrusterCount += qty;
+            }
+
+            float capacity = 0f;
+            for (int i = 0; i < spec.parts.Count; i++)
+            {
+                var part = spec.parts[i];
+                if (part == null || part.category != "tank")
+                    continue;
+
+                int qty = Math.Max(1, part.quantity);
+                ThingDef partDef = DefDatabase<ThingDef>.GetNamedSilentFail(part.defName);
+                var tankProps = partDef?.comps?.OfType<CompProperties_PropellantTank>().FirstOrDefault();
+                if (tankProps != null)
+                    capacity += tankProps.capacity * qty;
+                else
+                    capacity += 1000f * qty;
+            }
+
+            float fuelMass = Math.Max(0f, spec.fuelAmount);
+            if (capacity <= 0f)
+                capacity = fuelMass;
+
+            entity.AddPropulsion(new PropulsionData
+            {
+                propellant = propellant,
+                ve = ve,
+                massFlow = totalMassFlow,
+                mass = fuelMass,
+                capacity = capacity
+            });
+            Log.Message($"[PioneerFramework] Entity rocket propulsion injected: thrusters={thrusterCount}, ve={ve:0.#} m/s, massFlow={totalMassFlow:0.#} kg/s");
+        }
+
         /// <summary>发射失败清理：销毁群组/实体/口袋地图，地面火箭保留。</summary>
-        private static void CleanupFailedLaunch(SpaceGameComp spaceGame, int groupId, Map map)
+        private static void CleanupFailedLaunch(SpaceGameComp spaceGame, int groupId, Map map, bool destroyMap = true)
         {
             spaceGame?.DestroyGroup(groupId);
-            SpaceMapGenerator.DestroyPocketMap(map);
+            if (destroyMap && map != null)
+                SpaceMapGenerator.DestroyPocketMap(map);
+        }
+
+        /// <summary>
+        /// 查找地面火箭/发射台已经生成并关联的舱内口袋地图。
+        /// 若存在则发射时复用，保证玩家提前装修好的舱内人员/建筑随火箭入轨。
+        /// </summary>
+        private static Map FindExistingRocketMap(Map groundMap, IntVec3 center)
+        {
+            if (groundMap == null)
+                return null;
+
+            foreach (Thing thing in groundMap.thingGrid.ThingsListAt(center))
+            {
+                var rocketMap = thing?.TryGetComp<CompRocketPocketMap>();
+                if (rocketMap != null)
+                {
+                    var map = rocketMap.GetPocketMap();
+                    if (map != null)
+                        return map;
+                }
+            }
+
+            foreach (Thing thing in groundMap.thingGrid.ThingsListAt(center))
+            {
+                if (thing is not Building building)
+                    continue;
+                var pad = building.TryGetComp<CompAssemblyPad>();
+                if (pad != null)
+                {
+                    var map = pad.GetPocketMap();
+                    if (map != null)
+                        return map;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>发射瞬间生成 DMS 风格的离港 Skyfaller，让火箭贴图沿轨迹飞离而不是直接消失。</summary>

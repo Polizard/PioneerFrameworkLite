@@ -118,7 +118,7 @@ namespace PioneerFramework
         /// </summary>
         public static bool CurCelestialSunGlow_Prefix(Map map, ref float __result)
         {
-            if (map?.Tile == null) return true;
+            if (map == null || map.Tile < 0) return true;
 
             // 用 Map 所在 tile 的天体自转周期，而非当前查看的星球
             float dayLength = CelestialBodyLayerManager.GetDayLengthForMap(map);
@@ -154,7 +154,7 @@ namespace PioneerFramework
         /// </summary>
         public static bool GenLocalDate_DayPercent_Map_Prefix(Map map, ref float __result)
         {
-            if (map?.Tile == null) return true;
+            if (map == null || map.Tile < 0) return true;
 
             float dayLength = CelestialBodyLayerManager.GetDayLengthForMap(map);
             if (Math.Abs(dayLength - 60000f) <= 10f) return true; // Earth，走原版

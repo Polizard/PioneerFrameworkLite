@@ -105,14 +105,14 @@
 |---|--------|------|-----------|------|
 | LA-1 | P0 | 发射台多格可建造区域 | 原版只允许中心 1 格；改为多格，可建造区域由发射台等级/大小决定；修复燃料口定位后中心 3×3 可建 | ✅ 已完成 |
 | LA-2 | P0 | 发射台状态机 | 空闲/设计中/建造中/已完工；状态与关联建筑写入存档 | 🔵 进行中 |
-| LA-3 | P0 | 装配界面 | 首发功能可用即可：Part/载荷/预览/统计/确认/取消；编辑 `RocketDesignSpec` | ⬜ 待办 |
+| LA-3 | P0 | 装配界面 | 航天器管理界面已落地，设计页支持基础编辑：框架尺寸/Part/载荷/舱室类型；完整可视化编辑器待后续 | 🔵 进行中 |
 | LA-4 | P0 | 设计校验规则 | 框架正方形且在发射台范围内；至少 1 推进器 + 1 储罐；载荷不超安装位；未确认不能施工 | ⬜ 待办 |
 | LA-5 | P0 | 未完工火箭框架生成 | 发射台中心生成大型 Building，挂 `CompUnfinishedRocket`，持有 spec；已改为原版 Blueprint→Frame 流程并注入 `CompRocketBlueprint` | ✅ 已完成 |
 | LA-6 | P0 | 原版建造菜单施工 | 框架一次性施工到 100%，施工过程代表 Part 建造；已改为原版 Blueprint，pawn 先搬运建材再施工 | ✅ 已完成 |
 | LA-7 | P0 | 施工完成切换已完工火箭 | 同一 Building 切换为已完工火箭，进入下一阶段；已接调试“标记完工”+ `FrameCompleteConstructionPatch` 正常完工回调，通知发射台进入 Completed | ✅ 已完成 |
-| LA-8 | P1 | 框架拆除/取消设计 | 拆除后回空闲，设计作废，材料按原版拆除规则 | ⬜ 待办 |
-| LA-9 | P1 | 口袋地图生成 | 按型号模板生成完整船体轮廓，内部只有地板和舱门；尺寸由模板决定 | ⬜ 待办 |
-| LA-10 | P1 | 口袋地图与火箭关联 | `SpaceMapComp` 关联；火箭 Gizmo 进出口袋地图；地图随火箭入轨 | ⬜ 待办 |
+| LA-8 | P1 | 框架拆除/取消设计 | 取消设计已接入管理界面并限制在未完工阶段；框架拆除与材料返还待后续 | 🔵 进行中 |
+| LA-9 | P1 | 航天器地图生成 | 已改为 `SpacecraftMapParent` 平级地图 + `SpacecraftMapRegistry`；当前 50×50 基础舱室布局，完整船体轮廓待后续 | 🔵 进行中 |
+| LA-10 | P1 | 航天器地图与火箭关联 | 已实现：`SpacecraftMapParent` + `SpacecraftBridge` + 脐带塔；原版 `Dialog_EnterPortal` / `JobDriver_EnterPortal` / `PortalContainerProxy` 登船与物品转移；发射后地图随航天器进入 InSpace；待做：完整船体布局与持久乘员舱 | 🔵 进行中 |
 | LA-11 | P1 | 对接口预留 | 为 Pawn↔Pawn、Pawn↔非Pawn、非Pawn↔非Pawn 三种对接预留结构 | ⬜ 待办 |
 | LA-12 | P0 | 发射条件校验 | 至少 1 有人控制台；房间封闭；燃料足够；气体系统可选；`RocketLaunchConditions` 校验器已落地，正式控制台 Def 待 DMS:NF 接入 | 🔵 进行中 |
 | LA-13 | P1 | 燃料加注 | 玩家把燃料搬到发射台，写入 Part 储罐参数；保留 RimPipe 扩展点 | ⬜ 待办 |
@@ -122,6 +122,8 @@
 | LA-17 | P2 | 载荷配置与入轨 | 装配界面配置类型+数量+安装位置；首发只保存并随火箭入轨 | ⬜ 待办 |
 | LA-18 | P0 | 存档 | 保存 `RocketDesignSpec`、发射台状态、口袋地图、检修口设置；已实现：`RocketDesignSpec` 与虚拟推进参数由 `SpaceMapComp` 持久化并在读档后重建；待做：发射台状态/检修口完整存档验证 | 🔵 进行中 |
 | LA-19 | P3 | 未来扩展点 | 拖运平台、自定义口袋地图长宽、多 Part/多格、对接、载荷部署、燃料/RimPipe、Part 损耗/故障、火箭回收/退役 | ⬜ 待办 |
+| LA-20 | P1 | 人员/建筑在航天器地图中的装载 | 已接入原版 `Dialog_EnterPortal` 选择人员/物品 + `PortalContainerProxy` 物品投放；航天器地图可返回地面；待做：预置舱段建筑、建筑运输、完整登船调度 | 🔵 进行中 |
+| LA-21 | P0 | 统一发射方式管理 | `RocketLaunchManager` + `RocketLaunchMode` + `Dialog_RocketLaunch`；火箭/发射台统一入口；PFL 火箭隐藏原版发射 Gizmo；支持原版 TransportPod 与 PFL 入轨两种方式；记住上次选择；原版/PFL 条件分开校验；已有“强制发射 PFL (调试)”Gizmo。待做：游戏内验证、原版发射后的地图处置（依赖设计界面） | 🔵 进行中 |
 
 ---
 
@@ -146,3 +148,6 @@
 | 2026-08-20 | 小型发射台可建造区域限制为中心 3×3；同一发射台仅允许一座火箭/运输仓，修复多运输仓同台发射崩溃；`Steel100` 交叉引用初步未在 PFL/DMS:NF 源码中找到字面量（后查明为 `rebuildCost` XML 列表格式错误） |
 | 2026-08-20 | 查明并修复 `Steel100`（`rebuildCost` 的 `ThingDefCountClass` 列表格式错误）与 `Drop pod left the map`（离港动画未初始化 transport 字段）；调试用的 0 造价已按原值恢复，`rebuildCost` 用正确格式恢复为 `100 Steel` |
 | 2026-08-20 | 修复 `CompThruster` 启动期静态资源警告：添加 `[StaticConstructorOnStartup]`，`flameMaterial` 改为 `static readonly` 并在静态构造函数中创建；重新编译 `PioneerFrameworkLite.dll` |
+| 2026-08-21 | 发射台总装-口袋地图装载：火箭完工/重建时生成并关联舱内地图；新增 `CompRocketPocketMap`（火箭 Gizmo 进入、调试装载/卸载殖民者）；发射台 Gizmo 可进入舱内，舱内新增“返回地面”；发射时复用已有地图，舱内人员/建筑随火箭入轨；发射失败保留已装修地图，虚拟推进重试不重复注册；LA-10 转为进行中，新增 LA-20 |
+| 2026-08-21 | 统一发射方式管理开始实现：新增 `RocketLaunchManager`/`RocketLaunchMode`/`RocketLaunchContext`/`Dialog_RocketLaunch`；火箭与发射台统一“发射…”入口；Harmony 隐藏 PFL 火箭原版发射 Gizmo；`CompAssemblyPad` 持久化发射方式；原版条件/PFL 条件分开校验；新增火箭“强制发射 PFL (调试)”Gizmo；新增 LA-21 |
+| 2026-08-23 | 航天器管理界面与航天器地图架构：新增 `SpacecraftMapParent`/`SpacecraftMapRegistry`/`SpacecraftBridge`/`DockingPort`；脐带塔 + 原版 `Dialog_EnterPortal`/`PortalContainerProxy` 登船与物品转移；普通运输仓无地图 PFL 入轨；取消设计限制；`isPocketMap` 引擎技术要求注释；TODO 状态同步 |

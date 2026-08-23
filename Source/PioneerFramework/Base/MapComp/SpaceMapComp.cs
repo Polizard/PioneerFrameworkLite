@@ -295,6 +295,14 @@ namespace PioneerFramework
         public void SetVirtualRocketPropulsion(RocketDesignSpec spec, PropellantDef def,
             float ve, float massFlow, float fuelMass, float capacity)
         {
+            // 发射失败后可能复用同一张舱内地图重试；已有虚拟推进时不要重复注册，
+            // 避免引擎/容量叠加。只更新设计引用，保留当前实际工质剩余量。
+            if (hasVirtualPropulsion && virtualPropulsionRegistered)
+            {
+                rocketSpec = spec;
+                return;
+            }
+
             rocketSpec = spec;
             hasVirtualPropulsion = true;
             virtualPropellantDefName = def?.defName;

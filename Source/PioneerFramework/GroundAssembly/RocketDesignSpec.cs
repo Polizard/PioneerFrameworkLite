@@ -3,6 +3,13 @@ using Verse;
 
 namespace PioneerFramework.GroundAssembly
 {
+    /// <summary>运输仓类型：无舱体普通运输仓 / 有舱内地图的航天舱室。</summary>
+    public enum RocketCabinType
+    {
+        None,
+        Spacecraft
+    }
+
     /// <summary>
     /// 火箭设计规格。这是从「装配界面确认」到「框架施工」到「入轨 SpaceEntity」全程携带的数据对象。
     /// 对应 v1 设计中的 RocketDesignSpec。
@@ -12,14 +19,17 @@ namespace PioneerFramework.GroundAssembly
         /// <summary>火箭型号/模板 DefName。PFL 只提供调试模板，正式型号由 DMS:NF 提供。</summary>
         public string rocketDefName = "PF_Building_Rocket_Recoverable_Basic";
 
+        /// <summary>运输仓类型。航天舱室在首次登船时才生成舱内地图；普通运输仓不生成。</summary>
+        public RocketCabinType CabinType = RocketCabinType.Spacecraft;
+
         /// <summary>框架尺寸（正方形边长，格）。当前限制为正方形。</summary>
         public int frameSize = 3;
 
         /// <summary>口袋地图尺寸（格）。与框架尺寸相互独立，由型号模板决定。</summary>
-        public int mapWidth = 60;
+        public int mapWidth = 50;
 
         /// <summary>口袋地图尺寸（格）。</summary>
-        public int mapHeight = 60;
+        public int mapHeight = 50;
 
         /// <summary>燃料量（抽象单位；后续由 ChemfuelToDeltaVMapper 换算为 dV/工质）。</summary>
         public float fuelAmount;
@@ -36,9 +46,10 @@ namespace PioneerFramework.GroundAssembly
         public void ExposeData()
         {
             Scribe_Values.Look(ref rocketDefName, "rocketDefName", "PF_Building_Rocket_Recoverable_Basic");
+            Scribe_Values.Look(ref CabinType, "cabinType", RocketCabinType.Spacecraft);
             Scribe_Values.Look(ref frameSize, "frameSize", 3);
-            Scribe_Values.Look(ref mapWidth, "mapWidth", 60);
-            Scribe_Values.Look(ref mapHeight, "mapHeight", 60);
+            Scribe_Values.Look(ref mapWidth, "mapWidth", 50);
+            Scribe_Values.Look(ref mapHeight, "mapHeight", 50);
             Scribe_Values.Look(ref fuelAmount, "fuelAmount", 0f);
             Scribe_Collections.Look(ref parts, "parts", LookMode.Deep);
             Scribe_Collections.Look(ref payloads, "payloads", LookMode.Deep);

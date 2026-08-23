@@ -173,6 +173,10 @@ def main():
     KNOWN_BASE_TEX = {
         # 原版酿造桶贴图（打包在 Unity 资源里，无法用文件系统校验）
         "Things/Building/Production/FermentingBarrel",
+        # 原版通讯台贴图（PFL 控制终端临时借用）
+        "Things/Building/Misc/CommsConsole",
+        # 原版洞穴出口贴图（PFL 火箭舱门临时借用）
+        "Things/Building/Misc/CaveExit/CaveExit",
     }
 
     def texture_file(tex_path):

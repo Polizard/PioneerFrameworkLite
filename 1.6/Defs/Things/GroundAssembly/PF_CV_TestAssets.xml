@@ -7,6 +7,7 @@
     <label>小型总装发射台</label>
     <description>迁移自 DMS:NF 小型发射台的 PFL 测试资产。</description>
     <thingClass>PioneerFramework.GroundAssembly.Building_AssemblyPad</thingClass>
+    <tickerType>Normal</tickerType>
     <graphicData>
       <texPath>Things/Building/SpaceLaunchTechnology/LaunchPadS</texPath>
       <graphicClass>Graphic_Single</graphicClass>
@@ -91,6 +92,7 @@
         <restEffectiveness>0.8</restEffectiveness>
         <massCapacity>2000</massCapacity>
       </li>
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketPocketMap" />
       <li Class="CompProperties_Launchable_TransportPod">
         <activeTransporterDef>PF_ActivePod_CVOne</activeTransporterDef>
         <skyfallerLeaving>PF_Skyfaller_Leaving_CVOne</skyfallerLeaving>
@@ -136,6 +138,7 @@
         <restEffectiveness>0.8</restEffectiveness>
         <massCapacity>15000</massCapacity>
       </li>
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketPocketMap" />
       <li Class="CompProperties_Launchable_TransportPod">
         <activeTransporterDef>PF_ActivePod_CVThree</activeTransporterDef>
         <skyfallerLeaving>PF_Skyfaller_Leaving_CVThree</skyfallerLeaving>

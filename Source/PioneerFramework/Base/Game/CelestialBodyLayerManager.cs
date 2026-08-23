@@ -55,7 +55,7 @@ namespace PioneerFramework
         /// </summary>
         public static float GetDayLengthForMap(Map map)
         {
-            if (map?.Tile == null) return 60000f;
+            if (map == null || map.Tile < 0) return 60000f;
 
             var tile = map.Tile;
             var layerDef = tile.LayerDef;

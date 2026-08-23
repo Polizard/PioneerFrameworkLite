@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using RimWorld;
+using UnityEngine;
 using Verse;
 using PioneerFramework.GroundAssembly;
 
@@ -29,8 +30,15 @@ namespace PioneerFramework.Launch
 
             if (rocketMap == null)
             {
-                if (!debug)
-                    errors.Add("尚未生成舱内地图，无法进行正式发射。");
+                // 普通运输仓允许无地图 PFL 入轨；航天舱室若执行正式发射仍应先生成地图。
+                if (!debug && spec.CabinType == RocketCabinType.Spacecraft)
+                    errors.Add("航天舱室尚未生成舱内地图，无法进行正式发射。");
+
+                if (!SpecHasThrusters(spec))
+                    errors.Add("未安装推进器：至少需要 1 个推进器。");
+                if (spec.fuelAmount <= 0.001f)
+                    errors.Add("燃料不足：设计燃料为 0。");
+
                 return errors;
             }
 
@@ -41,11 +49,24 @@ namespace PioneerFramework.Launch
                 return errors;
             }
 
-            if (mapComp.Networks == null || mapComp.Networks.Count == 0)
-                errors.Add("未安装推进器：至少需要 1 个推进器。");
-
-            if (mapComp.TotalPropellantMass <= 0.001f)
-                errors.Add(string.Format("燃料不足：当前工质 {0:0.#} kg。", mapComp.TotalPropellantMass));
+            // 发射台预检时，虚拟推进可能尚未注入地图（注入发生在 LaunchService 发射流程内），
+            // 因此先按设计规格做硬条件判断；若地图已配置虚拟推进，则按地图实际工质判断。
+            bool mapHasPropulsion = (mapComp.Networks != null && mapComp.Networks.Count > 0)
+                || mapComp.TotalPropellantCapacity > 0f;
+            if (!mapHasPropulsion)
+            {
+                if (!SpecHasThrusters(spec))
+                    errors.Add("未安装推进器：至少需要 1 个推进器。");
+                if (spec.fuelAmount <= 0.001f)
+                    errors.Add("燃料不足：设计燃料为 0。");
+            }
+            else
+            {
+                if (mapComp.Networks == null || mapComp.Networks.Count == 0)
+                    errors.Add("未安装推进器：至少需要 1 个推进器。");
+                if (mapComp.TotalPropellantMass <= 0.001f)
+                    errors.Add(string.Format("燃料不足：当前工质 {0:0.#} kg。", mapComp.TotalPropellantMass));
+            }
 
             if (!debug)
             {
@@ -56,6 +77,22 @@ namespace PioneerFramework.Launch
             }
 
             return errors;
+        }
+
+        private static bool SpecHasThrusters(RocketDesignSpec spec)
+        {
+            if (spec?.parts == null)
+                return false;
+
+            int count = 0;
+            for (int i = 0; i < spec.parts.Count; i++)
+            {
+                if (spec.parts[i] == null || spec.parts[i].category != "thruster")
+                    continue;
+                count += Mathf.Max(1, spec.parts[i].quantity);
+            }
+
+            return count >= 1;
         }
 
         /// <summary>是否存在已挂载 <see cref="CompRocketConsole"/> 的可用控制台建筑。</summary>
