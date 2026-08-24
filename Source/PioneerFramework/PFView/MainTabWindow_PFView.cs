@@ -61,6 +61,12 @@ namespace PioneerFramework
         private bool debugShowSunMarker = true;  // 调试：在太阳位置显示黄色标记
         private int cachedRenderTick;           // 缓存渲染 tick，避免 OnPostRender 中重复获取
 
+#if DEBUG
+        // 射弹渲染连续检测：相邻帧弹头渲染位置跳变超阈值 → 提示（抓折线/集体闪现）
+        private readonly Dictionary<int, DVector3> debugLastProjRender = new Dictionary<int, DVector3>();
+        private int debugJumpLogTick = -9999;
+#endif
+
         // ════════════════════════════════════════════════════
         //  3D 资源
         // ════════════════════════════════════════════════════
@@ -381,9 +387,9 @@ namespace PioneerFramework
         // ════════════════════════════════════════════════════
 
         /// <summary>计算渲染原点（所有物体的 view-space 位置都相对此点）</summary>
-        private DVector3 GetRenderOrigin(int? tickOverride = null)
+        private DVector3 GetRenderOrigin(double? tickOverride = null)
         {
-            int tick = tickOverride ?? (int)Math.Round(TimeScaleManager.GetPhysicsTickSafe());
+            double tick = tickOverride ?? TimeScaleManager.GetPhysicsTickSafe();
 
             if (selectedGroupId >= 0)
             {
@@ -396,7 +402,7 @@ namespace PioneerFramework
         }
 
         /// <summary>获取选中编队的世界坐标（tick 时刻），无选中返回 zero</summary>
-        private DVector3 GetSelectedGroup(int tick)
+        private DVector3 GetSelectedGroup(double tick)
         {
             if (selectedGroupId < 0) return DVector3.zero;
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
@@ -425,7 +431,7 @@ namespace PioneerFramework
         /// 天体绝对位置通过 GetBodyWorldPosition 递归获取。
         /// </summary>
 
-        private DVector3 GetGroupAbsoluteWorldPos(SpaceEntityGroup g, int tick)
+        private DVector3 GetGroupAbsoluteWorldPos(SpaceEntityGroup g, double tick)
         {
             DVector3 localPos = g.IsCircularOrbit
                 ? g.GetCircularPositionAtTick(tick)
@@ -452,7 +458,7 @@ namespace PioneerFramework
         }
 
         /// <summary>获取天体世界坐标</summary>
-        private static DVector3 GetBodyWorldPos(int bodyId, int tick)
+        private static DVector3 GetBodyWorldPos(int bodyId, double tick)
         {
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             return mgr != null ? mgr.GetBodyWorldPosition(bodyId, tick) : DVector3.zero;
@@ -545,7 +551,7 @@ namespace PioneerFramework
         }
 
         /// <summary>每帧更新方向光，使其从恒星方向照射到行星</summary>
-        private void UpdateLighting(CelestialBodyManager mgr, int tick, DVector3 origin)
+        private void UpdateLighting(CelestialBodyManager mgr, double tick, DVector3 origin)
         {
             if (sunLight == null) return;
 
@@ -587,8 +593,8 @@ namespace PioneerFramework
             if (renderCamera == null || renderTexture == null) return;
 
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            int tick = mgr != null ? (int)Math.Round(TimeScaleManager.GetPhysicsTickSafe()) : 0;
-            cachedRenderTick = tick;
+            double tick = mgr != null ? TimeScaleManager.GetPhysicsTickSafe() : 0;
+            cachedRenderTick = (int)Math.Round(tick); // int 缓存仅作 OnPostRender 轨道线采样/键，天体位置一律用 double tick
             DVector3 origin = GetRenderOrigin(tick);
 
             if (mgr != null)
@@ -604,7 +610,7 @@ namespace PioneerFramework
             renderCamera.Render();
         }
 
-        private void DrawAllObjects(DVector3 origin, CelestialBodyManager mgr, int tick)
+        private void DrawAllObjects(DVector3 origin, CelestialBodyManager mgr, double tick)
         {
             DrawCelestialBodies(mgr, tick, origin);
             DrawSystemGroups(mgr, tick, origin);
@@ -656,7 +662,7 @@ namespace PioneerFramework
         }
 
 
-        private void DrawCelestialBodies(CelestialBodyManager mgr, int tick, DVector3 origin)
+        private void DrawCelestialBodies(CelestialBodyManager mgr, double tick, DVector3 origin)
         {
             var relevantIds = GetLocalSystemBodyIds(mgr);
             Vector3 camPos = GetCameraViewPos();
@@ -779,7 +785,7 @@ namespace PioneerFramework
             Graphics.DrawMesh(mesh, mtx2, mat, SceneLayer, null, 0, matBlock);
         }
 
-        private void DrawSystemGroups(CelestialBodyManager mgr, int tick, DVector3 origin)
+        private void DrawSystemGroups(CelestialBodyManager mgr, double tick, DVector3 origin)
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return;
@@ -883,16 +889,23 @@ namespace PioneerFramework
         {
             var cm = Current.Game?.GetComponent<CombatManager>();
             if (cm == null) return;
-            int tick = cachedRenderTick;
+
+            // 渲染插值必须用 physicsTick 基准（射弹 spawnPhysicsTick 同基准），
+            // 不能用 TicksGame：physicsTick 是受时间档缩放的游戏世界秒且可为负，
+            // 与 TicksGame 直接相减单位错位 → 外推恒为 0 → 渲染只显示离散物理位置 → 折线。
+            // 天体偏移同样用 double physicsTick：int 化在 1/60x 下每 60 real tick 才跳 1 秒，
+            // 天体位置离散跳变 → 射弹/场景"集体闪现"。全部用 double 后完全连续。
+            double tick = TimeScaleManager.GetPhysicsTickSafe();
 
             foreach (var proj in cm.ActiveProjectiles)
             {
-                // 渲染插值：物理每 2 tick 更新一次，渲染每帧都画。
-                // 自上次物理更新以来的时间外推 velocity，消除前后瞬移闪烁；
-                // 外推上限 1 个物理步（2 tick），防止物理暂停时射弹继续外飘。
-                int dtReal = tick - proj.lastUpdateRealTick;
-                double dtSec = dtReal <= 0 ? 0 : Math.Min(dtReal, 2) / 60.0;
-                DVector3 renderPos = proj.position + proj.velocity * dtSec;
+                // 渲染位置解析化：无重力射弹位置 = spawnPos + velocity×(physicsTick - spawnPhysicsTick)，
+                // 是 physicsTick 的连续函数——任何渲染帧率下都平滑（不依赖每 2 tick 的离散步进点，
+                // 低帧率时渲染点与物理点重合会离散跳动呈折线）。重力射弹回退为物理点+外推插值。
+                double physicsNowT = tick;
+                DVector3 renderPos = proj.affectedByGravity
+                    ? proj.position + proj.velocity * Math.Max(0, physicsNowT - proj.prevPhysicsTick)
+                    : proj.spawnPosition + proj.velocity * (physicsNowT - proj.spawnPhysicsTick);
 
                 // 射弹位置是行星系相对坐标，渲染需转绝对（加所属行星世界偏移）
                 DVector3 bodyOff = GetBodyWorldPos(proj.systemBodyId, tick);
@@ -910,13 +923,32 @@ namespace PioneerFramework
                 matBlock.SetColor("_Color", new Color(1f, 0.9f, 0.2f));
                 Graphics.DrawMesh(sphereMeshLOD1, mtx, renderMat, SceneLayer, null, 0, matBlock);
 
-                // 尾迹：上一物理位置 → 当前插值位置的线段（高速射弹单帧跳变也能看到轨迹）
-                Vector3 pv = WorldToView(proj.prevPosition + bodyOff, origin);
-                float len = Vector3.Distance(vp, pv);
+#if DEBUG
+                // 连续检测：相邻帧弹头渲染位置跳变超 1.5×物理步进 → 折线/闪现（限频提示）
+                if (debugLastProjRender.TryGetValue(proj.id, out var lastRender))
+                {
+                    double jump = (renderPos - lastRender).magnitude;
+                    double expectedStep = proj.velocity.magnitude * (2.0 / 60.0);
+                    if (jump > expectedStep * 1.5 + 1.0 && Find.TickManager.TicksGame - debugJumpLogTick >= 60)
+                    {
+                        debugJumpLogTick = Find.TickManager.TicksGame;
+                        Log.Message(string.Format("[射弹渲染检测] proj={0} 帧间跳变 {1:F0}m（预期步进 {2:F0}m）→ 疑似折线/闪现",
+                            proj.id, jump, expectedStep));
+                    }
+                }
+                debugLastProjRender[proj.id] = renderPos;
+#endif
+
+                // 尾迹：沿 velocity 反方向固定延伸 1 个物理步（长度恒定、端点连续）。
+                // 原实现连接 proj.prevPosition（物理上一步，每 2 tick 跳 167m），尾迹长度
+                // 每物理步从满长缩到 0 再跳回 → 伸缩抖动，视觉上呈"折线"。弹头本就平滑。
+                DVector3 trailEndWorld = renderPos - proj.velocity * (2.0 / 60.0);
+                Vector3 tv = WorldToView(trailEndWorld + bodyOff, origin);
+                float len = Vector3.Distance(vp, tv);
                 if (len > 0.01f)
                 {
-                    Vector3 mid = (vp + pv) * 0.5f;
-                    Quaternion rot = Quaternion.LookRotation((vp - pv).normalized, Vector3.up);
+                    Vector3 mid = (vp + tv) * 0.5f;
+                    Quaternion rot = Quaternion.LookRotation((vp - tv).normalized, Vector3.up);
                     Matrix4x4 lmtx = Matrix4x4.TRS(mid, rot, new Vector3(trailWidth, trailWidth, len));
                     matBlock.SetColor("_Color", new Color(1f, 0.8f, 0.2f, 0.55f));
                     Graphics.DrawMesh(cubeMesh, lmtx, renderMat, SceneLayer, null, 0, matBlock);
@@ -1102,7 +1134,7 @@ namespace PioneerFramework
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (mgr == null) return;
 
-            int tick = (int)Math.Round(TimeScaleManager.GetPhysicsTickSafe());
+            double tick = TimeScaleManager.GetPhysicsTickSafe();
             DVector3 origin = GetRenderOrigin();
             Vector2 center = inRect.center;
             float halfW = inRect.width * 0.5f;

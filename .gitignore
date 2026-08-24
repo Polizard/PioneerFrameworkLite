@@ -2,6 +2,10 @@
 .vs/
 **/.vs/
 
+# IDE
+.vscode/
+.idea/
+
 # Build outputs
 **/bin/
 **/obj/

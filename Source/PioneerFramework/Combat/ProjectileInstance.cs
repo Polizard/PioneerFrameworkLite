@@ -31,6 +31,9 @@ namespace PioneerFramework.Combat
         public double prevUpdatePhysicsTick;
         /// <summary>生成时的世界系位置（调试日志用）。</summary>
         public DVector3 spawnPosition;
+        /// <summary>生成时的 physicsTick：无重力射弹位置 = spawnPos + velocity×(physicsTick - spawnPhysicsTick)，
+        /// 渲染据此解析计算，任何帧率下都是平滑连续轨迹（不依赖离散步进点）。</summary>
+        public double spawnPhysicsTick;
         /// <summary>累计飞行游戏世界秒（调试日志用，验证时间基准）。</summary>
         public double totalFlightSeconds;
 

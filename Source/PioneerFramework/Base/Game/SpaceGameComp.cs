@@ -44,6 +44,20 @@ namespace PioneerFramework
         /// <summary>交会引导：预测脱靶量门控（米）。传播当前状态到到达时刻，脱靶低于此视为 on-course（零烧）。</summary>
         private const double GuidanceMissThreshold = 2000.0; // 2 km
 
+        /// <summary>接近引导：限速（m/s）。动态到达时刻 tof = dist / v_close，保证修正量有界、轨道扰动小。</summary>
+        private const double ApproachMaxClosingSpeed = 50.0;
+        /// <summary>接近引导：终端收拢时间常数 τ（s）。消相对速度的同时以 ≤ dist/τ 温柔贴近（仅近距离生效）。</summary>
+        private const double ApproachTimeConstant = 300.0;
+        /// <summary>接近引导：进入终端收拢的距离阈值（m）。低于此距离不再切回 Lambert 巡航，
+        /// 避免 tof=dist/限速 在终端窗口边界反复横跳造成极限环振荡。</summary>
+        private const double ApproachTerminalDistance = 5000.0; // 5 km
+        /// <summary>接近引导：完成判定——相对距离（m）。</summary>
+        private const double ApproachCompletionDistance = 300.0;
+        /// <summary>接近引导：完成判定——相对速度（m/s，取 ≥ 引导死区以保证可达成）。</summary>
+        private const double ApproachCompletionRelVel = 2.0;
+        /// <summary>接近引导：允许启动的最大相对距离（m，太远建议用精确交会）。</summary>
+        public const double ApproachMaxStartDistance = 1000000.0; // 1000 km
+
         // ── 地图封存/取档异步操作 ──
         public MapRestoreOperation ActiveRestoreOperation { get; private set; }
         public MapArchiveOperation ActiveArchiveOperation { get; private set; }
@@ -995,6 +1009,8 @@ namespace PioneerFramework
                         timeScaleManager.QueueCommand(TimeScaleCommand.ToFast());
                     else if (DesiredTimeScale == TimeScaleLevel.Combat)
                         timeScaleManager.QueueCommand(TimeScaleCommand.ToCombat());
+                    else
+                        timeScaleManager.QueueCommand(TimeScaleCommand.ToNormal()); // 默认 Normal 流速：缺此分支会锁死 Combat 档
                 }
             }
 
@@ -1124,16 +1140,20 @@ namespace PioneerFramework
                     group.GroupId, dV.magnitude, remaining));
             }
 
-            // ── 交会引导（精确交会：到达段按实际状态闭环修正）──
+            // ── 交会/接近引导（精确交会：固定到达时刻；近距离接近：动态到达时刻）──
             UpdateRendezvousGuidance(physicsTick);
         }
 
         /// <summary>
-        /// 交会引导：为处于精确交会的群组按实际状态修正到达轨迹（MechJeb 式"评估→修正→冷却"节奏）。
+        /// 交会/接近引导：为处于引导的群组按实际状态修正轨迹（MechJeb 式"评估→修正→冷却"节奏）。
+        /// 两种模式共用一套引擎：
+        /// - 精确交会（rendezvousIsApproach=false）：出发段点火后生效，固定到达时刻，巡航 Lambert + 终端消速；
+        /// - 近距离接近（rendezvousIsApproach=true）：登记即生效，到达时刻按当前距离动态重算（tof=dist/限速），
+        ///   巡航 Lambert 拦截 + 终端"消速+温柔收拢"，贴近且相对速度归零即完成。
         /// 无引导 / 燃烧中 / 队列里还有未执行机动（出发段或玩家接管）时跳过。
         /// 巡航段：检查节流（30s）+ 预测脱靶量门控（&lt; 2km 视为 on-course 零烧），脱靶才 Lambert 修正；
-        /// 终端段（tof &lt; 60s）：一次消相对速度，到达点过后立即结束（不追打）。
-        /// 修正烧后冷却 60s，避免追逐残差。修正烧复用 StartBurn（固定惯性方向 + 工质消耗 + 撞行星保护）。
+        /// 终端段（tof &lt; 60s）：消相对速度。修正烧后冷却 60s，避免追逐残差。
+        /// 修正烧复用 StartBurn（固定惯性方向 + 工质消耗 + 撞行星保护）。
         /// 计算成本：节流后每次检查 = 1~2 次解析传播 + 偶尔 1 次 Lambert（µs 级），无性能压力。
         /// </summary>
         private void UpdateRendezvousGuidance(double physicsTick)
@@ -1147,8 +1167,9 @@ namespace PioneerFramework
                 // 队列里还有未执行机动（出发段在排队 / 玩家新排队）→ 引导让位
                 if (group.plannedManeuvers.Count > 0) continue;
 
-                // 出发段尚未执行：若机动已被弹出（被阻止/取消）则引导作废
-                if (!group.rendezvousArmed)
+                // 出发段尚未执行（仅精确交会模式）：若机动已被弹出（被阻止/取消）则引导作废
+                // 接近模式无出发段（登记即生效），跳过此检查
+                if (!group.rendezvousArmed && !group.rendezvousIsApproach)
                 {
                     Log.Message(string.Format("[Guidance] Group {0} departure maneuver never executed, rendezvous guidance cancelled.",
                         group.GroupId));
@@ -1169,28 +1190,67 @@ namespace PioneerFramework
                 if (physicsTick < group.rendezvousLastCheckTick + GuidanceCheckInterval) continue;
                 group.rendezvousLastCheckTick = physicsTick;
 
-                double arrivalTick = group.rendezvousArrivalTick;
-                double tof = arrivalTick - physicsTick;
-                if (tof <= 0.0)
-                {
-                    // 到达点已过：交会完成（终端消速已在上个检查周期内完成），不追打
-                    Log.Message(string.Format("[Guidance] Group {0} rendezvous complete (arrival passed).", group.GroupId));
-                    group.ClearRendezvousGuidance();
-                    continue;
-                }
-
                 DVector3 r1Rel = group.localPosition;
                 DVector3 v1Rel = group.localVelocity;
+
+                double arrivalTick;
+                double tof;
+                if (group.rendezvousIsApproach)
+                {
+                    // 接近模式：动态到达时刻 = now + dist / 限速（修正量有界、轨道扰动小）；
+                    // 贴近且相对速度归零 → 接近完成
+                    double distNow = (target.localPosition - r1Rel).magnitude;
+                    double relvelNow = (target.localVelocity - v1Rel).magnitude;
+                    if (distNow < ApproachCompletionDistance && relvelNow < ApproachCompletionRelVel)
+                    {
+                        Log.Message(string.Format("[Guidance] Group {0} approach complete: dist={1:F0}m relvel={2:F1} m/s",
+                            group.GroupId, distNow, relvelNow));
+                        Messages.Message(string.Format("Group {0} 已接近 Group {1}（距离 {2:F0} m）",
+                            group.GroupId, group.rendezvousTargetId, distNow), MessageTypeDefOf.TaskCompletion);
+                        group.ClearRendezvousGuidance();
+                        continue;
+                    }
+                    tof = Math.Max(distNow / ApproachMaxClosingSpeed, 1.0);
+                    if (distNow < ApproachTerminalDistance)
+                    {
+                        // 已进入近距离：直接进终端"消速+温柔收拢"，不再切回 Lambert 巡航
+                        //（避免 tof=dist/限速 在终端窗口边界横跳 → 极限环振荡）
+                        tof = 1.0;
+                    }
+                    arrivalTick = physicsTick + tof;
+                }
+                else
+                {
+                    arrivalTick = group.rendezvousArrivalTick;
+                    tof = arrivalTick - physicsTick;
+                    if (tof <= 0.0)
+                    {
+                        // 到达点已过：交会完成（终端消速已在上个检查周期内完成），不追打
+                        Log.Message(string.Format("[Guidance] Group {0} rendezvous complete (arrival passed).", group.GroupId));
+                        group.ClearRendezvousGuidance();
+                        continue;
+                    }
+                }
                 double gm = GetBodyGM(group.CelestialBodyId);
                 double missM = double.NaN;
                 DVector3 dv;
 
                 if (tof < GuidanceTerminalWindow)
                 {
-                    // 终端：一次消相对速度（Lambert 在 tof→0 时数值不稳；巡航门控已把船带到目标附近）
+                    // 终端：消相对速度（Lambert 在 tof→0 时数值不稳；巡航门控已把船带到目标附近）
                     if (!TryPredictTargetAtTick(target, arrivalTick, out _, out var vTargetRel))
                         continue;
-                    dv = vTargetRel - v1Rel;
+                    if (group.rendezvousIsApproach)
+                    {
+                        // 接近终端：消相对速度 + 温柔收拢（≤ dist/τ，近距离下 ≤ ~10 m/s，安全），
+                        // 保证最终能贴到完成半径内而不是悬停
+                        DVector3 drClose = target.localPosition - r1Rel;
+                        dv = vTargetRel - v1Rel - drClose.normalized * (drClose.magnitude / ApproachTimeConstant);
+                    }
+                    else
+                    {
+                        dv = vTargetRel - v1Rel;
+                    }
                 }
                 else
                 {
@@ -1246,7 +1306,9 @@ namespace PioneerFramework
                 if (trackedManeuvers.ContainsKey(group.GroupId))
                     trackedManeuvers[group.GroupId] = new ManeuverTracker { ExecutePhysicsTick = physicsTick, IsActive = true };
                 Log.Message(string.Format("[Guidance] Group {0} correction burn started: dv={1:F1} m/s miss={2:F0}m tof={3:F0}s {4}",
-                    group.GroupId, dv.magnitude, missM, tof, tof < GuidanceTerminalWindow ? "(terminal)" : ""));
+                    group.GroupId, dv.magnitude, missM, tof,
+                    group.rendezvousIsApproach ? "(approach)"
+                        : tof < GuidanceTerminalWindow ? "(terminal)" : ""));
             }
         }
 

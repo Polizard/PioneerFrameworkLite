@@ -277,7 +277,7 @@ namespace PioneerFramework
         public void QueueManeuver(PlannedManeuver maneuver)
         {
             maneuver.useNetworks = InheritNetworks();
-            ClearRendezvousGuidance(); // 玩家新排队机动 = 手动接管，交会引导让位
+            ClearRendezvousGuidance(); // 玩家新排队机动 = 手动接管，交会/接近引导让位（接近是其特化，一并清除）
             plannedManeuvers.Add(maneuver);
         }
 
@@ -289,7 +289,7 @@ namespace PioneerFramework
         public void QueueManeuver(float radDV, float tanDV, float normDV, int deltaTicks)
         {
             int execTick = (int)System.Math.Round(TimeScaleManager.GetPhysicsTickSafe()) + deltaTicks;
-            ClearRendezvousGuidance(); // 玩家手动机动 = 接管，引导让位
+            ClearRendezvousGuidance(); // 玩家手动机动 = 接管，交会/接近引导让位
             plannedManeuvers.Add(new PlannedManeuver
             {
                 radialDV = radDV,
@@ -325,7 +325,7 @@ namespace PioneerFramework
         {
             if (index < 0 || index >= plannedManeuvers.Count) return;
             plannedManeuvers.RemoveRange(index, plannedManeuvers.Count - index);
-            ClearRendezvousGuidance(); // 取消出发段 = 交会计划作废
+            ClearRendezvousGuidance(); // 取消出发段 = 交会/接近计划作废
         }
 
         /// <summary>
@@ -411,6 +411,8 @@ namespace PioneerFramework
         public bool HasRendezvousGuidance = false;
         /// <summary>出发段已点火执行，引导生效（闭环修正开始）。false = 等待出发段。</summary>
         public bool rendezvousArmed = false;
+        /// <summary>引导为"近距离接近"模式（动态到达时刻、无出发段）。true 时绕开出发段与固定到达时刻逻辑。</summary>
+        public bool rendezvousIsApproach = false;
         /// <summary>目标群 ID。</summary>
         public int rendezvousTargetId = -1;
         /// <summary>到达时刻（physicsTick 基准）。</summary>
@@ -430,6 +432,7 @@ namespace PioneerFramework
         /// </summary>
         public void RegisterRendezvousGuidance(int targetId, double arrivalTick, bool prograde, HashSet<PropellantDef> useNetworks)
         {
+            ClearApproachGuidance(); // 互斥：规划交会即取消接近
             HasRendezvousGuidance = true;
             rendezvousArmed = false;
             rendezvousTargetId = targetId;
@@ -459,6 +462,38 @@ namespace PioneerFramework
 
         #endregion
 
+        #region 近距离接近 (Close-Range Approach)
+
+        /// <summary>是否处于近距离接近模式（交会引导的特化：动态到达时刻、无出发段）。</summary>
+        public bool HasApproachGuidance => HasRendezvousGuidance && rendezvousIsApproach;
+
+        /// <summary>接近目标群 ID（等价 rendezvousTargetId）。</summary>
+        public int ApproachTargetId => rendezvousTargetId;
+
+        /// <summary>
+        /// 登记近距离接近引导：复用交会引导引擎（Lambert 拦截 + 终端消速），但到达时刻不固定，
+        /// 每检查周期按当前距离动态重算（tof = dist / 限速）。无出发段，登记即生效。
+        /// 由玩家手动触发（空间信息面板「近距离接近」按钮选择目标）。
+        /// </summary>
+        public void RegisterApproachGuidance(int targetId, HashSet<PropellantDef> useNetworks)
+        {
+            ClearRendezvousGuidance(); // 互斥：清除旧的交会/接近引导
+            HasRendezvousGuidance = true;
+            rendezvousIsApproach = true;
+            rendezvousArmed = true;      // 接近无出发段，登记即生效
+            rendezvousTargetId = targetId;
+            rendezvousArrivalTick = 0.0; // 动态重算，占位
+            rendezvousPrograde = true;
+            rendezvousUseNetworks = useNetworks != null ? new HashSet<PropellantDef>(useNetworks) : null;
+            rendezvousLastCheckTick = double.NegativeInfinity;
+            rendezvousLastBurnTick = double.NegativeInfinity;
+        }
+
+        /// <summary>清除接近引导（等价清除交会引导）。</summary>
+        public void ClearApproachGuidance() => ClearRendezvousGuidance();
+
+        #endregion
+
         /// <summary>
         /// 获取中心天体在行星参考系中的位置偏移。
         /// 如果中心天体是行星（地球自身），返回零向量。
@@ -476,7 +511,7 @@ namespace PioneerFramework
             var centralDef = celestialMgr.GetBodyById(CelestialBodyId);
             if (centralDef == null || centralDef.bodyType == CelestialBodyType.Planet)
                 return DVector3.zero;
-            return celestialMgr.GetBodyLocalPosition(CelestialBodyId, (int)System.Math.Round(currentTick));
+            return celestialMgr.GetBodyLocalPosition(CelestialBodyId, currentTick);
         }
 
         /// <summary>
@@ -761,7 +796,7 @@ namespace PioneerFramework
                 {
                     var centralDef = celestialMgr.GetBodyById(circularCentralBodyId);
                     if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
-                        vel += celestialMgr.GetBodyLocalVelocity(circularCentralBodyId, (int)System.Math.Round(currentTick));
+                        vel += celestialMgr.GetBodyLocalVelocity(circularCentralBodyId, currentTick);
                 }
             }
 
@@ -823,6 +858,7 @@ namespace PioneerFramework
             // 交会引导序列化
             Scribe_Values.Look(ref HasRendezvousGuidance, "hasRendezvousGuidance", false);
             Scribe_Values.Look(ref rendezvousArmed, "rendezvousArmed", false);
+            Scribe_Values.Look(ref rendezvousIsApproach, "rendezvousIsApproach", false);
             Scribe_Values.Look(ref rendezvousTargetId, "rendezvousTargetId", -1);
             Scribe_Values.Look(ref rendezvousArrivalTick, "rendezvousArrivalTick", 0.0);
             Scribe_Values.Look(ref rendezvousPrograde, "rendezvousPrograde", true);
@@ -831,6 +867,7 @@ namespace PioneerFramework
             {
                 // 旧存档 / 无效状态兜底：清空残留引导字段
                 rendezvousArmed = false;
+                rendezvousIsApproach = false;
                 rendezvousTargetId = -1;
                 rendezvousUseNetworks = null;
             }

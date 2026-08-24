@@ -1,5 +1,6 @@
 using UnityEngine;
 using Verse;
+using RimWorld;
 
 namespace PioneerFramework
 {
@@ -32,10 +33,14 @@ namespace PioneerFramework
     /// IsBurning：空间层 burn 开始/结束时由 SpaceMapComp.SetThrustersBurning 设置，
     /// 表现层据此绘制喷焰。
     /// </summary>
+    [StaticConstructorOnStartup]
     public class CompThruster : ThingComp
     {
-        /// <summary>喷焰绘制材质（静态缓存）。</summary>
-        private static Material flameMaterial;
+        /// <summary>喷焰绘制材质（启动时主线程加载）。</summary>
+        private static readonly Material flameMaterial = new Material(ShaderDatabase.Transparent)
+        {
+            color = new Color(1f, 0.6f, 0.15f, 0.75f)
+        };
 
         public CompProperties_Thruster Props => (CompProperties_Thruster)props;
 
@@ -72,14 +77,6 @@ namespace PioneerFramework
         {
             base.PostDraw();
             if (!IsBurning || parent == null) return;
-
-            if (flameMaterial == null)
-            {
-                flameMaterial = new Material(ShaderDatabase.Transparent)
-                {
-                    color = new Color(1f, 0.6f, 0.15f, 0.75f)
-                };
-            }
 
             // 简单喷焰：建筑位置上方一个抖动发光的平面（表现层，无物理意义）
             float pulse = 1f + 0.35f * Mathf.Sin(Time.realtimeSinceStartup * 30f);

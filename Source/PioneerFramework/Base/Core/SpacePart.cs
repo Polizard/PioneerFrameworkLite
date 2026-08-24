@@ -22,6 +22,12 @@ namespace PioneerFramework
         public float hp = 100f;
         public bool isDestroyed;
 
+        /// <summary>
+        /// 不可摧毁（无血条）：空间站等地图载体 Part 置位——存亡由 Map 内建筑决定，
+        /// 射弹命中仅做碰撞/贯穿，不扣 Part HP、不触发链式销毁地图。
+        /// </summary>
+        public bool isIndestructible;
+
         /// <summary>关联的地图 ID（-1 = 无 Map part，如导弹等纯物理 part）。Part → Map 方向。</summary>
         public int linkedMapId = -1;
 
@@ -175,7 +181,7 @@ namespace PioneerFramework
         /// </summary>
         public void ApplyDamage(float damage)
         {
-            if (isDestroyed || damage <= 0f) return;
+            if (isDestroyed || isIndestructible || damage <= 0f) return;
 
             hp -= damage;
             for (int i = 0; i < components.Count; i++)

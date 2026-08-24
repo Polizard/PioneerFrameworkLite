@@ -86,10 +86,17 @@ namespace PioneerFramework
 
             string status = group.HasActiveBurn ? "燃烧中"
                 : group.plannedManeuvers.Count > 0 ? "待执行"
-                : group.HasRendezvousGuidance ? (group.rendezvousArmed ? "交会引导中" : "交会引导待命") : "空闲";
+                : group.HasRendezvousGuidance
+                    ? (group.rendezvousIsApproach
+                        ? string.Format("接近中 → G{0}", group.ApproachTargetId)
+                        : (group.rendezvousArmed
+                            ? string.Format("交会引导中 → G{0}", group.rendezvousTargetId)
+                            : "交会引导待命"))
+                    : "空闲";
             Color statusColor = group.HasActiveBurn ? AccentWarn
                 : group.plannedManeuvers.Count > 0 ? AccentOk
-                : group.HasRendezvousGuidance ? AccentCyan : TextDim;
+                : group.HasRendezvousGuidance ? AccentCyan
+                : group.HasApproachGuidance ? AccentCyan : TextDim;
 
             Text.Font = GameFont.Medium;
             GUI.color = statusColor;
@@ -103,12 +110,14 @@ namespace PioneerFramework
             GUI.color = Color.white;
             Text.Font = GameFont.Small;
 
-            // 交会引导激活时提供手动取消（玩家接管）
+            // 交会/接近引导激活时提供手动取消（玩家接管）
             if (group.HasRendezvousGuidance && Widgets.ButtonText(
-                new Rect(header.x + header.width - 116f, header.y + 4f, 100f, 24f), "取消交会引导"))
+                new Rect(header.x + header.width - 116f, header.y + 4f, 100f, 24f),
+                group.rendezvousIsApproach ? "取消接近" : "取消交会引导"))
             {
                 group.ClearRendezvousGuidance();
-                Messages.Message(string.Format("Group {0} 交会引导已取消", group.GroupId), MessageTypeDefOf.TaskCompletion);
+                Messages.Message(string.Format("Group {0} {1}已取消", group.GroupId,
+                    group.rendezvousIsApproach ? "接近引导" : "交会引导"), MessageTypeDefOf.TaskCompletion);
             }
 
             y = header.yMax;

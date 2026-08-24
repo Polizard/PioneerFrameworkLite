@@ -40,10 +40,68 @@ namespace PioneerFramework
         public DVector3 BoundsSize = new DVector3(5000.0, 3000.0, 5000.0);
 
         /// <summary>
-        /// AABB 半边长（旋转保守放大 2 倍）。所有 AABB 消费方必须用此属性而非 BoundsSize*0.5：
-        /// 忽略 Rotation 的轴对齐近似下，半边长取整个 BoundsSize 才能覆盖任意旋转的最坏投影。
+        /// AABB 半边长 = BoundsSize × 0.5（真实尺寸）。
+        /// 空间站 Part 尺寸 = mapWidth×50m×mapHeight → AABB 面积与 Map 1:1、高 50m，
+        /// 3D 物理 ↔ Map 直接映射（贯穿弹道入口点落在 Map 边缘）。
+        /// 注意：不做旋转保守 2 倍放大——轴对齐 AABB 忽略旋转时角部有覆盖缺口，
+        /// 以面积精确对齐换取 1:1 映射（空间站本体旋转不参与近战碰撞判定）。
         /// </summary>
-        public DVector3 AabbHalfSize => BoundsSize;
+        public DVector3 AabbHalfSize => BoundsSize * 0.5;
+
+        /// <summary>
+        /// 旋转后的世界轴对齐包围盒（相对 entity 原点，OBB→AABB 投影并集）。
+        /// 世界系用途（船-船碰撞 / 半径 / 战斗格子占用）用它——旋转后 part 会超出未旋转盒。
+        /// 注意：射弹命中检测在 shipLocal 系用 AabbHalfSize（part 局部正盒），不要改成这个。
+        /// 每 tick 懒缓存：同一 tick 内被碰撞检测多次调用（球快筛/扫掠盒/分离量）只算一次。
+        /// </summary>
+        public void GetWorldAabb(out DVector3 min, out DVector3 max)
+        {
+            int tick = Find.TickManager?.TicksGame ?? -1;
+            if (tick == cachedAabbTick)
+            {
+                min = cachedAabbMin;
+                max = cachedAabbMax;
+                return;
+            }
+            if (Parts.Count == 0)
+            {
+                DVector3 h = BoundsSize * 0.5;
+                min = -h;
+                max = h;
+            }
+            else
+            {
+                // 旋转矩阵分量（Unity Quaternion → 3x3，行优先）
+                Quaternion q = Rotation;
+                double x = q.x, y = q.y, z = q.z, w = q.w;
+                double r00 = 1 - 2 * (y * y + z * z), r01 = 2 * (x * y - z * w), r02 = 2 * (x * z + y * w);
+                double r10 = 2 * (x * y + z * w), r11 = 1 - 2 * (x * x + z * z), r12 = 2 * (y * z - x * w);
+                double r20 = 2 * (x * z - y * w), r21 = 2 * (y * z + x * w), r22 = 1 - 2 * (x * x + y * y);
+
+                min = new DVector3(double.MaxValue, double.MaxValue, double.MaxValue);
+                max = new DVector3(double.MinValue, double.MinValue, double.MinValue);
+                foreach (var part in Parts)
+                {
+                    DVector3 c = DVector3.Rotate(part.localPosition, Rotation);   // 旋转后中心
+                    DVector3 h = part.localBoundsSize * 0.5;
+                    // OBB→AABB 投影：旋转后轴对齐半尺寸
+                    DVector3 rh = new DVector3(
+                        System.Math.Abs(r00) * h.x + System.Math.Abs(r01) * h.y + System.Math.Abs(r02) * h.z,
+                        System.Math.Abs(r10) * h.x + System.Math.Abs(r11) * h.y + System.Math.Abs(r12) * h.z,
+                        System.Math.Abs(r20) * h.x + System.Math.Abs(r21) * h.y + System.Math.Abs(r22) * h.z);
+                    DVector3 pMin = c - rh;
+                    DVector3 pMax = c + rh;
+                    min = DVector3.Min(min, pMin);
+                    max = DVector3.Max(max, pMax);
+                }
+            }
+            cachedAabbTick = tick;
+            cachedAabbMin = min;
+            cachedAabbMax = max;
+        }
+
+        private int cachedAabbTick = -1;        // GetWorldAabb 每 tick 懒缓存（旋转/部件未变时同 tick 复用）
+        private DVector3 cachedAabbMin, cachedAabbMax;
 
         private DVector3 positionMeters;
         private DVector3 velocityMeters;
@@ -311,7 +369,11 @@ namespace PioneerFramework
             velocityMeters = velMeters;
         }
 
-        public void SetRotation(Quaternion rot) => rotation = rot;
+        public void SetRotation(Quaternion rot)
+        {
+            rotation = rot;
+            cachedAabbTick = -1; // 旋转参与 GetWorldAabb → 失效缓存
+        }
 
         // ── 部件管理 ──
 
@@ -321,6 +383,7 @@ namespace PioneerFramework
         public void SetParts(List<SpacePart> newParts, bool recalculateBounds = true)
         {
             parts = newParts ?? new List<SpacePart>();
+            cachedAabbTick = -1; // 部件参与 GetWorldAabb → 失效缓存
             InvalidateStats();
             if (recalculateBounds && parts.Count > 0)
                 RecalculateBoundsFromParts();

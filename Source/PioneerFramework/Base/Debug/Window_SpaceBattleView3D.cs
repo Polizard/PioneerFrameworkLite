@@ -4,6 +4,7 @@ using System.Linq;
 using UnityEngine;
 using Verse;
 using RimWorld;
+using PioneerFramework.Combat;
 
 namespace PioneerFramework
 {
@@ -39,6 +40,11 @@ namespace PioneerFramework
         private readonly Dictionary<int, GameObject> billboardObjects = new Dictionary<int, GameObject>();
         private GameObject sunBillboardObject;
         private GameObject sunBillboardGlowObject;
+
+        // ── 射弹视觉（3D 场景中的小球，池化管理）──
+        private readonly List<GameObject> projectileObjects = new List<GameObject>();
+        private GameObject projectileContainer;
+        private Material projectileMat;
 
         // ── 相机控制 ──
         private Vector3 observerPosUnity;
@@ -339,6 +345,66 @@ namespace PioneerFramework
 
             // ── 太阳 ──
             SyncSunBillboard();
+
+            // ── 射弹 ──
+            UpdateProjectileVisuals();
+        }
+
+        // ════════════════════════════════════════════════
+        //  射弹渲染（池化小球，跟随 CombatManager.ActiveProjectiles）
+        // ════════════════════════════════════════════════
+
+        private void UpdateProjectileVisuals()
+        {
+            var cm = Current.Game?.GetComponent<CombatManager>();
+            if (cm == null || sceneRoot == null)
+            {
+                ClearProjectileObjects();
+                return;
+            }
+            var projectiles = cm.ActiveProjectiles;
+            if (projectileContainer == null)
+            {
+                projectileContainer = new GameObject("Projectiles");
+                projectileContainer.transform.SetParent(sceneRoot.transform);
+            }
+            if (projectileMat == null)
+            {
+                projectileMat = new Material(Shader.Find("Standard")) { color = new Color(1f, 0.9f, 0.3f) };
+                projectileMat.EnableKeyword("_EMISSION");
+                projectileMat.SetColor("_EmissionColor", new Color(1f, 0.7f, 0.1f) * 2f);
+            }
+
+            while (projectileObjects.Count < projectiles.Count)
+            {
+                GameObject proj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                proj.name = "Projectile_" + projectileObjects.Count;
+                proj.transform.SetParent(projectileContainer.transform);
+                proj.transform.localScale = Vector3.one * 0.02f; // 1000m（1 Unity = 50km）
+                var col = proj.GetComponent<Collider>();
+                if (col != null) UnityEngine.Object.Destroy(col);
+                var mr = proj.GetComponent<MeshRenderer>();
+                if (mr != null) mr.material = projectileMat;
+                proj.layer = SceneLayer;
+                projectileObjects.Add(proj);
+            }
+            while (projectileObjects.Count > projectiles.Count)
+            {
+                int last = projectileObjects.Count - 1;
+                UnityEngine.Object.Destroy(projectileObjects[last]);
+                projectileObjects.RemoveAt(last);
+            }
+
+            float toUnity = (float)SpaceConstants.UnitsPerMeter;
+            for (int i = 0; i < projectiles.Count; i++)
+                projectileObjects[i].transform.position = (Vector3)(projectiles[i].position * toUnity);
+        }
+
+        private void ClearProjectileObjects()
+        {
+            foreach (var go in projectileObjects)
+                if (go != null) UnityEngine.Object.Destroy(go);
+            projectileObjects.Clear();
         }
 
         // ════════════════════════════════════════════════

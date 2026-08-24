@@ -56,6 +56,8 @@ namespace PioneerFramework
         private const float PanelWidth = 320f;
         private const float PanelHeight = 500f;          // 基础高度（无 burn 区）
         private const float BurnSectionHeight = 112f;    // 机动执行区附加高度
+        private const float RendezvousSectionHeight = 112f; // 交会引导区附加高度
+        private const float ApproachSectionHeight = 112f; // 近距离接近区附加高度
 
         // 面板配色（与机动队列窗口一致）
         private static readonly Color CyanColor = new Color(0.25f, 0.9f, 1f, 0.9f);
@@ -781,6 +783,8 @@ namespace PioneerFramework
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             var grp = selectedGroupId != -1 ? spaceGame?.GetGroupById(selectedGroupId) : null;
             if (grp != null && grp.HasActiveBurn) h += BurnSectionHeight;
+            if (grp != null && grp.HasApproachGuidance) h += ApproachSectionHeight;
+            if (grp != null && grp.HasRendezvousGuidance && !grp.rendezvousIsApproach) h += RendezvousSectionHeight;
             return new Rect(24f, 80f, PanelWidth, h);
         }
 
@@ -799,6 +803,10 @@ namespace PioneerFramework
             DrawPanelInfo(group, rect, ref y, spaceGame);
             if (group.HasActiveBurn)
                 DrawPanelBurn(group, rect, ref y, spaceGame);
+            if (group.HasRendezvousGuidance && !group.rendezvousIsApproach)
+                DrawPanelRendezvous(group, rect, ref y, spaceGame);
+            if (group.HasApproachGuidance)
+                DrawPanelApproach(group, rect, ref y, spaceGame);
             DrawPanelActions(group, rect, ref y, spaceGame);
             DrawPanelMap(group, rect, ref y, spaceGame);
         }
@@ -943,6 +951,78 @@ namespace PioneerFramework
             y += 36f;
         }
 
+        /// <summary>交会引导状态区：目标 / 状态（待命·引导中）/ 距到达时间 / 取消按钮（精确交会引导激活时显示）。</summary>
+        private static void DrawPanelRendezvous(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)
+        {
+            DrawSectionTitle(panel, ref y, "交会引导", CyanColor);
+
+            var target = spaceGame.GetGroupById(group.rendezvousTargetId);
+            string targetLabel = target != null
+                ? string.Format("Group {0}", group.rendezvousTargetId)
+                : string.Format("Group {0}（已消失）", group.rendezvousTargetId);
+            string state = group.rendezvousArmed ? "引导中" : "待命（等待出发段点火）";
+            double remain = group.rendezvousArrivalTick - TimeScaleManager.GetPhysicsTickSafe();
+
+            float rowH = 21f;
+            Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
+                string.Format("目标: {0}", targetLabel));
+            y += rowH;
+            Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
+                string.Format("状态: {0}", state));
+            y += rowH;
+            GUI.color = DimColor;
+            Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
+                remain > 0
+                    ? string.Format("距到达约 {0:F0} 秒（{1:F1} 分钟）", remain, remain / 60.0)
+                    : "已过到达时刻");
+            GUI.color = Color.white;
+            y += rowH + 6f;
+
+            GUI.color = WarnColor;
+            if (Widgets.ButtonText(new Rect(panel.x + 12f, y, panel.width - 24f, 28f), "取消交会引导"))
+                group.ClearRendezvousGuidance();
+            GUI.color = Color.white;
+            y += 36f;
+        }
+
+        /// <summary>近距离接近状态区：目标 / 距离 / 相对速度 / 停止按钮（接近引导激活时显示）。</summary>
+        private static void DrawPanelApproach(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)
+        {
+            DrawSectionTitle(panel, ref y, "近距离接近", OkColor);
+
+            var target = spaceGame.GetGroupById(group.ApproachTargetId);
+            string targetLabel = target != null
+                ? string.Format("Group {0}", group.ApproachTargetId)
+                : string.Format("Group {0}（已消失）", group.ApproachTargetId);
+            double dist = double.NaN, relvel = double.NaN;
+            if (target != null)
+            {
+                DVector3 dr = target.localPosition - group.localPosition;
+                DVector3 dv = target.localVelocity - group.localVelocity;
+                dist = dr.magnitude;
+                relvel = dv.magnitude;
+            }
+
+            float rowH = 21f;
+            Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
+                string.Format("目标: {0}", targetLabel));
+            y += rowH;
+
+            GUI.color = DimColor;
+            Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
+                double.IsNaN(dist)
+                    ? "距离 / 相对速度: --"
+                    : string.Format("距离 {0:F0} m · 相对速度 {1:F1} m/s", dist, relvel));
+            GUI.color = Color.white;
+            y += rowH + 6f;
+
+            GUI.color = WarnColor;
+            if (Widgets.ButtonText(new Rect(panel.x + 12f, y, panel.width - 24f, 28f), "停止接近"))
+                group.ClearApproachGuidance();
+            GUI.color = Color.white;
+            y += 36f;
+        }
+
         private static void DrawPanelActions(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)
         {
             DrawSectionTitle(panel, ref y, "行动", CyanColor);
@@ -1013,7 +1093,44 @@ namespace PioneerFramework
                 Find.WindowStack.Add(new OrbitTransferPlanner(group, spaceGame));
             y += rowH + rowGap;
 
-            // 行4：机动队列（全宽）
+            // 行4：近距离接近（目标选择 FloatMenu；接近中点击可重新选择/换目标）
+            string approachLabel = group.HasApproachGuidance
+                ? string.Format("近距离接近中 → G{0}", group.ApproachTargetId)
+                : "近距离接近";
+            if (Widgets.ButtonText(new Rect(leftX, y, panel.width - 24f, rowH), approachLabel))
+            {
+                var candidates = spaceGame.GetAllGroups()
+                    .Where(g => g.IsActive && g.GroupId != group.GroupId
+                        && (g.localPosition - group.localPosition).magnitude < SpaceGameComp.ApproachMaxStartDistance)
+                    .ToList();
+                if (candidates.Count == 0)
+                {
+                    Messages.Message("附近（1000km 内）没有可接近的群组，距离太远建议用「交会规划」", MessageTypeDefOf.RejectInput);
+                }
+                else
+                {
+                    var options = new List<FloatMenuOption>();
+                    foreach (var c in candidates)
+                    {
+                        int capturedId = c.GroupId;
+                        options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）",
+                            c.GroupId, (c.localPosition - group.localPosition).magnitude / 1000.0), () =>
+                        {
+                            var sg = Current.Game?.GetComponent<SpaceGameComp>();
+                            if (sg == null) return;
+                            var grp = sg.GetGroupById(selectedGroupId); // 面板当前选中群组（最新引用）
+                            if (grp == null) return;
+                            HashSet<PropellantDef> nets = grp.currentNetwork != null
+                                ? new HashSet<PropellantDef> { grp.currentNetwork } : null;
+                            grp.RegisterApproachGuidance(capturedId, nets);
+                        }));
+                    }
+                    Find.WindowStack.Add(new FloatMenu(options));
+                }
+            }
+            y += rowH + rowGap;
+
+            // 行5：机动队列（全宽）
             string queueLabel = group.plannedManeuvers.Count > 0
                 ? string.Format("机动队列 ({0})", group.plannedManeuvers.Count)
                 : "机动队列 (0)";
