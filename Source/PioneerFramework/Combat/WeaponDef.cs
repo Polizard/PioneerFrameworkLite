@@ -13,6 +13,9 @@ namespace PioneerFramework.Combat
         public float maxRange = 5000f;
         public float minRange = 50f;
 
+        /// <summary>轨道交战射程（米）：Map 炮塔索敌用。maxRange 保留给 Ray 射线长度等原语义。</summary>
+        public float orbitalEngageRange = 100000f;
+
         public float accuracyRadius = 2f;
         public float accuracyFalloff = 0.001f;
 

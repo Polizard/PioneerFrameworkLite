@@ -177,6 +177,12 @@ def main():
         "Things/Building/Misc/CommsConsole",
         # 原版洞穴出口贴图（PFL 火箭舱门临时借用）
         "Things/Building/Misc/CaveExit/CaveExit",
+        # 原版大型子弹贴图（F3 炮塔射弹临时借用）
+        "Things/Projectile/Bullet_Big",
+        # 原版狙击炮塔顶盖贴图（PFL 加农炮塔临时借用）
+        "Things/Building/Security/TurretSniper_Top",
+        # 原版飞船传感器组件贴图（PFL 目标定位机临时借用）
+        "Things/Building/Ship/ShipSensorCluster",
     }
 
     def texture_file(tex_path):

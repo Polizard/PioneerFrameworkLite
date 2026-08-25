@@ -212,6 +212,17 @@ namespace PioneerFramework
         public void SetNormalMode() => SetTimeScale(TimeScaleLevel.Normal);
         public void SetFastMode() => SetTimeScale(TimeScaleLevel.Fast);
 
+        /// <summary>
+        /// 立即切换 Combat 档（不排队、不弹"等待时间同步"消息）。
+        /// 供射弹生成等需要瞬间进入子弹时间的路径调用——排队版本有 ≤2 tick 的边界延迟，
+        /// Normal 档窗口内射弹会以 1s/tick 大步进瞬移（6.5km/步），观感上"物理断裂"。
+        /// </summary>
+        public void SetCombatModeImmediate()
+        {
+            if (currentLevel == TimeScaleLevel.Combat) return;
+            ExecuteCommand(new TimeScaleCommand { TargetLevel = TimeScaleLevel.Combat, RequestTick = Find.TickManager.TicksGame });
+        }
+
         public override void GameComponentTick()
         {
             base.GameComponentTick();

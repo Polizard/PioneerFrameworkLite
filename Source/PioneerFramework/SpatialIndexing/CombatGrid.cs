@@ -242,9 +242,10 @@ namespace PioneerFramework.Combat
                     var entity = spaceGame.GetEntityById(eid);
                     if (entity == null || !entity.IsCollidable) continue;
 
-                    DVector3 half = entity.AabbHalfSize;
-                    DVector3 eMin = groupPos + entity.Position - half;
-                    DVector3 eMax = groupPos + entity.Position + half;
+                    // 旋转后的世界轴对齐包围盒（覆盖倾斜姿态）
+                    entity.GetWorldAabb(out var relMin, out var relMax);
+                    DVector3 eMin = groupPos + entity.Position + relMin;
+                    DVector3 eMax = groupPos + entity.Position + relMax;
 
                     if (!hasEntity)
                     {
@@ -420,7 +421,12 @@ namespace PioneerFramework.Combat
 
             var endCoord = WorldToFineCell(endPos);
             var currentCell = startCell;
-            int maxSteps = 3;
+            // maxSteps 按线段跨格范围动态计算（+2 保险），而非固定 3：
+            // 大步进射弹（如 Fast 档 16s/步跨多格）时 DDA 必须完整遍历到终点格，
+            // 否则 finalCell ≠ 射弹实际所在格，调用方覆盖 fineC 后与格子记录错位。
+            int maxSteps = System.Math.Abs(endCoord.cx - startCell.cx)
+                         + System.Math.Abs(endCoord.cy - startCell.cy)
+                         + System.Math.Abs(endCoord.cz - startCell.cz) + 2;
 
             while (maxSteps-- > 0)
             {

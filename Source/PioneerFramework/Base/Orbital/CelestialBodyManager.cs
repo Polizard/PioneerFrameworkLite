@@ -274,14 +274,14 @@ namespace PioneerFramework
         /// <summary>
         /// 计算天体在给定 tick 的世界空间位置。
         /// </summary>
-        public DVector3 GetBodyWorldPosition(int bodyId, int tick)
+        public DVector3 GetBodyWorldPosition(int bodyId, double tick)
         {
             var body = GetBodyById(bodyId);
             if (body == null) return DVector3.zero;
             return GetBodyWorldPosition(body, tick);
         }
 
-        private DVector3 GetBodyWorldPosition(CelestialBodyDef body, int tick)
+        private DVector3 GetBodyWorldPosition(CelestialBodyDef body, double tick)
         {
             DVector3 localPos = DVector3.zero;
 
@@ -315,14 +315,14 @@ namespace PioneerFramework
         /// 速度方向沿轨道切向，大小 = ω × orbitRadius。
         /// 对于 Star 或没有轨道的天体返回零向量。
         /// </summary>
-        public DVector3 GetBodyWorldVelocity(int bodyId, int tick)
+        public DVector3 GetBodyWorldVelocity(int bodyId, double tick)
         {
             var body = GetBodyById(bodyId);
             if (body == null || !body.HasOrbit) return DVector3.zero;
             return GetBodyWorldVelocity(body, tick);
         }
 
-        private DVector3 GetBodyWorldVelocity(CelestialBodyDef body, int tick)
+        private DVector3 GetBodyWorldVelocity(CelestialBodyDef body, double tick)
         {
             if (!body.HasOrbit) return DVector3.zero;
 
@@ -355,7 +355,7 @@ namespace PioneerFramework
         /// 例如月球的返回值是「以地球为原点的月球轨道位置」。
         /// 对没有轨道或 Star 类型返回零向量。
         /// </summary>
-        public DVector3 GetBodyLocalPosition(int bodyId, int tick)
+        public DVector3 GetBodyLocalPosition(int bodyId, double tick)
         {
             var body = GetBodyById(bodyId);
             if (body == null || !body.HasOrbit) return DVector3.zero;
@@ -376,7 +376,7 @@ namespace PioneerFramework
         /// 计算天体在其父天体中心坐标系中的轨道速度。
         /// 对没有轨道或 Star 类型返回零向量。
         /// </summary>
-        public DVector3 GetBodyLocalVelocity(int bodyId, int tick)
+        public DVector3 GetBodyLocalVelocity(int bodyId, double tick)
         {
             var body = GetBodyById(bodyId);
             if (body == null || !body.HasOrbit) return DVector3.zero;
@@ -396,7 +396,7 @@ namespace PioneerFramework
         /// <summary>
         /// 获取所有天体在指定 tick 时的世界空间位置字典。
         /// </summary>
-        public Dictionary<int, DVector3> GetAllBodyWorldPositions(int tick)
+        public Dictionary<int, DVector3> GetAllBodyWorldPositions(double tick)
         {
             EnsureInitialized();
             var result = new Dictionary<int, DVector3>(bodiesById.Count);

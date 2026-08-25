@@ -47,6 +47,17 @@ namespace PioneerFramework.Combat
         private int lastLogTick = -1;
         private const int LOG_INTERVAL = 120;
 
+        // 船-船碰撞扫掠膨胀盒：保存"上一次 SyncAllShipsToGrid 读到的 group 位置"（上一步）。
+        // 检测时用「当前 AABB ∪ 上一步 AABB」并集，覆盖两步间运动路径，消除大步长 tunneling
+        // （离散采样点全部落在重叠窗口外导致穿模）。组件 tick 顺序不保证 → 用上次 sync 位置，
+        // 两种顺序下每个物理步运动段都会被并集覆盖一次，仅响应延迟不同（0 或 2 tick）。
+        private readonly Dictionary<int, DVector3> shipPrevPositions = new Dictionary<int, DVector3>();
+
+        /// <summary>详细碰撞日志开关（调试测试场景置 true；正式玩法保持 false）。</summary>
+        public static bool DebugDetailedCollision = false;
+        private int detailedLogNextTick = 0;
+        private int detailPairNextTick = 0;
+
 #if DEBUG
         // 圆轨缓存统计增量基准（验证 per-tick 懒缓存：每组每 tick 应只 miss 1 次）
         private long lastPosCacheHits, lastPosCacheMisses, lastVelCacheHits, lastVelCacheMisses;
@@ -120,6 +131,7 @@ namespace PioneerFramework.Combat
             stageStopwatch.Stop();
             syncMsAccum += stageStopwatch.Elapsed.TotalMilliseconds;
 #endif
+
             collisionStopwatch.Restart();
             CheckShipCollisions();
             collisionStopwatch.Stop();
@@ -185,10 +197,14 @@ namespace PioneerFramework.Combat
                 if (!shipLastPositions.TryGetValue(gid, out var lastPos))
                 {
                     combatGrid.AddShip(group);
+                    shipPrevPositions.Remove(gid);
                 }
-                else if (!lastPos.Equals(currentPos))
+                else
                 {
-                    combatGrid.UpdateShipPosition(group, lastPos);
+                    // 扫掠膨胀盒：保留覆盖前的旧值作为"上一步位置"（供 CheckShipCollisions 并集检测）
+                    shipPrevPositions[gid] = lastPos;
+                    if (!lastPos.Equals(currentPos))
+                        combatGrid.UpdateShipPosition(group, lastPos);
                 }
 
                 shipLastPositions[gid] = currentPos;
@@ -212,6 +228,7 @@ namespace PioneerFramework.Combat
                     if (g != null)
                         combatGrid.RemoveShip(g);
                     shipLastPositions.Remove(gid);
+                    shipPrevPositions.Remove(gid);
                 }
             }
         }
@@ -235,6 +252,9 @@ namespace PioneerFramework.Combat
                 double deltaTime = physicsTickNow - proj.prevPhysicsTick;
                 if (deltaTime <= 0.0)
                     deltaTime = (Find.TickManager.TicksGame - proj.lastUpdateRealTick) / 60.0;
+                // 物理严格基于 physicsTick：deltaTime = physicsTick 差值，不做任何截断。
+                // 射弹位置 = spawnPos + velocity×Δt 是 physicsTick 的连续函数，配合渲染精确外推
+                // 即得平滑轨迹；人为 clamp 步长反而造成物理点与渲染外推错位 → 折线。
                 proj.prevUpdatePhysicsTick = proj.prevPhysicsTick; // 记录上一步（碰撞检测回退用，prevPhysicsTick 随后被覆盖）
                 proj.prevPhysicsTick = physicsTickNow;
 
@@ -376,20 +396,19 @@ namespace PioneerFramework.Combat
 
                 DVector3 entityLocal = entity.Position;   // 目标参考系中实体局部位置（不随时间变）
                 DVector3 halfSize = entity.AabbHalfSize;
-                DVector3 min = entityLocal - halfSize;
-                DVector3 max = entityLocal + halfSize;
 
-#if DEBUG
-                if (verboseHit)
-                    Log.Message(string.Format(
-                        "[命中调试] entity={0} local=({1:F0},{2:F0},{3:F0}) half=({4:F0},{5:F0},{6:F0}) parts={7}",
-                        entityId, entityLocal.x, entityLocal.y, entityLocal.z,
-                        halfSize.x, halfSize.y, halfSize.z, entity.Parts.Count));
-#endif
+                // 射弹线段 → 船体局部系（含旋转）：part 局部 = 固定轴对齐盒（地图 1:1 基准）。
+                // entity.Rotation 参与命中几何——倾斜/翻滚的船，命中点反映真实姿态。
+                DQuaternion rotInv = DQuaternion.Inverse(DQuaternion.FromQuaternion(entity.Rotation));
+                DVector3 localStart = DVector3.Rotate(startPos - entityLocal, rotInv);
+                DVector3 localEnd = DVector3.Rotate(endPos - entityLocal, rotInv);
 
-                // 相对坐标系中目标静止：slab 线段检测是连续几何检测（与线段长度无关），
-                // 射弹无论多快，只要相对路径穿过 AABB 就会被捕捉，无需子段化。
-                if (!CombatGrid.RaySlabIntersection(startPos, endPos, min, max,
+                // 粗检测（shipLocal 系，盒中心 = 实体原点）：相对坐标系中目标静止，
+                // slab 线段检测是连续几何检测（与线段长度无关），射弹无论多快，
+                // 只要相对路径穿过 AABB 就会被捕捉，无需子段化。
+                DVector3 min = -halfSize;
+                DVector3 max = halfSize;
+                if (!CombatGrid.RaySlabIntersection(localStart, localEnd, min, max,
                         out double tEntry, out double tExit, out _))
                 {
 #if DEBUG
@@ -404,26 +423,26 @@ namespace PioneerFramework.Combat
                     Log.Message(string.Format("[命中调试] slab HIT tEntry={0:F3} tExit={1:F3}", tEntry, tExit));
 #endif
 
-                // Entity AABB 被命中，检查 Part 级碰撞（单 part 化：唯一 part slab 直判，§5.3）
+                // Entity AABB 被命中，检查 Part 级碰撞（单 part 化：唯一 part slab 直判，§5.3）。
+                // 线段基准 = 粗检测进入点（shipLocal）：part 检测从盒进入点扫盒内区间，
+                // 而不是从射弹线段起点扫（起点在盒外时永远 miss）。
                 if (entity.Parts.Count > 0 && segmentLength > 0.001)
                 {
-                    DVector3 worldDirNorm = worldDir / segmentLength;
-                    DVector3 hitEntryPoint = startPos + worldDir * tEntry;
-                    DVector3 localOrigin = hitEntryPoint - entityLocal;
-                    DVector3 localDir = worldDirNorm;
+                    DVector3 localDir = (localEnd - localStart) / segmentLength; // 归一化（旋转保持长度）
+                    DVector3 entryPoint = localStart + localDir * (tEntry * segmentLength);
                     double localMaxDist = (tExit - tEntry) * segmentLength;
 
                     var hitPart = entity.Parts[0];
                     DVector3 partMin = hitPart.localPosition - hitPart.localBoundsSize * 0.5;
                     DVector3 partMax = hitPart.localPosition + hitPart.localBoundsSize * 0.5;
-                    bool partHit = CombatGrid.RaySlabIntersection(localOrigin, localOrigin + localDir * localMaxDist,
-                        partMin, partMax, out double partTEntry, out _, out _);
+                    bool partHit = CombatGrid.RaySlabIntersection(entryPoint, entryPoint + localDir * localMaxDist,
+                        partMin, partMax, out double partTEntry, out double partTExit, out _);
                     partHit = partHit && partTEntry >= 0 && partTEntry <= localMaxDist;
 #if DEBUG
                     if (verboseHit)
                         Log.Message(string.Format(
                             "[命中调试] PartSlab origin=({0:F0},{1:F0},{2:F0}) dir=({3:F3},{4:F3},{5:F3}) maxDist={6:F0} partHit={7} t={8:F3}",
-                            localOrigin.x, localOrigin.y, localOrigin.z,
+                            entryPoint.x, entryPoint.y, entryPoint.z,
                             localDir.x, localDir.y, localDir.z, localMaxDist, partHit, partTEntry));
 #endif
                     if (partHit)
@@ -453,6 +472,18 @@ namespace PioneerFramework.Combat
                             entity.MarkPartDestroyed(hitPart.partId);
                             Log.Message(string.Format("[Part摧毁] Entity{0} Part[{1}]\"{2}\" 已被摧毁",
                                 entityId, firstHitPartIndex, hitPart.defName));
+                        }
+
+                        // F3 命中 → Map 落点瞬爆：命中点已在船体局部系（含旋转），
+                        // part 局部 = 地图 1:1，直接映射即可。
+                        if (entity.MapId >= 0)
+                        {
+                            Map targetMap = SpaceMapGenerator.FindPocketMap(entity.MapId);
+                            if (targetMap != null)
+                            {
+                                DVector3 hitLocal = entryPoint + localDir * (partTEntry * localMaxDist);
+                                SpawnPenetrationMote(entity, targetMap, hitLocal);
+                            }
                         }
                         return true;
                     }
@@ -488,6 +519,16 @@ namespace PioneerFramework.Combat
                 if (!a.IsActive || !b.IsActive || !a.IsCollidable || !b.IsCollidable) continue;
                 if (a.GroupId == b.GroupId) continue;
 
+                // 枚举对诊断：确认 G1/G2/G3 是否被枚举到（限频）
+                if (DebugDetailedCollision && Find.TickManager.TicksGame >= detailPairNextTick)
+                {
+                    detailPairNextTick = Find.TickManager.TicksGame + 30;
+                    DVector3 pa0 = GetGroupPos(a);
+                    DVector3 pb0 = GetGroupPos(b);
+                    Log.Message(string.Format("[碰撞枚举] t={0} 对 G{1}-G{2} 距离={3:F1}m",
+                        Find.TickManager.TicksGame, a.GroupId, b.GroupId, (pb0 - pa0).magnitude));
+                }
+
                 DVector3 pa = GetGroupPos(a);
                 DVector3 pb = GetGroupPos(b);
 
@@ -497,8 +538,55 @@ namespace PioneerFramework.Combat
                 double rr = ra + rb;
                 if ((pb - pa).sqrMagnitude > rr * rr) continue;
 
-                // AABB 重叠检测
-                if (!TryGetOverlap(a, b, spaceGame, pa, pb, out double ox, out double oy, out double oz)) continue;
+                // 当前实际盒（curOverlap 判定与分离量的基准）
+                GetGroupWorldAabb(a, pa, spaceGame, out var curAMin, out var curAMax);
+                GetGroupWorldAabb(b, pb, spaceGame, out var curBMin, out var curBMax);
+
+                // 扫掠膨胀盒：当前 AABB ∪ 上一步 AABB（覆盖两步间运动路径，消除 tunneling）
+                DVector3 aMin = curAMin, aMax = curAMax;
+                DVector3 bMin = curBMin, bMax = curBMax;
+                DVector3 prevPa = pa; // 无上一步记录时并集 = 当前盒（首拍退化）
+                if (shipPrevPositions.TryGetValue(a.GroupId, out var prevPaVal))
+                {
+                    prevPa = prevPaVal;
+                    GetGroupWorldAabb(a, prevPa, spaceGame, out var pMin, out var pMax);
+                    aMin = new DVector3(Math.Min(aMin.x, pMin.x), Math.Min(aMin.y, pMin.y), Math.Min(aMin.z, pMin.z));
+                    aMax = new DVector3(Math.Max(aMax.x, pMax.x), Math.Max(aMax.y, pMax.y), Math.Max(aMax.z, pMax.z));
+                }
+                DVector3 prevPb = pb;
+                if (shipPrevPositions.TryGetValue(b.GroupId, out var prevPbVal))
+                {
+                    prevPb = prevPbVal;
+                    GetGroupWorldAabb(b, prevPb, spaceGame, out var pMin, out var pMax);
+                    bMin = new DVector3(Math.Min(bMin.x, pMin.x), Math.Min(bMin.y, pMin.y), Math.Min(bMin.z, pMin.z));
+                    bMax = new DVector3(Math.Max(bMax.x, pMax.x), Math.Max(bMax.y, pMax.y), Math.Max(bMax.z, pMax.z));
+                }
+
+                bool sweptHit = AabbOverlap(aMin, aMax, bMin, bMax, out double ox, out double oy, out double oz);
+                if (DebugDetailedCollision && Find.TickManager.TicksGame >= detailedLogNextTick)
+                {
+                    detailedLogNextTick = Find.TickManager.TicksGame + 30;
+                    Log.Message(string.Format(
+                        "[碰撞详细] t={0} G{1}扫掠盒=({2:F0},{3:F0},{4:F0})-({5:F0},{6:F0},{7:F0}) " +
+                        "G{8}扫掠盒=({9:F0},{10:F0},{11:F0})-({12:F0},{13:F0},{14:F0}) " +
+                        "距离={15:F1}m prevG{16}=({17:F0},{18:F0},{19:F0}) prevG{20}=({21:F0},{22:F0},{23:F0}) 重叠={24}",
+                        Find.TickManager.TicksGame,
+                        a.GroupId, aMin.x, aMin.y, aMin.z, aMax.x, aMax.y, aMax.z,
+                        b.GroupId, bMin.x, bMin.y, bMin.z, bMax.x, bMax.y, bMax.z,
+                        (pb - pa).magnitude,
+                        a.GroupId, prevPa.x, prevPa.y, prevPa.z,
+                        b.GroupId, prevPb.x, prevPb.y, prevPb.z,
+                        sweptHit ? string.Format("{0:F1},{1:F1},{2:F1}m", ox, oy, oz) : "无"));
+                }
+                if (!sweptHit) continue;
+
+                // 纯 tunneling（当前盒不重叠但路径相交）→ 快速船停在对方膨胀盒表面；
+                // 否则用当前实际盒重叠量分离（扫掠盒 oz 含运动路径长度，直接分离会把船推飞）
+                if (!AabbOverlap(curAMin, curAMax, curBMin, curBMax, out ox, out oy, out oz))
+                {
+                    ResolveTunneled(b, prevPb, curBMin, curBMax, curAMin, curAMax, a.GroupId);
+                    continue;
+                }
 
                 DVector3 nDir = pb - pa;
                 double nLen = nDir.magnitude;
@@ -529,6 +617,117 @@ namespace PioneerFramework.Combat
             }
         }
 
+        /// <summary>
+        /// 纯 tunneling 响应：B 的当前盒与 A 盒不重叠，但扫掠路径相交（B 一步从 A 一侧穿到另一侧）。
+        /// 用「B 中心射线 vs A 膨胀盒（+B 半宽）」求接触时刻，把 B 精确停在接触点（留 0.1m 余量防嵌入）。
+        /// 若无法求交（无上一步记录）→ 退回上一步位置保守处理。
+        /// </summary>
+        private void ResolveTunneled(SpaceEntityGroup b, DVector3 prevB, DVector3 curBMin, DVector3 curBMax,
+            DVector3 aMin, DVector3 aMax, int aGroupId)
+        {
+            DVector3 curCenter = (curBMin + curBMax) * 0.5;
+            if (TryComputeTunneledStop(prevB, curCenter, curBMin, curBMax, aMin, aMax, out var stopPos))
+            {
+                ApplyTunneledStop(b, stopPos, aGroupId);
+                return;
+            }
+            if (shipPrevPositions.TryGetValue(b.GroupId, out var pbPrev))
+                ApplyTunneledStop(b, pbPrev, aGroupId);
+        }
+
+        /// <summary>
+        /// 计算 tunneling 停点：B 中心从 prev 直线移动到 cur（一步位移 dir），
+        /// 与「A 盒膨胀 B 半宽」（B 中心不可进入区）求交，停在其表面（留 0.1m 余量）。
+        /// 纯静态，便于单元测试验证物理正确性。
+        /// </summary>
+        internal static bool TryComputeTunneledStop(DVector3 prevCenter, DVector3 curCenter,
+            DVector3 curBMin, DVector3 curBMax, DVector3 aMin, DVector3 aMax, out DVector3 stopPos)
+        {
+            stopPos = default;
+            DVector3 dir = curCenter - prevCenter; // 实际位移向量：t 即位移比例 [0,1]
+            double dirLen = dir.magnitude;
+            if (dirLen <= 0.01) return false; // 静止/无位移 → 无法求交
+            DVector3 halfB = (curBMax - curBMin) * 0.5;
+            DVector3 expandMin = aMin - halfB;
+            DVector3 expandMax = aMax + halfB;
+            if (!RayAabb(prevCenter, dir, expandMin, expandMax, out double tHit)) return false;
+            double tStop = Math.Max(0.0, tHit - 0.1 / dirLen); // 留 0.1m 余量防嵌入
+            stopPos = prevCenter + dir * tStop;
+            return true;
+        }
+
+        private void ApplyTunneledStop(SpaceEntityGroup b, DVector3 stopPos, int aGroupId)
+        {
+            // 圆轨组的位置是解析的（GetCircularPositionAtTick），改 CurrentOrbit.position 无效；
+            // 必须退出圆轨后停位才能生效（否则 tunneling 对圆轨目标无效，快速船照样穿过）
+            if (b.IsCircularOrbit)
+                b.ExitCircularOrbit();
+            b.CurrentOrbit.position = stopPos;
+            b.OrbitDirty = true;
+            shipPrevPositions[b.GroupId] = stopPos;
+            shipLastPositions[b.GroupId] = stopPos;
+            Log.Message(string.Format("[ShipCollision] G{0} vs G{1} tunneling 捕获：G{1} 停于接触点 ({2:F0},{3:F0},{4:F0})m",
+                aGroupId, b.GroupId, stopPos.x, stopPos.y, stopPos.z));
+        }
+
+        /// <summary>slab 法射线-AABB 求交：origin + t·dir（t∈[0,1]，dir 为实际位移向量 → t 即位移比例）。</summary>
+        internal static bool RayAabb(DVector3 origin, DVector3 dir, DVector3 bmin, DVector3 bmax, out double tHit)
+        {
+            tHit = 0.0;
+            double tmin = 0.0, tmax = 1.0; // 只关心当前物理步内的命中
+            if (Math.Abs(dir.x) < 1e-12)
+            {
+                if (origin.x < bmin.x || origin.x > bmax.x) return false;
+            }
+            else
+            {
+                double t1 = (bmin.x - origin.x) / dir.x;
+                double t2 = (bmax.x - origin.x) / dir.x;
+                if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
+                tmin = Math.Max(tmin, t1);
+                tmax = Math.Min(tmax, t2);
+                if (tmin > tmax) return false;
+            }
+            if (Math.Abs(dir.y) < 1e-12)
+            {
+                if (origin.y < bmin.y || origin.y > bmax.y) return false;
+            }
+            else
+            {
+                double t1 = (bmin.y - origin.y) / dir.y;
+                double t2 = (bmax.y - origin.y) / dir.y;
+                if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
+                tmin = Math.Max(tmin, t1);
+                tmax = Math.Min(tmax, t2);
+                if (tmin > tmax) return false;
+            }
+            if (Math.Abs(dir.z) < 1e-12)
+            {
+                if (origin.z < bmin.z || origin.z > bmax.z) return false;
+            }
+            else
+            {
+                double t1 = (bmin.z - origin.z) / dir.z;
+                double t2 = (bmax.z - origin.z) / dir.z;
+                if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
+                tmin = Math.Max(tmin, t1);
+                tmax = Math.Min(tmax, t2);
+                if (tmin > tmax) return false;
+            }
+            tHit = tmin;
+            return true;
+        }
+
+        /// <summary>轴对齐盒重叠：三轴重叠量均 > 0 即重叠。</summary>
+        internal static bool AabbOverlap(DVector3 aMin, DVector3 aMax, DVector3 bMin, DVector3 bMax,
+            out double ox, out double oy, out double oz)
+        {
+            ox = Math.Min(aMax.x, bMax.x) - Math.Max(aMin.x, bMin.x);
+            oy = Math.Min(aMax.y, bMax.y) - Math.Max(aMin.y, bMin.y);
+            oz = Math.Min(aMax.z, bMax.z) - Math.Max(aMin.z, bMin.z);
+            return ox > 0 && oy > 0 && oz > 0;
+        }
+
         private double GetGroupRadius(SpaceEntityGroup group)
         {
             var spaceGame = GetSpaceGameComp();
@@ -538,7 +737,9 @@ namespace PioneerFramework.Combat
             {
                 var entity = spaceGame.GetEntityById(eid);
                 if (entity == null) continue;
-                double er = entity.AabbHalfSize.magnitude;
+                // 旋转后包围盒的球半径（覆盖倾斜姿态下的最远角点）
+                entity.GetWorldAabb(out var eMin, out var eMax);
+                double er = (eMax - eMin).magnitude * 0.5;
                 if (er > r) r = er;
             }
             return r;
@@ -554,9 +755,10 @@ namespace PioneerFramework.Combat
             {
                 var entity = spaceGame.GetEntityById(eid);
                 if (entity == null || !entity.IsCollidable) continue;
-                DVector3 half = entity.AabbHalfSize;
-                DVector3 eMin = groupPos + entity.Position - half;
-                DVector3 eMax = groupPos + entity.Position + half;
+                // 旋转后的世界轴对齐包围盒（覆盖倾斜姿态）
+                entity.GetWorldAabb(out var relMin, out var relMax);
+                DVector3 eMin = groupPos + entity.Position + relMin;
+                DVector3 eMax = groupPos + entity.Position + relMax;
                 if (!has) { min = eMin; max = eMax; has = true; }
                 else
                 {
@@ -564,18 +766,6 @@ namespace PioneerFramework.Combat
                     max = new DVector3(Math.Max(max.x, eMax.x), Math.Max(max.y, eMax.y), Math.Max(max.z, eMax.z));
                 }
             }
-        }
-
-        private bool TryGetOverlap(SpaceEntityGroup a, SpaceEntityGroup b, SpaceGameComp spaceGame,
-            DVector3 pa, DVector3 pb,
-            out double ox, out double oy, out double oz)
-        {
-            GetGroupWorldAabb(a, pa, spaceGame, out var aMin, out var aMax);
-            GetGroupWorldAabb(b, pb, spaceGame, out var bMin, out var bMax);
-            ox = Math.Min(aMax.x, bMax.x) - Math.Max(aMin.x, bMin.x);
-            oy = Math.Min(aMax.y, bMax.y) - Math.Max(aMin.y, bMin.y);
-            oz = Math.Min(aMax.z, bMax.z) - Math.Max(aMin.z, bMin.z);
-            return ox > 0 && oy > 0 && oz > 0;
         }
 
         /// <summary>
@@ -636,6 +826,14 @@ namespace PioneerFramework.Combat
 
             a.OrbitDirty = true;
             b.OrbitDirty = true;
+
+            // 分离后立即刷新扫掠基准：否则下拍并集含"分离前位置"，会误报重叠并反复分离。
+            // 必须同时更新 shipLastPositions，否则下个 SyncAllShipsToGrid 会用分离前的旧值
+            // 覆盖 shipPrevPositions（扫掠并集又含分离前位置）。
+            shipPrevPositions[a.GroupId] = a.CurrentOrbit.position;
+            shipPrevPositions[b.GroupId] = b.CurrentOrbit.position;
+            shipLastPositions[a.GroupId] = a.CurrentOrbit.position;
+            shipLastPositions[b.GroupId] = b.CurrentOrbit.position;
         }
 
         /// <summary>低速撞击等效：e=0 完全非弹性动量交换 + 位置分离，无损伤。</summary>
@@ -1052,6 +1250,7 @@ namespace PioneerFramework.Combat
                 affectedByGravity = weapon.def.affectedByGravity,
                 prevPosition = spawnPos,
                 spawnPosition = spawnPos,
+                spawnPhysicsTick = TimeScaleManager.GetPhysicsTickSafe(),
                 lastUpdateRealTick = Find.TickManager.TicksGame,
                 prevUpdateRealTick = Find.TickManager.TicksGame,
                 prevPhysicsTick = TimeScaleManager.GetPhysicsTickSafe(),
@@ -1062,6 +1261,10 @@ namespace PioneerFramework.Combat
 #if DEBUG
             projSpawnedTotal++;
 #endif
+
+            // 射弹生成瞬间立即进入 Combat 档（子弹时间）：排队降速有 ≤2 tick 边界延迟，
+            // Normal 档窗口射弹 6.5km/步 瞬移，观感"物理断裂"。立即切换让射弹全程平滑。
+            Current.Game?.GetComponent<TimeScaleManager>()?.SetCombatModeImmediate();
 
             var combatGrid = GetCombatGrid();
             if (combatGrid != null)
@@ -1083,7 +1286,7 @@ namespace PioneerFramework.Combat
                 {
                     var cd = mgr.GetBodyById(group.circularCentralBodyId);
                     if (cd != null && cd.bodyType != CelestialBodyType.Planet)
-                        centralVel = mgr.GetBodyLocalVelocity(group.circularCentralBodyId, (int)System.Math.Round(physicsTickNow));
+                        centralVel = mgr.GetBodyLocalVelocity(group.circularCentralBodyId, physicsTickNow);
                 }
             }
             double vRelMag = targetVelocity.HasValue ? (targetVelocity.Value - groupVelocity).magnitude : 0.0;
@@ -1099,6 +1302,42 @@ namespace PioneerFramework.Combat
                 centralVel.x, centralVel.y, centralVel.z,
                 groupVelocity.magnitude, muzzleVelocity.magnitude, totalVel.magnitude,
                 leadDist / Math.Max(weapon.def.projectileSpeed, 1f), vRelMag));
+        }
+
+        /// <summary>
+        /// Map 炮塔开火入口（M4-F2 桥接）。复用 FireWeapon 全链路（提前量 / 卡膛检查 / 射弹生成 / 入格）。
+        /// spawnPos 为炮塔在世界系的炮口位置（由 MapCoordMapper 换算），targetVelocity 供提前量解算。
+        /// </summary>
+        public void FireFromMapBuilding(int groupId, WeaponInstance weapon, DVector3 spawnPos, DVector3 targetPos, DVector3? targetVelocity = null)
+        {
+            FireWeapon(groupId, weapon, targetPos, spawnPos, targetVelocity);
+        }
+
+        /// <summary>
+        /// F3 命中 → Map 落点瞬爆。
+        /// hitLocal 为**船体局部系**命中点（CheckSegmentGroupHit 已含 entity.Rotation 逆旋转），
+        /// part 局部 = 地图 1:1，直接映射到地图（落点反映"击中倾斜船体的真实部位"）。
+        /// </summary>
+        private void SpawnPenetrationMote(SpaceEntity entity, Map map, DVector3 hitLocalMeters)
+        {
+            if (entity == null || map == null) return;
+            var def = DefDatabase<ThingDef>.GetNamedSilentFail("PF_Projectile_Shell");
+            if (def == null) return;
+
+            Vector3 pos = MapCoordMapper.ShipLocalToMapWorld(map,
+                new Vector3((float)hitLocalMeters.x, (float)hitLocalMeters.y, (float)hitLocalMeters.z));
+            pos.y = 0f; // 落点恒在地面（爆炸层）
+            pos.x = Mathf.Clamp(pos.x, 0f, map.Size.x - 1f);
+            pos.z = Mathf.Clamp(pos.z, 0f, map.Size.z - 1f);
+
+            // 瞬爆：入口 = 落点 = 命中点（船体局部映射格），距离 0 → 1 tick 后 ImpactSomething
+            // → Impact 造成落点建筑伤害 + 爆闪视觉。
+            var proj = (PFProjectile3D)ThingMaker.MakeThing(def);
+            if (proj == null) return;
+            IntVec3 cell = pos.ToIntVec3();
+            if (!cell.InBounds(map)) cell = map.Center; // 防御
+            GenSpawn.Spawn(proj, cell, map);
+            proj.Launch3D(pos, pos, cell);
         }
 
         /// <summary>
@@ -1135,7 +1374,11 @@ namespace PioneerFramework.Combat
             }
 
             if (t <= 0.0) return targetPos;
-            return targetPos + targetVel * t;
+            // 相对坐标系正确外推：射弹从射手当前位置沿 (r0 + vRel·t) 方向出膛，
+            // 射手自身速度已在 vRel 中扣除（射弹飞行中射手也在移动）。
+            // 原实现 targetPos + targetVel·t 用绝对速度外推，共轨场景（船速≈弹速量级）
+            // 会偏出 目标AABB（如 2.4km/s×0.27s≈650m >> 30m AABB）导致必然脱靶。
+            return targetPos + vRel * t;
         }
 
         /// <summary>

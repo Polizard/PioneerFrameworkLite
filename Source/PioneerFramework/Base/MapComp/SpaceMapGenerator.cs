@@ -362,6 +362,8 @@ namespace PioneerFramework
                 localPosition = DVector3.zero,
                 localBoundsSize = new DVector3(mapWidth, 50.0, mapHeight),
                 hp = 100f,
+                // 空间站是地图载体：无 Part 血条，存亡由 Map 内建筑决定（射弹命中不扣 Part HP）
+                isIndestructible = true,
             };
             entity.SetParts(new List<SpacePart> { part });
 

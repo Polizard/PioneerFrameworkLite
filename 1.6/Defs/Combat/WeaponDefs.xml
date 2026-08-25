@@ -35,14 +35,15 @@
     <fireRate>1</fireRate>
     <maxRange>3000000</maxRange>
     <minRange>50</minRange>
-    <cooldownTicks>60</cooldownTicks>
+    <orbitalEngageRange>300000</orbitalEngageRange>
+    <cooldownTicks>12</cooldownTicks>
     <overheatThreshold>10</overheatThreshold>
     <overheatCooldownTicks>300</overheatCooldownTicks>
     <mountSize>(2, 1, 2)</mountSize>
     <turret>true</turret>
     <turretRotationSpeed>30</turretRotationSpeed>
     <trackingArc>360</trackingArc>
-    <projectileSpeed>300000</projectileSpeed>
+    <projectileSpeed>5000</projectileSpeed>
     <projectileMass>0.5</projectileMass>
     <affectedByGravity>false</affectedByGravity>
     <projectileLifetime>600</projectileLifetime>
