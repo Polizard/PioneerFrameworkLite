@@ -130,11 +130,106 @@ namespace PioneerFramework
             yield return new Command_Action
             {
                 defaultLabel = "部署炮塔对射测试场景",
-                defaultDesc = "创建玩家空间站（定位机+上下双侧炮塔，自动绑定）+ 敌对空间站（20km 外），触发 Auto 索敌齐射。",
+                defaultDesc = "创建玩家空间站（定位机+整体式炮塔，自动绑定）+ 敌对空间站（20km 外赤道面），触发 Auto 索敌齐射，并自动开启详细战斗日志。",
                 icon = TexCommand.FireAtWill,
                 action = delegate
                 {
                     SpawnTurretTest();
+                }
+            };
+
+            yield return new Command_Action
+            {
+                defaultLabel = "部署全方位炮塔对射场景",
+                defaultDesc = "6 座整体式炮塔各配一台定位机（Manual 各指一个敌站），敌站分布在玩家船六方位（±x/±z 赤道面 + ±y 法向 20km）。一次齐射验证 360° 射界解除 + 六面出膛碰撞点，日志看 [炮塔出膛] 出膛面 0~5。",
+                icon = TexCommand.FireAtWill,
+                action = delegate
+                {
+                    SpawnTurretOmniTest();
+                }
+            };
+
+            yield return new Command_Action
+            {
+                defaultLabel = "部署精确炮击测试场景",
+                defaultDesc = "目标敌舰位于玩家船正下方（世界 -y 20km），定位机预设精确炮击点 (40,30)（船心偏移 +10m）。验证：出膛面 y-（面2）、瞄准偏移、红色标记、落点格≈炮击点。",
+                icon = TexCommand.FireAtWill,
+                action = delegate
+                {
+                    SpawnTurretPrecisionTest();
+                }
+            };
+
+            yield return new Command_Action
+            {
+                defaultLabel = "部署定向能对射场景",
+                defaultDesc = "玩家空间站（定位机 Auto + 激光炮塔，自动绑定）+ 敌对空间站 20km 外赤道面（vRel≈0）。激光即时命中无提前量，验证：[激光发射]（射程 50km）→[激光命中!]（Part HP 下降）→[贯穿生成]（贯通入口→落点弹道）→ 光束 60 tick 残留。",
+                icon = TexCommand.FireAtWill,
+                action = delegate
+                {
+                    SpawnRayTurretTest();
+                }
+            };
+
+            yield return new Command_Action
+            {
+                defaultLabel = "部署定向能遮挡验证",
+                defaultDesc = "玩家站 + 激光炮塔，定位机 Manual 指向 20km 远敌站，近敌站 10km 挡在光束路径上。验证遮挡语义：光束只命中最近一艘（近站掉血，[激光命中!] 指向近站）。",
+                icon = TexCommand.FireAtWill,
+                action = delegate
+                {
+                    SpawnRayOcclusionTest();
+                }
+            };
+
+            yield return new Command_Action
+            {
+                defaultLabel = "部署定向能旋转命中验证",
+                defaultDesc = "敌站绕 Z 轴旋转 45°，光束从 +x 水平来向在船体局部系变 45° 俯冲。验证旋转正确 part 检测：[激光slab] 局部系线段倾斜、[激光part] 命中局部点 y≠0、船壳入口 y>0（从上斜降地面）。",
+                icon = TexCommand.FireAtWill,
+                action = delegate
+                {
+                    SpawnRayRotatedTest();
+                }
+            };
+
+            yield return new Command_Action
+            {
+                defaultLabel = "部署定向能多目标齐射",
+                defaultDesc = "4 敌站四方位（±x/±z 20km 赤道面共轨）+ 4 组激光炮塔定位机（Manual 各指一个）。一次齐射 4 发，每发独立判定链 [激光发射]→[激光slab]→[激光part]→[激光命中!]→[激光命中判定]，验证多目标同时命中。",
+                icon = TexCommand.FireAtWill,
+                action = delegate
+                {
+                    SpawnRayMultiTest();
+                }
+            };
+
+            yield return new Command_Toggle
+            {
+                defaultLabel = "详细战斗日志",
+                defaultDesc = "开关炮塔战斗全链详细日志（齐射/炮塔几何/出膛/视觉弹/命中/贯穿）+ 射弹飞行探针（30 tick/条）。",
+                icon = TexButton.Info,
+                isActive = () => CombatManager.DebugDetailedCombat,
+                toggleAction = ToggleDetailedCombat
+            };
+
+            yield return new Command_Toggle
+            {
+                defaultLabel = "详细操舵日志",
+                defaultDesc = "开关操舵/自动对准详细日志：手动平移/旋转/SAS（[Steer] 10 tick/条）+ 自动对准开始/完成/进度（[Align] 30 tick/条）。",
+                icon = TexButton.Info,
+                isActive = () => SpaceGameComp.DebugDetailedSteering,
+                toggleAction = () => SpaceGameComp.DebugDetailedSteering = !SpaceGameComp.DebugDetailedSteering
+            };
+
+            yield return new Command_Action
+            {
+                defaultLabel = "部署操舵测试场景",
+                defaultDesc = "玩家站（操舵台 + 核热引擎 Rot4.East 主推进 + 横向/垂直推进器 + 氢罐满）→ 自动打开操舵 HUD 并开启详细操舵日志。验证：按键平移（沿船轴方向出 Δv）、旋转（动量轮）、SAS 对准、动作组过滤、输入打断清队列。",
+                icon = TexButton.Info,
+                action = delegate
+                {
+                    SpawnSteeringTest();
                 }
             };
 
@@ -146,6 +241,28 @@ namespace PioneerFramework
                 action = delegate
                 {
                     SpawnCollisionTest();
+                }
+            };
+
+            yield return new Command_Action
+            {
+                defaultLabel = "部署跳帮测试场景",
+                defaultDesc = "创建玩家空间站（母船，含突击兵）+ 敌对空间站（10km 外，含守军），自动触发单兵 EVA 跳帮：DeSpawn → 飞行 → 降落 Spawn pawn 进目标站 Map。",
+                icon = TexCommand.FireAtWill,
+                action = delegate
+                {
+                    SpawnBoardingTest();
+                }
+            };
+
+            yield return new Command_Action
+            {
+                defaultLabel = "打开跳帮测试面板",
+                defaultDesc = "跳帮测试面板：EVA 单兵/多兵/穿梭机/高速撞击场景一键部署 + 详细日志/探针开关 + 单位实时状态 + 结算历史与着陆验证。",
+                icon = TexButton.Info,
+                action = delegate
+                {
+                    Find.WindowStack.Add(new Window_BoardingTest());
                 }
             };
         }
@@ -326,6 +443,19 @@ namespace PioneerFramework
             Find.WindowStack.Add(new Window_SpaceBattleView3D(groupA));
         }
 
+        /// <summary>
+        /// 跳帮（登舰突击）测试场景（M3 验收）：
+        /// ① 玩家空间站（圆轨，母船）内置突击兵；
+        /// ② 敌对空间站（共轨 10km 外）内置守军；
+        /// ③ 自动触发单兵 EVA 跳帮：母船 pawn DeSpawn → 临时 3D 实体 + 接近引导（瞄准移动落点）
+        ///    → 降落判定通过 → pawn Spawn 进目标站 Map。
+        /// 实现委托 BoardingTestScenarios（与测试面板共用同一场景逻辑）。
+        /// </summary>
+        private void SpawnBoardingTest()
+        {
+            BoardingTestScenarios.DeployEvaTest(1);
+        }
+
         private void SpawnTestStation()
         {
             var (entity, group, map) = CreateTestStation();
@@ -426,11 +556,75 @@ namespace PioneerFramework
             return thing.TryGetComp<CompPropellantTank>();
         }
 
+        /// <summary>放置建筑并指定朝向（推进器 Rot4 映射轴向用）。</summary>
+        private static void PlaceBuildingRot(Map map, string defName, IntVec3 cell, Rot4 rot)
+        {
+            var def = DefDatabase<ThingDef>.GetNamedSilentFail(defName);
+            if (def == null)
+            {
+                Log.Error("[SteerTest] Def not found: " + defName);
+                return;
+            }
+            var thing = ThingMaker.MakeThing(def);
+            GenSpawn.Spawn(thing, cell, map, rot, WipeMode.Vanish, false);
+        }
+
         /// <summary>
-        /// 炮塔对射测试场景（M4-F2 验收）：
-        /// ① 玩家空间站（圆轨）内布置定位机 + 上下双侧炮塔，自动完成绑定；
-        /// ② 敌对空间站（不同 factionId）置于玩家旁 80km，近似共轨速度；
-        /// ③ 定位机 Auto 模式自动索敌 → 半球射界判定 → 齐射 → 3D 射弹命中。
+        /// 操舵测试场景（M-c 验收）：玩家站布置操舵台 + 主推进（核热 Rot4.East → 船 +X）+
+        /// 横向（Side 默认 Left）+ 垂直（Vertical Up）+ 氢罐满，自动打开操舵 HUD 与详细操舵日志。
+        /// 验证点：① 按键平移沿船轴世界方向出 Δv（[Steer] 平移）；② 动量轮旋转（[Steer] 旋转）；
+        /// ③ SAS 对准（[Steer] SAS→）；④ 动作组武装过滤（离子引擎 actionGroups=1）；⑤ 任意输入清空机动队列。
+        /// </summary>
+        private void SpawnSteeringTest()
+        {
+            var (entity, group, map) = CreateTestStation();
+            if (entity == null || group == null || map == null)
+                return;
+
+            // 详细操舵日志
+            SpaceGameComp.DebugDetailedSteering = true;
+
+            // 布置：操舵台 + 主推进（Rot4.East：def Back → 船 +X）+ 横向（Left）+ 垂直（Up）+ RCS + 氢罐满
+            PlaceBuilding(map, "PF_Building_SteeringConsole", new IntVec3(32, 0, 30));
+            PlaceBuildingRot(map, "PF_Building_Thruster_NuclearThermal", new IntVec3(28, 0, 30), Rot4.East);
+            PlaceBuildingRot(map, "PF_Building_Thruster_Side", new IntVec3(28, 0, 32), Rot4.North);
+            PlaceBuildingRot(map, "PF_Building_Thruster_Vertical", new IntVec3(28, 0, 34), Rot4.North);
+            PlaceBuildingRot(map, "PF_Building_Thruster_Rcs", new IntVec3(28, 0, 36), Rot4.North);
+            PlaceBuildingRot(map, "PF_Building_Thruster_Rcs", new IntVec3(28, 0, 38), Rot4.North);
+            var tank = PlaceBuilding(map, "PF_Building_Tank_Hydrogen", new IntVec3(30, 0, 30));
+            tank?.TryFill(tank.Capacity);
+
+            var mapComp = map.GetComponent<SpaceMapComp>();
+            if (mapComp == null) return;
+            Log.Message(string.Format(
+                "[SteerTest] 场景就绪 Group{0}：主推进轴={1} 六向推力(kN) F={2:F1} B={3:F1} L={4:F1} R={5:F1} U={6:F1} D={7:F1} RCS={8:F1}kN 氢={9:F0}kg",
+                group.GroupId, mapComp.MainThrustAxis,
+                mapComp.GetAxisTotalThrust((int)ThrustAxis.Forward) / 1000f,
+                mapComp.GetAxisTotalThrust((int)ThrustAxis.Back) / 1000f,
+                mapComp.GetAxisTotalThrust((int)ThrustAxis.Left) / 1000f,
+                mapComp.GetAxisTotalThrust((int)ThrustAxis.Right) / 1000f,
+                mapComp.GetAxisTotalThrust((int)ThrustAxis.Up) / 1000f,
+                mapComp.GetAxisTotalThrust((int)ThrustAxis.Down) / 1000f,
+                mapComp.RcsTotalThrust / 1000f,
+                mapComp.TotalPropellantMass));
+
+            // 打开操舵 HUD + 跳转玩家站地图
+            SteeringController.Open(group.GroupId);
+            Find.WindowStack.Add(new Window_Steering());
+            if (map != null)
+                CameraJumper.TryJump(map.Center, map);
+
+            Messages.Message("操舵测试场景就绪：操舵 HUD 已打开。W/S/A/D+R/F 平移、Q/E+方向键 旋转、SAS 按钮对准、1-9 动作组。日志看 [Steer]/[Align]。",
+                MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// 炮塔对射测试场景（M4-F2 验收，整体式 360° 版）：
+        /// ① 玩家空间站（圆轨）内布置定位机 + 整体式炮塔，自动完成绑定；
+        /// ② 敌对空间站（不同 factionId）置于玩家旁 20km，真正共轨（vRel≈0）；
+        /// ③ 定位机 Auto 模式自动索敌 → 360° 无射界过滤 → 齐射 → 3D 射弹命中。
+        /// 验证点：目标在船体局部赤道面（y≈0）——旧半球射界下"无炮可开"，现应正常开火，
+        /// 日志 [炮塔出膛] 显示六面出膛面与出膛点（本场景应命中 x+ 侧面，exitFace=1）。
         /// </summary>
         private void SpawnTurretTest()
         {
@@ -439,17 +633,20 @@ namespace PioneerFramework
             if (playerEntity == null || playerGroup == null || playerMap == null)
                 return;
 
-            // 侧倾 30°（绕 Z 轴）：两船同在轨道面（世界 y≈0），若不倾斜，目标在船体局部 y≈0，
-            // 上锚点(需 y>0)/下锚点(需 y<0) 全被半球射界过滤 → 无炮可开。侧倾后目标落入上炮半球。
-            playerEntity.SetRotation(Quaternion.Euler(0f, 0f, 30f));
+            // 开启详细战斗日志 + 射弹探针（30 tick/条），观察出膛点/弹道/命中全链
+            CombatManager.DebugDetailedCombat = true;
+            CombatManager.DebugProjectileProbeInterval = 30;
+            Log.Message("[TurretTest] 详细战斗日志已开启（DebugDetailedCombat + 射弹探针 30 tick/条），可随时用 Debug 组件 Gizmo 关闭");
 
-            // 1. 布置定位机 + 上下双侧炮塔（Both = 2 锚点）
+            // 不倾斜：目标在船体局部 y≈0（赤道面），360° 射界下仍可开火（旧半球射界会全过滤）
+
+            // 1. 布置定位机 + 整体式炮塔（单锚点）
             var designator = PlaceBuildingRaw(playerMap, "PF_Building_TargetDesignator", new IntVec3(28, 0, 30));
-            var turret = PlaceBuildingRaw(playerMap, "PF_Building_Turret_Cannon_Both", new IntVec3(30, 0, 30));
+            var turret = PlaceBuildingRaw(playerMap, "PF_Building_Turret_Cannon", new IntVec3(30, 0, 30));
             if (designator == null || turret == null)
                 return;
 
-            // 2. 自动绑定（模拟玩家 Gizmo 绑定结果）：上下锚点都绑到定位机
+            // 2. 自动绑定（模拟玩家 Gizmo 绑定结果）
             var desComp = designator.TryGetComp<CompMapDesignator>();
             var turretComp = turret.TryGetComp<CompMapTurret>();
             if (desComp == null || turretComp == null)
@@ -457,10 +654,8 @@ namespace PioneerFramework
                 Log.Error("[TurretTest] 定位机/炮塔 Comp 缺失");
                 return;
             }
-            desComp.RegisterTurret(turret, TurretMountSide.Top);
-            turretComp.GetMount(TurretMountSide.Top).boundDesignator = designator;
-            desComp.RegisterTurret(turret, TurretMountSide.Bottom);
-            turretComp.GetMount(TurretMountSide.Bottom).boundDesignator = designator;
+            desComp.RegisterTurret(turret);
+            turretComp.Mount.boundDesignator = designator;
 
             // 3. 敌对空间站：玩家旁 20km，真正共轨（同高度圆轨 → 相对静止 vRel≈0，提前量 0 精确命中）。
             //    Part 尺寸按地图格子对应（1 格 = 1 米），不取巧放大目标。
@@ -481,18 +676,123 @@ namespace PioneerFramework
             // 敌对空间站绕 Z 轴旋转 45°：射弹（世界水平 +x 来向）在船体局部系变成 45° 俯冲，
             // 命中船体上部缓冲区（y≈21m）→ 贯穿入口高度 ≈26m，炮弹从上方斜降地面（"上方 45 度挨打"）
             var enemyEntity = spaceGame.GetEntityById(enemyEntityId);
-            if (enemyEntity != null)
-                enemyEntity.SetRotation(Quaternion.Euler(0f, 0f, 45f));
+            if (enemyGroup != null)
+            {
+                // 姿态改走 group（entity.Rotation 由 UpdateGroupOrbit 同步），同时设 entity 保证立即生效
+                enemyGroup.CurrentOrbit.rotation = Quaternion.Euler(0f, 0f, 45f);
+                if (enemyEntity != null)
+                    enemyEntity.SetRotation(enemyGroup.CurrentOrbit.rotation);
+            }
 
-            // 4. 打开 3D 视角观察对射，并跳转到玩家空间站地图看炮塔/开火闪光
+            // 4. 打开 3D 视角观察对射，并跳转到玩家空间站地图看炮塔/出膛弹/开火烟雾
             Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
-            Log.Message(string.Format("[TurretTest] 场景就绪: 玩家 Group {0} 炮塔已绑定位机(上/下)，敌对 Group {1} 位于 20km 外，Auto 索敌启动",
+            Log.Message(string.Format("[TurretTest] 场景就绪: 玩家 Group {0} 整体式炮塔已绑定位机，敌对 Group {1} 位于 20km 外（赤道面），Auto 索敌启动",
                 playerGroup.GroupId, enemyGroupId));
-            Messages.Message(string.Format("炮塔对射测试场景就绪：玩家 Group {0}，敌对 Group {1} 位于 20km 外。",
+            Messages.Message(string.Format("炮塔对射测试场景就绪：玩家 Group {0}，敌对 Group {1} 位于 20km 外（赤道面，验证 360° 射界）。",
                 playerGroup.GroupId, enemyGroupId), MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// 全方位炮塔对射测试场景（2026-08-29，整体式 360° 验证）：
+        /// 6 座整体式炮塔各配一台定位机（Manual 模式各指一个敌站），敌站分布在玩家船六个方位（20km）：
+        ///   ±x / ±z（赤道面，共轨）→ 期望出膛面 1/0/5/4（四侧面）
+        ///   ±y（轨道面法向）→ 期望出膛面 3/2（上/下表面）
+        /// 一次齐射即可通过 [炮塔出膛] 日志验证：360° 射界解除（赤道面旧半球逻辑无炮可开）+
+        /// 六面出膛碰撞点准确性。玩家船不旋转（船体局部 = 世界轴，方位对应直白）。
+        /// </summary>
+        private void SpawnTurretOmniTest()
+        {
+            var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
+            if (playerEntity == null || playerGroup == null || playerMap == null)
+                return;
+
+            // 详细战斗日志 + 射弹探针：追踪 6 发齐射的出膛/弹道/命中全链
+            CombatManager.DebugDetailedCombat = true;
+            CombatManager.DebugProjectileProbeInterval = 30;
+
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+
+            DVector3 playerPos = playerGroup.IsCircularOrbit
+                ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
+                : playerGroup.CurrentOrbit.position;
+
+            // 六方位敌站（20km）→ 期望出膛面（0x- 1x+ 2y- 3y+ 4z- 5z+）
+            var directions = new (string name, DVector3 offset, int expectFace)[]
+            {
+                ("敌站+x", new DVector3(20000, 0, 0), 1),
+                ("敌站-x", new DVector3(-20000, 0, 0), 0),
+                ("敌站+z", new DVector3(0, 0, 20000), 5),
+                ("敌站-z", new DVector3(0, 0, -20000), 4),
+                ("敌站+y", new DVector3(0, 20000, 0), 3),
+                ("敌站-y", new DVector3(0, -20000, 0), 2),
+            };
+
+            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            var enemyGroupIds = new List<int>();
+            string mapping = "";
+            foreach (var d in directions)
+            {
+                int gid = GetNextGroupId(spaceGame);
+                int eid = GetNextEntityId(spaceGame);
+                spaceGame.CreateStation(eid, gid, enemyFactionId, playerPos + d.offset, 60, 60, d.name);
+                var g = spaceGame.GetGroupById(gid);
+                if (g != null)
+                    g.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+                enemyGroupIds.Add(gid);
+                mapping += string.Format("G{0}={1}(期望面{2}) ", gid, d.name, d.expectFace);
+            }
+
+            // 6 组：整体式炮塔 + 定位机（Manual 各指一个敌站），自动完成绑定
+            var turretCells = new[]
+            {
+                new IntVec3(29, 0, 29), new IntVec3(30, 0, 29), new IntVec3(31, 0, 29),
+                new IntVec3(29, 0, 30), new IntVec3(30, 0, 30), new IntVec3(31, 0, 30),
+            };
+            var desCells = new[]
+            {
+                new IntVec3(28, 0, 28), new IntVec3(29, 0, 28), new IntVec3(30, 0, 28),
+                new IntVec3(28, 0, 31), new IntVec3(29, 0, 31), new IntVec3(30, 0, 31),
+            };
+            var designators = new List<CompMapDesignator>();
+            for (int i = 0; i < directions.Length; i++)
+            {
+                var des = PlaceBuildingRaw(playerMap, "PF_Building_TargetDesignator", desCells[i]);
+                var turret = PlaceBuildingRaw(playerMap, "PF_Building_Turret_Cannon", turretCells[i]);
+                var desComp = des?.TryGetComp<CompMapDesignator>();
+                var turretComp = turret?.TryGetComp<CompMapTurret>();
+                if (desComp == null || turretComp == null || turretComp.Mount == null)
+                {
+                    Log.Error("[OmniTurretTest] 第 " + i + " 组定位机/炮塔 Comp 缺失");
+                    continue;
+                }
+                desComp.DebugSetManualTarget(enemyGroupIds[i]);
+                desComp.RegisterTurret(turret);
+                turretComp.Mount.boundDesignator = des;
+                designators.Add(desComp);
+            }
+
+            // 精确炮击验证：G2(+x 敌站) 的定位机瞄准船心偏移格 (40,30)（60×60 站中心(30,30) → 局部 +10m）
+            // 该组炮塔出膛方向将朝 G2 的 +10m 偏移点，命中落点格应落在 (40,30) 附近。
+            if (designators.Count > 0)
+            {
+                designators[0].DebugSetPreciseStrike(enemyGroupIds[0], new IntVec3(40, 0, 30));
+                Log.Message(string.Format("[OmniTurretTest] G{0} 已设精确炮击点 (40,30)：瞄准偏移船心 +10m（看 [精确炮击]/[炮塔出膛]/[贯穿生成] 日志）",
+                    enemyGroupIds[0]));
+            }
+
+            // 打开 3D 视角 + 跳转玩家地图看 6 发齐射出膛弹
+            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            if (playerMap != null)
+                CameraJumper.TryJump(playerMap.Center, playerMap);
+
+            Log.Message(string.Format("[OmniTurretTest] 场景就绪: 玩家 G{0}，6 炮塔各指一个敌站：{1}",
+                playerGroup.GroupId, mapping));
+            Messages.Message("全方位炮塔对射场景就绪：6 敌站分布六方位，6 炮塔齐射验证 360° 射界与六面出膛（看日志 [炮塔出膛]）。",
+                MessageTypeDefOf.TaskCompletion);
         }
 
         /// <summary>在地图指定格子放置一个建筑，返回 Thing（无 faction，测试用）。</summary>
@@ -507,6 +807,349 @@ namespace PioneerFramework
             var thing = ThingMaker.MakeThing(def);
             GenSpawn.Spawn(thing, cell, map, Rot4.North, WipeMode.Vanish, false);
             return thing;
+        }
+
+        /// <summary>
+        /// 精确炮击测试场景（2026-08-29）：目标敌舰位于玩家船正下方（世界 -y，20km）。
+        /// 验证点：
+        ///   ① 正下方目标 → 出膛面 y-（面2），出膛点局部 (≈0,-25,≈0)；
+        ///   ② 精确炮击点 (40,30)（60×60 站中心(30,30) → 局部偏移 +10m x）→ [精确炮击] 日志显示偏移；
+        ///   ③ 敌舰地图 (40,30) 上出现红色精确炮击标记；
+        ///   ④ 命中落点格 ≈ (40,30)（[贯穿生成] 验证）。
+        /// </summary>
+        private void SpawnTurretPrecisionTest()
+        {
+            var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
+            if (playerEntity == null || playerGroup == null || playerMap == null)
+                return;
+
+            // 详细战斗日志 + 射弹探针
+            CombatManager.DebugDetailedCombat = true;
+            CombatManager.DebugProjectileProbeInterval = 30;
+
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+
+            DVector3 playerPos = playerGroup.IsCircularOrbit
+                ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
+                : playerGroup.CurrentOrbit.position;
+
+            // 敌舰：玩家船正下方（世界 -y）20km → 船体局部 -y → 出膛面 y-（面2）
+            DVector3 enemyPos = playerPos + new DVector3(0, -20000, 0);
+            int enemyGroupId = GetNextGroupId(spaceGame);
+            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "正下方敌站");
+            var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
+            if (enemyGroup != null)
+                enemyGroup.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+
+            // 定位机 + 整体式炮塔，自动绑定
+            var designator = PlaceBuildingRaw(playerMap, "PF_Building_TargetDesignator", new IntVec3(28, 0, 30));
+            var turret = PlaceBuildingRaw(playerMap, "PF_Building_Turret_Cannon", new IntVec3(30, 0, 30));
+            var desComp = designator?.TryGetComp<CompMapDesignator>();
+            var turretComp = turret?.TryGetComp<CompMapTurret>();
+            if (desComp == null || turretComp == null || turretComp.Mount == null)
+            {
+                Log.Error("[PrecisionTest] 定位机/炮塔 Comp 缺失");
+                return;
+            }
+            desComp.RegisterTurret(turret);
+            turretComp.Mount.boundDesignator = designator;
+
+            // 精确炮击点：敌舰地图格 (40,30)（60×60 中心(30,30) → 局部偏移 +10m x），自动切 Manual 锁定目标
+            desComp.DebugSetPreciseStrike(enemyGroupId, new IntVec3(40, 0, 30));
+
+            // 打开 3D 视角 + 跳转敌舰地图看红色精确炮击标记
+            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            var enemyEntity = spaceGame.GetEntityById(enemyEntityId);
+            if (enemyEntity != null && enemyEntity.MapId >= 0)
+            {
+                Map enemyMap = SpaceMapGenerator.FindPocketMap(enemyEntity.MapId);
+                if (enemyMap != null)
+                    CameraJumper.TryJump(enemyMap.Center, enemyMap);
+            }
+
+            Log.Message(string.Format(
+                "[PrecisionTest] 场景就绪: 玩家 G{0}，敌舰 G{1} 位于正下方 20km，精确炮击点 (40,30)（船心偏移 +10m），Auto 索敌启动",
+                playerGroup.GroupId, enemyGroupId));
+            Messages.Message("精确炮击测试场景就绪：目标在正下方（期望出膛面 y-），精确炮击点 (40,30)，敌舰地图上有红色标记。",
+                MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// 定向能对射测试场景（2026-08-29）：玩家站定位机 Auto + 激光炮塔，敌对站 20km 赤道面（vRel≈0）。
+        /// 验证点（日志链）：[齐射详情] → [炮塔出膛] → [激光发射]（射程 50km）→ [激光命中!]（Part HP 下降）
+        /// → [贯穿生成]（贯通入口→落点格）→ 光束 60 tick 残留（3D 视角）。
+        /// </summary>
+        private void SpawnRayTurretTest()
+        {
+            var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
+            if (playerEntity == null || playerGroup == null || playerMap == null)
+                return;
+
+            // 详细战斗日志
+            CombatManager.DebugDetailedCombat = true;
+            CombatManager.DebugProjectileProbeInterval = 30;
+
+            // 1. 定位机（Auto）+ 激光炮塔，自动绑定
+            var designator = PlaceBuildingRaw(playerMap, "PF_Building_TargetDesignator", new IntVec3(28, 0, 30));
+            var turret = PlaceBuildingRaw(playerMap, "PF_Building_Turret_Laser", new IntVec3(30, 0, 30));
+            if (designator == null || turret == null)
+            {
+                Log.Error("[RayTurretTest] 定位机/激光炮塔 Def 缺失");
+                return;
+            }
+            var desComp = designator.TryGetComp<CompMapDesignator>();
+            var turretComp = turret.TryGetComp<CompMapTurret>();
+            if (desComp == null || turretComp == null || turretComp.Mount == null)
+            {
+                Log.Error("[RayTurretTest] 定位机/炮塔 Comp 缺失");
+                return;
+            }
+            desComp.RegisterTurret(turret);
+            turretComp.Mount.boundDesignator = designator;
+
+            // 2. 敌对空间站：玩家旁 20km，真正共轨（同高度圆轨 → 相对静止 vRel≈0，即时命中精准）
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            DVector3 playerPos = playerGroup.IsCircularOrbit
+                ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
+                : playerGroup.CurrentOrbit.position;
+            DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
+            int enemyGroupId = GetNextGroupId(spaceGame);
+            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站");
+            var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
+            if (enemyGroup != null)
+                enemyGroup.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+
+            // 3. 打开 3D 视角 + 跳转玩家地图看激光炮塔
+            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            if (playerMap != null)
+                CameraJumper.TryJump(playerMap.Center, playerMap);
+
+            Log.Message(string.Format("[RayTurretTest] 场景就绪: 玩家 Group {0} 激光炮塔已绑定位机，敌对 Group {1} 位于 20km 外（赤道面），Auto 索敌启动",
+                playerGroup.GroupId, enemyGroupId));
+            Messages.Message("定向能对射场景就绪：玩家 Group " + playerGroup.GroupId + "，敌对 Group " + enemyGroupId
+                + " 位于 20km 外（赤道面）。看日志 [激光发射]/[激光命中!]/[贯穿生成]。", MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// 定向能遮挡验证场景（2026-08-29）：玩家站激光炮塔，定位机 Manual 指向 20km 远敌站，
+        /// 近敌站 10km 正挡在玩家→远站连线上。期望：光束路径被近站遮挡 → 只命中最近一艘
+        /// （[激光命中!] 指向近站 Group、近站 Part HP 下降），验证遮挡语义。
+        /// 定位机必须 Manual 指远站——Auto 会选最近的近站，无法验证遮挡。
+        /// </summary>
+        private void SpawnRayOcclusionTest()
+        {
+            var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
+            if (playerEntity == null || playerGroup == null || playerMap == null)
+                return;
+
+            CombatManager.DebugDetailedCombat = true;
+            CombatManager.DebugProjectileProbeInterval = 30;
+
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            DVector3 playerPos = playerGroup.IsCircularOrbit
+                ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
+                : playerGroup.CurrentOrbit.position;
+            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+
+            // 1. 近敌站（挡路）：玩家 +x 10km
+            DVector3 nearPos = playerPos + new DVector3(10000, 0, 0);
+            int nearGroupId = GetNextGroupId(spaceGame);
+            int nearEntityId = GetNextEntityId(spaceGame);
+            spaceGame.CreateStation(nearEntityId, nearGroupId, enemyFactionId, nearPos, 60, 60, "遮挡敌站(近10km)");
+            var nearGroup = spaceGame.GetGroupById(nearGroupId);
+            if (nearGroup != null)
+                nearGroup.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+
+            // 2. 远敌站（瞄准目标）：玩家 +x 20km（近站正挡在光束路径上）
+            DVector3 farPos = playerPos + new DVector3(20000, 0, 0);
+            int farGroupId = GetNextGroupId(spaceGame);
+            int farEntityId = GetNextEntityId(spaceGame);
+            spaceGame.CreateStation(farEntityId, farGroupId, enemyFactionId, farPos, 60, 60, "瞄准敌站(远20km)");
+            var farGroup = spaceGame.GetGroupById(farGroupId);
+            if (farGroup != null)
+                farGroup.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+
+            // 3. 激光炮塔 + 定位机（Manual 指向远站）
+            var designator = PlaceBuildingRaw(playerMap, "PF_Building_TargetDesignator", new IntVec3(28, 0, 30));
+            var turret = PlaceBuildingRaw(playerMap, "PF_Building_Turret_Laser", new IntVec3(30, 0, 30));
+            var desComp = designator?.TryGetComp<CompMapDesignator>();
+            var turretComp = turret?.TryGetComp<CompMapTurret>();
+            if (desComp == null || turretComp == null || turretComp.Mount == null)
+            {
+                Log.Error("[RayOcclusionTest] 定位机/炮塔 Comp 缺失");
+                return;
+            }
+            desComp.RegisterTurret(turret);
+            turretComp.Mount.boundDesignator = designator;
+            desComp.DebugSetManualTarget(farGroupId);
+
+            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            if (playerMap != null)
+                CameraJumper.TryJump(playerMap.Center, playerMap);
+
+            Log.Message(string.Format("[RayOcclusionTest] 场景就绪: 玩家 G{0} 激光炮塔 Manual→G{1}(20km)，近站 G{2}(10km) 挡路，期望只命中近站",
+                playerGroup.GroupId, farGroupId, nearGroupId));
+            Messages.Message("定向能遮挡验证场景就绪：定位机 Manual 指向 20km 远站，10km 近站挡在光束路径上。期望光束只命中近站（遮挡语义）。",
+                MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// 定向能旋转命中验证场景（2026-08-29）：敌站绕 Z 轴旋转 45°，光束世界 +x 水平来向，
+        /// 在船体局部系变 45° 俯冲。验证 T2 的旋转正确 part 检测：
+        /// [激光slab] 局部系线段呈 45° 倾斜、[激光part] 命中局部点 y≠0（上方斜入）、船壳入口 y>0（从上斜降地面）。
+        /// 旧版"世界方向在局部系延伸"在旋转时失效，此场景是核心正确性回归测试。
+        /// </summary>
+        private void SpawnRayRotatedTest()
+        {
+            var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
+            if (playerEntity == null || playerGroup == null || playerMap == null)
+                return;
+
+            CombatManager.DebugDetailedCombat = true;
+            CombatManager.DebugProjectileProbeInterval = 30;
+
+            // 1. 定位机（Auto）+ 激光炮塔，自动绑定
+            var designator = PlaceBuildingRaw(playerMap, "PF_Building_TargetDesignator", new IntVec3(28, 0, 30));
+            var turret = PlaceBuildingRaw(playerMap, "PF_Building_Turret_Laser", new IntVec3(30, 0, 30));
+            var desComp = designator?.TryGetComp<CompMapDesignator>();
+            var turretComp = turret?.TryGetComp<CompMapTurret>();
+            if (desComp == null || turretComp == null || turretComp.Mount == null)
+            {
+                Log.Error("[RayRotatedTest] 定位机/炮塔 Comp 缺失");
+                return;
+            }
+            desComp.RegisterTurret(turret);
+            turretComp.Mount.boundDesignator = designator;
+
+            // 2. 敌对空间站 20km 赤道面（+x），绕 Z 轴旋转 45°：光束 +x 来向在局部系变 45° 俯冲
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            DVector3 playerPos = playerGroup.IsCircularOrbit
+                ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
+                : playerGroup.CurrentOrbit.position;
+            DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
+            int enemyGroupId = GetNextGroupId(spaceGame);
+            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "旋转敌站");
+            var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
+            if (enemyGroup != null)
+                enemyGroup.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+            var enemyEntity = spaceGame.GetEntityById(enemyEntityId);
+            if (enemyGroup != null)
+            {
+                // 姿态改走 group（entity.Rotation 由 UpdateGroupOrbit 同步），同时设 entity 保证立即生效
+                enemyGroup.CurrentOrbit.rotation = Quaternion.Euler(0f, 0f, 45f);
+                if (enemyEntity != null)
+                    enemyEntity.SetRotation(enemyGroup.CurrentOrbit.rotation);
+            }
+
+            // 3. 打开 3D 视角 + 跳转玩家地图
+            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            if (playerMap != null)
+                CameraJumper.TryJump(playerMap.Center, playerMap);
+
+            Log.Message(string.Format("[RayRotatedTest] 场景就绪: 玩家 G{0} 激光炮塔，敌对 G{1} 旋转45°（Z轴）20km 外，验证旋转正确 part 检测",
+                playerGroup.GroupId, enemyGroupId));
+            Messages.Message("定向能旋转命中验证场景就绪：敌站旋转 45°，看 [激光slab] 局部系线段倾斜 + [激光part] 命中局部点 y≠0（上方斜入）。",
+                MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// 定向能多目标齐射场景（2026-08-29）：4 敌站四方位（±x/±z 20km，赤道面共轨），
+        /// 4 组激光炮塔 + 定位机（Manual 各指一个敌站）。一次齐射 4 发，每发独立判定链
+        /// [激光发射]→[激光slab]→[激光part]→[激光命中!]→[激光命中判定]，验证多目标同时命中 + 光束视觉。
+        /// </summary>
+        private void SpawnRayMultiTest()
+        {
+            var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
+            if (playerEntity == null || playerGroup == null || playerMap == null)
+                return;
+
+            CombatManager.DebugDetailedCombat = true;
+            CombatManager.DebugProjectileProbeInterval = 30;
+
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            DVector3 playerPos = playerGroup.IsCircularOrbit
+                ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
+                : playerGroup.CurrentOrbit.position;
+
+            // 1. 四方位敌站（20km 赤道面，共轨 vRel≈0）
+            var directions = new (string name, DVector3 offset)[]
+            {
+                ("敌站+x", new DVector3(20000, 0, 0)),
+                ("敌站-x", new DVector3(-20000, 0, 0)),
+                ("敌站+z", new DVector3(0, 0, 20000)),
+                ("敌站-z", new DVector3(0, 0, -20000)),
+            };
+            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            var enemyGroupIds = new List<int>();
+            string mapping = "";
+            foreach (var d in directions)
+            {
+                int gid = GetNextGroupId(spaceGame);
+                int eid = GetNextEntityId(spaceGame);
+                spaceGame.CreateStation(eid, gid, enemyFactionId, playerPos + d.offset, 60, 60, d.name);
+                var g = spaceGame.GetGroupById(gid);
+                if (g != null)
+                    g.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+                enemyGroupIds.Add(gid);
+                mapping += string.Format("G{0}={1} ", gid, d.name);
+            }
+
+            // 2. 4 组：激光炮塔 + 定位机（Manual 各指一个敌站），自动绑定
+            var turretCells = new[]
+            {
+                new IntVec3(29, 0, 29), new IntVec3(30, 0, 29), new IntVec3(31, 0, 29),
+                new IntVec3(30, 0, 30),
+            };
+            var desCells = new[]
+            {
+                new IntVec3(28, 0, 28), new IntVec3(29, 0, 28), new IntVec3(30, 0, 28),
+                new IntVec3(28, 0, 30),
+            };
+            for (int i = 0; i < enemyGroupIds.Count; i++)
+            {
+                var des = PlaceBuildingRaw(playerMap, "PF_Building_TargetDesignator", desCells[i]);
+                var turret = PlaceBuildingRaw(playerMap, "PF_Building_Turret_Laser", turretCells[i]);
+                var desComp = des?.TryGetComp<CompMapDesignator>();
+                var turretComp = turret?.TryGetComp<CompMapTurret>();
+                if (desComp == null || turretComp == null || turretComp.Mount == null)
+                {
+                    Log.Error("[RayMultiTest] 第 " + i + " 组定位机/炮塔 Comp 缺失");
+                    continue;
+                }
+                desComp.RegisterTurret(turret);
+                turretComp.Mount.boundDesignator = des;
+                desComp.DebugSetManualTarget(enemyGroupIds[i]);
+            }
+
+            // 3. 打开 3D 视角 + 跳转玩家地图
+            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            if (playerMap != null)
+                CameraJumper.TryJump(playerMap.Center, playerMap);
+
+            Log.Message(string.Format("[RayMultiTest] 场景就绪: 玩家 G{0}，4 激光炮塔各指一个敌站：{1}",
+                playerGroup.GroupId, mapping));
+            Messages.Message("定向能多目标齐射场景就绪：4 敌站四方位，4 激光炮塔齐射（看 [激光命中!] 四条独立命中链）。",
+                MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>开关详细战斗日志 + 射弹探针（详细日志开启时探针固定 30 tick/条）。</summary>
+        private static void ToggleDetailedCombat()
+        {
+            CombatManager.DebugDetailedCombat = !CombatManager.DebugDetailedCombat;
+            CombatManager.DebugProjectileProbeInterval = CombatManager.DebugDetailedCombat ? 30 : 0;
+            Log.Message("[调试] 详细战斗日志 " + (CombatManager.DebugDetailedCombat ? "已开启" : "已关闭")
+                + "（射弹探针 " + CombatManager.DebugProjectileProbeInterval + " tick/条）");
         }
     }
 }

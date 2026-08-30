@@ -199,7 +199,10 @@ namespace PioneerFramework
             mapComp = map.GetComponent<SpaceMapComp>();
             if (mapComp == null) return false;
 
-            PlaceBuilding(map, "PF_Building_Thruster_NuclearThermal", new IntVec3(28, 0, 30));
+            // 核热引擎摆 Rot4.East：def 轴向 Back(-Z) 经 Rot4.East 映射 → 船 +X。
+            // 测试机动是径向 burn，节点时轨道相位 +X 附近（30s 内绕行 ~1.9°，在 10° 矢量锥内），
+            // 方向感知 burn 直接对准出力（否则自动对准会让 burn 拖长到超时）。
+            PlaceBuilding(map, "PF_Building_Thruster_NuclearThermal", new IntVec3(28, 0, 30), Rot4.East);
             var tankThing = PlaceBuilding(map, "PF_Building_Tank_Hydrogen", new IntVec3(30, 0, 30));
             tank = tankThing?.TryGetComp<CompPropellantTank>();
 
@@ -225,7 +228,7 @@ namespace PioneerFramework
             return true;
         }
 
-        private static Thing PlaceBuilding(Map map, string defName, IntVec3 cell)
+        private static Thing PlaceBuilding(Map map, string defName, IntVec3 cell, Rot4 rot = default)
         {
             var def = DefDatabase<ThingDef>.GetNamedSilentFail(defName);
             if (def == null)
@@ -234,7 +237,7 @@ namespace PioneerFramework
                 return null;
             }
             var thing = ThingMaker.MakeThing(def);
-            GenSpawn.Spawn(thing, cell, map, Rot4.North, WipeMode.Vanish, false);
+            GenSpawn.Spawn(thing, cell, map, rot, WipeMode.Vanish, false);
             return thing;
         }
 

@@ -406,24 +406,18 @@ namespace PioneerFramework.Combat
             proj.fineCz = newCell.cz;
         }
 
-        public (int cx, int cy, int cz) GetShipsNearProjectile(
-            int systemBodyId,
-            (int cx, int cy, int cz) startCell,
-            DVector3 startPos, DVector3 endPos,
-            out (int cx, int cy, int cz) finalCell,
-            HashSet<SpaceEntityGroup> results)
+        /// <summary>
+        /// 沿线段从 startCell 走格到 endCoord（含起点/终点格），把格内活跃船汇入 results。
+        /// 射弹与定向能射线共用的 DDA 核心（GetShipsNearProjectile / GetShipsNearSegment 薄封装共用）。
+        /// maxSteps 按线段跨格范围动态计算（+2 保险），而非固定 3：
+        /// 大步进射弹（如 Fast 档 16s/步跨多格）时 DDA 必须完整遍历到终点格，
+        /// 否则 finalCell ≠ 射弹实际所在格，调用方覆盖 fineC 后与格子记录错位。
+        /// </summary>
+        private (int cx, int cy, int cz) WalkSegmentCells(SystemGrid grid,
+            (int cx, int cy, int cz) startCell, (int cx, int cy, int cz) endCoord,
+            DVector3 startPos, DVector3 endPos, HashSet<SpaceEntityGroup> results)
         {
-            results.Clear();
-            finalCell = startCell;
-
-            if (!systemGrids.TryGetValue(systemBodyId, out var grid))
-                return startCell;
-
-            var endCoord = WorldToFineCell(endPos);
             var currentCell = startCell;
-            // maxSteps 按线段跨格范围动态计算（+2 保险），而非固定 3：
-            // 大步进射弹（如 Fast 档 16s/步跨多格）时 DDA 必须完整遍历到终点格，
-            // 否则 finalCell ≠ 射弹实际所在格，调用方覆盖 fineC 后与格子记录错位。
             int maxSteps = System.Math.Abs(endCoord.cx - startCell.cx)
                          + System.Math.Abs(endCoord.cy - startCell.cy)
                          + System.Math.Abs(endCoord.cz - startCell.cz) + 2;
@@ -453,8 +447,62 @@ namespace PioneerFramework.Combat
                 currentCell = GetNeighborCell(currentCell, hitFace);
             }
 
-            finalCell = currentCell;
             return currentCell;
+        }
+
+        public (int cx, int cy, int cz) GetShipsNearProjectile(
+            int systemBodyId,
+            (int cx, int cy, int cz) startCell,
+            DVector3 startPos, DVector3 endPos,
+            out (int cx, int cy, int cz) finalCell,
+            HashSet<SpaceEntityGroup> results)
+        {
+            results.Clear();
+            finalCell = startCell;
+
+            if (!systemGrids.TryGetValue(systemBodyId, out var grid))
+                return startCell;
+
+            finalCell = WalkSegmentCells(grid, startCell, WorldToFineCell(endPos), startPos, endPos, results);
+            return finalCell;
+        }
+
+        /// <summary>
+        /// 沿线段走格收集候选船（定向能射线 B 预留 / 射弹共用同一 DDA 核心）。
+        /// 丢弃 GetShipsNearProjectile 的 startCell 输入与 finalCell 输出语义，射线当前不调用。
+        /// </summary>
+        public void GetShipsNearSegment(int systemBodyId, DVector3 startPos, DVector3 endPos,
+            HashSet<SpaceEntityGroup> results)
+        {
+            results.Clear();
+            if (!systemGrids.TryGetValue(systemBodyId, out var grid)) return;
+
+            WalkSegmentCells(grid, WorldToFineCell(startPos), WorldToFineCell(endPos), startPos, endPos, results);
+        }
+
+        /// <summary>
+        /// 收集以 center 为中心、边长 2×halfSize 的正方体覆盖的所有细网格内的船。
+        /// 覆盖格数 ≈ (2·halfSize/20)³；射程 50km → 5×5×5=125 格（多数不存在，TryGetValue 跳过）。
+        /// 定位能即时命中候选粗筛（方案 A）；射程球内过滤由调用方做。
+        /// </summary>
+        public void CollectShipsInCube(int systemBodyId, DVector3 center, double halfSize,
+            HashSet<SpaceEntityGroup> results)
+        {
+            results.Clear();
+            if (!systemGrids.TryGetValue(systemBodyId, out var grid)) return;
+
+            var minCell = WorldToFineCell(center - new DVector3(halfSize, halfSize, halfSize));
+            var maxCell = WorldToFineCell(center + new DVector3(halfSize, halfSize, halfSize));
+
+            for (int x = minCell.cx; x <= maxCell.cx; x++)
+                for (int y = minCell.cy; y <= maxCell.cy; y++)
+                    for (int z = minCell.cz; z <= maxCell.cz; z++)
+                    {
+                        if (!grid.cells.TryGetValue((x, y, z), out var fCell)) continue;
+                        var ships = fCell.ships;
+                        for (int i = 0; i < ships.Count; i++)
+                            results.Add(ships[i]);
+                    }
         }
 
         public DVector3 ComputeProjectileGravity(DVector3 posMeters, int systemBodyId)

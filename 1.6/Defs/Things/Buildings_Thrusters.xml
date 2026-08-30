@@ -102,6 +102,115 @@
         <propellantDefName>PF_Propellant_Xenon</propellantDefName>
         <exhaustVelocity>30000</exhaustVelocity>
         <massFlowRate>0.2</massFlowRate>
+        <actionGroups>1</actionGroups>
+      </li>
+    </comps>
+  </ThingDef>
+
+  <ThingDef>
+    <defName>PF_Building_Thruster_Side</defName>
+    <label>横向推进器</label>
+    <description>小型横向姿态推进器，轴向固定为船体左（随 Rot4 旋转映射）。手动操舵平移用。</description>
+    <category>Building</category>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>150</MaxHitPoints>
+      <Flammability>0.05</Flammability>
+      <Mass>300</Mass>
+      <Beauty>-8</Beauty>
+      <WorkToBuild>400</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>120</Steel>
+    </costList>
+    <designationCategory>Power</designationCategory>
+    <uiOrder>108</uiOrder>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_Thruster">
+        <propellantDefName>PF_Propellant_Hydrogen</propellantDefName>
+        <exhaustVelocity>4000</exhaustVelocity>
+        <massFlowRate>2</massFlowRate>
+        <thrustAxis>Left</thrustAxis>
+      </li>
+    </comps>
+  </ThingDef>
+
+  <ThingDef>
+    <defName>PF_Building_Thruster_Vertical</defName>
+    <label>垂直推进器</label>
+    <description>小型垂直姿态推进器，轴向固定为船体上（Up/Down 不随建筑旋转）。手动操舵升降用。</description>
+    <category>Building</category>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>150</MaxHitPoints>
+      <Flammability>0.05</Flammability>
+      <Mass>300</Mass>
+      <Beauty>-8</Beauty>
+      <WorkToBuild>400</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>120</Steel>
+    </costList>
+    <designationCategory>Power</designationCategory>
+    <uiOrder>109</uiOrder>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_Thruster">
+        <propellantDefName>PF_Propellant_Hydrogen</propellantDefName>
+        <exhaustVelocity>4000</exhaustVelocity>
+        <massFlowRate>2</massFlowRate>
+        <thrustAxis>Up</thrustAxis>
+      </li>
+    </comps>
+  </ThingDef>
+
+  <ThingDef>
+    <defName>PF_Building_Thruster_Rcs</defName>
+    <label>矢量RCS推进器</label>
+    <description>矢量 RCS：低推力全矢量推进器，推进方向无限制（免对准/免锥）。用于交会微调与手动平移。</description>
+    <category>Building</category>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>120</MaxHitPoints>
+      <Flammability>0.05</Flammability>
+      <Mass>150</Mass>
+      <Beauty>-8</Beauty>
+      <WorkToBuild>300</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>80</Steel>
+    </costList>
+    <designationCategory>Power</designationCategory>
+    <uiOrder>111</uiOrder>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_Thruster">
+        <propellantDefName>PF_Propellant_Hydrogen</propellantDefName>
+        <exhaustVelocity>4500</exhaustVelocity>
+        <massFlowRate>1</massFlowRate>
+        <isVectoredRcs>true</isVectoredRcs>
       </li>
     </comps>
   </ThingDef>

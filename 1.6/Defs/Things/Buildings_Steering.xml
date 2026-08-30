@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+
+  <ThingDef>
+    <defName>PF_Building_SteeringConsole</defName>
+    <label>操舵台</label>
+    <description>舰船操舵终端。船上存在完好操舵台时解锁手动操舵：平移/旋转键控、动作组、姿态对准（KSP 式）。</description>
+    <category>Building</category>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/Ship/ShipSensorCluster</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>250</MaxHitPoints>
+      <Flammability>0.05</Flammability>
+      <Beauty>-2</Beauty>
+      <WorkToBuild>400</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>150</Steel>
+      <ComponentIndustrial>1</ComponentIndustrial>
+    </costList>
+    <designationCategory>Power</designationCategory>
+    <uiOrder>110</uiOrder>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_SteeringConsole" />
+    </comps>
+  </ThingDef>
+
+</Defs>

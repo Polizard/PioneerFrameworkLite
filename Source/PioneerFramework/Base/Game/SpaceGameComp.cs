@@ -22,11 +22,32 @@ namespace PioneerFramework
         // ── 参考系网格（根行星/恒星ID → 粗网格）──
         private Dictionary<int, SpatialGrid3D<ISpatialEntity>> planetGrids = new Dictionary<int, SpatialGrid3D<ISpatialEntity>>();
 
+        /// <summary>
+        /// 粗网格中 group 上次同步的位置（每 2 tick SyncGroupToCoarseGrid 维护）。
+        /// 圆轨船位置是解析函数（GetCircularPositionAtTick），粗网格若停在入轨点会永久过期，
+        /// 定向能 raycast 的 8 大区块粗筛就会漏检已绕出去的船 → 必须定期同步保鲜。
+        /// </summary>
+        private Dictionary<int, DVector3> groupLastCoarsePos = new Dictionary<int, DVector3>();
+
         private Dictionary<int, object> mapComponents = new Dictionary<int, object>();
 
         // 时间规则：1 tick = 1 秒，每 2 tick 更新一次物理
         private const int UPDATE_INTERVAL_TICKS = 2;
         private int lastUpdateTick = 0;
+
+        /// <summary>
+        /// 方向感知推进的默认矢量锥半角余弦（cos 10° ≈ 0.9848）。
+        /// burn / 手动平移只使用「轴向世界方向与目标方向夹角 ≤ 锥角」的引擎。
+        /// </summary>
+        public const float DefaultThrustConeCos = 0.984807753f;
+
+        /// <summary>操舵/自动对准详细日志开关（验证用，默认关；CompDebugShipSpawner Gizmo 切换）。</summary>
+        public static bool DebugDetailedSteering = false;
+
+        // 自动对准 / 手动操舵详细日志状态（主线程）
+        private readonly Dictionary<int, bool> alignStateByGroup = new Dictionary<int, bool>();
+        private int nextAlignLogTick = 0;
+        private int nextSteerLogTick = 0;
 
         /// <summary>机动预点火窗口（physicsTick 秒）：进入节点前提前这么久开始处理机动
         /// （估燃烧时长 → 等待点火时刻），需覆盖最长燃烧的半程，保证"燃烧居中"生效。</summary>
@@ -39,6 +60,9 @@ namespace PioneerFramework
         private const double GuidanceTerminalWindow = 60.0;
         /// <summary>交会引导：巡航检查间隔（physicsTick 秒）。未到间隔不重算（省算力、防高频点火）。</summary>
         private const double GuidanceCheckInterval = 30.0;
+        /// <summary>交会引导：终端闭环反馈间隔（physicsTick 秒）。消速段更密的重算（needDv = 目标速度−当前速度），
+        /// 逐步收敛、达到死区即停，避免一次巨烧过量。</summary>
+        private const double GuidanceTerminalCheckInterval = 10.0;
         /// <summary>交会引导：修正烧后冷却（physicsTick 秒）。让轨迹稳定再评估，避免追逐残差。</summary>
         private const double GuidanceBurnCooldown = 60.0;
         /// <summary>交会引导：预测脱靶量门控（米）。传播当前状态到到达时刻，脱靶低于此视为 on-course（零烧）。</summary>
@@ -117,6 +141,31 @@ namespace PioneerFramework
         {
             foreach (var pg in planetGrids.Values)
                 yield return pg;
+        }
+
+        /// <summary>
+        /// 粗网格位置同步（定向能 raycast 8 大区块粗筛的保鲜前提）：
+        /// 用新鲜位置更新 group 在粗网格的区块。大区块 1000km、2 tick 移动 ~5km，
+        /// 跨格极罕见，Update 内部新旧格相同 O(1) 返回，成本可忽略。
+        /// 统一入口：RegisterGroup（初始）/ UpdateGroupOrbit（轨道变更）/ SyncAllShipsToGrid（每 2 tick）都走这里，
+        /// 保证 groupLastCoarsePos 缓存与粗网格实际格坐标一致，不会用错误的旧位置移除导致泄漏。
+        /// </summary>
+        public void SyncGroupToCoarseGrid(int groupId, DVector3 newPos)
+        {
+            if (!groups.TryGetValue(groupId, out var group)) return;
+            var targetGrid = GetGridForGroup(groupId);
+            if (targetGrid == null) return;
+
+            if (groupLastCoarsePos.TryGetValue(groupId, out var last))
+            {
+                targetGrid.Update(group, last, newPos);
+            }
+            else
+            {
+                // 防御分支：正常流程 RegisterGroup 已初始化缓存，这里仅兜底
+                targetGrid.Add(group, newPos);
+            }
+            groupLastCoarsePos[groupId] = newPos;
         }
 
         /// <summary>获取参考系网格字典（只读），外部用。</summary>
@@ -222,10 +271,13 @@ namespace PioneerFramework
             Log.Message(string.Format("[Grid] Group {0} registered: bodyId={1} frameId={2}",
                 group.GroupId, group.CelestialBodyId, frameId));
 
-            // 粗网格：注册群组
+            // 粗网格：注册群组（同步初始化位置缓存，保证 SyncGroupToCoarseGrid 走 Update 路径）
             var targetGrid = GetGridForGroup(group.GroupId);
             if (targetGrid != null)
+            {
                 targetGrid.Add(group, group.Position);
+                groupLastCoarsePos[group.GroupId] = group.Position;
+            }
 
             // 细网格：注册群组到战斗网格
             var combatGrid = Current.Game?.GetComponent<CombatGrid>();
@@ -280,6 +332,7 @@ namespace PioneerFramework
             var targetGrid = GetGridForGroup(groupId);
             if (targetGrid != null)
                 targetGrid.Remove(group);
+            groupLastCoarsePos.Remove(groupId);
 
             // 3. 注销实体
             foreach (int entityId in group.GetEntityIds().ToList())
@@ -319,6 +372,24 @@ namespace PioneerFramework
         #endregion
 
         #region 空间站创建与管理
+
+        /// <summary>分配下一个 group id（扫 max+1，与调试生成器同规则，保证全局唯一）。</summary>
+        public int AllocGroupId()
+        {
+            int max = 0;
+            foreach (var g in groups.Keys)
+                if (g > max) max = g;
+            return max + 1;
+        }
+
+        /// <summary>分配下一个 entity id（扫 max+1）。</summary>
+        public int AllocEntityId()
+        {
+            int max = 0;
+            foreach (var e in entities.Keys)
+                if (e > max) max = e;
+            return max + 1;
+        }
 
         public SpaceEntity CreateStation(int entityId, int groupId, int factionId,
             DVector3 initialPosition, int mapWidth = 60, int mapHeight = 60, string stationName = null)
@@ -528,15 +599,22 @@ namespace PioneerFramework
                 group.CurrentOrbit.rotation == newOrbit.rotation)
                 return;
 
-            DVector3 oldGroupPos = group.CurrentOrbit.position;
-
             group.CurrentOrbit = newOrbit;
             group.OrbitDirty = false;
 
-            // 更新粗网格中的群组位置
-            var targetGrid = GetGridForGroup(groupId);
-            if (targetGrid != null)
-                targetGrid.Update(group, oldGroupPos, newOrbit.position);
+            // 姿态同步：group 旋转 = 全实体旋转（单 part 化，实体无独立姿态）。
+            // 碰撞 AABB（GetWorldAabb）与射弹/光束命中（局部系变换）都消费 entity.Rotation，
+            // 必须跟随 group 姿态，否则船转了碰撞盒/命中判定不转。
+            foreach (int eid in group.GetEntityIds())
+            {
+                var e = GetEntityById(eid);
+                if (e != null && e.Rotation != newOrbit.rotation)
+                    e.SetRotation(newOrbit.rotation);
+            }
+
+            // 更新粗网格中的群组位置（统一走 SyncGroupToCoarseGrid，与每 2 tick 同步共用位置追踪，
+            // 缓存 last 即粗网格中 group 当前所在格的位置，不会用错误的旧位置移除导致泄漏）
+            SyncGroupToCoarseGrid(groupId, newOrbit.position);
 
             // 注意：entity.Position 是 Entity 在 Group 内的局部偏移量，
             // Group 移动时实体偏移量不变，不要累加 deltaPos。
@@ -609,12 +687,16 @@ namespace PioneerFramework
             public bool NeedsUpdate;
             public DVector3 NewPosition;
             public DVector3 NewVelocity;
+            /// <summary>本步是否发生姿态变化（角速度积分产生新 rotation）。</summary>
+            public bool HasRotationChange;
+            /// <summary>姿态积分后的新 rotation（并行区只算不写，主线程统一施加）。</summary>
+            public Quaternion NewRotation;
             public bool HasActiveBurn;
             public bool BurnExhausted;
-            /// <summary>本次 tick 应消耗的工质总量（kg），主线程按各网络 ṁ 比例分配扣除。</summary>
+            /// <summary>本次 tick 应消耗的工质总量（kg），主线程按各网络切片流率比例分配扣除。</summary>
             public double PropellantConsumed;
-            /// <summary>本次 burn 参与推进的工质网络（并行阶段构建的活动网络快照）。</summary>
-            public List<PropellantNetwork> ActiveNetworks;
+            /// <summary>本次 burn 参与推进的方向切片（并行阶段构建的活动网络快照，含锥内推力/流率）。</summary>
+            public List<ThrustSlice> ActiveSlices;
             public bool HasOrbitKeeping;
             public double OrbitKeepingDvCost;
             public DVector3 SyncBodyPos;
@@ -631,33 +713,71 @@ namespace PioneerFramework
                 // （质量随工质消耗减小，加速度自然增大，无需对数记账）
                 var burnSrc = GetGroupPropulsionSource(group);
 
-                // 收集活动网络（启用策略 + 有工质）
-                var activeNetworks = new List<PropellantNetwork>();
-                if (burnSrc != null)
-                {
-                    foreach (var n in burnSrc.Networks)
-                    {
-                        if (n.MassFlow <= 0f) continue;
-                        if (group.burnEnabledNetworks != null && !group.burnEnabledNetworks.Contains(n.propellant)) continue;
-                        if (n.AvailableMass(burnSrc) <= 0f) continue; // 工质已尽的网络熄火
-                        activeNetworks.Add(n);
-                    }
-                }
+                float fTotal = 0f, mfTotal = 0f;
+                var activeSlices = new List<ThrustSlice>();
 
-                if (activeNetworks.Count == 0)
+                if (burnSrc is SpaceMapComp mapComp)
                 {
-                    // 无活动网络 → 无推力，燃烧终止
-                    result.BurnExhausted = true;
+                    if (group.burnUseRcs && mapComp.HasRcs)
+                    {
+                        // ── RCS 全矢量（微调 burn）：任意方向出力，免对准/免锥 ──
+                        // 交会/接近修正 burn 走此分支：无转向死区，修正即时。
+                        mapComp.GetRcsThrustAlong(group.burnEnabledNetworks, activeSlices, out fTotal, out mfTotal);
+                        if (fTotal <= 0f)
+                        {
+                            // RCS 工质尽 → 回退主引擎（对准，现状）
+                            mapComp.GetThrustAlong(group.burnDirection, group.CurrentOrbit.rotation, DefaultThrustConeCos,
+                                group.burnEnabledNetworks, activeSlices, out fTotal, out mfTotal);
+                            AlignMainAxis(group, group.burnDirection, dtSeconds);
+                            if (fTotal <= 0f && mapComp.TotalThrust <= 0f)
+                                result.BurnExhausted = true; // 完全没有引擎 → 无法推进，终止
+                        }
+                        // RCS 有出力：不跑 AlignMainAxis（全矢量无需对准，船保持当前姿态）
+                    }
+                    else
+                    {
+                        if (!mapComp.HasDirectionalEngines)
+                        {
+                            // 纯全矢量船（仅虚拟推进/RCS，无 per-axis 引擎）：任意方向出力，免对准
+                            mapComp.GetRcsThrustAlong(group.burnEnabledNetworks, activeSlices, out fTotal, out mfTotal);
+                            if (fTotal <= 0f && mapComp.TotalThrust <= 0f)
+                                result.BurnExhausted = true; // 完全没有引擎 → 无法推进，终止
+                        }
+                        else
+                        {
+                            // ── 主引擎方向感知：矢量锥内轴向出力 + 自动对准兜底 ──
+                            // GetThrustAlong 只取「轴向落在 burnDirection 矢量锥内」的引擎；
+                            // 未对准（锥内无推力）→ 本步只旋转对准（Align 控制器），不推力不耗工质。
+                            mapComp.GetThrustAlong(group.burnDirection, group.CurrentOrbit.rotation, DefaultThrustConeCos,
+                                group.burnEnabledNetworks, activeSlices, out fTotal, out mfTotal);
+                            // 已对准 → 消旋；未对准 → 转向（顺带零掉残余角速度）
+                            AlignMainAxis(group, group.burnDirection, dtSeconds);
+                            if (fTotal <= 0f && mapComp.TotalThrust <= 0f)
+                                result.BurnExhausted = true; // 完全没有引擎 → 无法推进，终止
+                        }
+                    }
                 }
                 else
                 {
-                    float fTotal = 0f, mfTotal = 0f;
-                    for (int i = 0; i < activeNetworks.Count; i++)
+                    // ── 全矢量（无 Map：穿梭机/导弹）：任意方向全网络出力，原逻辑 ──
+                    if (burnSrc != null)
                     {
-                        fTotal += activeNetworks[i].Thrust;
-                        mfTotal += activeNetworks[i].MassFlow;
+                        foreach (var n in burnSrc.Networks)
+                        {
+                            if (n.MassFlow <= 0f) continue;
+                            if (group.burnEnabledNetworks != null && !group.burnEnabledNetworks.Contains(n.propellant)) continue;
+                            if (n.AvailableMass(burnSrc) <= 0f) continue; // 工质已尽的网络熄火
+                            activeSlices.Add(new ThrustSlice { network = n, thrust = n.Thrust, massFlow = n.MassFlow });
+                            fTotal += n.Thrust;
+                            mfTotal += n.MassFlow;
+                        }
                     }
+                    if (fTotal <= 0f)
+                        result.BurnExhausted = true;
+                }
 
+                if (fTotal > 0f)
+                {
                     double groupMass = GetGroupMass(group, burnSrc);
                     if (group.burnStartMass <= 0.0)
                         group.burnStartMass = groupMass; // burn 起始质量（实际 ΔV 评估基准）
@@ -670,7 +790,7 @@ namespace PioneerFramework
                         result.BurnExhausted = (group.remainingBurnDV - burnDv) <= 1e-9;
                         // 总工质消耗：ṁ·dt 按实际 ΔV 折算（提前达成计划 ΔV 时按比例少烧）
                         result.PropellantConsumed = mfTotal * dtSeconds * (dvThisTick > 0.0 ? burnDv / dvThisTick : 0.0);
-                        result.ActiveNetworks = activeNetworks; // 引用快照，主线程按比例分配扣除
+                        result.ActiveSlices = activeSlices; // 引用快照，主线程按切片流率比例分配扣除
                         // 冲量累积：并行区只写本 group 独占的累积器，主线程在下一物理步首统一施加
                         // （避免并行区直接改 CurrentOrbit.velocity，消除多冲量顺序依赖）
                         group.pendingImpulse += group.burnDirection * burnDv;
@@ -682,7 +802,18 @@ namespace PioneerFramework
                         result.BurnExhausted = true;
                     }
                 }
+                else if (!result.BurnExhausted)
+                {
+                    // 自动对准中（Map 源，引擎存在但未对准）：保持 burn 激活，本步无推力无耗料，继续旋转
+                    result.HasActiveBurn = true;
+                }
             }
+
+            // ── 预对准（前瞻）：coasting 段按待点火机动方向提前转向主推进轴 ──
+            // 机动点火时已对准 → burn 准时居中（消除"先对准再烧"导致的初始 miss）。
+            // 有 burn 时不干预（burn 内部自带的 AlignMainAxis 已接管）。
+            if (!group.HasActiveBurn && group.pendingAlignDir.sqrMagnitude > 1e-12)
+                AlignMainAxis(group, group.pendingAlignDir, dtSeconds);
 
             if (group.IsCircularOrbit)
             {
@@ -788,10 +919,169 @@ namespace PioneerFramework
                 }
             }
 
+            // ── 姿态积分（魔法动量轮）──
+            // 角速度 → rotation 增量；大步长（物理步 2s）下按角度限幅分子步，避免肉眼可见跳变。
+            // 并行区只计算新姿态，主线程在结果应用时统一写 CurrentOrbit.rotation。
+            if (group.angularVelocity.sqrMagnitude > 1e-12)
+            {
+                double w = group.angularVelocity.magnitude;
+                DVector3 axis = group.angularVelocity / w;
+                double totalAngle = w * dtSeconds;
+                int steps = Math.Max(1, (int)Math.Ceiling(totalAngle / (10f * Mathf.Deg2Rad)));
+                steps = Math.Min(steps, 32);
+                DQuaternion rot = DQuaternion.FromQuaternion(group.CurrentOrbit.rotation);
+                DQuaternion stepRot = DQuaternion.AngleAxis(totalAngle / steps, axis);
+                for (int i = 0; i < steps; i++)
+                    rot = stepRot * rot;
+                result.HasRotationChange = true;
+                result.NewRotation = rot.ToQuaternion();
+                result.NeedsUpdate = true;
+            }
+
             result.SyncBodyPos = GetBodyWorldOffset(group.CelestialBodyId, (int)System.Math.Round(physicsTick));
             result.SyncBodyVel = GetBodyWorldVelOffset(group.CelestialBodyId, (int)System.Math.Round(physicsTick));
 
             return result;
+        }
+
+        /// <summary>
+        /// 自动对准（SAS 兜底）：把主推进轴转到目标世界方向，向量角速度（动量轮限速）。
+        /// 已对准 → 零角速度（消旋）。未对准 → 按剩余夹角比例调速，一步转不完则满速。
+        /// 在并行物理区调用（只写本 group 独占的 angularVelocity，与 pendingImpulse 同纪律）。
+        /// </summary>
+        private void AlignMainAxis(SpaceEntityGroup group, DVector3 targetDir, double dtSeconds)
+        {
+            var mapComp = group.GetLinkedMapComp();
+            if (mapComp == null) return;
+            DVector3 targetN = targetDir.normalized;
+            if (targetN.sqrMagnitude < 1e-12)
+            {
+                group.angularVelocity = DVector3.zero;
+                return;
+            }
+            DVector3 mainAxisWorld = group.GetWorldAxis(mapComp.MainThrustAxis);
+            double dot = Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(mainAxisWorld, targetN)));
+            if (dot >= DefaultThrustConeCos)
+            {
+                group.angularVelocity = DVector3.zero; // 已对准：消旋，防止 burn 期间漂移
+                return;
+            }
+            double error = Math.Acos(dot);
+            // 最短旋转轴 = mainAxis × target（右手系）；反平行时叉积退化 → 任取垂直轴
+            DVector3 rotAxis = DVector3.Cross(mainAxisWorld, targetN);
+            if (rotAxis.sqrMagnitude < 1e-12)
+                rotAxis = DVector3.Cross(mainAxisWorld, Math.Abs(mainAxisWorld.y) < 0.9 ? DVector3.up : DVector3.forward);
+            DVector3 axisN = rotAxis.normalized;
+            // 剩余夹角小于一步最大转角 → 降速收敛（避免越过目标震荡）
+            double rate = Math.Min(group.MaxAngularRate, error / Math.Max(dtSeconds, 1e-9));
+            group.angularVelocity = axisN * rate;
+        }
+
+        /// <summary>
+        /// 手动操舵应用（每物理步）：平移冲量 + 旋转角速度 + SAS 对准 + 输入打断清队列（D10）。
+        /// 在 UpdateAllMovements 步首调用（冲量随本步 ApplyPendingImpulses 立即生效）。
+        /// 平移不走 burn 状态机（避免自动对准把船转向），方向感知推力逐引擎过滤动作组。
+        /// </summary>
+        private void ApplySteering(double dtSeconds)
+        {
+            if (!SteeringController.IsOpen) return;
+            var group = GetGroupById(SteeringController.GroupId);
+            if (group == null || !group.IsActive || !group.IsMovable)
+            {
+                SteeringController.Close();
+                return;
+            }
+            var mapComp = group.GetLinkedMapComp();
+            if (mapComp == null) return; // 无 Map 船暂不支持操舵
+
+            bool anyInput = SteeringController.AnyTranslation || SteeringController.AnyRotation
+                || SteeringController.SasKind != SasTargetKind.None;
+
+            // D10：任何操舵输入 → 手动接管：中止 burn、清空机动队列与引导
+            if (anyInput)
+            {
+                bool hadAuto = group.HasActiveBurn || group.plannedManeuvers.Count > 0 || group.HasRendezvousGuidance;
+                if (group.HasActiveBurn)
+                    group.EndBurn();
+                if (group.plannedManeuvers.Count > 0 || group.HasRendezvousGuidance)
+                {
+                    group.ClearManeuvers();
+                    trackedManeuvers.Remove(group.GroupId);
+                }
+                if (hadAuto)
+                {
+                    mapComp.SetThrustersBurning(false);
+                    Log.Message(string.Format("[Steer] Group {0} 手动接管：清空机动队列/引导", group.GroupId));
+                }
+            }
+
+            // ① 手动平移：方向感知直施冲量 + 扣工质
+            DVector3 transDir = SteeringController.GetTranslationWorldDir(group);
+            if (transDir.sqrMagnitude > 1e-9)
+            {
+                var slices = new List<ThrustSlice>();
+                mapComp.GetManualThrustAlong(transDir, group.CurrentOrbit.rotation, DefaultThrustConeCos,
+                    group.burnEnabledNetworks, mapComp.armedGroupsMask, slices, out float f, out float mf);
+                bool burning = false;
+                if (f > 0f && mf > 0f)
+                {
+                    double mass = GetGroupMass(group, mapComp);
+                    double dv = f / Math.Max(mass, 1.0) * dtSeconds;
+                    group.pendingImpulse += transDir.normalized * dv;
+                    float mfTotal = 0f;
+                    for (int i = 0; i < slices.Count; i++) mfTotal += slices[i].massFlow;
+                    for (int i = 0; i < slices.Count; i++)
+                    {
+                        float share = mfTotal > 0f ? mf * (float)dtSeconds * (slices[i].massFlow / mfTotal) : 0f;
+                        ConsumeGroupPropellant(group, slices[i].network.propellant, share);
+                    }
+                    burning = true;
+                }
+                mapComp.SetThrustersBurning(burning);
+                if (DebugDetailedSteering && Find.TickManager.TicksGame >= nextSteerLogTick)
+                {
+                    DVector3 dirN = transDir.normalized;
+                    Log.Message(string.Format("[Steer] Group {0} 平移 dir=({1:F2},{2:F2},{3:F2}) 推力={4:F1}kN 流率={5:F1}kg/s rcs={6} 实际推进={7}",
+                        group.GroupId, dirN.x, dirN.y, dirN.z, f / 1000f, mf, mapComp.HasRcs, burning));
+                    nextSteerLogTick = Find.TickManager.TicksGame + 10;
+                }
+            }
+            else if (!SteeringController.AnyRotation && SteeringController.SasKind == SasTargetKind.None)
+            {
+                // 无任何操舵输入：熄火表现（清掉上一步手动平移留下的喷焰）
+                mapComp.SetThrustersBurning(false);
+            }
+
+            // ② 手动旋转：动量轮直设角速度（无输入不动 angularVelocity → 自由自转）
+            if (SteeringController.AnyRotation)
+                group.angularVelocity = SteeringController.GetRotationWorldAngularVelocity(group);
+
+            // ③ 手动 SAS：主推进轴对准目标（复用 AlignMainAxis；对准后消旋保持姿态）
+            if (SteeringController.SasKind != SasTargetKind.None)
+            {
+                DVector3 target = SteeringController.GetSasTarget(group);
+                if (target.sqrMagnitude > 1e-9)
+                    AlignMainAxis(group, target, dtSeconds);
+            }
+
+            // 详细日志：旋转 / SAS（与平移共用节流）
+            if (DebugDetailedSteering && Find.TickManager.TicksGame >= nextSteerLogTick)
+            {
+                if (SteeringController.AnyRotation)
+                {
+                    DVector3 w = group.angularVelocity;
+                    Log.Message(string.Format("[Steer] Group {0} 旋转 ω=({1:F2},{2:F2},{3:F2})°/s 幅值={4:F2}°/s",
+                        group.GroupId, w.x * Mathf.Rad2Deg, w.y * Mathf.Rad2Deg, w.z * Mathf.Rad2Deg,
+                        (float)w.magnitude * Mathf.Rad2Deg));
+                }
+                if (SteeringController.SasKind != SasTargetKind.None)
+                {
+                    DVector3 t = SteeringController.GetSasTarget(group);
+                    Log.Message(string.Format("[Steer] Group {0} SAS→{1} target=({2:F2},{3:F2},{4:F2})",
+                        group.GroupId, SteeringController.SasKind, t.x, t.y, t.z));
+                }
+                nextSteerLogTick = Find.TickManager.TicksGame + 10;
+            }
         }
 
         /// <summary>
@@ -830,6 +1120,9 @@ namespace PioneerFramework
             var celestialMgr = Current.Game.GetComponent<CelestialBodyManager>();
             if (celestialMgr == null) return;
 
+            // ── 手动操舵（每物理步）：平移/旋转/SAS 输入应用 + 输入打断清队列（D10）──
+            ApplySteering(dtSeconds);
+
             // ── 物理步首：统一施加上一步累积的合冲量（burn/碰撞动量交换/爆炸/手动 ΔV），
             //    然后清零。并行区此后只累积新冲量，不直接改速度。──
             ApplyPendingImpulses();
@@ -853,20 +1146,20 @@ namespace PioneerFramework
 
                 if (result.HasActiveBurn)
                 {
-                    // 多网络按 ṁ 比例分配消耗并扣各自工质；全部网络工质尽 → 燃烧终止
+                    // 多网络按切片流率比例分配消耗并扣各自工质；全部网络工质尽 → 燃烧终止
                     float totalConsumed = 0f;
-                    int activeCount = result.ActiveNetworks != null ? result.ActiveNetworks.Count : 0;
+                    int activeCount = result.ActiveSlices != null ? result.ActiveSlices.Count : 0;
                     int exhaustedCount = 0;
                     if (activeCount > 0)
                     {
                         float mfTotal = 0f;
                         for (int i = 0; i < activeCount; i++)
-                            mfTotal += result.ActiveNetworks[i].MassFlow;
+                            mfTotal += result.ActiveSlices[i].massFlow;
                         for (int i = 0; i < activeCount; i++)
                         {
-                            var n = result.ActiveNetworks[i];
-                            float share = mfTotal > 0f ? (float)result.PropellantConsumed * (n.MassFlow / mfTotal) : 0f;
-                            float actual = ConsumeGroupPropellant(group, n.propellant, share);
+                            var slice = result.ActiveSlices[i];
+                            float share = mfTotal > 0f ? (float)result.PropellantConsumed * (slice.massFlow / mfTotal) : 0f;
+                            float actual = ConsumeGroupPropellant(group, slice.network.propellant, share);
                             totalConsumed += actual;
                             if (actual < share - 0.001f)
                                 exhaustedCount++;
@@ -886,6 +1179,7 @@ namespace PioneerFramework
                         // burn 结束：推进器退出燃烧状态（表现层）
                         group.GetLinkedMapComp()?.SetThrustersBurning(false);
                         trackedManeuvers.Remove(group.GroupId);
+                        alignStateByGroup.Remove(group.GroupId);
                         Log.Message(string.Format("[Burn] Group {0} burn completed: appliedDv={1:F1} m/s actualDv(mass)={2:F1} m/s propellant={3:F1} kg (propellantOut={4})",
                             group.GroupId, group.appliedBurnDV, actualDv, group.burnConsumedPropellant, allNetworksExhausted));
                         burnEndedThisStep = true;
@@ -897,7 +1191,41 @@ namespace PioneerFramework
                     // burn 结束：推进器退出燃烧状态（表现层）
                     group.GetLinkedMapComp()?.SetThrustersBurning(false);
                     trackedManeuvers.Remove(group.GroupId);
+                    alignStateByGroup.Remove(group.GroupId);
                     burnEndedThisStep = true;
+                }
+
+                // ── 自动对准详细日志（DebugDetailedSteering）：对准开始/完成/进度 ──
+                if (DebugDetailedSteering && result.HasActiveBurn)
+                {
+                    bool aligningNow = result.ActiveSlices == null || result.ActiveSlices.Count == 0;
+                    bool wasAligning = alignStateByGroup.TryGetValue(group.GroupId, out var prevAlign) && prevAlign;
+                    if (aligningNow && !wasAligning)
+                    {
+                        var amc = GetGroupPropulsionSource(group) as SpaceMapComp;
+                        DVector3 mainAxisWorld = group.GetWorldAxis(amc != null ? amc.MainThrustAxis : ThrustAxis.Back);
+                        Log.Message(string.Format(
+                            "[Align] Group {0} 自动对准开始：burnDir=({1:F2},{2:F2},{3:F2}) 主轴世界=({4:F2},{5:F2},{6:F2})",
+                            group.GroupId, group.burnDirection.x, group.burnDirection.y, group.burnDirection.z,
+                            mainAxisWorld.x, mainAxisWorld.y, mainAxisWorld.z));
+                    }
+                    else if (!aligningNow && wasAligning)
+                    {
+                        Log.Message(string.Format("[Align] Group {0} 对准完成 → 进入 burn（主轴进入 {1}° 矢量锥）",
+                            group.GroupId, Mathf.Rad2Deg * Mathf.Acos(Mathf.Clamp(SpaceGameComp.DefaultThrustConeCos, -1f, 1f))));
+                    }
+                    else if (aligningNow && Find.TickManager.TicksGame >= nextAlignLogTick)
+                    {
+                        var amc = GetGroupPropulsionSource(group) as SpaceMapComp;
+                        DVector3 mainAxisWorld = group.GetWorldAxis(amc != null ? amc.MainThrustAxis : ThrustAxis.Back);
+                        double dot = Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(mainAxisWorld, group.burnDirection.normalized)));
+                        Log.Message(string.Format(
+                            "[Align] Group {0} 对准中：主轴=({1:F2},{2:F2},{3:F2}) vs burnDir 夹角 {4:F1}° 角速度={5:F2}°/s",
+                            group.GroupId, mainAxisWorld.x, mainAxisWorld.y, mainAxisWorld.z,
+                            Mathf.Rad2Deg * Mathf.Acos((float)dot), (float)group.angularVelocity.magnitude * Mathf.Rad2Deg));
+                        nextAlignLogTick = Find.TickManager.TicksGame + 30;
+                    }
+                    alignStateByGroup[group.GroupId] = aligningNow;
                 }
 
                 if (result.NeedsUpdate)
@@ -906,7 +1234,7 @@ namespace PioneerFramework
                     {
                         position = result.NewPosition,
                         velocity = result.NewVelocity,
-                        rotation = group.CurrentOrbit.rotation
+                        rotation = result.HasRotationChange ? result.NewRotation : group.CurrentOrbit.rotation
                     };
                     UpdateGroupOrbit(group.GroupId, newOrbit);
                 }
@@ -1018,7 +1346,10 @@ namespace PioneerFramework
             foreach (var group in groups.Values)
             {
                 if (group.plannedManeuvers.Count == 0)
+                {
+                    group.pendingAlignDir = DVector3.zero; // 无待执行机动 → 取消预对准
                     continue;
+                }
 
                 var nextManeuver = group.PeekNextManeuver();
                 if (nextManeuver == null)
@@ -1072,6 +1403,14 @@ namespace PioneerFramework
                     group.PopExecutedManeuver();
                     continue;
                 }
+
+                // ── 预对准（前瞻）：本条机动可行 → 点火前 coasting 段就转向主推进轴，
+                //    使点火时刻已对准（burn 准时居中，消除初始 miss）。
+                //    用规划时刻的惯性 dV 方向（与点火时 StartBurn 的 burnDirection 一致）。
+                DVector3 preAlignDv = pm.plannedWorldDv.sqrMagnitude > 0.0
+                    ? pm.plannedWorldDv
+                    : OrbitMath.GetWorldDeltaV(group.localPosition, group.localVelocity, pm.radialDV, pm.tangentialDV, pm.normalDV);
+                group.pendingAlignDir = preAlignDv.sqrMagnitude > 1e-9 ? preAlignDv.normalized : DVector3.zero;
 
                 // ── 燃烧居中：点火时刻 = 节点时刻 − 半程燃烧时长，让冲量模型的"瞬间"落在燃烧中点 ──
                 // 与 MechJeb 一致（ignitionUT = node.UT − halfBurnTime），抵消有限时长燃烧的时序误差。
@@ -1162,7 +1501,7 @@ namespace PioneerFramework
             {
                 if (!group.HasRendezvousGuidance) continue;
                 if (!group.IsMovable) continue;
-                if (group.HasActiveBurn) continue;
+                if (group.HasActiveBurn && !group.burnIsCorrection) continue; // 机动 burn 不打断；修正 burn 允许重规划
 
                 // 队列里还有未执行机动（出发段在排队 / 玩家新排队）→ 引导让位
                 if (group.plannedManeuvers.Count > 0) continue;
@@ -1185,10 +1524,23 @@ namespace PioneerFramework
                     continue;
                 }
 
-                // 修正烧后冷却 + 检查节流：避免追逐残差与高频点火（on-course 时大多更新直接跳过）
-                if (physicsTick < group.rendezvousLastBurnTick + GuidanceBurnCooldown) continue;
-                if (physicsTick < group.rendezvousLastCheckTick + GuidanceCheckInterval) continue;
-                group.rendezvousLastCheckTick = physicsTick;
+                // ── 巡航预对准（持续）：出发 burn 完成后立刻调头，为下一次主推（终端消速）提前对准 ──
+                // 终端 dv ≈ (目标到达速度 − 本船速度)，用当前相对速度方向做代理姿态；
+                // 终端点火时已对准 → 无转向死区（否则最后 180° 调头 + 4km/s 消速叠一起必炸）。
+                // 修正 burn 点火时由 burn 内部 AlignMainAxis 覆盖此姿态，烧完自动回归。
+                if (!group.HasActiveBurn)
+                {
+                    if (TryPredictTargetAtTick(target, group.rendezvousArrivalTick, out _, out var vTargetHold))
+                    {
+                        DVector3 killDir = (vTargetHold - group.localVelocity).normalized;
+                        if (killDir.sqrMagnitude > 1e-9)
+                            group.pendingAlignDir = killDir;
+                    }
+                }
+
+                // 瞄准偏移（跳帮落点）：目标局部系偏移 → 世界米偏移（含目标实体偏移与姿态旋转）。
+                // 零偏移 = 瞄准 group 中心（原行为）。
+                DVector3 aimOffset = ResolveTargetAimOffset(group, target);
 
                 DVector3 r1Rel = group.localPosition;
                 DVector3 v1Rel = group.localVelocity;
@@ -1199,7 +1551,7 @@ namespace PioneerFramework
                 {
                     // 接近模式：动态到达时刻 = now + dist / 限速（修正量有界、轨道扰动小）；
                     // 贴近且相对速度归零 → 接近完成
-                    double distNow = (target.localPosition - r1Rel).magnitude;
+                    double distNow = (target.localPosition + aimOffset - r1Rel).magnitude;
                     double relvelNow = (target.localVelocity - v1Rel).magnitude;
                     if (distNow < ApproachCompletionDistance && relvelNow < ApproachCompletionRelVel)
                     {
@@ -1231,25 +1583,72 @@ namespace PioneerFramework
                         continue;
                     }
                 }
+
+                // ── 终端判定（动态）：固定窗口 60s，或「消相对速度所需时间已逼近剩余时间」→ 提前进终端 ──
+                // 巡航 Lambert 只保证到点位置、不保证到点速度；必须提前开始消速（相对速度大时动辄数百秒）。
+                bool inTerminal = tof < GuidanceTerminalWindow;
+                double aMain = EstimateMainAcceleration(group);
+                if (!inTerminal && aMain > 0.01
+                    && TryPredictTargetAtTick(target, arrivalTick, out _, out var vTermRel0))
+                {
+                    DVector3 drEst = target.localPosition + aimOffset - r1Rel;
+                    double distEst = drEst.magnitude;
+                    double relVel = (vTermRel0 - v1Rel).magnitude;
+                    // 终端 = 第二次主推（主引擎全力消速）：在"刹车距离"处入场——
+                    // 刹车距离 = relVel²/(2·aMain)，此时全力消速恰好覆盖剩余距离，到目标时速度归零。
+                    // 过早入场会停短（曾出现 ~1000km 停短）；过晚入场会冲过。
+                    double brakingDist = relVel * relVel / (2.0 * aMain);
+                    if (distEst <= brakingDist + 30000.0) // +30km 余量（引导 10s 节拍），末段位置收敛补正
+                        inTerminal = true;
+                }
+
+                // ── 巡航预对准（持续）：出发 burn 完成后立刻调头，为下一次主推（终端消速）提前对准 ──
+                // 终端 dv ≈ (目标到达速度 − 本船速度)，用当前相对速度方向做代理姿态；
+                // 终端点火时已对准 → 无转向死区。修正 burn 点火时由 burn 内部 AlignMainAxis 临时覆盖。
+                if (!group.HasActiveBurn)
+                {
+                    if (TryPredictTargetAtTick(target, arrivalTick, out _, out var vTargetHold))
+                    {
+                        DVector3 killDir = (vTargetHold - v1Rel).normalized;
+                        if (killDir.sqrMagnitude > 1e-9)
+                            group.pendingAlignDir = killDir;
+                    }
+                }
+
+                // 修正烧后冷却 + 检查节流：避免追逐残差与高频点火（on-course 时大多更新直接跳过）。
+                // 终端段跳过冷却（消速要连续迭代）；进行中的修正 burn 也不受冷却限制（允许打断重烧）。
+                if (!group.HasActiveBurn && !inTerminal
+                    && physicsTick < group.rendezvousLastBurnTick + GuidanceBurnCooldown) continue;
+                double checkInterval = inTerminal ? GuidanceTerminalCheckInterval : GuidanceCheckInterval;
+                if (physicsTick < group.rendezvousLastCheckTick + checkInterval) continue;
+                group.rendezvousLastCheckTick = physicsTick;
+
                 double gm = GetBodyGM(group.CelestialBodyId);
                 double missM = double.NaN;
                 DVector3 dv;
 
-                if (tof < GuidanceTerminalWindow)
+                if (inTerminal)
                 {
-                    // 终端：消相对速度（Lambert 在 tof→0 时数值不稳；巡航门控已把船带到目标附近）
+                    // 终端 = 第二次主推（主引擎全力消速）：dv = 目标速度 − 当前速度（4.4km/s 级）。
+                    // 入场已按刹车距离门控（relVel²/2aMain），全力消速恰好覆盖剩余距离 → 到目标速度归零。
+                    // 速度接近匹配但距离仍大时补位置收敛（轨迹整形），避免"停在远处"。
                     if (!TryPredictTargetAtTick(target, arrivalTick, out _, out var vTargetRel))
                         continue;
-                    if (group.rendezvousIsApproach)
+                    DVector3 drClose = target.localPosition + aimOffset - r1Rel;
+                    double distClose = drClose.magnitude;
+                    dv = vTargetRel - v1Rel;
+                    double relVel = dv.magnitude;
+                    if (relVel < 100.0 && distClose > 10000.0)
                     {
-                        // 接近终端：消相对速度 + 温柔收拢（≤ dist/τ，近距离下 ≤ ~10 m/s，安全），
-                        // 保证最终能贴到完成半径内而不是悬停
-                        DVector3 drClose = target.localPosition - r1Rel;
-                        dv = vTargetRel - v1Rel - drClose.normalized * (drClose.magnitude / ApproachTimeConstant);
+                        // 速度已匹配但距离还大：补位置收敛（dr/tof，RCS 级小修正）
+                        dv = vTargetRel + drClose / Math.Max(tof, 1.0) - v1Rel;
                     }
-                    else
+                    double needDv = dv.magnitude; // 数学模型：主推 Δv（或末段综合 dv）
+                    // 对比日志：距离 + 相对速度 + 主推 Δv（数学模型目标）
+                    if (DebugDetailedSteering)
                     {
-                        dv = vTargetRel - v1Rel;
+                        Log.Message(string.Format("[Terminal] G{0} tof={1:F0}s dist={2:F0}km relVel={3:F1}m/s mainDv={4:F1}m/s",
+                            group.GroupId, tof, distClose / 1000.0, relVel, needDv));
                     }
                 }
                 else
@@ -1257,8 +1656,9 @@ namespace PioneerFramework
                     // 巡航：预测脱靶量门控 → 只有真的会脱靶才修，on-course 零烧
                     if (!TryPredictTargetAtTick(target, arrivalTick, out var r2Rel, out _))
                         continue;
+                    DVector3 r2Aim = r2Rel + aimOffset;
                     DVector3 r1ArrivalPred = OrbitMath.GetPositionAtTimeDelta(r1Rel, v1Rel, tof, gm);
-                    missM = (r1ArrivalPred - r2Rel).magnitude;
+                    missM = (r1ArrivalPred - r2Aim).magnitude;
                     if (double.IsNaN(missM) || missM < GuidanceMissThreshold)
                         continue;
                     TransferGeometry geom = group.rendezvousPrograde
@@ -1266,7 +1666,7 @@ namespace PioneerFramework
                     DVector3 vi;
                     try
                     {
-                        (vi, _) = Gooding.Solve(gm, r1Rel, r2Rel, tof, geom);
+                        (vi, _) = Gooding.Solve(gm, r1Rel, r2Aim, tof, geom);
                     }
                     catch (Exception)
                     {
@@ -1275,7 +1675,34 @@ namespace PioneerFramework
                     dv = vi - v1Rel;
                 }
 
-                if (dv.magnitude < GuidanceBurnDeadband) continue; // 修正量可忽略
+                if (dv.magnitude < GuidanceBurnDeadband)
+                {
+                    // 修正量可忽略：若正在烧修正 burn → 当前修正已多余，中断（防过烧）
+                    if (group.HasActiveBurn)
+                        InterruptCorrectionBurn(group);
+                    // 终端：相对速度已匹配（≤ 死区）→ 交会完成（提前于"到达点已过"）
+                    if (inTerminal)
+                    {
+                        Log.Message(string.Format("[Guidance] Group {0} terminal complete: relVel={1:F1} m/s tof={2:F0}s",
+                            group.GroupId, dv.magnitude, tof));
+                        Messages.Message(string.Format("Group {0} 交会完成（相对速度已匹配）", group.GroupId),
+                            MessageTypeDefOf.TaskCompletion);
+                        group.ClearRendezvousGuidance();
+                    }
+                    continue;
+                }
+
+                // ── 修正 burn 打断重烧：方向大变（>30°）→ 重烧；否则让当前 burn 继续 ──
+                // 避免修正过期：烧中重新评估，若轨迹变化导致修正方向偏离，立即换新解。
+                if (group.HasActiveBurn)
+                {
+                    double curDot = DVector3.Dot(group.burnDirection.normalized, dv.normalized);
+                    if (curDot >= Math.Cos(30f * Mathf.Deg2Rad))
+                        continue; // 方向没大变 → 继续当前烧（不重复对准/浪费）
+                    InterruptCorrectionBurn(group);
+                    Log.Message(string.Format("[Guidance] Group {0} correction burn replanned: dv={1:F1} m/s (direction changed)",
+                        group.GroupId, dv.magnitude));
+                }
 
                 // 可行性（继承出发机动的工质网络）
                 var src = GetGroupPropulsionSource(group);
@@ -1300,16 +1727,79 @@ namespace PioneerFramework
                     continue;
                 }
 
+                // 修正 burn 使用任务网络（继承出发机动的工质选择），避免沿用上一段机动残留的过滤
+                group.burnEnabledNetworks = group.rendezvousUseNetworks;
+                group.burnIsCorrection = true; // 标记引导修正 burn（允许引导打断重烧）
+                // 分发：小修正用 RCS（全矢量免对准，秒级烧完，无转向死区）；
+                // 大修正用主引擎（对准后全力烧）——RCS 推力小，大修正拖长引导冻结 → 修正过期 → 死循环。
+                group.burnUseRcs = false;
+                var rcsMc = group.GetLinkedMapComp();
+                if (rcsMc != null && rcsMc.HasRcs)
+                {
+                    double rcsMass = GetGroupMass(group, rcsMc);
+                    double aRcs = rcsMc.RcsTotalThrust / Math.Max(rcsMass, 1.0);
+                    // RCS 能在 ~15s 内烧完的修正量才用 RCS（引导冻结时间可控）
+                    group.burnUseRcs = aRcs > 0.0 && dv.magnitude <= aRcs * 15.0;
+                }
                 group.StartBurn(dv);
                 group.rendezvousLastBurnTick = physicsTick; // 冷却：烧完等一个冷却期再评估
                 group.GetLinkedMapComp()?.SetThrustersBurning(true);
                 if (trackedManeuvers.ContainsKey(group.GroupId))
                     trackedManeuvers[group.GroupId] = new ManeuverTracker { ExecutePhysicsTick = physicsTick, IsActive = true };
-                Log.Message(string.Format("[Guidance] Group {0} correction burn started: dv={1:F1} m/s miss={2:F0}m tof={3:F0}s {4}",
+                Log.Message(string.Format("[Guidance] Group {0} correction burn started: dv={1:F1} m/s miss={2:F0}m tof={3:F0}s rcs={4} {5}",
                     group.GroupId, dv.magnitude, missM, tof,
-                    group.rendezvousIsApproach ? "(approach)"
-                        : tof < GuidanceTerminalWindow ? "(terminal)" : ""));
+                    group.burnUseRcs,
+                    group.rendezvousIsApproach
+                        ? "(approach)"
+                        : inTerminal ? "(terminal)" : ""));
             }
+        }
+
+        /// <summary>
+        /// 该船当前最大可用加速度（m/s²）= 全网络推力（含 RCS）/ 当前质量。
+        /// 终端消速时间估算用（上限口径：不区分方向，忽略对准）。
+        /// </summary>
+        private double EstimateMaxAcceleration(SpaceEntityGroup group)
+        {
+            var src = GetGroupPropulsionSource(group);
+            if (src == null) return 0.0;
+            double mass = GetGroupMass(group, src);
+            if (mass <= 0.0) return 0.0;
+            double f = 0.0;
+            foreach (var n in src.Networks)
+                f += n.Thrust; // RCS 引擎计入网络总推力
+            return f / mass;
+        }
+
+        /// <summary>
+        /// 该船主引擎加速度（m/s²）=（全网络推力 − RCS）/ 当前质量。
+        /// 终端"第二次主推"的消速时间估算用（RCS 只做末段精修，不计入主推时长）。
+        /// </summary>
+        private double EstimateMainAcceleration(SpaceEntityGroup group)
+        {
+            var src = GetGroupPropulsionSource(group);
+            if (src == null) return 0.0;
+            double mass = GetGroupMass(group, src);
+            if (mass <= 0.0) return 0.0;
+            double f = 0.0;
+            foreach (var n in src.Networks)
+                f += n.Thrust;
+            if (src is SpaceMapComp mc)
+                f -= mc.RcsTotalThrust; // 主推 = 总推力 − RCS
+            return f / mass;
+        }
+
+        /// <summary>
+        /// 中断一次进行中的引导修正 burn（剩余 dV 丢弃），清理 burn 状态与表现层。
+        /// 由引导"打断重烧"路径调用。
+        /// </summary>
+        private void InterruptCorrectionBurn(SpaceEntityGroup group)
+        {
+            if (group == null || !group.HasActiveBurn) return;
+            group.EndBurn(); // 清 burnUseRcs / burnIsCorrection / remainingBurnDV
+            alignStateByGroup.Remove(group.GroupId);
+            trackedManeuvers.Remove(group.GroupId);
+            group.GetLinkedMapComp()?.SetThrustersBurning(false);
         }
 
         /// <summary>
@@ -1342,6 +1832,23 @@ namespace PioneerFramework
             posRel = OrbitMath.GetPositionAtTimeDelta(relPos, relVel, tof, gm);
             velRel = OrbitMath.GetVelocityAtTimeDelta(relPos, relVel, tof, gm);
             return true;
+        }
+
+        /// <summary>
+        /// 解析引导瞄准偏移（世界米）：追逐者配置的目标局部系偏移 →
+        /// 目标实体偏移 + 姿态旋转(offset)。零偏移返回零向量（兼容瞄准 group 中心）。
+        /// 跳帮落点用：落点格子 → 目标空间站局部系偏移。
+        /// </summary>
+        private DVector3 ResolveTargetAimOffset(SpaceEntityGroup chaser, SpaceEntityGroup target)
+        {
+            if (chaser.rendezvousTargetOffset == DVector3.zero) return DVector3.zero;
+            foreach (int eid in target.GetEntityIds())
+            {
+                var e = GetEntityById(eid);
+                if (e == null) continue;
+                return e.Position + DVector3.Rotate(chaser.rendezvousTargetOffset, e.Rotation);
+            }
+            return chaser.rendezvousTargetOffset;
         }
 
         private void UpdateCombatInterpolation(int currentTick, TimeScaleManager timeScaleManager)
@@ -1832,11 +2339,15 @@ namespace PioneerFramework
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
                 planetGrids = new Dictionary<int, SpatialGrid3D<ISpatialEntity>>();
+                groupLastCoarsePos = new Dictionary<int, DVector3>();
                 foreach (var group in groups.Values)
                 {
                     var targetGrid = GetGridForGroup(group.GroupId);
                     if (targetGrid != null)
+                    {
                         targetGrid.Add(group, group.Position);
+                        groupLastCoarsePos[group.GroupId] = group.Position;
+                    }
                 }
             }
         }

@@ -95,6 +95,23 @@ namespace PioneerFramework
         public double burnStartMass;
         /// <summary>本次 burn 已实际消耗的工质（kg，主线程累计）。</summary>
         public double burnConsumedPropellant;
+        /// <summary>
+        /// 本次 burn 是否用 RCS（全矢量免对准）：交会/接近修正 burn 置 true，
+        /// 主引擎大 burn 保持 false。瞬态标记，EndBurn 清零，不序列化。
+        /// </summary>
+        public bool burnUseRcs;
+
+        /// <summary>
+        /// 本次 burn 是否为引导修正 burn（交会/接近）：引导允许打断重烧的前提。
+        /// 瞬态标记，EndBurn 清零，不序列化。
+        /// </summary>
+        public bool burnIsCorrection;
+
+        /// <summary>
+        /// 预对准目标（主推进轴应对准的世界方向；coasting 段由机动执行设置，
+        /// 点火前提前转向 → burn 准时居中）。零 = 未启用。瞬态，不序列化。
+        /// </summary>
+        public DVector3 pendingAlignDir;
 
         /// <summary>
         /// 本物理步累积的合冲量（速度 ΔV，m/s）。
@@ -329,6 +346,7 @@ namespace PioneerFramework
         {
             plannedManeuvers.Clear();
             ClearRendezvousGuidance();
+            pendingAlignDir = DVector3.zero; // 取消预对准（手动接管）
         }
 
         /// <summary>
@@ -365,6 +383,23 @@ namespace PioneerFramework
 
         #region 主动燃烧 (Active Burn)
 
+        // ── 姿态控制（魔法动量轮）──
+        /// <summary>角速度（rad/s，魔法动量轮直设；每物理步积分到 CurrentOrbit.rotation）。</summary>
+        public DVector3 angularVelocity;
+        /// <summary>动量轮最大角速度（rad/s；无转动惯量，限速即手感，暂定 ~5°/s）。</summary>
+        public const float DefaultMaxAngularRate = 5f * Mathf.Deg2Rad;
+        /// <summary>实际限速（预留 per-ship 覆盖；当前恒用默认）。</summary>
+        public float MaxAngularRate => DefaultMaxAngularRate;
+
+        /// <summary>
+        /// 船体局部轴向 → 世界方向（当前姿态 rotation 旋转）。
+        /// 方向感知推进 / 转向机动的唯一换算入口。
+        /// </summary>
+        public DVector3 GetWorldAxis(ThrustAxis axis)
+        {
+            return DVector3.Rotate(axis.LocalVector(), CurrentOrbit.rotation);
+        }
+
         /// <summary>
         /// 开始一次缓释燃烧。
         /// </summary>
@@ -386,6 +421,8 @@ namespace PioneerFramework
         {
             HasActiveBurn = false;
             remainingBurnDV = 0.0;
+            burnUseRcs = false;
+            burnIsCorrection = false;
         }
 
         #endregion
@@ -428,6 +465,11 @@ namespace PioneerFramework
         public bool rendezvousIsApproach = false;
         /// <summary>目标群 ID。</summary>
         public int rendezvousTargetId = -1;
+        /// <summary>
+        /// 目标局部系瞄准偏移（m，序列化）：瞄准 targetGroupPos + 目标实体偏移 + 姿态旋转(offset)。
+        /// 零 = 瞄准 group 中心（原行为）。跳帮落点用：落点格子 → 目标空间站局部系偏移。
+        /// </summary>
+        public DVector3 rendezvousTargetOffset;
         /// <summary>到达时刻（physicsTick 基准）。</summary>
         public double rendezvousArrivalTick;
         /// <summary>转移方向（ShortWay/LongWay）。</summary>
@@ -471,6 +513,7 @@ namespace PioneerFramework
             rendezvousArrivalTick = 0.0;
             rendezvousPrograde = true;
             rendezvousUseNetworks = null;
+            rendezvousTargetOffset = DVector3.zero;
         }
 
         #endregion
@@ -490,6 +533,15 @@ namespace PioneerFramework
         /// </summary>
         public void RegisterApproachGuidance(int targetId, HashSet<PropellantDef> useNetworks)
         {
+            RegisterApproachGuidance(targetId, useNetworks, DVector3.zero);
+        }
+
+        /// <summary>
+        /// 带瞄准偏移的接近引导：瞄准 targetGroupPos + 目标实体偏移 + 姿态旋转(targetOffset)。
+        /// 跳帮落点用（落点 = 目标空间站局部系偏移）；零偏移 = 瞄准 group 中心（原行为）。
+        /// </summary>
+        public void RegisterApproachGuidance(int targetId, HashSet<PropellantDef> useNetworks, DVector3 targetOffset)
+        {
             ClearRendezvousGuidance(); // 互斥：清除旧的交会/接近引导
             HasRendezvousGuidance = true;
             rendezvousIsApproach = true;
@@ -498,6 +550,7 @@ namespace PioneerFramework
             rendezvousArrivalTick = 0.0; // 动态重算，占位
             rendezvousPrograde = true;
             rendezvousUseNetworks = useNetworks != null ? new HashSet<PropellantDef>(useNetworks) : null;
+            rendezvousTargetOffset = targetOffset;
             rendezvousLastCheckTick = double.NegativeInfinity;
             rendezvousLastBurnTick = double.NegativeInfinity;
         }
@@ -827,6 +880,7 @@ namespace PioneerFramework
             Scribe_Values.Look(ref IsCollidable, "isCollidable", true);
             Scribe_Values.Look(ref HasGravityWell, "hasGravityWell", false);
             Scribe_Deep.Look(ref CurrentOrbit, "currentOrbit");
+            DVector3.Scribe("angularVelocity", ref angularVelocity);
             Scribe_Values.Look(ref OrbitDirty, "orbitDirty", true);
             Scribe_Collections.Look(ref entityIds, "entityIds", LookMode.Value);
             Scribe_Values.Look(ref CelestialBodyId, "celestialBodyId", -1);
@@ -873,6 +927,7 @@ namespace PioneerFramework
             Scribe_Values.Look(ref rendezvousArmed, "rendezvousArmed", false);
             Scribe_Values.Look(ref rendezvousIsApproach, "rendezvousIsApproach", false);
             Scribe_Values.Look(ref rendezvousTargetId, "rendezvousTargetId", -1);
+            DVector3.Scribe("rendezvousTargetOffset", ref rendezvousTargetOffset);
             Scribe_Values.Look(ref rendezvousArrivalTick, "rendezvousArrivalTick", 0.0);
             Scribe_Values.Look(ref rendezvousPrograde, "rendezvousPrograde", true);
             Scribe_Collections.Look(ref rendezvousUseNetworks, "rendezvousUseNetworks", LookMode.Def);

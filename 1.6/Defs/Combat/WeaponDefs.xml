@@ -74,13 +74,14 @@
   <PioneerFramework.Combat.WeaponDef>
     <defName>PF_Weapon_Laser</defName>
     <label>激光炮</label>
-    <description>快速射击的定向能武器，精度高但单发伤害低。</description>
+    <description>快速射击的定向能武器，光束即时命中、无需提前量，精度高但单发伤害低。</description>
     <weaponType>Ray</weaponType>
     <damagePerShot>10</damagePerShot>
     <armorPenetration>3</armorPenetration>
     <fireRate>2.0</fireRate>
-    <maxRange>3000</maxRange>
+    <maxRange>50000</maxRange>
     <minRange>10</minRange>
+    <orbitalEngageRange>50000</orbitalEngageRange>
     <accuracyRadius>0.5</accuracyRadius>
     <cooldownTicks>30</cooldownTicks>
     <overheatThreshold>20</overheatThreshold>
@@ -90,7 +91,7 @@
     <trackingArc>180</trackingArc>
     <referenceDistance>100</referenceDistance>
     <inverseSquareFalloff>true</inverseSquareFalloff>
-    <rayMaxLength>3000</rayMaxLength>
+    <rayMaxLength>50000</rayMaxLength>
     <beamVisualColor>(1, 0.3, 0.1)</beamVisualColor>
   </PioneerFramework.Combat.WeaponDef>
 

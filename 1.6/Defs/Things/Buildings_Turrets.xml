@@ -2,86 +2,16 @@
 <Defs>
 
   <ThingDef>
-    <defName>PF_Building_Turret_Cannon_Top</defName>
-    <label>加农炮塔（上侧）</label>
-    <description>向上单侧安装的加农炮塔。需绑定定位机方可索敌开火。</description>
+    <defName>PF_Building_Turret_Cannon</defName>
+    <label>加农炮塔</label>
+    <description>整体式加农炮塔，360° 全方位射界，无死角。需绑定定位机方可索敌开火。</description>
     <category>Building</category>
     <thingClass>Building</thingClass>
     <graphicData>
-      <texPath>Things/Building/Security/TurretSniper_Top</texPath>
-      <graphicClass>Graphic_Multi</graphicClass>
-    </graphicData>
-    <altitudeLayer>Building</altitudeLayer>
-    <size>(1,1)</size>
-    <passability>PassThroughOnly</passability>
-    <selectable>true</selectable>
-    <tickerType>Normal</tickerType>
-    <statBases>
-      <MaxHitPoints>800</MaxHitPoints>
-      <Flammability>0.05</Flammability>
-      <Mass>4000</Mass>
-      <Beauty>-8</Beauty>
-      <WorkToBuild>1500</WorkToBuild>
-    </statBases>
-    <costList>
-      <Steel>500</Steel>
-    </costList>
-    <designationCategory>Power</designationCategory>
-    <uiOrder>110</uiOrder>
-    <comps>
-      <li Class="PioneerFramework.CompProperties_MapTurret">
-        <weaponDefName>PF_Weapon_ProjectileCannon</weaponDefName>
-        <mountConfig>Top</mountConfig>
-        <yOffset>25</yOffset>
-      </li>
-    </comps>
-  </ThingDef>
-
-  <ThingDef>
-    <defName>PF_Building_Turret_Cannon_Bottom</defName>
-    <label>加农炮塔（下侧）</label>
-    <description>向下单侧安装的加农炮塔。需绑定定位机方可索敌开火。</description>
-    <category>Building</category>
-    <thingClass>Building</thingClass>
-    <graphicData>
-      <texPath>Things/Building/Security/TurretSniper_Top</texPath>
-      <graphicClass>Graphic_Multi</graphicClass>
-    </graphicData>
-    <altitudeLayer>Building</altitudeLayer>
-    <size>(1,1)</size>
-    <passability>PassThroughOnly</passability>
-    <selectable>true</selectable>
-    <tickerType>Normal</tickerType>
-    <statBases>
-      <MaxHitPoints>800</MaxHitPoints>
-      <Flammability>0.05</Flammability>
-      <Mass>4000</Mass>
-      <Beauty>-8</Beauty>
-      <WorkToBuild>1500</WorkToBuild>
-    </statBases>
-    <costList>
-      <Steel>500</Steel>
-    </costList>
-    <designationCategory>Power</designationCategory>
-    <uiOrder>111</uiOrder>
-    <comps>
-      <li Class="PioneerFramework.CompProperties_MapTurret">
-        <weaponDefName>PF_Weapon_ProjectileCannon</weaponDefName>
-        <mountConfig>Bottom</mountConfig>
-        <yOffset>25</yOffset>
-      </li>
-    </comps>
-  </ThingDef>
-
-  <ThingDef>
-    <defName>PF_Building_Turret_Cannon_Both</defName>
-    <label>加农炮塔（上下双侧）</label>
-    <description>上下双侧安装的加农炮塔（上下各一门，分别绑定定位机）。需绑定定位机方可索敌开火。</description>
-    <category>Building</category>
-    <thingClass>Building</thingClass>
-    <graphicData>
-      <texPath>Things/Building/Security/TurretSniper_Top</texPath>
-      <graphicClass>Graphic_Multi</graphicClass>
+      <!-- 底座贴图（原版重炮台地基）：炮头由 CompMapTurret.PostDraw 单独绘制（含朝向旋转），避免同一贴图画两遍 -->
+      <texPath>Things/Building/Security/TurretHeavy_Base</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(1.3, 1.3)</drawSize>
     </graphicData>
     <altitudeLayer>Building</altitudeLayer>
     <size>(1,1)</size>
@@ -99,12 +29,45 @@
       <Steel>800</Steel>
     </costList>
     <designationCategory>Power</designationCategory>
-    <uiOrder>112</uiOrder>
+    <uiOrder>110</uiOrder>
     <comps>
       <li Class="PioneerFramework.CompProperties_MapTurret">
         <weaponDefName>PF_Weapon_ProjectileCannon</weaponDefName>
-        <mountConfig>Both</mountConfig>
-        <yOffset>25</yOffset>
+      </li>
+    </comps>
+  </ThingDef>
+
+  <ThingDef>
+    <defName>PF_Building_Turret_Laser</defName>
+    <label>激光炮塔</label>
+    <description>整体式激光炮塔，光束即时命中、无需提前量。需绑定定位机方可索敌开火。</description>
+    <category>Building</category>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/Security/TurretHeavy_Base</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(1.3, 1.3)</drawSize>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <tickerType>Normal</tickerType>
+    <statBases>
+      <MaxHitPoints>1000</MaxHitPoints>
+      <Flammability>0.05</Flammability>
+      <Mass>6000</Mass>
+      <Beauty>-8</Beauty>
+      <WorkToBuild>2200</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>800</Steel>
+    </costList>
+    <designationCategory>Power</designationCategory>
+    <uiOrder>111</uiOrder>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_MapTurret">
+        <weaponDefName>PF_Weapon_Laser</weaponDefName>
       </li>
     </comps>
   </ThingDef>
@@ -112,7 +75,7 @@
   <ThingDef>
     <defName>PF_Building_TargetDesignator</defName>
     <label>目标定位机</label>
-    <description>集中索敌的定位建筑。绑定炮塔后统一索敌并齐射。上炮组与下炮组分别绑定。</description>
+    <description>集中索敌的定位建筑。绑定炮塔后统一索敌并齐射。整体式炮塔 360° 无射界限制。</description>
     <category>Building</category>
     <thingClass>Building</thingClass>
     <graphicData>

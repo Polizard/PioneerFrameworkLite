@@ -6,6 +6,61 @@ using PioneerFramework.GroundAssembly;
 namespace PioneerFramework
 {
     /// <summary>
+    /// 推进器轴向（船体局部系）。局部系约定：Map +X → 船 +X，Map +Z → 船 +Z，船 +Y = 世界 Y。
+    /// XZ 四向随建筑 Rot4 映射；Up/Down 固定。
+    /// </summary>
+    public enum ThrustAxis
+    {
+        Forward,  // +Z（船头）
+        Back,     // -Z（船尾，主推进默认）
+        Left,     // -X
+        Right,    // +X
+        Up,       // +Y
+        Down      // -Y
+    }
+
+    /// <summary>ThrustAxis 辅助：轴向 → 船体局部系单位向量；Rot4 朝向映射。</summary>
+    public static class ThrustAxisHelper
+    {
+        private static readonly ThrustAxis[] XzAxes =
+            { ThrustAxis.Forward, ThrustAxis.Back, ThrustAxis.Left, ThrustAxis.Right };
+
+        public static DVector3 LocalVector(this ThrustAxis axis)
+        {
+            switch (axis)
+            {
+                case ThrustAxis.Forward: return DVector3.forward;  // +Z
+                case ThrustAxis.Back:    return DVector3.back;     // -Z
+                case ThrustAxis.Left:    return DVector3.left;     // -X
+                case ThrustAxis.Right:   return DVector3.right;    // +X
+                case ThrustAxis.Up:      return DVector3.up;       // +Y
+                case ThrustAxis.Down:    return DVector3.down;     // -Y
+                default:                 return DVector3.forward;
+            }
+        }
+
+        /// <summary>
+        /// XZ 四向随建筑 Rot4 旋转映射；Up/Down 固定。
+        /// RimWorld 地图坐标：Rot4.North 朝 -Z（屏幕上）、East +X、South +Z、West -X；
+        /// 船体局部系 = 地图 XZ（Map +X=船+X, Map +Z=船+Z）。
+        /// 朝向往东 = 船头(-Z)转成船右(+X)：绕 +Y 旋转 -90°·AsInt。
+        /// </summary>
+        public static ThrustAxis RotateByRot4(this ThrustAxis axis, Rot4 rot)
+        {
+            if (axis == ThrustAxis.Up || axis == ThrustAxis.Down) return axis;
+            DVector3 v = axis.LocalVector();
+            double rad = -rot.AsInt * 90f * Mathf.Deg2Rad;
+            DVector3 r = DVector3.Rotate(v, DVector3.up, rad);
+            foreach (var a in XzAxes)
+            {
+                if (DVector3.Dot(r, a.LocalVector()) > 0.999)
+                    return a;
+            }
+            return axis;
+        }
+    }
+
+    /// <summary>
     /// 推进源抽象：一组工质网络 + 工质池的提供者。
     /// 两个实现：<see cref="SpaceMapComp"/>（Map 建筑引擎/储罐聚合）与 <see cref="SpaceEntity"/>
     /// （无 Map 实体自带推进数据，见 PropulsionData）。burn / 机动估算统一走此接口，
@@ -32,11 +87,20 @@ namespace PioneerFramework
         float EffectiveVe { get; }
     }
 
+    /// <summary>一次方向感知推进的方向切片：参与出力的网络 + 其锥内推力/流率（工质消耗按此分配）。</summary>
+    public struct ThrustSlice
+    {
+        public PropellantNetwork network;
+        public float thrust;
+        public float massFlow;
+    }
+
     /// <summary>
     /// 工质网络：一种工质 + 使用它的所有推进器引擎的聚合。
     /// 记录「以排气速度 ve 喷射质量流 ṁ」：推力 F = ve·ṁ。
     /// 一条船可同时携带多个工质网络（核热网络/化学网络/离子网络…），
     /// 机动时各网络并行出力、各自消耗自己的工质。
+    /// per-axis 聚合（六方向）：burn/手动平移按引擎朝向过滤出力；无朝向的调用（无 Map 全矢量）只走总聚合。
     /// </summary>
     public class PropellantNetwork
     {
@@ -44,6 +108,10 @@ namespace PioneerFramework
 
         private float sumVeMf;   // Σ(ve·ṁ)
         private float sumMf;     // Σṁ
+        private readonly float[] sumVeMfByAxis = new float[6];  // Σ(ve·ṁ) per ThrustAxis（主引擎）
+        private readonly float[] sumMfByAxis = new float[6];    // Σṁ per ThrustAxis（主引擎）
+        private float sumVeMfRcs; // Σ(ve·ṁ) RCS 引擎（全矢量）
+        private float sumMfRcs;   // Σṁ RCS 引擎（全矢量）
 
         /// <summary>加权排气速度 ve = Σ(ve·ṁ)/Σṁ（m/s）。</summary>
         public float Ve => sumMf > 0f ? sumVeMf / sumMf : 0f;
@@ -54,22 +122,68 @@ namespace PioneerFramework
         /// <summary>总推力 F = ve·ṁ（N）。</summary>
         public float Thrust => Ve * sumMf;
 
+        /// <summary>某轴向上的推力（N，Σ(ve·ṁ)）。</summary>
+        public float ThrustByAxis(int axisIndex) => sumVeMfByAxis[axisIndex];
+
+        /// <summary>某轴向上的质量流率（kg/s）。</summary>
+        public float FlowByAxis(int axisIndex) => sumMfByAxis[axisIndex];
+
+        /// <summary>RCS 总推力（N，全矢量）。</summary>
+        public float RcsThrust => sumVeMfRcs;
+
+        /// <summary>RCS 总质量流率（kg/s）。</summary>
+        public float RcsFlow => sumMfRcs;
+
         /// <summary>该网络工质的当前可用存量（kg，动态查推进源工质池）。</summary>
         public float AvailableMass(IPropulsionSource src)
         {
             return src != null ? src.GetPropellantMass(propellant) : 0f;
         }
 
+        /// <summary>无朝向注册（无 Map 全矢量源）：只入总聚合，不入 per-axis。</summary>
         public void RegisterEngine(float ve, float mf)
         {
             sumVeMf += ve * mf;
             sumMf += mf;
         }
 
+        public void RegisterEngine(float ve, float mf, int axisIndex)
+        {
+            sumVeMf += ve * mf;
+            sumMf += mf;
+            sumVeMfByAxis[axisIndex] += ve * mf;
+            sumMfByAxis[axisIndex] += mf;
+        }
+
+        /// <summary>RCS 引擎注册：只入总聚合与 RCS 聚合，不入 per-axis（主引擎六向判定不包含 RCS）。</summary>
+        public void RegisterEngineRcs(float ve, float mf)
+        {
+            sumVeMf += ve * mf;
+            sumMf += mf;
+            sumVeMfRcs += ve * mf;
+            sumMfRcs += mf;
+        }
+
         public void UnregisterEngine(float ve, float mf)
         {
             sumVeMf = Mathf.Max(0f, sumVeMf - ve * mf);
             sumMf = Mathf.Max(0f, sumMf - mf);
+        }
+
+        public void UnregisterEngine(float ve, float mf, int axisIndex)
+        {
+            sumVeMf = Mathf.Max(0f, sumVeMf - ve * mf);
+            sumMf = Mathf.Max(0f, sumMf - mf);
+            sumVeMfByAxis[axisIndex] = Mathf.Max(0f, sumVeMfByAxis[axisIndex] - ve * mf);
+            sumMfByAxis[axisIndex] = Mathf.Max(0f, sumMfByAxis[axisIndex] - mf);
+        }
+
+        public void UnregisterEngineRcs(float ve, float mf)
+        {
+            sumVeMf = Mathf.Max(0f, sumVeMf - ve * mf);
+            sumMf = Mathf.Max(0f, sumMf - mf);
+            sumVeMfRcs = Mathf.Max(0f, sumVeMfRcs - ve * mf);
+            sumMfRcs = Mathf.Max(0f, sumMfRcs - mf);
         }
 
         public bool Empty => sumMf <= 0f;
@@ -122,6 +236,20 @@ namespace PioneerFramework
 
         // ── 推进器建筑列表（burn 状态传播 / 喷焰表现）──
         private readonly List<CompThruster> thrusters = new List<CompThruster>();
+
+        // ── 六方向推力聚合（per-axis 缓存，引擎注册/注销时维护；并行物理线程只读）──
+        private readonly float[] totalThrustByAxis = new float[6];
+
+        // ── RCS 全矢量聚合（Σ RCS 引擎，免对准）──
+        private float rcsTotalThrust;
+
+        // ── 主推进方向 ──
+        /// <summary>主推进方向（ThrustAxis 索引）。-1 = 自动（取推力最大轴向）。序列化。</summary>
+        public int mainThrustAxisIndex = -1;
+
+        // ── 动作组（手动指令过滤）──
+        /// <summary>已武装动作组掩码（bit0..8 = 动作组 1..9）。只过滤手动指令；自动 burn 不受影响。序列化。</summary>
+        public int armedGroupsMask;
 
         public string StationName
         {
@@ -230,7 +358,51 @@ namespace PioneerFramework
             }
         }
 
+        /// <summary>轴向总量：某方向（船体局部系）当前全部引擎总推力（N，跨网络）。</summary>
+        public float GetAxisTotalThrust(int axisIndex)
+        {
+            return axisIndex >= 0 && axisIndex < 6 ? totalThrustByAxis[axisIndex] : 0f;
+        }
+
+        /// <summary>主推进方向：显式设置（操舵台 UI）或自动 = 推力最大轴向。无引擎时回退 Back。</summary>
+        public ThrustAxis MainThrustAxis
+        {
+            get
+            {
+                if (mainThrustAxisIndex >= 0 && mainThrustAxisIndex < 6)
+                    return (ThrustAxis)mainThrustAxisIndex;
+                int best = (int)ThrustAxis.Back;
+                float bestT = 0f;
+                for (int i = 0; i < 6; i++)
+                {
+                    if (totalThrustByAxis[i] > bestT)
+                    {
+                        bestT = totalThrustByAxis[i];
+                        best = i;
+                    }
+                }
+                return (ThrustAxis)best;
+            }
+        }
+
+        /// <summary>无朝向引擎注册（虚拟推进/全矢量引擎）：按 RCS 口径入全矢量聚合（免对准）。</summary>
         public void RegisterEngine(PropellantDef def, float ve, float massFlow)
+        {
+            RegisterEngine(def, ve, massFlow, ThrustAxis.Back, isRcs: true);
+        }
+
+        /// <summary>是否装有方向性（per-axis）引擎：false = 纯全矢量船（仅虚拟推进/RCS），burn 免对准。</summary>
+        public bool HasDirectionalEngines
+        {
+            get
+            {
+                for (int i = 0; i < 6; i++)
+                    if (totalThrustByAxis[i] > 0f) return true;
+                return false;
+            }
+        }
+
+        public void RegisterEngine(PropellantDef def, float ve, float massFlow, ThrustAxis axis, bool isRcs = false)
         {
             if (def == null || massFlow <= 0f) return;
             if (!networks.TryGetValue(def, out var net))
@@ -238,20 +410,167 @@ namespace PioneerFramework
                 net = new PropellantNetwork { propellant = def };
                 networks[def] = net;
             }
-            net.RegisterEngine(ve, massFlow);
+            if (isRcs)
+            {
+                net.RegisterEngineRcs(ve, massFlow);
+                rcsTotalThrust += ve * massFlow;
+            }
+            else
+            {
+                int axisIndex = (int)axis;
+                net.RegisterEngine(ve, massFlow, axisIndex);
+                totalThrustByAxis[axisIndex] += ve * massFlow;
+            }
             RebuildNetworkList();
         }
 
-        public void UnregisterEngine(PropellantDef def, float ve, float massFlow)
+        public void UnregisterEngine(PropellantDef def, float ve, float massFlow, ThrustAxis axis, bool isRcs = false)
         {
             if (def == null || massFlow <= 0f) return;
             if (networks.TryGetValue(def, out var net))
             {
-                net.UnregisterEngine(ve, massFlow);
+                if (isRcs)
+                {
+                    net.UnregisterEngineRcs(ve, massFlow);
+                    rcsTotalThrust = Mathf.Max(0f, rcsTotalThrust - ve * massFlow);
+                }
+                else
+                {
+                    int axisIndex = (int)axis;
+                    net.UnregisterEngine(ve, massFlow, axisIndex);
+                    totalThrustByAxis[axisIndex] = Mathf.Max(0f, totalThrustByAxis[axisIndex] - ve * massFlow);
+                }
                 if (net.Empty)
                     networks.Remove(def);
                 RebuildNetworkList();
             }
+        }
+
+        /// <summary>RCS 总推力（N，全矢量）。</summary>
+        public float RcsTotalThrust => rcsTotalThrust;
+
+        /// <summary>是否装有矢量 RCS（微调/手动平移免对准的前提）。</summary>
+        public bool HasRcs => rcsTotalThrust > 0f;
+
+        /// <summary>
+        /// RCS 全矢量推力：任意方向 = Σ RCS 引擎（免对准/免锥）。
+        /// 返回按工质网络的切片（工质消耗按切片流率分配）。
+        /// </summary>
+        public void GetRcsThrustAlong(HashSet<PropellantDef> enabled, List<ThrustSlice> slices,
+            out float totalThrust, out float totalMassFlow)
+        {
+            totalThrust = 0f;
+            totalMassFlow = 0f;
+            if (slices != null) slices.Clear();
+            for (int n = 0; n < networkList.Count; n++)
+            {
+                var net = networkList[n];
+                if (net.RcsFlow <= 0f) continue;
+                if (enabled != null && !enabled.Contains(net.propellant)) continue;
+                if (net.AvailableMass(this) <= 0f) continue; // 工质已尽熄火
+                totalThrust += net.RcsThrust;
+                totalMassFlow += net.RcsFlow;
+                if (slices != null)
+                    slices.Add(new ThrustSlice { network = net, thrust = net.RcsThrust, massFlow = net.RcsFlow });
+            }
+        }
+
+        /// <summary>
+        /// 方向感知推力：目标世界方向 dir 落在哪个船体轴向的矢量锥内（含主推进方向辅助），
+        /// 取锥内引擎的聚合推力/流率（跨网络，按网络切片，工质消耗按切片流率分配）。
+        /// 调用方（burn/手动平移）传入 group 当前姿态 rotation 做局部→世界换算。
+        /// </summary>
+        public void GetThrustAlong(DVector3 worldDir, Quaternion rotation, float coneCos,
+            HashSet<PropellantDef> enabled, List<ThrustSlice> slices, out float totalThrust, out float totalMassFlow)
+        {
+            totalThrust = 0f;
+            totalMassFlow = 0f;
+            if (slices != null) slices.Clear();
+            if (worldDir.sqrMagnitude < 1e-12) return;
+
+            DVector3 dirN = worldDir.normalized;
+            for (int n = 0; n < networkList.Count; n++)
+            {
+                var net = networkList[n];
+                if (net.MassFlow <= 0f) continue;
+                if (enabled != null && !enabled.Contains(net.propellant)) continue;
+                if (net.AvailableMass(this) <= 0f) continue; // 工质已尽熄火
+
+                float t = 0f, mf = 0f;
+                for (int a = 0; a < 6; a++)
+                {
+                    if (net.FlowByAxis(a) <= 0f) continue;
+                    DVector3 worldAxis = DVector3.Rotate(((ThrustAxis)a).LocalVector(), rotation);
+                    if (DVector3.Dot(worldAxis, dirN) >= coneCos)
+                    {
+                        t += net.ThrustByAxis(a);
+                        mf += net.FlowByAxis(a);
+                    }
+                }
+                if (t > 0f)
+                {
+                    totalThrust += t;
+                    totalMassFlow += mf;
+                    if (slices != null)
+                        slices.Add(new ThrustSlice { network = net, thrust = t, massFlow = mf });
+                }
+            }
+        }
+
+        /// <summary>
+        /// 手动指令用的方向感知推力：**逐引擎**过滤——
+        /// RCS 引擎**全矢量**（任意方向出力，免对准），主引擎只在矢量锥内出力；
+        /// 都受「已武装（动作组）」过滤。返回按工质网络的切片（工质消耗按切片流率分配）。
+        /// </summary>
+        public void GetManualThrustAlong(DVector3 worldDir, Quaternion rotation, float coneCos,
+            HashSet<PropellantDef> enabled, int armedGroupsMask, List<ThrustSlice> slices,
+            out float totalThrust, out float totalMassFlow)
+        {
+            totalThrust = 0f;
+            totalMassFlow = 0f;
+            if (slices != null) slices.Clear();
+            if (worldDir.sqrMagnitude < 1e-12) return;
+            DVector3 dirN = worldDir.normalized;
+
+            var acc = new Dictionary<PropellantDef, (float t, float mf)>();
+            for (int i = 0; i < thrusters.Count; i++)
+            {
+                var t = thrusters[i];
+                if (t == null || t.parent == null || t.parent.Destroyed || t.PropellantDef == null) continue;
+                if (!IsThrusterArmed(t, armedGroupsMask)) continue;
+                if (enabled != null && !enabled.Contains(t.PropellantDef)) continue;
+                // RCS 全矢量（免方向判定）；主引擎需落在目标方向矢量锥内
+                if (!t.IsVectoredRcs)
+                {
+                    DVector3 wAxis = DVector3.Rotate(t.ShipAxis.LocalVector(), rotation);
+                    if (DVector3.Dot(wAxis, dirN) < coneCos) continue;
+                }
+                float ve = t.Ve, mf = t.MassFlowRate;
+                if (ve <= 0f || mf <= 0f) continue;
+                if (acc.TryGetValue(t.PropellantDef, out var e))
+                    acc[t.PropellantDef] = (e.t + ve * mf, e.mf + mf);
+                else
+                    acc[t.PropellantDef] = (ve * mf, mf);
+            }
+
+            foreach (var kv in acc)
+            {
+                var net = networks.TryGetValue(kv.Key, out var n) ? n : null;
+                if (net == null) continue;
+                totalThrust += kv.Value.t;
+                totalMassFlow += kv.Value.mf;
+                if (slices != null)
+                    slices.Add(new ThrustSlice { network = net, thrust = kv.Value.t, massFlow = kv.Value.mf });
+            }
+        }
+
+        /// <summary>引擎是否武装：未分组（mask=0）恒武装；分组引擎只在其任一组已武装时出力。</summary>
+        public bool IsThrusterArmed(CompThruster t, int armedGroupsMask)
+        {
+            if (t == null) return false;
+            int mask = t.ActionGroupMask;
+            if (mask == 0) return true; // 未分组 → 常开
+            return (armedGroupsMask & mask) != 0;
         }
 
         private void RebuildNetworkList()
@@ -370,6 +689,10 @@ namespace PioneerFramework
 
             if (Scribe.mode == LoadSaveMode.LoadingVars)
                 virtualPropulsionRegistered = false;
+
+            // 操舵与推进朝向（六方向/主推进/动作组）
+            Scribe_Values.Look(ref mainThrustAxisIndex, "mainThrustAxisIndex", -1);
+            Scribe_Values.Look(ref armedGroupsMask, "armedGroupsMask", 0);
 
             // propellantMass / networks / 各聚合缓存均为运行时聚合缓存，不序列化；
             // 普通地图建筑在 Spawn/DeSpawn 时重建，虚拟推进在 FinalizeInit 重建。

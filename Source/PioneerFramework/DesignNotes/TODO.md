@@ -16,10 +16,10 @@
 
 | # | 优先级 | 任务 | 验证方式 | Phase | 状态 |
 |---|--------|------|----------|-------|------|
-| M3-1 | P0 | 轨道物理链路游戏内验证 | 进游戏生成地月系，观察 N 体积分/圆轨保持/机动规划/Lambert/交会 | P1 验收 | ⬜ 待办 |
+| M3-1 | P0 | 轨道物理链路游戏内验证 | 进游戏生成地月系，观察 N 体积分/圆轨保持/机动规划/Lambert/交会 | P1 验收 | ✅ 已完成 |
 | M3-2 | P0 | 月球表面生成验证 | 进游戏触发月球地表生成，检查地形/生物群系 | P1 验收（着陆） | ⬜ 待办 |
-| M3-3 | P0 | 单 part 船（空间站）形态验证 | CompDebugShipSpawner 部署空间站，进出 Pocket Map | P1 验收 | ⬜ 待办 |
-| M3-4 | P0 | 空间站对射验证 | Window_CombatTest 触发对射，检查 [命中] 日志 + 单 part slab 命中 | P1 验收（F2/F3） | ⬜ 待办 |
+| M3-3 | P0 | 单 part 船（空间站）形态验证 | CompDebugShipSpawner 部署空间站，进出 Pocket Map | P1 验收 | ✅ 已完成 |
+| M3-4 | P0 | 空间站对射验证 | Window_CombatTest 触发对射，检查 [命中] 日志 + 单 part slab 命中 | P1 验收（F2/F3） | ✅ 已完成（2026-08-29 日志实证：六面出膛→物理弹→[命中Part!]→贯穿生成） |
 | M3-5 | P1 | PFView 描边渲染验证 | MainTabWindow_PFView 打开，检查 ToonOutline 三平台 AssetBundle | P3-4 | ⬜ 待办 |
 
 ---
@@ -40,19 +40,23 @@
 
 ### F2. 空间站开火（Map 炮塔 Building → 3D 射弹）
 
+> ✅ 2026-08-29 全部完成（整体式炮塔改造）：单炮塔 360° 无射界，出膛点 = 炮口射线 ∩ 本船 AABB 六面（MapCoordMapper.RayExitAabb，与 F3 命中共用 slab 几何），物理弹在出膛碰撞点生成；Map 侧有出膛视觉弹（PFProjectile3D.visualOnly）。详见 [炮塔实现记录-20260819.md §5](./炮塔实现记录-20260819.md)。
+
 | # | 优先级 | 任务 | 说明 | Phase | 状态 |
 |---|--------|------|------|-------|------|
-| F2-1 | P0 | CombatManager 新增「Map 炮塔开火」方法 | 复用 `FireWeapon` 的 groupId + targetPosition + spawnPosition 语义，传入炮塔在 3D 空间对应的 spawn 位置与目标，直接生成 `ProjectileInstance` | P1-5 | ⬜ 待办 |
-| F2-2 | P0 | Map 炮塔 Building 桥接 | 炮塔建筑（Building）调用上述方法；与已删 `CompNozzle` 同构（地图建筑↔太空实体桥接） | P1-5 | ⬜ 待办 |
-| F2-3 | P1 | 炮塔 Building Def 定义 | 需在 `1.6/Defs/` 下定义炮塔建筑 ThingDef（或复用现有 `WeaponDefs.xml`） | P1-5 | ⬜ 待办 |
+| F2-1 | P0 | CombatManager 新增「Map 炮塔开火」方法 | 复用 `FireWeapon` 的 groupId + targetPosition + spawnPosition 语义，传入炮塔在 3D 空间对应的 spawn 位置与目标，直接生成 `ProjectileInstance` | P1-5 | ✅ 已完成（`FireFromMapBuilding`） |
+| F2-2 | P0 | Map 炮塔 Building 桥接 | 炮塔建筑（Building）调用上述方法；与已删 `CompNozzle` 同构（地图建筑↔太空实体桥接） | P1-5 | ✅ 已完成（`CompMapTurret` + `CompMapDesignator`：索敌/齐射/出膛点/精确炮击/标记） |
+| F2-3 | P1 | 炮塔 Building Def 定义 | 需在 `1.6/Defs/` 下定义炮塔建筑 ThingDef（或复用现有 `WeaponDefs.xml`） | P1-5 | ✅ 已完成（`PF_Building_Turret_Cannon` 整体式 + `PF_Building_TargetDesignator`） |
 
 ### F3. 空间站被打中 → Map 内对应 part 位置生成爆炸
 
+> ✅ 2026-08-29 基本版完成：命中 → Map 三维贯穿弹（PFProjectile3D）+ 落点建筑 Bomb 伤害 + 爆闪视觉。范围爆炸/pawn 伤害因太空 Pocket Map 上 `GenExplosion` NRE 后置（P3 二次伤害）。
+
 | # | 优先级 | 任务 | 说明 | Phase | 状态 |
 |---|--------|------|------|-------|------|
-| F3-1 | P0 | 3D 命中点 → part 关联 Pocket Map 内坐标映射 | `CombatManager.CheckSegmentGroupHit` 命中后，将 3D 命中点（`hitEntryPoint`）映射到 `part.linkedMapId` 对应 Map 内坐标 | P1-3（复用 MapCoordMapper） | ⬜ 待办 |
-| F3-2 | P0 | Map 内爆炸生成 | 在映射坐标处生成爆炸（视觉 + 伤害反馈），复用 RW 爆炸机制 | P1-6 | ⬜ 待办 |
-| F3-3 | P1 | 无 Map part 命中反馈 | 导弹等无 Map part（`linkedMapId=-1`）命中后无 Map 反馈，需确认仅 3D 损伤 | P1 验收 | ⬜ 待办 |
+| F3-1 | P0 | 3D 命中点 → part 关联 Pocket Map 内坐标映射 | `CombatManager.CheckSegmentGroupHit` 命中后，将 3D 命中点（`hitEntryPoint`）映射到 `part.linkedMapId` 对应 Map 内坐标 | P1-3（复用 MapCoordMapper） | ✅ 已完成（`MapCoordMapper.ShipLocalToMapWorld`，日志 `[贯穿生成]`） |
+| F3-2 | P0 | Map 内爆炸生成 | 在映射坐标处生成爆炸（视觉 + 伤害反馈），复用 RW 爆炸机制 | P1-6 | ✅ 已完成（贯穿弹 + 落点建筑 Bomb + FleckMaker 爆闪；范围爆炸后置） |
+| F3-3 | P1 | 无 Map part 命中反馈 | 导弹等无 Map part（`linkedMapId=-1`）命中后无 Map 反馈，需确认仅 3D 损伤 | P1 验收 | 🟡 待验证（设计如此：仅 3D 损伤；待导弹武器测试确认） |
 
 ### F4. DMS:NF 接入点接口冻结 + 最小实现（2026-08-10 同步 DMS:NF 文档新增）
 
@@ -140,6 +144,7 @@
 | 日期 | 变更 |
 |------|------|
 | 2026-08-10 | 创建：从 [Lite规划-20260808.md](./Lite规划-20260808.md) M3-M5 拆解为粒度任务清单；登记 F1-F3 共 9 项 + M3 验证 5 项 + M5 打包 4 项 + 遗留 2 项，共 20 项 |
+| 2026-08-29 | **炮塔系统收尾（M4-F2/F3 完成）**：①整体式炮塔改造——上下分体→单炮塔、360° 无射界、出膛点=炮口射线∩本船 AABB 六面（与 F3 命中几何对称）；②**F2-1/2/3 全部标 ✅**、**F3-1 ✅**、**F3-2 基本版 ✅**（贯穿弹+落点伤害；范围爆炸后置 P3）；③修复射弹生成后立即误判命中 bug（`prevUpdatePhysicsTick` 初始化 + `segmentLength<0.5m` 防御，详见实现记录踩坑 #13）；④新增精确炮击（敌舰地图选格瞄准偏移 + 红色标记）；⑤全链详细调试日志（`DebugDetailedCombat` + 射弹探针）；⑥新增测试场景：全方位 6 方位对射 + 正下方精确炮击；⑦**M3-1/3/4 游戏内验证标 ✅**；⑧炮塔渲染修复（底座+炮头分离、AltIncVect 抬高）；⑨**性能优化**：定位机炮塔朝向 4 tick 限频（对齐 SOS2）+ `CheckShipCollisions` 组级碰撞缓存（位置/半径/当前盒/上一步盒每组每 tick 只算一次，消除每对最多 6 次 `GetWorldAabb` 旋转计算） |
 | 2026-08-10（同日同步 DMS:NF 文档） | **重大更新**：①所有任务表追加「Phase」列（映射 [PFL闭环规划 §6](./PFL闭环规划-20260810.md) P1/P2/P3 各子项）；②F1 新增 F1-4「化合燃料 ↔ dV 定量换算」；③新增 §F4「DMS:NF 接入点接口冻结 + 最小实现」7 项（F4-1~7）；④M5 新增 M5-5「DMS:NF 接入点文档（9 类）交付」；⑤M3/M5 标题与说明补充 Phase 归属引用；**合计从 20 项扩至 29 项**。 |
 | 2026-08-11 | 按 DMS:NF 最新口径同步：火箭型号改为「CV-1/CV-3 可用、CV-8/10/12 暂缓」（F4 区块说明、F4-6）；F1-4 的「每格=2 单位→dV 定额」改为「系数可配、消耗指标待 DMS:NF 定」；M5-5 接入文档名「化合燃料映射」改「燃料映射」 |
 | 2026-08-19 | 把《航天器地面建设与发射流程设计v1.md》拆成 19 项目标，新增“发射台总装（Design v1 拆解）”章节（LA-1~LA-19） |

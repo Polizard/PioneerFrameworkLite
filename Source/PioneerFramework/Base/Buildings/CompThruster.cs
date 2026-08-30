@@ -20,6 +20,18 @@ namespace PioneerFramework
         /// <summary>单台质量流率 ṁ（kg/s）。推力 F = ve·ṁ。</summary>
         public float massFlowRate = 5f;
 
+        /// <summary>推进轴向（船体局部系）。默认 Back = 船尾（主推进）。XZ 四向随建筑 Rot4 旋转。</summary>
+        public ThrustAxis thrustAxis = ThrustAxis.Back;
+
+        /// <summary>动作组掩码（bit0..8 = 动作组 1..9）。0 = 未分组（手动指令恒开）。只过滤手动指令。</summary>
+        public int actionGroups;
+
+        /// <summary>
+        /// 矢量 RCS：推进方向无限制（全矢量，免对准/免锥）。
+        /// 用于交会微调与手动平移；不参与主引擎的六向判定与自动对准。
+        /// </summary>
+        public bool isVectoredRcs;
+
         public CompProperties_Thruster()
         {
             compClass = typeof(CompThruster);
@@ -52,6 +64,18 @@ namespace PioneerFramework
         public float Ve => Props.exhaustVelocity;
 
         public float MassFlowRate => Props.massFlowRate;
+
+        /// <summary>动作组掩码（bit0..8 = 动作组 1..9；0 = 未分组常开）。只过滤手动指令。</summary>
+        public int ActionGroupMask => Props.actionGroups;
+
+        /// <summary>是否矢量 RCS（全矢量免对准）。</summary>
+        public bool IsVectoredRcs => Props.isVectoredRcs;
+
+        /// <summary>
+        /// 本推进器在船体局部系中的推力轴向（def 轴向经建筑 Rot4 映射；Up/Down 固定）。
+        /// Spawn 时计算，注册到 SpaceMapComp 六方向聚合。
+        /// </summary>
+        public ThrustAxis ShipAxis { get; private set; } = ThrustAxis.Back;
 
         /// <summary>本推进器消耗的工质。Def 缺失（配置错误）时为 null。</summary>
         public PropellantDef PropellantDef { get; private set; }
@@ -98,12 +122,14 @@ namespace PioneerFramework
             if (mapComp == null) return;
             if (sign > 0)
             {
-                mapComp.RegisterEngine(PropellantDef, Ve, MassFlowRate);
+                // Spawn 时定死轴向（建筑 Rot4 在放置后不变；重建时重新 Spawn 会重算）
+                ShipAxis = parent != null ? Props.thrustAxis.RotateByRot4(parent.Rotation) : Props.thrustAxis;
+                mapComp.RegisterEngine(PropellantDef, Ve, MassFlowRate, ShipAxis, IsVectoredRcs);
                 mapComp.RegisterThruster(this);
             }
             else
             {
-                mapComp.UnregisterEngine(PropellantDef, Ve, MassFlowRate);
+                mapComp.UnregisterEngine(PropellantDef, Ve, MassFlowRate, ShipAxis, IsVectoredRcs);
                 mapComp.UnregisterThruster(this);
             }
         }
