@@ -1,0 +1,147 @@
+using System;
+
+namespace PioneerFramework
+{
+    /// <summary>
+    /// 爬升段制导参数（设计 §4.4 冻结初值）。纯数据，可序列化/可单测。
+    /// </summary>
+    public struct LaunchGuidanceParams
+    {
+        /// <summary>目标圆轨半径 (m)。</summary>
+        public double rTarget;
+        /// <summary>径向收拢时间常数 τ (s)。</summary>
+        public double tau;
+        /// <summary>径向收拢速度上限 vRadMax (m/s)，控重力损失。</summary>
+        public double vRadMax;
+        /// <summary>死区：|dv| 小于此值则不烧 (m/s)。</summary>
+        public double deadband;
+        /// <summary>到达半径窗口 tolR (m)。</summary>
+        public double tolR;
+        /// <summary>到达速度窗口 tolV (m/s)。</summary>
+        public double tolV;
+        /// <summary>发射天体半径 (m)，用于换算高度（竖直起飞段判定）。</summary>
+        public double planetRadius;
+        /// <summary>竖直起飞段目标爬升速度 vAscent (m/s)。</summary>
+        public double vAscent;
+        /// <summary>竖直起飞段结束高度（相对表面）(m)。</summary>
+        public double altPitchStart;
+        /// <summary>倾倒完成高度（相对表面）(m)：此高度后切到纯追踪 vC。</summary>
+        public double altPitchEnd;
+        /// <summary>
+        /// 切向方向符号：+1 = up×radial（引擎旧约定），−1 = radial×up（与行星真实自转同向）。
+        /// 2026-09-05：自转方向由 RimWorld 太阳约定锚定（固连系太阳星下点西移 ⇒ ECI 自转 Ry(−ωt)），
+        /// 表面切向 = ω·(p×up) = radial×up → 顺行发射必须取 −1，
+        /// 否则控制律会先把自转初速刹掉再反向加速（白烧 ~2×v_surface ≈ 1048 m/s 赤道）。
+        /// </summary>
+        public double progradeSign;
+
+        /// <summary>设计 §4.4 冻结默认参数，rTarget = planetRadius + 500km。</summary>
+        public static LaunchGuidanceParams CreateDefault(double planetRadiusMeters)
+        {
+            return new LaunchGuidanceParams
+            {
+                rTarget = planetRadiusMeters + 500000.0,
+                tau = 600.0,
+                vRadMax = 300.0,
+                deadband = 0.5,
+                tolR = 10000.0,
+                tolV = 10.0,
+                planetRadius = planetRadiusMeters,
+                vAscent = 500.0,
+                altPitchStart = 20000.0,
+                altPitchEnd = 450000.0,
+                progradeSign = -1.0 // 顺行 = 与真实自转（radial×up）同向
+            };
+        }
+    }
+
+    /// <summary>单步制导输出：dv 指令（m/s）+ 到达标记。</summary>
+    public struct LaunchGuidanceStep
+    {
+        public DVector3 dv;
+        public bool arrived;
+
+        public LaunchGuidanceStep(DVector3 dv, bool arrived)
+        {
+            this.dv = dv;
+            this.arrived = arrived;
+        }
+    }
+
+    /// <summary>
+    /// 爬升段制导纯数学核心（设计 §4.2）。无记忆：每步只由 (pos, vel, GM, 参数) 决定。
+    /// 控制律 = 目标圆轨速度 + 径向收拢，重力转弯为涌现行为，不显式编俯仰程序。
+    /// 控制器无积分器/历史，载入存档不漂移。
+    /// </summary>
+    public static class LaunchGuidanceCore
+    {
+        /// <summary>
+        /// 计算本物理步的期望速度修正 dv 与到达标记。
+        /// 控制律 = 显式俯仰程序（重力转弯近似）：
+        ///   ① 低空竖直起飞段：desiredVel = 径向·vAscent + 切向·当前切向速度（全量爬升对抗重力）
+        ///   ② 倾倒段：随高度线性把 竖直目标 渐变到 追踪 vC（圆轨速度 + 径向收拢）
+        ///   ③ 高空：纯追踪 vC（原控制律）
+        /// 原因：纯追踪 vC 时 dv 方向 ≈ 96% 切向，径向推力分量（&lt; 1 m/s²）压不住重力（8 m/s²），
+        /// 低 TWR 下火箭只会贴地表水平加速坠落，永不竖直爬升（游戏日志实证 r 5010→4969km）。
+        /// </summary>
+        /// <param name="pos">ECI 位置 (m)，原点 = 行星中心。</param>
+        /// <param name="vel">ECI 速度 (m/s)。</param>
+        /// <param name="gm">中心天体引力参数 GM (m³/s²)。</param>
+        /// <param name="p">冻结参数。</param>
+        public static LaunchGuidanceStep ComputeStep(DVector3 pos, DVector3 vel, double gm, in LaunchGuidanceParams p)
+        {
+            double r = pos.magnitude;
+            if (r < 1e-3 || gm <= 0.0 || p.rTarget <= 0.0)
+                return new LaunchGuidanceStep(DVector3.zero, false);
+
+            double vC = Math.Sqrt(gm / p.rTarget);   // 目标圆轨速度（常数）
+            DVector3 radialOut = pos / r;
+            // 切向基准 + 方向符号：−1 = radial×up（与真实自转同向，顺行发射），+1 = up×radial（旧约定）
+            DVector3 tangent = DVector3.Cross(DVector3.up, radialOut).normalized * p.progradeSign;
+            if (tangent.sqrMagnitude < 1e-12)
+                return new LaunchGuidanceStep(DVector3.zero, false);
+
+            double deltaR = p.rTarget - r;                       // >0 在目标半径内侧
+            double radialSpeed = Clamp(deltaR / p.tau, -p.vRadMax, p.vRadMax);
+            double vTan = DVector3.Dot(vel, tangent);            // 当前切向速度（竖直段保持，防突变）
+
+            // 目标速度 = 径向分量 + 切向分量（按高度分段）
+            double alt = r - p.planetRadius;                     // 相对表面高度
+            double radialTarget;
+            double tanTarget;
+            if (alt < p.altPitchStart)
+            {
+                // ① 竖直起飞段：全量径向爬升，切向保持现状
+                radialTarget = p.vAscent;
+                tanTarget = vTan;
+            }
+            else if (alt < p.altPitchEnd)
+            {
+                // ② 倾倒段：径向 vAscent→收拢项，切向 vTan→vC，随高度线性过渡
+                double t = Clamp((alt - p.altPitchStart) / (p.altPitchEnd - p.altPitchStart), 0.0, 1.0);
+                radialTarget = p.vAscent * (1.0 - t) + radialSpeed * t;
+                tanTarget = vTan * (1.0 - t) + vC * t;
+            }
+            else
+            {
+                // ③ 高空纯追踪 vC
+                radialTarget = radialSpeed;
+                tanTarget = vC;
+            }
+
+            DVector3 desiredVel = radialOut * radialTarget + tangent * tanTarget;
+            DVector3 dv = desiredVel - vel;
+
+            // 到达判定：窗口内才切给入轨（§4.2/§4.5）
+            bool arrived = Math.Abs(deltaR) < p.tolR && Math.Abs(vel.magnitude - vC) < p.tolV;
+
+            if (dv.magnitude < p.deadband)
+                return new LaunchGuidanceStep(DVector3.zero, arrived); // 不烧，但窗口内仍上报到达
+
+            return new LaunchGuidanceStep(dv, arrived);
+        }
+
+        private static double Clamp(double v, double min, double max)
+            => v < min ? min : (v > max ? max : v);
+    }
+}

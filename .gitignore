@@ -36,3 +36,7 @@ AGENTS.md
 # IDE / 工具生成
 .trae/
 /Docs
+
+# Agent workspace / debug artifacts
+.zcode/
+Source/PioneerFramework.Pure.Tests/*.txt

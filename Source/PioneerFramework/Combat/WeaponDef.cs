@@ -39,11 +39,15 @@ namespace PioneerFramework.Combat
         public Color beamVisualColor = new Color(1f, 0.3f, 0.1f);
 
         public int missileCount = 1;
-        public float missileSpeed = 300f;
+        /// <summary>出膛速度增量（m/s，相对母船）：2026-09-06 从 300 降到 150——发射观感慢速脱离，接近由制导加速接管。</summary>
+        public float missileSpeed = 150f;
         public float terminalSpeed = 800f;
         public float missileFuel = 60f;
         public float engageDistance = 50f;
         public bool requiresDirectPath = false;
+
+        /// <summary>导弹武器 → 弹体/弹头定义（K2：MissileDef 独立承载，WeaponDef 只保留发射语义）。</summary>
+        public string missileDefName;
 
         public bool isWeaponized = false;
         public string droneWeaponDef;

@@ -224,6 +224,13 @@ namespace PioneerFramework
         public List<PropulsionData> propulsion = new List<PropulsionData>();
         public bool HasPropulsionData => propulsion.Count > 0;
 
+        // ── 无 Map 主推方向型（D15，可选）──
+        // 有 Map 实体忽略此字段（主推轴 = mapComp.MainThrustAxis）。
+        // null = 全向（穿梭机/EVA/无人机等默认，任意方向推力、无姿态对准）；
+        // 有值 = 主推方向型（导弹/火箭：只沿该 body 局部轴锥角内出力，需魔动量轮对准）。
+        public DVector3? mainAxisLocal;
+        public bool HasMainAxis => mainAxisLocal.HasValue && mainAxisLocal.Value.sqrMagnitude > 1e-12;
+
         // 运行时缓存（并行物理线程只读；propulsion 变更时重建）
         private List<PropellantNetwork> cachedPropulsionNetworks = new List<PropellantNetwork>();
         private bool propulsionDirty = true;
@@ -243,7 +250,10 @@ namespace PioneerFramework
                         var d = propulsion[i];
                         if (d == null || d.massFlow <= 0f) continue;
                         var net = new PropellantNetwork { propellant = d.propellant };
-                        net.RegisterEngine(d.ve, d.massFlow);
+                        if (d.isVectoredRcs)
+                            net.RegisterEngineRcs(d.ve, d.massFlow); // RCS 副网：入总聚合 + RCS 聚合（D15/D13 同构）
+                        else
+                            net.RegisterEngine(d.ve, d.massFlow);     // 主引擎：总聚合（无 Map 由实体主推轴约束）
                         list.Add(net);
                     }
                     cachedPropulsionNetworks = list;
@@ -310,7 +320,7 @@ namespace PioneerFramework
             if (d == null || d.propellant == null) return;
             for (int i = 0; i < propulsion.Count; i++)
             {
-                if (propulsion[i].propellant == d.propellant)
+                if (propulsion[i].propellant == d.propellant && propulsion[i].isVectoredRcs == d.isVectoredRcs)
                 {
                     var existing = propulsion[i];
                     existing.ve = d.ve;
@@ -466,6 +476,9 @@ namespace PioneerFramework
             if (Scribe.mode == LoadSaveMode.LoadingVars)
                 InvalidatePropulsion();
 
+            // D15 主推轴（null = 全向；旧存档无此节点 → 保持全向，向后兼容）
+            DVector3.ScribeNullable("mainAxisLocal", ref mainAxisLocal);
+
             // 部件列表序列化
             Scribe_Collections.Look(ref parts, "parts", LookMode.Deep);
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
@@ -505,6 +518,14 @@ namespace PioneerFramework
         /// <summary>燃料容量（kg，MaxDeltaV / 补给上限用）。</summary>
         public float capacity;
 
+        /// <summary>
+        /// 是否弱 RCS 副网（D15/D13 同构，仅无 Map 实体使用）：
+        /// true = 全矢量小推力修正（主推未对准时仍可出力、主网尽时兜底），不参与主推轴向约束；
+        /// false = 主引擎（无 Map 主推方向型沿 entity.mainAxisLocal 锥内出力；全向型无约束）。
+        /// 约束：同一实体内主网与 RCS 网须用不同 PropellantDef（同工质无法区分消耗）。
+        /// </summary>
+        public bool isVectoredRcs;
+
         public void ExposeData()
         {
             Scribe_Defs.Look(ref propellant, "propellant");
@@ -512,6 +533,7 @@ namespace PioneerFramework
             Scribe_Values.Look(ref massFlow, "massFlow", 0f);
             Scribe_Values.Look(ref mass, "mass", 0f);
             Scribe_Values.Look(ref capacity, "capacity", 0f);
+            Scribe_Values.Look(ref isVectoredRcs, "isVectoredRcs", false);
         }
     }
 }

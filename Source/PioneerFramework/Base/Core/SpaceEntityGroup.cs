@@ -70,6 +70,12 @@ namespace PioneerFramework
         // ── 归属天体 ──
         /// <summary>归属天体的 bodyId，-1 表示未归属（深空自由飞行）</summary>
         public int CelestialBodyId = -1;
+        /// <summary>
+        /// 豁免行星碰撞检查（火箭爬升段出生在大气层内 R+10km &lt; 安全半径 R+100km、
+        /// 初速 ~524 m/s &gt; 安全着陆阈值 10 m/s，会被 CheckPlanetCollision 首步误毁）。
+        /// 仅爬升段置 true，入轨时清除。
+        /// </summary>
+        public bool exemptPlanetCollision = false;
 
         /// <summary>中心天体相对位置（中心天体参考系），用于 R/T/N 基向量计算。</summary>
         public DVector3 localPosition;
@@ -388,8 +394,13 @@ namespace PioneerFramework
         public DVector3 angularVelocity;
         /// <summary>动量轮最大角速度（rad/s；无转动惯量，限速即手感，暂定 ~5°/s）。</summary>
         public const float DefaultMaxAngularRate = 5f * Mathf.Deg2Rad;
-        /// <summary>实际限速（预留 per-ship 覆盖；当前恒用默认）。</summary>
-        public float MaxAngularRate => DefaultMaxAngularRate;
+        /// <summary>
+        /// 实际限速（rad/s）。&lt;=0 = 用默认（旧存档/普通船兼容）。
+        /// 导弹等敏捷自主体出生时按 MissileDef.maxAngularRateDegrees 覆盖（D15 主推对准收敛速度）。
+        /// </summary>
+        public float maxAngularRate = -1f;
+        /// <summary>实际限速（rad/s；per-group 覆盖，未设用默认常量）。</summary>
+        public float MaxAngularRate => maxAngularRate > 0f ? maxAngularRate : DefaultMaxAngularRate;
 
         /// <summary>
         /// 船体局部轴向 → 世界方向（当前姿态 rotation 旋转）。
@@ -619,14 +630,16 @@ namespace PioneerFramework
             DVector3 vel = CurrentOrbit.velocity;
 
             // 如果中心天体不是行星（如月球），将 pos/vel 转为相对中心天体
+            // 采样用 physicsTick：CurrentOrbit 是 physicsTick 时间轴上的状态，
+            // 与后续 GetCircularPositionAtTick / N 体积分同基准（realTick 在倍率≠1 时错位）
             var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (celestialMgr != null)
             {
                 var centralDef = celestialMgr.GetBodyById(centralBodyId);
                 if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
                 {
-                    pos -= celestialMgr.GetBodyLocalPosition(centralBodyId, realTick);
-                    vel -= celestialMgr.GetBodyLocalVelocity(centralBodyId, realTick);
+                    pos -= celestialMgr.GetBodyLocalPosition(centralBodyId, physicsTick);
+                    vel -= celestialMgr.GetBodyLocalVelocity(centralBodyId, physicsTick);
                 }
             }
 
@@ -634,6 +647,15 @@ namespace PioneerFramework
             if (r < 0.01)
             {
                 Log.Warning(string.Format("SpaceEntityGroup {0}: Cannot enter circular orbit at near-zero radius.", GroupId));
+                return;
+            }
+
+            // 最小轨道半径 ≥ 天体半径：低于表面强行入轨 = 圆轨解析位置在地表以下，必坠毁
+            var centralDefForRadius = celestialMgr?.GetBodyById(centralBodyId);
+            if (centralDefForRadius != null && centralDefForRadius.radius > 0.0 && r < centralDefForRadius.radius)
+            {
+                Log.Warning(string.Format("SpaceEntityGroup {0}: Cannot enter circular orbit around body {1}: orbit radius {2:F0} km < body radius {3:F0} km.",
+                    GroupId, centralBodyId, r / 1000.0, centralDefForRadius.radius / 1000.0));
                 return;
             }
 
@@ -689,7 +711,7 @@ namespace PioneerFramework
                 var centralDefInner = celestialMgr.GetBodyById(centralBodyId);
                 if (centralDefInner != null && centralDefInner.bodyType != CelestialBodyType.Planet)
                 {
-                    circularVel += celestialMgr.GetBodyLocalVelocity(centralBodyId, realTick);
+                    circularVel += celestialMgr.GetBodyLocalVelocity(centralBodyId, physicsTick);
                 }
             }
             CurrentOrbit.velocity = circularVel;
@@ -707,12 +729,11 @@ namespace PioneerFramework
         {
             if (!IsCircularOrbit) return;
 
-            int realTick = Find.TickManager.TicksGame;
             var timeScaleManager = Current.Game?.GetComponent<TimeScaleManager>();
             double physicsTick = timeScaleManager != null ? timeScaleManager.GetPhysicsTick() : (double)Find.TickManager.TicksGame;
 
             DVector3 pos = GetCircularPositionAtTick(physicsTick);
-            DVector3 radialDir = (pos - GetCentralBodyOffset(realTick)).normalized;
+            DVector3 radialDir = (pos - GetCentralBodyOffset(physicsTick)).normalized;
 
             // 切向方向：在轨道平面内垂直于径向
             DVector3 tangentDir;
@@ -729,7 +750,7 @@ namespace PioneerFramework
             DVector3 newVel = tangentDir * (circularAngularVelocity * circularRadius);
 
             // 更新中心天体相对坐标（用于 R/T/N 基向量）
-            localPosition = pos - GetCentralBodyOffset(realTick);
+            localPosition = pos - GetCentralBodyOffset(physicsTick);
             localVelocity = newVel;
 
             CurrentOrbit.velocity = newVel;
@@ -743,7 +764,7 @@ namespace PioneerFramework
                     var centralDef = celestialMgr.GetBodyById(circularCentralBodyId);
                     if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
                     {
-                        CurrentOrbit.velocity += celestialMgr.GetBodyLocalVelocity(circularCentralBodyId, realTick);
+                        CurrentOrbit.velocity += celestialMgr.GetBodyLocalVelocity(circularCentralBodyId, physicsTick);
                     }
                 }
             }
@@ -881,9 +902,11 @@ namespace PioneerFramework
             Scribe_Values.Look(ref HasGravityWell, "hasGravityWell", false);
             Scribe_Deep.Look(ref CurrentOrbit, "currentOrbit");
             DVector3.Scribe("angularVelocity", ref angularVelocity);
+            Scribe_Values.Look(ref maxAngularRate, "maxAngularRate", -1f); // -1 = 默认常量（旧存档兼容）
             Scribe_Values.Look(ref OrbitDirty, "orbitDirty", true);
             Scribe_Collections.Look(ref entityIds, "entityIds", LookMode.Value);
             Scribe_Values.Look(ref CelestialBodyId, "celestialBodyId", -1);
+            Scribe_Values.Look(ref exemptPlanetCollision, "exemptPlanetCollision", false);
             // 圆轨模式数据序列化
             Scribe_Values.Look(ref IsCircularOrbit, "isCircularOrbit", false);
             Scribe_Values.Look(ref circularRadius, "circularRadius", 0.0);

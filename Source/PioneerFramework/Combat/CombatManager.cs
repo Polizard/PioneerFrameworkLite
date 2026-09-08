@@ -3,6 +3,8 @@ using UnityEngine;
 using Verse;
 using System.Text;
 using System;
+using RimWorld;
+using PioneerFramework.Components;
 
 namespace PioneerFramework.Combat
 {
@@ -12,6 +14,9 @@ namespace PioneerFramework.Combat
         // 群组武器列表（Lite 裁剪后：实体级武器收集已删除，此容器由 M4 Map 炮塔桥接填充）
         private readonly Dictionary<int, List<WeaponInstance>> groupWeapons = new Dictionary<int, List<WeaponInstance>>();
         private readonly HashSet<SpaceEntityGroup> projectileQueryResults = new HashSet<SpaceEntityGroup>();
+        /// <summary>齐射弹群实体数上限（§5，2026-09-08 深度队列制：同深度仅 1 枚、深度间距 = min(2km, 10km/(N−1))，
+        /// 致死带 ~1km 余量下 10km 内安全容量 = 8；方形同排成员会被兄弟弹头 AoE 击杀，已废弃）。</summary>
+        private const int MaxVolleyCount = 8;
         // 定向能射线候选集（每炮一次收集复用，方案 A 正方体粗筛 / B 走格预留共用）
         private readonly HashSet<SpaceEntityGroup> rayCandidateResults = new HashSet<SpaceEntityGroup>();
         // 命中诊断：已记录过的射弹 id（每个射弹只打印一次）
@@ -130,7 +135,18 @@ namespace PioneerFramework.Combat
                     activeExplosions.RemoveAt(i);
             }
 
-            if (currentTick % 2 != 0) return;
+        }
+
+        /// <summary>
+        /// 每物理步执行（2026-09-07 起由 SpaceGameComp 在物理推进完成后统一驱动）：
+        /// 组件 tick 顺序 = 类型全名字母序（AVM → SpaceGameComp → CombatManager），若按 %2 自行
+        /// tick 会读物理推进前的位置——与制导/其他每物理步消费者错位 2s ≈ 5km（09-07 日志实证：
+        /// 同 tick 制导报 0.7km 即将命中、碰撞实测 2.6km，导弹真实航线从没穿过目标盒）。
+        /// 挂在推进后 = 所有每物理步消费者同 tick 同位，顺序依赖消除。
+        /// </summary>
+        internal void OnPhysicsStepCompleted()
+        {
+            int currentTick = Find.TickManager.TicksGame;
 
             var combatGrid = GetCombatGrid();
             if (combatGrid != null)
@@ -195,16 +211,25 @@ namespace PioneerFramework.Combat
         }
 
         /// <summary>
-        /// 射弹在飞时自动将时间流速降到 1/60（Combat 档），实现"子弹时间"。
-        /// 只降不升：恢复由 SpaceGameComp 的流速检查（每 240 tick）处理，避免射弹清空/再生反复切换。
-        /// 限频（每 60 tick 最多请求一次）：覆盖用户手动切走高流速的情况，同时避免 QueueCommand 刷屏。
+        /// 射弹在飞 / 导弹处于 Attack 终末自动段时自动将时间流速降到 1/60（Combat 档），
+        /// 实现"子弹时间"（导弹终末与射弹同级 flag，2026-09-07 用户定稿——否则 60× 现实流速下
+        /// 玩家看不清导弹冲刺与撞击）。只降不升：恢复由 SpaceGameComp 的流速检查（每 240 tick）
+        /// 处理，避免清空/再生反复切换。限频（每 60 tick 最多请求一次）：覆盖用户手动切走的
+        /// 高流速，同时避免 QueueCommand 刷屏。
         /// </summary>
         private void ManageProjectileTimeScale()
         {
             var tsm = Current.Game?.GetComponent<TimeScaleManager>();
             if (tsm == null) return;
 
-            if (activeProjectiles.Count > 0 &&
+            bool combatActive = activeProjectiles.Count > 0;
+            if (!combatActive)
+            {
+                var avm = Current.Game?.GetComponent<AutonomousVehicleManager>();
+                combatActive = avm != null && avm.HasActiveAttack;
+            }
+
+            if (combatActive &&
                 tsm.CurrentLevel != TimeScaleLevel.Combat &&
                 Find.TickManager.TicksGame - lastProjectileSlowdownTick >= PROJECTILE_SLOWDOWN_MIN_INTERVAL)
             {
@@ -327,15 +352,18 @@ namespace PioneerFramework.Combat
                 {
                     // ── 调试日志：超时脱靶汇总（验证时间基准 B1 与提前量 A1）──
                     double flightDist = (proj.position - proj.spawnPosition).magnitude;
-                    Log.Message(string.Format(
-                        "[射弹脱靶] proj={0} 超时销毁 | 生成=({1:F0},{2:F0},{3:F0}) 终点=({4:F0},{5:F0},{6:F0}) 飞行距离={7:F0}m 累计游戏秒={8:F2}s 平均速度={9:F0}m/s 末速={10:F0}m/s physicsTick={11:F1}",
-                        proj.id,
-                        proj.spawnPosition.x, proj.spawnPosition.y, proj.spawnPosition.z,
-                        proj.position.x, proj.position.y, proj.position.z,
-                        flightDist, proj.totalFlightSeconds,
-                        proj.totalFlightSeconds > 0.001 ? flightDist / proj.totalFlightSeconds : 0.0,
-                        proj.velocity.magnitude,
-                        TimeScaleManager.GetPhysicsTickSafe()));
+                    if (DebugDetailedCombat)
+                    {
+                        Log.Message(string.Format(
+                            "[射弹脱靶] proj={0} 超时销毁 | 生成=({1:F0},{2:F0},{3:F0}) 终点=({4:F0},{5:F0},{6:F0}) 飞行距离={7:F0}m 累计游戏秒={8:F2}s 平均速度={9:F0}m/s 末速={10:F0}m/s physicsTick={11:F1}",
+                            proj.id,
+                            proj.spawnPosition.x, proj.spawnPosition.y, proj.spawnPosition.z,
+                            proj.position.x, proj.position.y, proj.position.z,
+                            flightDist, proj.totalFlightSeconds,
+                            proj.totalFlightSeconds > 0.001 ? flightDist / proj.totalFlightSeconds : 0.0,
+                            proj.velocity.magnitude,
+                            TimeScaleManager.GetPhysicsTickSafe()));
+                    }
                     combatGrid?.RemoveProjectile(proj);
                     spaceGame.UnregisterProjectileFromGrid(proj);
                     activeProjectiles.RemoveAt(i);
@@ -381,14 +409,17 @@ namespace PioneerFramework.Combat
                     if (dist < 800.0)
                     {
                         hitDiagnosticLogged.Add(proj.id);
-                        Log.Message(string.Format("[命中诊断] proj={0} group={1} 查询数={2} TicksGame={3} physicsTick={4:F0} 距离={5:F0}m | 线段({6:F0},{7:F0})->({8:F0},{9:F0}) | 目标=({10:F0},{11:F0}) | 射弹速=({12:F0},{13:F0},{14:F0})",
-                            proj.id, group.GroupId, projectileQueryResults.Count,
-                            Find.TickManager.TicksGame,
-                            TimeScaleManager.GetPhysicsTickSafe(), dist,
-                            proj.prevPosition.x, proj.prevPosition.z,
-                            proj.position.x, proj.position.z,
-                            gPos.x, gPos.z,
-                            proj.velocity.x, proj.velocity.y, proj.velocity.z));
+                        if (DebugDetailedCombat)
+                        {
+                            Log.Message(string.Format("[命中诊断] proj={0} group={1} 查询数={2} TicksGame={3} physicsTick={4:F0} 距离={5:F0}m | 线段({6:F0},{7:F0})->({8:F0},{9:F0}) | 目标=({10:F0},{11:F0}) | 射弹速=({12:F0},{13:F0},{14:F0})",
+                                proj.id, group.GroupId, projectileQueryResults.Count,
+                                Find.TickManager.TicksGame,
+                                TimeScaleManager.GetPhysicsTickSafe(), dist,
+                                proj.prevPosition.x, proj.prevPosition.z,
+                                proj.position.x, proj.position.z,
+                                gPos.x, gPos.z,
+                                proj.velocity.x, proj.velocity.y, proj.velocity.z));
+                        }
                     }
                 }
 
@@ -481,6 +512,29 @@ namespace PioneerFramework.Combat
                     continue;
                 }
 
+                // 拦截引爆（§10）：目标实体所属 group 是导弹（manager 反查，K9）→ 命中即就地引爆弹头
+                // AoE（无阵营过滤，误伤玩法成立）。统一单枚路径（2026-09-08 双路径统一）：只引爆被
+                // slab 命中的这枚实体（爆心 = 该实体世界位 = 单实体时即组原位，语义与原整群引爆一致），
+                // 实体离群走 AVM.RemoveMissileEntity 出口（燃料随实体、无记账）；组空 → 注销+销毁。
+                // 射弹路径内 DestroyGroup 安全（此处不在 EnumerateShipPairs 迭代中）。
+                var interceptMgr = Current.Game?.GetComponent<AutonomousVehicleManager>();
+                var missileRec = interceptMgr?.GetRecord(group.GroupId);
+                if (missileRec != null)
+                {
+                    DVector3 hitCenter = groupPos + entity.Position; // 命中实体世界位（爆心）
+                    Log.Message(string.Format("[导弹拦截] proj={0} 击毁导弹G{1} 单枚E{2} → 就地引爆", proj.id, group.GroupId, entityId));
+                    // A（2026-09-09 用户定稿）：**先摘除后引爆**——被打成员在受爆炸影响前先脱队；
+                    // B：引爆带 excludeGroupId=本组，成员死亡爆炸不扰动残组（残组照飞）
+                    bool groupEmpty = interceptMgr.RemoveMissileEntity(missileRec, entityId, "拦截");
+                    ExplodeMissileEntityAt(group, missileRec, hitCenter, spaceGame, group.GroupId);
+                    if (groupEmpty)
+                    {
+                        interceptMgr.UnregisterGroup(group.GroupId);
+                        spaceGame.DestroyGroup(group.GroupId);
+                    }
+                    return true;
+                }
+
 #if DEBUG
                 if (verboseHit)
                     Log.Message(string.Format("[命中调试] slab HIT tEntry={0:F3} tExit={1:F3}", tEntry, tExit));
@@ -531,29 +585,36 @@ namespace PioneerFramework.Combat
                         lastHitPosition = proj.position;
                         lastHitGroupId = group.GroupId;
                         lastHitTick = Find.TickManager.TicksGame;
-                        lastHitWeaponType = proj.weaponDef.weaponType;
-                        Log.Message(string.Format(
-                            "[命中Part!] Tick={8} 射弹{0}→Group{1} Entity{2} Part[{3}]\"{4}\" " +
-                            "hitT={5:F3} PartHP={6:F0}→{7:F0} 飞行秒={18:F2} " +
-                            "EntityPos=({9:F0},{10:F0},{11:F0}) PartLocalPos=({12:F0},{13:F0},{14:F0}) PartSize=({15:F0},{16:F0},{17:F0})",
-                            proj.id, group.GroupId, entityId, firstHitPartIndex, hitPart.defName,
-                            firstHitT, hitPart.hp, hitPart.hp - proj.damage,
-                            lastHitTick,
-                            entityWorldPos.x, entityWorldPos.y, entityWorldPos.z,
-                            hitPart.localPosition.x, hitPart.localPosition.y, hitPart.localPosition.z,
-                            hitPart.localBoundsSize.x, hitPart.localBoundsSize.y, hitPart.localBoundsSize.z,
-                            proj.totalFlightSeconds));
+                        lastHitWeaponType = proj.weaponDef?.weaponType ?? WeaponType.Projectile;
+                        if (DebugDetailedCombat)
+                        {
+                            Log.Message(string.Format(
+                                "[命中Part!] Tick={8} 射弹{0}→Group{1} Entity{2} Part[{3}]\"{4}\" " +
+                                "hitT={5:F3} PartHP={6:F0}→{7:F0} 飞行秒={18:F2} " +
+                                "EntityPos=({9:F0},{10:F0},{11:F0}) PartLocalPos=({12:F0},{13:F0},{14:F0}) PartSize=({15:F0},{16:F0},{17:F0})",
+                                proj.id, group.GroupId, entityId, firstHitPartIndex, hitPart.defName,
+                                firstHitT, hitPart.hp, hitPart.hp - proj.damage,
+                                lastHitTick,
+                                entityWorldPos.x, entityWorldPos.y, entityWorldPos.z,
+                                hitPart.localPosition.x, hitPart.localPosition.y, hitPart.localPosition.z,
+                                hitPart.localBoundsSize.x, hitPart.localBoundsSize.y, hitPart.localBoundsSize.z,
+                                proj.totalFlightSeconds));
+                        }
                         // 应用伤害（走组件回调：OnDamaged / OnDestroyed）
                         hitPart.ApplyDamage(proj.damage);
                         if (hitPart.isDestroyed)
                         {
                             entity.MarkPartDestroyed(hitPart.partId);
-                            Log.Message(string.Format("[Part摧毁] Entity{0} Part[{1}]\"{2}\" 已被摧毁",
-                                entityId, firstHitPartIndex, hitPart.defName));
+                            if (DebugDetailedCombat)
+                            {
+                                Log.Message(string.Format("[Part摧毁] Entity{0} Part[{1}]\"{2}\" 已被摧毁",
+                                    entityId, firstHitPartIndex, hitPart.defName));
+                            }
                         }
 
                         // F3 命中 → Map 落点瞬爆：命中点已在船体局部系（含旋转），
                         // part 局部 = 地图 1:1，直接映射即可。
+                        DVector3 worldHitPoint = proj.position; // 兜底：步末点
                         if (entity.MapId >= 0)
                         {
                             Map targetMap = SpaceMapGenerator.FindPocketMap(entity.MapId);
@@ -574,8 +635,22 @@ namespace PioneerFramework.Combat
                                         penDir.z / Math.Max(penDir.magnitude, 0.001)));
                                 }
                                 SpawnPenetrationMote(entity, targetMap, hitLocal);
+                                // 弹头 Map 范围爆炸（§10 收尾，2026-09-07）：以命中映射格为心在目标地图上
+                                // 做范围爆炸（条件：命中处地板不是"太空"，SpawnMapWarheadBlast 内部判定）——
+                                // 3D AoE（HandleWarheadImpact）的 Map 对应物；太空 Pocket Map GenExplosion NRE → 自实现。
+                                if (proj.isWarhead)
+                                    SpawnMapWarheadBlast(targetMap, hitLocal, proj.mapBlastRadiusCells, proj.blastCenterDamage);
+                                // 世界命中点（爆炸中心用）：船体局部 hitLocal → 世界（含目标姿态/群位置）
+                                worldHitPoint = groupPos + entity.Position + DVector3.Rotate(hitLocal, entity.Rotation);
                             }
                         }
+
+                        // 弹头命中结算（§10）：part 大额直扣（上方 ApplyDamage）+ F3 Map 落点（上方 mote）
+                        // 已走现链；弹头额外在**精确命中点**触发 3D AoE 爆炸（2026-09-07 修：
+                        // 原用 proj.position（步末点）作爆炸中心——高速弹头一步穿 ~3.4km，
+                        // 偏深超出 AoE 半径导致 damaged=0）。（命中即移除，外层处理。）
+                        if (proj.isWarhead)
+                            HandleWarheadImpact(proj, group, worldHitPoint);
                         return true;
                     }
                 }
@@ -585,9 +660,14 @@ namespace PioneerFramework.Combat
                     lastHitPosition = proj.position;
                     lastHitGroupId = group.GroupId;
                     lastHitTick = Find.TickManager.TicksGame;
-                    lastHitWeaponType = proj.weaponDef.weaponType;
-                    Log.Message(string.Format("[命中!] 射弹击中 Entity {0} (Group {1}) 位置({2:F0},{3:F0},{4:F0})",
-                        entityId, group.GroupId, groupPos.x, groupPos.y, groupPos.z));
+                    lastHitWeaponType = proj.weaponDef?.weaponType ?? WeaponType.Projectile;
+                    if (DebugDetailedCombat)
+                    {
+                        Log.Message(string.Format("[命中!] 射弹击中 Entity {0} (Group {1}) 位置({2:F0},{3:F0},{4:F0})",
+                            entityId, group.GroupId, groupPos.x, groupPos.y, groupPos.z));
+                    }
+                    if (proj.isWarhead)
+                        HandleWarheadImpact(proj, group, proj.position);
                     return true;
                 }
             }
@@ -607,6 +687,12 @@ namespace PioneerFramework.Combat
 
             // #2：每 tick 重建组级缓存
             groupCollisionCache.Clear();
+
+            // 转化交接待销毁导弹群：统一在 pair 循环外执行（EnumerateShipPairs 是字典懒迭代器，
+            // 迭代体内 DestroyGroup 会并发修改抛异常）。HashSet 防同一导弹本 tick 与多个目标接触时重复转化。
+            var destroyedMissiles = new HashSet<int>();
+            // 导弹识别管理器：pair 循环外取一次（GetComponent 线性查组件表，不能每对被拒 pair 都调）
+            var missileMgr = Current.Game?.GetComponent<AutonomousVehicleManager>();
 
             foreach (var (a, b) in combatGrid.EnumerateShipPairs())
             {
@@ -629,11 +715,19 @@ namespace PioneerFramework.Combat
                 DVector3 pa = ca.pos;
                 DVector3 pb = cb.pos;
 
-                // 球包围快筛
+                // 球包围快筛（导弹参与的对豁免——09-07 日志实证根因）：步末距离判据在
+                // "相对步长 > 球区跨度"时失效：导弹整步从目标一侧穿到另一侧（0.7km/接近率479，
+                // 单步相对位移 958m > 目标球区 ±57m），步末已在另一侧 209m → 误拒 → 扫掠/段级
+                // 复核全部没机会执行（收敛直撞线零碰撞）。导弹对改由下方段级时间对齐复核权威判定。
                 double ra = ca.radius;
                 double rb = cb.radius;
                 double rr = ra + rb;
-                if ((pb - pa).sqrMagnitude > rr * rr) continue;
+                if ((pb - pa).sqrMagnitude > rr * rr)
+                {
+                    bool anyMissile = missileMgr != null
+                        && (missileMgr.GetRecord(a.GroupId) != null || missileMgr.GetRecord(b.GroupId) != null);
+                    if (!anyMissile) continue;
+                }
 
                 // 当前实际盒（curOverlap 判定与分离量的基准）
                 DVector3 curAMin = ca.curMin, curAMax = ca.curMax;
@@ -656,6 +750,12 @@ namespace PioneerFramework.Combat
                 }
 
                 bool sweptHit = AabbOverlap(aMin, aMax, bMin, bMax, out double ox, out double oy, out double oz);
+                // 导弹对判定提前（导弹分支复用；GetRecord 字典 O(1)）。注意：导弹对不打无门控日志——
+                // 09-07 诊断期曾临时无门控（穿越窗口 2-4 tick），Combat 档（1/60）下现实 30Hz × 每对
+                // 刷屏 8725 行/次测试拖垮内存，使命完成后恢复全局 30 tick 门控。
+                var recA = missileMgr?.GetRecord(a.GroupId);
+                var recB = missileMgr?.GetRecord(b.GroupId);
+                bool pairHasMissile = recA != null || recB != null;
                 if (DebugDetailedCollision && Find.TickManager.TicksGame >= detailedLogNextTick)
                 {
                     detailedLogNextTick = Find.TickManager.TicksGame + 30;
@@ -673,6 +773,28 @@ namespace PioneerFramework.Combat
                 }
                 if (!sweptHit) continue;
 
+                // 导弹转化交接分支（§10）：导弹接触任何碰撞体（普通船 / 异 volley 导弹 / 友军）→
+                // 一律「先生成弹头射弹（继承方向/速度/位置）、后销毁导弹」——打谁都转为射弹。
+                // 例外只有两条：① 同 volley 兄弟互碰永久排除（K1，防齐射同点/编队自爆）；
+                // ② 拦截（导弹被射弹击中）= 就地引爆，在 CheckSegmentGroupHit 处理（§10），不在此。
+                // 本分支位于 tunneling / 跳帮分支之前：导弹参与的重叠一律先被消费，不落通用船-船
+                // 语义（动量交换/弹开/动能爆炸/ResolveTunneled 全错）。销毁收集到 destroyedMissiles
+                // 延后到 pair 循环外统一执行（EnumerateShipPairs 是字典懒迭代器，迭代内 DestroyGroup 抛异常）。
+                if (missileMgr != null && pairHasMissile)
+                {
+                    bool sameVolley = recA != null && recB != null && recA.volleyId == recB.volleyId;
+                    if (!sameVolley)
+                    {
+                        // 逐实体接触解析（唯一路径，2026-09-08 双路径统一）：导弹对一律走 ResolveEntityContacts
+                        // ——单实体组 = 1×1 退化情形，与旧组级复核几何完全一致（组盒=实体盒、组原点=实体
+                        // 原点），游戏内单发命中链（撞击→弹头命中）等价；并集盒扫掠只作粗筛：多实体
+                        // 10km 阵列"空当"不触发转化；真接触的单枚独立转化离群（组空才整体销毁，延后
+                        // pair 循环外统一执行）。假阳性防御（出生/伴飞时间对齐复核）内建于逐实体解析。
+                        ResolveEntityContacts(a, b, recA, ca, cb, missileMgr, spaceGame, combatGrid, destroyedMissiles);
+                        ResolveEntityContacts(b, a, recB, cb, ca, missileMgr, spaceGame, combatGrid, destroyedMissiles);
+                    }
+                    continue; // 导弹对一律在本分支消费完（含同 volley 排除），不落通用船-船语义
+                    }
                 // 纯 tunneling（当前盒不重叠但路径相交）→ 快速船停在对方膨胀盒表面；
                 // 否则用当前实际盒重叠量分离（扫掠盒 oz 含运动路径长度，直接分离会把船推飞）
                 if (!AabbOverlap(curAMin, curAMax, curBMin, curBMax, out ox, out oy, out oz))
@@ -695,6 +817,7 @@ namespace PioneerFramework.Combat
 
                 // 跳帮接舷分支（§9）：一方是跳帮单位且低速对准落点 → 消费碰撞（不弹飞/不爆炸，
                 // 降落判定由 BoardingManager 每物理步驱动）。高速 → 走正常爆炸。
+                // （导弹 vs 跳帮单位不会到达此处：导弹分支已在上方优先消费。）
                 if (Current.Game?.GetComponent<BoardingManager>() is BoardingManager boarding
                     && boarding.TryResolveBoardingContact(a, b, vRel))
                 {
@@ -704,7 +827,7 @@ namespace PioneerFramework.Combat
 
                 if (vRel >= CollisionExplosionSpeedThreshold)
                 {
-                    TriggerExplosion(a, b, pa, pb, va, vb, nDir, vRel, ox, oy, oz);
+                    TriggerExplosion(a, b, pa, pb, va, vb, nDir, vRel, ox, oy, oz, destroyedMissiles);
                 }
                 else if (vRel > 0)
                 {
@@ -714,11 +837,26 @@ namespace PioneerFramework.Combat
                 {
                     // 正在分离但 AABB 仍重叠：仅位置分离防卡死
                     SeparatePositions(a, b, ox, oy, oz);
-                    Log.Message(string.Format("[ShipCollision] G{0} vs G{1} 分离中重叠，仅位置分离 重叠=({2:F0},{3:F0},{4:F0})m",
-                        a.GroupId, b.GroupId, ox, oy, oz));
+                    if (DebugDetailedCollision)
+                    {
+                        Log.Message(string.Format("[ShipCollision] G{0} vs G{1} 分离中重叠，仅位置分离 重叠=({2:F0},{3:F0},{4:F0})m",
+                            a.GroupId, b.GroupId, ox, oy, oz));
+                    }
                 }
                 // 任何碰撞解决都可能改变 a/b 位置 → 失效缓存，后续对该组的对重建
                 InvalidateCollisionCache(a, b);
+            }
+
+            // 转化交接统一销毁（pair 循环外：字典懒迭代器内 DestroyGroup 抛异常）
+            if (destroyedMissiles.Count > 0)
+            {
+                var avmDestroy = Current.Game?.GetComponent<AutonomousVehicleManager>();
+                foreach (int gid in destroyedMissiles)
+                {
+                    avmDestroy?.UnregisterGroup(gid); // 弹群登记注销（§11）
+                    spaceGame.DestroyGroup(gid);
+                }
+                destroyedMissiles.Clear();
             }
         }
 
@@ -806,8 +944,11 @@ namespace PioneerFramework.Combat
             b.OrbitDirty = true;
             shipPrevPositions[b.GroupId] = stopPos;
             shipLastPositions[b.GroupId] = stopPos;
-            Log.Message(string.Format("[ShipCollision] G{0} vs G{1} tunneling 捕获：G{1} 停于接触点 ({2:F0},{3:F0},{4:F0})m",
-                aGroupId, b.GroupId, stopPos.x, stopPos.y, stopPos.z));
+            if (DebugDetailedCollision)
+            {
+                Log.Message(string.Format("[ShipCollision] G{0} vs G{1} tunneling 捕获：G{1} 停于接触点 ({2:F0},{3:F0},{4:F0})m",
+                    aGroupId, b.GroupId, stopPos.x, stopPos.y, stopPos.z));
+            }
         }
 
         /// <summary>slab 法射线-AABB 求交：origin + t·dir（t∈[0,1]，dir 为实际位移向量 → t 即位移比例）。</summary>
@@ -989,14 +1130,18 @@ namespace PioneerFramework.Combat
             ApplyGroupVelocity(b, vb - nDir * (j / mb));
             SeparatePositions(a, b, ox, oy, oz);
 
-            Log.Message(string.Format("[ShipCollision] 撞击等效 G{0} vs G{1} 接近速度={2:F1}m/s 质量={3:F0}/{4:F0}kg 冲量j={5:F2} 已分离",
-                a.GroupId, b.GroupId, vRel, ma, mb, j));
+            if (DebugDetailedCollision)
+            {
+                Log.Message(string.Format("[ShipCollision] 撞击等效 G{0} vs G{1} 接近速度={2:F1}m/s 质量={3:F0}/{4:F0}kg 冲量j={5:F2} 已分离",
+                    a.GroupId, b.GroupId, vRel, ma, mb, j));
+            }
         }
 
-        /// <summary>高速真爆炸：范围损伤 + 径向冲量 + 爆炸视觉。</summary>
+        /// <summary>高速真爆炸：范围损伤 + 径向冲量 + 爆炸视觉。
+        /// deferredEmptyGroups：本调用处于 pair 迭代内，AoE 击毁导弹成员后变空的组延后销毁（C）。</summary>
         private void TriggerExplosion(SpaceEntityGroup a, SpaceEntityGroup b,
             DVector3 pa, DVector3 pb, DVector3 va, DVector3 vb, DVector3 nDir, double vRel,
-            double ox, double oy, double oz)
+            double ox, double oy, double oz, HashSet<int> deferredEmptyGroups = null)
         {
             double ma = GetGroupMass(a);
             double mb = GetGroupMass(b);
@@ -1007,7 +1152,7 @@ namespace PioneerFramework.Combat
             double R = CollisionExplosionBaseRadius + CollisionExplosionRadiusK * Math.Pow(E, 1.0 / 3.0);
             double D0 = CollisionExplosionDamageK * Math.Sqrt(E);
 
-            int damaged = ApplyExplosionDamage(hitPoint, R, D0);
+            int damaged = ApplyExplosionDamage(hitPoint, R, D0, -1, deferredEmptyGroups);
             int pushed = ApplyExplosionImpulse(hitPoint, R, E);
 
             // 视觉残留
@@ -1022,15 +1167,27 @@ namespace PioneerFramework.Combat
 
             SeparatePositions(a, b, ox, oy, oz);
 
-            Log.Message(string.Format("[爆炸] G{0} vs G{1} 碰撞点=({2:F0},{3:F0},{4:F0}) 半径={5:F0}m 能量={6:F2}J vRel={7:F1}m/s 损伤Part={8} 冲量船={9}",
-                a.GroupId, b.GroupId, hitPoint.x, hitPoint.y, hitPoint.z, R, E, vRel, damaged, pushed));
+            if (DebugDetailedCollision)
+            {
+                Log.Message(string.Format("[爆炸] G{0} vs G{1} 碰撞点=({2:F0},{3:F0},{4:F0}) 半径={5:F0}m 能量={6:F2}J vRel={7:F1}m/s 损伤Part={8} 冲量船={9}",
+                    a.GroupId, b.GroupId, hitPoint.x, hitPoint.y, hitPoint.z, R, E, vRel, damaged, pushed));
+            }
         }
 
-        /// <summary>爆炸范围损伤：半径 R 内所有 Part 按 (1 - dist/R) 衰减扣 HP。</summary>
-        private int ApplyExplosionDamage(DVector3 center, double R, double D0)
+        /// <summary>
+        /// 爆炸范围损伤：半径 R 内所有 Part 按 (1 - dist/R) 衰减扣 HP。
+        /// excludeGroupId：豁免组（B，2026-09-09 用户定稿——成员死亡爆炸不作用于自家残组）。
+        /// emptiedMissileGroups：C（2026-09-09）——导弹实体被打到部件全毁**当场脱队**
+        /// （RemoveMissileEntity，只移实体不销毁组，安全），组空则把组 id 交给调用方销毁
+        /// （射弹路径当场销毁；pair 迭代内延后到循环外）。此前滞后 120 tick 由 AVM 周期清理兜底。
+        /// </summary>
+        private int ApplyExplosionDamage(DVector3 center, double R, double D0,
+            int excludeGroupId = -1, HashSet<int> emptiedMissileGroups = null)
         {
             var spaceGame = GetSpaceGameComp();
             if (spaceGame == null) return 0;
+            var avm = Current.Game?.GetComponent<AutonomousVehicleManager>();
+            var newlyDeadMissiles = new List<(int groupId, int entityId)>();
 
             int damaged = 0;
             double rangeCheck = R + 100000.0; // 球快筛余量
@@ -1038,9 +1195,13 @@ namespace PioneerFramework.Combat
             foreach (var group in spaceGame.GetAllGroups())
             {
                 if (!group.IsActive || !group.IsCollidable) continue;
+                if (excludeGroupId >= 0 && group.GroupId == excludeGroupId) continue;
 
                 DVector3 gpos = GetGroupPos(group);
                 if ((gpos - center).sqrMagnitude > rangeCheck * rangeCheck) continue;
+
+                // C：导弹群才做"击毁即脱队"收集（普通船部件全毁维持现语义）
+                var missileRec = avm != null ? avm.GetRecord(group.GroupId) : null;
 
                 foreach (int eid in group.GetEntityIds())
                 {
@@ -1062,17 +1223,41 @@ namespace PioneerFramework.Combat
                         if (part.isDestroyed)
                         {
                             entity.MarkPartDestroyed(part.partId);
-                            Log.Message(string.Format("[爆炸损伤] Entity{0} Part[{1}]\"{2}\" HP≤0 被摧毁 dist={3:F0}m",
-                                eid, part.partId, part.defName, dist));
+                            if (DebugDetailedCollision)
+                            {
+                                Log.Message(string.Format("[爆炸损伤] Entity{0} Part[{1}]\"{2}\" HP≤0 被摧毁 dist={3:F0}m",
+                                    eid, part.partId, part.defName, dist));
+                            }
                         }
                     }
+
+                    // C：本实体部件全毁（含此前遗留的空壳）→ 当场脱队（组迭代结束后统一执行）
+                    if (missileRec != null && entity.Parts.Count > 0)
+                    {
+                        bool allDead = true;
+                        foreach (var pt in entity.Parts)
+                            if (!pt.isDestroyed) { allDead = false; break; }
+                        if (allDead) newlyDeadMissiles.Add((group.GroupId, eid));
+                    }
                 }
+            }
+
+            // C：组迭代结束后执行离群（不在 GetAllGroups/GetEntityIds 迭代中改集合）
+            foreach (var (gid, eid) in newlyDeadMissiles)
+            {
+                var rec = avm?.GetRecord(gid);
+                if (rec == null) continue;
+                if (avm.RemoveMissileEntity(rec, eid, "AoE 击毁") && emptiedMissileGroups != null)
+                    emptiedMissileGroups.Add(gid);
             }
             return damaged;
         }
 
-        /// <summary>爆炸径向冲量：范围内船被炸飞，Δv = K·√E·(1-dist/R)/mass。</summary>
-        private int ApplyExplosionImpulse(DVector3 center, double R, double E)
+        /// <summary>
+        /// 爆炸径向冲量：范围内船被炸飞，Δv = K·√E·(1-dist/R)/mass。
+        /// excludeGroupId：豁免组（B）。空实体组跳过（冲量模型除以组质量，空组会除零）。
+        /// </summary>
+        private int ApplyExplosionImpulse(DVector3 center, double R, double E, int excludeGroupId = -1)
         {
             var spaceGame = GetSpaceGameComp();
             if (spaceGame == null) return 0;
@@ -1083,6 +1268,8 @@ namespace PioneerFramework.Combat
             foreach (var group in spaceGame.GetAllGroups())
             {
                 if (!group.IsActive || !group.IsCollidable) continue;
+                if (excludeGroupId >= 0 && group.GroupId == excludeGroupId) continue;
+                if (group.GetEntityIds().Count == 0) continue; // 空组（待延后销毁）：防除零
 
                 DVector3 gpos = GetGroupPos(group);
                 DVector3 to = gpos - center;
@@ -1311,7 +1498,12 @@ namespace PioneerFramework.Combat
         }
 
         /// <param name="targetVelocity">目标当前世界系速度（用于提前量计算）。null = 瞄准当前位置。</param>
-        public void FireWeapon(int groupId, WeaponInstance weapon, DVector3 targetPosition, DVector3? spawnPosition = null, DVector3? targetVelocity = null)
+        /// <param name="targetGroupId">目标 group id（导弹默认 Mission=Attack 用；null = 导弹出生即 Standby）。射弹/射线忽略。</param>
+        /// <param name="missileFollowMode">导弹出生 Mission = Following（发射器建筑释放：目标跟随发射器、
+        /// 不立即进终末，2026-09-06）。false = 出生即 Attack（fire-and-forget）。射弹/射线忽略。</param>
+        /// <param name="aimOffsetLocal">导弹弹着偏置（目标局部米，y=0，§10 精确打击；零 = 瞄目标质心）。射弹/射线忽略。</param>
+        /// <param name="volleyCount">导弹齐射枚数（弹群实体数；null = 武器 Def.missileCount）。射弹/射线忽略。</param>
+        public void FireWeapon(int groupId, WeaponInstance weapon, DVector3 targetPosition, DVector3? spawnPosition = null, DVector3? targetVelocity = null, int? targetGroupId = null, bool missileFollowMode = false, DVector3 aimOffsetLocal = default, int? volleyCount = null)
         {
             if (weapon == null)
             {
@@ -1351,9 +1543,11 @@ namespace PioneerFramework.Combat
             // 发射者当前世界系速度（射弹继承 + 提前量解算共用）
             DVector3 groupVelocity = GetGroupVelocity(group);
 
-            // 瞄准：射线瞬时命中瞄准当前位置；射弹带简单提前量（相对运动二次方程）
+            // 瞄准：射线瞬时命中瞄准当前位置；射弹带简单提前量（相对运动二次方程）。
+            // Missile 无提前量（硬性分叉 §6）：出膛速度量级远低于炮弹且靠制导收敛，收敛归制导循环。
             DVector3 aimPos = targetPosition;
-            if (weapon.def.weaponType != WeaponType.Ray && targetVelocity.HasValue && weapon.def.projectileSpeed > 0f)
+            if (weapon.def.weaponType != WeaponType.Ray && weapon.def.weaponType != WeaponType.Missile
+                && targetVelocity.HasValue && weapon.def.projectileSpeed > 0f)
                 aimPos = ComputeLeadAimPoint(spawnPos, groupVelocity, targetPosition, targetVelocity.Value, weapon.def.projectileSpeed);
 
             // 出膛方向有效性检查：目标与炮口重合（<1m）时 aimDelta 为零向量，
@@ -1372,6 +1566,14 @@ namespace PioneerFramework.Combat
             if (weapon.def.weaponType == WeaponType.Ray)
             {
                 FireRayWeapon(group, weapon, groupId, spawnPos, direction);
+                return;
+            }
+
+            // 导弹（自主武器平台）：创建弹群 + 注册 AutonomousVehicleManager。
+            // 不切 Combat 档（分支内无 SetCombatModeImmediate）、不做弹道提前量（上方 aimPos 已排除）。
+            if (weapon.def.weaponType == WeaponType.Missile)
+            {
+                FireMissileWeapon(group, spaceGame, groupId, weapon, spawnPos, direction, groupVelocity, targetGroupId, missileFollowMode, aimOffsetLocal, volleyCount);
                 return;
             }
 
@@ -1433,18 +1635,21 @@ namespace PioneerFramework.Combat
                 }
             }
             double vRelMag = targetVelocity.HasValue ? (targetVelocity.Value - groupVelocity).magnitude : 0.0;
-            Log.Message(string.Format(
-                "[射弹生成] proj={0} Group {1} TicksGame={2} physicsTick={3:F1} 位置=({4:F0},{5:F0},{6:F0}) 目标当前=({7:F0},{8:F0},{9:F0}) 瞄准点=({10:F0},{11:F0},{12:F0}) 提前量={13:F0}m",
-                proj.id, groupId, Find.TickManager.TicksGame, physicsTickNow,
-                spawnPos.x, spawnPos.y, spawnPos.z,
-                targetPosition.x, targetPosition.y, targetPosition.z,
-                aimPos.x, aimPos.y, aimPos.z, leadDist));
-            Log.Message(string.Format(
-                "  └ 继承速度: 圆轨={0} 中心天体速度=({1:F1},{2:F1},{3:F1}) 轨道速={4:F0} 炮口速={5:F0} 合速={6:F0}m/s 提前量时间≈{7:F1}s 相对速度={8:F0}m/s",
-                group.IsCircularOrbit ? "是" : "否",
-                centralVel.x, centralVel.y, centralVel.z,
-                groupVelocity.magnitude, muzzleVelocity.magnitude, totalVel.magnitude,
-                leadDist / Math.Max(weapon.def.projectileSpeed, 1f), vRelMag));
+            if (DebugDetailedCombat)
+            {
+                Log.Message(string.Format(
+                    "[射弹生成] proj={0} Group {1} TicksGame={2} physicsTick={3:F1} 位置=({4:F0},{5:F0},{6:F0}) 目标当前=({7:F0},{8:F0},{9:F0}) 瞄准点=({10:F0},{11:F0},{12:F0}) 提前量={13:F0}m",
+                    proj.id, groupId, Find.TickManager.TicksGame, physicsTickNow,
+                    spawnPos.x, spawnPos.y, spawnPos.z,
+                    targetPosition.x, targetPosition.y, targetPosition.z,
+                    aimPos.x, aimPos.y, aimPos.z, leadDist));
+                Log.Message(string.Format(
+                    "  └ 继承速度: 圆轨={0} 中心天体速度=({1:F1},{2:F1},{3:F1}) 轨道速={4:F0} 炮口速={5:F0} 合速={6:F0}m/s 提前量时间≈{7:F1}s 相对速度={8:F0}m/s",
+                    group.IsCircularOrbit ? "是" : "否",
+                    centralVel.x, centralVel.y, centralVel.z,
+                    groupVelocity.magnitude, muzzleVelocity.magnitude, totalVel.magnitude,
+                    leadDist / Math.Max(weapon.def.projectileSpeed, 1f), vRelMag));
+            }
 
             // 开火详情（详细日志）：出膛点相对船心偏移 = 炮口在船体 AABB 表面的位置（验证出膛点生成）
             if (DebugDetailedCombat)
@@ -1464,9 +1669,663 @@ namespace PioneerFramework.Combat
         /// Map 炮塔开火入口（M4-F2 桥接）。复用 FireWeapon 全链路（提前量 / 卡膛检查 / 射弹生成 / 入格）。
         /// spawnPos 为炮塔在世界系的炮口位置（由 MapCoordMapper 换算），targetVelocity 供提前量解算。
         /// </summary>
-        public void FireFromMapBuilding(int groupId, WeaponInstance weapon, DVector3 spawnPos, DVector3 targetPos, DVector3? targetVelocity = null)
+        public void FireFromMapBuilding(int groupId, WeaponInstance weapon, DVector3 spawnPos, DVector3 targetPos, DVector3? targetVelocity = null, int? targetGroupId = null, DVector3 aimOffsetLocal = default, int? volleyCount = null)
         {
-            FireWeapon(groupId, weapon, targetPos, spawnPos, targetVelocity);
+            // 建筑释放的导弹 = Following：目标跟随发射器（定位机换目标自动同步），不立即进终末
+            FireWeapon(groupId, weapon, targetPos, spawnPos, targetVelocity, targetGroupId, missileFollowMode: true, aimOffsetLocal: aimOffsetLocal, volleyCount: volleyCount);
+        }
+
+        // ════════════════════════════════════════════
+        //  导弹发射（FireWeapon Missile 分支，《导弹系统设计》§6 / §0.2 K1-K3 / K7 / K10）
+        // ════════════════════════════════════════════
+
+        /// <summary>
+        /// Missile 分支：创建导弹（N=1 单实体 = 原单发路径；N&gt;1 弹群 = 1 group + N 实体，§5 2026-09-08），
+        /// 出生点沿出膛方向外推到母船 AABB 外（K1）、继承母船速度 + 出膛速度（不做提前量），
+        /// 默认 Mission = Attack(目标 group) 或 Standby（targetGroupId 为空），注册 AutonomousVehicleManager。
+        /// 成本 = 扣 WeaponInstance.ammo：公共路径 weapon.Fire() 已扣 1，齐射 N 在此补扣至 N（K3）。
+        /// 弹体/推进/D15 主推/弹头参数全部来自 MissileDef（K2/K10）。
+        /// aimOffsetLocal = 弹着偏置（§10 精确打击：目标局部米 y=0，随记录进制导瞄准）。
+        /// volleyCount = 齐射枚数（null = 武器 Def.missileCount）。
+        /// </summary>
+        private void FireMissileWeapon(SpaceEntityGroup launcherGroup, SpaceGameComp spaceGame, int launcherGroupId,
+            WeaponInstance weapon, DVector3 spawnPos, DVector3 direction, DVector3 groupVelocity, int? targetGroupId, bool followMode = false, DVector3 aimOffsetLocal = default, int? volleyCount = null)
+        {
+            var wdef = weapon.def;
+            var missileDef = DefDatabase<MissileDef>.GetNamedSilentFail(wdef.missileDefName);
+            if (missileDef == null)
+            {
+                Log.Warning(string.Format("[导弹发射] 武器 {0} 的 missileDefName='{1}' 未找到，中止发射（冷却已消耗，请检查 Def 配置）",
+                    wdef.defName, wdef.missileDefName));
+                return;
+            }
+
+            var manager = Current.Game?.GetComponent<AutonomousVehicleManager>();
+            if (manager == null)
+            {
+                Log.Warning("[导弹发射] AutonomousVehicleManager 未找到，中止发射");
+                return;
+            }
+
+            int logicalCount = Mathf.Clamp(volleyCount ?? wdef.missileCount, 1, MaxVolleyCount);
+
+            // ── 出生点：出膛点沿出膛方向外推到母船 AABB 出口之外（K1：发射器侧职责，防出生与母船重叠）──
+            DVector3 birthPos = ExtrapolateOutsideMothership(spawnPos, direction, missileDef, launcherGroup, spaceGame);
+
+            // 初速 = 母船当前速度 + 出膛速度（朝目标当前位置方向；不做目标速度提前量，收敛归制导循环）
+            double muzzleSpeed = Math.Max(wdef.missileSpeed, 1.0);
+            DVector3 birthVelocity = groupVelocity + direction * muzzleSpeed;
+
+            // ── 弹群创建（工厂供调试场景复用；N=1 单实体路径保持原语义零回归）──
+            SpaceEntityGroup group;
+            int missileEntityId;
+            bool volleySqueezed = false;
+            if (logicalCount > 1)
+            {
+                group = CreateMissileVolley(missileDef, launcherGroup.FactionId, birthPos, birthVelocity,
+                    launcherGroup.CelestialBodyId, direction, logicalCount, out missileEntityId, out volleySqueezed);
+                if (volleySqueezed)
+                {
+                    Log.Warning(string.Format("[导弹发射] 弹群 N={0} 超阵型边长上限（{1:F0}m），已压间距强行创建",
+                        logicalCount, missileDef.arraySideLimitMeters));
+                    Messages.Message(string.Format("齐射 {0} 枚超出安全阵列（边长上限 {1:F0}m），已压缩间距强行发射——兄弟弹可能处于弹头 AoE 致死带内",
+                        logicalCount, missileDef.arraySideLimitMeters), MessageTypeDefOf.RejectInput, false);
+                }
+            }
+            else
+            {
+                group = CreateMissileGroup(missileDef, launcherGroup.FactionId, birthPos, birthVelocity,
+                    launcherGroup.CelestialBodyId, direction, out missileEntityId);
+            }
+            int missileGroupId = group.GroupId;
+
+            // 齐射 N 按弹药计数（K3）：公共路径已扣 1，补扣余下 N-1（ammo<0 = 无限不动）
+            if (weapon.ammo > 0 && logicalCount > 1)
+                weapon.ammo = Math.Max(0, weapon.ammo - (logicalCount - 1));
+
+            // 队首收敛余量警告（2026-09-08 三轮实测：队列长 14km 打 15.2km 靶 → 队首出生即在靶
+            // 1.2km 处，终末收敛时间不足擦过）。前沿余量 ≈ 目标距离 − 队列长 < 5km 提示。
+            if (logicalCount > 1 && targetGroupId.HasValue)
+            {
+                double queueLen = (logicalCount - 1) * MissileVolleyMath.ComputeSpacing(
+                    missileDef.safetySpacingMeters, missileDef.arraySideLimitMeters, logicalCount,
+                    missileDef.blastRadius * 1.2f);
+                var tg = spaceGame.GetGroupById(targetGroupId.Value);
+                double targetDist = tg != null ? (GetGroupPos(tg) - birthPos).magnitude : 0.0;
+                double frontRunUp = targetDist - queueLen;
+                if (tg != null && frontRunUp < 5000.0)
+                    Log.Warning(string.Format(
+                        "[导弹发射] 队首收敛余量不足：目标 {0:F1}km − 队列长 {1:F1}km = 前沿余量 {2:F1}km（&lt;5km，队首终末收敛时间受限，建议拉远目标或减小齐射数）",
+                        targetDist / 1000.0, queueLen / 1000.0, frontRunUp / 1000.0));
+            }
+
+            // 默认 Mission：建筑释放（followMode）→ Following（目标跟随发射器，不立即进终末，
+            // 玩家在合适时机从面板下 Attack）；其他来源有目标 → Attack（fire-and-forget 基线）；
+            // 无目标 → Standby（K7，等待玩家/AI 指令）
+            int volleyId = manager.AllocVolleyId();
+            var mission = !targetGroupId.HasValue
+                ? AutonomousVehicleManager.MissionType.Standby
+                : followMode
+                    ? AutonomousVehicleManager.MissionType.Following
+                    : AutonomousVehicleManager.MissionType.Attack;
+            manager.RegisterMissileLeader(missileGroupId, missileEntityId, volleyId, launcherGroupId,
+                logicalCount, missileDef.defName, wdef.defName, mission, targetGroupId ?? -1, aimOffsetLocal);
+
+            // ── 发射摘要（无条件，一次齐射一条）：出生点 / 速度继承分解 / Mission ──
+            Log.Message(string.Format(
+                "[导弹发射] G{0} volley={1} N={2} 领弹G{3}/E{4} 目标G{5} Mission={6} 出生=({7:F0},{8:F0},{9:F0})m 出膛方向=({10:F3},{11:F3},{12:F3}) 继承船速={13:F0}m/s 出膛速={14:F0}m/s 合速={15:F0}m/s 主工质={16:F0}kg RCS={17:F0}kg",
+                launcherGroupId, volleyId, logicalCount, missileGroupId, missileEntityId,
+                targetGroupId ?? -1, mission,
+                birthPos.x, birthPos.y, birthPos.z,
+                direction.x, direction.y, direction.z,
+                groupVelocity.magnitude, muzzleSpeed, birthVelocity.magnitude,
+                missileDef.fuelMass, missileDef.rcsFuelMass));
+
+            // 出生点相对母船偏移（详细日志门控）：验证 K1 外推量
+            if (DebugDetailedCombat)
+            {
+                DVector3 motherPos = GetGroupPos(launcherGroup);
+                DVector3 offset = birthPos - motherPos;
+                Log.Message(string.Format(
+                    "  └ [导弹细节] 母船G{0} 船心=({1:F0},{2:F0},{3:F0})m 出生相对船心偏移=({4:F0},{5:F0},{6:F0})m 外推后离开盒距离={7:F0}m 出膛点=({8:F0},{9:F0},{10:F0})m",
+                    launcherGroupId, motherPos.x, motherPos.y, motherPos.z,
+                    offset.x, offset.y, offset.z,
+                    (birthPos - spawnPos).magnitude,
+                    spawnPos.x, spawnPos.y, spawnPos.z));
+            }
+        }
+
+        /// <summary>
+        /// 导弹弹群创建工厂（FireMissileWeapon 发射链与调试场景——敌弹/拦截/巡航测试——共用）：
+        /// 1 group + 1 领弹实体（巡航单等效体），参数全来自 MissileDef（K2/K10/K11）：
+        /// body Part（尺寸/干质量/HP）、主网满罐注入 + RCS 副网（异工质）、D15 主推轴、
+        /// 敏捷转向率覆盖、出生姿态 = 局部主推轴（-Z）对准 birthDir（省初始大转向等待）。
+        /// 调用方职责：出生点语义（避母船外推是发射侧）、速度继承、AutonomousVehicleManager 登记。
+        /// </summary>
+        internal SpaceEntityGroup CreateMissileGroup(MissileDef missileDef, int factionId,
+            DVector3 birthPos, DVector3 birthVel, int celestialBodyId, DVector3 birthDir, out int entityId)
+        {
+            var spaceGame = GetSpaceGameComp();
+            int missileGroupId = spaceGame.AllocGroupId();
+            entityId = spaceGame.AllocEntityId();
+
+            var group = new SpaceEntityGroup(missileGroupId, factionId)
+            {
+                IsActive = true,
+                IsMovable = true,
+                IsCollidable = true,
+                CelestialBodyId = celestialBodyId
+            };
+            Quaternion birthRotation = Quaternion.FromToRotation(Vector3.back,
+                new Vector3((float)birthDir.x, (float)birthDir.y, (float)birthDir.z));
+            group.CurrentOrbit = new OrbitState
+            {
+                position = birthPos,
+                velocity = birthVel,
+                rotation = birthRotation
+            };
+            spaceGame.RegisterGroup(group);
+            // D15 转向率覆盖：默认 5°/s 对追导太慢（转 90° 要 18s），导弹用 MissileDef 敏捷值（20°/s）
+            group.maxAngularRate = missileDef.maxAngularRateDegrees * Mathf.Deg2Rad;
+
+            // 弹体实体（弹体 Part + 满罐主网/RCS 推进）——单发/弹群共用构建器（2026-09-08 思路 A 去重）
+            BuildMissileEntity(group, spaceGame, missileDef, factionId, entityId, birthRotation, DVector3.zero);
+            return group;
+        }
+
+        /// <summary>
+        /// 导弹实体构建器（单发 CreateMissileGroup 与弹群 CreateMissileVolley 共用，2026-09-08 思路 A）：
+        /// body Part（尺寸定 AABB / HullMassComponent 定干质量 / hp = part HP，K10）+ D15 主推轴 +
+        /// **每枚标准满罐**主网/RCS（工质归实体自己——多实体弹群由物理核心 GroupPropulsionAggregator
+        /// 按 N 源聚合燃烧，无需任何 ×N 记账）。
+        /// localOffset = 组内局部偏移（世界轴向；单发为零）。注册实体并入组。
+        /// </summary>
+        private void BuildMissileEntity(SpaceEntityGroup group, SpaceGameComp spaceGame,
+            MissileDef missileDef, int factionId, int entityId, Quaternion rotation, DVector3 localOffset)
+        {
+            var entity = new SpaceEntity(entityId, factionId)
+            {
+                HasMap = false,
+                IsMapArchived = false,
+                IsCollidable = true,
+                IsMovable = true,
+                CanInteract = false,
+                IsAffectedByGravity = true
+            };
+            entity.GroupId = group.GroupId;
+            entity.SetPositionVelocity(localOffset, DVector3.zero);
+            entity.SetRotation(rotation); // 与 group 姿态一致（命中几何/渲染立即正确）
+
+            // body Part（弹体：尺寸定 AABB / HullMassComponent 定干质量 / hp 为 part HP，K10）
+            var part = new SpacePart
+            {
+                partId = 1,
+                defName = "PF_ShipPart_Missile",
+                localPosition = DVector3.zero,
+                localBoundsSize = new DVector3(missileDef.bodySize.x, missileDef.bodySize.y, missileDef.bodySize.z),
+                hp = missileDef.hp,
+                isIndestructible = false
+            };
+            part.AddComponent(new HullMassComponent { mass = missileDef.dryMass });
+            entity.SetParts(new List<SpacePart> { part });
+
+            // D15 主推方向型：主推轴 body 局部（K11）
+            if (missileDef.mainThrustDirectional && missileDef.mainAxisLocal.sqrMagnitude > 1e-9f)
+                entity.mainAxisLocal = new DVector3(missileDef.mainAxisLocal.x, missileDef.mainAxisLocal.y, missileDef.mainAxisLocal.z);
+
+            // 主网（满罐注入 = 作战半径）+ 弱 RCS 副网（与主网异工质，K11）
+            var mainProp = missileDef.Propellant;
+            if (mainProp == null)
+                Log.Warning(string.Format("[导弹] MissileDef {0} 主网工质 '{1}' 未找到", missileDef.defName, missileDef.propellantDefName));
+            else
+                entity.AddPropulsion(new PropulsionData
+                {
+                    propellant = mainProp,
+                    ve = missileDef.ve,
+                    massFlow = missileDef.massFlow,
+                    mass = missileDef.fuelMass,
+                    capacity = missileDef.fuelMass
+                });
+            if (missileDef.hasRcs)
+            {
+                var rcsProp = missileDef.RcsPropellant;
+                if (rcsProp == null)
+                    Log.Warning(string.Format("[导弹] MissileDef {0} RCS 工质 '{1}' 未找到", missileDef.defName, missileDef.rcsPropellantDefName));
+                else
+                    entity.AddPropulsion(new PropulsionData
+                    {
+                        propellant = rcsProp,
+                        ve = missileDef.rcsVe,
+                        massFlow = missileDef.rcsMassFlow,
+                        mass = missileDef.rcsFuelMass,
+                        capacity = missileDef.rcsFuelMass,
+                        isVectoredRcs = true
+                    });
+            }
+
+            spaceGame.RegisterEntity(entity);
+            group.AddEntity(entityId);
+        }
+
+        /// <summary>
+        /// 齐射弹群工厂（§5，2026-09-08 思路 A）：1 group + count 个导弹实体，**每枚自带标准满罐**——
+        /// 群级燃烧由物理核心 GroupPropulsionAggregator 按 N 源同步（数学精确 ≡ N 台同型引擎）。
+        /// 散布 = **深度队列**（2026-09-08 用户定稿：方形阵列同深度横排成员到达差离散于物理步
+        /// （33ms），先转化者弹头 AoE（致死带 ~1km）必杀后到兄弟 → 方形废弃）：每枚沿出膛方向排开、
+        /// 同深度仅 1 枚，深度间距 = min(安全格距, 边长上限/(N−1))（N=8 → 10km/7 ≈ 1.43km > 致死带
+        /// 加裕量）——解离后沿航向队列自然错峰到达，前弹 AoE 打不到后到兄弟；横向仅装饰性微偏
+        /// （±~0.2·间距，到达差可忽略）。深度自出膛点向前排开（不穿母船）；N ≤ MaxVolleyCount 恒可排布。
+        /// 领弹（记录实体）置队列最前方、优先创建。
+        /// </summary>
+        private SpaceEntityGroup CreateMissileVolley(MissileDef missileDef, int factionId,
+            DVector3 birthPos, DVector3 birthVel, int celestialBodyId, DVector3 birthDir, int count,
+            out int leaderEntityId, out bool squeezed)
+        {
+            var spaceGame = GetSpaceGameComp();
+            int missileGroupId = spaceGame.AllocGroupId();
+            count = Mathf.Clamp(count, 1, MaxVolleyCount);
+            squeezed = false;
+
+            DVector3 axisDepth = birthDir.normalized;
+            // 深度间距：自适应取「安全格距」与「总长上限/(N−1)」较小者，并以**弹头爆炸冲量作用半径**
+            // 为下限（口径统一在 MissileVolleyMath，纯测试固化不变量：间距不足时后弹会被前弹爆炸
+            // 侧推数百 m/s、错峰队形被打乱——2026-09-08 弹群仿真复现）
+            float minSpacing = missileDef.blastRadius * 1.2f;
+            float spacing = count > 1
+                ? (float)MissileVolleyMath.ComputeSpacing(missileDef.safetySpacingMeters, missileDef.arraySideLimitMeters, count, minSpacing)
+                : 0f;
+            // 因爆炸半径下限被迫超出总长上限时提示（原本的压间距分支已由下限保护取代）
+            squeezed = count > 1 && (count - 1) * spacing > missileDef.arraySideLimitMeters;
+            DVector3 axisCross = DVector3.Cross(axisDepth, DVector3.up);
+            if (axisCross.sqrMagnitude < 1e-12)
+                axisCross = DVector3.Cross(axisDepth, DVector3.right); // 出膛方向与天顶平行 → 换基准
+            axisCross = axisCross.normalized;
+
+            var group = new SpaceEntityGroup(missileGroupId, factionId)
+            {
+                IsActive = true,
+                IsMovable = true,
+                IsCollidable = true,
+                CelestialBodyId = celestialBodyId
+            };
+            Quaternion birthRotation = Quaternion.FromToRotation(Vector3.back,
+                new Vector3((float)birthDir.x, (float)birthDir.y, (float)birthDir.z));
+            // 群原点 = 队列中点：出膛点沿深度前移半队长（后排实体仍在出膛点之前，不穿母船）
+            float mid = (count - 1) * 0.5f * spacing;
+            group.CurrentOrbit = new OrbitState
+            {
+                position = birthPos + axisDepth * mid,
+                velocity = birthVel,
+                rotation = birthRotation
+            };
+            spaceGame.RegisterGroup(group);
+            group.maxAngularRate = missileDef.maxAngularRateDegrees * Mathf.Deg2Rad;
+
+            // 填列：k=0 = 领弹（记录实体）置队列最前方（先到先转化），其余依次靠后
+            leaderEntityId = -1;
+            for (int k = 0; k < count; k++)
+            {
+                int depthIndex = count - 1 - k; // k=0 → 最前（depthIndex = count−1）
+                float along = (depthIndex - (count - 1) * 0.5f) * spacing; // 相对群原点
+                // 横向装饰性微偏（±0.05·间距，交替两侧）：只用于避免同深度完全共线，**必须小**——
+                // 队首距靶可能只有 ~1km，0.2·间距（400m）的横偏在 1km 处是 22° 视线偏角，
+                // 转向+修正来不及（2026-09-08 游戏内队首擦过实证）→ 收到 0.05（100m ≈ 6.5°）。
+                float jitter = (k % 2 == 0 ? -0.05f : 0.05f) * spacing;
+                DVector3 offset = axisDepth * along + axisCross * jitter;
+                int eid = spaceGame.AllocEntityId();
+                BuildMissileEntity(group, spaceGame, missileDef, factionId, eid, birthRotation, offset);
+                if (k == 0) leaderEntityId = eid;
+            }
+            if (leaderEntityId < 0)
+            {
+                foreach (int eid in group.GetEntityIds()) { leaderEntityId = eid; break; }
+            }
+
+            Log.Message(string.Format(
+                "[导弹弹群] G{0} N={1} 深度队列 间距={2:F0}m 队长={3:F0}m 领弹E{4}（最前） 深度轴=({5:F3},{6:F3},{7:F3}) 群原点=({8:F0},{9:F0},{10:F0})m｜间距依据：弹头爆炸半径={11:F0}m 下限={12:F0}m 超长上限={13}",
+                group.GroupId, count, spacing, (count - 1) * spacing, leaderEntityId,
+                axisDepth.x, axisDepth.y, axisDepth.z,
+                group.CurrentOrbit.position.x, group.CurrentOrbit.position.y, group.CurrentOrbit.position.z,
+                missileDef.blastRadius, minSpacing, squeezed ? "是（间距被爆炸半径下限抬高）" : "否"));
+
+            return group;
+        }
+
+        /// <summary>
+        /// K1 出生点外推：出膛点沿出膛方向推进到母船 group 世界 AABB（旋转后并集）出口之外，
+        /// 再外推「弹体最大半轴 + 5m」缓冲（弹体质心完全离开母船盒，防出生重叠误判碰撞）。
+        /// slab 法统一处理出膛点盒内/盒外：盒内向外出 = 正向出口距离；盒外背向/不穿盒 → 原出膛点不动。
+        /// </summary>
+        private DVector3 ExtrapolateOutsideMothership(DVector3 spawnPos, DVector3 direction, MissileDef missileDef,
+            SpaceEntityGroup launcherGroup, SpaceGameComp spaceGame)
+        {
+            GetGroupWorldAabb(launcherGroup, GetGroupPos(launcherGroup), spaceGame, out DVector3 gMin, out DVector3 gMax);
+            if (gMax.x < gMin.x)
+                return spawnPos; // group 无碰撞实体 → 无需外推
+
+            const double eps = 1e-9;
+            double tNear = double.MinValue;
+            double tFar = double.MaxValue;
+            // x 轴 slab
+            if (Math.Abs(direction.x) < eps)
+            {
+                if (spawnPos.x < gMin.x || spawnPos.x > gMax.x) return spawnPos; // 平行且已出该轴范围 → 不穿盒
+            }
+            else
+            {
+                double t1 = (gMin.x - spawnPos.x) / direction.x;
+                double t2 = (gMax.x - spawnPos.x) / direction.x;
+                if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
+                tNear = Math.Max(tNear, t1);
+                tFar = Math.Min(tFar, t2);
+                if (tNear > tFar) return spawnPos;
+            }
+            // y 轴 slab
+            if (Math.Abs(direction.y) < eps)
+            {
+                if (spawnPos.y < gMin.y || spawnPos.y > gMax.y) return spawnPos;
+            }
+            else
+            {
+                double t1 = (gMin.y - spawnPos.y) / direction.y;
+                double t2 = (gMax.y - spawnPos.y) / direction.y;
+                if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
+                tNear = Math.Max(tNear, t1);
+                tFar = Math.Min(tFar, t2);
+                if (tNear > tFar) return spawnPos;
+            }
+            // z 轴 slab
+            if (Math.Abs(direction.z) < eps)
+            {
+                if (spawnPos.z < gMin.z || spawnPos.z > gMax.z) return spawnPos;
+            }
+            else
+            {
+                double t1 = (gMin.z - spawnPos.z) / direction.z;
+                double t2 = (gMax.z - spawnPos.z) / direction.z;
+                if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
+                tNear = Math.Max(tNear, t1);
+                tFar = Math.Min(tFar, t2);
+                if (tNear > tFar) return spawnPos;
+            }
+
+            if (tFar < 0.0)
+                return spawnPos; // 盒整体在射线反方向 → 出膛点已在盒外
+
+            double bodyHalf = Math.Max(Math.Max(missileDef.bodySize.x, missileDef.bodySize.y), missileDef.bodySize.z) * 0.5;
+            return spawnPos + direction * (Math.Max(tFar, 0.0) + bodyHalf + 5.0);
+        }
+
+        // ════════════════════════════════════════════
+        //  撞击式命中语义（《导弹系统设计》§10：转化交接 / 拦截引爆 / 弹头 AoE）
+        //  2026-09-08 双路径统一：整组转化（HandleMissileContact）已删除——导弹对一律走
+        //  ResolveEntityContacts 逐实体解析（单实体 = 1×1 退化情形，几何等价）。
+        // ════════════════════════════════════════════
+
+        /// <summary>
+        /// 导弹接触时间对齐复核（防扫掠假阳性）：把导弹本步运动段（missilePrev→missileCur）转到
+        /// 目标随动参考系（prev 时刻减 prev 中心、当前减 cur 中心——与 CheckSegmentGroupHit 同构，
+        /// 相对运动时间对齐），与目标当前盒做 slab。
+        /// 通过 = 真实接触（out contactWorld = 参考系首接触点转回世界系，作为弹头出生点）；
+        /// 不过 = 假阳性（扫掠并集的"上一步位置带"与刚出生/伴飞导弹时间不重合）。
+        /// </summary>
+        private static bool MissileSegmentHitsTarget(DVector3 missilePrev, DVector3 missileCur,
+            DVector3 targetPrevCenter, DVector3 targetCurMin, DVector3 targetCurMax,
+            out DVector3 contactWorld)
+        {
+            DVector3 curCenter = (targetCurMin + targetCurMax) * 0.5;
+            DVector3 half = (targetCurMax - targetCurMin) * 0.5;
+            DVector3 start = missilePrev - targetPrevCenter;
+            DVector3 end = missileCur - curCenter;
+            contactWorld = missileCur;
+            if (!CombatGrid.RaySlabIntersection(start, end, -half, half, out double tEntry, out _, out _))
+                return false;
+            // 首接触点（目标系）→ 世界系：目标系点 + 目标当前中心
+            double t = Math.Max(0.0, Math.Min(1.0, tEntry));
+            contactWorld = start + (end - start) * t + curCenter;
+            return true;
+        }
+
+        /// <summary>组内实体数（弹群多实体判定）。</summary>
+        private static int CountGroupEntities(SpaceEntityGroup g)
+        {
+            int n = 0;
+            foreach (int _ in g.GetEntityIds()) n++;
+            return n;
+        }
+
+        /// <summary>本物理步时长（s，与 SpaceGameComp.UpdateAllMovements 同口径：UPDATE_INTERVAL_TICKS × 流速）。</summary>
+        private static double PhysicsStepSeconds()
+        {
+            var tsm = Current.Game?.GetComponent<TimeScaleManager>();
+            return SpaceGameComp.UPDATE_INTERVAL_TICKS * (tsm != null ? tsm.PhysicsSpeedMultiplier : 1f);
+        }
+
+        /// <summary>
+        /// 弹群逐实体接触解析（§5，2026-09-08）：x 侧（导弹，recX 非空）每个实体本步运动段 vs
+        /// y 侧**每个实体**的世界盒做时间对齐复核——并集盒扫掠只作粗筛，10km 阵列空当不触发转化；
+        /// 真接触 → 该实体独立转化弹头（接触点 = 弹头出生点）并走 AVM.RemoveMissileEntity 离群出口
+        /// （多实体组只移实体；组空 → destroyedMissileIds 延后统一销毁）。
+        /// 两阶段（先全部探测后执行）：y 侧同为导弹时保持"双方各自转化"的对称语义。
+        /// 调用约束：pair 循环内（不销毁 group、不改 AVM 登记结构——空组销毁延后到 pair 循环外）。
+        /// </summary>
+        private void ResolveEntityContacts(SpaceEntityGroup xGroup, SpaceEntityGroup yGroup,
+            AutonomousVehicleManager.VehicleRecord recX, GroupCollisionCache cx, GroupCollisionCache cy,
+            AutonomousVehicleManager avm, SpaceGameComp spaceGame, CombatGrid combatGrid,
+            HashSet<int> destroyedMissileIds)
+        {
+            if (recX == null || xGroup == null || yGroup == null) return;
+            var missileDef = recX.missileDefName == null
+                ? null
+                : DefDatabase<MissileDef>.GetNamedSilentFail(recX.missileDefName);
+
+            // 阶段 1：探测（几何快照，全部命中后统一执行——保持导弹-导弹互撞的对称转化）
+            var contacts = new List<(int entityId, DVector3 point)>();
+            foreach (int exId in new List<int>(xGroup.GetEntityIds()))
+            {
+                var ex = spaceGame.GetEntityById(exId);
+                if (ex == null || !ex.IsCollidable) continue;
+                // 首拍（组刚创建，无上一步位置）：按当前速度回推一个物理步作为段起点——
+                // 既避免零长段退化判定（RaySlabIntersection 旧版对 dir=0 恒真 → 2026-09-08
+                // 弹群场景首步 8 枚全转化），也防"首拍整步穿过目标"漏检（首拍步长可达 5.2km）。
+                DVector3 xStart = cx.hasPrev
+                    ? cx.prevPos + ex.Position
+                    : cx.pos + ex.Position - GetGroupVelocity(xGroup) * PhysicsStepSeconds();
+                DVector3 xEnd = cx.pos + ex.Position;
+                foreach (int eyId in yGroup.GetEntityIds())
+                {
+                    var ey = spaceGame.GetEntityById(eyId);
+                    if (ey == null || !ey.IsCollidable) continue;
+                    ey.GetWorldAabb(out var relMin, out var relMax);
+                    DVector3 prevCenter = (cy.hasPrev ? cy.prevPos : cy.pos) + ey.Position + (relMin + relMax) * 0.5;
+                    DVector3 curMin = cy.pos + ey.Position + relMin;
+                    DVector3 curMax = cy.pos + ey.Position + relMax;
+                    if (MissileSegmentHitsTarget(xStart, xEnd, prevCenter, curMin, curMax, out var contact))
+                    {
+                        contacts.Add((exId, contact));
+                        break; // ex 只转化一次
+                    }
+                }
+            }
+            // 详细门控（§5 场景验证：并集盒扫掠通过但逐实体复核空当放行的对照证据）
+            if (DebugDetailedCollision && contacts.Count == 0)
+            {
+                Log.Message(string.Format(
+                    "[弹群接触] G{0}(E{1}) vs G{2}(E{3}) 并集盒重叠但逐实体复核无真接触（阵列空当/擦边放行，不转化）",
+                    xGroup.GroupId, CountGroupEntities(xGroup), yGroup.GroupId, CountGroupEntities(yGroup)));
+            }
+
+            // 阶段 2：执行转化 + 离群
+            for (int i = 0; i < contacts.Count; i++)
+            {
+                int exId = contacts[i].entityId;
+                if (!xGroup.ContainsEntity(exId)) continue; // 已被同 tick 前序对/前序命中转化
+                if (missileDef == null)
+                {
+                    Log.Warning(string.Format("[导弹撞击] G{0} E{1} 弹体 Def 缺失，仅移除该实体", xGroup.GroupId, exId));
+                    if (avm.RemoveMissileEntity(recX, exId, "撞击转化(Def缺失)"))
+                        destroyedMissileIds.Add(xGroup.GroupId);
+                    continue;
+                }
+                CreateWarheadProjectile(xGroup, recX, missileDef, contacts[i].point,
+                    GetGroupVelocity(xGroup), spaceGame, combatGrid);
+                Log.Message(string.Format(
+                    "[导弹撞击] G{0} E{1}→G{2} 接触=({3:F0},{4:F0},{5:F0})m 单枚转化弹头（弹群剩余继续）",
+                    xGroup.GroupId, exId, yGroup.GroupId,
+                    contacts[i].point.x, contacts[i].point.y, contacts[i].point.z));
+                if (avm.RemoveMissileEntity(recX, exId, "撞击转化"))
+                    destroyedMissileIds.Add(xGroup.GroupId);
+            }
+        }
+
+        /// <summary>
+        /// 弹头射弹工厂：继承导弹当前位置/速度（方向随速度），照 FireWeapon 射弹生成样板
+        /// （prevPhysicsTick 系列初始化防首步参考系回退误判；三处注册）。
+        /// 弹头 = 普通射弹 + isWarhead/AoE 参数；命中结算由 CheckSegmentGroupHit 现有链完成。
+        /// </summary>
+        private void CreateWarheadProjectile(SpaceEntityGroup missileGroup,
+            AutonomousVehicleManager.VehicleRecord rec, MissileDef missileDef,
+            DVector3 pos, DVector3 vel, SpaceGameComp spaceGame, CombatGrid combatGrid)
+        {
+            var warhead = new ProjectileInstance
+            {
+                sourceGroupId = missileGroup.GroupId,
+                factionId = missileGroup.FactionId,
+                weaponDef = rec.weaponDefName == null ? null : DefDatabase<WeaponDef>.GetNamedSilentFail(rec.weaponDefName),
+                position = pos,
+                velocity = vel,
+                remainingLife = missileDef.warheadLifetimeSeconds,
+                damage = missileDef.warheadDamage,
+                armorPenetration = 0f,
+                affectedByGravity = true, // 轨道环境：弹头随引力弯曲，脱靶自然衰减为轨道垃圾
+                flybyDistance = 0f,
+                trailEffect = false,
+                prevPosition = pos,
+                spawnPosition = pos,
+                spawnPhysicsTick = TimeScaleManager.GetPhysicsTickSafe(),
+                lastUpdateRealTick = Find.TickManager.TicksGame,
+                prevUpdateRealTick = Find.TickManager.TicksGame,
+                prevPhysicsTick = TimeScaleManager.GetPhysicsTickSafe(),
+                prevUpdatePhysicsTick = TimeScaleManager.GetPhysicsTickSafe(),
+                systemBodyId = spaceGame.ResolveReferenceFrameId(missileGroup.CelestialBodyId),
+                isWarhead = true,
+                blastRadius = missileDef.blastRadius,
+                mapBlastRadiusCells = missileDef.mapBlastRadiusCells,
+                blastCenterDamage = missileDef.blastCenterDamage,
+                blastImpulseEnergy = missileDef.blastImpulseEnergy
+            };
+            activeProjectiles.Add(warhead);
+            combatGrid?.AddProjectile(warhead);
+            spaceGame.RegisterProjectileToGrid(warhead);
+        }
+
+        /// <summary>
+        /// 弹头命中结算（§10）：part 大额直扣与 F3 Map 落点已由命中现链完成，
+        /// 此处补 3D AoE（伤害线性衰减 + 径向冲量 + 扩散视觉），以精确命中点 worldHitPoint 为心。
+        /// </summary>
+        private void HandleWarheadImpact(ProjectileInstance proj, SpaceEntityGroup target, DVector3 worldHitPoint)
+        {
+            // B：弹头源自某弹群成员（sourceGroupId=来源组）——其死亡爆炸豁免自家残组；
+            // C：AoE 击毁的导弹成员当场脱队，变空的组当场销毁（射弹路径不在 pair 迭代中，安全）
+            var spaceGameHi = GetSpaceGameComp();
+            var avmHi = Current.Game?.GetComponent<AutonomousVehicleManager>();
+            var emptiedGroups = new HashSet<int>();
+            int damaged = ApplyExplosionDamage(worldHitPoint, proj.blastRadius, proj.blastCenterDamage,
+                proj.sourceGroupId, emptiedGroups);
+            ApplyExplosionImpulse(worldHitPoint, proj.blastRadius, proj.blastImpulseEnergy, proj.sourceGroupId);
+            foreach (int gid in emptiedGroups)
+            {
+                avmHi?.UnregisterGroup(gid);
+                spaceGameHi?.DestroyGroup(gid);
+            }
+            activeExplosions.Add(new ExplosionInstance
+            {
+                position = worldHitPoint,
+                maxRadius = proj.blastRadius,
+                remainingTicks = 60,
+                totalTicks = 60,
+                systemBodyId = proj.systemBodyId
+            });
+            Log.Message(string.Format(
+                "[弹头命中] proj={0}→G{1} 爆炸中心=({2:F0},{3:F0},{4:F0})m 直扣={5:F0} AoE R={6:F0}m D0={7:F0} damaged={8}",
+                proj.id, target.GroupId,
+                worldHitPoint.x, worldHitPoint.y, worldHitPoint.z,
+                proj.damage, proj.blastRadius, proj.blastCenterDamage, damaged));
+        }
+
+        /// <summary>
+        /// 导弹就地引爆（拦截路径与自毁指令共用，§10：导弹被射弹击中 / 玩家下令自毁 =
+        /// 在该位置引爆弹头 AoE 后销毁）。internal：AutonomousVehicleManager.IssueCommand(SelfDestruct) 调用。
+        /// 多实体弹群 = 逐枚在其世界位引爆（整群自毁语义），单实体 = 原位引爆。
+        /// ⚠️ 调用约束：ApplyExplosionDamage 内部遍历 groups 字典，调用点不得处于
+        /// EnumerateShipPairs/GetAllGroups 的修改迭代中（射弹命中路径/UI 事件满足）。
+        /// </summary>
+        internal void ExplodeMissileAt(SpaceEntityGroup missileGroup,
+            AutonomousVehicleManager.VehicleRecord rec, SpaceGameComp spaceGame)
+        {
+            // 整群自毁：逐枚各自爆心（2026-09-08 统一：单实体 = 单次循环，等价原位引爆；多实体覆盖散布）
+            DVector3 gpos = GetGroupPos(missileGroup);
+            int n = 0;
+            foreach (int eid in missileGroup.GetEntityIds())
+            {
+                var e = spaceGame.GetEntityById(eid);
+                if (e == null) continue;
+                ExplodeAtWorldPoint(missileGroup, rec, spaceGame, gpos + e.Position,
+                    n == 0 ? "[导弹引爆]" : "[导弹群自毁]", missileGroup.GroupId);
+                n++;
+            }
+            if (n == 0)
+                ExplodeAtWorldPoint(missileGroup, rec, spaceGame, gpos, "[导弹引爆]", missileGroup.GroupId);
+
+            var avm = Current.Game?.GetComponent<AutonomousVehicleManager>();
+            avm?.UnregisterGroup(missileGroup.GroupId);
+            spaceGame.DestroyGroup(missileGroup.GroupId);
+        }
+
+        /// <summary>
+        /// 多实体弹群单枚引爆（拦截用，2026-09-08 §5）：爆心 = 被命中那枚实体的世界位；
+        /// 只引爆不销毁群——实体离群由调用方走 AVM.RemoveMissileEntity 出口。
+        /// </summary>
+        internal void ExplodeMissileEntityAt(SpaceEntityGroup missileGroup,
+            AutonomousVehicleManager.VehicleRecord rec, DVector3 center, SpaceGameComp spaceGame,
+            int excludeGroupId = -1)
+        {
+            ExplodeAtWorldPoint(missileGroup, rec, spaceGame, center, "[导弹单枚引爆]", excludeGroupId);
+        }
+
+        /// <summary>弹头 AoE 核心（伤害/冲量/视觉/日志）。excludeGroupId：豁免自家残组（B）；
+        /// AoE 击毁变空的导弹组当场销毁（C）——调用点均在射弹路径/UI 事件，不在 pair 迭代中。</summary>
+        private void ExplodeAtWorldPoint(SpaceEntityGroup missileGroup,
+            AutonomousVehicleManager.VehicleRecord rec, SpaceGameComp spaceGame,
+            DVector3 center, string tag, int excludeGroupId = -1)
+        {
+            var missileDef = rec.missileDefName == null
+                ? null
+                : DefDatabase<MissileDef>.GetNamedSilentFail(rec.missileDefName);
+            double R = missileDef != null ? missileDef.blastRadius : 1000.0;   // Def 缺失兜底口径
+            double D0 = missileDef != null ? missileDef.blastCenterDamage : 500.0;
+            double E = missileDef != null ? missileDef.blastImpulseEnergy : 1e9;
+
+            var emptiedGroups = new HashSet<int>();
+            int damaged = ApplyExplosionDamage(center, R, D0, excludeGroupId, emptiedGroups);
+            foreach (int gid in emptiedGroups)
+            {
+                var avm = Current.Game?.GetComponent<AutonomousVehicleManager>();
+                avm?.UnregisterGroup(gid);
+                spaceGame.DestroyGroup(gid);
+            }
+            ApplyExplosionImpulse(center, R, E, excludeGroupId);
+            activeExplosions.Add(new ExplosionInstance
+            {
+                position = center,
+                maxRadius = R,
+                remainingTicks = 60,
+                totalTicks = 60,
+                systemBodyId = spaceGame.ResolveReferenceFrameId(missileGroup.CelestialBodyId)
+            });
+            Log.Message(string.Format(
+                "{0} G{1} 位置=({2:F0},{3:F0},{4:F0})m AoE R={5:F0}m D0={6:F0} damaged={7}",
+                tag, missileGroup.GroupId, center.x, center.y, center.z, R, D0, damaged));
         }
 
         /// <summary>
@@ -1543,6 +2402,124 @@ namespace PioneerFramework.Combat
             proj.Launch3D(pos, pos, cell);
         }
 
+        // ════════════════════════════════════════════
+        //  弹头 Map 范围爆炸（§10 结算的 Map 侧 AoE，2026-09-07）
+        // ════════════════════════════════════════════
+
+        /// <summary>
+        /// 弹头命中带 Map 目标后的地图范围爆炸（3D AoE HandleWarheadImpact 的 Map 对应物）。
+        /// 太空 Pocket Map 上 GenExplosion 会 NRE（terrain/roof 缺失，PFProjectile3D 既有注释）→ 自实现：
+        /// 命中点（船体局部，已含姿态旋转）映射为地图中心格，半径 = mapBlastRadiusCells（**格**，1 格 = 1 m；
+        /// 2026-09-09 用户定稿 5 格——与 3D AoE 1500m 分口径，Map 侧外科手术式拆建筑），
+        /// 伤害沿距离线性衰减到 0，对格上建筑（墙/门/家具）与 Pawn 造成 Bomb 伤害——
+        /// **拆站伤害语义（2026-09-09 用户定稿）：Map 无血条，进图拆建筑即细化伤害；站体 part 不可摧毁，
+        /// "关键建筑被毁 → 空间站毁灭"链后续设计。**
+        /// 爆炸条件（2026-09-07 用户定稿）：中心格地板不是"太空"——奥德赛 DLC TerrainDef Space
+        /// （真空暴露、无实心甲板）；中心是太空 = 命中点无结构可炸 → 整个 Map 爆炸跳过；
+        /// 半径内太空格同样跳过（不伤害不视觉）。
+        /// </summary>
+        private void SpawnMapWarheadBlast(Map map, DVector3 hitLocalMeters, float blastRadiusCells, float blastCenterDamage)
+        {
+            if (map == null || blastRadiusCells <= 0f || blastCenterDamage <= 0f) return;
+            IntVec3 center = MapCoordMapper.LocalToMapCell(map,
+                new Vector3((float)hitLocalMeters.x, 0f, (float)hitLocalMeters.z));
+            if (!center.InBounds(map)) return;
+
+            TerrainDef ground = map.terrainGrid.TerrainAt(center);
+            if (IsSpaceFloor(ground))
+            {
+                Log.Message(string.Format(
+                    "[弹头Map爆炸] 中心格=({0},{1}) 地板='{2}' 是太空 → 命中点无实心甲板，跳过 Map 范围爆炸（仅 3D AoE）",
+                    center.x, center.z, ground?.defName ?? "null"));
+                return;
+            }
+
+            // 先收集后结算：遍历中摧毁建筑会改动 thingGrid，爆炸结算统一在收集后执行
+            var targets = new List<KeyValuePair<Thing, float>>(64);
+            int radiusCells = Mathf.CeilToInt(blastRadiusCells);
+            int buildings = 0, pawns = 0, spaceCells = 0;
+            for (int x = Math.Max(center.x - radiusCells, 0); x <= Math.Min(center.x + radiusCells, map.Size.x - 1); x++)
+            {
+                for (int z = Math.Max(center.z - radiusCells, 0); z <= Math.Min(center.z + radiusCells, map.Size.z - 1); z++)
+                {
+                    var c = new IntVec3(x, 0, z);
+                    if (IsSpaceFloor(map.terrainGrid.TerrainAt(c)))
+                    {
+                        spaceCells++;
+                        continue;
+                    }
+                    float dist = (c - center).LengthHorizontal;
+                    float dmg = blastCenterDamage * (1f - dist / blastRadiusCells);
+                    if (dmg <= 0.5f) continue;
+                    var things = map.thingGrid.ThingsListAt(c);
+                    for (int j = 0; j < things.Count; j++)
+                    {
+                        Thing th = things[j];
+                        if (th is Pawn)
+                        {
+                            targets.Add(new KeyValuePair<Thing, float>(th, dmg));
+                            pawns++;
+                        }
+                        else if (th.def.category == ThingCategory.Building)
+                        {
+                            targets.Add(new KeyValuePair<Thing, float>(th, dmg));
+                            buildings++;
+                        }
+                    }
+                }
+            }
+            for (int i = 0; i < targets.Count; i++)
+                targets[i].Key.TakeDamage(new DamageInfo(DamageDefOf.Bomb, targets[i].Value));
+
+            SpawnMapBlastFlecks(map, center, radiusCells);
+
+            Log.Message(string.Format(
+                "[弹头Map爆炸] Map={0} 中心格=({1},{2}) 地板={3} R={4:F0}格 D0={5:F0} 受击建筑={6} Pawn={7} 跳过太空格={8}",
+                map.uniqueID, center.x, center.z, ground?.defName ?? "null",
+                blastRadiusCells, blastCenterDamage, buildings, pawns, spaceCells));
+        }
+
+        /// <summary>"太空地板"判定（奥德赛 DLC TerrainDef Space：exposesToVacuum、不可站、无实心甲板；
+        /// 兼容 defName 与 tag 两种标注）。</summary>
+        private static bool IsSpaceFloor(TerrainDef terrain)
+        {
+            return terrain != null && (terrain.defName == "Space" || terrain.HasTag("Space"));
+        }
+
+        /// <summary>Map 爆炸视觉（纯 Fleck，GenExplosion NRE 规避）：一次爆炸从命中点炸开的观感——
+        /// 中心主爆闪/火球 + 同心冲击波环（确定性角度抽样，中心密、外沿疏）+ 近场火光亮与烟柱。
+        /// ⚠️ 09-07 实测修正：不要用"半径内随机撒点"（观感 = 全图散一地）；环形/密集结构才读作一次爆炸。</summary>
+        private static void SpawnMapBlastFlecks(Map map, IntVec3 center, int radiusCells)
+        {
+            Vector3 cv = center.ToVector3Shifted();
+            // 中心主爆闪（规模随爆炸半径增长，封顶避免盖满整图）+ 中心火球
+            float flashScale = Mathf.Min(5f, Mathf.Max(2.5f, radiusCells * 0.3f));
+            FleckMaker.Static(cv, map, FleckDefOf.ExplosionFlash, flashScale);
+            for (int e = 0; e < 12; e++)
+                FleckMaker.ThrowExplosionInterior(cv + Gen.RandomHorizontalVector(1.6f), map, FleckDefOf.ExplosionFlash);
+            // 冲击波环：巨型 AoE 的可见环收敛到核心（观感清晰半径 ~10 格），随实际半径缩小
+            float visR = Mathf.Min(radiusCells, 10f);
+            float[] shells = { 0.25f, 0.5f, 0.75f, 1.0f }; // 环半径（相对 visR）
+            int[] counts = { 6, 10, 14, 18 };              // 中心环少而亮，外环密而淡（读作波前）
+            for (int s = 0; s < shells.Length; s++)
+            {
+                float ringR = shells[s] * visR;
+                for (int k = 0; k < counts[s]; k++)
+                {
+                    float ang = (k / (float)counts[s]) * 2f * Mathf.PI + s * 0.35f; // 环间错相位，不叠放射线
+                    Vector3 p = cv + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * ringR;
+                    IntVec3 c2 = p.ToIntVec3();
+                    if (c2.InBounds(map))
+                        FleckMaker.ThrowHeatGlow(c2, map, shells[s] < 0.6f ? Rand.Range(0.85f, 1.2f) : Rand.Range(0.45f, 0.8f));
+                }
+            }
+            // 火光亮（中心附近）+ 烟柱
+            for (int f = 0; f < 6; f++)
+                FleckMaker.ThrowFireGlow(cv + Gen.RandomHorizontalVector(2.2f), map, Rand.Range(0.6f, 0.95f));
+            for (int m = 0; m < 5; m++)
+                FleckMaker.ThrowSmoke(cv + Gen.RandomHorizontalVector(1.4f), map, Rand.Range(2.0f, 2.8f));
+        }
+
         /// <summary>
         /// 简单提前量：在相对坐标系（射手静止）中解 |r0 + vRel·t| = muzzleSpeed·t 的二次方程，
         /// 返回目标提前量瞄准点（世界系）。无解（目标逃脱/弹速不足）时回退瞄准当前位置。
@@ -1600,9 +2577,12 @@ namespace PioneerFramework.Combat
             DVector3 endPos = startPos + dir * beamLength;
             int systemBodyId = spaceGame.ResolveReferenceFrameId(group.CelestialBodyId);
 
-            Log.Message(string.Format("[激光发射] Group {0} 起点=({1:F0},{2:F0},{3:F0}) 方向=({4:F3},{5:F3},{6:F3}) 射程={7:F0}m",
-                groupId, startPos.x, startPos.y, startPos.z,
-                dir.x, dir.y, dir.z, beamLength));
+            if (DebugDetailedCombat)
+            {
+                Log.Message(string.Format("[激光发射] Group {0} 起点=({1:F0},{2:F0},{3:F0}) 方向=({4:F3},{5:F3},{6:F3}) 射程={7:F0}m",
+                    groupId, startPos.x, startPos.y, startPos.z,
+                    dir.x, dir.y, dir.z, beamLength));
+            }
 
             // 候选收集：A 正方体粗筛（当前）；B 线段走格（预留切换点，见 CollectRayCandidates）
             CollectRayCandidates(groupId, systemBodyId, startPos, endPos, beamLength, rayCandidateResults);
@@ -1745,15 +2725,21 @@ namespace PioneerFramework.Combat
                     float preHP = hitPart.hp;
                     // 应用伤害（走组件回调：OnDamaged / OnDestroyed）
                     hitPart.ApplyDamage(weapon.def.damagePerShot);
-                    Log.Message(string.Format("[激光命中!] Tick={0} Group{1}→Group{2} Part[{3}]\"{4}\" HP={5:F0}→{6:F0} 命中点=({7:F0},{8:F0},{9:F0})",
-                        lastHitTick, groupId, hitGroup.GroupId, hitPartIndex, hitPart.defName,
-                        preHP, hitPart.hp,
-                        hitPoint.x, hitPoint.y, hitPoint.z));
+                    if (DebugDetailedCombat)
+                    {
+                        Log.Message(string.Format("[激光命中!] Tick={0} Group{1}→Group{2} Part[{3}]\"{4}\" HP={5:F0}→{6:F0} 命中点=({7:F0},{8:F0},{9:F0})",
+                            lastHitTick, groupId, hitGroup.GroupId, hitPartIndex, hitPart.defName,
+                            preHP, hitPart.hp,
+                            hitPoint.x, hitPoint.y, hitPoint.z));
+                    }
                     if (hitPart.isDestroyed)
                     {
                         hitEntity.MarkPartDestroyed(hitPart.partId);
-                        Log.Message(string.Format("[Part摧毁] Entity{0} Part[{1}]\"{2}\" 已被摧毁",
-                            hitEntity.EntityId, hitPartIndex, hitPart.defName));
+                        if (DebugDetailedCombat)
+                        {
+                            Log.Message(string.Format("[Part摧毁] Entity{0} Part[{1}]\"{2}\" 已被摧毁",
+                                hitEntity.EntityId, hitPartIndex, hitPart.defName));
+                        }
                     }
 
                     // 定向能贯通视觉弹：命中目标有 Map → 从船壳入口贯穿到落点（光束切进船体）
@@ -1766,9 +2752,12 @@ namespace PioneerFramework.Combat
                 }
                 else
                 {
-                    Log.Message(string.Format("[激光命中!] Tick={0} Group{1}→Group{2} Entity{3} AABB 命中点=({4:F0},{5:F0},{6:F0})",
-                        lastHitTick, groupId, hitGroup.GroupId, hitEntity.EntityId,
-                        hitPoint.x, hitPoint.y, hitPoint.z));
+                    if (DebugDetailedCombat)
+                    {
+                        Log.Message(string.Format("[激光命中!] Tick={0} Group{1}→Group{2} Entity{3} AABB 命中点=({4:F0},{5:F0},{6:F0})",
+                            lastHitTick, groupId, hitGroup.GroupId, hitEntity.EntityId,
+                            hitPoint.x, hitPoint.y, hitPoint.z));
+                    }
                 }
 
                 activeLaserBeams.Add(new LaserBeamInstance
@@ -1791,7 +2780,10 @@ namespace PioneerFramework.Combat
             else
             {
                 // 未命中详情：候选船数（0 = 粗筛/射程过滤后无目标；>0 = 全部 slab 未中）
-                Log.Message(string.Format("[激光未命中] Group {0} 射线无碰撞（候选船数={1}）", groupId, rayCandidateResults.Count));
+                if (DebugDetailedCombat)
+                {
+                    Log.Message(string.Format("[激光未命中] Group {0} 射线无碰撞（候选船数={1}）", groupId, rayCandidateResults.Count));
+                }
                 activeLaserBeams.Add(new LaserBeamInstance
                 {
                     startPos = startPos,

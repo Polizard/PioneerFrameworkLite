@@ -121,20 +121,13 @@ namespace PioneerFramework.Launch
             int entityId = GetNextEntityId(spaceGame);
             int factionId = Faction.OfPlayer?.loadID ?? 0;
 
-            // 发射入轨初始状态：500km 高度的近圆插入轨道。
-            // 速度给到圆轨速度的 92%，让圆轨化机动保留真实 dV 消耗（而不是瞬间免费入轨）。
-            double orbitRadiusMeters = SpaceConstants.PlanetRadiusMeters + 500000.0;
-            double angle = Rand.Value * Math.PI * 2.0;
-            var pos = new DVector3(
-                Math.Cos(angle) * orbitRadiusMeters,
-                0,
-                Math.Sin(angle) * orbitRadiusMeters);
-            double mu = SpaceConstants.PrimaryGravitationalParameter;
-            double vCircular = Math.Sqrt(mu / orbitRadiusMeters);
-            double vInsert = vCircular * 0.92;
-            DVector3 radialDir = pos.normalized;
-            DVector3 tangentDir = DVector3.Cross(DVector3.up, radialDir).normalized;
-            DVector3 insertVelocity = tangentDir * vInsert;
+            // ── 出生状态：天地映射（设计 §3，取代随机角度瞬移）──
+            // 发射台 tile → 经纬度 → ECI 惯性状态；出生 = 地表上方 10km，速度继承自转初速 v_surface。
+            // 出生半径 R+10km < 安全半径 R+100km 且初速 ~524 > 着陆阈值 10 → 由 RocketLaunchController 置碰撞豁免。
+            const double LaunchAltitudeMeters = 10000.0;
+            // 世界视图发射点标记（红色正方体）钉在这个 tile 上
+            SpaceGroupVisualManager.SetLaunchSiteTile(groundMap.Tile);
+            var (pos, birthVel) = GetSurfaceState.GroundStateAtLaunch(groundMap, LaunchAltitudeMeters, EarthBodyId);
 
             var group = new SpaceEntityGroup(groupId, factionId)
             {
@@ -145,7 +138,7 @@ namespace PioneerFramework.Launch
             group.CurrentOrbit = new OrbitState
             {
                 position = pos,
-                velocity = insertVelocity,
+                velocity = birthVel,
                 rotation = UnityEngine.Quaternion.identity
             };
             spaceGame.RegisterGroup(group);
@@ -191,9 +184,38 @@ namespace PioneerFramework.Launch
             spaceGame.RegisterEntity(entity);
             group.AddEntity(entityId);
 
-            // 正式入轨机动：两段式圆轨化，burn 完成后进入 500km 圆轨。
-            // 这一步会真实消耗注入到 SpaceMapComp 的工质（对应设计稿 §8/§9 的 dV 消耗）。
-            if (!spaceGame.BeginCircularize(group, EarthBodyId))
+            // ── 爬升起点的硬校验：TWR > 1（设计 §4.1）──
+            // F = Σ Networks.Thrust，W = m·g（m = 干质量 + 工质，g = GM/R² ≈ 8 m/s²）。
+            // 不足则无法起飞，直接拒绝发射（保留地面火箭/发射台）。
+            double surfaceRadius = GetSurfaceState.BodyRadius(Current.Game?.GetComponent<CelestialBodyManager>(), EarthBodyId);
+            double gSurface = spaceGame.GetBodyGM(EarthBodyId) / (surfaceRadius * surfaceRadius);
+            var propulsionSrc = spaceGame.GetGroupPropulsionSource(group);
+            double thrustN = 0.0;
+            if (propulsionSrc != null)
+            {
+                for (int n = 0; n < propulsionSrc.Networks.Count; n++)
+                    thrustN += propulsionSrc.Networks[n].Thrust;
+            }
+            double dryMass = 0.0;
+            foreach (int eid in group.GetEntityIds())
+            {
+                var e = spaceGame.GetEntityById(eid);
+                if (e != null) dryMass += e.TotalMass;
+            }
+            double propMass = propulsionSrc != null ? propulsionSrc.TotalPropellantMass : 0.0;
+            double weightN = (dryMass + propMass) * gSurface;
+            if (thrustN <= weightN)
+            {
+                Messages.Message(string.Format("推力不足，无法起飞：F={0:0.#} kN ≤ 重力 {1:0.#} kN（TWR≤1）。",
+                    thrustN / 1000.0, weightN / 1000.0), MessageTypeDefOf.RejectInput, false);
+                CleanupFailedLaunch(spaceGame, groupId, map, !hadExistingMap);
+                return null;
+            }
+
+            // ── 爬升段制导（设计 §4）：注册 RocketLaunchController 持续引导，取代瞬移入轨 ──
+            // 控制器每物理步闭环驱动 → 到达目标窗口 → BeginCircularize 真实入轨（消耗注入的工质）。
+            var launchCtrl = Current.Game?.GetComponent<RocketLaunchController>();
+            if (launchCtrl == null || !launchCtrl.RegisterLaunch(group, EarthBodyId, LaunchGuidanceParams.CreateDefault(surfaceRadius)))
             {
                 CleanupFailedLaunch(spaceGame, groupId, map, !hadExistingMap);
                 return null;
@@ -204,8 +226,8 @@ namespace PioneerFramework.Launch
             TryTriggerLaunchFx(groundMap, center);
             TryTriggerBoosterRecovery(groundMap, center, spec.rocketDefName);
 
-            Log.Message($"[PioneerFramework] Launch complete: entity={entityId}, group={groupId}, map={entity.MapId}, rocket={spec.rocketDefName}");
-            Messages.Message("火箭已入轨（圆轨化机动已开始）。", MessageTypeDefOf.TaskCompletion, false);
+            Log.Message($"[PioneerFramework] Launch initiated: entity={entityId}, group={groupId}, map={entity.MapId}, rocket={spec.rocketDefName}, TWR={thrustN / Math.Max(weightN, 1e-3):0.00}");
+            Messages.Message("火箭已起飞，爬升段制导已开始。", MessageTypeDefOf.TaskCompletion, false);
             return entity;
         }
         /// <summary>

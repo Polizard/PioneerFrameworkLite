@@ -436,10 +436,9 @@ namespace PioneerFramework.Combat
                 if (currentCell.Equals(endCoord))
                     break;
 
-                if (!grid.cells.TryGetValue(currentCell, out var cellForSlab))
-                    break;
-
-                GetCellBounds(cellForSlab, out var cellMin, out var cellMax);
+                // 空格（不在 cells 字典）也继续走格：cell 边界由坐标直接推导（索引 × cellSize），
+                // 不再依赖 cells 字典查格，避免 DDA 走到无船格就提前中断而漏掉空格之后的船。
+                GetCellBounds(currentCell, out var cellMin, out var cellMax);
                 var (hitFace, _) = SlabMethodExitFace(startPos, endPos, cellMin, cellMax);
                 if (hitFace == -1)
                     break;
@@ -658,53 +657,20 @@ namespace PioneerFramework.Combat
               .Append(" 新/2s=").Append(recentCells);
         }
 
-        private void GetCellBounds(FineCell cell, out DVector3 min, out DVector3 max)
+        private static void GetCellBounds((int cx, int cy, int cz) cell, out DVector3 min, out DVector3 max)
         {
-            min = new DVector3(cell.minX, cell.minY, cell.minZ);
-            max = new DVector3(cell.maxX, cell.maxY, cell.maxZ);
+            min = new DVector3(cell.cx * FINE_CELL_SIZE, cell.cy * FINE_CELL_SIZE, cell.cz * FINE_CELL_SIZE);
+            max = new DVector3((cell.cx + 1) * FINE_CELL_SIZE, (cell.cy + 1) * FINE_CELL_SIZE, (cell.cz + 1) * FINE_CELL_SIZE);
         }
 
         /// <summary>
-        /// Ray-AABB 相交检测（Slab 方法）。用于细网格多格遍历和精确碰撞检测。
-        /// exitFace: 0=-X, 1=+X, 2=-Y, 3=+Y, 4=-Z, 5=+Z（射线最先离开 AABB 的面），-1 表示无交点。
+        /// Ray-AABB 相交检测（Slab 方法，实现已抽到纯核心 <see cref="SlabMath"/> 以便单测——
+        /// 2026-09-08 退化零长段恒真导致弹群首拍全转化，几何判据必须有测试覆盖）。
+        /// exitFace: 0=-X, 1=+X, 2=-Y, 3=+Y, 4=-Z, 5=+Z，-1 = 无交点。
         /// </summary>
         internal static bool RaySlabIntersection(DVector3 start, DVector3 end, DVector3 min, DVector3 max,
             out double tNear, out double tFar, out int exitFace)
-        {
-            DVector3 dir = end - start;
-            tNear = double.NegativeInfinity;
-            tFar = double.PositiveInfinity;
-            exitFace = -1;
-
-            if (dir.x != 0)
-            {
-                double t1 = (min.x - start.x) / dir.x;
-                double t2 = (max.x - start.x) / dir.x;
-                if (t1 > t2) { double temp = t1; t1 = t2; t2 = temp; }
-                if (t1 > tNear) tNear = t1;
-                if (t2 < tFar) { tFar = t2; exitFace = dir.x < 0 ? 0 : 1; }
-            }
-
-            if (dir.y != 0)
-            {
-                double t1 = (min.y - start.y) / dir.y;
-                double t2 = (max.y - start.y) / dir.y;
-                if (t1 > t2) { double temp = t1; t1 = t2; t2 = temp; }
-                if (t1 > tNear) tNear = t1;
-                if (t2 < tFar) { tFar = t2; exitFace = dir.y < 0 ? 2 : 3; }
-            }
-
-            if (dir.z != 0)
-            {
-                double t1 = (min.z - start.z) / dir.z;
-                double t2 = (max.z - start.z) / dir.z;
-                if (t1 > t2) { double temp = t1; t1 = t2; t2 = temp; }
-                if (t1 > tNear) tNear = t1;
-                if (t2 < tFar) { tFar = t2; exitFace = dir.z < 0 ? 4 : 5; }
-            }
-
-            return tNear <= tFar && tNear <= 1.0 && tFar >= 0;
-        }
+            => SlabMath.RaySlabIntersection(start, end, min, max, out tNear, out tFar, out exitFace);
 
         private (int face, double t) SlabMethodExitFace(DVector3 start, DVector3 end, DVector3 min, DVector3 max)
         {

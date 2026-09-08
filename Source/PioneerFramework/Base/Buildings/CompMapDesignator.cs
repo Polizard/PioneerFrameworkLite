@@ -25,7 +25,7 @@ namespace PioneerFramework
     }
 
     /// <summary>定位机 → 炮塔的绑定记录（整体式，无上下之分）。</summary>
-    public class TurretBinding
+    public class TurretBinding : IExposable
     {
         public Thing turret;
 
@@ -69,6 +69,14 @@ namespace PioneerFramework
             base.PostSpawnSetup(respawningAfterLoad);
             if (!respawningAfterLoad)
                 mode = Props.defaultMode;
+
+            // 一体式建筑（导弹发射器等自带炮塔）：定位机与同建筑炮塔自动绑定，免去玩家手动绑定
+            var ownTurret = parent?.TryGetComp<CompMapTurret>();
+            if (ownTurret != null && ownTurret.Mount != null)
+            {
+                RegisterTurret(parent);
+                ownTurret.Mount.boundDesignator = parent;
+            }
         }
 
         public override void CompTick()
@@ -92,8 +100,13 @@ namespace PioneerFramework
 
             if (Find.TickManager.TicksGame >= nextScanTick)
             {
+                var prevTargetGroupId = currentTarget?.GroupId ?? -1;
                 currentTarget = AcquireTarget();
                 nextScanTick = Find.TickManager.TicksGame + Props.scanIntervalTicks;
+                // 目标变化（Auto 换锁 / 手动改指）→ 同步已释放导弹的跟随目标（Following 态）
+                int newTargetGroupId = currentTarget?.GroupId ?? -1;
+                if (newTargetGroupId != prevTargetGroupId && newTargetGroupId >= 0)
+                    SyncMissileFollowers(newTargetGroupId);
             }
 
             // 炮塔朝向每 4 tick 更新一次（对齐 SOS2 的 4 tick 限频：旋转是平滑展示，每 tick 更新浪费）
@@ -339,7 +352,7 @@ namespace PioneerFramework
                         (exitLocal - muzzleLocal).magnitude));
                 }
 
-                cm.FireFromMapBuilding(myGroup.GroupId, mount.weapon, exitWorld, targetPos, targetVel);
+                cm.FireFromMapBuilding(myGroup.GroupId, mount.weapon, exitWorld, targetPos, targetVel, target.GroupId);
 
                 // 出膛诊断日志：验证六面出膛（射界解除 + 碰撞点准确）+ 目标距离与武器状态
                 Log.Message(string.Format(
@@ -438,6 +451,15 @@ namespace PioneerFramework
                 if (angle < 0f) angle += 360f;
                 mount.rotation = angle;
             }
+        }
+
+        /// <summary>索敌目标变化 → 同步本定位机（发射器）释放的 Following 导弹改指新目标（2026-09-06）。</summary>
+        private void SyncMissileFollowers(int newTargetGroupId)
+        {
+            var avm = Current.Game?.GetComponent<AutonomousVehicleManager>();
+            var myGroup = GetMyGroup();
+            if (avm == null || myGroup == null) return;
+            avm.SyncFollowerTargets(myGroup.GroupId, newTargetGroupId);
         }
 
         // ── 绑定 ──

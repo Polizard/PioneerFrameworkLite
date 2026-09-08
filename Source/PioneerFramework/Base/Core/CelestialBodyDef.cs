@@ -51,6 +51,38 @@ namespace PioneerFramework
         /// <summary>初始相位（弧度，t=0 时的角度）</summary>
         public double initialPhase;
 
+        // ── 运行时缓存（PERF-3）：轨道平面正交基，避免 N 体积分热路径每次重算 normalized + 双重 cross ──
+        [Verse.Unsaved]
+        private bool orbitFrameCached;
+        [Verse.Unsaved]
+        private DVector3 orbitFrameRefX;
+        [Verse.Unsaved]
+        private DVector3 orbitFrameRefY;
+
+        /// <summary>懒加载计算并缓存轨道平面正交基（规范化法线 + refX/refY），供圆轨解析位置/速度热路径复用。</summary>
+        public void EnsureOrbitFrame()
+        {
+            if (orbitFrameCached) return;
+            orbitFrameCached = true;
+
+            DVector3 normal = OrbitNormalD;
+            if (normal.sqrMagnitude > 0.0)
+                normal = normal.normalized;
+
+            DVector3 up = System.Math.Abs(DVector3.Dot(normal, DVector3.up)) > 0.99
+                ? DVector3.forward : DVector3.up;
+            orbitFrameRefX = DVector3.Cross(normal, up).normalized;
+            orbitFrameRefY = DVector3.Cross(normal, orbitFrameRefX).normalized;
+        }
+
+        /// <summary>获取缓存的轨道平面正交基（refX/refY）。</summary>
+        public void GetOrbitFrame(out DVector3 refX, out DVector3 refY)
+        {
+            EnsureOrbitFrame();
+            refX = orbitFrameRefX;
+            refY = orbitFrameRefY;
+        }
+
         // ── XML 交叉引用 ──
         /// <summary>父天体的 defName（XML 引用），空表示直接绕恒星</summary>
         public string parentBodyDefName;

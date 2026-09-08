@@ -365,6 +365,11 @@ namespace PioneerFramework
                 // 空间站是地图载体：无 Part 血条，存亡由 Map 内建筑决定（射弹命中不扣 Part HP）
                 isIndestructible = true,
             };
+            // 站体质量（2026-09-06 补：此前无质量组件 → 1kg 兜底 → 任何爆炸冲量（弹头 AoE / 船-船）
+            // 把空间站以 ~1.6e4 m/s 打飞离轨——弹头命中后目标成逃逸体、后续导弹全部追丢。
+            // 口径：part 体积 mapW×50×mapH m³ × 90kg/m³（低密度站壳，内部空旷）
+            // ≈ 60×60 站 1.6e4 t → 弹头冲量对站速影响 <1m/s（站保持轨道，受击不漂移）。
+            part.AddComponent(new HullMassComponent { mass = mapWidth * 50.0f * mapHeight * 90.0f });
             entity.SetParts(new List<SpacePart> { part });
 
             return entity;

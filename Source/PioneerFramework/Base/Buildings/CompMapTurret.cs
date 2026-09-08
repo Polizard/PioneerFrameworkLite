@@ -139,7 +139,7 @@ namespace PioneerFramework
     }
 
     /// <summary>单个发射锚点：独立武器 / 朝向 / 定位机绑定（整体式，无上下之分）。</summary>
-    public class TurretMount
+    public class TurretMount : IExposable
     {
         public WeaponInstance weapon;
         public float rotation; // 朝向角（船体局部系，度，顺时针绕局部 Y）

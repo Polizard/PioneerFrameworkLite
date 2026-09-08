@@ -40,6 +40,18 @@ namespace PioneerFramework.Combat
         public int fineCx, fineCy, fineCz;
         public int systemBodyId = -1;
 
+        // ── 弹头射弹（导弹撞击转化生成，《导弹系统设计》§10）──
+        /// <summary>是否弹头射弹（导弹销毁瞬间生成、接管命中结算：命中后额外触发 3D AoE 爆炸）。</summary>
+        public bool isWarhead;
+        /// <summary>Map 范围爆炸半径（格，MissileDef.mapBlastRadiusCells；与 3D blastRadius 分口径）。</summary>
+        public float mapBlastRadiusCells;
+        /// <summary>弹头 3D AoE 半径（m）。</summary>
+        public float blastRadius;
+        /// <summary>弹头 3D AoE 中心伤害（随距离线性衰减到 0）。</summary>
+        public float blastCenterDamage;
+        /// <summary>弹头爆炸冲量等效能量（J，ApplyExplosionImpulse 用）。</summary>
+        public float blastImpulseEnergy;
+
         /// <summary>
         /// 粗网格（SpatialGrid3D，1000km 格）登记坐标。与细网格 fineCx/fineCy/fineCz（20km 格）分离，
         /// 避免粗细网格通过共享字段互相践踏（原实现 LastCellCoord 映射到 fineCx，粗网格写覆盖细网格坐标，

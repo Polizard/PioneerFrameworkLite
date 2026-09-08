@@ -3,6 +3,7 @@ using RimWorld;
 using UnityEngine;
 using Verse;
 using PioneerFramework.Combat;
+using PioneerFramework.Components;
 
 namespace PioneerFramework
 {
@@ -34,9 +35,64 @@ namespace PioneerFramework
         private const int PROBE_LOG_INTERVAL = 120;
         private const int PROBE_LOG_MAX = 300;
 
+        // ── 导弹拦截测试状态（SpawnMissileInterceptTest 部署；CompTick 驱动敌弹波次；销毁按钮复用）──
+        private static bool interceptTestActive;
+        /// <summary>敌 faction id（「销毁来袭弹」按钮按此过滤敌导弹）。</summary>
+        private static int interceptEnemyFactionId = -1;
+        private static int interceptPlayerGroupId = -1;
+        private static int interceptEnemyGroupId = -1;
+        private static int interceptNextWaveTick;
+        private static int interceptWavesLeft;
+        private const int interceptWaveIntervalTicks = 420; // ~7s：敌弹 3 波，与反导冷却（300tick）错开
+
+        /// <summary>
+        /// 场景自动下令（撞击/巡航/拦截用）：该发射器释放的 Following 导弹出生后立即下 Attack——
+        /// 模拟"玩家在导弹出膛时下令撞击"，保持场景验证内容（20km 发射测试不设置 = 验证 Following
+        /// 巡航待命不乱飞，由玩家在面板手动下令）。
+        /// </summary>
+        private static int autoCmdLauncherGroupId = -1;
+
         public override void CompTick()
         {
             base.CompTick();
+
+            // ── 场景自动下令：Following 导弹 → Attack（模拟玩家在出膛时下令；幂等——下令后不再 Following）──
+            if (autoCmdLauncherGroupId >= 0)
+            {
+                var avmNow = Current.Game?.GetComponent<AutonomousVehicleManager>();
+                if (avmNow != null)
+                {
+                    var recs = avmNow.Vehicles;
+                    for (int i = 0; i < recs.Count; i++)
+                    {
+                        var rec = recs[i];
+                        if (rec.mission != AutonomousVehicleManager.MissionType.Following) continue;
+                        if (rec.launcherGroupId != autoCmdLauncherGroupId || rec.targetGroupId < 0) continue;
+                        avmNow.IssueCommand(rec.groupId, AutonomousVehicleManager.MissionType.Attack, rec.targetGroupId);
+                    }
+                }
+            }
+
+            // ── 导弹拦截测试：敌弹波次自动发射（不依赖敌站地图 tick，由本 Comp 在玩家地图驱动）──
+            if (interceptTestActive)
+            {
+                int waveNow = Find.TickManager.TicksGame;
+                if (waveNow >= interceptNextWaveTick)
+                {
+                    if (interceptWavesLeft > 0)
+                    {
+                        interceptWavesLeft--;
+                        interceptNextWaveTick = waveNow + interceptWaveIntervalTicks;
+                        FireEnemyMissileWave();
+                    }
+                    else
+                    {
+                        interceptTestActive = false;
+                        Log.Message("[拦截测试] 敌弹波次发射完毕（3 波），观察反导拦截日志");
+                    }
+                }
+            }
+
             if (probeGroupA < 0) return;
             if (probeLogCount >= PROBE_LOG_MAX)
             {
@@ -86,6 +142,34 @@ namespace PioneerFramework
             return g.CurrentOrbit.position;
         }
 
+        /// <summary>与 CombatManager.GetGroupVelocity 相同的基准：圆轨解析切向速度 / 非圆轨 CurrentOrbit.velocity。</summary>
+        private static DVector3 GetGroupVelDebug(SpaceEntityGroup g)
+        {
+            if (g.IsCircularOrbit)
+                return g.GetCircularVelocityAtTick(TimeScaleManager.GetPhysicsTickSafe());
+            return g.CurrentOrbit.velocity;
+        }
+
+        /// <summary>
+        /// 同轨靶点（2026-09-06 补）：把 pos 绕中心天体沿轨道切向旋转弧长 arcMeters，得到与母站
+        /// 严格同半径同轨的点（相对静止）。此前用世界系偏移（pos + 世界轴×距离）——轨道任意相位下
+        /// 偏移含径向分量 → 靶进入异轨（半径差 km 级，22:43 会话 33571 vs 33560km 实证），
+        /// 靶相对母站持续漂移、导弹瞄准错乱。旋转方向 = 沿速度方向（右手定则：绕 pos×vel 正转）。
+        /// </summary>
+        private static DVector3 SameOrbitPointOffset(DVector3 pos, DVector3 vel, double arcMeters)
+        {
+            double r = pos.magnitude;
+            if (r < 1e-6) return pos + vel.normalized * arcMeters; // 退化兜底（不应发生）
+            DVector3 axis = DVector3.Cross(pos, vel);
+            double aLen = axis.magnitude;
+            if (aLen < 1e-9) return pos + vel.normalized * arcMeters;
+            axis /= aLen;
+            double angRad = arcMeters / r;
+            var q = Quaternion.AngleAxis((float)(angRad * Mathf.Rad2Deg),
+                new Vector3((float)axis.x, (float)axis.y, (float)axis.z));
+            return DVector3.Rotate(pos, q);
+        }
+
         public override IEnumerable<Gizmo> CompGetGizmosExtra()
         {
             foreach (var g in base.CompGetGizmosExtra())
@@ -94,113 +178,15 @@ namespace PioneerFramework
             if (parent.Faction != Faction.OfPlayer)
                 yield break;
 
+            // ── 统一调试入口（2026-09-06）：全部场景 Gizmo 收编进 Window_DebugHub；此处仅保留面板 + 日志开关 ──
             yield return new Command_Action
             {
-                defaultLabel = "部署空间站 (测试)",
-                defaultDesc = "创建一个测试空间站（含地图+Part），并打开3D视角。",
-                icon = TexCommand.DesirePower,
-                action = delegate
-                {
-                    SpawnTestStation();
-                }
-            };
-
-            yield return new Command_Action
-            {
-                defaultLabel = "部署双引擎测试场景",
-                defaultDesc = "创建空间站并自动布置核热(液氢)+离子(氙)引擎与满罐储罐，规划两条各自绑定网络的机动。",
-                icon = TexCommand.FireAtWill,
-                action = delegate
-                {
-                    SpawnDualEngineTest();
-                }
-            };
-
-            yield return new Command_Action
-            {
-                defaultLabel = "运行架构验证测试",
-                defaultDesc = "自动部署测试空间站并验证：储罐差值同步 / 合冲量 burn / 推进器燃烧状态。结果打印到游戏日志。",
+                defaultLabel = "打开 PF 调试面板",
+                defaultDesc = "统一调试面板：空间站 / 炮塔（炮+激光）/ 碰撞 / 操舵 / 跳帮 / 发射 / 导弹发射测试 场景一键部署 + 日志开关（导弹制导面板 m3+ 待接入）。",
                 icon = TexButton.Info,
                 action = delegate
                 {
-                    BurnArchitectureTest.Run();
-                }
-            };
-
-            yield return new Command_Action
-            {
-                defaultLabel = "部署炮塔对射测试场景",
-                defaultDesc = "创建玩家空间站（定位机+整体式炮塔，自动绑定）+ 敌对空间站（20km 外赤道面），触发 Auto 索敌齐射，并自动开启详细战斗日志。",
-                icon = TexCommand.FireAtWill,
-                action = delegate
-                {
-                    SpawnTurretTest();
-                }
-            };
-
-            yield return new Command_Action
-            {
-                defaultLabel = "部署全方位炮塔对射场景",
-                defaultDesc = "6 座整体式炮塔各配一台定位机（Manual 各指一个敌站），敌站分布在玩家船六方位（±x/±z 赤道面 + ±y 法向 20km）。一次齐射验证 360° 射界解除 + 六面出膛碰撞点，日志看 [炮塔出膛] 出膛面 0~5。",
-                icon = TexCommand.FireAtWill,
-                action = delegate
-                {
-                    SpawnTurretOmniTest();
-                }
-            };
-
-            yield return new Command_Action
-            {
-                defaultLabel = "部署精确炮击测试场景",
-                defaultDesc = "目标敌舰位于玩家船正下方（世界 -y 20km），定位机预设精确炮击点 (40,30)（船心偏移 +10m）。验证：出膛面 y-（面2）、瞄准偏移、红色标记、落点格≈炮击点。",
-                icon = TexCommand.FireAtWill,
-                action = delegate
-                {
-                    SpawnTurretPrecisionTest();
-                }
-            };
-
-            yield return new Command_Action
-            {
-                defaultLabel = "部署定向能对射场景",
-                defaultDesc = "玩家空间站（定位机 Auto + 激光炮塔，自动绑定）+ 敌对空间站 20km 外赤道面（vRel≈0）。激光即时命中无提前量，验证：[激光发射]（射程 50km）→[激光命中!]（Part HP 下降）→[贯穿生成]（贯通入口→落点弹道）→ 光束 60 tick 残留。",
-                icon = TexCommand.FireAtWill,
-                action = delegate
-                {
-                    SpawnRayTurretTest();
-                }
-            };
-
-            yield return new Command_Action
-            {
-                defaultLabel = "部署定向能遮挡验证",
-                defaultDesc = "玩家站 + 激光炮塔，定位机 Manual 指向 20km 远敌站，近敌站 10km 挡在光束路径上。验证遮挡语义：光束只命中最近一艘（近站掉血，[激光命中!] 指向近站）。",
-                icon = TexCommand.FireAtWill,
-                action = delegate
-                {
-                    SpawnRayOcclusionTest();
-                }
-            };
-
-            yield return new Command_Action
-            {
-                defaultLabel = "部署定向能旋转命中验证",
-                defaultDesc = "敌站绕 Z 轴旋转 45°，光束从 +x 水平来向在船体局部系变 45° 俯冲。验证旋转正确 part 检测：[激光slab] 局部系线段倾斜、[激光part] 命中局部点 y≠0、船壳入口 y>0（从上斜降地面）。",
-                icon = TexCommand.FireAtWill,
-                action = delegate
-                {
-                    SpawnRayRotatedTest();
-                }
-            };
-
-            yield return new Command_Action
-            {
-                defaultLabel = "部署定向能多目标齐射",
-                defaultDesc = "4 敌站四方位（±x/±z 20km 赤道面共轨）+ 4 组激光炮塔定位机（Manual 各指一个）。一次齐射 4 发，每发独立判定链 [激光发射]→[激光slab]→[激光part]→[激光命中!]→[激光命中判定]，验证多目标同时命中。",
-                icon = TexCommand.FireAtWill,
-                action = delegate
-                {
-                    SpawnRayMultiTest();
+                    Find.WindowStack.Add(new Window_DebugHub(this));
                 }
             };
 
@@ -216,54 +202,19 @@ namespace PioneerFramework
             yield return new Command_Toggle
             {
                 defaultLabel = "详细操舵日志",
-                defaultDesc = "开关操舵/自动对准详细日志：手动平移/旋转/SAS（[Steer] 10 tick/条）+ 自动对准开始/完成/进度（[Align] 30 tick/条）。",
+                defaultDesc = "开关操舵/自动对准详细日志（[Steer] 10 tick/条 + [Align] 30 tick/条）。",
                 icon = TexButton.Info,
                 isActive = () => SpaceGameComp.DebugDetailedSteering,
                 toggleAction = () => SpaceGameComp.DebugDetailedSteering = !SpaceGameComp.DebugDetailedSteering
             };
 
-            yield return new Command_Action
+            yield return new Command_Toggle
             {
-                defaultLabel = "部署操舵测试场景",
-                defaultDesc = "玩家站（操舵台 + 核热引擎 Rot4.East 主推进 + 横向/垂直推进器 + 氢罐满）→ 自动打开操舵 HUD 并开启详细操舵日志。验证：按键平移（沿船轴方向出 Δv）、旋转（动量轮）、SAS 对准、动作组过滤、输入打断清队列。",
+                defaultLabel = "详细推进日志（无Map主推/RCS）",
+                defaultDesc = "开关 D15 无 Map 机动详细日志（[Thrust] 每物理步：选网/对准角/Δv/双罐燃料/燃尽抑制），用于验证主推+RCS 新改动。",
                 icon = TexButton.Info,
-                action = delegate
-                {
-                    SpawnSteeringTest();
-                }
-            };
-
-            yield return new Command_Action
-            {
-                defaultLabel = "部署无Map航天器碰撞测试",
-                defaultDesc = "创建 3 艘无 Map 纯物理航天器：基准船 A（同步轨道圆轨）+ 旋转 45° 的 B（200m 外 30m/s 接近）+ 旋转 30° 的 C（25m/s 另一方向接近），验证旋转感知碰撞盒 GetWorldAabb。",
-                icon = TexCommand.FireAtWill,
-                action = delegate
-                {
-                    SpawnCollisionTest();
-                }
-            };
-
-            yield return new Command_Action
-            {
-                defaultLabel = "部署跳帮测试场景",
-                defaultDesc = "创建玩家空间站（母船，含突击兵）+ 敌对空间站（10km 外，含守军），自动触发单兵 EVA 跳帮：DeSpawn → 飞行 → 降落 Spawn pawn 进目标站 Map。",
-                icon = TexCommand.FireAtWill,
-                action = delegate
-                {
-                    SpawnBoardingTest();
-                }
-            };
-
-            yield return new Command_Action
-            {
-                defaultLabel = "打开跳帮测试面板",
-                defaultDesc = "跳帮测试面板：EVA 单兵/多兵/穿梭机/高速撞击场景一键部署 + 详细日志/探针开关 + 单位实时状态 + 结算历史与着陆验证。",
-                icon = TexButton.Info,
-                action = delegate
-                {
-                    Find.WindowStack.Add(new Window_BoardingTest());
-                }
+                isActive = () => SpaceGameComp.DebugDetailedThrust,
+                toggleAction = () => SpaceGameComp.DebugDetailedThrust = !SpaceGameComp.DebugDetailedThrust
             };
         }
 
@@ -392,7 +343,7 @@ namespace PioneerFramework
         /// 部署后自动打开 3D 视角，并挂上「距离探针」：CompTick 每 2 秒打印一次 B/C 相对 A 的距离，
         /// 用于自证物理是否在推进（距离不变=时间未推进；递减=物理正常，等 [ShipCollision]）。
         /// </summary>
-        private void SpawnCollisionTest()
+        internal void SpawnCollisionTest()
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return;
@@ -444,6 +395,114 @@ namespace PioneerFramework
         }
 
         /// <summary>
+        /// 主推轴向 + 弱 RCS 燃烧测试场景（D15 改动验证，2026-09-06）：
+        /// 创建 1 枚无 Map 主推方向型测试弹（body 局部主推轴 -Z + 主网液氢 + RCS 副网肼），
+        /// 初始姿态 identity（轴 -Z），向世界 +X 点火 StartBurn(dv=500)。
+        /// 预期 [Thrust] 日志序列（开「详细推进日志」）：
+        ///   ① 对准中 + 用网=RCS：夹角 90°→收敛（魔动量轮 ω，RCS 小推力修正、主罐不动）；
+        ///   ② 夹角收心至 ≤~1.5°（axis·burn≈0.9997）→ 已对准 + 用网=主：主网沿 +X 正中直烧、RCS 保留；
+        ///   ③ [Burn] burn completed（主料烧到余 dv≈0 结算）。
+        /// </summary>
+        internal void SpawnAxialThrustTest()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null)
+            {
+                Messages.Message("SpaceGameComp 未找到！", MessageTypeDefOf.RejectInput);
+                return;
+            }
+
+            // 碰撞/物理依赖时间推进 → 解除暂停回 1x
+            bool wasPaused = Find.TickManager.CurTimeSpeed == TimeSpeed.Paused;
+            Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
+            if (wasPaused)
+                Log.Message("[AxialThrustTest] 检测到暂停，已自动解除（TimeSpeed.Normal）");
+
+            SpaceGameComp.DebugDetailedThrust = true; // 自动开 [Thrust] 详细日志
+
+            int factionId = parent.Faction?.loadID ?? 0;
+            int groupId = GetNextGroupId(spaceGame);
+            int entityId = GetNextEntityId(spaceGame);
+
+            // 出生：近地圆轨 500km（半径 6.4Mm → 半径+500km），姿态 identity
+            double radius = SpaceConstants.PlanetRadiusMeters + 500000.0;
+            var pos = new DVector3(radius, 0, 0);
+
+            var group = new SpaceEntityGroup(groupId, factionId)
+            {
+                IsActive = true,
+                IsMovable = true,
+                IsCollidable = true,
+                CelestialBodyId = EARTH_BODY_ID
+            };
+            group.CurrentOrbit = new OrbitState
+            {
+                position = pos,
+                velocity = DVector3.zero,
+                rotation = Quaternion.identity
+            };
+            spaceGame.RegisterGroup(group);
+
+            var entity = new SpaceEntity(entityId, factionId)
+            {
+                HasMap = false,
+                IsMapArchived = false,
+                IsCollidable = true,
+                IsMovable = true,
+                CanInteract = false,
+                IsAffectedByGravity = true
+            };
+            entity.GroupId = groupId;
+            entity.SetPositionVelocity(DVector3.zero, DVector3.zero);
+            entity.SetRotation(Quaternion.identity);
+
+            // body Part（长条，沿主推轴 -Z；AABB = 2×2×8m）
+            var part = new SpacePart
+            {
+                partId = 1,
+                defName = "PF_ShipPart_TestMissile",
+                localPosition = DVector3.zero,
+                localBoundsSize = new DVector3(2, 2, 8),
+                hp = 200f,
+                isIndestructible = false
+            };
+            part.AddComponent(new HullMassComponent { mass = 300f }); // 干质量 300kg
+            entity.SetParts(new List<SpacePart> { part });
+
+            // D15 主推方向型：主推轴 body 局部 -Z
+            entity.mainAxisLocal = new DVector3(0, 0, -1);
+
+            // 主网（液氢，大推力）+ RCS 副网（肼，全矢量小推力；与主网异工质）
+            var hydrogen = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Hydrogen");
+            var hydrazine = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Hydrazine");
+            entity.AddPropulsion(new PropulsionData
+            {
+                propellant = hydrogen, ve = 2000f, massFlow = 6f, mass = 2000f, capacity = 2000f
+            });
+            entity.AddPropulsion(new PropulsionData
+            {
+                propellant = hydrazine, ve = 900f, massFlow = 2f, mass = 300f, capacity = 300f, isVectoredRcs = true
+            });
+
+            spaceGame.RegisterEntity(entity);
+            group.AddEntity(entityId);
+
+            // 稳定圆轨（速度由 EnterCircularOrbit 解析生成）
+            group.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+
+            // 点火：世界 +X，dv=500 m/s（初始轴 -Z → 夹角 90°，先转向+RCS 修正，再主网直烧）
+            group.StartBurn(new DVector3(500, 0, 0));
+
+            Log.Message(string.Format(
+                "[AxialThrustTest] 就绪: G{0} E{1} 主推轴局部=(0,0,-1) 姿态identity→burnDir=+X(夹角90°) dv=500m/s " +
+                "主网=H2(ṁ6kg/s F12kN) RCS=肼(ṁ2kg/s F1.8kN) 双罐=H2 2000/肼 300kg；开 [Thrust] 日志观察对准+RCS→主网切换",
+                groupId, entityId));
+
+            // 打开 3D 视角
+            Find.WindowStack.Add(new Window_SpaceBattleView3D(group));
+        }
+
+        /// <summary>
         /// 跳帮（登舰突击）测试场景（M3 验收）：
         /// ① 玩家空间站（圆轨，母船）内置突击兵；
         /// ② 敌对空间站（共轨 10km 外）内置守军；
@@ -451,12 +510,12 @@ namespace PioneerFramework
         ///    → 降落判定通过 → pawn Spawn 进目标站 Map。
         /// 实现委托 BoardingTestScenarios（与测试面板共用同一场景逻辑）。
         /// </summary>
-        private void SpawnBoardingTest()
+        internal void SpawnBoardingTest()
         {
             BoardingTestScenarios.DeployEvaTest(1);
         }
 
-        private void SpawnTestStation()
+        internal void SpawnTestStation()
         {
             var (entity, group, map) = CreateTestStation();
             if (entity == null || group == null)
@@ -485,7 +544,7 @@ namespace PioneerFramework
         /// 核热引擎(液氢) + 氢储罐(满 5000kg)、离子引擎(氙) + 氙储罐(满 1000kg)，
         /// 规划两条各自绑定网络的机动（①核热径向 ②离子切向），并打开机动队列窗口。
         /// </summary>
-        private void SpawnDualEngineTest()
+        internal void SpawnDualEngineTest()
         {
             var (entity, group, map) = CreateTestStation();
             if (entity == null || group == null || map == null)
@@ -575,7 +634,7 @@ namespace PioneerFramework
         /// 验证点：① 按键平移沿船轴世界方向出 Δv（[Steer] 平移）；② 动量轮旋转（[Steer] 旋转）；
         /// ③ SAS 对准（[Steer] SAS→）；④ 动作组武装过滤（离子引擎 actionGroups=1）；⑤ 任意输入清空机动队列。
         /// </summary>
-        private void SpawnSteeringTest()
+        internal void SpawnSteeringTest()
         {
             var (entity, group, map) = CreateTestStation();
             if (entity == null || group == null || map == null)
@@ -626,7 +685,7 @@ namespace PioneerFramework
         /// 验证点：目标在船体局部赤道面（y≈0）——旧半球射界下"无炮可开"，现应正常开火，
         /// 日志 [炮塔出膛] 显示六面出膛面与出膛点（本场景应命中 x+ 侧面，exitFace=1）。
         /// </summary>
-        private void SpawnTurretTest()
+        internal void SpawnTurretTest()
         {
             // 同步轨道（高度约 28,560km，周期 24h）：相对角速度极小，敌对近似共轨漂移极慢，适合长时观察
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
@@ -664,6 +723,8 @@ namespace PioneerFramework
             DVector3 playerPos = playerGroup.IsCircularOrbit
                 ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
                 : playerGroup.CurrentOrbit.position;
+
+
             DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
             int enemyGroupId = GetNextGroupId(spaceGame);
             int enemyEntityId = GetNextEntityId(spaceGame);
@@ -696,6 +757,582 @@ namespace PioneerFramework
         }
 
         /// <summary>
+        /// 导弹发射测试场景（《导弹系统设计-20260830》§14 验收第 1 条）：
+        /// ① 玩家空间站（圆轨）布置定位机 + 整体式炮塔，武器现场换为 PF_Weapon_MissileLauncher；
+        /// ② 敌对空间站（不同 factionId）置于玩家旁 20km 共轨；
+        /// ③ Manual 指定目标 + ManualFire 立即齐射 → FireWeapon Missile 分支创建领弹弹群
+        ///    （出生点外推避母船 AABB / 继承母船速度 / Mission=Attack 登记 AutonomousVehicleManager）。
+        /// 验证点：[导弹发射] 日志（出生点偏移/速度分解/volley/N/Mission）+ 3D 视图目视领弹出生。
+        /// 注：导弹当前为巡航惯性体（制导/解离/转化交接后置任务），发射后沿轨道惯性飞行。
+        /// </summary>
+        internal void SpawnMissileLaunchTest()
+        {
+            var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
+            if (playerEntity == null || playerGroup == null || playerMap == null)
+                return;
+
+            CombatManager.DebugDetailedCombat = true;
+            AutonomousVehicleManager.DebugDetailedGuidance = true; // 制导详情（距离/dv/burn）10tick 限频
+            SpaceGameComp.DebugDetailedThrust = true; // 物理推进日志（对准状态/用网/耗料）——点火链诊断用
+            CombatManager.DebugDetailedCollision = true; // 碰撞枚举/扫掠盒重叠详情（2026-09-07 直撞线漏检诊断）
+            Log.Message("[MissileTest] 详细战斗/制导/推进/碰撞日志已开启，可随时用 Debug 组件 Gizmo 关闭");
+
+            // 1. 布置定位机 + 整体式炮塔，武器现场换成导弹发射器
+            //    （正式「导弹发射器炮塔」Building Def 属后续 XML 待办，场景用 Cannon 壳替换武器）
+            // 一体式导弹发射器建筑（自带定位机+炮塔，自动绑定；Auto 索敌敌对，或玩家手动指定目标）
+            var launcher = PlaceBuildingRaw(playerMap, "PF_Building_MissileLauncher", new IntVec3(30, 0, 30));
+            if (launcher == null)
+                return;
+            var launchComp = launcher.TryGetComp<CompMissileLauncher>();
+            if (launchComp == null)
+            {
+                Log.Error("[MissileTest] 导弹发射器 Comp 缺失");
+                return;
+            }
+
+            // 2. 敌对空间站：玩家旁 20km 共轨（索敌射程取武器 orbitalEngageRange 默认 100km）
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            DVector3 playerPos = playerGroup.IsCircularOrbit
+                ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
+                : playerGroup.CurrentOrbit.position;
+            // 异轨靶（2026-09-07：同轨正后方追尾=纯切向，任何推进都抬轨逃逸，物理打不中；
+            // 真实交战目标异轨，视线含径向分量，推力直扑可打——19:53 异轨轮次命中实证）。
+            // 位置 = 沿母站轨道切向 20km + 径向抬轨 30km → 入轨后不同半径不同周期 = 轨道不同步
+            DVector3 sameOrbitPoint = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 20000);
+            DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 30000.0;
+            int enemyGroupId = GetNextGroupId(spaceGame);
+            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（导弹靶）");
+            var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
+            if (enemyGroup != null)
+                enemyGroup.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+
+            // 3. Manual 指定目标 + 立即齐射（不等 scanInterval 自动索敌；齐射沿物理步对齐，奇 tick 调用会被跳拍后由 autoFire 补发）
+            launchComp.SetManualTarget(enemyGroupId);
+            launchComp.ManualFire();
+
+            // 4. 打开 3D 视角观察领弹出生，并跳转到玩家空间站地图
+            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            if (playerMap != null)
+                CameraJumper.TryJump(playerMap.Center, playerMap);
+
+            Log.Message(string.Format("[MissileTest] 场景就绪: 玩家 Group {0}（导弹发射器炮塔已绑定）→ 敌对 Group {1} 位于 20km 外，ManualFire 已触发",
+                playerGroup.GroupId, enemyGroupId));
+            Messages.Message(string.Format("导弹发射测试场景就绪：玩家 Group {0}，敌对 Group {1} 位于 20km 外（观察 [导弹发射] 日志与 3D 视图领弹出生）。",
+                playerGroup.GroupId, enemyGroupId), MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// 导弹撞击测试场景（《导弹系统设计-20260830》§14 验收「命中语义」：撞上才爆）：
+        /// 同 SpawnMissileLaunchTest，但敌对空间站置于 1.5km 近距——同轨近邻横向相对速度 ≈0，
+        /// 领弹以 150m/s 出膛增量出膛（制导加速接管），数秒内必然撞上目标 → 转化交接：
+        /// [导弹撞击]（先生成弹头射弹、后销毁导弹）→ [弹头命中]（part 直扣 + Map 落点贯穿 + 3D AoE）。
+        /// 验证点：撞击才爆炸（无"地板/平面即命中"）、弹头射弹沿导弹速度方向命中不偏深、
+        /// 导弹登记注销（[AutonomousVehicle] 注销）。可用炮塔对射场景打飞行导弹验证拦截引爆。
+        /// </summary>
+        internal void SpawnMissileImpactTest()
+        {
+            var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
+            if (playerEntity == null || playerGroup == null || playerMap == null)
+                return;
+
+            CombatManager.DebugDetailedCombat = true;
+            AutonomousVehicleManager.DebugDetailedGuidance = true; // 制导详情（距离/dv/burn）10tick 限频
+            Log.Message("[MissileImpactTest] 详细战斗日志已开启（DebugDetailedCombat），可随时用 Debug 组件 Gizmo 关闭");
+
+            // 1. 定位机 + 整体式炮塔（武器现场换成导弹发射器，同 SpawnMissileLaunchTest）
+            // 一体式导弹发射器建筑（自带定位机+炮塔，自动绑定；Auto 索敌敌对，或玩家手动指定目标）
+            var launcher = PlaceBuildingRaw(playerMap, "PF_Building_MissileLauncher", new IntVec3(30, 0, 30));
+            if (launcher == null)
+                return;
+            var launchComp = launcher.TryGetComp<CompMissileLauncher>();
+            if (launchComp == null)
+            {
+                Log.Error("[MissileImpactTest] 导弹发射器 Comp 缺失");
+                return;
+            }
+
+            // 2. 敌对空间站：玩家旁 1.5km 共轨（撞击窗口 ~5s；20km 场景用于发射验证，本场景用于命中验证）
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            DVector3 playerPos = playerGroup.IsCircularOrbit
+                ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
+                : playerGroup.CurrentOrbit.position;
+            // 同轨靶（严格同半径共轨，相对静止）：沿母站轨道切向偏移——世界系偏移在任意轨道相位
+            // 会引入径向分量导致异轨（半径差 km 级），靶漂移+瞄准错乱（22:43 会话实证）
+            DVector3 enemyPos = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 1500);
+            int enemyGroupId = GetNextGroupId(spaceGame);
+            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（导弹靶 1.5km）");
+            var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
+            if (enemyGroup != null)
+                enemyGroup.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+
+            // 3. Manual 指定目标 + 立即齐射（齐射沿物理步对齐，奇 tick 调用会被跳拍后由 autoFire 补发）
+            launchComp.SetManualTarget(enemyGroupId);
+            launchComp.ManualFire();
+            autoCmdLauncherGroupId = playerGroup.GroupId; // 导弹出生即自动下令撞击（模拟玩家出膛下令）
+
+            // 4. 打开 3D 视角观察撞击爆炸，并跳转到玩家空间站地图
+            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            if (playerMap != null)
+                CameraJumper.TryJump(playerMap.Center, playerMap);
+
+            Log.Message(string.Format("[MissileImpactTest] 场景就绪: 玩家 Group {0} → 敌对 Group {1} 位于 1.5km 外，ManualFire 已触发，预计 ~5s 撞击",
+                playerGroup.GroupId, enemyGroupId));
+            Messages.Message(string.Format("导弹撞击测试场景就绪：玩家 Group {0}，敌对 Group {1} 位于 1.5km 外（观察 [导弹撞击] → [弹头命中] 日志与 3D 爆炸）。",
+                playerGroup.GroupId, enemyGroupId), MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// 导弹巡航→终末转移测试（制导巡航分支验证）：炮塔换装 PF_Weapon_MissileLauncher_CruiseTest
+        /// （弹体 PF_Missile_TestCruise：homingEngageDistance=500m），敌对靶 1.5km——
+        /// 导弹出生表面距 1.5km &gt; 500m 边界 → 巡航不点火（[导弹巡航]，惯性接近）→
+        /// 惯性接近至 ~500m 表面距 → [导弹制导] 终末接管 → 火炬冲刺 → 撞击全链（~10s 内）。
+        /// </summary>
+        internal void SpawnMissileCruiseTest()
+        {
+            var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
+            if (playerEntity == null || playerGroup == null || playerMap == null)
+                return;
+
+            CombatManager.DebugDetailedCombat = true;
+            AutonomousVehicleManager.DebugDetailedGuidance = true; // 制导详情（距离/dv/burn）10tick 限频
+
+            // 一体式导弹发射器建筑（自带定位机+炮塔，自动绑定；Auto 索敌敌对，或玩家手动指定目标）
+            var launcher = PlaceBuildingRaw(playerMap, "PF_Building_MissileLauncher", new IntVec3(30, 0, 30));
+            if (launcher == null)
+                return;
+            var launchComp = launcher.TryGetComp<CompMissileLauncher>();
+            if (launchComp == null)
+            {
+                Log.Error("[MissileCruiseTest] 导弹发射器 Comp 缺失");
+                return;
+            }
+            // 巡航测试换弹体（homing 500m）：正式建筑默认标准弹，本场景现场换装测试武器
+            var cruiseWeaponDef = DefDatabase<WeaponDef>.GetNamedSilentFail("PF_Weapon_MissileLauncher_CruiseTest");
+            if (cruiseWeaponDef == null)
+            {
+                Log.Error("[MissileCruiseTest] PF_Weapon_MissileLauncher_CruiseTest 武器 Def 缺失");
+                return;
+            }
+            launchComp.Weapon.def = cruiseWeaponDef;
+
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            DVector3 playerPos = GetGroupPosDebug(playerGroup);
+            // 同轨靶（严格同半径共轨，相对静止）：沿母站轨道切向偏移——世界系偏移在任意轨道相位
+            // 会引入径向分量导致异轨（半径差 km 级），靶漂移+瞄准错乱（22:43 会话实证）
+            DVector3 enemyPos = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 1500);
+            int enemyGroupId = GetNextGroupId(spaceGame);
+            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（巡航测试靶）");
+            var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
+            if (enemyGroup != null)
+                enemyGroup.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+
+            launchComp.SetManualTarget(enemyGroupId);
+            launchComp.ManualFire();
+            autoCmdLauncherGroupId = playerGroup.GroupId; // 导弹出生即自动下令撞击（模拟玩家出膛下令）
+
+            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            if (playerMap != null)
+                CameraJumper.TryJump(playerMap.Center, playerMap);
+
+            Log.Message(string.Format("[MissileCruiseTest] 场景就绪: 玩家 Group {0} → 敌对 Group {1} 位于 1.5km 外（巡航边界 500m），预期日志链：巡航 → 终末接管 → 撞击",
+                playerGroup.GroupId, enemyGroupId));
+            Messages.Message(string.Format("巡航→终末转移测试就绪（1.5km 靶，巡航边界 500m）：观察 [导弹巡航] → [导弹制导 终末接管] → [导弹撞击]。",
+                playerGroup.GroupId, enemyGroupId), MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// 弹群齐射·解离·错峰撞击测试（§5 思路 A，2026-09-08）：
+        /// 玩家站导弹发射器 8 连发（深度队列：同深度 1 枚、间距 2km = 安全格距且 &gt; 弹头爆炸半径 1.5km、
+        /// 队长 14km）→ 敌对站位于出膛方向 ~25.3km（队首距靶 ~11.3km 收敛余量充足、队尾 25.3km）→
+        /// autoCmd 立即下 Attack → 合并群（1 group ×8，每枚满罐）表面距 ≤ homing → [弹群解离] 拆 8 个
+        /// 单实体 group → 各枚按队列错峰终末（[导弹制导 终末接管] 距离递增）→ 逐枚 [导弹撞击]→[弹头命中]
+        /// （前弹爆炸冲量作用半径 1.5km &lt; 队列间距 2km → 后到兄弟既不自伤也不被侧推打乱队形）。
+        /// 验证点：[导弹弹群] N=8 队列日志 / 面板 ×8 单枚燃料 2000kg / [弹群解离] / 8× 错峰撞击无自伤 /
+        /// 每枚独立制导均命中（聚合器分账正确性由面板单枚燃料 + 燃尽日志佐证）。
+        /// </summary>
+        internal void SpawnVolleyImpactTest()
+        {
+            var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
+            if (playerEntity == null || playerGroup == null || playerMap == null)
+                return;
+
+            CombatManager.DebugDetailedCombat = true;
+            CombatManager.DebugDetailedCollision = true; // [弹群接触] 空当放行对照
+            AutonomousVehicleManager.DebugDetailedGuidance = true;
+            // 注：不开 DebugDetailedThrust——Combat 慢放下多弹同时燃烧会按物理步刷屏拖垮内存（09-07 教训）
+            Log.Message("[VolleyImpactTest] 详细战斗/碰撞/制导日志已开启（推进日志未开）");
+
+            var launcher = PlaceBuildingRaw(playerMap, "PF_Building_MissileLauncher", new IntVec3(30, 0, 30));
+            if (launcher == null)
+                return;
+            var launchComp = launcher.TryGetComp<CompMissileLauncher>();
+            if (launchComp == null)
+            {
+                Log.Error("[VolleyImpactTest] 导弹发射器 Comp 缺失");
+                return;
+            }
+            launchComp.SetVolleyCount(8); // 弹群 8 连发（深度队列安全容量）
+
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            DVector3 playerPos = GetGroupPosDebug(playerGroup);
+            // 异轨靶（同轨正后方追尾物理打不中——径向分量是直扑几何前提，既有场景同口径）：
+            // 切向 24km + 径向抬轨 8km → 斜距 ~25.3km；队列长 14km（间距 2km）→ 队首距靶 ~11.3km
+            // （2026-09-08 三轮实测：靶 15.2km 时队首仅 1.2km 余量收敛不及擦过 → 拉远靶距）
+            DVector3 sameOrbitPoint = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 24000);
+            DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 8000.0;
+            int enemyGroupId = GetNextGroupId(spaceGame);
+            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（弹群靶 ~25km）");
+            var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
+            if (enemyGroup != null)
+                enemyGroup.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+
+            launchComp.SetManualTarget(enemyGroupId);
+            launchComp.ManualFire();
+            autoCmdLauncherGroupId = playerGroup.GroupId; // 出膛即自动下 Attack（进终末 → 解离）
+
+            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            if (playerMap != null)
+                CameraJumper.TryJump(playerMap.Center, playerMap);
+
+            Log.Message(string.Format("[VolleyImpactTest] 场景就绪: 玩家 G{0} 弹群 N=8 → 敌对 G{1} ~25.3km。预期日志链：[导弹弹群] N=8 队列 → [弹群解离]（含错峰时隙）→ 8×[导弹制导 终末接管]（距离递增）→ 8×[导弹撞击]/[弹头命中]（错峰点火保证到达间隔 ≥ 间距/巡航，无兄弟爆炸误杀）",
+                playerGroup.GroupId, enemyGroupId));
+            Messages.Message(string.Format("弹群齐射测试就绪：N=8 深度队列 → 敌对 G{1} ~25.3km（观察 [导弹弹群]/[弹群解离]/8× 错峰撞击日志）。",
+                playerGroup.GroupId, enemyGroupId), MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// 弹群合并期被撞击测试（新路径：多实体 group 逐实体接触解析，2026-09-08）：
+        /// 玩家站发射弹群 N=4（Following 保持合并，不下 Attack——合并群停在发射器附近 coast）；
+        /// 敌对站 6km 外发射 1 枚敌弹 Attack 目标 = 该合并弹群 → 敌弹终末冲刺撞入编队 →
+        /// pair 双 pass 逐实体解析（ResolveEntityContacts）：敌弹单枚转化（自毁）+ 弹群被撞那枚
+        /// 独立转化离群（[弹群] E.. 离群，N 4→3，燃料随实体消失无记账）→ 弹群其余兄弟继续合并巡航。
+        /// 验证点：[导弹弹群] N=4 → 敌弹终末 → 两条单枚 [导弹撞击]（弹群侧含 E..）+ [弹群] 离群日志；
+        /// 面板该弹群 ×3；随后玩家可用「命令全体导弹」/面板对剩余弹群下 Attack 观察解离+错峰撞击。
+        /// </summary>
+        internal void SpawnVolleyMergedHitTest()
+        {
+            var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
+            if (playerEntity == null || playerGroup == null || playerMap == null)
+                return;
+
+            CombatManager.DebugDetailedCombat = true;
+            CombatManager.DebugDetailedCollision = true;
+            AutonomousVehicleManager.DebugDetailedGuidance = true;
+            Log.Message("[VolleyMergedHitTest] 详细战斗/碰撞/制导日志已开启");
+
+            var launcher = PlaceBuildingRaw(playerMap, "PF_Building_MissileLauncher", new IntVec3(30, 0, 30));
+            if (launcher == null)
+                return;
+            var launchComp = launcher.TryGetComp<CompMissileLauncher>();
+            if (launchComp == null)
+            {
+                Log.Error("[VolleyMergedHitTest] 导弹发射器 Comp 缺失");
+                return;
+            }
+            launchComp.SetVolleyCount(4); // 合并弹群（不下 Attack = 保持合并巡航）
+
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            DVector3 playerPos = GetGroupPosDebug(playerGroup);
+            // 敌站 6km（异轨小径向差）：探针敌弹从敌站侧撞入停驻在玩家站附近的合并弹群
+            DVector3 sameOrbitPoint = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 6000);
+            DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 2000.0;
+            int enemyGroupId = GetNextGroupId(spaceGame);
+            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（合并弹群撞击探针）");
+            var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
+            if (enemyGroup != null)
+                enemyGroup.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+
+            // 发射弹群（Following：不 autoCmd）→ 合并停驻
+            launchComp.SetManualTarget(enemyGroupId);
+            launchComp.ManualFire();
+
+            // 找到刚发射的合并弹群（本发射器释放、mission=Following、logicalCount=4）
+            var avm = Current.Game?.GetComponent<AutonomousVehicleManager>();
+            int volleyGroupId = -1;
+            if (avm != null)
+            {
+                var recs = avm.Vehicles;
+                for (int i = 0; i < recs.Count; i++)
+                {
+                    var rec = recs[i];
+                    if (rec.launcherGroupId != playerGroup.GroupId) continue;
+                    if (rec.mission != AutonomousVehicleManager.MissionType.Following) continue;
+                    if (rec.logicalCount > 1) { volleyGroupId = rec.groupId; break; }
+                }
+            }
+            if (volleyGroupId < 0)
+            {
+                Log.Error("[VolleyMergedHitTest] 未找到合并弹群记录（Following ×N>1）");
+                return;
+            }
+
+            // 敌弹探针：敌站远侧 4km（背向弹群）出生，Attack 目标 = 合并弹群（从外撞入编队，
+            // 出生点远离队列避免重叠——弹群 Following coast 停在玩家站前 ~3km 队列内）
+            DVector3 volleyPos = GetGroupPosDebug(spaceGame.GetGroupById(volleyGroupId));
+            DVector3 enemyPos2 = GetGroupPosDebug(enemyGroup);
+            DVector3 dirToVolley = volleyPos - enemyPos2;
+            double d = dirToVolley.magnitude;
+            if (d < 1.0) return;
+            dirToVolley /= d;
+            DVector3 probePos = enemyPos2 - dirToVolley * 4000.0; // 敌站远侧（离弹群更远，追击路径清晰）
+            DVector3 probeVel = GetGroupVelDebug(enemyGroup) + dirToVolley * 150.0;
+            CreateTestMissile("PF_Missile_Standard", "PF_Weapon_MissileLauncher", enemyFactionId,
+                probePos, probeVel, enemyGroup.CelestialBodyId, dirToVolley, volleyGroupId);
+
+            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            if (playerMap != null)
+                CameraJumper.TryJump(playerMap.Center, playerMap);
+
+            Log.Message(string.Format("[VolleyMergedHitTest] 场景就绪: 玩家 G{0} 合并弹群 G{1}(N=4 Following) ← 敌站 G{2} 探针敌弹（Attack 目标=弹群）。预期：敌弹终末撞入编队 → 两条单枚 [导弹撞击] + [弹群] E.. 离群 N 4→3（兄弟继续合并）",
+                playerGroup.GroupId, volleyGroupId, enemyGroupId));
+            Messages.Message(string.Format("合并弹群撞击测试就绪：探针敌弹即将撞入 G{1} 弹群（观察单枚 [导弹撞击]/[弹群] 离群日志；之后用面板/「命令全体导弹」下 Attack 看解离）。",
+                playerGroup.GroupId, volleyGroupId), MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// 导弹长距制导验证场景（60km+ 靶，2026-09-08 制导改良验收）：
+        /// 玩家站发射 N=4 弹群（间距 2km &gt; 弹头爆炸半径 1.5km）→ 敌对站位于切向 55km + 径向 25km
+        /// （斜距 ~60km，仍在 homing 100km 内）→ 出膛即进终末段 → 收敛制导全程火炬（~450m/s）
+        /// → 逐枚错峰撞击（前弹爆炸冲量作用不到 2km 外的后弹）。
+        /// 验证点：① 长距 tGo 充裕时命中率应显著高于 11km 弹群场景（制导改良有效性）；
+        /// ② [导弹制导] 日志中冲刺量随横差自适应（横差大时 ≈0，不再无脑 450）；③ 零冲量扰动。
+        /// 注：60km @ ~450m/s ≈ 133 游戏秒（Combat 档 ≈133 现实秒）——长距验证的固有代价，比其他场景慢。
+        /// </summary>
+        internal void SpawnMissileLongRangeTest()
+        {
+            var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
+            if (playerEntity == null || playerGroup == null || playerMap == null)
+                return;
+
+            CombatManager.DebugDetailedCombat = true;
+            AutonomousVehicleManager.DebugDetailedGuidance = true;
+            Log.Message("[MissileLongRangeTest] 详细战斗/制导日志已开启（推进日志未开，防刷屏）");
+
+            var launcher = PlaceBuildingRaw(playerMap, "PF_Building_MissileLauncher", new IntVec3(30, 0, 30));
+            if (launcher == null)
+                return;
+            var launchComp = launcher.TryGetComp<CompMissileLauncher>();
+            if (launchComp == null)
+            {
+                Log.Error("[MissileLongRangeTest] 导弹发射器 Comp 缺失");
+                return;
+            }
+            launchComp.SetVolleyCount(4);
+
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            DVector3 playerPos = GetGroupPosDebug(playerGroup);
+            // 长距靶：切向 55km + 径向 25km（斜距 ~60km）——异轨（径向分量是直扑几何前提），
+            // 仍在 homing 100km 内 → 出膛即终末段，全程火炬收敛
+            DVector3 sameOrbitPoint = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 55000);
+            DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 25000.0;
+            int enemyGroupId = GetNextGroupId(spaceGame);
+            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（长距靶 ~60km）");
+            var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
+            if (enemyGroup != null)
+                enemyGroup.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+
+            launchComp.SetManualTarget(enemyGroupId);
+            launchComp.ManualFire();
+            autoCmdLauncherGroupId = playerGroup.GroupId; // 出膛即自动下 Attack
+
+            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            if (playerMap != null)
+                CameraJumper.TryJump(playerMap.Center, playerMap);
+
+            Log.Message(string.Format("[MissileLongRangeTest] 场景就绪: 玩家 G{0} 弹群 N=4 → 敌对 G{1} ~60km。预期：[导弹制导 终末接管]（表面距 ~60km）→ 全程收敛冲刺 → 4× 错峰 [导弹撞击]/[弹头命中]（间距 2km > 爆炸半径 1.5km，零冲量扰动）。~133 游戏秒后到达",
+                playerGroup.GroupId, enemyGroupId));
+            Messages.Message(string.Format("长距制导验证就绪：N=4 弹群 → 敌对 G{1} ~60km（观察制导收敛与 4× 错峰命中；约 133 游戏秒）。",
+                playerGroup.GroupId, enemyGroupId), MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// 导弹拦截对撞测试（异 volley 互撞 + K6 目标消失自动验证）：
+        /// ① 敌对空间站 20km（CreateStation，faction=玩家+1），由本 Comp 定时发射 3 波敌弹
+        ///    （敌弹 = 完整导弹：CreateMissileGroup + manager 登记，Attack 目标 = 玩家站）；
+        /// ② 玩家站部署导弹炮塔 + 定位机（Auto 索敌）：敌弹接近后比敌站更近 → 自动锁定敌弹 → 反导导弹；
+        /// ③ 敌弹与反导导弹同线相向（相对 ~600m/s）→ 必然对撞：异 volley → 双方各自转化（双 [导弹撞击]）；
+        /// ④ 反导冷却 5s &lt; 敌弹波次间隔 7s → 迟发反导弹飞行途中目标（敌弹）已被前弹撞毁 →
+        ///    [导弹中止] 回 Standby（K6 自动出现）。
+        /// 可用 DebugHub「销毁来袭弹」按钮手动销毁敌弹即时验证 K6。
+        /// </summary>
+        internal void SpawnMissileInterceptTest()
+        {
+            var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
+            if (playerEntity == null || playerGroup == null || playerMap == null)
+                return;
+
+            CombatManager.DebugDetailedCombat = true;
+            AutonomousVehicleManager.DebugDetailedGuidance = true;
+            SpaceGameComp.DebugDetailedThrust = true;
+            Log.Message("[MissileInterceptTest] 已开启详细战斗/制导/推进日志，可随时关闭");
+
+            // 1. 玩家反导炮塔 + 定位机（Auto 索敌：敌弹接近后自动锁定）
+            // 一体式导弹发射器建筑（自带定位机+炮塔，自动绑定；Auto 索敌敌对，或玩家手动指定目标）
+            var launcher = PlaceBuildingRaw(playerMap, "PF_Building_MissileLauncher", new IntVec3(30, 0, 30));
+            if (launcher == null)
+                return;
+            var launchComp = launcher.TryGetComp<CompMissileLauncher>();
+            if (launchComp == null)
+            {
+                Log.Error("[MissileInterceptTest] 导弹发射器 Comp 缺失");
+                return;
+            }
+
+            // 2. 敌对空间站 20km（faction = 玩家+1）
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            DVector3 playerPos = GetGroupPosDebug(playerGroup);
+            // 异轨靶（2026-09-07：同轨正后方追尾=纯切向，任何推进都抬轨逃逸，物理打不中；
+            // 真实交战目标异轨，视线含径向分量，推力直扑可打——19:53 异轨轮次命中实证）。
+            // 位置 = 沿母站轨道切向 20km + 径向抬轨 30km → 入轨后不同半径不同周期 = 轨道不同步
+            DVector3 sameOrbitPoint = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 20000);
+            DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 30000.0;
+            int enemyGroupId = GetNextGroupId(spaceGame);
+            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（来袭导弹基地）");
+            var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
+            if (enemyGroup != null)
+                enemyGroup.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
+
+            // 3. 拦截测试状态：3 波敌弹由 CompTick 定时发射（2s 后首波）
+            interceptEnemyFactionId = enemyFactionId;
+            interceptPlayerGroupId = playerGroup.GroupId;
+            interceptEnemyGroupId = enemyGroupId;
+            interceptWavesLeft = 3;
+            interceptNextWaveTick = Find.TickManager.TicksGame + 120;
+            interceptTestActive = true;
+            autoCmdLauncherGroupId = playerGroup.GroupId; // 反导弹出生即自动下令拦截（目标=发射器锁定的敌弹）
+
+            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            if (playerMap != null)
+                CameraJumper.TryJump(playerMap.Center, playerMap);
+
+            Log.Message(string.Format("[MissileInterceptTest] 场景就绪: 玩家 G{0} 反导炮塔已绑定 → 敌对 G{1} 位于 20km 外（3 波敌弹 2s/9s/16s 来袭），敌弹接近后反导自动锁定。预期：异 volley 对撞双 [导弹撞击] + 迟发反导弹 [导弹中止]（K6）",
+                playerGroup.GroupId, enemyGroupId));
+            Messages.Message(string.Format("拦截对撞测试就绪：敌对 G{1} 位于 20km 外，3 波敌弹即将来袭（观察对撞双爆与 [导弹中止]）。",
+                playerGroup.GroupId, enemyGroupId), MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>拦截测试敌弹波次：从敌站外侧朝玩家站发射一枚完整敌对导弹（不依赖敌站地图 tick）。</summary>
+        private void FireEnemyMissileWave()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var enemyGroup = spaceGame?.GetGroupById(interceptEnemyGroupId);
+            var playerGroup = spaceGame?.GetGroupById(interceptPlayerGroupId);
+            if (spaceGame == null || enemyGroup == null || playerGroup == null || interceptEnemyFactionId < 0)
+            {
+                Log.Warning("[拦截测试] 敌弹波次发射失败：站 group 缺失（可能已被销毁），终止波次");
+                interceptTestActive = false;
+                return;
+            }
+
+            DVector3 enemyPos = GetGroupPosDebug(enemyGroup);
+            DVector3 playerPos = GetGroupPosDebug(playerGroup);
+            DVector3 toPlayer = playerPos - enemyPos;
+            double dist = toPlayer.magnitude;
+            if (dist < 1.0) return;
+            DVector3 dir = toPlayer / dist;
+
+            // 出生点：敌站视线前方 1km（> 敌站 AABB 扫掠带；且距玩家站 19km < 敌站 20km，
+            // 保证反导 Auto 索敌优先锁定来袭导弹而非敌站）；速度 = 敌站速度 + 150m/s 出膛增量（同正式武器口径）
+            DVector3 birthPos = enemyPos + dir * 1000.0;
+            DVector3 birthVel = GetGroupVelDebug(enemyGroup) + dir * 150.0;
+            var group = CreateTestMissile("PF_Missile_Standard", "PF_Weapon_MissileLauncher", interceptEnemyFactionId,
+                birthPos, birthVel, enemyGroup.CelestialBodyId, dir, interceptPlayerGroupId);
+            if (group != null)
+                Log.Message(string.Format("[拦截测试] 敌弹波次：G{0} 敌站G{1}→玩家G{2} 距离={3:F1}km", group.GroupId,
+                    interceptEnemyGroupId, interceptPlayerGroupId, dist / 1000.0));
+        }
+
+        /// <summary>
+        /// 测试弹工厂（场景用）：CombatManager.CreateMissileGroup 建实体 + AutonomousVehicleManager 登记，
+        /// 与发射链同参数语义（volleyId 独立、launcherGroupId=-1 表示非炮塔来源）。
+        /// </summary>
+        private SpaceEntityGroup CreateTestMissile(string missileDefName, string weaponDefName, int factionId,
+            DVector3 birthPos, DVector3 birthVel, int celestialBodyId, DVector3 birthDir, int? targetGroupId)
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var combatMgr = Current.Game?.GetComponent<CombatManager>();
+            var avm = Current.Game?.GetComponent<AutonomousVehicleManager>();
+            if (spaceGame == null || combatMgr == null || avm == null)
+            {
+                Log.Error("[导弹测试] SpaceGameComp/CombatManager/AutonomousVehicleManager 缺失");
+                return null;
+            }
+            var missileDef = DefDatabase<MissileDef>.GetNamedSilentFail(missileDefName);
+            if (missileDef == null)
+            {
+                Log.Error("[导弹测试] MissileDef '" + missileDefName + "' 未找到");
+                return null;
+            }
+
+            var group = combatMgr.CreateMissileGroup(missileDef, factionId, birthPos, birthVel,
+                celestialBodyId, birthDir, out int entityId);
+            int volleyId = avm.AllocVolleyId();
+            var mission = targetGroupId.HasValue
+                ? AutonomousVehicleManager.MissionType.Attack
+                : AutonomousVehicleManager.MissionType.Standby;
+            avm.RegisterMissileLeader(group.GroupId, entityId, volleyId, -1, 1,
+                missileDefName, weaponDefName, mission, targetGroupId ?? -1);
+            return group;
+        }
+
+        /// <summary>销毁当前全部敌对来袭导弹（DebugHub 按钮：K6 目标消失即时验证——正在追敌弹的反导弹会 [导弹中止] 回 Standby）。</summary>
+        internal static void DestroyIncomingMissiles()
+        {
+            if (interceptEnemyFactionId < 0)
+            {
+                Messages.Message("未部署拦截测试场景（先点「拦截对撞」）！", MessageTypeDefOf.RejectInput);
+                return;
+            }
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var avm = Current.Game?.GetComponent<AutonomousVehicleManager>();
+            if (spaceGame == null || avm == null) return;
+
+            var targets = new List<int>();
+            var recs = avm.Vehicles;
+            for (int i = 0; i < recs.Count; i++)
+            {
+                var rec = recs[i];
+                if (rec.mission != AutonomousVehicleManager.MissionType.Attack) continue;
+                var g = spaceGame.GetGroupById(rec.groupId);
+                if (g != null && g.FactionId == interceptEnemyFactionId)
+                    targets.Add(rec.groupId);
+            }
+            if (targets.Count == 0)
+            {
+                Messages.Message("当前没有在飞的敌对来袭导弹。", MessageTypeDefOf.RejectInput);
+                return;
+            }
+            foreach (int gid in targets)
+            {
+                avm.UnregisterGroup(gid);
+                spaceGame.DestroyGroup(gid);
+                Log.Message(string.Format("[拦截测试] 手动销毁来袭导弹 G{0}", gid));
+            }
+            Messages.Message(string.Format("已销毁 {0} 枚来袭导弹——正在追击它们的反导弹应中止回 Standby（[导弹中止]）。", targets.Count), MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
         /// 全方位炮塔对射测试场景（2026-08-29，整体式 360° 验证）：
         /// 6 座整体式炮塔各配一台定位机（Manual 模式各指一个敌站），敌站分布在玩家船六个方位（20km）：
         ///   ±x / ±z（赤道面，共轨）→ 期望出膛面 1/0/5/4（四侧面）
@@ -703,7 +1340,7 @@ namespace PioneerFramework
         /// 一次齐射即可通过 [炮塔出膛] 日志验证：360° 射界解除（赤道面旧半球逻辑无炮可开）+
         /// 六面出膛碰撞点准确性。玩家船不旋转（船体局部 = 世界轴，方位对应直白）。
         /// </summary>
-        private void SpawnTurretOmniTest()
+        internal void SpawnTurretOmniTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -817,7 +1454,7 @@ namespace PioneerFramework
         ///   ③ 敌舰地图 (40,30) 上出现红色精确炮击标记；
         ///   ④ 命中落点格 ≈ (40,30)（[贯穿生成] 验证）。
         /// </summary>
-        private void SpawnTurretPrecisionTest()
+        internal void SpawnTurretPrecisionTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -882,7 +1519,7 @@ namespace PioneerFramework
         /// 验证点（日志链）：[齐射详情] → [炮塔出膛] → [激光发射]（射程 50km）→ [激光命中!]（Part HP 下降）
         /// → [贯穿生成]（贯通入口→落点格）→ 光束 60 tick 残留（3D 视角）。
         /// </summary>
-        private void SpawnRayTurretTest()
+        internal void SpawnRayTurretTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -942,7 +1579,7 @@ namespace PioneerFramework
         /// （[激光命中!] 指向近站 Group、近站 Part HP 下降），验证遮挡语义。
         /// 定位机必须 Manual 指远站——Auto 会选最近的近站，无法验证遮挡。
         /// </summary>
-        private void SpawnRayOcclusionTest()
+        internal void SpawnRayOcclusionTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -1006,7 +1643,7 @@ namespace PioneerFramework
         /// [激光slab] 局部系线段呈 45° 倾斜、[激光part] 命中局部点 y≠0（上方斜入）、船壳入口 y>0（从上斜降地面）。
         /// 旧版"世界方向在局部系延伸"在旋转时失效，此场景是核心正确性回归测试。
         /// </summary>
-        private void SpawnRayRotatedTest()
+        internal void SpawnRayRotatedTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -1034,6 +1671,8 @@ namespace PioneerFramework
             DVector3 playerPos = playerGroup.IsCircularOrbit
                 ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
                 : playerGroup.CurrentOrbit.position;
+
+
             DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
             int enemyGroupId = GetNextGroupId(spaceGame);
             int enemyEntityId = GetNextEntityId(spaceGame);
@@ -1067,7 +1706,7 @@ namespace PioneerFramework
         /// 4 组激光炮塔 + 定位机（Manual 各指一个敌站）。一次齐射 4 发，每发独立判定链
         /// [激光发射]→[激光slab]→[激光part]→[激光命中!]→[激光命中判定]，验证多目标同时命中 + 光束视觉。
         /// </summary>
-        private void SpawnRayMultiTest()
+        internal void SpawnRayMultiTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)

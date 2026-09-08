@@ -32,17 +32,25 @@ namespace PioneerFramework
         private Dictionary<int, object> mapComponents = new Dictionary<int, object>();
 
         // 时间规则：1 tick = 1 秒，每 2 tick 更新一次物理
-        private const int UPDATE_INTERVAL_TICKS = 2;
+        internal const int UPDATE_INTERVAL_TICKS = 2;
         private int lastUpdateTick = 0;
+
+        // PERF-5：物理并行下限——编组数低于此值时顺序执行（线程调度 + 并发容器分配 > 顺序开销）
+        private const int PARALLEL_PHYSICS_MIN_GROUPS = 32;
 
         /// <summary>
         /// 方向感知推进的默认矢量锥半角余弦（cos 10° ≈ 0.9848）。
         /// burn / 手动平移只使用「轴向世界方向与目标方向夹角 ≤ 锥角」的引擎。
         /// </summary>
         public const float DefaultThrustConeCos = 0.984807753f;
+        /// <summary>姿态"对准完成"阈值（≈1.5° 死区）：主推轴收心到正中才点火/消旋（2026-09-06 收心语义）。
+        /// 与 DefaultThrustConeCos（10° 引擎允许窗口）区分：窗口内可出力、收心到死区才点火。</summary>
+        public const float DefaultThrustAlignCos = 0.999657325f;
 
         /// <summary>操舵/自动对准详细日志开关（验证用，默认关；CompDebugShipSpawner Gizmo 切换）。</summary>
         public static bool DebugDetailedSteering = false;
+        /// <summary>无 Map 主推方向型机动详细日志（D15 新增改动验证）：每物理步输出网选择/对准角/RCS/燃料/燃尽抑制。</summary>
+        public static bool DebugDetailedThrust = false;
 
         // 自动对准 / 手动操舵详细日志状态（主线程）
         private readonly Dictionary<int, bool> alignStateByGroup = new Dictionary<int, bool>();
@@ -659,6 +667,12 @@ namespace PioneerFramework
             {
                 lastUpdateTick = currentTick;
                 UpdateAllMovements(timeScaleManager);
+                // 每物理步消费者统一在推进完成后驱动（2026-09-07）：GameComponent tick 顺序按类型
+                // 全名字母序（AutonomousVehicleManager → 本组件 → CombatManager），若制导/碰撞各自
+                // %2 tick 会有一方读到推进前的旧位置 → 同 tick 位置错位 2s ≈ 5km（导弹制导报 0.7km
+                // 命中、碰撞实测 2.6km 的日志实证）。此处推进完毕 = 所有消费者同 tick 同位。
+                Current.Game?.GetComponent<CombatManager>()?.OnPhysicsStepCompleted();
+                Current.Game?.GetComponent<AutonomousVehicleManager>()?.OnPhysicsStepCompleted();
             }
             
             if (timeScaleManager != null && timeScaleManager.IsCombatMode)
@@ -693,6 +707,16 @@ namespace PioneerFramework
             public Quaternion NewRotation;
             public bool HasActiveBurn;
             public bool BurnExhausted;
+            /// <summary>RCS 修正燃烧耗尽时不终结 burn（主网仍有料、可能仍在等对准），避免误终止（D15 弱 RCS）。</summary>
+            public bool SuppressAutoBurnEnd;
+            // ── D15 无 Map 主推/RCS 详细日志快照（并行区只写，主线程打日志）──
+            public bool NoMapThrust;
+            public bool UseMainSel;
+            public bool UseRcsSel;
+            public bool AligningMain;      // 主推型且本步未对准（主网等待）
+            public bool RcsFallbackSel;    // 主推已对准但主网尽 → RCS 兜底
+            public double MainDot;         // mainAxisWorld·burnDir（已归一；全向=1）
+            public double AppliedDv;       // 本步实际 ΔV（m/s）
             /// <summary>本次 tick 应消耗的工质总量（kg），主线程按各网络切片流率比例分配扣除。</summary>
             public double PropellantConsumed;
             /// <summary>本次 burn 参与推进的方向切片（并行阶段构建的活动网络快照，含锥内推力/流率）。</summary>
@@ -703,7 +727,7 @@ namespace PioneerFramework
             public DVector3 SyncBodyVel;
         }
 
-        private GroupPhysicsResult ComputeGroupPhysics(SpaceEntityGroup group, double dtSeconds, int currentTick, double physicsTick, CelestialBodyManager celestialMgr, int subSteps = 1)
+        private GroupPhysicsResult ComputeGroupPhysics(SpaceEntityGroup group, double dtSeconds, double physicsTick, CelestialBodyManager celestialMgr, int subSteps = 1)
         {
             var result = new GroupPhysicsResult { GroupId = group.GroupId };
 
@@ -759,21 +783,102 @@ namespace PioneerFramework
                 }
                 else
                 {
-                    // ── 全矢量（无 Map：穿梭机/导弹）：任意方向全网络出力，原逻辑 ──
+                    // ── 无 Map 源：主推方向型（D15）+ 可选弱 RCS 副网，或纯全向 ──
+                    // 主网（PropulsionData.isVectoredRcs=false）：主推型沿 mainAxisLocal 锥内出力；
+                    // RCS 网（isVectoredRcs=true）：全矢量小推力——主推未对准时仍可出力修正、主网尽时兜底。
+                    DVector3 mainAxisWorld = GetMainThrustWorldAxis(group);
+                    bool isMainThrust = mainAxisWorld.sqrMagnitude > 1e-12;
+                    double axisDot = 1.0;
+                    if (isMainThrust)
+                    {
+                        // 姿态控制独立于燃料（魔动量轮不限料）：本步开头执行——
+                        // 已收心（axis·burn ≥ cos~1.5°）→ 立即消旋，杜绝残余 ω 让弹体在主推燃烧时漂出；
+                        // 未收心 → 全速转向（剩余夹角小于一步转角则降速收敛），直至收心正中才点火主网；
+                        // 窗口内（锥内 10°）未收心时由 RCS/不点火继续修正对准。
+                        axisDot = DVector3.Dot(mainAxisWorld.normalized, group.burnDirection.normalized);
+                        AlignMainAxis(group, group.burnDirection, dtSeconds);
+                    }
+                    bool mainAligned = !isMainThrust || axisDot >= DefaultThrustAlignCos;
+
+                    // pass1：各类网络可用性（启用 + ṁ>0 + 有料）+ RCS 存量/流率（预判本步是否耗尽）
+                    bool hasMainFuel = false, hasRcsFuel = false;
+                    double rcsAvailKg = 0.0, rcsFlowKgS = 0.0;
                     if (burnSrc != null)
                     {
                         foreach (var n in burnSrc.Networks)
                         {
                             if (n.MassFlow <= 0f) continue;
                             if (group.burnEnabledNetworks != null && !group.burnEnabledNetworks.Contains(n.propellant)) continue;
-                            if (n.AvailableMass(burnSrc) <= 0f) continue; // 工质已尽的网络熄火
-                            activeSlices.Add(new ThrustSlice { network = n, thrust = n.Thrust, massFlow = n.MassFlow });
-                            fTotal += n.Thrust;
-                            mfTotal += n.MassFlow;
+                            double avail = n.AvailableMass(burnSrc);
+                            if (avail <= 0f) continue;
+                            if (n.HasRcsEngines)
+                            {
+                                hasRcsFuel = true;
+                                rcsAvailKg += avail;
+                                rcsFlowKgS += n.MassFlow;
+                            }
+                            else hasMainFuel = true;
                         }
                     }
-                    if (fTotal <= 0f)
-                        result.BurnExhausted = true;
+                    if (!hasMainFuel && !hasRcsFuel)
+                    {
+                        result.BurnExhausted = true; // 全工质尽 → 终止 burn
+                    }
+                    else
+                    {
+                        // 选网策略：
+                        //  全向            → 主网 + RCS 全部出力；
+                        //  主推已对准       → 主网出力（RCS 保留修正/兜底）；主网尽 → RCS 兜底；
+                        //  主推未对准       → 主网等待（只转），RCS 小推力修正；无 RCS → 纯转向等对准。
+                        bool useMain = false, useRcs = false;
+                        if (!isMainThrust)
+                        {
+                            useMain = true;
+                            useRcs = true;
+                        }
+                        else if (mainAligned)
+                        {
+                            if (hasMainFuel) useMain = true;
+                            else useRcs = hasRcsFuel; // 主网尽 → RCS 兜底
+                        }
+                        else
+                        {
+                            useRcs = hasRcsFuel; // 未对准：主网等待（姿态已在上方 Align 转向）
+                        }
+
+                        // RCS 修正燃烧中若本步将耗尽、而主网仍有料 → 不终结 burn（主线程据 SuppressAutoBurnEnd 跳过 EndBurn），
+                        // 让姿态继续转向直到对准主网接管；未到耗尽预判的普通修正步不刷 Suppress。
+                        bool rcsMayExhaust = rcsFlowKgS > 0.0 && rcsAvailKg <= rcsFlowKgS * dtSeconds;
+                        if (useRcs && !useMain && hasMainFuel && rcsMayExhaust)
+                            result.SuppressAutoBurnEnd = true;
+
+                        // ── D15 详细日志快照（主线程打 [Thrust]）──
+                        result.NoMapThrust = true;
+                        result.UseMainSel = useMain;
+                        result.UseRcsSel = useRcs;
+                        result.AligningMain = isMainThrust && !mainAligned;
+                        result.RcsFallbackSel = isMainThrust && mainAligned && !hasMainFuel && useRcs;
+                        result.MainDot = isMainThrust
+                            ? Math.Max(-1.0, Math.Min(1.0, axisDot))
+                            : 1.0;
+
+                        if (burnSrc != null && (useMain || useRcs))
+                        {
+                            foreach (var n in burnSrc.Networks)
+                            {
+                                if (n.MassFlow <= 0f) continue;
+                                if (group.burnEnabledNetworks != null && !group.burnEnabledNetworks.Contains(n.propellant)) continue;
+                                if (n.AvailableMass(burnSrc) <= 0f) continue;
+                                bool isRcs = n.HasRcsEngines;
+                                if ((isRcs && !useRcs) || (!isRcs && !useMain)) continue;
+                                activeSlices.Add(new ThrustSlice { network = n, thrust = n.Thrust, massFlow = n.MassFlow });
+                                fTotal += n.Thrust;
+                                mfTotal += n.MassFlow;
+                            }
+                        }
+                        // 主推未对准且无 RCS（主网有料）：0 推力 0 耗料，burn 保持激活等对准（不标 exhausted）。
+                        // RCS 修正/兜底燃烧时主网未动 → 主网不耗料；RCS 烧尽不误判整 burn 结束（主料仍可用）。
+                    }
                 }
 
                 if (fTotal > 0f)
@@ -796,6 +901,7 @@ namespace PioneerFramework
                         group.pendingImpulse += group.burnDirection * burnDv;
                         group.remainingBurnDV -= burnDv;
                         group.appliedBurnDV += burnDv; // 累计已施加 dV（诊断/日志）
+                        result.AppliedDv = burnDv;
                     }
                     else
                     {
@@ -837,8 +943,11 @@ namespace PioneerFramework
                     DVector3 relPos, relVel;
                     if (primaryBody.bodyType != CelestialBodyType.Planet)
                     {
-                        DVector3 bodyPos = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, currentTick);
-                        DVector3 bodyVel = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, currentTick);
+                        // 天体采样必须用 physicsTick（物理时间轴），与积分 dtSeconds / 圆轨解析 / 机动队列同基准。
+                        // 之前用 realTick（Find.TickManager.TicksGame），Normal 档两者相等掩盖了问题，
+                        // Fast/Combat 档倍率≠1 时近月参考系会系统性漂移。
+                        DVector3 bodyPos = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, physicsTick);
+                        DVector3 bodyVel = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, physicsTick);
                         relPos = group.CurrentOrbit.position - bodyPos;
                         relVel = group.CurrentOrbit.velocity - bodyVel;
                     }
@@ -852,7 +961,7 @@ namespace PioneerFramework
                     {
                         NBodyIntegrator.MultiBodyAccelJerk(
                             relPos, relVel,
-                            currentTick, primaryBody, celestialMgr,
+                            physicsTick, primaryBody, celestialMgr,
                             group.orbitKeepingWhitelist,
                             out var acc, out var jerk);
 
@@ -863,8 +972,8 @@ namespace PioneerFramework
 
                         if (primaryBody.bodyType != CelestialBodyType.Planet)
                         {
-                            DVector3 bodyPosNow = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, currentTick + UPDATE_INTERVAL_TICKS);
-                            DVector3 bodyVelNow = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, currentTick + UPDATE_INTERVAL_TICKS);
+                            DVector3 bodyPosNow = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, physicsTick + dtSeconds);
+                            DVector3 bodyVelNow = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, physicsTick + dtSeconds);
                             newPos += bodyPosNow;
                             newVel += bodyVelNow;
                         }
@@ -880,7 +989,7 @@ namespace PioneerFramework
                         {
                             NBodyIntegrator.MultiBodyAccelJerk(
                                 relPos, relVel,
-                                currentTick, primaryBody, celestialMgr,
+                                physicsTick, primaryBody, celestialMgr,
                                 group.orbitKeepingWhitelist,
                                 out var acc, out var jerk);
 
@@ -892,8 +1001,8 @@ namespace PioneerFramework
 
                         if (primaryBody.bodyType != CelestialBodyType.Planet)
                         {
-                            DVector3 bodyPosNow = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, currentTick + UPDATE_INTERVAL_TICKS);
-                            DVector3 bodyVelNow = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, currentTick + UPDATE_INTERVAL_TICKS);
+                            DVector3 bodyPosNow = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, physicsTick + dtSeconds);
+                            DVector3 bodyVelNow = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, physicsTick + dtSeconds);
                             relPos += bodyPosNow;
                             relVel += bodyVelNow;
                         }
@@ -913,7 +1022,7 @@ namespace PioneerFramework
                 {
                     double dvRate = NBodyIntegrator.ComputeOrbitKeepingDvRate(
                         group.localPosition, group.localVelocity,
-                        currentTick, primaryBody, celestialMgr,
+                        physicsTick, primaryBody, celestialMgr,
                         group.orbitKeepingWhitelist);
                     result.OrbitKeepingDvCost = dvRate * dtSeconds;
                 }
@@ -945,25 +1054,48 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 自动对准（SAS 兜底）：把主推进轴转到目标世界方向，向量角速度（动量轮限速）。
-        /// 已对准 → 零角速度（消旋）。未对准 → 按剩余夹角比例调速，一步转不完则满速。
+        /// 主推轴世界方向（D15）：Map = mapComp.MainThrustAxis 随 rotation 旋转；
+        /// 无 Map 主推方向型 = entity.mainAxisLocal 随 rotation 旋转；全向类（无主推轴）= zero。
+        /// 并行区只读调用（与 GetGroupPropulsionSource 同纪律）。
+        /// </summary>
+        private DVector3 GetMainThrustWorldAxis(SpaceEntityGroup group)
+        {
+            var mapComp = group.GetLinkedMapComp();
+            if (mapComp != null)
+                return group.GetWorldAxis(mapComp.MainThrustAxis);
+            // 无 Map：任一带主推轴的实体（导弹弹群成员同构同姿态；2026-09-08 思路 A——多实体组推进源
+            // 是群级聚合器，不再 as SpaceEntity 取轴，改扫实体；单实体组结果与原来逐字节一致）
+            foreach (int eid in group.GetEntityIds())
+            {
+                var e = GetEntityById(eid);
+                if (e != null && e.HasMainAxis)
+                    return DVector3.Rotate(e.mainAxisLocal.Value.normalized, group.CurrentOrbit.rotation);
+            }
+            return DVector3.zero;
+        }
+
+        /// <summary>
+        /// 自动对准（SAS 兜底）：把主推进轴转到目标世界方向（收心正中，死区 ~1.5°），向量角速度（动量轮限速）。
+        /// 已收心 → 零角速度（消旋）。未收心 → 按剩余夹角比例调速，一步转不完则满速。
+        /// 主推轴来源：Map = mapComp.MainThrustAxis；无 Map 主推型 = entity.mainAxisLocal（D15）；
+        /// 全向类（无主推轴）→ 直接返回（无对准语义）。
         /// 在并行物理区调用（只写本 group 独占的 angularVelocity，与 pendingImpulse 同纪律）。
         /// </summary>
         private void AlignMainAxis(SpaceEntityGroup group, DVector3 targetDir, double dtSeconds)
         {
-            var mapComp = group.GetLinkedMapComp();
-            if (mapComp == null) return;
+            DVector3 mainAxisWorld = GetMainThrustWorldAxis(group);
+            if (mainAxisWorld.sqrMagnitude < 1e-12)
+                return; // 无主推轴（全向类）：无姿态对准
             DVector3 targetN = targetDir.normalized;
             if (targetN.sqrMagnitude < 1e-12)
             {
                 group.angularVelocity = DVector3.zero;
                 return;
             }
-            DVector3 mainAxisWorld = group.GetWorldAxis(mapComp.MainThrustAxis);
             double dot = Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(mainAxisWorld, targetN)));
-            if (dot >= DefaultThrustConeCos)
+            if (dot >= DefaultThrustAlignCos)
             {
-                group.angularVelocity = DVector3.zero; // 已对准：消旋，防止 burn 期间漂移
+                group.angularVelocity = DVector3.zero; // 已收心到正中（≤~1.5°）：消旋，防 burn 期间漂移
                 return;
             }
             double error = Math.Acos(dot);
@@ -1116,7 +1248,6 @@ namespace PioneerFramework
                 physicsTick = timeScaleManager.GetPhysicsTick();
             }
             
-            int currentTick = Find.TickManager.TicksGame;
             var celestialMgr = Current.Game.GetComponent<CelestialBodyManager>();
             if (celestialMgr == null) return;
 
@@ -1127,14 +1258,28 @@ namespace PioneerFramework
             //    然后清零。并行区此后只累积新冲量，不直接改速度。──
             ApplyPendingImpulses();
 
-            var physicsResults = new ConcurrentBag<GroupPhysicsResult>();
-
-            Parallel.ForEach(groups.Values, group =>
+            // PERF-5：小规模回退顺序——预分配数组存结果，编组数低于阈值走顺序循环，避免并发容器分配
+            var movableGroups = new List<SpaceEntityGroup>(groups.Count);
+            foreach (var group in groups.Values)
             {
-                if (!group.IsMovable) return;
-                var result = ComputeGroupPhysics(group, dtSeconds, currentTick, physicsTick, celestialMgr, subSteps);
-                physicsResults.Add(result);
-            });
+                if (group.IsMovable)
+                    movableGroups.Add(group);
+            }
+
+            var physicsResults = new GroupPhysicsResult[movableGroups.Count];
+
+            if (movableGroups.Count < PARALLEL_PHYSICS_MIN_GROUPS)
+            {
+                for (int i = 0; i < movableGroups.Count; i++)
+                    physicsResults[i] = ComputeGroupPhysics(movableGroups[i], dtSeconds, physicsTick, celestialMgr, subSteps);
+            }
+            else
+            {
+                Parallel.For(0, movableGroups.Count, i =>
+                {
+                    physicsResults[i] = ComputeGroupPhysics(movableGroups[i], dtSeconds, physicsTick, celestialMgr, subSteps);
+                });
+            }
 
             var groupsToCheck = new List<int>();
 
@@ -1168,7 +1313,7 @@ namespace PioneerFramework
                     group.burnConsumedPropellant += totalConsumed;
 
                     bool allNetworksExhausted = activeCount > 0 && exhaustedCount >= activeCount;
-                    if (allNetworksExhausted || result.BurnExhausted)
+                    if ((allNetworksExhausted || result.BurnExhausted) && !result.SuppressAutoBurnEnd)
                     {
                         // 实际 ΔV 评估（质量口径）：ve·ln(m0/m1)，验证 ṁ/推力模型与火箭方程一致性
                         float veEff = GetGroupPropulsionSource(group)?.EffectiveVe ?? 0f;
@@ -1185,7 +1330,7 @@ namespace PioneerFramework
                         burnEndedThisStep = true;
                     }
                 }
-                else if (result.BurnExhausted)
+                else if (result.BurnExhausted && !result.SuppressAutoBurnEnd)
                 {
                     group.EndBurn();
                     // burn 结束：推进器退出燃烧状态（表现层）
@@ -1195,6 +1340,24 @@ namespace PioneerFramework
                     burnEndedThisStep = true;
                 }
 
+                // ── 无 Map 主推/RCS 机动详细日志（DebugDetailedThrust，D15 改动验证）──
+                // 每物理步：选网（主/RCS/兜底）、主推轴-目标夹角、Δv/余 dv、双罐燃料、燃尽抑制、转向角速度。
+                if (DebugDetailedThrust && result.NoMapThrust)
+                {
+                    double angleDeg = Mathf.Rad2Deg * Mathf.Acos((float)Math.Max(-1.0, Math.Min(1.0, result.MainDot)));
+                    string sel = result.UseMainSel && result.UseRcsSel ? "主+RCS"
+                        : result.UseRcsSel ? "RCS" : result.UseMainSel ? "主" : "无";
+                    if (result.RcsFallbackSel) sel += "(兜底)";
+                    string alignState = result.AligningMain ? "对准中" : (result.UseMainSel ? "已对准" : "全向");
+                    string note = result.SuppressAutoBurnEnd ? "  [!RCS尽主料存→不终burn]" : "";
+                    Log.Message(string.Format(
+                        "[Thrust] G{0} tick={1} {2} | 用网={3} | axis·burn={4:F3}({5:F1}°) | Δv={6:F1} m/s 余dv={7:F1} | 耗={8:F2}kg | {9}{10} | ω={11:F1}°/s",
+                        group.GroupId, Find.TickManager.TicksGame, alignState, sel,
+                        result.MainDot, angleDeg, result.AppliedDv, group.remainingBurnDV,
+                        result.PropellantConsumed, NoMapFuelSummary(group), note,
+                        (float)group.angularVelocity.magnitude * Mathf.Rad2Deg));
+                }
+
                 // ── 自动对准详细日志（DebugDetailedSteering）：对准开始/完成/进度 ──
                 if (DebugDetailedSteering && result.HasActiveBurn)
                 {
@@ -1202,8 +1365,7 @@ namespace PioneerFramework
                     bool wasAligning = alignStateByGroup.TryGetValue(group.GroupId, out var prevAlign) && prevAlign;
                     if (aligningNow && !wasAligning)
                     {
-                        var amc = GetGroupPropulsionSource(group) as SpaceMapComp;
-                        DVector3 mainAxisWorld = group.GetWorldAxis(amc != null ? amc.MainThrustAxis : ThrustAxis.Back);
+                        DVector3 mainAxisWorld = GetMainThrustWorldAxis(group);
                         Log.Message(string.Format(
                             "[Align] Group {0} 自动对准开始：burnDir=({1:F2},{2:F2},{3:F2}) 主轴世界=({4:F2},{5:F2},{6:F2})",
                             group.GroupId, group.burnDirection.x, group.burnDirection.y, group.burnDirection.z,
@@ -1216,8 +1378,7 @@ namespace PioneerFramework
                     }
                     else if (aligningNow && Find.TickManager.TicksGame >= nextAlignLogTick)
                     {
-                        var amc = GetGroupPropulsionSource(group) as SpaceMapComp;
-                        DVector3 mainAxisWorld = group.GetWorldAxis(amc != null ? amc.MainThrustAxis : ThrustAxis.Back);
+                        DVector3 mainAxisWorld = GetMainThrustWorldAxis(group);
                         double dot = Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(mainAxisWorld, group.burnDirection.normalized)));
                         Log.Message(string.Format(
                             "[Align] Group {0} 对准中：主轴=({1:F2},{2:F2},{3:F2}) vs burnDir 夹角 {4:F1}° 角速度={5:F2}°/s",
@@ -1314,12 +1475,15 @@ namespace PioneerFramework
             {
                 lastManeuverCheckRealTick = Find.TickManager.TicksGame;
 
-                // 射弹在飞：保持 Combat（1/60）。降速由 CombatManager.ManageProjectileTimeScale 负责，
-                // 这里不恢复期望流速，避免与降速逻辑打架（否则每 240 tick 会把 Combat 拉回 Fast）。
+                // 射弹在飞 / 导弹 Attack 终末自动段：保持 Combat（1/60）。降速由
+                // CombatManager.ManageProjectileTimeScale 负责，这里不恢复期望流速，
+                // 避免与降速逻辑打架（否则每 240 tick 会把 Combat 拉回 Fast）。
                 var combatMgr = Current.Game?.GetComponent<CombatManager>();
-                if (combatMgr != null && combatMgr.ActiveProjectiles.Count > 0)
+                var avmCheck = Current.Game?.GetComponent<AutonomousVehicleManager>();
+                if ((combatMgr != null && combatMgr.ActiveProjectiles.Count > 0)
+                    || (avmCheck != null && avmCheck.HasActiveAttack))
                 {
-                    // 射弹在飞，维持 Combat 档
+                    // 射弹在飞 / 导弹终末撞击中，维持 Combat 档
                 }
                 else if (trackedManeuvers.Count > 0)
                 {
@@ -1894,10 +2058,12 @@ namespace PioneerFramework
             DVector3 currentVel = group.CurrentOrbit.velocity;
 
             DVector3 relPos, relVel;
+            double physicsTickSample = TimeScaleManager.GetPhysicsTickSafe();
             if (primaryBody.bodyType != CelestialBodyType.Planet)
             {
-                DVector3 bodyPos = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, currentTick);
-                DVector3 bodyVel = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, currentTick);
+                // 重力采样用 physicsTick（物理时间轴）；baseTick 保持 realTick 供插值索引
+                DVector3 bodyPos = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, physicsTickSample);
+                DVector3 bodyVel = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, physicsTickSample);
                 relPos = currentPos - bodyPos;
                 relVel = currentVel - bodyVel;
             }
@@ -1908,7 +2074,7 @@ namespace PioneerFramework
             }
 
             NBodyIntegrator.MultiBodyAccelJerk(relPos, relVel,
-                currentTick, primaryBody, celestialMgr,
+                physicsTickSample, primaryBody, celestialMgr,
                 group.orbitKeepingWhitelist,
                 out var acc, out var jerk);
 
@@ -2212,6 +2378,7 @@ namespace PioneerFramework
         private void CheckPlanetCollision(SpaceEntityGroup group)
         {
             if (group == null || !group.IsActive) return;
+            if (group.exemptPlanetCollision) return; // 火箭爬升段豁免：出生在大气层内、初速高于着陆阈值，入轨时清除
 
             int tick = Find.TickManager.TicksGame;
             DVector3 bodyOffset = GetBodyWorldOffset(group.CelestialBodyId, tick);
@@ -2263,20 +2430,53 @@ namespace PioneerFramework
             return src.TryConsumePropellant(def, kg);
         }
 
+        /// <summary>无 Map 主推型双罐燃料摘要（主网 vs RCS 网，同 def 去重后合计）供 [Thrust] 日志。</summary>
+        private string NoMapFuelSummary(SpaceEntityGroup group)
+        {
+            var src = GetGroupPropulsionSource(group);
+            if (src == null) return "无源";
+            double main = 0.0, rcs = 0.0;
+            var seenMain = new HashSet<PropellantDef>();
+            var seenRcs = new HashSet<PropellantDef>();
+            foreach (var n in src.Networks)
+            {
+                if (n.propellant == null) continue;
+                double m = src.GetPropellantMass(n.propellant);
+                if (n.HasRcsEngines)
+                {
+                    if (seenRcs.Add(n.propellant)) rcs += m;
+                }
+                else if (seenMain.Add(n.propellant))
+                {
+                    main += m;
+                }
+            }
+            return string.Format("主={0:F0} RCS={1:F0}kg", main, rcs);
+        }
+
         /// <summary>
-        /// 取 group 的推进源：优先任一实体关联的 SpaceMapComp（Map 建筑引擎/工质），
-        /// 无 Map 时回退第一个带自带推进数据的实体（导弹/载荷等纯物理实体，PropulsionData）。
-        /// 并行只读安全：只读聚合缓存 / 只读实体推进字段。
+        /// 取 group 的推进源：优先任一实体关联的 SpaceMapComp（Map 建筑引擎/工质）；
+        /// 无 Map 时 = 自带推进实体（导弹/载荷等纯物理实体，PropulsionData）：
+        ///   1 个 → 该实体（单发/火箭热路径，行为不变）；
+        ///   &gt;1 个（弹群，2026-09-08 思路 A）→ 群级聚合器 GroupPropulsionAggregator
+        ///   （N 引擎同步：推力/流率全组合并、工质按实体分摊——燃料归实体自己，无记账）。
+        /// 并行只读安全：只读聚合缓存 / 只读实体推进字段；工质消耗在主线程 TryConsume。
         /// </summary>
         public IPropulsionSource GetGroupPropulsionSource(SpaceEntityGroup group)
         {
             var mapComp = group.GetLinkedMapComp();
             if (mapComp != null) return mapComp;
+            SpaceEntity first = null;
+            int n = 0;
             foreach (int eid in group.GetEntityIds())
             {
                 var e = GetEntityById(eid);
-                if (e != null && e.HasPropulsionData) return e;
+                if (e == null || !e.HasPropulsionData) continue;
+                if (first == null) first = e;
+                n++;
             }
+            if (n == 1) return first;
+            if (n > 1) return new GroupPropulsionAggregator(group, this);
             return null;
         }
 

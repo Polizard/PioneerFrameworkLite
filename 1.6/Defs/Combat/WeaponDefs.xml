@@ -107,11 +107,34 @@
     <minRange>100</minRange>
     <cooldownTicks>300</cooldownTicks>
     <missileCount>1</missileCount>
-    <missileSpeed>300</missileSpeed>
+    <missileSpeed>150</missileSpeed>
     <terminalSpeed>800</terminalSpeed>
-    <missileFuel>60</missileFuel>
+    <missileFuel>2000</missileFuel>
     <engageDistance>50</engageDistance>
     <requiresDirectPath>false</requiresDirectPath>
+    <!-- 弹体/弹头定义（K2）：MissileDef 独立承载 -->
+    <missileDefName>PF_Missile_Standard</missileDefName>
+  </PioneerFramework.Combat.WeaponDef>
+
+  <!-- 巡航测试武器：弹体 = PF_Missile_TestCruise（homing 500m，场景现场换装用，不动正式武器 Def） -->
+  <PioneerFramework.Combat.WeaponDef>
+    <defName>PF_Weapon_MissileLauncher_CruiseTest</defName>
+    <label>导弹发射器（巡航测试）</label>
+    <description>巡航测试专用：弹体 PF_Missile_TestCruise。</description>
+    <weaponType>Missile</weaponType>
+    <damagePerShot>50</damagePerShot>
+    <armorPenetration>15</armorPenetration>
+    <fireRate>0.2</fireRate>
+    <maxRange>10000</maxRange>
+    <minRange>100</minRange>
+    <cooldownTicks>300</cooldownTicks>
+    <missileCount>1</missileCount>
+    <missileSpeed>150</missileSpeed>
+    <terminalSpeed>800</terminalSpeed>
+    <missileFuel>2000</missileFuel>
+    <engageDistance>50</engageDistance>
+    <requiresDirectPath>false</requiresDirectPath>
+    <missileDefName>PF_Missile_TestCruise</missileDefName>
   </PioneerFramework.Combat.WeaponDef>
 
   <PioneerFramework.Combat.WeaponDef>

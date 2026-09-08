@@ -19,4 +19,10 @@
     <description>电推进工质，极高比冲极低推力。适合精细轨道调整。</description>
   </PioneerFramework.PropellantDef>
 
+  <PioneerFramework.PropellantDef>
+    <defName>PF_Propellant_Hydrazine</defName>
+    <label>肼</label>
+    <description>单组元肼 RCS 工质，小推力中比冲。导弹/火箭的姿态与微调副网用；与主网异工质以区分消耗。</description>
+  </PioneerFramework.PropellantDef>
+
 </Defs>

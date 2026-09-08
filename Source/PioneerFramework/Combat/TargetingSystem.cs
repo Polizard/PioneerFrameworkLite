@@ -40,16 +40,15 @@ namespace PioneerFramework.Combat
             SpaceEntityGroup bestTarget = null;
             float bestScore = float.MinValue;
 
-            double searchRangeSq = SpaceConstants.CellSizeMeters * SpaceConstants.CellSizeMeters;
+            DVector3 attackerPos = combatManager.GetGroupPos(attacker);
 
-            foreach (var group in spaceGame.GetAllGroups())
+            // O(n²) → 空间网格预过滤：只遍历 CellSizeMeters 半径内的候选（粗网格 GetGroupsInRange），
+            // 避免每 tick 对全部 group 双重遍历。候选数从 N 降到近邻 k。
+            foreach (var group in spaceGame.GetGroupsInRange(attackerPos, SpaceConstants.CellSizeMeters))
             {
                 if (!group.IsActive) continue;
                 if (group.GroupId == attacker.GroupId) continue;
                 if (group.FactionId == attacker.FactionId) continue;
-
-                DVector3 delta = combatManager.GetGroupPos(group) - combatManager.GetGroupPos(attacker);
-                if (delta.sqrMagnitude > searchRangeSq) continue;
 
                 float score = EvaluateTarget(attacker, group);
                 if (score > bestScore)
@@ -92,11 +91,11 @@ namespace PioneerFramework.Combat
             for (int i = 0; i < weapons.Count; i++)
             {
                 if (weapons[i].CanFire())
-                    combatManager.FireWeapon(attacker.GroupId, weapons[i], targetPos, null, targetVel);
+                    combatManager.FireWeapon(attacker.GroupId, weapons[i], targetPos, null, targetVel, target.GroupId);
             }
 
-            // ── 调试日志（限频）：目标锁定状态，验证 A2 解析位置与 A1 提前量输入 ──
-            if (Find.TickManager.TicksGame - lastLockLogTick >= 60)
+            // ── 调试日志（限频 + 门控）：目标锁定状态，验证 A2 解析位置与 A1 提前量输入 ──
+            if (CombatManager.DebugDetailedCombat && Find.TickManager.TicksGame - lastLockLogTick >= 60)
             {
                 lastLockLogTick = Find.TickManager.TicksGame;
                 DVector3 attackerPos = combatManager.GetGroupPos(attacker);

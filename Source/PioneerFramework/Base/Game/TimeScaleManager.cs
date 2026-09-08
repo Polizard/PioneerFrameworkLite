@@ -49,6 +49,7 @@ namespace PioneerFramework
         private int combatSubTick = 0;
         private double calendarBaseTick = 0;
         private int switchStartTick = 0;
+        private double gameStartAbsTickCapture = 0;
         private bool calendarInitialized = false;
 
         public float CalendarSpeedMultiplier
@@ -99,21 +100,32 @@ namespace PioneerFramework
 
         public int GetCombatStartTick() => combatStartTick;
 
+        /// <summary>
+        /// 初始化历法锚点。核心修复：把 gameStartAbsTick 在首次初始化时**捕获一次并固定**，
+        /// 而非每次调用都全新读取 Find.TickManager.gameStartAbsTick。
+        /// 原因：Game.InitNewGame 在 (Game.cs L507) 才设置 gameStartAbsTick，Mod 的 GameComponent
+        /// 首次调用本方法可能早于此（此时 gameStartAbsTick==0）→ 旧代码把 calendarBaseTick 锚定到
+        /// TicksGame+0，之后再读到的真实 gSAT 相减 → physicsTick = 120 - 372500 = -372380（负且大），
+        /// 污染自转相位/经度。捕获后减号与基线用同一锚点 → 自洽非负，且跨存档连续。
+        /// </summary>
+        private void EnsureCalendarBaseline()
+        {
+            if (calendarInitialized) return;
+            gameStartAbsTickCapture = Find.TickManager.gameStartAbsTick;
+            calendarBaseTick = Find.TickManager.TicksGame + gameStartAbsTickCapture;
+            switchStartTick = Find.TickManager.TicksGame;
+            calendarInitialized = true;
+        }
+
         public double GetPhysicsTick()
         {
-            if (!calendarInitialized)
-            {
-                calendarBaseTick = Find.TickManager.TicksGame + Find.TickManager.gameStartAbsTick;
-                switchStartTick = Find.TickManager.TicksGame;
-                calendarInitialized = true;
-            }
+            EnsureCalendarBaseline();
 
             int realTicksGame = Find.TickManager.TicksGame;
             int deltaReal = realTicksGame - switchStartTick;
             double scale = GetCalendarScale();
 
-            int absOffset = Find.TickManager.gameStartAbsTick;
-            return calendarBaseTick + deltaReal * scale - absOffset;
+            return calendarBaseTick + deltaReal * scale - gameStartAbsTickCapture;
         }
 
         private static Game cachedGame;
@@ -137,18 +149,12 @@ namespace PioneerFramework
 
         public double GetPhysicsTick(int realTick)
         {
-            if (!calendarInitialized)
-            {
-                calendarBaseTick = Find.TickManager.TicksGame + Find.TickManager.gameStartAbsTick;
-                switchStartTick = Find.TickManager.TicksGame;
-                calendarInitialized = true;
-            }
+            EnsureCalendarBaseline();
 
             int deltaReal = realTick - switchStartTick;
             double scale = GetCalendarScale();
 
-            int absOffset = Find.TickManager.gameStartAbsTick;
-            return calendarBaseTick + deltaReal * scale - absOffset;
+            return calendarBaseTick + deltaReal * scale - gameStartAbsTickCapture;
         }
 
         /// <summary>
@@ -157,12 +163,7 @@ namespace PioneerFramework
         /// </summary>
         public double GetDisplayTicksAbs()
         {
-            if (!calendarInitialized)
-            {
-                calendarBaseTick = Find.TickManager.TicksGame + Find.TickManager.gameStartAbsTick;
-                switchStartTick = Find.TickManager.TicksGame;
-                calendarInitialized = true;
-            }
+            EnsureCalendarBaseline();
 
             int realTicksGame = Find.TickManager.TicksGame;
             int deltaReal = realTicksGame - switchStartTick;
@@ -276,7 +277,11 @@ namespace PioneerFramework
         private bool IsInCombatAction()
         {
             var combatManager = Current.Game.GetComponent<Combat.CombatManager>();
-            return combatManager != null && combatManager.IsBattleActive;
+            if (combatManager != null && combatManager.IsBattleActive) return true;
+            // 导弹 Attack 终末自动段与射弹同级（2026-09-07 用户定稿）：存在即视为战斗动作，
+            // 阻止"回 Normal"命令执行（Combat 档维持由 SpaceGameComp 240-tick 检查负责）
+            var avm = Current.Game.GetComponent<AutonomousVehicleManager>();
+            return avm != null && avm.HasActiveAttack;
         }
 
         private void ExecuteCommand(TimeScaleCommand command)
@@ -325,11 +330,13 @@ namespace PioneerFramework
                 var primaryBody = celestialMgr.GetBodyById(group.CelestialBodyId);
                 if (primaryBody != null)
                 {
+                    // 重力采样用 physicsTick（物理时间轴）；baseTick 保持 realTick 供插值索引
+                    double physicsTick = GetPhysicsTick();
                     DVector3 relPos, relVel;
                     if (primaryBody.bodyType != CelestialBodyType.Planet)
                     {
-                        DVector3 bodyPos = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, currentTick);
-                        DVector3 bodyVel = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, currentTick);
+                        DVector3 bodyPos = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, physicsTick);
+                        DVector3 bodyVel = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, physicsTick);
                         relPos = currentPos - bodyPos;
                         relVel = currentVel - bodyVel;
                     }
@@ -341,7 +348,7 @@ namespace PioneerFramework
 
                     NBodyIntegrator.MultiBodyAccelJerk(
                         relPos, relVel,
-                        currentTick, primaryBody, celestialMgr,
+                        physicsTick, primaryBody, celestialMgr,
                         group.orbitKeepingWhitelist,
                         out var acc, out var jerk);
 
@@ -380,6 +387,7 @@ namespace PioneerFramework
             Scribe_Values.Look(ref currentLevel, "timeScaleLevel", TimeScaleLevel.Normal);
             Scribe_Values.Look(ref calendarBaseTick, "calendarBaseTick", 0.0);
             Scribe_Values.Look(ref switchStartTick, "switchStartTick", 0);
+            Scribe_Values.Look(ref gameStartAbsTickCapture, "gameStartAbsTickCapture", 0.0);
             Scribe_Values.Look(ref calendarInitialized, "calendarInitialized", false);
         }
     }

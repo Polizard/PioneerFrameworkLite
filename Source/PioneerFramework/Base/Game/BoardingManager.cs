@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using RimWorld;
 using UnityEngine;
 using Verse;
@@ -255,6 +256,7 @@ namespace PioneerFramework
             {
                 Log.Message(string.Format("[Boarding] Unit {0} 目标空间站 {1} 已消失，任务取消", unit.id, unit.targetGroupId));
                 KillMembers(unit, "目标空间站消失");
+                SpaceGame?.DestroyGroup(unit.groupId); // 同步销毁临时 3D 实体，防孤儿幽灵船
                 unit.state = BoardingState.Destroyed;
                 return;
             }
@@ -392,6 +394,10 @@ namespace PioneerFramework
             var dock = shuttleThing.TryGetComp<CompShuttleDock>();
             if (dock == null || passengers == null || passengers.Count == 0) return null;
 
+            // 只收编已生成的乘客：未生成 pawn（世界 pawn/caravan 成员）不随船，防"绑架"
+            passengers = passengers.Where(p => p != null && !p.Destroyed && p.Spawned).ToList();
+            if (passengers.Count == 0) return null;
+
             var spaceGame = SpaceGame;
             if (spaceGame == null) return null;
 
@@ -457,8 +463,9 @@ namespace PioneerFramework
             if (targetMap == null)
             {
                 Log.Message(string.Format("[Boarding] Unit {0} 目标空间站内部 Map 不可用，降落失败", unit.id));
-                unit.state = BoardingState.Destroyed;
                 KillMembers(unit, "目标站内部 Map 不可用");
+                spaceGame.DestroyGroup(unit.groupId); // 同步销毁临时 3D 实体，防孤儿幽灵船
+                unit.state = BoardingState.Destroyed;
                 return;
             }
 
@@ -471,8 +478,9 @@ namespace PioneerFramework
                 if (def == null)
                 {
                     Log.Error("[Boarding] PF_Building_Shuttle Def 缺失，降落失败");
-                    unit.state = BoardingState.Destroyed;
                     KillMembers(unit, "穿梭机 Def 缺失");
+                    spaceGame.DestroyGroup(unit.groupId); // 同步销毁临时 3D 实体，防孤儿幽灵船
+                    unit.state = BoardingState.Destroyed;
                     return;
                 }
                 // 占地足迹钳制：LocalToMapCell 只收敛单格，3x3 足迹需整体不出界
@@ -490,13 +498,11 @@ namespace PioneerFramework
                     unit.id, targetMap.uniqueID, unit.shuttleId, footCell));
             }
 
-            // 乘客/单兵下船：Spawn 到落点（穿梭机乘客分散在附近可站立格）
+            // 乘客/单兵下船：Spawn 到落点附近可站立格（落点可能点在建筑上，统一校验）
             foreach (var m in unit.members)
             {
                 if (m.pawn == null || m.pawn.Destroyed) continue;
-                IntVec3 spawnCell = unit.type == VesselType.Shuttle
-                    ? FindWalkableNear(targetMap, cell)
-                    : cell;
+                IntVec3 spawnCell = FindWalkableNear(targetMap, cell);
                 GenSpawn.Spawn(m.pawn, spawnCell, targetMap, Rot4.North, WipeMode.Vanish, false);
                 Log.Message(string.Format("[Boarding] 单位 {0} 成员 {1} 已登陆站 Map {2} 格 {3}",
                     unit.id, m.pawn.LabelShort, targetMap.uniqueID, spawnCell));
@@ -532,6 +538,10 @@ namespace PioneerFramework
                 unitGroup = b;
             }
             if (unit == null || unit.state != BoardingState.Flying || unitGroup == null) return false;
+
+            // 对方必须是本单位的目标空间站：撞到第三方/友军不消费，走正常碰撞
+            int otherGroupId = a.GroupId == unitGroup.GroupId ? b.GroupId : a.GroupId;
+            if (otherGroupId != unit.targetGroupId) return false;
 
             // 已对准落点（距移动落点 < 阈值）→ 消费
             double dist = (GetGroupPos(unitGroup) - GetWorldAimPoint(unit)).magnitude;
@@ -771,7 +781,7 @@ namespace PioneerFramework
             Scribe_Values.Look(ref nextShuttleId, "nextShuttleId", 1);
             Scribe_Collections.Look(ref units, "units", LookMode.Deep);
             if (Scribe.mode == LoadSaveMode.PostLoadInit && units == null)
-                units.Clear();
+                units = new List<BoardingUnit>();
         }
     }
 

@@ -77,7 +77,7 @@ namespace PioneerFramework
 #if !PURE_MATH
         public static void MultiBodyAccelJerk(
             DVector3 scPos, DVector3 scVel,
-            int tick,
+            double tick,
             CelestialBodyDef primaryBody,
             CelestialBodyManager manager,
             HashSet<int> whitelist,
@@ -131,7 +131,7 @@ namespace PioneerFramework
         
         public static double ComputeOrbitKeepingDvRate(
             DVector3 scPos, DVector3 scVel,
-            int tick,
+            double tick,
             CelestialBodyDef primaryBody,
             CelestialBodyManager manager,
             HashSet<int> whitelist)

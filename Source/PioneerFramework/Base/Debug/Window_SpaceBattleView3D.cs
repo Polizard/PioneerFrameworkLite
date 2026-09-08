@@ -5,6 +5,7 @@ using UnityEngine;
 using Verse;
 using RimWorld;
 using PioneerFramework.Combat;
+using PioneerFramework.Launch;
 
 namespace PioneerFramework
 {
@@ -55,6 +56,10 @@ namespace PioneerFramework
         // ── 缓存 ──
         private int lastUpdateTick = -1;
         private Dictionary<int, Vector3> bodyPositionsUnity;
+
+        // ── 殖民地位置标记（天地映射检测用：玩家殖民地在行星表面的 ECI 位置）──
+        private GameObject colonyMarkerObject;
+        private bool colonyMarkerLogged;
 
         // ── 飞船参数（无设计数据的回退长方体尺寸）──
         private const float FallbackShipLength = 2.0f;
@@ -340,6 +345,9 @@ namespace PioneerFramework
             // ── 本行星系天体 ──
             SyncSameSystemBodies();
 
+            // ── 玩家殖民地标记（天地映射检测）──
+            SyncColonyMarker();
+
             // ── 非本行星系天体 ──
             SyncOtherBodiesAsBillboards();
 
@@ -605,6 +613,69 @@ namespace PioneerFramework
         // ════════════════════════════════════════════════
         //  天体渲染（原有逻辑保持不变）
         // ════════════════════════════════════════════════
+
+        /// <summary>
+        /// 渲染玩家殖民地标记（天地映射检测用）：把殖民地 tile 经纬度按 GetSurfaceState
+        /// 映射到 ECI 地表位置（与火箭出生同构的变换）。若火箭从标记处起飞 → 经度/自转相位原点正确；
+        /// 若偏离 → 偏离量即经度/相位误差。亮黄色发光球，40km 视觉尺寸（相对行星半径可见）。
+        /// </summary>
+        private void SyncColonyMarker()
+        {
+            if (sceneRoot == null || celestialManager == null || observerGroup == null) return;
+
+            // 玩家殖民地（settlement）tile
+            Faction playerFaction = Faction.OfPlayer;
+            if (playerFaction == null) return;
+            int tile = -1;
+            foreach (var s in Find.WorldObjects.Settlements)
+            {
+                if (s != null && s.Faction == playerFaction && s.Tile >= 0) { tile = s.Tile; break; }
+            }
+            if (tile < 0) return;
+
+            // 观察者所在行星系根天体（殖民地所在的星球）
+            int rootBodyId = celestialManager.GetRootPlanetId(observerGroup.CelestialBodyId);
+            if (rootBodyId < 0) return;
+
+            double radius = GetSurfaceState.BodyRadius(celestialManager, rootBodyId);
+            double omega = GetSurfaceState.RotationOmega(celestialManager, rootBodyId);
+            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
+
+            Vector2 longLat = Find.WorldGrid.LongLatOf(tile);
+            double latRad = longLat.y * Mathf.Deg2Rad;
+            double lonRad0 = longLat.x * Mathf.Deg2Rad;
+            var surf = GetSurfaceState.SurfaceState(radius, latRad, lonRad0, omega, physicsTick);
+            Vector3 markPos = (Vector3)(surf.pos * SpaceConstants.UnitsPerMeter);
+
+            if (colonyMarkerObject == null)
+            {
+                colonyMarkerObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                colonyMarkerObject.name = "ColonyMarker";
+                colonyMarkerObject.layer = SceneLayer;
+                var coll = colonyMarkerObject.GetComponent<Collider>();
+                if (coll != null) UnityEngine.Object.Destroy(coll);
+                var mr = colonyMarkerObject.GetComponent<MeshRenderer>();
+                mr.material = new Material(Shader.Find("Standard")) { color = new Color(1f, 1f, 0f) };
+                mr.material.EnableKeyword("_EMISSION");
+                mr.material.SetColor("_EmissionColor", new Color(1f, 1f, 0f) * 1.5f);
+                colonyMarkerObject.transform.SetParent(sceneRoot.transform);
+            }
+            colonyMarkerObject.transform.position = markPos;
+            float toUnity = (float)SpaceConstants.UnitsPerMeter;
+            colonyMarkerObject.transform.localScale = Vector3.one * Mathf.Max((float)(40000.0 * toUnity), 0.5f);
+            colonyMarkerObject.SetActive(true);
+
+            // 与观察者（火箭）的角距/距离，量化经度/相位误差（首次打印一次，不刷屏）
+            if (!colonyMarkerLogged)
+            {
+                colonyMarkerLogged = true;
+                double observerDistM = (observerPosUnity - markPos).magnitude / toUnity;
+                Log.Message(string.Format(
+                    "[ColonyMarker] 玩家殖民地标记 ECI=({0:F0},{1:F0},{2:F0})km (φ={3:F1}° λ0={4:F1}°) 距观察者(火箭)={5:F0}km",
+                    surf.pos.x / 1000.0, surf.pos.y / 1000.0, surf.pos.z / 1000.0,
+                    latRad * Mathf.Rad2Deg, lonRad0 * Mathf.Rad2Deg, observerDistM / 1000.0));
+            }
+        }
 
         private void SyncSameSystemBodies()
         {
@@ -990,6 +1061,7 @@ namespace PioneerFramework
             billboardObjects.Clear();
             sunBillboardObject = null;
             sunBillboardGlowObject = null;
+            if (colonyMarkerObject != null) { UnityEngine.Object.Destroy(colonyMarkerObject); colonyMarkerObject = null; }
         }
     }
 }

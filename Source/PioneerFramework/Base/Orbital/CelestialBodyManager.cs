@@ -263,14 +263,6 @@ namespace PioneerFramework
 
         // ── 轨道位置计算 ──
 
-        private static void GetOrbitFrame(DVector3 normal, out DVector3 refX, out DVector3 refY)
-        {
-            DVector3 up = System.Math.Abs(DVector3.Dot(normal, DVector3.up)) > 0.99
-                ? DVector3.forward : DVector3.up;
-            refX = DVector3.Cross(normal, up).normalized;
-            refY = DVector3.Cross(normal, refX).normalized;
-        }
-
         /// <summary>
         /// 计算天体在给定 tick 的世界空间位置。
         /// </summary>
@@ -290,9 +282,8 @@ namespace PioneerFramework
                 double angularVelocity = 2.0 * System.Math.PI / body.orbitPeriod;
                 double phase = body.initialPhase + angularVelocity * tick;
 
-                DVector3 normal = body.OrbitNormalD.normalized;
                 DVector3 refX, refY;
-                GetOrbitFrame(normal, out refX, out refY);
+                body.GetOrbitFrame(out refX, out refY);
 
                 double cos = System.Math.Cos(phase);
                 double sin = System.Math.Sin(phase);
@@ -329,9 +320,8 @@ namespace PioneerFramework
             double angularVelocity = 2.0 * System.Math.PI / body.orbitPeriod;
             double phase = body.initialPhase + angularVelocity * tick;
 
-            DVector3 normal = body.OrbitNormalD.normalized;
             DVector3 refX, refY;
-            GetOrbitFrame(normal, out refX, out refY);
+            body.GetOrbitFrame(out refX, out refY);
 
             // 位置 = R·(cos·refX + sin·refY)
             // 速度 = ω·R·(-sin·refX + cos·refY)
@@ -363,9 +353,8 @@ namespace PioneerFramework
             double angularVelocity = 2.0 * System.Math.PI / body.orbitPeriod;
             double phase = body.initialPhase + angularVelocity * tick;
 
-            DVector3 normal = body.OrbitNormalD.normalized;
             DVector3 refX, refY;
-            GetOrbitFrame(normal, out refX, out refY);
+            body.GetOrbitFrame(out refX, out refY);
 
             double cos = System.Math.Cos(phase);
             double sin = System.Math.Sin(phase);
@@ -384,9 +373,8 @@ namespace PioneerFramework
             double angularVelocity = 2.0 * System.Math.PI / body.orbitPeriod;
             double phase = body.initialPhase + angularVelocity * tick;
 
-            DVector3 normal = body.OrbitNormalD.normalized;
             DVector3 refX, refY;
-            GetOrbitFrame(normal, out refX, out refY);
+            body.GetOrbitFrame(out refX, out refY);
 
             double cos = System.Math.Cos(phase);
             double sin = System.Math.Sin(phase);
@@ -424,9 +412,8 @@ namespace PioneerFramework
                     centerWorld = GetBodyWorldPosition(parent, tick);
             }
 
-            DVector3 normal = body.OrbitNormalD.normalized;
             DVector3 refX, refY;
-            GetOrbitFrame(normal, out refX, out refY);
+            body.GetOrbitFrame(out refX, out refY);
 
             var points = new List<Vector3>(segments);
             double toUnity = SpaceConstants.UnitsPerMeter;

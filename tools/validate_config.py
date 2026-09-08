@@ -181,6 +181,8 @@ def main():
         "Things/Projectile/Bullet_Big",
         # 原版狙击炮塔顶盖贴图（PFL 加农炮塔临时借用）
         "Things/Building/Security/TurretSniper_Top",
+        # 原版重型炮塔底座贴图（PFL 加农炮塔临时借用；ae1d4b7 引用但漏入清单，2026-09-09 补）
+        "Things/Building/Security/TurretHeavy_Base",
         # 原版飞船传感器组件贴图（PFL 目标定位机临时借用）
         "Things/Building/Ship/ShipSensorCluster",
     }

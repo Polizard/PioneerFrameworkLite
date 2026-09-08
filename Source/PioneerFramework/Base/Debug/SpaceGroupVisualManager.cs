@@ -70,6 +70,15 @@ namespace PioneerFramework
         /// <summary>预创建的球体网格，用于天体球体渲染。</summary>
         private static Mesh sphereMesh;
 
+        /// <summary>预创建的立方体网格，用于发射点标记。</summary>
+        private static Mesh cubeMesh;
+
+        /// <summary>发射点 tile（发射时由 LaunchService/LaunchTestScenarios 登记）。-1 = 尚未发射。</summary>
+        private static int launchSiteTile = -1;
+
+        /// <summary>登记发射点 tile（发射链调用），世界视图据此钉红色正方体。</summary>
+        public static void SetLaunchSiteTile(int tile) => launchSiteTile = tile;
+
         public static int GetSelectedGroupId() => selectedGroupId;
         static SpaceGroupVisualManager()
         {
@@ -85,6 +94,11 @@ namespace PioneerFramework
             var sphereGO = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             sphereMesh = UnityEngine.Object.Instantiate(sphereGO.GetComponent<MeshFilter>().sharedMesh);
             UnityEngine.Object.DestroyImmediate(sphereGO);
+
+            // 创建立方体网格（用于发射点标记）
+            var cubeGO = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            cubeMesh = UnityEngine.Object.Instantiate(cubeGO.GetComponent<MeshFilter>().sharedMesh);
+            UnityEngine.Object.DestroyImmediate(cubeGO);
 
             // 应用 Harmony 补丁
             var harmony = new Harmony("PioneerFramework.SpaceGroupVisualManager");
@@ -117,14 +131,17 @@ namespace PioneerFramework
             if (!WorldRendererUtility.WorldSelected) return;
             if (!EnableVisualization) return;
 
+            var camera = Find.WorldCamera;
+            if (camera == null) return;
+
+            // 发射点标记（红色正方体，固连系）：不依赖 group 存在，未发射也可作天地对照锚点
+            DrawLaunchSiteMarker(camera);
+
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return;
 
             var groups = spaceGame.GetAllGroups().ToList();
             if (groups.Count == 0) return;
-
-            var camera = Find.WorldCamera;
-            if (camera == null) return;
 
             // 收集地球系统（地球 + 所有卫星）的天体 ID 集合，渲染该系统中所有群组
             var earthSystemBodyIds = new HashSet<int> { EARTH_BODY_ID };
@@ -578,6 +595,37 @@ namespace PioneerFramework
                 }
             }
             return points;
+        }
+
+        /// <summary>
+        /// 世界视图发射点标记：红色正方体钉在发射 tile 表面（固连系）。
+        /// 位置直接取 Find.WorldGrid.GetTileCenter（星球贴图渲染真值）——与叠加渲染的火箭
+        /// （ApplyVisualRotation 后钉在同一 tile）形成天地对照锚点；未发射时回退到玩家据点 tile。
+        /// </summary>
+        private static void DrawLaunchSiteMarker(Camera cam)
+        {
+            int tile = launchSiteTile;
+            if (tile < 0)
+            {
+                foreach (var s in Find.WorldObjects.Settlements)
+                {
+                    if (s != null && s.Faction == Faction.OfPlayer && s.Tile >= 0) { tile = s.Tile; break; }
+                }
+            }
+            if (tile < 0) return;
+
+            float radius = Find.WorldGrid.Surface.Radius;
+            Vector3 radial = Find.WorldGrid.GetTileCenter(tile).normalized;
+            Vector3 drawPos = radial * (radius + 4f);   // 贴表面略抬（云层 +0.2，辉光 +16）
+
+            if (!IsWorldPosVisible(drawPos, 0.5f)) return;
+
+            // 立方体 Y 轴对齐地表法线"立"在地面，轻微脉动便于远距离辨认
+            float pulse = 1f + 0.12f * Mathf.Sin(Time.realtimeSinceStartup * 3f);
+            Quaternion rot = Quaternion.FromToRotation(Vector3.up, radial);
+            Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, Vector3.one * (12f * pulse));
+            orbitMarkerPropertyBlock.SetColor("_Color", new Color(1f, 0.15f, 0.1f, 0.95f));
+            Graphics.DrawMesh(cubeMesh, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
         }
 
         /// <summary>

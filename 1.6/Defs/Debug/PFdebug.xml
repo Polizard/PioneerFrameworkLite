@@ -1,45 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Defs>
-  <!-- ME输入端口：将周围物品输入网络 -->
-  <ThingDef ParentName="BuildingBase">
-    <defName>PF_Debug</defName>
-    <label>PF Debug</label>
-    <description>调试建筑</description>
-    <thingClass>Building</thingClass>
-    <tickerType>Normal</tickerType>
-    <graphicData>
-      <texPath>Things/Building/SpaceLaunchTechnology/LaunchPadS</texPath>
-      <graphicClass>Graphic_Multi</graphicClass>
-      <drawSize>(1,1)</drawSize>
-      <shadowData>
-        <volume>(1.83, 0.5, 1.73)</volume>
-        <offset>(0,0,-0.05)</offset>
-      </shadowData>
-    </graphicData>
-    <size>(1,1)</size>
-    <altitudeLayer>Building</altitudeLayer>
-    <passability>PassThroughOnly</passability>
-    <selectable>true</selectable>
-    <designationCategory>Power</designationCategory>
-    <uiOrder>100</uiOrder>
-    <costList>
-      <Steel>20</Steel>
-    </costList>
-    <constructionSkillPrerequisite>4</constructionSkillPrerequisite>
-    <researchPrerequisites>
-      <li>MicroelectronicsBasics</li>
-    </researchPrerequisites>
-    <comps>
-      <li Class="PioneerFramework.CompProperties_DebugSpatialGrid">
-      </li>
-    </comps>
-  </ThingDef>
-
-  <!-- 空间站部署台：创建绕近地轨道的测试空间站（含地图 + 单 part） -->
+  <!-- 统一调试台（2026-09-06）：唯一调试入口。选中 → Gizmo「打开 PF 调试面板」→ Window_DebugHub -->
   <ThingDef ParentName="BuildingBase">
     <defName>PF_ShipDeployer</defName>
-    <label>空间站部署台</label>
-    <description>创建绕 500km 近地轨道的测试空间站，生成对应的 Group 和 Entity。</description>
+    <label>PF 调试台</label>
+    <description>调试建筑：选中后打开「PF 统一调试面板」，一键部署空间站 / 炮塔（炮+激光）/ 碰撞 / 操舵 / 跳帮 / 发射等测试场景。</description>
     <thingClass>Building</thingClass>
     <tickerType>Normal</tickerType>
     <graphicData>
@@ -66,36 +31,6 @@
     </researchPrerequisites>
     <comps>
       <li Class="PioneerFramework.CompProperties_DebugShipSpawner" />
-    </comps>
-  </ThingDef>
-  <!-- 空间站信息台：选中显示所属空间站地图的 MapComp 概况（工质向量、dV 等） -->
-  <ThingDef ParentName="BuildingBase">
-    <defName>PF_StationInfo</defName>
-    <label>空间站信息台</label>
-    <description>调试建筑：选中时显示所属空间站地图的 SpaceMapComp 概况（归属实体、工质向量、dV）。</description>
-    <thingClass>Building</thingClass>
-    <tickerType>Normal</tickerType>
-    <graphicData>
-      <texPath>Things/Building/SpaceLaunchTechnology/LaunchPadS</texPath>
-      <graphicClass>Graphic_Multi</graphicClass>
-      <drawSize>(1,1)</drawSize>
-      <shadowData>
-        <volume>(1.83, 0.5, 1.73)</volume>
-        <offset>(0,0,-0.05)</offset>
-      </shadowData>
-    </graphicData>
-    <size>(1,1)</size>
-    <altitudeLayer>Building</altitudeLayer>
-    <passability>PassThroughOnly</passability>
-    <selectable>true</selectable>
-    <designationCategory>Power</designationCategory>
-    <uiOrder>104</uiOrder>
-    <costList>
-      <Steel>10</Steel>
-    </costList>
-    <constructionSkillPrerequisite>1</constructionSkillPrerequisite>
-    <comps>
-      <li Class="PioneerFramework.CompProperties_DebugStationInfo" />
     </comps>
   </ThingDef>
 </Defs>

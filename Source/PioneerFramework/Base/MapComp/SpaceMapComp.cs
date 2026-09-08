@@ -134,6 +134,9 @@ namespace PioneerFramework
         /// <summary>RCS 总质量流率（kg/s）。</summary>
         public float RcsFlow => sumMfRcs;
 
+        /// <summary>该网络是否含 RCS 引擎（no-map 实体每 PropulsionData 一条网络，可用此判定类属；D15）。</summary>
+        public bool HasRcsEngines => sumMfRcs > 0f;
+
         /// <summary>该网络工质的当前可用存量（kg，动态查推进源工质池）。</summary>
         public float AvailableMass(IPropulsionSource src)
         {
