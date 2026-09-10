@@ -26,6 +26,7 @@
     <Compile Include="..\PioneerFramework\Base\Orbital\BurnCore.cs" Link="Pure\BurnCore.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\LaunchGuidanceCore.cs" Link="Pure\LaunchGuidanceCore.cs" />
     <Compile Include="..\PioneerFramework\Base\Game\MissileGuidanceCore.cs" Link="Pure\MissileGuidanceCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\Game\ConstellationCore.cs" Link="Pure\ConstellationCore.cs" />
   </ItemGroup>
 
 </Project>

@@ -169,7 +169,9 @@ namespace PioneerFramework
 
         public BoardingManager(Game game) { }
 
-        private SpaceGameComp SpaceGame => Current.Game?.GetComponent<SpaceGameComp>();
+        // 性能第 5 条：接舷每物理步每单位都要取，按 Game 缓存
+        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new GameComponentRef<SpaceGameComp>();
+        private SpaceGameComp SpaceGame => spaceGameRef.Get();
 
         public IReadOnlyList<BoardingUnit> Units => units;
 

@@ -11,6 +11,14 @@
 ## 常用命令
 
 ```powershell
+# 一键验证（推荐）：镜像 CI 全流程 —— Debug 构建 + 纯数学测试 + 游戏集成测试 +
+# Def/XML 校验 + 已提交资源存在性 + Release 确定性构建 + 重建并校验已提交 DLL。
+# 退出码 0 = 全绿；任何一步失败打印 [FAIL] 并返回 1。
+powershell -ExecutionPolicy Bypass -File tools/test-all.ps1
+
+# 可选开关：-SkipConfig -SkipDeterminism -NoDllRebuild
+#           -WarningDiff（额外用 HEAD 的临时 worktree 比对警告类别，确认本次改动没引入新警告）
+
 # 构建
 dotnet build Source/PioneerFramework/PioneerFramework.csproj -c Debug
 
@@ -51,6 +59,10 @@ powershell -ExecutionPolicy Bypass -File tools/check-committed-dll.ps1
 ## DLL 提交约定
 
 `1.6/Assemblies/PioneerFrameworkLite.dll` 是已提交二进制，CI 会校验它必须等于固定 SDK 的 Release 构建结果。
+
+⚠️ **`PioneerFramework.csproj` 的 `OutputPath` 对 Debug/Release 都指向 `1.6/Assemblies/`**，所以
+**任何 `dotnet build -c Debug`（包括 `dotnet test`）都会把已提交的 DLL 覆盖成 Debug 版**。
+改完 C# 后务必**最后**跑一次 `rebuild-dll.ps1`（或用 `tools/test-all.ps1`，它会把重建+校验放在最后一步）。
 
 提交 DLL 前请使用：
 

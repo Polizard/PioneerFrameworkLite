@@ -42,7 +42,8 @@ namespace PioneerFramework
             // 有效性：窗口开着但 group 失效 / 船上操舵台被拆 → 自动关闭
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             var group = spaceGame != null ? spaceGame.GetGroupById(SteeringController.GroupId) : null;
-            if (group == null || !group.IsActive || !CompSteeringConsole.HasConsole(Current.Game.CurrentMap))
+            var curMap = Current.Game?.CurrentMap; // 同上：全库约定是 Current.Game?.
+            if (group == null || !group.IsActive || curMap == null || !CompSteeringConsole.HasConsole(curMap))
             {
                 SteeringController.Close();
                 Close();

@@ -103,6 +103,38 @@ namespace PioneerFramework
         private int cachedAabbTick = -1;        // GetWorldAabb 每 tick 懒缓存（旋转/部件未变时同 tick 复用）
         private DVector3 cachedAabbMin, cachedAabbMax;
 
+        private int cachedRotInvTick = -1;      // RotationInverse 每 tick 懒缓存（同款模式）
+        private DQuaternion cachedRotInv;
+
+        /// <summary>
+        /// 姿态逆四元数（per-tick 懒缓存，与 GetWorldAabb 同款；SetRotation 失效）。
+        /// 命中几何对「每射弹/每光束 × 每候选实体」各算一次 Inverse(FromQuaternion(Rotation))，
+        /// 而姿态在步内不变（物理区只算，主线程统一施加）——缓存把每弹每实体的开销压成每实体每 tick。
+        /// </summary>
+        public DQuaternion RotationInverse()
+        {
+            int tick = Find.TickManager?.TicksGame ?? -1;
+            if (tick == cachedRotInvTick)
+            {
+                if (PerfProbe.Enabled)
+                {
+                    PerfProbe.RotInvHit(); // 命中 = 省下的一次旋转逆运算
+                    if (PerfProbe.ShadowChecks && PerfProbe.ShouldShadowRotInv())
+                    {
+                        // 影子校验：缓存值 vs 实时重算（姿态若在同 tick 内被改而未失效，此处必然抓到）
+                        var fresh = DQuaternion.Inverse(DQuaternion.FromQuaternion(rotation));
+                        PerfProbe.RotInvShadow(fresh.Equals(cachedRotInv),
+                            $"entity={entityId} tick={tick} cached=({cachedRotInv.x:F6},{cachedRotInv.y:F6},{cachedRotInv.z:F6},{cachedRotInv.w:F6}) fresh=({fresh.x:F6},{fresh.y:F6},{fresh.z:F6},{fresh.w:F6})");
+                    }
+                }
+                return cachedRotInv;
+            }
+            cachedRotInv = DQuaternion.Inverse(DQuaternion.FromQuaternion(rotation));
+            cachedRotInvTick = tick;
+            if (PerfProbe.Enabled) PerfProbe.RotInvMiss();
+            return cachedRotInv;
+        }
+
         private DVector3 positionMeters;
         private DVector3 velocityMeters;
         private Quaternion rotation;
@@ -237,6 +269,10 @@ namespace PioneerFramework
         private float totalPropulsionMass;
         private float totalPropulsionCapacity;
 
+        /// <summary>推进数据版本：InvalidatePropulsion 自增（不序列化）。
+        /// 群级推进源（GroupPropulsionAggregator）缓存以它判陈旧——与 Networks 缓存同一失效入口。</summary>
+        public int PropulsionVersion { get; private set; }
+
         /// <summary>全部自带工质网络（由 propulsion 数据懒构建；ve/ṁ 变更需 InvalidatePropulsion）。</summary>
         public IReadOnlyList<PropellantNetwork> Networks
         {
@@ -339,6 +375,7 @@ namespace PioneerFramework
         public void InvalidatePropulsion()
         {
             propulsionDirty = true;
+            PropulsionVersion++;
             totalPropulsionMass = 0f;
             totalPropulsionCapacity = 0f;
             if (propulsion == null) return; // 旧存档无此节点
@@ -389,6 +426,7 @@ namespace PioneerFramework
         {
             rotation = rot;
             cachedAabbTick = -1; // 旋转参与 GetWorldAabb → 失效缓存
+            cachedRotInvTick = -1; // 同上：姿态逆四元数随之失效
         }
 
         // ── 部件管理 ──

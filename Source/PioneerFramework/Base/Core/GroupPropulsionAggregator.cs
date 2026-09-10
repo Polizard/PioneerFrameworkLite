@@ -10,22 +10,29 @@ namespace PioneerFramework
     ///   · GetPropellantMass / Total*：Σ 各实体存量/容量；
     ///   · TryConsumePropellant：沿实体分摊扣料——**燃料归实体自己**：实体阵亡燃料随之消失，
     ///     群质量/推力/总料自动收缩，无任何移交/平分记账。
-    /// 每次由 SpaceGameComp.GetGroupPropulsionSource 现建（物理步内实体集稳定；
-    /// 并行物理区只读：Networks/GetPropellantMass/EffectiveVe；消耗在主线程 TryConsume）。
+    /// 实例由 SpaceGameComp.GetGroupPropulsionSource 按「实体集+推进指纹」缓存在 group 上复用
+    /// （SpaceEntityGroup.cachedPropulsionAggregator；指纹不变则 Networks 只构建一次）。
+    /// 并行物理区只读：Networks/GetPropellantMass/EffectiveVe；消耗在主线程 TryConsume。
     /// </summary>
     public class GroupPropulsionAggregator : IPropulsionSource
     {
         private readonly SpaceEntityGroup group;
         private readonly SpaceGameComp spaceGame;
+        private readonly int sourceStamp;
 
         private List<PropellantNetwork> cachedNetworks = new List<PropellantNetwork>();
         private bool dirty = true;
 
-        public GroupPropulsionAggregator(SpaceEntityGroup group, SpaceGameComp spaceGame)
+        /// <param name="sourceStamp">构建时的实体集+推进指纹（见 SpaceEntityGroup.cachedPropulsionStamp）。</param>
+        public GroupPropulsionAggregator(SpaceEntityGroup group, SpaceGameComp spaceGame, int sourceStamp)
         {
             this.group = group;
             this.spaceGame = spaceGame;
+            this.sourceStamp = sourceStamp;
         }
+
+        /// <summary>本实例对应的指纹：调用方据此判断能否复用缓存实例。</summary>
+        public int SourceStamp => sourceStamp;
 
         public IReadOnlyList<PropellantNetwork> Networks
         {

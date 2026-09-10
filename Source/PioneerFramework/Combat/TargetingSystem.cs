@@ -9,6 +9,9 @@ namespace PioneerFramework.Combat
         private CombatManager combatManager;
         private int lastLockLogTick = -120;   // 锁定日志限频（每 60 tick 一条）
 
+        // 性能第 5 条：索敌每物理步一次 GetComponent 是组件表线性扫描，按 Game 缓存
+        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new GameComponentRef<SpaceGameComp>();
+
         public TargetingSystem(CombatManager manager)
         {
             combatManager = manager;
@@ -16,7 +19,7 @@ namespace PioneerFramework.Combat
 
         public void Update(int currentTick)
         {
-            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var spaceGame = spaceGameRef.Get();
             if (spaceGame == null) return;
 
             foreach (var group in spaceGame.GetAllGroups())

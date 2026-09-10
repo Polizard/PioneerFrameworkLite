@@ -139,7 +139,9 @@ namespace PioneerFramework
 
         public AutonomousVehicleManager(Game game) { }
 
-        private SpaceGameComp SpaceGame => Current.Game?.GetComponent<SpaceGameComp>();
+        // 性能第 5 条：OnPhysicsStepCompleted / TickAttack 每物理步都要取，按 Game 缓存
+        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new GameComponentRef<SpaceGameComp>();
+        private SpaceGameComp SpaceGame => spaceGameRef.Get();
 
         public IReadOnlyList<VehicleRecord> Vehicles => vehicles;
 
@@ -923,7 +925,8 @@ namespace PioneerFramework
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
                 if (vehicles == null)
-                    vehicles.Clear(); // Scribe_Collections 已重建列表；防御 null（旧存档无字段时）
+                    vehicles = new List<VehicleRecord>(); // 旧存档无此节点 → Scribe 不建列表，这里补建
+                // 注：原实现误写为 vehicles.Clear()（对 null 调用）→ 旧存档读档必 NRE；CS8602 静态分析抓出
                 // 反查索引随存档重建
                 byGroupId.Clear();
                 for (int i = 0; i < vehicles.Count; i++)

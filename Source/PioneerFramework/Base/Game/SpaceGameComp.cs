@@ -38,6 +38,19 @@ namespace PioneerFramework
         // PERF-5：物理并行下限——编组数低于此值时顺序执行（线程调度 + 并发容器分配 > 顺序开销）
         private const int PARALLEL_PHYSICS_MIN_GROUPS = 32;
 
+        // ── 每物理步 scratch 复用（2026-09-10 性能第 2 条：消除每步固定容器分配）──
+        // 仅主线程持有与消费；物理并行区只按索引写 physicsResultsScratch（组数与顺序步内稳定）。
+        private readonly List<SpaceEntityGroup> movableGroupsScratch = new List<SpaceEntityGroup>();
+        private GroupPhysicsResult[] physicsResultsScratch = new GroupPhysicsResult[0];
+        private readonly List<int> groupsToCheckScratch = new List<int>();
+        private readonly List<ThrustSlice> steeringSliceScratch = new List<ThrustSlice>();
+
+        // ── 组件引用缓存（2026-09-10 性能第 5 条）：GameComponentTick / 每物理步都要查的组件 ──
+        private readonly GameComponentRef<TimeScaleManager> timeScaleRef = new GameComponentRef<TimeScaleManager>();
+        private readonly GameComponentRef<CombatManager> combatMgrRef = new GameComponentRef<CombatManager>();
+        private readonly GameComponentRef<AutonomousVehicleManager> avmRef = new GameComponentRef<AutonomousVehicleManager>();
+        private readonly GameComponentRef<CelestialBodyManager> celestialRef = new GameComponentRef<CelestialBodyManager>();
+
         /// <summary>
         /// 方向感知推进的默认矢量锥半角余弦（cos 10° ≈ 0.9848）。
         /// burn / 手动平移只使用「轴向世界方向与目标方向夹角 ≤ 锥角」的引擎。
@@ -47,7 +60,7 @@ namespace PioneerFramework
         /// 与 DefaultThrustConeCos（10° 引擎允许窗口）区分：窗口内可出力、收心到死区才点火。</summary>
         public const float DefaultThrustAlignCos = 0.999657325f;
 
-        /// <summary>操舵/自动对准详细日志开关（验证用，默认关；CompDebugShipSpawner Gizmo 切换）。</summary>
+        /// <summary>操舵/自动对准详细日志开关（验证用，默认关；Debug 菜单「PFL 测试」页签切换）。</summary>
         public static bool DebugDetailedSteering = false;
         /// <summary>无 Map 主推方向型机动详细日志（D15 新增改动验证）：每物理步输出网选择/对准角/RCS/燃料/燃尽抑制。</summary>
         public static bool DebugDetailedThrust = false;
@@ -125,6 +138,10 @@ namespace PioneerFramework
         {
             if (groups.TryGetValue(groupId, out var group) && group.CelestialBodyId >= 0)
             {
+                // 地表锚点（星座成员载体）不进任何空间索引：粗网格的唯一消费者是
+                // 定向能粗筛 / TargetingSystem.GetGroupsInRange 的候选预过滤，锚点没有参与资格。
+                // 在本方法短路 = RegisterGroup / SyncGroupToCoarseGrid / DestroyGroup 三处一并覆盖。
+                if (group.IsSurfaceAnchor) return null;
                 var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
                 if (mgr != null)
                 {
@@ -276,8 +293,6 @@ namespace PioneerFramework
 
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             int frameId = mgr?.GetReferenceFrameId(group.CelestialBodyId) ?? -1;
-            Log.Message(string.Format("[Grid] Group {0} registered: bodyId={1} frameId={2}",
-                group.GroupId, group.CelestialBodyId, frameId));
 
             // 粗网格：注册群组（同步初始化位置缓存，保证 SyncGroupToCoarseGrid 走 Update 路径）
             var targetGrid = GetGridForGroup(group.GroupId);
@@ -287,6 +302,12 @@ namespace PioneerFramework
                 groupLastCoarsePos[group.GroupId] = group.Position;
             }
 
+            // 打印实际结果而非"registered"：地表锚点按设计不入索引（GetGridForGroup 短路），
+            // 若这里仍报 registered，会与星座自检「空间索引隔离」的结论互相矛盾，误导排查。
+            Log.Message(string.Format("[Grid] Group {0} registered: bodyId={1} frameId={2} 粗网格={3}",
+                group.GroupId, group.CelestialBodyId, frameId,
+                targetGrid != null ? "已入" : group.IsSurfaceAnchor ? "锚点不入" : "无参考系"));
+
             // 细网格：注册群组到战斗网格
             var combatGrid = Current.Game?.GetComponent<CombatGrid>();
             if (combatGrid != null && group.IsCollidable)
@@ -294,7 +315,7 @@ namespace PioneerFramework
 
             if (group.CelestialBodyId >= 0)
             {
-                var celestialMgr = Current.Game.GetComponent<CelestialBodyManager>();
+                var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>(); // 与全库其它调用点同款判空
                 if (celestialMgr != null)
                     celestialMgr.RegisterGroupToBody(group.GroupId, group.CelestialBodyId);
             }
@@ -321,6 +342,13 @@ namespace PioneerFramework
         }
 
         /// <summary>
+        /// 群组销毁事件（唯一收束点：<see cref="DestroyGroup"/> 内 fire，与 OnGroupDestroyed→CombatManager 同点）。
+        /// 卫星与地表锚点的销毁都汇聚到 DestroyGroup，订阅方（星座收尸等）不必到处挂点。
+        /// **注意**：fire 时刻群组仍在 groups 字典中（注销是第 4 步）→ 订阅者可读 group 自身身份字段。
+        /// </summary>
+        public event Action<int> GroupDestroyed;
+
+        /// <summary>
         /// 销毁群组：从粗细网格移除 → 清理战斗缓存 → 注销实体 → 注销群组。
         /// </summary>
         public void DestroyGroup(int groupId)
@@ -335,6 +363,10 @@ namespace PioneerFramework
             // 2. 战斗缓存清理
             var combatMgr = Current.Game?.GetComponent<CombatManager>();
             combatMgr?.OnGroupDestroyed(groupId);
+
+            // 2.7 收尸事件（星座等组织层订阅）：在粗网格/实体注销之前 fire，
+            //     此刻 group 仍在 groups 中，订阅者能读到 IsSurfaceAnchor / anchorWorldObjectId。
+            GroupDestroyed?.Invoke(groupId);
 
             // 2.5 粗网格移除（此时 group 仍在 groups 字典中，GetGridForGroup 可用）
             var targetGrid = GetGridForGroup(groupId);
@@ -660,7 +692,7 @@ namespace PioneerFramework
                 ProcessArchiveOperation();
             }
 
-            var timeScaleManager = Current.Game?.GetComponent<TimeScaleManager>();
+            var timeScaleManager = timeScaleRef.Get();
             int currentTick = Find.TickManager.TicksGame;
             
             if (currentTick - lastUpdateTick >= UPDATE_INTERVAL_TICKS)
@@ -671,8 +703,8 @@ namespace PioneerFramework
                 // 全名字母序（AutonomousVehicleManager → 本组件 → CombatManager），若制导/碰撞各自
                 // %2 tick 会有一方读到推进前的旧位置 → 同 tick 位置错位 2s ≈ 5km（导弹制导报 0.7km
                 // 命中、碰撞实测 2.6km 的日志实证）。此处推进完毕 = 所有消费者同 tick 同位。
-                Current.Game?.GetComponent<CombatManager>()?.OnPhysicsStepCompleted();
-                Current.Game?.GetComponent<AutonomousVehicleManager>()?.OnPhysicsStepCompleted();
+                combatMgrRef.Get()?.OnPhysicsStepCompleted();
+                avmRef.Get()?.OnPhysicsStepCompleted();
             }
             
             if (timeScaleManager != null && timeScaleManager.IsCombatMode)
@@ -681,7 +713,17 @@ namespace PioneerFramework
             }
             
             foreach (var pg in planetGrids.Values)
+            {
                 pg.ApplyChanges();
+                // 粗网格空格回收（TTL 600 tick）：本方法此前**没有任何调用点**（同名 CombatGrid.DrainEmptyCells
+                // 才有），于是空格与其 emptyQueue 条目永不回收——历史上被访问过的每个 1000km 格都常驻内存。
+                // 2026-09-10 游戏内实证：空闲场景跑一次星座自检（造/销一枚圆轨探针）后，[网格状态] 恒为
+                // 「网格数=1 格数=1 实体=0 空队=1」，tick 240/360/480 无回落。
+                // 安全性：只回收"当前无实体"的格，查询侧（GetNearby→GetGroupsInRange）语义不变；
+                // 被回收格的 LastCellCoord 只可能属于已 Remove 离开网格的实体，不会再走 Update。
+                // 成本：每 tick 最多摊销 emptyQueue.Count/20（空队时零迭代）。
+                pg.DrainEmptyCells();
+            }
 
             // 空间站地图为 pocket map，Thing 的 CompTick 在隐藏时不可靠：
             // 统一在此驱动储罐差值同步（burn 扣向量后储罐本地逐 tick 追平）。
@@ -693,6 +735,15 @@ namespace PioneerFramework
 
             // 游戏内架构验证测试（burn 差值同步/合冲量/推进器状态）——空闲时零开销
             BurnArchitectureTest.Tick();
+
+            // 性能优化验收探针汇总（2026-09-10；开关关闭时仅一次静态 bool 读，内部限频）
+            PerfProbe.MaybeLogSummary();
+
+            // 游戏内一键验收状态机（未运行时立即返回，空闲零开销）
+            PerfAcceptanceRunner.Tick();
+
+            // 调试场景驱动（原 DebugShipSpawner.CompTick：场景自动下令 + 碰撞距离探针）
+            DebugShipSpawner.Tick();
         }
 
         private struct GroupPhysicsResult
@@ -738,7 +789,11 @@ namespace PioneerFramework
                 var burnSrc = GetGroupPropulsionSource(group);
 
                 float fTotal = 0f, mfTotal = 0f;
-                var activeSlices = new List<ThrustSlice>();
+                // 第 3 条：组级 scratch 复用（本组本步独占；下方非 Map 分支是 Add 累加，必须先清空）
+                var activeSlices = group.thrustSliceScratch;
+                activeSlices.Clear();
+                // 探针：校验"每组独占一个 scratch 且身份恒定"（并行区两组共用会互相覆盖）
+                if (PerfProbe.Enabled) PerfProbe.SliceBuffer(group.GroupId, activeSlices);
 
                 if (burnSrc is SpaceMapComp mapComp)
                 {
@@ -896,6 +951,8 @@ namespace PioneerFramework
                         // 总工质消耗：ṁ·dt 按实际 ΔV 折算（提前达成计划 ΔV 时按比例少烧）
                         result.PropellantConsumed = mfTotal * dtSeconds * (dvThisTick > 0.0 ? burnDv / dvThisTick : 0.0);
                         result.ActiveSlices = activeSlices; // 引用快照，主线程按切片流率比例分配扣除
+                        if (PerfProbe.Enabled) // 探针：快照必须是本组自己的 scratch（否则并行区会被别的组改写）
+                            PerfProbe.SliceAlias(ReferenceEquals(activeSlices, group.thrustSliceScratch), $"G{group.GroupId}");
                         // 冲量累积：并行区只写本 group 独占的累积器，主线程在下一物理步首统一施加
                         // （避免并行区直接改 CurrentOrbit.velocity，消除多冲量顺序依赖）
                         group.pendingImpulse += group.burnDirection * burnDv;
@@ -1151,7 +1208,9 @@ namespace PioneerFramework
             DVector3 transDir = SteeringController.GetTranslationWorldDir(group);
             if (transDir.sqrMagnitude > 1e-9)
             {
-                var slices = new List<ThrustSlice>();
+                // 第 3 条：主线程 scratch 复用（本方法是单组逐步调用，无重入；显式清空不依赖被调方语义）
+                var slices = steeringSliceScratch;
+                slices.Clear();
                 mapComp.GetManualThrustAlong(transDir, group.CurrentOrbit.rotation, DefaultThrustConeCos,
                     group.burnEnabledNetworks, mapComp.armedGroupsMask, slices, out float f, out float mf);
                 bool burning = false;
@@ -1248,7 +1307,7 @@ namespace PioneerFramework
                 physicsTick = timeScaleManager.GetPhysicsTick();
             }
             
-            var celestialMgr = Current.Game.GetComponent<CelestialBodyManager>();
+            var celestialMgr = celestialRef.Get();
             if (celestialMgr == null) return;
 
             // ── 手动操舵（每物理步）：平移/旋转/SAS 输入应用 + 输入打断清队列（D10）──
@@ -1259,14 +1318,25 @@ namespace PioneerFramework
             ApplyPendingImpulses();
 
             // PERF-5：小规模回退顺序——预分配数组存结果，编组数低于阈值走顺序循环，避免并发容器分配
-            var movableGroups = new List<SpaceEntityGroup>(groups.Count);
+            var movableGroups = movableGroupsScratch;
+            movableGroups.Clear();
             foreach (var group in groups.Values)
             {
                 if (group.IsMovable)
                     movableGroups.Add(group);
             }
 
-            var physicsResults = new GroupPhysicsResult[movableGroups.Count];
+            if (physicsResultsScratch.Length < movableGroups.Count)
+            {
+                // 扩容留余量（翻倍）：组数持续增长时避免每步重新分配
+                // （2026-09-10 探针实测：按精确尺寸扩容会在弹群解离/场景加船的步骤上反复重分配）
+                int cap = Math.Max(movableGroups.Count, physicsResultsScratch.Length * 2);
+                physicsResultsScratch = new GroupPhysicsResult[cap];
+            }
+            var physicsResults = physicsResultsScratch;
+
+            // 探针（第 2 条）：容器身份稳定（确在复用）+ 复用数组尾部陈旧槽统计（下方按 Count 上界跳过）
+            if (PerfProbe.Enabled) PerfProbe.StepScratch(movableGroups, physicsResults, movableGroups.Count);
 
             if (movableGroups.Count < PARALLEL_PHYSICS_MIN_GROUPS)
             {
@@ -1281,10 +1351,14 @@ namespace PioneerFramework
                 });
             }
 
-            var groupsToCheck = new List<int>();
+            var groupsToCheck = groupsToCheckScratch;
+            if (PerfProbe.Enabled) PerfProbe.GroupsToCheckLeftover(groupsToCheck.Count); // 探针：上一步遗留项（应被清空）
+            groupsToCheck.Clear();
 
-            foreach (var result in physicsResults)
+            // 只遍历本步有效的前 Count 项：复用数组时尾部仍是上一步的结果，不得参与本步
+            for (int ri = 0; ri < movableGroups.Count; ri++)
             {
+                var result = physicsResults[ri];
                 if (!groups.TryGetValue(result.GroupId, out var group)) continue;
 
                 bool burnEndedThisStep = false;
@@ -1462,6 +1536,7 @@ namespace PioneerFramework
                 groupsToCheck.Add(group.GroupId);
             }
 
+            if (PerfProbe.Enabled) PerfProbe.GroupsToCheckConsume(groupsToCheck.Count, movableGroups.Count);
             foreach (int groupId in groupsToCheck)
             {
                 if (!groups.TryGetValue(groupId, out var group)) continue;
@@ -2460,7 +2535,10 @@ namespace PioneerFramework
         ///   1 个 → 该实体（单发/火箭热路径，行为不变）；
         ///   &gt;1 个（弹群，2026-09-08 思路 A）→ 群级聚合器 GroupPropulsionAggregator
         ///   （N 引擎同步：推力/流率全组合并、工质按实体分摊——燃料归实体自己，无记账）。
-        /// 并行只读安全：只读聚合缓存 / 只读实体推进字段；工质消耗在主线程 TryConsume。
+        /// 聚合器按「实体集版本 ⊕ 各推进实体推进版本」指纹缓存在 group 上复用（2026-09-10
+        /// 性能第 1 条）：多实体组每物理步被查 4+ 次，缓存后 BuildNetworks 每变更只跑一次。
+        /// 并行只读安全：指纹与 Networks 只依赖实体集与推进数据，物理步内无人变更它们
+        /// （消耗工质只改存量，不入指纹）；唯一并行区 Parallel.For 每组恰好一个迭代。
         /// </summary>
         public IPropulsionSource GetGroupPropulsionSource(SpaceEntityGroup group)
         {
@@ -2468,16 +2546,80 @@ namespace PioneerFramework
             if (mapComp != null) return mapComp;
             SpaceEntity first = null;
             int n = 0;
+            // 指纹复用既有遍历计算（每实体 2 次整数运算），无需在增删实体/改推进处回调置脏。
+            int stamp = group.entitySetVersion;
             foreach (int eid in group.GetEntityIds())
             {
                 var e = GetEntityById(eid);
                 if (e == null || !e.HasPropulsionData) continue;
                 if (first == null) first = e;
                 n++;
+                stamp = stamp * 31 + e.PropulsionVersion;
             }
             if (n == 1) return first;
-            if (n > 1) return new GroupPropulsionAggregator(group, this);
+            if (n > 1)
+            {
+                var agg = group.cachedPropulsionAggregator;
+                if (agg == null || agg.SourceStamp != stamp)
+                {
+                    agg = new GroupPropulsionAggregator(group, this, stamp);
+                    group.cachedPropulsionAggregator = agg;
+                    if (PerfProbe.Enabled) PerfProbe.AggRebuild(group.GroupId, group.entitySetVersion, stamp, n);
+                }
+                else if (PerfProbe.Enabled)
+                {
+                    PerfProbe.AggReuse(group.GroupId);
+                    if (PerfProbe.ShadowChecks && PerfProbe.ShouldShadowAgg())
+                        ProbeAggregatorShadow(group, agg);
+                }
+                return agg;
+            }
             return null;
+        }
+
+        /// <summary>
+        /// 探针（第 1 条影子校验）：用同一 group/指纹现建一个聚合器（= 优化前的旧行为：每次现建），
+        /// 与缓存实例逐网络比对（工质引用 / 推力 / 流率 / 主-RCS 归属），并核对燃料总量与容量是否实时。
+        /// 任何差异即"缓存陈旧"，由 PerfProbe 红字报出。仅在探针开启且命中节流时调用。
+        /// </summary>
+        private void ProbeAggregatorShadow(SpaceEntityGroup group, GroupPropulsionAggregator cached)
+        {
+            var fresh = new GroupPropulsionAggregator(group, this, cached.SourceStamp);
+            var a = cached.Networks;
+            var b = fresh.Networks;
+            if (a.Count != b.Count)
+            {
+                PerfProbe.AggShadowResult(false, $"G{group.GroupId} 网络数 缓存={a.Count} 现建={b.Count}");
+                return;
+            }
+            for (int i = 0; i < a.Count; i++)
+            {
+                if (!ReferenceEquals(a[i].propellant, b[i].propellant))
+                {
+                    PerfProbe.AggShadowResult(false, $"G{group.GroupId} 网络{i} 工质引用不同：{a[i].propellant}≠{b[i].propellant}");
+                    return;
+                }
+                if (a[i].HasRcsEngines != b[i].HasRcsEngines)
+                {
+                    PerfProbe.AggShadowResult(false, $"G{group.GroupId} 网络{i} 主/RCS 归属不同");
+                    return;
+                }
+                if (Math.Abs(a[i].Thrust - b[i].Thrust) > 1e-3f || Math.Abs(a[i].MassFlow - b[i].MassFlow) > 1e-6f)
+                {
+                    PerfProbe.AggShadowResult(false,
+                        $"G{group.GroupId} 网络{i} 参数不同：推力 {a[i].Thrust:F6}≠{b[i].Thrust:F6} 流率 {a[i].MassFlow:F6}≠{b[i].MassFlow:F6}");
+                    return;
+                }
+            }
+            // 燃料/容量必须实时（缓存不得固化存量——这是第 1 条"物理是否不及时"的关键判据）
+            if (Math.Abs(cached.TotalPropellantMass - fresh.TotalPropellantMass) > 1e-3f
+                || Math.Abs(cached.TotalPropellantCapacity - fresh.TotalPropellantCapacity) > 1e-3f)
+            {
+                PerfProbe.AggShadowResult(false,
+                    $"G{group.GroupId} 燃料/容量不一致：存量 {cached.TotalPropellantMass:F3}≠{fresh.TotalPropellantMass:F3} 容量 {cached.TotalPropellantCapacity:F3}≠{fresh.TotalPropellantCapacity:F3}");
+                return;
+            }
+            PerfProbe.AggShadowResult(true, null);
         }
 
         /// <summary>group 当前质量（kg）= Σ 实体结构质量 + 推进源工质总量。</summary>

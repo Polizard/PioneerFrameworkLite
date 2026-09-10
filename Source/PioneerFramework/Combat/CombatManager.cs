@@ -24,6 +24,13 @@ namespace PioneerFramework.Combat
         private readonly Dictionary<int, DVector3> shipLastPositions = new Dictionary<int, DVector3>();
         // #4：SyncAllShipsToGrid 的本 tick 存活船缓冲（复用，避免每 2 tick 分配 HashSet）
         private readonly HashSet<int> aliveScratch = new HashSet<int>();
+        // 性能第 4 条：CheckShipCollisions 本步待销毁导弹组缓冲（复用，避免场上无导弹时每物理步也分配）
+        private readonly HashSet<int> destroyedMissilesScratch = new HashSet<int>();
+
+        // 性能第 15 条：爆炸 AoE 候选组缓冲（走细网格；每次爆炸复用，CollectShipsInCube 内部会 Clear）。
+        // 复用安全：ApplyExplosionDamage 的循环体不会重入自身（部件伤害回调无重写实现），
+        // 冲量函数在其返回后才再次收集。
+        private readonly HashSet<SpaceEntityGroup> explosionCandidateResults = new HashSet<SpaceEntityGroup>();
 
         // 激光射线（仅视觉残留，不参与物理模拟）
         private readonly List<LaserBeamInstance> activeLaserBeams = new List<LaserBeamInstance>();
@@ -219,13 +226,13 @@ namespace PioneerFramework.Combat
         /// </summary>
         private void ManageProjectileTimeScale()
         {
-            var tsm = Current.Game?.GetComponent<TimeScaleManager>();
+            var tsm = GetTimeScaleManager();
             if (tsm == null) return;
 
             bool combatActive = activeProjectiles.Count > 0;
             if (!combatActive)
             {
-                var avm = Current.Game?.GetComponent<AutonomousVehicleManager>();
+                var avm = GetAvm();
                 combatActive = avm != null && avm.HasActiveAttack;
             }
 
@@ -238,15 +245,21 @@ namespace PioneerFramework.Combat
             }
         }
 
-        private CombatGrid GetCombatGrid()
-        {
-            return Current.Game?.GetComponent<CombatGrid>();
-        }
+        // ── 组件引用缓存（2026-09-10 性能第 5 条）：下列组件在每物理步 / 每弹 / 每对 上报，
+        //    每次 Current.Game.GetComponent 都是组件表线性扫描，故按 Game 缓存（见 GameComponentRef）。──
+        private readonly GameComponentRef<CombatGrid> combatGridRef = new GameComponentRef<CombatGrid>();
+        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new GameComponentRef<SpaceGameComp>();
+        private readonly GameComponentRef<TimeScaleManager> timeScaleRef = new GameComponentRef<TimeScaleManager>();
+        private readonly GameComponentRef<AutonomousVehicleManager> avmRef = new GameComponentRef<AutonomousVehicleManager>();
+        private readonly GameComponentRef<BoardingManager> boardingRef = new GameComponentRef<BoardingManager>();
+        private readonly GameComponentRef<CelestialBodyManager> celestialRef = new GameComponentRef<CelestialBodyManager>();
 
-        private SpaceGameComp GetSpaceGameComp()
-        {
-            return Current.Game?.GetComponent<SpaceGameComp>();
-        }
+        private CombatGrid GetCombatGrid() => combatGridRef.Get();
+        private SpaceGameComp GetSpaceGameComp() => spaceGameRef.Get();
+        private TimeScaleManager GetTimeScaleManager() => timeScaleRef.Get();
+        private AutonomousVehicleManager GetAvm() => avmRef.Get();
+        private BoardingManager GetBoardingManager() => boardingRef.Get();
+        private CelestialBodyManager GetCelestialBodyManager() => celestialRef.Get();
 
         internal DVector3 GetGroupPos(SpaceEntityGroup group)
         {
@@ -493,7 +506,8 @@ namespace PioneerFramework.Combat
 
                 // 射弹线段 → 船体局部系（含旋转）：part 局部 = 固定轴对齐盒（地图 1:1 基准）。
                 // entity.Rotation 参与命中几何——倾斜/翻滚的船，命中点反映真实姿态。
-                DQuaternion rotInv = DQuaternion.Inverse(DQuaternion.FromQuaternion(entity.Rotation));
+                // 第 16 条：逆四元数走实体 per-tick 缓存（每弹每实体的旋转开销 → 每实体每 tick 一次）
+                DQuaternion rotInv = entity.RotationInverse();
                 DVector3 localStart = DVector3.Rotate(startPos - entityLocal, rotInv);
                 DVector3 localEnd = DVector3.Rotate(endPos - entityLocal, rotInv);
 
@@ -517,7 +531,7 @@ namespace PioneerFramework.Combat
                 // slab 命中的这枚实体（爆心 = 该实体世界位 = 单实体时即组原位，语义与原整群引爆一致），
                 // 实体离群走 AVM.RemoveMissileEntity 出口（燃料随实体、无记账）；组空 → 注销+销毁。
                 // 射弹路径内 DestroyGroup 安全（此处不在 EnumerateShipPairs 迭代中）。
-                var interceptMgr = Current.Game?.GetComponent<AutonomousVehicleManager>();
+                var interceptMgr = GetAvm();
                 var missileRec = interceptMgr?.GetRecord(group.GroupId);
                 if (missileRec != null)
                 {
@@ -690,9 +704,11 @@ namespace PioneerFramework.Combat
 
             // 转化交接待销毁导弹群：统一在 pair 循环外执行（EnumerateShipPairs 是字典懒迭代器，
             // 迭代体内 DestroyGroup 会并发修改抛异常）。HashSet 防同一导弹本 tick 与多个目标接触时重复转化。
-            var destroyedMissiles = new HashSet<int>();
+            var destroyedMissiles = destroyedMissilesScratch;
+            if (PerfProbe.Enabled) PerfProbe.DestroyedLeftoverReport(destroyedMissiles.Count); // 探针：上一步遗留项数（>0 即复用生效）
+            destroyedMissiles.Clear(); // 第 4 条：字段复用，步首清空（早退分支不消费，无需清理）
             // 导弹识别管理器：pair 循环外取一次（GetComponent 线性查组件表，不能每对被拒 pair 都调）
-            var missileMgr = Current.Game?.GetComponent<AutonomousVehicleManager>();
+            var missileMgr = GetAvm();
 
             foreach (var (a, b) in combatGrid.EnumerateShipPairs())
             {
@@ -750,12 +766,8 @@ namespace PioneerFramework.Combat
                 }
 
                 bool sweptHit = AabbOverlap(aMin, aMax, bMin, bMax, out double ox, out double oy, out double oz);
-                // 导弹对判定提前（导弹分支复用；GetRecord 字典 O(1)）。注意：导弹对不打无门控日志——
-                // 09-07 诊断期曾临时无门控（穿越窗口 2-4 tick），Combat 档（1/60）下现实 30Hz × 每对
-                // 刷屏 8725 行/次测试拖垮内存，使命完成后恢复全局 30 tick 门控。
-                var recA = missileMgr?.GetRecord(a.GroupId);
-                var recB = missileMgr?.GetRecord(b.GroupId);
-                bool pairHasMissile = recA != null || recB != null;
+                // 注意：本日志全局 30 tick 门控——09-07 诊断期曾临时无门控（穿越窗口 2-4 tick），
+                // Combat 档（1/60）下现实 30Hz × 每对刷屏 8725 行/次测试拖垮内存，使命完成后恢复门控。
                 if (DebugDetailedCollision && Find.TickManager.TicksGame >= detailedLogNextTick)
                 {
                     detailedLogNextTick = Find.TickManager.TicksGame + 30;
@@ -771,7 +783,18 @@ namespace PioneerFramework.Combat
                         b.GroupId, prevPb.x, prevPb.y, prevPb.z,
                         sweptHit ? string.Format("{0:F1},{1:F1},{2:F1}m", ox, oy, oz) : "无"));
                 }
-                if (!sweptHit) continue;
+                if (!sweptHit)
+                {
+                    // 第 10 条：绝大多数对在此早退，故导弹记录查询移到判定之后——每对每步省 2 次
+                    // GetRecord 字典查找（此前在判定前取，扫掠未命中的对也白查两次）。
+                    if (PerfProbe.Enabled) PerfProbe.NoteRecordLookupsAvoided(2);
+                    continue;
+                }
+
+                // 导弹对判定（导弹分支复用；GetRecord 字典 O(1)）。放在早退之后：见第 10 条。
+                var recA = missileMgr?.GetRecord(a.GroupId);
+                var recB = missileMgr?.GetRecord(b.GroupId);
+                bool pairHasMissile = recA != null || recB != null;
 
                 // 导弹转化交接分支（§10）：导弹接触任何碰撞体（普通船 / 异 volley 导弹 / 友军）→
                 // 一律「先生成弹头射弹（继承方向/速度/位置）、后销毁导弹」——打谁都转为射弹。
@@ -818,8 +841,8 @@ namespace PioneerFramework.Combat
                 // 跳帮接舷分支（§9）：一方是跳帮单位且低速对准落点 → 消费碰撞（不弹飞/不爆炸，
                 // 降落判定由 BoardingManager 每物理步驱动）。高速 → 走正常爆炸。
                 // （导弹 vs 跳帮单位不会到达此处：导弹分支已在上方优先消费。）
-                if (Current.Game?.GetComponent<BoardingManager>() is BoardingManager boarding
-                    && boarding.TryResolveBoardingContact(a, b, vRel))
+                var boarding = GetBoardingManager();
+                if (boarding != null && boarding.TryResolveBoardingContact(a, b, vRel))
                 {
                     InvalidateCollisionCache(a, b); // 跳帮单位位置可能改变
                     continue;
@@ -850,13 +873,13 @@ namespace PioneerFramework.Combat
             // 转化交接统一销毁（pair 循环外：字典懒迭代器内 DestroyGroup 抛异常）
             if (destroyedMissiles.Count > 0)
             {
-                var avmDestroy = Current.Game?.GetComponent<AutonomousVehicleManager>();
+                var avmDestroy = GetAvm();
                 foreach (int gid in destroyedMissiles)
                 {
+                    if (PerfProbe.Enabled) PerfProbe.DestroyedConsume(gid, Find.TickManager.TicksGame); // 探针：同一步重复销毁检测
                     avmDestroy?.UnregisterGroup(gid); // 弹群登记注销（§11）
                     spaceGame.DestroyGroup(gid);
                 }
-                destroyedMissiles.Clear();
             }
         }
 
@@ -1098,6 +1121,7 @@ namespace PioneerFramework.Combat
         /// </summary>
         private void SeparatePositions(SpaceEntityGroup a, SpaceEntityGroup b, double ox, double oy, double oz)
         {
+            if (PerfProbe.Enabled) PerfProbe.NoteContact(); // 探针：接触解算唯一收口（验收器碰撞阶段判据）
             if (a.IsCircularOrbit) a.ExitCircularOrbit();
             if (b.IsCircularOrbit) b.ExitCircularOrbit();
 
@@ -1152,8 +1176,9 @@ namespace PioneerFramework.Combat
             double R = CollisionExplosionBaseRadius + CollisionExplosionRadiusK * Math.Pow(E, 1.0 / 3.0);
             double D0 = CollisionExplosionDamageK * Math.Sqrt(E);
 
-            int damaged = ApplyExplosionDamage(hitPoint, R, D0, -1, deferredEmptyGroups);
-            int pushed = ApplyExplosionImpulse(hitPoint, R, E);
+            int frameId = GetCombatGrid()?.ResolveFrameId(a.CelestialBodyId) ?? -1;
+            int damaged = ApplyExplosionDamage(frameId, hitPoint, R, D0, -1, deferredEmptyGroups);
+            int pushed = ApplyExplosionImpulse(frameId, hitPoint, R, E);
 
             // 视觉残留
             activeExplosions.Add(new ExplosionInstance
@@ -1181,24 +1206,38 @@ namespace PioneerFramework.Combat
         /// （RemoveMissileEntity，只移实体不销毁组，安全），组空则把组 id 交给调用方销毁
         /// （射弹路径当场销毁；pair 迭代内延后到循环外）。此前滞后 120 tick 由 AVM 周期清理兜底。
         /// </summary>
-        private int ApplyExplosionDamage(DVector3 center, double R, double D0,
+        /// <param name="frameId">爆炸所在参考系（CombatGrid.ResolveFrameId），候选组由该帧细网格给出。</param>
+        private int ApplyExplosionDamage(int frameId, DVector3 center, double R, double D0,
             int excludeGroupId = -1, HashSet<int> emptiedMissileGroups = null)
         {
             var spaceGame = GetSpaceGameComp();
             if (spaceGame == null) return 0;
-            var avm = Current.Game?.GetComponent<AutonomousVehicleManager>();
+            var combatGrid = GetCombatGrid();
+            if (combatGrid == null) return 0;
+            var avm = GetAvm();
             var newlyDeadMissiles = new List<(int groupId, int entityId)>();
 
             int damaged = 0;
-            double rangeCheck = R + 100000.0; // 球快筛余量
 
-            foreach (var group in spaceGame.GetAllGroups())
+            // 性能第 15 条：候选改走细网格（半径 R 的立方体即保守超集——部件的世界位必落在本船
+            // 注册 AABB 内，而注册覆盖 AABB 的全部格）。成本 O(全场组数) → O(R 内格数，R≈1.5km 即 1~8 格)，
+            // 与船队总量解耦。网格每物理步由 SyncAllShipsToGrid 保鲜（含深空帧 -1）。
+            var candidates = explosionCandidateResults;
+            combatGrid.CollectShipsInCube(frameId, center, R, candidates);
+
+            if (PerfProbe.Enabled)
+            {
+                PerfProbe.ExplosionQuery("AoE损伤", frameId, R, candidates.Count);
+                if (PerfProbe.ShadowChecks && PerfProbe.ShouldShadowExplosion())
+                    ProbeExplosionShadow("AoE损伤", frameId, center, R, candidates, excludeGroupId);
+            }
+
+            foreach (var group in candidates)
             {
                 if (!group.IsActive || !group.IsCollidable) continue;
                 if (excludeGroupId >= 0 && group.GroupId == excludeGroupId) continue;
 
                 DVector3 gpos = GetGroupPos(group);
-                if ((gpos - center).sqrMagnitude > rangeCheck * rangeCheck) continue;
 
                 // C：导弹群才做"击毁即脱队"收集（普通船部件全毁维持现语义）
                 var missileRec = avm != null ? avm.GetRecord(group.GroupId) : null;
@@ -1257,15 +1296,77 @@ namespace PioneerFramework.Combat
         /// 爆炸径向冲量：范围内船被炸飞，Δv = K·√E·(1-dist/R)/mass。
         /// excludeGroupId：豁免组（B）。空实体组跳过（冲量模型除以组质量，空组会除零）。
         /// </summary>
-        private int ApplyExplosionImpulse(DVector3 center, double R, double E, int excludeGroupId = -1)
+        /// <summary>
+        /// 探针（第 15 条影子校验）：按优化前的旧算法（全场 GetAllGroups + R+100km 球筛 + 逐部件距离）
+        /// 重算一遍候选，与网格候选集比对，专门回答"网格会不会漏伤"：
+        ///   · 旧扫有、网格没有、且**确有部件在 R 内** → 真实漏伤（红字，判据必须 0）
+        ///   · 旧扫有、网格没有、但无部件在 R 内 → 只是旧球筛 100km 余量的保守差异（正常，仅计数）
+        /// 逐部件仍用实时位置（与两版实现同口径），故差异只来自候选枚举本身。
+        /// </summary>
+        private void ProbeExplosionShadow(string tag, int frameId, DVector3 center, double R,
+            HashSet<SpaceEntityGroup> gridCandidates, int excludeGroupId)
+        {
+            var spaceGame = GetSpaceGameComp();
+            if (spaceGame == null) return;
+            double rangeCheck = R + 100000.0; // 旧实现的球快筛余量（原样保留以复现旧候选集）
+            int oldScan = 0, oldOnly = 0, missed = 0;
+            string firstMiss = "";
+            foreach (var group in spaceGame.GetAllGroups())
+            {
+                if (!group.IsActive || !group.IsCollidable) continue;
+                if (excludeGroupId >= 0 && group.GroupId == excludeGroupId) continue;
+                DVector3 gpos = GetGroupPos(group);
+                if ((gpos - center).sqrMagnitude > rangeCheck * rangeCheck) continue;
+                oldScan++;
+                if (gridCandidates.Contains(group)) continue;
+                oldOnly++;
+
+                bool partInRange = false;
+                foreach (int eid in group.GetEntityIds())
+                {
+                    var entity = spaceGame.GetEntityById(eid);
+                    if (entity == null) continue;
+                    foreach (var part in entity.Parts)
+                    {
+                        if (part.isDestroyed) continue;
+                        if ((gpos + entity.Position + part.localPosition - center).magnitude <= R) { partInRange = true; break; }
+                    }
+                    if (partInRange) break;
+                }
+                if (partInRange)
+                {
+                    missed++;
+                    if (firstMiss.Length == 0)
+                        firstMiss = $"G{group.GroupId} 组位距心={(gpos - center).magnitude:F0}m";
+                }
+            }
+            PerfProbe.ExplosionShadowResult(tag, oldScan, oldOnly, missed, firstMiss);
+        }
+
+        /// <param name="frameId">爆炸所在参考系（CombatGrid.ResolveFrameId）。</param>
+        private int ApplyExplosionImpulse(int frameId, DVector3 center, double R, double E, int excludeGroupId = -1)
         {
             var spaceGame = GetSpaceGameComp();
             if (spaceGame == null) return 0;
+            var combatGrid = GetCombatGrid();
+            if (combatGrid == null) return 0;
 
             int pushed = 0;
             double sqRtE = Math.Sqrt(E);
 
-            foreach (var group in spaceGame.GetAllGroups())
+            // 第 15 条：同 ApplyExplosionDamage 走细网格。组位置必在注册 AABB 内
+            // （GetGroupWorldBounds 以 groupPos 为初值做并集），故 cube(R) 仍是本判定的保守超集。
+            var candidates = explosionCandidateResults;
+            combatGrid.CollectShipsInCube(frameId, center, R, candidates);
+
+            if (PerfProbe.Enabled)
+            {
+                PerfProbe.ExplosionQuery("爆炸冲量", frameId, R, candidates.Count);
+                if (PerfProbe.ShadowChecks && PerfProbe.ShouldShadowExplosion())
+                    ProbeExplosionShadow("爆炸冲量", frameId, center, R, candidates, excludeGroupId);
+            }
+
+            foreach (var group in candidates)
             {
                 if (!group.IsActive || !group.IsCollidable) continue;
                 if (excludeGroupId >= 0 && group.GroupId == excludeGroupId) continue;
@@ -1488,13 +1589,19 @@ namespace PioneerFramework.Combat
         }
 
         /// <summary>获取 Group 的全部武器列表（供调试/UI 展示）。</summary>
+        /// <summary>未注册组的共享空容器（第 7 条）：调用方只读（TargetingSystem 索引 / PFView 读 Count），
+        /// 不要往里写——它是共享实例。</summary>
+        private static readonly List<WeaponInstance> EmptyWeaponList = new List<WeaponInstance>();
+
         public List<WeaponInstance> GetGroupWeapons(int groupId)
         {
             if (groupWeapons.TryGetValue(groupId, out var weapons))
                 return weapons;
 
-            // Lite 裁剪（§5.5）：实体级武器收集已删除；M4 前返回空列表（Map 炮塔桥接填充后立即可用）
-            return new List<WeaponInstance>();
+            // Lite 裁剪（§5.5）：实体级武器收集已删除；M4 前恒空（Map 炮塔桥接填充后立即可用）。
+            // 第 7 条：返回共享空实例——此前每步每组都 new 一个空 List 再扔掉（战斗期每组每步一次分配）。
+            if (PerfProbe.Enabled) PerfProbe.NoteEmptyWeaponListHit();
+            return EmptyWeaponList;
         }
 
         /// <param name="targetVelocity">目标当前世界系速度（用于提前量计算）。null = 瞄准当前位置。</param>
@@ -1609,7 +1716,7 @@ namespace PioneerFramework.Combat
 
             // 射弹生成瞬间立即进入 Combat 档（子弹时间）：排队降速有 ≤2 tick 边界延迟，
             // Normal 档窗口射弹 6.5km/步 瞬移，观感"物理断裂"。立即切换让射弹全程平滑。
-            Current.Game?.GetComponent<TimeScaleManager>()?.SetCombatModeImmediate();
+            GetTimeScaleManager()?.SetCombatModeImmediate();
 
             var combatGrid = GetCombatGrid();
             if (combatGrid != null)
@@ -1626,7 +1733,7 @@ namespace PioneerFramework.Combat
             DVector3 centralVel = DVector3.zero;
             if (group.IsCircularOrbit && group.circularCentralBodyId >= 0)
             {
-                var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+                var mgr = GetCelestialBodyManager();
                 if (mgr != null)
                 {
                     var cd = mgr.GetBodyById(group.circularCentralBodyId);
@@ -1700,7 +1807,7 @@ namespace PioneerFramework.Combat
                 return;
             }
 
-            var manager = Current.Game?.GetComponent<AutonomousVehicleManager>();
+            var manager = GetAvm();
             if (manager == null)
             {
                 Log.Warning("[导弹发射] AutonomousVehicleManager 未找到，中止发射");
@@ -2095,9 +2202,9 @@ namespace PioneerFramework.Combat
         }
 
         /// <summary>本物理步时长（s，与 SpaceGameComp.UpdateAllMovements 同口径：UPDATE_INTERVAL_TICKS × 流速）。</summary>
-        private static double PhysicsStepSeconds()
+        private double PhysicsStepSeconds()
         {
-            var tsm = Current.Game?.GetComponent<TimeScaleManager>();
+            var tsm = GetTimeScaleManager();
             return SpaceGameComp.UPDATE_INTERVAL_TICKS * (tsm != null ? tsm.PhysicsSpeedMultiplier : 1f);
         }
 
@@ -2228,11 +2335,12 @@ namespace PioneerFramework.Combat
             // B：弹头源自某弹群成员（sourceGroupId=来源组）——其死亡爆炸豁免自家残组；
             // C：AoE 击毁的导弹成员当场脱队，变空的组当场销毁（射弹路径不在 pair 迭代中，安全）
             var spaceGameHi = GetSpaceGameComp();
-            var avmHi = Current.Game?.GetComponent<AutonomousVehicleManager>();
+            var avmHi = GetAvm();
             var emptiedGroups = new HashSet<int>();
-            int damaged = ApplyExplosionDamage(worldHitPoint, proj.blastRadius, proj.blastCenterDamage,
+            // 帧号用射弹自带的 systemBodyId：它与网格注册同源（射弹碰撞链一直以它查网格）
+            int damaged = ApplyExplosionDamage(proj.systemBodyId, worldHitPoint, proj.blastRadius, proj.blastCenterDamage,
                 proj.sourceGroupId, emptiedGroups);
-            ApplyExplosionImpulse(worldHitPoint, proj.blastRadius, proj.blastImpulseEnergy, proj.sourceGroupId);
+            ApplyExplosionImpulse(proj.systemBodyId, worldHitPoint, proj.blastRadius, proj.blastImpulseEnergy, proj.sourceGroupId);
             foreach (int gid in emptiedGroups)
             {
                 avmHi?.UnregisterGroup(gid);
@@ -2277,7 +2385,7 @@ namespace PioneerFramework.Combat
             if (n == 0)
                 ExplodeAtWorldPoint(missileGroup, rec, spaceGame, gpos, "[导弹引爆]", missileGroup.GroupId);
 
-            var avm = Current.Game?.GetComponent<AutonomousVehicleManager>();
+            var avm = GetAvm();
             avm?.UnregisterGroup(missileGroup.GroupId);
             spaceGame.DestroyGroup(missileGroup.GroupId);
         }
@@ -2307,14 +2415,15 @@ namespace PioneerFramework.Combat
             double E = missileDef != null ? missileDef.blastImpulseEnergy : 1e9;
 
             var emptiedGroups = new HashSet<int>();
-            int damaged = ApplyExplosionDamage(center, R, D0, excludeGroupId, emptiedGroups);
+            int frameId = GetCombatGrid()?.ResolveFrameId(missileGroup.CelestialBodyId) ?? -1;
+            int damaged = ApplyExplosionDamage(frameId, center, R, D0, excludeGroupId, emptiedGroups);
             foreach (int gid in emptiedGroups)
             {
-                var avm = Current.Game?.GetComponent<AutonomousVehicleManager>();
+                var avm = GetAvm();
                 avm?.UnregisterGroup(gid);
                 spaceGame.DestroyGroup(gid);
             }
-            ApplyExplosionImpulse(center, R, E, excludeGroupId);
+            ApplyExplosionImpulse(frameId, center, R, E, excludeGroupId);
             activeExplosions.Add(new ExplosionInstance
             {
                 position = center,
@@ -2633,8 +2742,8 @@ namespace PioneerFramework.Combat
                     // 旋转正确版：世界线段 → 船体局部系（含逆旋转）→ 局部轴对齐盒 slab。
                     // 旧版"世界方向在局部系延伸"（localOrigin + dir*maxDist）在船无旋转时恰好成立，
                     // 旋转时失效；且旧版起点漏乘 maxRange，part 检测从炮口扫 0~1 米必然错位。
-                    // 照 CheckSegmentGroupHit 的完整旋转处理写。
-                    DQuaternion rotInv = DQuaternion.Inverse(DQuaternion.FromQuaternion(entity.Rotation));
+                    // 照 CheckSegmentGroupHit 的完整旋转处理写（第 16 条：逆四元数同走实体 per-tick 缓存）。
+                    DQuaternion rotInv = entity.RotationInverse();
                     DVector3 localStart = DVector3.Rotate(startPos - entityWorldPos, rotInv);
                     DVector3 localEnd = DVector3.Rotate(endPos - entityWorldPos, rotInv);
 

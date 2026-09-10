@@ -263,14 +263,28 @@ namespace PioneerFramework
 
         // ── 轨道位置计算 ──
 
+        // 第 8 条（2026-09-10）：天体世界位置/速度是 (bodyId, tick) 的**纯函数**（递归父链 + 每级
+        // Cos/Sin），而射弹弹道是"每弹每步 × 每个引力源"都要查一遍（ComputeProjectileGravity）。
+        // 故按 bodyId 记忆最近一次 tick 的结果：同 tick 内重复查询直接命中（天体数少，内存可忽略）。
+        private readonly Dictionary<int, (double tick, DVector3 v)> bodyPosCache = new Dictionary<int, (double, DVector3)>();
+        private readonly Dictionary<int, (double tick, DVector3 v)> bodyVelCache = new Dictionary<int, (double, DVector3)>();
+
         /// <summary>
-        /// 计算天体在给定 tick 的世界空间位置。
+        /// 计算天体在给定 tick 的世界空间位置（第 8 条：按 (bodyId, tick) 记忆化）。
         /// </summary>
         public DVector3 GetBodyWorldPosition(int bodyId, double tick)
         {
+            if (bodyPosCache.TryGetValue(bodyId, out var c) && c.tick == tick)
+            {
+                if (PerfProbe.Enabled) PerfProbe.NoteBodyPosHit();
+                return c.v;
+            }
             var body = GetBodyById(bodyId);
             if (body == null) return DVector3.zero;
-            return GetBodyWorldPosition(body, tick);
+            var pos = GetBodyWorldPosition(body, tick);
+            bodyPosCache[bodyId] = (tick, pos);
+            if (PerfProbe.Enabled) PerfProbe.NoteBodyPosMiss();
+            return pos;
         }
 
         private DVector3 GetBodyWorldPosition(CelestialBodyDef body, double tick)
@@ -308,9 +322,17 @@ namespace PioneerFramework
         /// </summary>
         public DVector3 GetBodyWorldVelocity(int bodyId, double tick)
         {
+            if (bodyVelCache.TryGetValue(bodyId, out var c) && c.tick == tick)
+            {
+                if (PerfProbe.Enabled) PerfProbe.NoteBodyPosHit();
+                return c.v;
+            }
             var body = GetBodyById(bodyId);
             if (body == null || !body.HasOrbit) return DVector3.zero;
-            return GetBodyWorldVelocity(body, tick);
+            var vel = GetBodyWorldVelocity(body, tick);
+            bodyVelCache[bodyId] = (tick, vel);
+            if (PerfProbe.Enabled) PerfProbe.NoteBodyPosMiss();
+            return vel;
         }
 
         private DVector3 GetBodyWorldVelocity(CelestialBodyDef body, double tick)

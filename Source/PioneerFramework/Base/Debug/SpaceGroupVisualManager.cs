@@ -140,8 +140,7 @@ namespace PioneerFramework
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return;
 
-            var groups = spaceGame.GetAllGroups().ToList();
-            if (groups.Count == 0) return;
+            var groups = spaceGame.GetAllGroups(); // 第 11 条：直接遍历字典视图（此前每帧 ToList 复制整表）
 
             // 收集地球系统（地球 + 所有卫星）的天体 ID 集合，渲染该系统中所有群组
             var earthSystemBodyIds = new HashSet<int> { EARTH_BODY_ID };
@@ -157,7 +156,7 @@ namespace PioneerFramework
             }
 
             foreach (var group in groups)
-                if (group.IsActive && earthSystemBodyIds.Contains(group.CelestialBodyId))
+                if (group.IsActive && !group.IsSurfaceAnchor && earthSystemBodyIds.Contains(group.CelestialBodyId))
                     DrawGroupIcon(group, camera);
 
             // ── 天然卫星渲染（地球的卫星，根据 XML 定义动态渲染）──
@@ -205,14 +204,23 @@ namespace PioneerFramework
                     else
                     {
                         // 非圆轨模式：从 CurrentOrbit 位置/速度生成轨道点
+                        // 第 11 条：按「组 id + pos + vel」记忆化——路径是这两者的纯函数，滑行期不变，
+                        // 此前每帧都跑 60 点积分 + 两次列表分配。圆轨那条不缓存（采样数随相机高度变）。
                         DVector3 pos = selected.CurrentOrbit.position;
                         DVector3 vel = selected.CurrentOrbit.velocity;
-                        var dPoints = OrbitMath.GetOrbitPoints(pos, vel, 60);
-                        if (dPoints != null && dPoints.Count > 0)
+                        if (orbitPathCacheGroupId != selected.GroupId
+                            || !orbitPathCachePos.Equals(pos) || !orbitPathCacheVel.Equals(vel))
                         {
-                            var pts = dPoints.ConvertAll(p => (Vector3)(p * SpaceConstants.UnitsPerMeter));
-                            DrawOrbitPath(pts, new Color(0.35f, 0.95f, 1f, 0.8f), OrbitMarkerSize, camera);
+                            var dPoints = OrbitMath.GetOrbitPoints(pos, vel, 60);
+                            orbitPathCachePoints = dPoints != null && dPoints.Count > 0
+                                ? dPoints.ConvertAll(p => (Vector3)(p * SpaceConstants.UnitsPerMeter))
+                                : null;
+                            orbitPathCacheGroupId = selected.GroupId;
+                            orbitPathCachePos = pos;
+                            orbitPathCacheVel = vel;
                         }
+                        if (orbitPathCachePoints != null && orbitPathCachePoints.Count > 0)
+                            DrawOrbitPath(orbitPathCachePoints, new Color(0.35f, 0.95f, 1f, 0.8f), OrbitMarkerSize, camera);
                     }
 
                     // ── 规划器预览段（规划器打开且有数据时叠加）──
@@ -540,6 +548,14 @@ namespace PioneerFramework
         /// 生成圆轨采样点（相对轨道原点的 Unity 坐标），供 DrawOrbitPath 使用。
         /// 包含鼠标高度衰减、轨道平面支持。不含视觉旋转（由 DrawOrbitPath 统一叠加）。
         /// </summary>
+        // 第 11 条（2026-09-10）：选中组非圆轨路径的 per-frame 缓存（键 = 组 id + pos + vel，
+        // 路径是 pos/vel 的纯函数；滑行期命中，变轨/点火时自然重建）。
+        // （静态类故为 static；键含组 id + pos + vel，换局/变轨时键必不同 → 自动重建，无跨局陈旧）
+        private static int orbitPathCacheGroupId = -1;
+        private static DVector3 orbitPathCachePos;
+        private static DVector3 orbitPathCacheVel;
+        private static List<Vector3>? orbitPathCachePoints;
+
         private static List<Vector3> GetCircularOrbitPointsUnity(SpaceEntityGroup group)
         {
             double radiusMetersD = group.circularRadius;

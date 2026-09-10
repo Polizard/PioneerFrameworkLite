@@ -38,6 +38,20 @@ namespace PioneerFramework
 
         private HashSet<int> entityIds = new HashSet<int>();
 
+        /// <summary>实体集版本：AddEntity/RemoveEntity 实际变更时自增（不序列化）。
+        /// 供群级推进源缓存判陈旧（见 SpaceGameComp.GetGroupPropulsionSource）。</summary>
+        internal int entitySetVersion;
+
+        // ── 群级推进源聚合器缓存（无 Map 多推进实体组，不序列化）──
+        // 指纹 = entitySetVersion ⊕ 各推进实体 PropulsionVersion，两者之外无输入，
+        // 故指纹匹配即可复用实例（聚合器 Networks 懒构建一次，此后只读）。
+        internal GroupPropulsionAggregator? cachedPropulsionAggregator;
+        internal int cachedPropulsionStamp;
+
+        /// <summary>燃烧切片 scratch（第 3 条：每物理步复用，免每步 new List）。
+        /// 物理并行区内由本组唯一迭代独占写入，主线程在同一步消费其引用快照后不再保留。</summary>
+        internal readonly List<ThrustSlice> thrustSliceScratch = new List<ThrustSlice>();
+
         // ── 圆轨模式 ──
         public bool IsCircularOrbit = false;
         public double circularRadius = 0.0;          // 轨道半径 (m)
@@ -76,6 +90,17 @@ namespace PioneerFramework
         /// 仅爬升段置 true，入轨时清除。
         /// </summary>
         public bool exemptPlanetCollision = false;
+
+        // ── 地表锚点（星座组网：为地表据点合成的不动 group，见《星座组网系统设计-20260828.md》§5 D11）──
+        /// <summary>
+        /// 地表据点的合成锚点 group：仅作星座成员载体（成员类型统一为 groupId），不是飞船。
+        /// 约束 IsActive=false / IsMovable=false / IsCollidable=false——三者共同保证它既不参与物理积分与碰撞，
+        /// 也不出现在任何「遍历 groups 的飞船消费方」（渲染 / 索敌 / 目标列表）视野内；
+        /// <see cref="SpaceGameComp.GetGridForGroup"/> 另有 IsSurfaceAnchor 短路，使其根本不进空间索引。
+        /// </summary>
+        public bool IsSurfaceAnchor = false;
+        /// <summary>锚点对应的原版世界物体 ID（Settlement.ID）；非锚点 = -1。据点被摧毁时据此惰性回收。</summary>
+        public int anchorWorldObjectId = -1;
 
         /// <summary>中心天体相对位置（中心天体参考系），用于 R/T/N 基向量计算。</summary>
         public DVector3 localPosition;
@@ -272,8 +297,15 @@ namespace PioneerFramework
             FactionId = factionId;
         }
 
-        public void AddEntity(int entityId) => entityIds.Add(entityId);
-        public void RemoveEntity(int entityId) => entityIds.Remove(entityId);
+        public void AddEntity(int entityId)
+        {
+            if (entityIds.Add(entityId)) entitySetVersion++;
+        }
+
+        public void RemoveEntity(int entityId)
+        {
+            if (entityIds.Remove(entityId)) entitySetVersion++;
+        }
         public bool ContainsEntity(int entityId) => entityIds.Contains(entityId);
         public IReadOnlyCollection<int> GetEntityIds() => entityIds;
 
@@ -907,6 +939,9 @@ namespace PioneerFramework
             Scribe_Collections.Look(ref entityIds, "entityIds", LookMode.Value);
             Scribe_Values.Look(ref CelestialBodyId, "celestialBodyId", -1);
             Scribe_Values.Look(ref exemptPlanetCollision, "exemptPlanetCollision", false);
+            // 地表锚点（星座成员载体）：旧存档无此节点 → 默认非锚点
+            Scribe_Values.Look(ref IsSurfaceAnchor, "isSurfaceAnchor", false);
+            Scribe_Values.Look(ref anchorWorldObjectId, "anchorWorldObjectId", -1);
             // 圆轨模式数据序列化
             Scribe_Values.Look(ref IsCircularOrbit, "isCircularOrbit", false);
             Scribe_Values.Look(ref circularRadius, "circularRadius", 0.0);

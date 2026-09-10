@@ -156,7 +156,10 @@ namespace PioneerFramework
                 float ty = y;
                 var groups = new List<SpaceEntityGroup>();
                 foreach (var g in spaceGame.GetAllGroups())
+                {
+                    if (!g.IsActive) continue; // 地表锚点（星座成员载体）不是可打目标
                     groups.Add(g);
+                }
                 float tH = Mathf.Min(190f, groups.Count * 24f + 4f);
                 Widgets.BeginScrollView(new Rect(0, ty, inRect.width, tH), ref scroll,
                     new Rect(0, 0, inRect.width - 24f, groups.Count * 24f + 4f));

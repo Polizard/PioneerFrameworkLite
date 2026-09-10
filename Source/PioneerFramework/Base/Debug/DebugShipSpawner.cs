@@ -7,21 +7,14 @@ using PioneerFramework.Components;
 
 namespace PioneerFramework
 {
-    public class CompProperties_DebugShipSpawner : CompProperties
-    {
-        public CompProperties_DebugShipSpawner()
-        {
-            compClass = typeof(CompDebugShipSpawner);
-        }
-    }
-
     /// <summary>
-    /// 调试用 ThingComp：提供一个 Gizmo，创建绕地球圆轨道的测试空间站（含地图 + 单 part）。
-    /// Lite 裁剪：Ship3D 蓝本部署已删除（装配系统移除），仅保留空间站部署入口。
-    /// 额外提供「双引擎测试场景」：核热 + 离子引擎、对应储罐加注，并规划两条
-    /// 各自绑定网络的机动，用于验证工质网络独立选择与执行。
+    /// 调试场景库（2026-09-10 规范化：从「挂在调试建筑上的 ThingComp」迁到游戏自带 Debug 菜单）。
+    /// 入口：dev mode 的 **Debug 菜单 →「PFL 测试」页签**（<see cref="DebugTabMenu_PFL"/>，Def `PF_DebugTab`）；
+    /// 旧建筑 PF_ShipDeployer 保留一个 Gizmo 作兼容入口（打开同一页签）。
+    /// 各场景由 CreateTestStation 自建口袋地图，**不依赖任何建筑**；一键验收（PerfAcceptanceRunner）
+    /// 也直接调本类。转静态：原 ThingComp 的实例状态本就全是 static 字段，无状态迁移。
     /// </summary>
-    public class CompDebugShipSpawner : ThingComp
+    public static class DebugShipSpawner
     {
         private const int EARTH_BODY_ID = 1;
 
@@ -52,10 +45,10 @@ namespace PioneerFramework
         /// </summary>
         private static int autoCmdLauncherGroupId = -1;
 
-        public override void CompTick()
+        /// <summary>每 tick 驱动（原 CompTick；现由 SpaceGameComp.GameComponentTick 调用）：
+        /// 场景自动下令（Following→Attack）+ 碰撞测试距离探针（暂停时不跑 ⇒ 无探针日志即时间未推进）。</summary>
+        public static void Tick()
         {
-            base.CompTick();
-
             // ── 场景自动下令：Following 导弹 → Attack（模拟玩家在出膛时下令；幂等——下令后不再 Following）──
             if (autoCmdLauncherGroupId >= 0)
             {
@@ -170,53 +163,6 @@ namespace PioneerFramework
             return DVector3.Rotate(pos, q);
         }
 
-        public override IEnumerable<Gizmo> CompGetGizmosExtra()
-        {
-            foreach (var g in base.CompGetGizmosExtra())
-                yield return g;
-
-            if (parent.Faction != Faction.OfPlayer)
-                yield break;
-
-            // ── 统一调试入口（2026-09-06）：全部场景 Gizmo 收编进 Window_DebugHub；此处仅保留面板 + 日志开关 ──
-            yield return new Command_Action
-            {
-                defaultLabel = "打开 PF 调试面板",
-                defaultDesc = "统一调试面板：空间站 / 炮塔（炮+激光）/ 碰撞 / 操舵 / 跳帮 / 发射 / 导弹发射测试 场景一键部署 + 日志开关（导弹制导面板 m3+ 待接入）。",
-                icon = TexButton.Info,
-                action = delegate
-                {
-                    Find.WindowStack.Add(new Window_DebugHub(this));
-                }
-            };
-
-            yield return new Command_Toggle
-            {
-                defaultLabel = "详细战斗日志",
-                defaultDesc = "开关炮塔战斗全链详细日志（齐射/炮塔几何/出膛/视觉弹/命中/贯穿）+ 射弹飞行探针（30 tick/条）。",
-                icon = TexButton.Info,
-                isActive = () => CombatManager.DebugDetailedCombat,
-                toggleAction = ToggleDetailedCombat
-            };
-
-            yield return new Command_Toggle
-            {
-                defaultLabel = "详细操舵日志",
-                defaultDesc = "开关操舵/自动对准详细日志（[Steer] 10 tick/条 + [Align] 30 tick/条）。",
-                icon = TexButton.Info,
-                isActive = () => SpaceGameComp.DebugDetailedSteering,
-                toggleAction = () => SpaceGameComp.DebugDetailedSteering = !SpaceGameComp.DebugDetailedSteering
-            };
-
-            yield return new Command_Toggle
-            {
-                defaultLabel = "详细推进日志（无Map主推/RCS）",
-                defaultDesc = "开关 D15 无 Map 机动详细日志（[Thrust] 每物理步：选网/对准角/Δv/双罐燃料/燃尽抑制），用于验证主推+RCS 新改动。",
-                icon = TexButton.Info,
-                isActive = () => SpaceGameComp.DebugDetailedThrust,
-                toggleAction = () => SpaceGameComp.DebugDetailedThrust = !SpaceGameComp.DebugDetailedThrust
-            };
-        }
 
         private static int GetNextGroupId(SpaceGameComp spaceGame)
         {
@@ -238,7 +184,7 @@ namespace PioneerFramework
         }
 
         /// <summary>创建指定高度圆轨道的测试空间站（含地图 + 单 part），返回实体/群组/地图。</summary>
-        private (SpaceEntity entity, SpaceEntityGroup group, Map map) CreateTestStation(double altitudeMeters = 500000.0)
+        private static (SpaceEntity entity, SpaceEntityGroup group, Map map) CreateTestStation(double altitudeMeters = 500000.0)
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null)
@@ -258,7 +204,7 @@ namespace PioneerFramework
             double z = System.Math.Sin(angle) * orbitRadiusMeters;
             var pos = new DVector3(x, 0, z);
 
-            var entity = spaceGame.CreateStation(entityId, groupId, parent.Faction?.loadID ?? 0,
+            var entity = spaceGame.CreateStation(entityId, groupId, Faction.OfPlayer.loadID,
                 pos, mapWidth: 60, mapHeight: 60, stationName: "测试空间站");
 
             // 进入圆轨道
@@ -278,7 +224,7 @@ namespace PioneerFramework
         /// 创建无 Map 的纯物理航天器（linkedMapId=-1，单 part），用于船-船碰撞测试。
         /// 支持指定尺寸 / 姿态（验证旋转感知碰撞盒 GetWorldAabb）/ 初始速度。
         /// </summary>
-        private SpaceEntityGroup CreateShipNoMap(SpaceGameComp spaceGame, int factionId, DVector3 pos,
+        private static SpaceEntityGroup CreateShipNoMap(SpaceGameComp spaceGame, int factionId, DVector3 pos,
             DVector3 size, Quaternion rotation, string name, DVector3? velocity = null)
         {
             int groupId = GetNextGroupId(spaceGame);
@@ -343,7 +289,7 @@ namespace PioneerFramework
         /// 部署后自动打开 3D 视角，并挂上「距离探针」：CompTick 每 2 秒打印一次 B/C 相对 A 的距离，
         /// 用于自证物理是否在推进（距离不变=时间未推进；递减=物理正常，等 [ShipCollision]）。
         /// </summary>
-        internal void SpawnCollisionTest()
+        public static void SpawnCollisionTest()
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return;
@@ -354,7 +300,7 @@ namespace PioneerFramework
             if (wasPaused)
                 Log.Message("[碰撞测试] 检测到暂停，已自动解除（TimeSpeed.Normal）");
 
-            int playerFaction = parent.Faction?.loadID ?? 0;
+            int playerFaction = Faction.OfPlayer.loadID;
 
             // A：基准无 Map 船（玩家），同步轨道圆轨，无旋转
             DVector3 basePos = new DVector3(33560000.0, 0, 0);
@@ -403,7 +349,7 @@ namespace PioneerFramework
         ///   ② 夹角收心至 ≤~1.5°（axis·burn≈0.9997）→ 已对准 + 用网=主：主网沿 +X 正中直烧、RCS 保留；
         ///   ③ [Burn] burn completed（主料烧到余 dv≈0 结算）。
         /// </summary>
-        internal void SpawnAxialThrustTest()
+        public static void SpawnAxialThrustTest()
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null)
@@ -420,7 +366,7 @@ namespace PioneerFramework
 
             SpaceGameComp.DebugDetailedThrust = true; // 自动开 [Thrust] 详细日志
 
-            int factionId = parent.Faction?.loadID ?? 0;
+            int factionId = Faction.OfPlayer.loadID;
             int groupId = GetNextGroupId(spaceGame);
             int entityId = GetNextEntityId(spaceGame);
 
@@ -510,12 +456,12 @@ namespace PioneerFramework
         ///    → 降落判定通过 → pawn Spawn 进目标站 Map。
         /// 实现委托 BoardingTestScenarios（与测试面板共用同一场景逻辑）。
         /// </summary>
-        internal void SpawnBoardingTest()
+        public static void SpawnBoardingTest()
         {
             BoardingTestScenarios.DeployEvaTest(1);
         }
 
-        internal void SpawnTestStation()
+        public static void SpawnTestStation()
         {
             var (entity, group, map) = CreateTestStation();
             if (entity == null || group == null)
@@ -544,7 +490,7 @@ namespace PioneerFramework
         /// 核热引擎(液氢) + 氢储罐(满 5000kg)、离子引擎(氙) + 氙储罐(满 1000kg)，
         /// 规划两条各自绑定网络的机动（①核热径向 ②离子切向），并打开机动队列窗口。
         /// </summary>
-        internal void SpawnDualEngineTest()
+        public static void SpawnDualEngineTest()
         {
             var (entity, group, map) = CreateTestStation();
             if (entity == null || group == null || map == null)
@@ -602,7 +548,7 @@ namespace PioneerFramework
         }
 
         /// <summary>在地图指定格子放置一个建筑，返回其 CompPropellantTank（若无则 null）。</summary>
-        private CompPropellantTank PlaceBuilding(Map map, string defName, IntVec3 cell)
+        private static CompPropellantTank PlaceBuilding(Map map, string defName, IntVec3 cell)
         {
             var def = DefDatabase<ThingDef>.GetNamedSilentFail(defName);
             if (def == null)
@@ -634,7 +580,7 @@ namespace PioneerFramework
         /// 验证点：① 按键平移沿船轴世界方向出 Δv（[Steer] 平移）；② 动量轮旋转（[Steer] 旋转）；
         /// ③ SAS 对准（[Steer] SAS→）；④ 动作组武装过滤（离子引擎 actionGroups=1）；⑤ 任意输入清空机动队列。
         /// </summary>
-        internal void SpawnSteeringTest()
+        public static void SpawnSteeringTest()
         {
             var (entity, group, map) = CreateTestStation();
             if (entity == null || group == null || map == null)
@@ -685,7 +631,7 @@ namespace PioneerFramework
         /// 验证点：目标在船体局部赤道面（y≈0）——旧半球射界下"无炮可开"，现应正常开火，
         /// 日志 [炮塔出膛] 显示六面出膛面与出膛点（本场景应命中 x+ 侧面，exitFace=1）。
         /// </summary>
-        internal void SpawnTurretTest()
+        public static void SpawnTurretTest()
         {
             // 同步轨道（高度约 28,560km，周期 24h）：相对角速度极小，敌对近似共轨漂移极慢，适合长时观察
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
@@ -728,7 +674,7 @@ namespace PioneerFramework
             DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
             int enemyGroupId = GetNextGroupId(spaceGame);
             int enemyEntityId = GetNextEntityId(spaceGame);
-            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -765,7 +711,7 @@ namespace PioneerFramework
         /// 验证点：[导弹发射] 日志（出生点偏移/速度分解/volley/N/Mission）+ 3D 视图目视领弹出生。
         /// 注：导弹当前为巡航惯性体（制导/解离/转化交接后置任务），发射后沿轨道惯性飞行。
         /// </summary>
-        internal void SpawnMissileLaunchTest()
+        public static void SpawnMissileLaunchTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -803,7 +749,7 @@ namespace PioneerFramework
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 30000.0;
             int enemyGroupId = GetNextGroupId(spaceGame);
             int enemyEntityId = GetNextEntityId(spaceGame);
-            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（导弹靶）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -832,7 +778,7 @@ namespace PioneerFramework
         /// 验证点：撞击才爆炸（无"地板/平面即命中"）、弹头射弹沿导弹速度方向命中不偏深、
         /// 导弹登记注销（[AutonomousVehicle] 注销）。可用炮塔对射场景打飞行导弹验证拦截引爆。
         /// </summary>
-        internal void SpawnMissileImpactTest()
+        public static void SpawnMissileImpactTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -865,7 +811,7 @@ namespace PioneerFramework
             DVector3 enemyPos = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 1500);
             int enemyGroupId = GetNextGroupId(spaceGame);
             int enemyEntityId = GetNextEntityId(spaceGame);
-            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（导弹靶 1.5km）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -893,7 +839,7 @@ namespace PioneerFramework
         /// 导弹出生表面距 1.5km &gt; 500m 边界 → 巡航不点火（[导弹巡航]，惯性接近）→
         /// 惯性接近至 ~500m 表面距 → [导弹制导] 终末接管 → 火炬冲刺 → 撞击全链（~10s 内）。
         /// </summary>
-        internal void SpawnMissileCruiseTest()
+        public static void SpawnMissileCruiseTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -929,7 +875,7 @@ namespace PioneerFramework
             DVector3 enemyPos = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 1500);
             int enemyGroupId = GetNextGroupId(spaceGame);
             int enemyEntityId = GetNextEntityId(spaceGame);
-            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（巡航测试靶）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -959,7 +905,7 @@ namespace PioneerFramework
         /// 验证点：[导弹弹群] N=8 队列日志 / 面板 ×8 单枚燃料 2000kg / [弹群解离] / 8× 错峰撞击无自伤 /
         /// 每枚独立制导均命中（聚合器分账正确性由面板单枚燃料 + 燃尽日志佐证）。
         /// </summary>
-        internal void SpawnVolleyImpactTest()
+        public static void SpawnVolleyImpactTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -992,7 +938,7 @@ namespace PioneerFramework
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 8000.0;
             int enemyGroupId = GetNextGroupId(spaceGame);
             int enemyEntityId = GetNextEntityId(spaceGame);
-            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（弹群靶 ~25km）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -1021,7 +967,7 @@ namespace PioneerFramework
         /// 验证点：[导弹弹群] N=4 → 敌弹终末 → 两条单枚 [导弹撞击]（弹群侧含 E..）+ [弹群] 离群日志；
         /// 面板该弹群 ×3；随后玩家可用「命令全体导弹」/面板对剩余弹群下 Attack 观察解离+错峰撞击。
         /// </summary>
-        internal void SpawnVolleyMergedHitTest()
+        public static void SpawnVolleyMergedHitTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -1051,7 +997,7 @@ namespace PioneerFramework
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 2000.0;
             int enemyGroupId = GetNextGroupId(spaceGame);
             int enemyEntityId = GetNextEntityId(spaceGame);
-            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（合并弹群撞击探针）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -1113,7 +1059,7 @@ namespace PioneerFramework
         /// ② [导弹制导] 日志中冲刺量随横差自适应（横差大时 ≈0，不再无脑 450）；③ 零冲量扰动。
         /// 注：60km @ ~450m/s ≈ 133 游戏秒（Combat 档 ≈133 现实秒）——长距验证的固有代价，比其他场景慢。
         /// </summary>
-        internal void SpawnMissileLongRangeTest()
+        public static void SpawnMissileLongRangeTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -1143,7 +1089,7 @@ namespace PioneerFramework
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 25000.0;
             int enemyGroupId = GetNextGroupId(spaceGame);
             int enemyEntityId = GetNextEntityId(spaceGame);
-            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（长距靶 ~60km）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -1173,7 +1119,7 @@ namespace PioneerFramework
         ///    [导弹中止] 回 Standby（K6 自动出现）。
         /// 可用 DebugHub「销毁来袭弹」按钮手动销毁敌弹即时验证 K6。
         /// </summary>
-        internal void SpawnMissileInterceptTest()
+        public static void SpawnMissileInterceptTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -1207,7 +1153,7 @@ namespace PioneerFramework
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 30000.0;
             int enemyGroupId = GetNextGroupId(spaceGame);
             int enemyEntityId = GetNextEntityId(spaceGame);
-            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（来袭导弹基地）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -1233,7 +1179,7 @@ namespace PioneerFramework
         }
 
         /// <summary>拦截测试敌弹波次：从敌站外侧朝玩家站发射一枚完整敌对导弹（不依赖敌站地图 tick）。</summary>
-        private void FireEnemyMissileWave()
+        public static void FireEnemyMissileWave()
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             var enemyGroup = spaceGame?.GetGroupById(interceptEnemyGroupId);
@@ -1267,7 +1213,7 @@ namespace PioneerFramework
         /// 测试弹工厂（场景用）：CombatManager.CreateMissileGroup 建实体 + AutonomousVehicleManager 登记，
         /// 与发射链同参数语义（volleyId 独立、launcherGroupId=-1 表示非炮塔来源）。
         /// </summary>
-        private SpaceEntityGroup CreateTestMissile(string missileDefName, string weaponDefName, int factionId,
+        private static SpaceEntityGroup CreateTestMissile(string missileDefName, string weaponDefName, int factionId,
             DVector3 birthPos, DVector3 birthVel, int celestialBodyId, DVector3 birthDir, int? targetGroupId)
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
@@ -1340,7 +1286,7 @@ namespace PioneerFramework
         /// 一次齐射即可通过 [炮塔出膛] 日志验证：360° 射界解除（赤道面旧半球逻辑无炮可开）+
         /// 六面出膛碰撞点准确性。玩家船不旋转（船体局部 = 世界轴，方位对应直白）。
         /// </summary>
-        internal void SpawnTurretOmniTest()
+        public static void SpawnTurretOmniTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -1368,7 +1314,7 @@ namespace PioneerFramework
                 ("敌站-y", new DVector3(0, -20000, 0), 2),
             };
 
-            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             var enemyGroupIds = new List<int>();
             string mapping = "";
             foreach (var d in directions)
@@ -1433,7 +1379,7 @@ namespace PioneerFramework
         }
 
         /// <summary>在地图指定格子放置一个建筑，返回 Thing（无 faction，测试用）。</summary>
-        private Thing PlaceBuildingRaw(Map map, string defName, IntVec3 cell)
+        private static Thing PlaceBuildingRaw(Map map, string defName, IntVec3 cell)
         {
             var def = DefDatabase<ThingDef>.GetNamedSilentFail(defName);
             if (def == null)
@@ -1454,7 +1400,7 @@ namespace PioneerFramework
         ///   ③ 敌舰地图 (40,30) 上出现红色精确炮击标记；
         ///   ④ 命中落点格 ≈ (40,30)（[贯穿生成] 验证）。
         /// </summary>
-        internal void SpawnTurretPrecisionTest()
+        public static void SpawnTurretPrecisionTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -1475,7 +1421,7 @@ namespace PioneerFramework
             DVector3 enemyPos = playerPos + new DVector3(0, -20000, 0);
             int enemyGroupId = GetNextGroupId(spaceGame);
             int enemyEntityId = GetNextEntityId(spaceGame);
-            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "正下方敌站");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -1519,7 +1465,7 @@ namespace PioneerFramework
         /// 验证点（日志链）：[齐射详情] → [炮塔出膛] → [激光发射]（射程 50km）→ [激光命中!]（Part HP 下降）
         /// → [贯穿生成]（贯通入口→落点格）→ 光束 60 tick 残留（3D 视角）。
         /// </summary>
-        internal void SpawnRayTurretTest()
+        public static void SpawnRayTurretTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -1556,7 +1502,7 @@ namespace PioneerFramework
             DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
             int enemyGroupId = GetNextGroupId(spaceGame);
             int enemyEntityId = GetNextEntityId(spaceGame);
-            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -1579,7 +1525,7 @@ namespace PioneerFramework
         /// （[激光命中!] 指向近站 Group、近站 Part HP 下降），验证遮挡语义。
         /// 定位机必须 Manual 指远站——Auto 会选最近的近站，无法验证遮挡。
         /// </summary>
-        internal void SpawnRayOcclusionTest()
+        public static void SpawnRayOcclusionTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -1593,7 +1539,7 @@ namespace PioneerFramework
             DVector3 playerPos = playerGroup.IsCircularOrbit
                 ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
                 : playerGroup.CurrentOrbit.position;
-            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
 
             // 1. 近敌站（挡路）：玩家 +x 10km
             DVector3 nearPos = playerPos + new DVector3(10000, 0, 0);
@@ -1643,7 +1589,7 @@ namespace PioneerFramework
         /// [激光slab] 局部系线段呈 45° 倾斜、[激光part] 命中局部点 y≠0（上方斜入）、船壳入口 y>0（从上斜降地面）。
         /// 旧版"世界方向在局部系延伸"在旋转时失效，此场景是核心正确性回归测试。
         /// </summary>
-        internal void SpawnRayRotatedTest()
+        public static void SpawnRayRotatedTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -1676,7 +1622,7 @@ namespace PioneerFramework
             DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
             int enemyGroupId = GetNextGroupId(spaceGame);
             int enemyEntityId = GetNextEntityId(spaceGame);
-            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "旋转敌站");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -1706,7 +1652,7 @@ namespace PioneerFramework
         /// 4 组激光炮塔 + 定位机（Manual 各指一个敌站）。一次齐射 4 发，每发独立判定链
         /// [激光发射]→[激光slab]→[激光part]→[激光命中!]→[激光命中判定]，验证多目标同时命中 + 光束视觉。
         /// </summary>
-        internal void SpawnRayMultiTest()
+        public static void SpawnRayMultiTest()
         {
             var (playerEntity, playerGroup, playerMap) = CreateTestStation(altitudeMeters: 28560000.0);
             if (playerEntity == null || playerGroup == null || playerMap == null)
@@ -1729,7 +1675,7 @@ namespace PioneerFramework
                 ("敌站+z", new DVector3(0, 0, 20000)),
                 ("敌站-z", new DVector3(0, 0, -20000)),
             };
-            int enemyFactionId = (parent.Faction?.loadID ?? 0) + 1;
+            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             var enemyGroupIds = new List<int>();
             string mapping = "";
             foreach (var d in directions)

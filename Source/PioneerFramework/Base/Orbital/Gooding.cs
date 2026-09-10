@@ -21,6 +21,26 @@ namespace PioneerFramework
         // 最小有效速度阈值，避免全零失败被当作有效解
         private const double MIN_VALID_SPEED = 1e-9;
 
+        /// <summary>
+        /// 级数收敛迭代上限（2026-09-10 性能第 19 条）。
+        /// TLAMB 的两处级数循环以「T != TOLD」为终止条件（Gooding 1990 Fortran 的忠实移植）：
+        /// 正常输入必然收敛，但 NaN 传播时 NaN != NaN 恒真 → 死循环挂死 UI 线程（规划器
+        /// 事件驱动，冻结整个游戏）。退化几何（共面 / 零角动量 / 极端半长轴）恰是玩家会在
+        /// 规划器里试出来的输入，故加硬上限并走"无解"异常分支——调用点已有 try/catch 兜底
+        /// （规划器回落为 Lambert 无解提示，制导本次跳过）。
+        /// </summary>
+        public const int MAX_SERIES_ITER = 200;
+
+        // ── 探针计数（纯 C#、无 Verse 依赖——本文件同时被 Pure.Tests 链接编译，故不用 Log/Find）──
+        // 由 PerfProbe 汇总打印读取。判据：DebugSeriesCapHits 正常玩法下必须恒为 0；
+        // DebugMaxSeriesIter 用于确认 200 的余量（真实收敛所需迭代数应远小于它）。
+        /// <summary>TLAMB 调用次数。</summary>
+        public static long DebugTlambCalls;
+        /// <summary>级数迭代触顶次数（触顶 = 判定不收敛并抛异常）。</summary>
+        public static long DebugSeriesCapHits;
+        /// <summary>实测最大级数迭代数。</summary>
+        public static int DebugMaxSeriesIter;
+
         public static (DVector3 Vi, DVector3 Vf) Solve(double mu, DVector3 r1, DVector3 r2, double tof,
             TransferGeometry direction = TransferGeometry.ShortWay, int nrev = 0, DVector3? h = null)
         {
@@ -296,6 +316,7 @@ namespace PioneerFramework
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static (double T, double DT, double D2T, double D3T) TLAMB(int M, double Q, double QSQFM1, double X, int N)
         {
+            DebugTlambCalls++;
             const double SW = 0.4;
             bool LM1 = N == -1;
             bool L1 = N >= 1;
@@ -341,13 +362,22 @@ namespace PioneerFramework
                             T = TERM;
                             double TWOI1 = 1.0;
                             double TOLD;
+                            bool converged = false;
+                            int iter = 0;
                             do
                             {
                                 TWOI1 += 2.0;
                                 TERM *= FG1SQ;
                                 TOLD = T;
                                 T += TERM / TWOI1;
-                            } while (T != TOLD);
+                                converged = (T == TOLD);
+                            } while (!converged && ++iter < MAX_SERIES_ITER);
+                            if (iter > DebugMaxSeriesIter) DebugMaxSeriesIter = iter;
+                            if (!converged)
+                            {
+                                DebugSeriesCapHits++;
+                                throw new Exception("Gooding TLAMB series did not converge");
+                            }
                         }
                     }
 
@@ -381,6 +411,10 @@ namespace PioneerFramework
                 double TTMOLD = TERM / 3.0;
                 T = TTMOLD * TQSUM;
                 double TOLD;
+                // 上限 = N（级数阶数下限，必须跑满）+ MAX_SERIES_ITER 收敛余量：不会截断任何真收敛的输入
+                int maxIter = (N > 0 ? N : 0) + MAX_SERIES_ITER;
+                bool converged2 = false;
+                int iter2 = 0;
                 do
                 {
                     I++;
@@ -401,7 +435,16 @@ namespace PioneerFramework
                     if (L1) DT += TQTERM * U1I;
                     if (L2) D2T += TQTERM * U2I * (P - 1.0);
                     if (L3) D3T += TQTERM * U3I * (P - 1.0) * (P - 2.0);
-                } while (I < N || T != TOLD);
+                    // 原终止条件 (I < N || T != TOLD) 的等价取反：跑满 N 阶且本级增量已归零
+                    converged2 = I >= N && T == TOLD;
+                } while (!converged2 && ++iter2 < maxIter);
+
+                if (iter2 > DebugMaxSeriesIter) DebugMaxSeriesIter = iter2;
+                if (!converged2)
+                {
+                    DebugSeriesCapHits++;
+                    throw new Exception("Gooding TLAMB series expansion did not converge");
+                }
 
                 if (L3) D3T = 8.0 * X * (1.5 * D2T - XSQ * D3T);
                 if (L2) D2T = 2.0 * (2.0 * XSQ * D2T - DT);

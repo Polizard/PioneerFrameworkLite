@@ -61,6 +61,14 @@ namespace PioneerFramework
         private bool debugShowSunMarker = true;  // 调试：在太阳位置显示黄色标记
         private int cachedRenderTick;           // 缓存渲染 tick，避免 OnPostRender 中重复获取
 
+        // 第 12 条（2026-09-10）：本窗口每帧重建 id 集合（GetLocalSystemBodyIds + 三处内联
+        // {currentSystemBodyId}+卫星）。天体/卫星在开局后不可变，故按"所属天体 id"记忆化即精确复用；
+        // 调用方仅 Contains/遍历、不跨帧保留。
+        private readonly HashSet<int> localSystemBodyIdsCache = new HashSet<int>();
+        private int localSystemBodyIdsCacheKey = int.MinValue;
+        private readonly HashSet<int> currentSystemBodyIdsCache = new HashSet<int>();
+        private int currentSystemBodyIdsCacheKey = int.MinValue;
+
 #if DEBUG
         // 射弹渲染连续检测：相邻帧弹头渲染位置跳变超阈值 → 提示（抓折线/集体闪现）
         private readonly Dictionary<int, DVector3> debugLastProjRender = new Dictionary<int, DVector3>();
@@ -617,13 +625,17 @@ namespace PioneerFramework
             DrawProjectiles(origin);
         }
 
-        /// <summary>计算本行星系应渲染的天体 ID 集合（恒星 + 飞船所在行星 + 其卫星）</summary>
+        /// <summary>计算本行星系应渲染的天体 ID 集合（恒星 + 飞船所在行星 + 其卫星）。
+        /// 第 12 条：按 shipBodyId 记忆化（每帧调用；天体图开局后不可变 → 键相同即内容相同）。</summary>
         private HashSet<int> GetLocalSystemBodyIds(CelestialBodyManager mgr)
         {
-            var ids = new HashSet<int>();
-
             // 找到飞船所在天体
             int shipBodyId = selectedGroupId >= 0 ? GetSelectedGroupBodyId() : currentSystemBodyId;
+            if (localSystemBodyIdsCacheKey == shipBodyId) return localSystemBodyIdsCache;
+            localSystemBodyIdsCacheKey = shipBodyId;
+
+            var ids = localSystemBodyIdsCache;
+            ids.Clear();
             var shipBody = mgr.GetBodyById(shipBodyId);
 
             // 找到顶层恒星
@@ -650,6 +662,22 @@ namespace PioneerFramework
                 }
             }
 
+            return ids;
+        }
+
+        /// <summary>第 12 条：当前星系 + 其卫星的 id 集（记忆化，免每帧重建；调用方仅 Contains/遍历）。</summary>
+        private HashSet<int> GetCurrentSystemBodyIds(CelestialBodyManager mgr)
+        {
+            if (currentSystemBodyIdsCacheKey == currentSystemBodyId) return currentSystemBodyIdsCache;
+            currentSystemBodyIdsCacheKey = currentSystemBodyId;
+
+            var ids = currentSystemBodyIdsCache;
+            ids.Clear();
+            ids.Add(currentSystemBodyId);
+            var bodyDef = mgr.GetBodyById(currentSystemBodyId);
+            if (bodyDef != null)
+                foreach (var m in bodyDef.moonBodies)
+                    ids.Add(m.bodyId);
             return ids;
         }
 
@@ -790,11 +818,7 @@ namespace PioneerFramework
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return;
 
-            var sysIds = new HashSet<int> { currentSystemBodyId };
-            var bodyDef = mgr.GetBodyById(currentSystemBodyId);
-            if (bodyDef != null)
-                foreach (var m in bodyDef.moonBodies)
-                    sysIds.Add(m.bodyId);
+            var sysIds = GetCurrentSystemBodyIds(mgr); // 第 12 条：记忆化复用（此前每帧新建 HashSet + 填卫星）
 
             int totalGroups = 0, activeCount = 0, sysMatchCount = 0, partsRendered = 0, markerRendered = 0;
             float minDist = float.MaxValue, maxDist = 0f;
@@ -1062,11 +1086,7 @@ namespace PioneerFramework
             int tick = (int)Math.Round(TimeScaleManager.GetPhysicsTickSafe());
             DVector3 origin = GetRenderOrigin();
 
-            var sysIds = new HashSet<int> { currentSystemBodyId };
-            var bodyDef = mgr.GetBodyById(currentSystemBodyId);
-            if (bodyDef != null)
-                foreach (var m in bodyDef.moonBodies)
-                    sysIds.Add(m.bodyId);
+            var sysIds = GetCurrentSystemBodyIds(mgr); // 第 12 条：记忆化复用（此前每帧新建 HashSet + 填卫星）
 
             float best = float.MaxValue;
             int bestId = -1;
@@ -1203,11 +1223,7 @@ namespace PioneerFramework
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (spaceGame == null || mgr == null) return;
 
-            var sysIds = new HashSet<int> { currentSystemBodyId };
-            var bodyDef = mgr.GetBodyById(currentSystemBodyId);
-            if (bodyDef != null)
-                foreach (var m in bodyDef.moonBodies)
-                    sysIds.Add(m.bodyId);
+            var sysIds = GetCurrentSystemBodyIds(mgr); // 第 12 条：记忆化复用（此前每帧新建 HashSet + 填卫星）
 
             var opts = new List<FloatMenuOption>();
             foreach (var g in spaceGame.GetAllGroups())

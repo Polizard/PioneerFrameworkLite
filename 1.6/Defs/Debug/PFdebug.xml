@@ -1,10 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Defs>
-  <!-- 统一调试台（2026-09-06）：唯一调试入口。选中 → Gizmo「打开 PF 调试面板」→ Window_DebugHub -->
+  <!-- ═══ PFL 测试入口（2026-09-10 规范化）═══
+       全部测试场景已迁入**游戏自带 Debug 菜单**：dev mode → 顶部页签「PFL 测试」。
+       实现：PioneerFramework.DebugTabMenu_PFL（扩展点 = DebugTabMenuDef.menuClass，官方扩展点，无需 Harmony 补丁）；
+       场景实现在 PioneerFramework.DebugShipSpawner（静态类，各场景自建口袋地图，不依赖任何建筑）。
+       页签内含：一键验收（性能优化 9 条）/ 中止验收 / 验收探针开关 / 全部单场景入口 / 调试日志开关。 -->
+  <DebugTabMenuDef>
+    <defName>PF_DebugTab</defName>
+    <!-- label 必填：Dialog_Debug.Setup() 用 SortBy(displayOrder, label) 排序页签，
+         而 SortBy 对第二关键字调 .CompareTo → label 为 null 会抛 NRE（2026-09-10 实测踩到）。
+         displayOrder 也应避开原版取值，免得无谓地走到第二关键字。 -->
+    <label>PFL 测试</label>
+    <menuClass>PioneerFramework.DebugTabMenu_PFL</menuClass>
+    <displayOrder>1234</displayOrder>
+  </DebugTabMenuDef>
+
+  <!-- 旧调试台（deprecated）：入口已迁至 Debug 菜单 →「PFL 测试」页签。
+       本 Def 仅为**存档兼容**保留（老存档里已建成的建筑仍可正常加载），它已不挂任何 Comp；
+       不影响新功能，想清理可以整段删掉（删前确认没有存档还建着它）。 -->
   <ThingDef ParentName="BuildingBase">
     <defName>PF_ShipDeployer</defName>
-    <label>PF 调试台</label>
-    <description>调试建筑：选中后打开「PF 统一调试面板」，一键部署空间站 / 炮塔（炮+激光）/ 碰撞 / 操舵 / 跳帮 / 发射等测试场景。</description>
+    <label>PF 调试台（旧，已弃用）</label>
+    <description>已弃用的调试建筑：测试入口已迁到 dev mode 的 Debug 菜单 →「PFL 测试」页签。此建筑无功能，仅存档兼容。</description>
     <thingClass>Building</thingClass>
     <tickerType>Normal</tickerType>
     <graphicData>
@@ -29,8 +46,5 @@
     <researchPrerequisites>
       <li>MicroelectronicsBasics</li>
     </researchPrerequisites>
-    <comps>
-      <li Class="PioneerFramework.CompProperties_DebugShipSpawner" />
-    </comps>
   </ThingDef>
 </Defs>

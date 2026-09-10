@@ -41,7 +41,9 @@ namespace PioneerFramework
         /// <summary>弹群齐射枚数（0 = 跟随武器 Def.missileCount；1..32 = 发射器覆盖，2026-09-08 §5）。</summary>
         private int volleyCount;
         private int nextScanTick;
-        private int lastSyncedTargetGroupId = -1;
+
+        // 性能第 14 条：CompTick 每建筑每 tick 都要取 SpaceGameComp，按 Game 缓存
+        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new GameComponentRef<SpaceGameComp>();
 
         // ── 精确打击点（§10 弹着偏置，2026-09-07）：瞄准目标地图指定格，本发射器释放的导弹终末撞该格 ──
         private int preciseStrikeGroupId = -1;
@@ -112,7 +114,7 @@ namespace PioneerFramework
             if (parent == null || parent.Destroyed || parent.Map == null) return;
             weapon?.Update(Find.TickManager.TicksGame);
 
-            var sg = Current.Game?.GetComponent<SpaceGameComp>();
+            var sg = spaceGameRef.Get();
             if (sg == null) return;
 
             // 精确打击点维护：目标失活 → 自动清除；目标地图重载（读档/切换）后补选格标记
@@ -141,8 +143,6 @@ namespace PioneerFramework
                 int newId = target?.GroupId ?? -1;
                 if (newId >= 0 && newId != prevId)
                     SyncFollowerTargets(newId);
-                if (newId < 0)
-                    lastSyncedTargetGroupId = -1;
             }
 
             // 自动发射（发射档位 = 自动）：目标有效 + 武器冷却就绪（偶 tick 对齐物理步；WeaponInstance.Fire 冷却节流）

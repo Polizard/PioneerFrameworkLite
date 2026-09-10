@@ -798,6 +798,7 @@ namespace PioneerFramework
 
             if (sunBillboardObject == null)
                 CreateSunBillboard();
+            if (sunBillboardObject == null) return; // 创建失败（缺资源）→ 跳过太阳标记，避免 NRE
 
             sunBillboardObject.transform.position = renderPos;
             sunBillboardObject.SetActive(true);

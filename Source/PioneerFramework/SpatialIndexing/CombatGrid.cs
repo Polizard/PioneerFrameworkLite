@@ -79,6 +79,12 @@ namespace PioneerFramework.Combat
         internal long debugCellCrossCount;
 #endif
 
+        // ── 组件引用缓存（2026-09-10 性能第 5 条）：本类每船同步 / 每弹每步都要查这两个组件，
+        //    GetComponent 是组件表线性扫描，故按 Game 缓存（跨局自动失效，见 GameComponentRef）。──
+        private readonly GameComponentRef<CelestialBodyManager> celestialMgrRef = new GameComponentRef<CelestialBodyManager>();
+        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new GameComponentRef<SpaceGameComp>();
+
+        // 引力源按 tick 缓存；cachedBodyMgr 是跨局失效判据（换局后 tick 可能重合，必须比对实例）
         private CelestialBodyManager cachedBodyMgr;
         private List<CelestialBodyDef> cachedGravitySources;
         private int cachedGravityTick = -1;
@@ -108,10 +114,17 @@ namespace PioneerFramework.Combat
         /// 解析编队所属的根行星/恒星参考系 ID（绕卫星的船与绕行星的船统一进同一网格，
         /// 坐标基准均为行星系相对坐标，见 GetCircularPositionAtTick）。
         /// </summary>
-        private static int GetFrameId(SpaceEntityGroup ship)
+        private int GetFrameId(SpaceEntityGroup ship) => ResolveFrameId(ship.CelestialBodyId);
+
+        /// <summary>
+        /// 参考系解析（与 AddShip / GetFrameId 同源）。外部按帧查网格（如爆炸 AoE 候选）必须走本方法：
+        /// CelestialBodyManager 缺失时注册帧退回 celestialBodyId 本身，若查询侧改用
+        /// SpaceGameComp.ResolveReferenceFrameId（返回 -1）就会与注册帧错位、查不到船。
+        /// </summary>
+        public int ResolveFrameId(int celestialBodyId)
         {
-            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            return mgr != null ? mgr.GetReferenceFrameId(ship.CelestialBodyId) : ship.CelestialBodyId;
+            var mgr = celestialMgrRef.Get();
+            return mgr != null ? mgr.GetReferenceFrameId(celestialBodyId) : celestialBodyId;
         }
 
         /// <summary>
@@ -234,7 +247,7 @@ namespace PioneerFramework.Combat
             DVector3 min = groupPos, max = groupPos;
             bool hasEntity = false;
 
-            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var spaceGame = spaceGameRef.Get();
             if (spaceGame != null)
             {
                 foreach (int eid in ship.GetEntityIds())
@@ -507,10 +520,10 @@ namespace PioneerFramework.Combat
         public DVector3 ComputeProjectileGravity(DVector3 posMeters, int systemBodyId)
         {
             int tick = (int)System.Math.Round(TimeScaleManager.GetPhysicsTickSafe());
-            var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            var celestialMgr = celestialMgrRef.Get();
             if (celestialMgr == null) return DVector3.zero;
 
-            if (cachedBodyMgr != celestialMgr || cachedGravityTick != tick)
+            if (!ReferenceEquals(cachedBodyMgr, celestialMgr) || cachedGravityTick != tick)
             {
                 cachedBodyMgr = celestialMgr;
                 cachedGravityTick = tick;

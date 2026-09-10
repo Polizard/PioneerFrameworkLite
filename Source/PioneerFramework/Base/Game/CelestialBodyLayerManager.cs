@@ -105,6 +105,15 @@ namespace PioneerFramework
         private bool layersRegistered;
         private bool desertFillAttempted;
 
+        // 第 13 条（2026-09-10）：GameComponentUpdate 是**每帧**调用，而注册失败路径内含反射
+        // （AccessTools.Field）与多条 Log.Message/Warning。若某些存档永远注册不成立，就变成每帧反射 + 日志刷屏。
+        // 故限频：前 N 次每帧试（覆盖 WorldGrid 刚就绪的启动窗口），之后每 RETRY_TICKS 试一次。
+        private int layerRegisterAttempts;
+        private int nextLayerRegisterAttemptTick;
+        private bool layerRegisterSlowLogged;
+        private const int LAYER_REGISTER_FAST_ATTEMPTS = 120; // ≈2s @60fps
+        private const int LAYER_REGISTER_RETRY_TICKS = 600;
+
         public CelestialBodyLayerManager(Game game) : base()
         {
         }
@@ -112,14 +121,26 @@ namespace PioneerFramework
         public override void GameComponentUpdate()
         {
             base.GameComponentUpdate();
-            // 延迟注册：等待 WorldGrid 初始化完毕
-            if (!layersRegistered && Find.WorldGrid != null)
+            // 延迟注册：等待 WorldGrid 初始化完毕（失败路径限频，见字段注释）
+            if (!layersRegistered && Find.WorldGrid != null && ShouldAttemptLayerRegister())
             {
+                layerRegisterAttempts++;
+                if (layerRegisterAttempts > LAYER_REGISTER_FAST_ATTEMPTS)
+                {
+                    nextLayerRegisterAttemptTick = (Find.TickManager?.TicksGame ?? 0) + LAYER_REGISTER_RETRY_TICKS;
+                    if (!layerRegisterSlowLogged)
+                    {
+                        layerRegisterSlowLogged = true;
+                        Log.Warning(string.Format(
+                            "[CelestialBodyLayerManager] 天体 layer 注册连续失败 {0} 次，转为每 {1} tick 重试（避免每帧反射 + 日志刷屏）",
+                            LAYER_REGISTER_FAST_ATTEMPTS, LAYER_REGISTER_RETRY_TICKS));
+                    }
+                }
                 TryRegisterExistingLayers();
             }
 
-            // 确保沙漠填充至少执行一次（处理旧存档）
-            if (!desertFillAttempted && layersRegistered && Find.WorldGrid != null)
+            // 确保沙漠填充至少执行一次（处理旧存档）——同门控（两者互斥：本块要求 layersRegistered）
+            if (!desertFillAttempted && layersRegistered && Find.WorldGrid != null && ShouldAttemptLayerRegister())
             {
                 var layersField = AccessTools.Field(typeof(WorldGrid), "planetLayers");
                 var layers = layersField?.GetValue(Find.WorldGrid) as Dictionary<int, PlanetLayer>;
@@ -129,6 +150,13 @@ namespace PioneerFramework
                     desertFillAttempted = true;
                 }
             }
+        }
+
+        /// <summary>第 13 条：注册/填充尝试门控（前 N 次直通，之后按 tick 限频）。</summary>
+        private bool ShouldAttemptLayerRegister()
+        {
+            if (layerRegisterAttempts < LAYER_REGISTER_FAST_ATTEMPTS) return true;
+            return (Find.TickManager?.TicksGame ?? 0) >= nextLayerRegisterAttemptTick;
         }
 
         /// <summary>
