@@ -115,21 +115,23 @@ namespace PioneerFramework.Combat
         /// <summary>
         /// 终末制导参数（纯核心口径，2026-09-08）：Def 字段 → MissileGuidanceParams。
         /// 横向加速度 = 主推推力/湿质量（每枚同构，弹群合并态与单枚同值——N 台引擎 N 倍质量）。
+        /// 2026-09-14：不可调项（deadband/boostMax）与 lateralAccel 算式改为引用纯核心单一来源
+        /// （`MissileGuidanceDefaults`），不再就地写死——此前那两个写死值与纯测试口径不一致。
         /// </summary>
         public MissileGuidanceParams GuidanceParams
         {
             get
             {
-                double thrust = (double)ve * massFlow + (hasRcs ? (double)rcsVe * rcsMassFlow : 0.0);
-                double wetMass = (double)dryMass + fuelMass + (hasRcs ? rcsFuelMass : 0.0);
                 return new MissileGuidanceParams
                 {
                     lateralGain = guidanceLateralGain,
                     closingThreshold = guidanceClosingThreshold,
                     cruiseClosing = terminalSpeed,
-                    boostMax = 600.0,
-                    deadband = 0.5,
-                    lateralAccel = wetMass > 1e-6 ? thrust / wetMass : 0.0,
+                    boostMax = MissileGuidanceDefaults.BoostMax,
+                    deadband = MissileGuidanceDefaults.Deadband,
+                    lateralAccel = MissileGuidanceDefaults.LateralAccelFor(
+                        dryMass, fuelMass, ve, massFlow,
+                        hasRcs, rcsVe, rcsMassFlow, rcsFuelMass),
                     turnRateRad = maxAngularRateDegrees * Mathf.Deg2Rad,
                     timeMargin = guidanceTimeMargin,
                     lostMarginMeters = guidanceLostMarginMeters

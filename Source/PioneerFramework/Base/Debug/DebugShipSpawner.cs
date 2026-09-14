@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using RimWorld;
 using UnityEngine;
 using Verse;
@@ -10,13 +10,15 @@ namespace PioneerFramework
     /// <summary>
     /// 调试场景库（2026-09-10 规范化：从「挂在调试建筑上的 ThingComp」迁到游戏自带 Debug 菜单）。
     /// 入口：dev mode 的 **Debug 菜单 →「PFL 测试」页签**（<see cref="DebugTabMenu_PFL"/>，Def `PF_DebugTab`）；
-    /// 旧建筑 PF_ShipDeployer 保留一个 Gizmo 作兼容入口（打开同一页签）。
+    /// （2026-09-14 更正）旧建筑 `PF_ShipDeployer` 仅保留 ThingDef、**没有 Comp 也没有 Gizmo**——
+    /// 本类与它已无任何关系；此前注释声称"保留一个 Gizmo 作兼容入口"与代码/XML 均不符。
     /// 各场景由 CreateTestStation 自建口袋地图，**不依赖任何建筑**；一键验收（PerfAcceptanceRunner）
     /// 也直接调本类。转静态：原 ThingComp 的实例状态本就全是 static 字段，无状态迁移。
     /// </summary>
     public static class DebugShipSpawner
     {
         private const int EARTH_BODY_ID = 1;
+        private const int MOON_BODY_ID = 2;
 
         // ── 碰撞测试距离探针（自证物理是否推进；部署时设置，CompTick 每 2 秒打一条）──
         // 暂停时 CompTick 不跑 → 无探针日志 = 时间未推进；距离递减 = 物理正常等 [ShipCollision]。
@@ -164,24 +166,6 @@ namespace PioneerFramework
         }
 
 
-        private static int GetNextGroupId(SpaceGameComp spaceGame)
-        {
-            int maxId = 0;
-            foreach (var g in spaceGame.GetAllGroups())
-                if (g.GroupId > maxId) maxId = g.GroupId;
-            return maxId + 1;
-        }
-
-        private static int GetNextEntityId(SpaceGameComp spaceGame)
-        {
-            int maxId = 0;
-            foreach (var g in spaceGame.GetAllGroups())
-            {
-                foreach (int eid in g.GetEntityIds())
-                    if (eid > maxId) maxId = eid;
-            }
-            return maxId + 1;
-        }
 
         /// <summary>创建指定高度圆轨道的测试空间站（含地图 + 单 part），返回实体/群组/地图。</summary>
         private static (SpaceEntity entity, SpaceEntityGroup group, Map map) CreateTestStation(double altitudeMeters = 500000.0)
@@ -193,13 +177,15 @@ namespace PioneerFramework
                 return (null, null, null);
             }
 
-            int groupId = GetNextGroupId(spaceGame);
-            int entityId = GetNextEntityId(spaceGame);
+            int groupId = spaceGame.AllocGroupId();
+            int entityId = spaceGame.AllocEntityId();
 
             // 默认 500km LEO；同步轨道高度约 28,560km（半径 33,560km，周期 24h）
             double earthRadiusMeters = SpaceConstants.PlanetRadiusMeters;
             double orbitRadiusMeters = earthRadiusMeters + altitudeMeters;
-            double angle = System.DateTime.Now.Millisecond * 0.001 * System.Math.PI * 2;
+            // 2026-09-14：相位改由物理 tick 推导（原 DateTime.Now.Millisecond 每次运行不同 →
+            // 同一场景几何不可复现，"这次没覆盖/超时"无法与上次对照）
+            double angle = (TimeScaleManager.GetPhysicsTickSafe() % 60000.0) / 60000.0 * System.Math.PI * 2.0;
             double x = System.Math.Cos(angle) * orbitRadiusMeters;
             double z = System.Math.Sin(angle) * orbitRadiusMeters;
             var pos = new DVector3(x, 0, z);
@@ -227,8 +213,8 @@ namespace PioneerFramework
         private static SpaceEntityGroup CreateShipNoMap(SpaceGameComp spaceGame, int factionId, DVector3 pos,
             DVector3 size, Quaternion rotation, string name, DVector3? velocity = null)
         {
-            int groupId = GetNextGroupId(spaceGame);
-            int entityId = GetNextEntityId(spaceGame);
+            int groupId = spaceGame.AllocGroupId();
+            int entityId = spaceGame.AllocEntityId();
 
             var group = new SpaceEntityGroup(groupId, factionId)
             {
@@ -367,8 +353,8 @@ namespace PioneerFramework
             SpaceGameComp.DebugDetailedThrust = true; // 自动开 [Thrust] 详细日志
 
             int factionId = Faction.OfPlayer.loadID;
-            int groupId = GetNextGroupId(spaceGame);
-            int entityId = GetNextEntityId(spaceGame);
+            int groupId = spaceGame.AllocGroupId();
+            int entityId = spaceGame.AllocEntityId();
 
             // 出生：近地圆轨 500km（半径 6.4Mm → 半径+500km），姿态 identity
             double radius = SpaceConstants.PlanetRadiusMeters + 500000.0;
@@ -486,7 +472,104 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 双引擎测试场景：
+        /// **漏靶弹头**场景（A2，《审查修复计划2026-09-14》§9 第 2 项）：让弹头活满寿命。
+        ///
+        /// 为什么需要它：实战弹头在命中点出生、通常**一个物理步内就结算**，于是 A2 的
+        /// "2 物理秒一段 + 段内插值飞行"只走到"建段"，走不到"段内插值"，也验不到
+        /// "漏靶弹头被引力弯成轨道垃圾"这条设计意图。
+        ///
+        /// 做法：在同步轨道半径处放一枚**圆轨**弹头（切向速度 = √(μ/r)），四周无任何目标
+        /// —— 它既不会撞地球（33,560 km 之外）、也不会撞到任何船，活满
+        /// `warheadLifetimeSeconds`（120 s）后自然销毁。
+        ///
+        /// 判据（探针）：㉔ 自由飞行弯曲 实际偏移/½|a|t² 应 ≈1×（0.6–1.7）；
+        /// ㉒ 段重建节奏按"飞行秒/段长"判定；两者都由探针直接记 Mismatch，进硬指标。
+        /// </summary>
+        public static void SpawnMissedWarheadTest()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            var combatMgr = Current.Game?.GetComponent<CombatManager>();
+            if (spaceGame == null || celestialMgr == null || combatMgr == null)
+            {
+                Log.Error("[漏靶弹头测试] 前置组件缺失");
+                return;
+            }
+
+            var earth = celestialMgr.GetBodyById(EARTH_BODY_ID);
+            if (earth == null)
+            {
+                Log.Error("[漏靶弹头测试] 地球 Def 缺失");
+                return;
+            }
+
+            // 同步轨道半径（与空间站场景同高，便于对照 ㉒ 的 |a|=μ/r²）
+            double r = SpaceConstants.PlanetRadiusMeters + 28_560_000.0;
+            double vCirc = System.Math.Sqrt(earth.gravitationalParameter / r);
+
+            var pos = new DVector3(r, 0.0, 0.0);
+            var vel = new DVector3(0.0, 0.0, vCirc); // 切向（⊥ 半径）→ 圆轨
+
+            bool ok = combatMgr.SpawnDebugMissedWarhead("PF_Missile_Standard", EARTH_BODY_ID, pos, vel);
+            Log.Message(string.Format("[漏靶弹头测试] 弹头已生成={0}：r={1:F0}km 圆轨速度={2:F0}m/s｜"
+                + "预期 ㉒|a|≈{3:F3} m/s²（=μ/r²）、㉔弯曲比≈1×、寿命 {4:F0}s",
+                ok, r / 1000.0, vCirc,
+                earth.gravitationalParameter / (r * r), 120.0));
+        }
+
+        /// <summary>
+        /// 月球系引力回归场景（A0 §9 第 3 项）：在月球附近放一个**非圆轨**群组。
+        ///
+        /// 为什么必须非圆轨：圆轨群组走 `GetCircularPositionAtTick` 解析推进，**不经过引力场积分**，
+        /// 验不到 A0 的改动；非圆轨才走 `ComputeGroupPhysics` 的场积分路径。
+        ///
+        /// 起手数据：月球表面上方 1800km、速度 = 0.92×月球圆轨速度（切向）→ 稳定椭圆
+        /// （a≈0.866r，e≈0.154，近月点 ≈2.4e6 m > 月半径 1.5e6 m，不会立刻撞月），
+        /// 半径在 2.4–3.3e6 m 间变化，全程都在积分。
+        ///
+        /// 判据（配合 PerfProbe 的汇总行 ㉑）：子天体域「差分/局部引力」应落在 **0.1%–2%**（地球潮汐）；
+        /// 若为 0 → 月球周围仍未带上根天体的贡献（A0 未生效）；若 ≈7% → 走了"全量求和"的错路。
+        /// </summary>
+        public static void SpawnMoonGravityTest()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (spaceGame == null || celestialMgr == null) return;
+
+            var moon = celestialMgr.GetBodyById(MOON_BODY_ID);
+            if (moon == null)
+            {
+                Log.Error("[月球引力测试] 天体 Def 缺失（bodyId=2）");
+                return;
+            }
+
+            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
+            // 月球相对**其父天体**（= 根行星地球）的位置/速度 → 与群组系（CurrentOrbit 所在系）同系
+            DVector3 moonPos = celestialMgr.GetBodyLocalPosition(MOON_BODY_ID, physicsTick);
+            DVector3 moonVel = celestialMgr.GetBodyLocalVelocity(MOON_BODY_ID, physicsTick);
+
+            double r = moon.radius + 1_800_000.0;
+            double vCirc = System.Math.Sqrt(moon.gravitationalParameter / r);
+            var radial = new DVector3(1.0, 0.0, 0.15).normalized;
+            var tangent = new DVector3(radial.z, 0.0, -radial.x); // XZ 平面内正交
+
+            DVector3 pos = moonPos + radial * r;
+            DVector3 vel = moonVel + tangent * (vCirc * 0.92);
+
+            var group = CreateShipNoMap(spaceGame, Faction.OfPlayer.loadID, pos,
+                new DVector3(6f, 6f, 12f), Quaternion.identity, "月球引力测试", vel);
+            if (group == null) return;
+
+            // 中心天体 = 月球（引力场按根系解析；坐标仍在系统系 → 无需改 CurrentOrbit）
+            group.CelestialBodyId = MOON_BODY_ID;
+
+            Log.Message(string.Format(
+                "[月球引力测试] G{0} 已创建：r={1:F0}km 圆轨速度={2:F0}m/s 实给={3:F0}m/s（椭圆 e≈0.154）" +
+                "｜开「性能优化验收探针」后看汇总行 ㉑ 的子天体域差分比值",
+                group.GroupId, r / 1000.0, vCirc, vCirc * 0.92));
+        }
+
+
         /// 核热引擎(液氢) + 氢储罐(满 5000kg)、离子引擎(氙) + 氙储罐(满 1000kg)，
         /// 规划两条各自绑定网络的机动（①核热径向 ②离子切向），并打开机动队列窗口。
         /// </summary>
@@ -672,8 +755,8 @@ namespace PioneerFramework
 
 
             DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
-            int enemyGroupId = GetNextGroupId(spaceGame);
-            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyGroupId = spaceGame.AllocGroupId();
+            int enemyEntityId = spaceGame.AllocEntityId();
             int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
@@ -747,8 +830,8 @@ namespace PioneerFramework
             // 位置 = 沿母站轨道切向 20km + 径向抬轨 30km → 入轨后不同半径不同周期 = 轨道不同步
             DVector3 sameOrbitPoint = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 20000);
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 30000.0;
-            int enemyGroupId = GetNextGroupId(spaceGame);
-            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyGroupId = spaceGame.AllocGroupId();
+            int enemyEntityId = spaceGame.AllocEntityId();
             int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（导弹靶）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
@@ -809,8 +892,8 @@ namespace PioneerFramework
             // 同轨靶（严格同半径共轨，相对静止）：沿母站轨道切向偏移——世界系偏移在任意轨道相位
             // 会引入径向分量导致异轨（半径差 km 级），靶漂移+瞄准错乱（22:43 会话实证）
             DVector3 enemyPos = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 1500);
-            int enemyGroupId = GetNextGroupId(spaceGame);
-            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyGroupId = spaceGame.AllocGroupId();
+            int enemyEntityId = spaceGame.AllocEntityId();
             int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（导弹靶 1.5km）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
@@ -873,8 +956,8 @@ namespace PioneerFramework
             // 同轨靶（严格同半径共轨，相对静止）：沿母站轨道切向偏移——世界系偏移在任意轨道相位
             // 会引入径向分量导致异轨（半径差 km 级），靶漂移+瞄准错乱（22:43 会话实证）
             DVector3 enemyPos = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 1500);
-            int enemyGroupId = GetNextGroupId(spaceGame);
-            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyGroupId = spaceGame.AllocGroupId();
+            int enemyEntityId = spaceGame.AllocEntityId();
             int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（巡航测试靶）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
@@ -936,8 +1019,8 @@ namespace PioneerFramework
             // （2026-09-08 三轮实测：靶 15.2km 时队首仅 1.2km 余量收敛不及擦过 → 拉远靶距）
             DVector3 sameOrbitPoint = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 24000);
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 8000.0;
-            int enemyGroupId = GetNextGroupId(spaceGame);
-            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyGroupId = spaceGame.AllocGroupId();
+            int enemyEntityId = spaceGame.AllocEntityId();
             int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（弹群靶 ~25km）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
@@ -995,8 +1078,8 @@ namespace PioneerFramework
             // 敌站 6km（异轨小径向差）：探针敌弹从敌站侧撞入停驻在玩家站附近的合并弹群
             DVector3 sameOrbitPoint = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 6000);
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 2000.0;
-            int enemyGroupId = GetNextGroupId(spaceGame);
-            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyGroupId = spaceGame.AllocGroupId();
+            int enemyEntityId = spaceGame.AllocEntityId();
             int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（合并弹群撞击探针）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
@@ -1087,8 +1170,8 @@ namespace PioneerFramework
             // 仍在 homing 100km 内 → 出膛即终末段，全程火炬收敛
             DVector3 sameOrbitPoint = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 55000);
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 25000.0;
-            int enemyGroupId = GetNextGroupId(spaceGame);
-            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyGroupId = spaceGame.AllocGroupId();
+            int enemyEntityId = spaceGame.AllocEntityId();
             int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（长距靶 ~60km）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
@@ -1151,8 +1234,8 @@ namespace PioneerFramework
             // 位置 = 沿母站轨道切向 20km + 径向抬轨 30km → 入轨后不同半径不同周期 = 轨道不同步
             DVector3 sameOrbitPoint = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 20000);
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 30000.0;
-            int enemyGroupId = GetNextGroupId(spaceGame);
-            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyGroupId = spaceGame.AllocGroupId();
+            int enemyEntityId = spaceGame.AllocEntityId();
             int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（来袭导弹基地）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
@@ -1319,8 +1402,8 @@ namespace PioneerFramework
             string mapping = "";
             foreach (var d in directions)
             {
-                int gid = GetNextGroupId(spaceGame);
-                int eid = GetNextEntityId(spaceGame);
+                int gid = spaceGame.AllocGroupId();
+                int eid = spaceGame.AllocEntityId();
                 spaceGame.CreateStation(eid, gid, enemyFactionId, playerPos + d.offset, 60, 60, d.name);
                 var g = spaceGame.GetGroupById(gid);
                 if (g != null)
@@ -1419,8 +1502,8 @@ namespace PioneerFramework
 
             // 敌舰：玩家船正下方（世界 -y）20km → 船体局部 -y → 出膛面 y-（面2）
             DVector3 enemyPos = playerPos + new DVector3(0, -20000, 0);
-            int enemyGroupId = GetNextGroupId(spaceGame);
-            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyGroupId = spaceGame.AllocGroupId();
+            int enemyEntityId = spaceGame.AllocEntityId();
             int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "正下方敌站");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
@@ -1500,8 +1583,8 @@ namespace PioneerFramework
                 ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
                 : playerGroup.CurrentOrbit.position;
             DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
-            int enemyGroupId = GetNextGroupId(spaceGame);
-            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyGroupId = spaceGame.AllocGroupId();
+            int enemyEntityId = spaceGame.AllocEntityId();
             int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
@@ -1543,8 +1626,8 @@ namespace PioneerFramework
 
             // 1. 近敌站（挡路）：玩家 +x 10km
             DVector3 nearPos = playerPos + new DVector3(10000, 0, 0);
-            int nearGroupId = GetNextGroupId(spaceGame);
-            int nearEntityId = GetNextEntityId(spaceGame);
+            int nearGroupId = spaceGame.AllocGroupId();
+            int nearEntityId = spaceGame.AllocEntityId();
             spaceGame.CreateStation(nearEntityId, nearGroupId, enemyFactionId, nearPos, 60, 60, "遮挡敌站(近10km)");
             var nearGroup = spaceGame.GetGroupById(nearGroupId);
             if (nearGroup != null)
@@ -1552,8 +1635,8 @@ namespace PioneerFramework
 
             // 2. 远敌站（瞄准目标）：玩家 +x 20km（近站正挡在光束路径上）
             DVector3 farPos = playerPos + new DVector3(20000, 0, 0);
-            int farGroupId = GetNextGroupId(spaceGame);
-            int farEntityId = GetNextEntityId(spaceGame);
+            int farGroupId = spaceGame.AllocGroupId();
+            int farEntityId = spaceGame.AllocEntityId();
             spaceGame.CreateStation(farEntityId, farGroupId, enemyFactionId, farPos, 60, 60, "瞄准敌站(远20km)");
             var farGroup = spaceGame.GetGroupById(farGroupId);
             if (farGroup != null)
@@ -1620,8 +1703,8 @@ namespace PioneerFramework
 
 
             DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
-            int enemyGroupId = GetNextGroupId(spaceGame);
-            int enemyEntityId = GetNextEntityId(spaceGame);
+            int enemyGroupId = spaceGame.AllocGroupId();
+            int enemyEntityId = spaceGame.AllocEntityId();
             int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "旋转敌站");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
@@ -1680,8 +1763,8 @@ namespace PioneerFramework
             string mapping = "";
             foreach (var d in directions)
             {
-                int gid = GetNextGroupId(spaceGame);
-                int eid = GetNextEntityId(spaceGame);
+                int gid = spaceGame.AllocGroupId();
+                int eid = spaceGame.AllocEntityId();
                 spaceGame.CreateStation(eid, gid, enemyFactionId, playerPos + d.offset, 60, 60, d.name);
                 var g = spaceGame.GetGroupById(gid);
                 if (g != null)

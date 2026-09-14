@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -40,29 +40,17 @@ jobs:
       - name: Build PioneerFrameworkLite (Release)
         run: dotnet build Source/PioneerFramework/PioneerFramework.csproj --configuration Release -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_release -p:AppendTargetFrameworkToOutputPath=false
 
+      # D3(2026-09-14): CI used to INLINE the same two checks that tools/verify-deterministic.ps1
+      # and tools/check-committed-dll.ps1 already implement -- two parallel implementations that
+      # drift over time (e.g. CI had no warning-count / -WarningDiff coverage). CI now calls the
+      # shared scripts, so developers and CI run the exact same code paths.
       - name: Verify deterministic Release build
         shell: pwsh
-        run: |
-          dotnet build Source/PioneerFramework/PioneerFramework.csproj --configuration Release -v:minimal -t:Rebuild -p:OutputPath=$env:RUNNER_TEMP/pfl_det_a -p:AppendTargetFrameworkToOutputPath=false
-          dotnet build Source/PioneerFramework/PioneerFramework.csproj --configuration Release -v:minimal -t:Rebuild -p:OutputPath=$env:RUNNER_TEMP/pfl_det_b -p:AppendTargetFrameworkToOutputPath=false
-          $hashA = (Get-FileHash "$env:RUNNER_TEMP/pfl_det_a/PioneerFrameworkLite.dll").Hash
-          $hashB = (Get-FileHash "$env:RUNNER_TEMP/pfl_det_b/PioneerFrameworkLite.dll").Hash
-          if ($hashA -ne $hashB) {
-            Write-Host "hashA=$hashA"
-            Write-Host "hashB=$hashB"
-            throw "Deterministic build check failed: same source produced different DLL bytes"
-          }
+        run: pwsh -NoProfile -File tools/verify-deterministic.ps1
 
       - name: Verify committed DLL consistency
         shell: pwsh
-        run: |
-          $committed = (Get-FileHash "1.6/Assemblies/PioneerFrameworkLite.dll").Hash
-          $built = (Get-FileHash "$env:RUNNER_TEMP/pfl_det_a/PioneerFrameworkLite.dll").Hash
-          if ($committed -ne $built) {
-            Write-Host "committed=$committed"
-            Write-Host "built    =$built"
-            throw "Committed 1.6/Assemblies/PioneerFrameworkLite.dll differs from CI Release build. Rebuild with tools/rebuild-dll.ps1 using the pinned SDK and commit separately."
-          }
+        run: pwsh -NoProfile -File tools/check-committed-dll.ps1
 
       - name: Run game integration tests
         run: dotnet test Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_test_game -p:AppendTargetFrameworkToOutputPath=false

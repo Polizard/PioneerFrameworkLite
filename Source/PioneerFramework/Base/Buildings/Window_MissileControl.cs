@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using Verse;
 using PioneerFramework.Combat;
@@ -12,6 +12,11 @@ namespace PioneerFramework
     /// Standby = 中止回待命；Loiter = 熄火待机意图（轨道部署由玩家机动完成）；SelfDestruct = 就地引爆。
     /// 操作流程：列表点 [攻] → 底部出现目标选择列表（全部 group，含敌对/友军——IFF 不硬拦，UI 明示）
     /// → 点目标行即下发。按钮动作先进队列、帧末统一执行（防渲染期迭代集合被销毁）。
+    ///
+    /// 目录说明（2026-09-14 D1）：本文件原在 `Base/Debug/`，但它是**玩家可达的正式 UI**
+    /// （由可建造建筑 `PF_Building_MissileLauncher` 的 Gizmo 打开，非 dev-only），放在 Debug 目录
+    /// 会误导（让人以为"仅开发者可见"而低估其每帧开销与回归面）。现与开它的 Comp 同目录——
+    /// 同惯例：`Window_VolleyCountSlider` 就在 `CompMissileLauncher.cs` 内。
     /// </summary>
     public class Window_MissileControl : Window
     {
@@ -47,6 +52,7 @@ namespace PioneerFramework
 
         public override void DoWindowContents(Rect inRect)
         {
+            RefreshComponentCache();
             var avm = Current.Game?.GetComponent<AutonomousVehicleManager>();
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             Text.Font = GameFont.Small;
@@ -97,7 +103,6 @@ namespace PioneerFramework
                 string velTxt = "—";
                 string fuelTxt = "—";
                 string burnTxt = "";
-                if (group != null)
                 {
                     burnTxt = group.HasActiveBurn ? "燃烧" : "熄火";
                     var src = spaceGame.GetGroupPropulsionSource(group);
@@ -232,6 +237,18 @@ namespace PioneerFramework
             }
         }
 
-        private CombatManager cm => Current.Game?.GetComponent<CombatManager>();
+        /// <summary>
+        /// B4：每帧缓存一次 CombatManager。
+        /// 原为表达式体属性 `=> Current.Game?.GetComponent&lt;CombatManager&gt;()`——**每次访问**都重新
+        /// `GetComponent`（RimWorld 侧是线性扫组件表），而本窗口每帧、每行要读 1–2 次 ⇒ 每帧数十次线性扫。
+        /// 本窗口**玩家可达**（可建造建筑 `PF_Building_MissileLauncher` 的 Gizmo 打开，非 dev-only），
+        /// 故这不是"仅开发者的开销"。每帧开头刷新一次即可（组件实例换局才变，帧内恒定）。
+        /// </summary>
+        private CombatManager? cm;
+
+        private void RefreshComponentCache()
+        {
+            cm = Current.Game?.GetComponent<CombatManager>();
+        }
     }
 }

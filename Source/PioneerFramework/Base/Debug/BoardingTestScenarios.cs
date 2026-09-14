@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
 using UnityEngine;
@@ -203,7 +203,9 @@ namespace PioneerFramework
         {
             double earthRadius = SpaceConstants.PlanetRadiusMeters;
             double orbitRadius = earthRadius + altitudeMeters;
-            double angle = System.DateTime.Now.Millisecond * 0.001 * System.Math.PI * 2;
+            // 2026-09-14：相位改由物理 tick 推导（原 DateTime.Now.Millisecond 每次运行不同 →
+            // 同一场景几何不可复现，"这次没覆盖/超时"无法与上次对照）
+            double angle = (TimeScaleManager.GetPhysicsTickSafe() % 60000.0) / 60000.0 * System.Math.PI * 2.0;
             double x = System.Math.Cos(angle) * orbitRadius;
             double z = System.Math.Sin(angle) * orbitRadius;
             return CreateStationAt(spaceGame, factionId, new DVector3(x, 0, z), name);

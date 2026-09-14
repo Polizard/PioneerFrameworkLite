@@ -428,66 +428,36 @@ namespace PioneerFramework
         /// 生成多体数值传播的预览点（扰动弹道）。
         /// 使用大步长三阶泰勒积分，比开普勒预测更符合实际轨迹。
         /// 返回中心天体参考系中的位置列表。游戏暂停时天体位置固定。
-        /// 对卫星群组自动包含其父天体的引力摄动。
+        /// **引力取该行星系全部天体**（A0）：中心天体局部系里，外部天体的贡献取
+        /// 「差分形式」（= 该天体在弹位处与在局部系原点处之差），因此在局部系里既保住了
+        /// 计划轨道、又带上正确的潮汐摄动——不再需要对父天体做手工"全量拉力"叠加
+        /// （那会把均匀部分重复计入，在月球系是 ~224km 量级的错误）。
         /// </summary>
         private List<DVector3> GeneratePerturbedPreviewPoints(DVector3 localPos, DVector3 localVel, int numSteps, double stepSec)
         {
             var points = new List<DVector3>(numSteps);
             points.Add(localPos);
 
-            int pausedTick = Find.TickManager.TicksGame;
             var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (celestialMgr == null) return points;
 
             var primaryBody = celestialMgr.GetBodyById(group.CelestialBodyId);
             if (primaryBody == null) return points;
 
-            // 获取父天体的世界坐标（用于卫星群组的摄动计算）
-            // 只有中心天体不是行星时（如月球），才需要父天体摄动
-            DVector3 parentWorldPos = DVector3.zero;
-            double parentMu = 0.0;
-            if (primaryBody.bodyType != CelestialBodyType.Planet && primaryBody.ParentBodyId >= 0)
-            {
-                var parentBody = celestialMgr.GetBodyById(primaryBody.ParentBodyId);
-                if (parentBody != null)
-                {
-                    parentWorldPos = celestialMgr.GetBodyWorldPosition(primaryBody.ParentBodyId, pausedTick);
-                    parentMu = parentBody.gravitationalParameter;
-                }
-            }
-
-            // 中心天体的世界坐标（local系原点）
-            DVector3 centralWorldPos = celestialMgr.GetBodyWorldPosition(group.CelestialBodyId, pausedTick);
+            if (previewSourcesScratch == null) previewSourcesScratch = new List<GravitySource>();
 
             DVector3 pos = localPos;
             DVector3 vel = localVel;
 
             for (int i = 0; i < numSteps; i++)
             {
-                // 1) 中心天体的引力（MultiBodyAccelJerk 在中心天体坐标系中计算）
-                NBodyIntegrator.MultiBodyAccelJerk(
-                    pos, vel,
-                    pausedTick, primaryBody, celestialMgr,
-                    null,
-                    out DVector3 acc, out DVector3 jerk);
+                // 天体位置用 physicsTick 基准（与物理推进/机动队列同基准；暂停时两者一致）
+                double sampleTick = TimeScaleManager.GetPhysicsTickSafe() + i * stepSec;
+                FillLocalFrameSources(celestialMgr, sampleTick);
 
-                // 2) 父天体摄动（只有卫星群组才有）
-                if (parentMu > 0.0)
-                {
-                    // 卫星在世界的绝对位置
-                    DVector3 satWorldPos = centralWorldPos + pos;
-                    // 从卫星指向父天体的相对矢量
-                    DVector3 rToParent = parentWorldPos - satWorldPos;
-                    double rSq = rToParent.sqrMagnitude;
-                    if (rSq > 0.01)
-                    {
-                        double r = Math.Sqrt(rSq);
-                        double muOverR3 = parentMu / (rSq * r);
-                        DVector3 aParent = muOverR3 * rToParent;
-                        acc += aParent;
-                        // 急动度忽略（大阶梯下意义不大）
-                    }
-                }
+                NBodyIntegrator.DifferentialAccelJerk(
+                    pos, vel, DVector3.zero, DVector3.zero, previewSourcesScratch,
+                    out DVector3 acc, out DVector3 jerk);
 
                 NBodyIntegrator.ThirdOrderTaylorStep(
                     pos, vel, acc, jerk, stepSec,
@@ -499,6 +469,37 @@ namespace PioneerFramework
             }
 
             return points;
+        }
+
+        private List<GravitySource> previewSourcesScratch;
+        private List<GravitySource> systemSourcesScratch;
+
+        /// <summary>
+        /// 把该行星系全部天体填成**中心天体局部系**的源（位置/速度均减去中心天体的系统系位置/速度）。
+        /// 局部系原点 = 中心天体 → 其自身位置为零、速度为零。
+        /// </summary>
+        private void FillLocalFrameSources(CelestialBodyManager mgr, double tick)
+        {
+            if (systemSourcesScratch == null) systemSourcesScratch = new List<GravitySource>();
+            if (previewSourcesScratch == null) previewSourcesScratch = new List<GravitySource>();
+
+            mgr.CollectSystemSources(group.CelestialBodyId, tick, systemSourcesScratch);
+            previewSourcesScratch.Clear();
+
+            DVector3 originPos = DVector3.zero, originVel = DVector3.zero;
+            for (int i = 0; i < systemSourcesScratch.Count; i++)
+            {
+                if (systemSourcesScratch[i].bodyId != group.CelestialBodyId) continue;
+                originPos = systemSourcesScratch[i].position;
+                originVel = systemSourcesScratch[i].velocity;
+                break;
+            }
+
+            for (int i = 0; i < systemSourcesScratch.Count; i++)
+            {
+                var s = systemSourcesScratch[i];
+                previewSourcesScratch.Add(new GravitySource(s.position - originPos, s.velocity - originVel, s.mu, s.bodyId));
+            }
         }
 
         /// <summary>

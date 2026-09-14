@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using PioneerFramework;
 
@@ -95,6 +95,9 @@ namespace PioneerFramework.Pure.Tests
         /// <summary>诊断：首步制导读到的位置偏移（复现解离当步读旧组原点）。</summary>
         public DVector3 firstStepGuidancePosOffset;
 
+        /// <summary>覆盖单枚工质注入量（kg；&lt;0 = 用标准弹的 2000kg）。用于"燃料不足"这类**硬约束**负测试。</summary>
+        public double fuelMassOverride = -1.0;
+
         public struct Result
         {
             public bool hit;
@@ -153,6 +156,12 @@ namespace PioneerFramework.Pure.Tests
                 abortTime = -1.0
             };
             var body = MissileBody.Spawn(mPos, mVel);
+            if (fuelMassOverride >= 0.0)
+            {
+                body.fuelMass = fuelMassOverride;
+                body.fuel = fuelMassOverride;
+                body.mass = body.dryMass + fuelMassOverride + body.rcsFuelMass;
+            }
             DVector3 target = tPos;
             double t = 0.0;
             var gs = new MissileGuidanceState();
@@ -279,7 +288,7 @@ namespace PioneerFramework.Pure.Tests
 
                     // 扫掠命中判定（连续；相对运动段-球）——先推进再判，命中点取本步扫掠
                     DVector3 relStart = body.pos - target;
-                    DVector3 relEnd = (body.pos + body.vel * dt) - (target + DVector3.zero * dt);
+                    DVector3 relEnd = (body.pos + body.vel * dt) - target;   // 靶静止：省掉恒零的 DVector3.zero*dt（2026-09-14 清理）
                     if (MissileFlightSim.SweptClosestApproach(relStart, relEnd) <= targetRadius || dist <= targetRadius)
                     {
                         alive[k] = false;

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Verse;
@@ -647,7 +647,7 @@ namespace PioneerFramework
             // ── 末段收敛制导（纯核心 MissileGuidanceCore，2026-09-08 抽纯）──
             // 控制律 = 横向相对速度归零 + 接近率补量双门控（阈值 + 横差修正时间约束）+
             // 几何丢失判定（最近点基准）→ Abort。全部参数来自 MissileDef（可配），
-            // 控制律本体在纯测试里用迷你飞行仿真迭代（33 用例），游戏内只做验收。
+            // 控制律本体在纯测试里用迷你飞行仿真迭代（**不在此处记用例数**：数字必漂，2026-09-14 实际已与旧注释差 13 条），游戏内只做验收。
             bool allowBoost = now >= rec.holdFireUntilTick; // 错峰时隙未到：只修横向不冲刺
             var step = MissileGuidanceCore.ComputeStep(pos, vel, aimPoint, tVel,
                 GroupRadius(target, spaceGame), missileDef.GuidanceParams, rec.guidanceState, allowBoost);
@@ -750,6 +750,12 @@ namespace PioneerFramework
             if (group == null || !group.ContainsEntity(deadEntityId)) return false;
 
             group.RemoveEntity(deadEntityId);
+            // A5b：离群 = 该实体已死 → **必须从实体注册表注销**。
+            // 旧实现只移出组、从不注销：DestroyGroup 遍历的是组内**剩余**成员，被移出的那枚从此
+            // 永远留在 `entities`（并随档序列化），且 `GetEntityById(陈旧 id)` 会取回僵尸实体
+            // （质量/燃料/推进全错）。2026-09-14 查出的泄漏，实测每轮验收累积。
+            var deadEntity = spaceGame.GetEntityById(deadEntityId);
+            if (deadEntity != null) spaceGame.UnregisterEntity(deadEntity);
             rec.logicalCount = Math.Max(0, rec.logicalCount - 1);
             if (rec.entityId == deadEntityId)
             {

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 using RimWorld;
@@ -34,11 +34,29 @@ namespace PioneerFramework
     public class CompMissileLauncher : ThingComp
     {
         private WeaponInstance weapon;
+
+        /// <summary>
+        /// 武器 Def 指向的 MissileDef（供 UI 显示与发射口径引用）。
+        /// 缺失时回退到 `FallbackMissileDef`——**它的字段初始化器就是 Def 的 C# 默认值**，
+        /// 故读数口径仍只有一处来源（不在 UI 里再抄一份数字）。
+        /// </summary>
+        private MissileDef ResolvedMissileDef
+        {
+            get
+            {
+                var name = weapon?.def?.missileDefName;
+                if (name == null) return FallbackMissileDef;
+                return DefDatabase<MissileDef>.GetNamedSilentFail(name) ?? FallbackMissileDef;
+            }
+        }
+
+        /// <summary>仅用于读 C# 默认值（Def 缺失时的 UI 兜底）；不注册进 DefDatabase，不参与玩法。</summary>
+        private static readonly MissileDef FallbackMissileDef = new MissileDef();
         private SpaceEntityGroup target;
         private bool manualMode; // false = Auto（索敌模式：最近敌对）；true = 手动指定目标
         private bool autoFire = true; // 发射档位：true = 自动发射（目标有效+冷却就绪即打）；false = 手动发射（仅手动开火/面板/全体命令触发）
         private int manualTargetGroupId = -1;
-        /// <summary>弹群齐射枚数（0 = 跟随武器 Def.missileCount；1..32 = 发射器覆盖，2026-09-08 §5）。</summary>
+        /// <summary>弹群齐射枚数（0 = 跟随武器 Def.missileCount；1..CombatManager.MaxVolleyCount = 发射器覆盖，2026-09-08 §5）。</summary>
         private int volleyCount;
         private int nextScanTick;
 
@@ -59,19 +77,18 @@ namespace PioneerFramework
         public bool HasPreciseStrike => preciseStrikeGroupId >= 0 && preciseStrikeCell.IsValid;
         public DVector3 PreciseAimOffsetLocal => preciseAimOffsetLocal;
 
-        /// <summary>生效齐射枚数：发射器覆盖（1..8）优先，0 = 跟随武器 Def.missileCount。
-        /// 上限 8 = 深度队列安全容量（10km 队列/致死带约束，见 CombatManager.MaxVolleyCount）。</summary>
+        /// <summary>生效齐射枚数：发射器覆盖（1..MaxVolleyCount）优先，0 = 跟随武器 Def.missileCount。</summary>
         public int EffectiveVolleyCount()
         {
-            if (volleyCount > 0) return Mathf.Min(volleyCount, 8);
+            if (volleyCount > 0) return Mathf.Min(volleyCount, CombatManager.MaxVolleyCount);
             var wdef = weapon?.def;
-            return wdef != null ? Mathf.Clamp(wdef.missileCount, 1, 8) : 1;
+            return wdef != null ? Mathf.Clamp(wdef.missileCount, 1, CombatManager.MaxVolleyCount) : 1;
         }
 
-        /// <summary>设置齐射枚数（0 = 跟随武器 Def；1..8 = 覆盖）。测试场景/调试共用。</summary>
+        /// <summary>设置齐射枚数（0 = 跟随武器 Def；1..MaxVolleyCount = 覆盖）。测试场景/调试共用。</summary>
         public void SetVolleyCount(int n)
         {
-            volleyCount = n < 0 ? 0 : Mathf.Min(n, 8);
+            volleyCount = n < 0 ? 0 : Mathf.Min(n, CombatManager.MaxVolleyCount);
         }
 
         public CompProperties_MissileLauncher Props => (CompProperties_MissileLauncher)props;
@@ -158,7 +175,15 @@ namespace PioneerFramework
             var myGroup = GetMyGroup();
             if (cm == null || myGroup == null) return null;
             DVector3 myPos = cm.GetGroupPos(myGroup);
-            float range = weapon?.def != null ? weapon.def.orbitalEngageRange : 100000f;
+            // B3：缺 Def 时**报错并明确放弃交战**，不再静默回退 100km（旧值 = WeaponDef 的 C# 默认值，
+            // 恰好掩盖"武器未初始化/Def 未找到"这类配置错误，让发射器看起来"能用但从不命中"）。
+            if (weapon?.def == null)
+            {
+                Log.Error(string.Format("[导弹发射器] 武器 Def 缺失（{0}），本组件不参与交战检索",
+                    Props?.weaponDefName ?? "?"));
+                return null;
+            }
+            float range = weapon.def.orbitalEngageRange;
 
             if (manualMode && manualTargetGroupId >= 0)
             {
@@ -479,14 +504,17 @@ namespace PioneerFramework
             yield return new Command_Action
             {
                 defaultLabel = "齐射数量: " + EffectiveVolleyCount(),
-                defaultDesc = "单次发射的弹群枚数（1..8，发射器设置覆盖武器默认；8 = 10km 队列安全容量）：N 枚实体同群编队巡航（群级推进由物理按 N 源同步，每枚自带满罐），发射沿航向排成深度队列（间距自适应 ~1.4-2km，同深度仅 1 枚）；终末接管时解离、沿队列逐枚撞击——前弹 AoE 打不到后到兄弟。",
+                defaultDesc = "单次发射的弹群枚数（1.." + CombatManager.MaxVolleyCount + "，发射器设置覆盖武器默认；上限 = 深度队列安全容量）：N 枚实体同群编队巡航（群级推进由物理按 N 源同步，每枚自带满罐），发射沿航向排成深度队列（间距自适应 ~1.4-2km，同深度仅 1 枚）；终末接管时解离、沿队列逐枚撞击——前弹 AoE 打不到后到兄弟。",
                 icon = TexButton.Rename,
                 action = () => Find.WindowStack.Add(new Window_VolleyCountSlider(EffectiveVolleyCount(),
                     n =>
                     {
                         volleyCount = n;
                         Log.Message(string.Format("[导弹发射器] 齐射数量 → {0}", n));
-                    }))
+                    },
+                    safetySpacing: ResolvedMissileDef.safetySpacingMeters,
+                    arraySideLimit: ResolvedMissileDef.arraySideLimitMeters,
+                    minSpacing: ResolvedMissileDef.blastRadius * 1.2f))
             };
 
             yield return new Command_Action
@@ -601,19 +629,34 @@ namespace PioneerFramework
     }
 
     /// <summary>
-    /// 齐射数量滑杆（弹群 N，2026-09-08 §5）：1..32 连续可调；「恢复武器默认」把发射器设置清回
-    /// 0（跟随 Def.missileCount）。确定回调 n ≥ 1（0 = 武器默认）。
+    /// 齐射数量滑杆（弹群 N，2026-09-08 §5）：1..CombatManager.MaxVolleyCount 连续可调；
+    /// 「恢复武器默认」把发射器设置清回 0（跟随 Def.missileCount）。确定回调 n ≥ 1（0 = 武器默认）。
     /// </summary>
     public class Window_VolleyCountSlider : Window
     {
         private const int MinN = 1;
-        private const int MaxN = 8; // 深度队列安全容量（10km/致死带约束）
+        private const int MaxN = CombatManager.MaxVolleyCount; // 单一来源（深度队列安全容量）
         private readonly Action<int> onConfirm;
         private float sliderVal;
 
-        public Window_VolleyCountSlider(int currentEffective, Action<int> onConfirm)
+        /// <summary>
+        /// 队列间距预览用的 Def 口径（safetySpacingMeters / arraySideLimitMeters / 爆炸半径）。
+        /// **必须与发射路径同源**：真实间距由 `MissileVolleyMath.ComputeSpacing` 算出
+        /// （`CombatManager.CreateMissileVolley`），UI 不能自己写死数——2026-09-14 修：
+        /// 旧 UI 写死 `min(2000, 10000/(n−1))` 且文案称"≤10km"，而 Def 上限是 16km，
+        /// n=8 时 UI 显示 1429m、实际 2000m，属于误导。
+        /// </summary>
+        private readonly float safetySpacing;
+        private readonly float arraySideLimit;
+        private readonly float minSpacing;
+
+        public Window_VolleyCountSlider(int currentEffective, Action<int> onConfirm,
+            float safetySpacing = 2000f, float arraySideLimit = 16000f, float minSpacing = 1500f * 1.2f)
         {
             this.onConfirm = onConfirm;
+            this.safetySpacing = safetySpacing;
+            this.arraySideLimit = arraySideLimit;
+            this.minSpacing = minSpacing;
             sliderVal = Mathf.Clamp(currentEffective, MinN, MaxN);
             forcePause = true;
             closeOnAccept = false;
@@ -637,8 +680,14 @@ namespace PioneerFramework
             sliderVal = Widgets.HorizontalSlider(new Rect(0, 72, inRect.width - 20f, 26f), sliderVal, MinN, MaxN, false);
             sliderVal = Mathf.RoundToInt(sliderVal); // 吸附整数
 
+            float spacing = n > 1
+                ? (float)MissileVolleyMath.ComputeSpacing(safetySpacing, arraySideLimit, n, minSpacing)
+                : 0f;
             Widgets.Label(new Rect(0, 100, inRect.width, 22f),
-                n == 1 ? "单发模式（同旧版逐发）" : string.Format("弹群深度队列：{0} 枚沿航向排开，间距 {1:F0}m，总长 {2:F0}m（≤10km）", n, n > 1 ? Mathf.Min(2000f, 10000f / (n - 1)) : 0f, n > 1 ? (n - 1) * Mathf.Min(2000f, 10000f / (n - 1)) : 0f));
+                n == 1
+                    ? "单发模式（同旧版逐发）"
+                    : string.Format("弹群深度队列：{0} 枚沿航向排开，间距 {1:F0}m，总长 {2:F0}m（超总长上限 {3:F0}km 时压间距，下限 = 爆炸冲量半径）",
+                        n, spacing, (n - 1) * spacing, arraySideLimit / 1000f));
             Text.Font = GameFont.Small;
 
             if (Widgets.ButtonText(new Rect(0, 132, 110f, 28f), "确定"))

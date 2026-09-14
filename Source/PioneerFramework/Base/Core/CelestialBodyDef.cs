@@ -52,18 +52,22 @@ namespace PioneerFramework
         public double initialPhase;
 
         // ── 运行时缓存（PERF-3）：轨道平面正交基，避免 N 体积分热路径每次重算 normalized + 双重 cross ──
+        // volatile：见 EnsureOrbitFrame 的写序说明（读写可能发生在不同线程）。
         [Verse.Unsaved]
-        private bool orbitFrameCached;
+        private volatile bool orbitFrameCached;
         [Verse.Unsaved]
         private DVector3 orbitFrameRefX;
         [Verse.Unsaved]
         private DVector3 orbitFrameRefY;
 
-        /// <summary>懒加载计算并缓存轨道平面正交基（规范化法线 + refX/refY），供圆轨解析位置/速度热路径复用。</summary>
+        /// <summary>懒加载计算并缓存轨道平面正交基（规范化法线 + refX/refY），供圆轨解析位置/速度热路径复用。
+        /// **写序**：先把两个基向量写好，最后才置标志（标志 volatile）——反过来的话，并发首用的一方
+        /// 可能看到"标志已置、基向量还是零"，于是拿到 (0,0,0) 的 refX 把位置算成 0 或错方向
+        /// （本缓存会被 Parallel.For 里的群组引力场查到，见 `BodySampleCache` 的并发说明）。
+        /// 两线程同时首算无害：各自算出的值逐位相同，谁最后写都一样。</summary>
         public void EnsureOrbitFrame()
         {
             if (orbitFrameCached) return;
-            orbitFrameCached = true;
 
             DVector3 normal = OrbitNormalD;
             if (normal.sqrMagnitude > 0.0)
@@ -71,8 +75,12 @@ namespace PioneerFramework
 
             DVector3 up = System.Math.Abs(DVector3.Dot(normal, DVector3.up)) > 0.99
                 ? DVector3.forward : DVector3.up;
-            orbitFrameRefX = DVector3.Cross(normal, up).normalized;
-            orbitFrameRefY = DVector3.Cross(normal, orbitFrameRefX).normalized;
+            DVector3 refX = DVector3.Cross(normal, up).normalized;
+            DVector3 refY = DVector3.Cross(normal, refX).normalized;
+
+            orbitFrameRefX = refX;
+            orbitFrameRefY = refY;
+            orbitFrameCached = true;
         }
 
         /// <summary>获取缓存的轨道平面正交基（refX/refY）。</summary>

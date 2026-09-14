@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using Verse;
 using System.Text;
@@ -16,7 +16,10 @@ namespace PioneerFramework.Combat
         private readonly HashSet<SpaceEntityGroup> projectileQueryResults = new HashSet<SpaceEntityGroup>();
         /// <summary>齐射弹群实体数上限（§5，2026-09-08 深度队列制：同深度仅 1 枚、深度间距 = min(2km, 10km/(N−1))，
         /// 致死带 ~1km 余量下 10km 内安全容量 = 8；方形同排成员会被兄弟弹头 AoE 击杀，已废弃）。</summary>
-        private const int MaxVolleyCount = 8;
+        /// <summary>单次齐射枚数上限：**单一来源**——深度队列安全容量（N 枚沿航向排开、
+        /// 间距受弹头爆炸冲量作用半径约束；N=8 时 16km/(8−1) ≈ 2.29km &gt; 爆炸半径 1.5km）。
+        /// 发射器 UI（`CompMissileLauncher` / `Window_VolleyCountSlider`）与齐射工厂都引用它。</summary>
+        public const int MaxVolleyCount = 8;
         // 定向能射线候选集（每炮一次收集复用，方案 A 正方体粗筛 / B 走格预留共用）
         private readonly HashSet<SpaceEntityGroup> rayCandidateResults = new HashSet<SpaceEntityGroup>();
         // 命中诊断：已记录过的射弹 id（每个射弹只打印一次）
@@ -146,10 +149,12 @@ namespace PioneerFramework.Combat
 
         /// <summary>
         /// 每物理步执行（2026-09-07 起由 SpaceGameComp 在物理推进完成后统一驱动）：
-        /// 组件 tick 顺序 = 类型全名字母序（AVM → SpaceGameComp → CombatManager），若按 %2 自行
-        /// tick 会读物理推进前的位置——与制导/其他每物理步消费者错位 2s ≈ 5km（09-07 日志实证：
-        /// 同 tick 制导报 0.7km 即将命中、碰撞实测 2.6km，导弹真实航线从没穿过目标盒）。
-        /// 挂在推进后 = 所有每物理步消费者同 tick 同位，顺序依赖消除。
+        /// （2026-09-14 更正）本方法**不依赖组件 tick 顺序**：原先它按 `%2` 自行 tick，会读物理推进
+        /// **前**的位置，与制导/其他每物理步消费者错位 2s ≈ 5km（09-07 日志实证：同 tick 制导报
+        /// 0.7km 即将命中、碰撞实测 2.6km，导弹真实航线从没穿过目标盒）。改为挂在物理推进之后，
+        /// 所有每物理步消费者同 tick 同位，顺序依赖消除。
+        /// 注：旧注释把组件顺序写成"A V M → SpaceGameComp → CombatManager"，与类型全名字母序不符
+        /// （本组件 C 在前、S 在后）——正因为顺序不可指望，才改成由 SpaceGameComp 显式驱动。
         /// </summary>
         internal void OnPhysicsStepCompleted()
         {
@@ -353,13 +358,43 @@ namespace PioneerFramework.Combat
                 proj.prevUpdatePhysicsTick = proj.prevPhysicsTick; // 记录上一步（碰撞检测回退用，prevPhysicsTick 随后被覆盖）
                 proj.prevPhysicsTick = physicsTickNow;
 
-                DVector3 gravity = DVector3.zero;
-                if (proj.affectedByGravity && combatGrid != null)
-                    gravity = combatGrid.ComputeProjectileGravity(proj.position, proj.systemBodyId);
-
                 proj.prevUpdateRealTick = proj.lastUpdateRealTick;
                 proj.lastUpdateRealTick = Find.TickManager.TicksGame;
-                proj.UpdatePosition((float)deltaTime, gravity);
+
+                // A2：引力射弹走"2 物理秒一段的三阶泰勒传播 + 段内插值"——
+                // 引力（含递归取天体位置）每段只求一次，段内位置由多项式给出，
+                // 仍是"每物理步一个精确位置"，扫掠碰撞检测的精度不受影响。
+                if (proj.affectedByGravity)
+                {
+                    bool expired = proj.gravitySegment.Expired(physicsTickNow);
+                    if (expired)
+                    {
+                        // 段起点时刻必须是**当前状态所在的时刻**（= 上一步更新时间），不能是 physicsTickNow：
+                        // 否则求值时 t = physicsTickNow − baseTick = 0 → 这一步位置不推进，每段丢一步运动。
+                        // 实测：Combat 档（2s 段 = 120 步）偏 0.83%，Normal 档（2 步）偏 33% —— 2026-09-14 ㉔ 探针抓到。
+                        BuildGravitySegment(proj, proj.prevUpdatePhysicsTick);
+                    }
+
+                    proj.BeginStep();
+                    proj.ApplyGravitySegment(physicsTickNow);
+                    proj.AdvanceLife(deltaTime);
+
+                    if (PerfProbe.Enabled)
+                    {
+                        proj.gravitySteps++;
+                        if (expired) proj.gravityRebuilds++;
+                        PerfProbe.NoteProjectileStep(proj.id, proj.gravityRebuilds,
+                            proj.totalFlightSeconds, ProjectileGravitySegmentSeconds, expired);
+                        // 定量值判据：与"生成时的直线"相比的实际弯曲量 vs ½·|a|·t²
+                        PerfProbe.NoteFreeFlightBend(proj.id, proj.isWarhead, proj.totalFlightSeconds,
+                            proj.spawnPosition, proj.spawnVelocity, proj.position,
+                            proj.gravitySegment.acc.magnitude);
+                    }
+                }
+                else
+                {
+                    proj.UpdatePosition((float)deltaTime);
+                }
 
                 if (!proj.IsAlive())
                 {
@@ -393,6 +428,58 @@ namespace PioneerFramework.Combat
 
                 CheckProjectileCollision(proj, spaceGame);
             }
+        }
+
+        /// <summary>引力射弹的传播段长（物理秒）。用户 2026-09-14 定调：不要算得太勤。</summary>
+        private const double ProjectileGravitySegmentSeconds = 2.0;
+
+        private readonly List<GravitySource> projectileGravityScratch = new List<GravitySource>();
+
+        /// <summary>
+        /// 以当前位置/速度为段起点重开一段引力传播（A2）。
+        /// 位置/速度取自当前位置 → 段间连续无跳变；引力取**该行星系全部天体**（A0 的场，
+        /// 与飞船/导弹同源），因此弹头与弹群吃同一套引力、不存在"弹头绕地球弯而弹群不弯"的几何错位。
+        /// </summary>
+        private void BuildGravitySegment(ProjectileInstance proj, double physicsTick)
+        {
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (mgr == null)
+            {
+                proj.gravitySegment.Rebuild(proj.position, proj.velocity,
+                    DVector3.zero, DVector3.zero, physicsTick, ProjectileGravitySegmentSeconds);
+                return;
+            }
+
+            // systemBodyId = 参考帧天体（根行星/恒星）= 系统标识 → 取该系全部天体
+            mgr.CollectSystemSources(proj.systemBodyId, physicsTick, projectileGravityScratch);
+            NBodyIntegrator.FieldAccelJerk(proj.position, proj.velocity, projectileGravityScratch,
+                out var acc, out var jerk);
+
+            if (PerfProbe.Enabled && acc.magnitude > 1e-9)
+            {
+                // 探针（A2）：|a| / 主导项（μ/r² 最大值）+ "指向行星中心"余弦 —— 旧实现此处是 ~100× 主导项的伪值，
+                // 修正后应 ≈1× 主导项（近地即行星真实引力 ~8 m/s² 量级）。
+                double dominant = 0.0;
+                for (int i = 0; i < projectileGravityScratch.Count; i++)
+                {
+                    var s = projectileGravityScratch[i];
+                    double dSq = (s.position - proj.position).sqrMagnitude;
+                    if (dSq < 0.01) continue;
+                    double term = s.mu / dSq;
+                    if (term > dominant) dominant = term;
+                }
+
+                DVector3 toCenter = -proj.position;
+                double cos = toCenter.magnitude > 1.0
+                    ? DVector3.Dot(acc.normalized, toCenter.normalized)
+                    : 0.0;
+                double ratio = dominant > 1e-12 ? acc.magnitude / dominant : 0.0;
+
+                PerfProbe.NoteWarheadSegment(acc.magnitude, cos, ratio);
+            }
+
+            proj.gravitySegment.Rebuild(proj.position, proj.velocity, acc, jerk,
+                physicsTick, ProjectileGravitySegmentSeconds);
         }
 
         private void CheckProjectileCollision(ProjectileInstance proj, SpaceGameComp spaceGame)
@@ -496,6 +583,13 @@ namespace PioneerFramework.Combat
                     segmentLength, proj.velocity.x, proj.velocity.y, proj.velocity.z));
 #endif
 
+            // B1：命中拦截时**不在 foreach 内改 group.entityIds**——只记录，摘除/引爆延后到循环外。
+            // 原实现靠"改完立即 return"侥幸安全（HashSet 枚举器只在 MoveNext 校验 version），
+            // 后续谁在 return 前补一句逻辑就会抛 InvalidOperationException。
+            AutonomousVehicleManager.VehicleRecord? interceptedRec = null;
+            int interceptedEntityId = -1;
+            DVector3 interceptedHitCenter = DVector3.zero;
+
             foreach (int entityId in group.GetEntityIds())
             {
                 var entity = spaceGame.GetEntityById(entityId);
@@ -535,18 +629,11 @@ namespace PioneerFramework.Combat
                 var missileRec = interceptMgr?.GetRecord(group.GroupId);
                 if (missileRec != null)
                 {
-                    DVector3 hitCenter = groupPos + entity.Position; // 命中实体世界位（爆心）
                     Log.Message(string.Format("[导弹拦截] proj={0} 击毁导弹G{1} 单枚E{2} → 就地引爆", proj.id, group.GroupId, entityId));
-                    // A（2026-09-09 用户定稿）：**先摘除后引爆**——被打成员在受爆炸影响前先脱队；
-                    // B：引爆带 excludeGroupId=本组，成员死亡爆炸不扰动残组（残组照飞）
-                    bool groupEmpty = interceptMgr.RemoveMissileEntity(missileRec, entityId, "拦截");
-                    ExplodeMissileEntityAt(group, missileRec, hitCenter, spaceGame, group.GroupId);
-                    if (groupEmpty)
-                    {
-                        interceptMgr.UnregisterGroup(group.GroupId);
-                        spaceGame.DestroyGroup(group.GroupId);
-                    }
-                    return true;
+                    interceptedRec = missileRec;
+                    interceptedEntityId = entityId;
+                    interceptedHitCenter = groupPos + entity.Position; // 命中实体世界位（爆心）
+                    break;   // 摘除/引爆在循环外执行（见方法尾部）
                 }
 
 #if DEBUG
@@ -686,6 +773,21 @@ namespace PioneerFramework.Combat
                 }
             }
 
+            // B1：拦截引爆延后到循环外（A 2026-09-09 定稿的"先摘除后引爆"顺序在此保持；
+            // B：引爆带 excludeGroupId=本组，成员死亡爆炸不扰动残组）
+            if (interceptedRec != null)
+            {
+                var interceptMgr = GetAvm();
+                bool groupEmpty = interceptMgr.RemoveMissileEntity(interceptedRec, interceptedEntityId, "拦截");
+                ExplodeMissileEntityAt(group, interceptedRec, interceptedHitCenter, spaceGame, group.GroupId);
+                if (groupEmpty)
+                {
+                    interceptMgr.UnregisterGroup(group.GroupId);
+                    spaceGame.DestroyGroup(group.GroupId);
+                }
+                return true;
+            }
+
             return false;
         }
 
@@ -817,7 +919,7 @@ namespace PioneerFramework.Combat
                         ResolveEntityContacts(b, a, recB, cb, ca, missileMgr, spaceGame, combatGrid, destroyedMissiles);
                     }
                     continue; // 导弹对一律在本分支消费完（含同 volley 排除），不落通用船-船语义
-                    }
+                }
                 // 纯 tunneling（当前盒不重叠但路径相交）→ 快速船停在对方膨胀盒表面；
                 // 否则用当前实际盒重叠量分离（扫掠盒 oz 含运动路径长度，直接分离会把船推飞）
                 if (!AabbOverlap(curAMin, curAMax, curBMin, curBMax, out ox, out oy, out oz))
@@ -1699,6 +1801,7 @@ namespace PioneerFramework.Combat
                 affectedByGravity = weapon.def.affectedByGravity,
                 prevPosition = spawnPos,
                 spawnPosition = spawnPos,
+                spawnVelocity = groupVelocity + muzzleVelocity,
                 spawnPhysicsTick = TimeScaleManager.GetPhysicsTickSafe(),
                 lastUpdateRealTick = Find.TickManager.TicksGame,
                 prevUpdateRealTick = Find.TickManager.TicksGame,
@@ -2294,11 +2397,41 @@ namespace PioneerFramework.Combat
             AutonomousVehicleManager.VehicleRecord rec, MissileDef missileDef,
             DVector3 pos, DVector3 vel, SpaceGameComp spaceGame, CombatGrid combatGrid)
         {
+            SpawnWarheadProjectileCore(missileGroup.GroupId, missileGroup.FactionId, missileGroup.CelestialBodyId,
+                rec.weaponDefName, missileDef, pos, vel, spaceGame, combatGrid);
+        }
+
+        /// <summary>
+        /// 【调试】生成一枚**必定漏靶**的弹头，用于验 A2 的"2 物理秒一段"节奏与长期引力弯曲
+        /// （《审查修复计划2026-09-14》§9 第 2 项）。
+        /// 实战弹头在命中点出生、通常一个物理步内就结算 —— 段传播只走到"建段"，走不到"段内插值飞行"，
+        /// 也验不到"漏靶弹头被引力弯成轨道垃圾"这条设计意图。走**同一条生成核心**，不另起实现。
+        /// </summary>
+        public bool SpawnDebugMissedWarhead(string missileDefName, int celestialBodyId, DVector3 pos, DVector3 vel)
+        {
+            var spaceGame = GetSpaceGameComp();
+            var def = DefDatabase<MissileDef>.GetNamedSilentFail(missileDefName);
+            if (spaceGame == null || def == null)
+            {
+                Log.Error(string.Format("[漏靶弹头测试] 前置缺失：spaceGame={0} def={1}", spaceGame != null, def != null));
+                return false;
+            }
+
+            SpawnWarheadProjectileCore(-1, Faction.OfPlayer.loadID, celestialBodyId,
+                null, def, pos, vel, spaceGame, GetCombatGrid());
+            return true;
+        }
+
+        /// <summary>弹头生成的**唯一实现**（实战与调试共用，避免两条路各自演化）。</summary>
+        private void SpawnWarheadProjectileCore(int sourceGroupId, int factionId, int celestialBodyId,
+            string weaponDefName, MissileDef missileDef,
+            DVector3 pos, DVector3 vel, SpaceGameComp spaceGame, CombatGrid combatGrid)
+        {
             var warhead = new ProjectileInstance
             {
-                sourceGroupId = missileGroup.GroupId,
-                factionId = missileGroup.FactionId,
-                weaponDef = rec.weaponDefName == null ? null : DefDatabase<WeaponDef>.GetNamedSilentFail(rec.weaponDefName),
+                sourceGroupId = sourceGroupId,
+                factionId = factionId,
+                weaponDef = weaponDefName == null ? null : DefDatabase<WeaponDef>.GetNamedSilentFail(weaponDefName),
                 position = pos,
                 velocity = vel,
                 remainingLife = missileDef.warheadLifetimeSeconds,
@@ -2309,12 +2442,13 @@ namespace PioneerFramework.Combat
                 trailEffect = false,
                 prevPosition = pos,
                 spawnPosition = pos,
+                spawnVelocity = vel,
                 spawnPhysicsTick = TimeScaleManager.GetPhysicsTickSafe(),
                 lastUpdateRealTick = Find.TickManager.TicksGame,
                 prevUpdateRealTick = Find.TickManager.TicksGame,
                 prevPhysicsTick = TimeScaleManager.GetPhysicsTickSafe(),
                 prevUpdatePhysicsTick = TimeScaleManager.GetPhysicsTickSafe(),
-                systemBodyId = spaceGame.ResolveReferenceFrameId(missileGroup.CelestialBodyId),
+                systemBodyId = spaceGame.ResolveReferenceFrameId(celestialBodyId),
                 isWarhead = true,
                 blastRadius = missileDef.blastRadius,
                 mapBlastRadiusCells = missileDef.mapBlastRadiusCells,
@@ -2410,7 +2544,12 @@ namespace PioneerFramework.Combat
             var missileDef = rec.missileDefName == null
                 ? null
                 : DefDatabase<MissileDef>.GetNamedSilentFail(rec.missileDefName);
-            double R = missileDef != null ? missileDef.blastRadius : 1000.0;   // Def 缺失兜底口径
+            // B3：Def 缺失时仍继续（爆炸必须发生，不能因配置错误让弹头变成哑弹），
+            // 但**不再静默**——否则"武器 Def 名写错"这类错误会表现为"弹头能炸但威力不对"，无从察觉。
+            if (missileDef == null)
+                Log.Error(string.Format("[弹头AOE] MissileDef '{0}' 未找到 → 使用兜底口径 R=1000 D0=500 E=1e9（请检查 Def 配置）",
+                    rec.missileDefName ?? "<null>"));
+            double R = missileDef != null ? missileDef.blastRadius : 1000.0;   // 兜底口径（已报错）
             double D0 = missileDef != null ? missileDef.blastCenterDamage : 500.0;
             double E = missileDef != null ? missileDef.blastImpulseEnergy : 1e9;
 

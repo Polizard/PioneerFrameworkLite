@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace PioneerFramework
 {
@@ -32,22 +32,70 @@ namespace PioneerFramework
         /// 取代旧"接管点 +3km"（接管点常在 100km 外，近距滑脱根本触发不了）——以最近点为基准，
         /// 同时给掉头再捕获留出回旋余地（大横差滑脱的横向漂移可达十几 km）。</summary>
         public double lostMarginMeters;
+    }
 
-        /// <summary>2026-09-08 定稿初值（= 旧硬编码常量的语义化，见设计 §7）。</summary>
-        public static MissileGuidanceParams CreateDefault()
+    /// <summary>
+    /// 标准弹的制导参数（**唯一来源**）。
+    /// 2026-09-14：此处原为 `MissileGuidanceParams.CreateDefault()`——它与 `MissileDef` 的 C#/XML 默认值
+    /// 是**手抄的平行副本**，已经漂了两处（deadband 1.0 vs 游戏内 0.5、lateralAccel 83.0 vs 由推力/湿质量
+    /// 推得的 ≈80.0826），导致"纯测试全绿"不代表游戏内行为。现改为：本类持有标准弹的全部物理/制导常数，
+    /// `MissileDef` 只覆写真正需要调参的字段，且 `lateralAccel` 两侧共用同一算式（LateralAccelFor）。
+    /// 任何一处漂移都会被纯测试与游戏内一致性断言同时抓住。
+    /// </summary>
+    public static class MissileGuidanceDefaults
+    {
+        // ── 标准弹物理常数（= PF_Missile_Standard 的 XML 取值）──
+        public const float DryMass = 300f;
+        public const float FuelMass = 2000f;
+        public const float Ve = 3200f;
+        public const float MassFlow = 60f;
+        public const float RcsVe = 900f;
+        public const float RcsMassFlow = 2f;
+        public const float RcsFuelMass = 120f;
+
+        // ── 制导常数（可调参项由 MissileDef 字段承载；不可调项在此单点定义）──
+        public const float LateralGain = 0.8f;
+        public const float ClosingThreshold = 300f;
+        public const float CruiseClosing = 450f;
+        public const double BoostMax = 600.0;
+        /// <summary>点火死区（m/s）：dv 低于此值熄火惯性逼近。**0.5 是意图值**——同项目发射制导
+        /// （LaunchGuidanceCore / RocketLaunchController）同为 0.5 且单一来源，旧副本的 1.0 是漂移。</summary>
+        public const double Deadband = 0.5;
+        public const float MaxAngularRateDegrees = 20f;
+        public const float TimeMargin = 2f;
+        public const float LostMarginMeters = 30000f;
+
+        /// <summary>
+        /// 横向加速度 = 主推推力 / 湿质量（K11 每枚同构口径）。
+        /// `MissileDef.GuidanceParams` 与本类共用此算式——避免两处各写一遍再漂。
+        /// </summary>
+        public static double LateralAccelFor(double dryMass, double fuelMass, double ve, double massFlow,
+            bool hasRcs, double rcsVe, double rcsMassFlow, double rcsFuelMass)
         {
-            return new MissileGuidanceParams
+            double thrust = ve * massFlow + (hasRcs ? rcsVe * rcsMassFlow : 0.0);
+            double wetMass = dryMass + fuelMass + (hasRcs ? rcsFuelMass : 0.0);
+            return wetMass > 1e-6 ? thrust / wetMass : 0.0;
+        }
+
+        /// <summary>标准弹的制导参数（纯测试与游戏内一致性断言共用）。</summary>
+        public static MissileGuidanceParams Standard
+        {
+            get
             {
-                lateralGain = 0.8,
-                closingThreshold = 300.0,
-                cruiseClosing = 450.0,
-                boostMax = 600.0,
-                deadband = 1.0,
-                lateralAccel = 83.0,
-                turnRateRad = 20.0 * Math.PI / 180.0,
-                timeMargin = 2.0,
-                lostMarginMeters = 30000.0
-            };
+                return new MissileGuidanceParams
+                {
+                    lateralGain = LateralGain,
+                    closingThreshold = ClosingThreshold,
+                    cruiseClosing = CruiseClosing,
+                    boostMax = BoostMax,
+                    deadband = Deadband,
+                    lateralAccel = LateralAccelFor(DryMass, FuelMass, Ve, MassFlow,
+                        true, RcsVe, RcsMassFlow, RcsFuelMass),
+                    turnRateRad = MaxAngularRateDegrees * (Math.PI / 180.0),
+                    timeMargin = TimeMargin,
+                    lostMarginMeters = LostMarginMeters
+                };
+            }
         }
     }
 
@@ -57,8 +105,16 @@ namespace PioneerFramework
     /// </summary>
     public struct MissileGuidanceState
     {
-        /// <summary>历史最近表面距（m，≤0 = 未初始化）。追丢判定基准——取代旧"接管点 +3km"（对近距滑脱不敏感）。</summary>
+        /// <summary>历史最近表面距（m）。追丢判定基准——取代旧"接管点 +3km"（对近距滑脱不敏感）。</summary>
         public double minSurfaceDist;
+        /// <summary>
+        /// 是否已记录过最近距。**不能用 `minSurfaceDist &lt;= 0` 当"未初始化"哨兵**：
+        /// 贴表面（=0）与侵入目标球（&lt;0）都是**有效**的历史值（命中/穿透），
+        /// 用 ≤0 会把它们误判为未初始化 → 之后一步把历史**重置成更大的值** →
+        /// 追丢判据 `surfaceDist &gt; minSurfaceDist + lostMargin` 被抬高、提前 Abort。
+        /// （2026-09-14 修；瞬态字段，不序列化）
+        /// </summary>
+        public bool minSurfaceInitialized;
     }
 
     /// <summary>制导动作（AVM 按此驱动 EndBurn/StartBurn/中止）。</summary>
@@ -139,8 +195,11 @@ namespace PioneerFramework
 
             double surfaceDist = dist - targetRadius;
             step.surfaceDist = surfaceDist;
-            if (st.minSurfaceDist <= 0.0 || surfaceDist < st.minSurfaceDist)
+            if (!st.minSurfaceInitialized || surfaceDist < st.minSurfaceDist)
+            {
                 st.minSurfaceDist = surfaceDist;
+                st.minSurfaceInitialized = true;
+            }
 
             DVector3 vRel = vel - targetVel;
             double closing = DVector3.Dot(vRel, los);

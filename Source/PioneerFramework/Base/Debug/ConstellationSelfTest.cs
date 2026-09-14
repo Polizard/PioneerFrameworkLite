@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using RimWorld;
@@ -122,6 +122,7 @@ namespace PioneerFramework
                 {
                     // **独立口径**校验：反推用 SpaceEntityGroup.GetCentralBodyOffset（碰撞检查 / 圆轨解析 /
                     // N 体积分器共用的群组系规则），不是重算一遍 AnchorWorldPosition 的输入。
+                    // （坐标系约定的唯一出处：CelestialBodyManager.GetBodyWorldPosition 的文档块）
                     // 初版检查与实现同错（两边都用"递归到恒星"的 GetBodyWorldPosition）→ 12 万 km 的
                     // 帧错误被判成 PASS；换成独立口径后这类错误必 FAIL。
                     DVector3 frameOffset = anchor.GetCentralBodyOffset(TimeScaleManager.GetPhysicsTickSafe());

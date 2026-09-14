@@ -84,10 +84,8 @@ namespace PioneerFramework.Combat
         private readonly GameComponentRef<CelestialBodyManager> celestialMgrRef = new GameComponentRef<CelestialBodyManager>();
         private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new GameComponentRef<SpaceGameComp>();
 
-        // 引力源按 tick 缓存；cachedBodyMgr 是跨局失效判据（换局后 tick 可能重合，必须比对实例）
-        private CelestialBodyManager cachedBodyMgr;
-        private List<CelestialBodyDef> cachedGravitySources;
-        private int cachedGravityTick = -1;
+        // 引力源按 tick 缓存已随 A2 移除（射弹引力改由 CelestialBodyManager 的引力场 +
+        // TaylorSegment 承载，见 CombatManager.BuildGravitySegment）。
 
         public CombatGrid(Game game) { }
 
@@ -515,34 +513,6 @@ namespace PioneerFramework.Combat
                         for (int i = 0; i < ships.Count; i++)
                             results.Add(ships[i]);
                     }
-        }
-
-        public DVector3 ComputeProjectileGravity(DVector3 posMeters, int systemBodyId)
-        {
-            int tick = (int)System.Math.Round(TimeScaleManager.GetPhysicsTickSafe());
-            var celestialMgr = celestialMgrRef.Get();
-            if (celestialMgr == null) return DVector3.zero;
-
-            if (!ReferenceEquals(cachedBodyMgr, celestialMgr) || cachedGravityTick != tick)
-            {
-                cachedBodyMgr = celestialMgr;
-                cachedGravityTick = tick;
-                cachedGravitySources = celestialMgr.GetGravitySources();
-            }
-
-            DVector3 accel = DVector3.zero;
-
-            foreach (var body in cachedGravitySources)
-            {
-                DVector3 bodyPos = celestialMgr.GetBodyWorldPosition(body.bodyId, tick);
-                DVector3 r = bodyPos - posMeters;
-                double rMag = r.magnitude;
-                if (rMag < 1.0) continue;
-                double rSq = rMag * rMag;
-                accel += r * (body.gravitationalParameter / (rSq * rMag));
-            }
-
-            return accel;
         }
 
         /// <summary>

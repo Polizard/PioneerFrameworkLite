@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -18,6 +18,10 @@ namespace PioneerFramework
         // ── 轨道实体/群组 ──
         private Dictionary<int, SpaceEntity> entities = new Dictionary<int, SpaceEntity>();
         private Dictionary<int, SpaceEntityGroup> groups = new Dictionary<int, SpaceEntityGroup>();
+
+        // ── id 分配：持久化单调计数器（A5a）。≤0 = 未初始化 → 首次分配时一次性播种 ──
+        private int nextGroupId;
+        private int nextEntityId;
 
         // ── 参考系网格（根行星/恒星ID → 粗网格）──
         private Dictionary<int, SpatialGrid3D<ISpatialEntity>> planetGrids = new Dictionary<int, SpatialGrid3D<ISpatialEntity>>();
@@ -413,22 +417,68 @@ namespace PioneerFramework
 
         #region 空间站创建与管理
 
-        /// <summary>分配下一个 group id（扫 max+1，与调试生成器同规则，保证全局唯一）。</summary>
+        /// <summary>
+        /// id 分配 = **持久化单调计数器**（A5a 根治）。
+        ///
+        /// 旧实现是"扫 max+1"这种**派生状态**：销毁当前最大 id 的组之后，下一个新组会**复用**那个 id。
+        /// 后果（2026-09-14 实测：一轮验收里 id 复用 1–21 次）：
+        ///   · 弹头的 `sourceGroupId` 友军免疫判定、AVM 的 `targetGroupId` 追踪会认错组（静默错靶/穿模）；
+        ///   · 探针按 groupId 记忆的状态（切片 scratch / 聚合器指纹）会误判"同 id 不同组"。
+        /// 计数器随档序列化；计数缺失/异常时**一次性播种**为 max+1（自愈，不依赖旧档迁移）。
+        /// </summary>
         public int AllocGroupId()
         {
-            int max = 0;
-            foreach (var g in groups.Keys)
-                if (g > max) max = g;
-            return max + 1;
+            if (nextGroupId <= 0) nextGroupId = MaxLiveId(groups.Keys) + 1;
+            return nextGroupId++;
         }
 
-        /// <summary>分配下一个 entity id（扫 max+1）。</summary>
+        /// <summary>分配下一个 entity id（持久化单调计数器，同上）。</summary>
         public int AllocEntityId()
         {
+            if (nextEntityId <= 0) nextEntityId = MaxLiveId(entities.Keys) + 1;
+            return nextEntityId++;
+        }
+
+        /// <summary>
+        /// 注册表一致性探针（A5b，每 600 tick 一次，仅在 PerfProbe.Enabled 时算）：
+        /// `entities` 应恰好等于"各存活组 entityIds 的并集"；多出来的是**离群未注销**的泄漏实体。
+        /// 之所以要"每 N tick 查"而不是只在验收开头查：泄漏是**战斗中累积**的，开头查永远是 0。
+        /// </summary>
+        private void ProbeEntityRegistryConsistency()
+        {
+            if (!PerfProbe.Enabled) return;
+            int now = Find.TickManager?.TicksGame ?? 0;
+            if (now < nextEntityRegistryProbeTick) return;
+            nextEntityRegistryProbeTick = now + 600;
+
+            var inGroups = new HashSet<int>();
+            foreach (var g in groups.Values)
+                foreach (int eid in g.GetEntityIds())
+                    inGroups.Add(eid);
+
+            var leaked = new List<int>();
+            foreach (var kv in entities)
+                if (!inGroups.Contains(kv.Key)) leaked.Add(kv.Key);
+
+            PerfProbe.EntityRegistry(leaked.Count, leaked.Count > 0
+                ? string.Join(",", leaked.GetRange(0, Math.Min(8, leaked.Count)).ConvertAll(i => i.ToString()).ToArray())
+                : null);
+        }
+
+        private int nextEntityRegistryProbeTick;
+
+        private static int MaxLiveId(Dictionary<int, SpaceEntityGroup>.KeyCollection keys)
+        {
             int max = 0;
-            foreach (var e in entities.Keys)
-                if (e > max) max = e;
-            return max + 1;
+            foreach (var k in keys) if (k > max) max = k;
+            return max;
+        }
+
+        private static int MaxLiveId(Dictionary<int, SpaceEntity>.KeyCollection keys)
+        {
+            int max = 0;
+            foreach (var k in keys) if (k > max) max = k;
+            return max;
         }
 
         public SpaceEntity CreateStation(int entityId, int groupId, int factionId,
@@ -698,7 +748,12 @@ namespace PioneerFramework
             if (currentTick - lastUpdateTick >= UPDATE_INTERVAL_TICKS)
             {
                 lastUpdateTick = currentTick;
+                // 第 25 条墙钟：整步 = 一次 UpdateAllMovements（操舵 + 冲量 + 群组物理 + 耗散）。
+                // 起止都按步首那个 Enabled 快照配对，避免探针中途被切（Gizmo）导致"有起点没终点"。
+                bool timeStep = PerfProbe.Enabled;
+                long stepClock = timeStep ? PerfProbe.StepClockStart() : 0L;
                 UpdateAllMovements(timeScaleManager);
+                if (timeStep) PerfProbe.StepClockEnd(stepClock);
                 // 每物理步消费者统一在推进完成后驱动（2026-09-07）：GameComponent tick 顺序按类型
                 // 全名字母序（AutonomousVehicleManager → 本组件 → CombatManager），若制导/碰撞各自
                 // %2 tick 会有一方读到推进前的旧位置 → 同 tick 位置错位 2s ≈ 5km（导弹制导报 0.7km
@@ -739,6 +794,9 @@ namespace PioneerFramework
             // 性能优化验收探针汇总（2026-09-10；开关关闭时仅一次静态 bool 读，内部限频）
             PerfProbe.MaybeLogSummary();
 
+            // 实体注册表一致性（A5b；独立限频 600 tick，不受汇总频率影响）
+            ProbeEntityRegistryConsistency();
+
             // 游戏内一键验收状态机（未运行时立即返回，空闲零开销）
             PerfAcceptanceRunner.Tick();
 
@@ -778,7 +836,203 @@ namespace PioneerFramework
             public DVector3 SyncBodyVel;
         }
 
-        private GroupPhysicsResult ComputeGroupPhysics(SpaceEntityGroup group, double dtSeconds, double physicsTick, CelestialBodyManager celestialMgr, int subSteps = 1)
+        /// <summary>
+        /// 引力场求解的复用容器：**每个群组一份**——物理推进跑在 Parallel.For 里，
+        /// 共享容器即数据竞争（同 PerfProbe 的 SliceBufferShared 所警戒的那类）。
+        /// all = 该系统全部天体；kept = 其中的非白名单子集（轨道保持用）。
+        /// </summary>
+        private sealed class GravityScratch
+        {
+            public readonly List<GravitySource> all = new List<GravitySource>();
+            public readonly List<GravitySource> kept = new List<GravitySource>();
+        }
+
+        private GravityScratch[] gravityScratchByIndex = new GravityScratch[0];
+
+        /// <summary>主线程路径（战斗插值缓存重建）专用容器：不在并行区内，独占即可。</summary>
+        private GravityScratch gravityScratchMain = new GravityScratch();
+
+        private GravityScratch GetGravityScratch(int index)
+        {
+            var scratch = gravityScratchByIndex[index];
+            if (scratch == null)
+            {
+                scratch = new GravityScratch();
+                gravityScratchByIndex[index] = scratch;
+            }
+            return scratch;
+        }
+
+        private void EnsureGravityScratchCapacity(int count)
+        {
+            if (gravityScratchByIndex.Length >= count) return;
+
+            // 与 physicsResultsScratch 同规则：翻倍留余量，避免组数增长时每步重分配
+            int cap = Math.Max(count, gravityScratchByIndex.Length * 2);
+            var grown = new GravityScratch[cap];
+            Array.Copy(gravityScratchByIndex, grown, gravityScratchByIndex.Length);
+            gravityScratchByIndex = grown;
+        }
+
+        /// <summary>
+        /// 轨道保持的抵消量（A0-7）：要减掉的加速度 = **场(当前位置) − 计划轨道(当前位置)**，
+        /// 即"非白名单天体相对计划轨道中心的那部分贡献"。
+        ///   · 抵消它 ⇒ 实际轨迹 = 计划轨道 + 白名单天体的扰动（与"白名单=不抵消"的旧语义一致）；
+        ///   · 其模长 = 维持计划所需 dV 速率（旧实现算的正是这个量）。
+        /// 根域（计划中心 = 被钉住的根）退化为"非白名单天体的全量项"——与旧数字逐位一致；
+        /// 子天体域（如月球）则是**潮汐项**（旧实现此处为零，属本次修正）。
+        /// 注意：`EnterOrbitKeeping(null)` 会落成**空集**（= 抵消全部扰动、保住计划），
+        /// 与旧实现"空集 ⇒ 零引力积分"不同；现有调用点均传 `{自身中心天体}`，不受影响。
+        /// </summary>
+        private void ComputeOrbitKeepingCorrection(SpaceEntityGroup group, CelestialBodyManager mgr,
+            GravityScratch scratch, out DVector3 corrAcc, out DVector3 corrJerk)
+        {
+            corrAcc = DVector3.zero;
+            corrJerk = DVector3.zero;
+
+            int centerBodyId = group.CelestialBodyId;
+            var whitelist = group.orbitKeepingWhitelist;
+
+            // ① 非白名单天体（除计划中心本身）在当前位的全量项
+            scratch.kept.Clear();
+            for (int i = 0; i < scratch.all.Count; i++)
+            {
+                var s = scratch.all[i];
+                if (s.bodyId == centerBodyId) continue;
+                if (whitelist != null && whitelist.Contains(s.bodyId)) continue;
+                scratch.kept.Add(s);
+            }
+
+            if (scratch.kept.Count > 0)
+            {
+                NBodyIntegrator.FieldAccelJerk(group.CurrentOrbit.position, group.CurrentOrbit.velocity,
+                    scratch.kept, out corrAcc, out corrJerk);
+            }
+
+            // ② 计划中心的受迫（自由落体）加速度里、由非白名单父天体贡献的那部分：
+            //    逐级取「父对子的拉力，评估在子处」——链到系统外的父天体即止（根域为空）。
+            int childId = centerBodyId;
+            for (int guard = 0; guard < 8; guard++)
+            {
+                var childBody = mgr.GetBodyById(childId);
+                if (childBody == null) break;
+                int parentId = childBody.ParentBodyId;
+                if (parentId < 0) break;
+
+                if (!NBodyIntegrator.TryFindSource(scratch.all, parentId, out var parentSrc)) break;
+
+                if (whitelist == null || !whitelist.Contains(parentId))
+                {
+                    if (NBodyIntegrator.TryFindSource(scratch.all, childId, out var childSrc))
+                    {
+                        NBodyIntegrator.ComputeBodyAccelJerk(
+                            childSrc.position, childSrc.velocity,
+                            parentSrc.position, parentSrc.velocity, parentSrc.mu,
+                            out var a, out var j);
+                        corrAcc -= a;
+                        corrJerk -= j;
+                    }
+                }
+
+                childId = parentId;
+            }
+        }
+
+        /// <summary>
+        /// 群组所受的引力加速度/急动度（系统系内，含轨道保持抵消）。
+        /// **物理推进与战斗渲染插值共用本方法**——同一份算式，避免两处各写一遍导致参考系/口径漂移。
+        /// keepAcc/keepJerk = 本步被轨道保持抵消掉的那部分（其模长即 dV 速率）。
+        /// </summary>
+        private void ComputeGroupFieldAccelJerk(SpaceEntityGroup group, CelestialBodyManager mgr, double tick,
+            GravityScratch scratch, out DVector3 acc, out DVector3 jerk,
+            out DVector3 keepAcc, out DVector3 keepJerk, bool timeSegment = false)
+        {
+            acc = DVector3.zero;
+            jerk = DVector3.zero;
+            keepAcc = DVector3.zero;
+            keepJerk = DVector3.zero;
+
+            // 第 25 条墙钟：只有**物理步**里的调用点传 timeSegment=true。战斗插值重建
+            // （RebuildCombatCache）走同一方法但不在物理步节奏上，计入会污染"µs/步"口径。
+            bool timing = timeSegment && PerfProbe.Enabled;
+            long clock = timing ? PerfProbe.GravityClockStart() : 0L;
+
+            mgr.CollectSystemSources(group.CelestialBodyId, tick, scratch.all);
+            if (scratch.all.Count == 0)
+            {
+                if (timing) PerfProbe.GravityClockEnd(clock);
+                return;
+            }
+
+            NBodyIntegrator.FieldAccelJerk(group.CurrentOrbit.position, group.CurrentOrbit.velocity,
+                scratch.all, out acc, out jerk);
+
+            if (timing) PerfProbe.GravityClockEnd(clock);
+
+            if (PerfProbe.Enabled) ProbeGravityField(group, mgr, scratch, acc);
+
+            if (!group.HasOrbitKeeping) return;
+
+            ComputeOrbitKeepingCorrection(group, mgr, scratch, out keepAcc, out keepJerk);
+            acc -= keepAcc;
+            jerk -= keepJerk;
+        }
+
+        /// <summary>
+        /// 引力场探针（A0，§8.4 第 1/2 项；限频，只在 PerfProbe.Enabled 时跑）：
+        ///  · **根域影子**：场(全部后代) vs 场(根 + 直接子天体)。当前数据无孙天体，两者必须逐位一致
+        ///    → mismatch 恒为 0 是"层级枚举与位置累加没错"的守卫；将来加了孙天体则应显式分化（勿盲改）。
+        ///  · **子天体域差分**：报告「差分(潮汐)模长 / 局部引力模长」。这是月球系修正是否生效的直接读数——
+        ///    ≈0 = 还是旧行为（只算中心天体）、0.1%–2% = 正确潮汐、≈7% = 走了"全量求和"的错路。
+        /// </summary>
+        private void ProbeGravityField(SpaceEntityGroup group, CelestialBodyManager mgr, GravityScratch scratch, DVector3 acc)
+        {
+            bool isSubBodyDomain = mgr.GetReferenceFrameId(group.CelestialBodyId) != group.CelestialBodyId;
+
+            // 根域：热路径（地球系群组多）→ 限频；子天体域：群组稀少（月球系）→ 逐次采样，
+            // 保证验收阶段一定拿得到证据，且 min/max 区间更密。
+            if (!isSubBodyDomain && !PerfProbe.ShouldProbeGravity()) return;
+
+            if (!isSubBodyDomain)
+            {
+                // 根域：与「根 + 直接子天体」子集比较
+                scratch.kept.Clear();
+                for (int i = 0; i < scratch.all.Count; i++)
+                {
+                    var s = scratch.all[i];
+                    bool directChild = s.bodyId == group.CelestialBodyId
+                        || mgr.GetBodyById(s.bodyId)?.ParentBodyId == group.CelestialBodyId;
+                    if (directChild) scratch.kept.Add(s);
+                }
+
+                NBodyIntegrator.FieldAccelJerk(group.CurrentOrbit.position, group.CurrentOrbit.velocity,
+                    scratch.kept, out var subsetAcc, out _);
+
+                double diff = (acc - subsetAcc).magnitude;
+                PerfProbe.GravityRootDomain(diff < 1e-9,
+                    string.Format("G{0} 全域与根+直接子天体不一致 Δ={1:E3} m/s²（天体枚举/位置累加错？）",
+                        group.GroupId, diff));
+                return;
+            }
+
+            // 子天体域：差分 = 场 − 计划（唯一口径见 CelestialBodyManager.ComputeFieldMinusPlan）。
+            // 注意不能写成"场 − 中心天体单独在场"——那是外面天体的**全量**项（实测 6.86%），
+            // 不是潮汐（0.3%–0.6%）。2026-09-14 首轮验收正是这样误报的。
+            mgr.ComputeFieldMinusPlan(group.CurrentOrbit.position, group.CurrentOrbit.velocity,
+                group.CelestialBodyId, scratch.all, out var diffAcc, out _);
+
+            scratch.kept.Clear();
+            for (int i = 0; i < scratch.all.Count; i++)
+            {
+                if (scratch.all[i].bodyId == group.CelestialBodyId) scratch.kept.Add(scratch.all[i]);
+            }
+            NBodyIntegrator.FieldAccelJerk(group.CurrentOrbit.position, group.CurrentOrbit.velocity,
+                scratch.kept, out var localAcc, out _);
+
+            PerfProbe.GravitySubBodyDomain(diffAcc.magnitude, localAcc.magnitude);
+        }
+
+        private GroupPhysicsResult ComputeGroupPhysics(SpaceEntityGroup group, double dtSeconds, double physicsTick, CelestialBodyManager celestialMgr, GravityScratch gravityScratch, int subSteps = 1)
         {
             var result = new GroupPhysicsResult { GroupId = group.GroupId };
 
@@ -793,7 +1047,7 @@ namespace PioneerFramework
                 var activeSlices = group.thrustSliceScratch;
                 activeSlices.Clear();
                 // 探针：校验"每组独占一个 scratch 且身份恒定"（并行区两组共用会互相覆盖）
-                if (PerfProbe.Enabled) PerfProbe.SliceBuffer(group.GroupId, activeSlices);
+                if (PerfProbe.Enabled) PerfProbe.SliceBuffer(group, activeSlices);
 
                 if (burnSrc is SpaceMapComp mapComp)
                 {
@@ -978,6 +1232,27 @@ namespace PioneerFramework
             if (!group.HasActiveBurn && group.pendingAlignDir.sqrMagnitude > 1e-12)
                 AlignMainAxis(group, group.pendingAlignDir, dtSeconds);
 
+            // 引力场采样：非圆轨需要它做积分；圆轨（解析推进）只有在轨道保持需要结算 dV 时才需要。
+            // 保持旧成本画像——圆轨且无轨道保持的群组不做任何引力计算。
+            var scratch = gravityScratch;
+            bool needField = !group.IsCircularOrbit || group.HasOrbitKeeping;
+            DVector3 fieldAcc = DVector3.zero, fieldJerk = DVector3.zero;
+            DVector3 keepAcc = DVector3.zero, keepJerk = DVector3.zero;
+
+            if (needField)
+            {
+                ComputeGroupFieldAccelJerk(group, celestialMgr, physicsTick, scratch,
+                    out fieldAcc, out fieldJerk, out keepAcc, out keepJerk, timeSegment: true);
+            }
+
+            // 轨道保持的 dV 结算：**两条推进路径共用**（圆轨走解析推进，但其"抵消非白名单天体扰动"
+            // 的燃料开销与积分路径同源；旧实现同样对圆轨结算，勿因重构而漏掉）
+            if (group.HasOrbitKeeping && scratch.all.Count > 0)
+            {
+                result.HasOrbitKeeping = true;
+                result.OrbitKeepingDvCost = keepAcc.magnitude * dtSeconds;
+            }
+
             if (group.IsCircularOrbit)
             {
                 DVector3 newPos = group.GetCircularPositionAtTick(physicsTick);
@@ -992,97 +1267,45 @@ namespace PioneerFramework
                     result.NewVelocity = newVel;
                 }
             }
-            else
+            else if (scratch.all.Count > 0)
             {
-                var primaryBody = celestialMgr.GetBodyById(group.CelestialBodyId);
-                if (primaryBody != null)
+                // ── 引力场（A0）：系统系内**全部天体**全量求和，无"环绕天体"参量 ──
+                // 坐标 = CurrentOrbit.position（群组系 = 根行星中心，与场同系）→ 不再做任何帧转换。
+                // 子天体为中心时（如月球），由场自动带上根天体的贡献（等价于"局部系 + 潮汐项"），
+                // 不再需要旧的"减天体位置 / 加回天体位置"两段式。
+                DVector3 pos = group.CurrentOrbit.position;
+                DVector3 vel = group.CurrentOrbit.velocity;
+
+                if (subSteps <= 1)
                 {
-                    DVector3 relPos, relVel;
-                    if (primaryBody.bodyType != CelestialBodyType.Planet)
+                    NBodyIntegrator.ThirdOrderTaylorStep(pos, vel, fieldAcc, fieldJerk, dtSeconds,
+                        out var newPos, out var newVel);
+
+                    result.NeedsUpdate = true;
+                    result.NewPosition = newPos;
+                    result.NewVelocity = newVel;
+                }
+                else
+                {
+                    // 分子步：每子步用子步时刻重采天体位置（天体解析位置随时间连续，避免大步长冻结天体）
+                    double subDt = dtSeconds / subSteps;
+                    for (int i = 0; i < subSteps; i++)
                     {
-                        // 天体采样必须用 physicsTick（物理时间轴），与积分 dtSeconds / 圆轨解析 / 机动队列同基准。
-                        // 之前用 realTick（Find.TickManager.TicksGame），Normal 档两者相等掩盖了问题，
-                        // Fast/Combat 档倍率≠1 时近月参考系会系统性漂移。
-                        DVector3 bodyPos = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, physicsTick);
-                        DVector3 bodyVel = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, physicsTick);
-                        relPos = group.CurrentOrbit.position - bodyPos;
-                        relVel = group.CurrentOrbit.velocity - bodyVel;
-                    }
-                    else
-                    {
-                        relPos = group.CurrentOrbit.position;
-                        relVel = group.CurrentOrbit.velocity;
+                        ComputeGroupFieldAccelJerk(group, celestialMgr, physicsTick + i * subDt, scratch,
+                            out var acc, out var jerk, out _, out _, timeSegment: true);
+                        NBodyIntegrator.ThirdOrderTaylorStep(pos, vel, acc, jerk, subDt, out pos, out vel);
                     }
 
-                    if (subSteps <= 1)
-                    {
-                        NBodyIntegrator.MultiBodyAccelJerk(
-                            relPos, relVel,
-                            physicsTick, primaryBody, celestialMgr,
-                            group.orbitKeepingWhitelist,
-                            out var acc, out var jerk);
-
-                        NBodyIntegrator.ThirdOrderTaylorStep(
-                            relPos, relVel,
-                            acc, jerk, dtSeconds,
-                            out var newPos, out var newVel);
-
-                        if (primaryBody.bodyType != CelestialBodyType.Planet)
-                        {
-                            DVector3 bodyPosNow = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, physicsTick + dtSeconds);
-                            DVector3 bodyVelNow = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, physicsTick + dtSeconds);
-                            newPos += bodyPosNow;
-                            newVel += bodyVelNow;
-                        }
-
-                        result.NeedsUpdate = true;
-                        result.NewPosition = newPos;
-                        result.NewVelocity = newVel;
-                    }
-                    else
-                    {
-                        double subDt = dtSeconds / subSteps;
-                        for (int i = 0; i < subSteps; i++)
-                        {
-                            NBodyIntegrator.MultiBodyAccelJerk(
-                                relPos, relVel,
-                                physicsTick, primaryBody, celestialMgr,
-                                group.orbitKeepingWhitelist,
-                                out var acc, out var jerk);
-
-                            NBodyIntegrator.ThirdOrderTaylorStep(
-                                relPos, relVel,
-                                acc, jerk, subDt,
-                                out relPos, out relVel);
-                        }
-
-                        if (primaryBody.bodyType != CelestialBodyType.Planet)
-                        {
-                            DVector3 bodyPosNow = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, physicsTick + dtSeconds);
-                            DVector3 bodyVelNow = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, physicsTick + dtSeconds);
-                            relPos += bodyPosNow;
-                            relVel += bodyVelNow;
-                        }
-
-                        result.NeedsUpdate = true;
-                        result.NewPosition = relPos;
-                        result.NewVelocity = relVel;
-                    }
+                    result.NeedsUpdate = true;
+                    result.NewPosition = pos;
+                    result.NewVelocity = vel;
                 }
             }
 
-            if (group.HasOrbitKeeping)
+            if (group.HasOrbitKeeping && !result.HasOrbitKeeping)
             {
+                // 无引力场（天体缺失）时仍标记模式，但不产生 dV（无处可抵消）
                 result.HasOrbitKeeping = true;
-                var primaryBody = celestialMgr.GetBodyById(group.CelestialBodyId);
-                if (primaryBody != null)
-                {
-                    double dvRate = NBodyIntegrator.ComputeOrbitKeepingDvRate(
-                        group.localPosition, group.localVelocity,
-                        physicsTick, primaryBody, celestialMgr,
-                        group.orbitKeepingWhitelist);
-                    result.OrbitKeepingDvCost = dvRate * dtSeconds;
-                }
             }
 
             // ── 姿态积分（魔法动量轮）──
@@ -1334,6 +1557,7 @@ namespace PioneerFramework
                 physicsResultsScratch = new GroupPhysicsResult[cap];
             }
             var physicsResults = physicsResultsScratch;
+            EnsureGravityScratchCapacity(movableGroups.Count);
 
             // 探针（第 2 条）：容器身份稳定（确在复用）+ 复用数组尾部陈旧槽统计（下方按 Count 上界跳过）
             if (PerfProbe.Enabled) PerfProbe.StepScratch(movableGroups, physicsResults, movableGroups.Count);
@@ -1341,13 +1565,13 @@ namespace PioneerFramework
             if (movableGroups.Count < PARALLEL_PHYSICS_MIN_GROUPS)
             {
                 for (int i = 0; i < movableGroups.Count; i++)
-                    physicsResults[i] = ComputeGroupPhysics(movableGroups[i], dtSeconds, physicsTick, celestialMgr, subSteps);
+                    physicsResults[i] = ComputeGroupPhysics(movableGroups[i], dtSeconds, physicsTick, celestialMgr, GetGravityScratch(i), subSteps);
             }
             else
             {
                 Parallel.For(0, movableGroups.Count, i =>
                 {
-                    physicsResults[i] = ComputeGroupPhysics(movableGroups[i], dtSeconds, physicsTick, celestialMgr, subSteps);
+                    physicsResults[i] = ComputeGroupPhysics(movableGroups[i], dtSeconds, physicsTick, celestialMgr, GetGravityScratch(i), subSteps);
                 });
             }
 
@@ -2117,6 +2341,16 @@ namespace PioneerFramework
             }
         }
 
+        /// <summary>为全部可动群组重建战斗插值缓存（切档进入 Combat 时调用；实现唯一）。</summary>
+        public void RebuildAllCombatCaches(int currentTick)
+        {
+            foreach (var group in groups.Values)
+            {
+                if (!group.IsMovable) continue;
+                RebuildCombatCache(group, currentTick);
+            }
+        }
+
         /// <summary>
         /// 以当前轨道状态重建 Combat 插值缓存（更新基准 tick + 重新采样 acc/jerk）。
         /// 重建起点 = 当前插值末端 → 位置/速度连续无跳变。
@@ -2126,38 +2360,18 @@ namespace PioneerFramework
             var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (celestialMgr == null) return;
 
-            var primaryBody = celestialMgr.GetBodyById(group.CelestialBodyId);
-            if (primaryBody == null) return;
-
-            DVector3 currentPos = group.CurrentOrbit.position;
-            DVector3 currentVel = group.CurrentOrbit.velocity;
-
-            DVector3 relPos, relVel;
+            // 重力采样用 physicsTick（物理时间轴）；baseTick 保持 realTick 供插值索引。
+            // 采样点与插值起点**同为系统系坐标**（此前 acc/jerk 取局部系、startPos 取系统系，
+            // 月心系群组的渲染插值会用到混系加速度——A0 一并修正）。
             double physicsTickSample = TimeScaleManager.GetPhysicsTickSafe();
-            if (primaryBody.bodyType != CelestialBodyType.Planet)
-            {
-                // 重力采样用 physicsTick（物理时间轴）；baseTick 保持 realTick 供插值索引
-                DVector3 bodyPos = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, physicsTickSample);
-                DVector3 bodyVel = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, physicsTickSample);
-                relPos = currentPos - bodyPos;
-                relVel = currentVel - bodyVel;
-            }
-            else
-            {
-                relPos = currentPos;
-                relVel = currentVel;
-            }
-
-            NBodyIntegrator.MultiBodyAccelJerk(relPos, relVel,
-                physicsTickSample, primaryBody, celestialMgr,
-                group.orbitKeepingWhitelist,
-                out var acc, out var jerk);
+            ComputeGroupFieldAccelJerk(group, celestialMgr, physicsTickSample, gravityScratchMain,
+                out var acc, out var jerk, out _, out _);
 
             group.CombatCache = new SpaceEntityGroup.PhysicsStateCache
             {
                 baseTick = currentTick,
-                startPos = currentPos,
-                startVel = currentVel,
+                startPos = group.CurrentOrbit.position,
+                startVel = group.CurrentOrbit.velocity,
                 acc = acc,
                 jerk = jerk,
                 dt = 2.0,
@@ -2564,7 +2778,7 @@ namespace PioneerFramework
                 {
                     agg = new GroupPropulsionAggregator(group, this, stamp);
                     group.cachedPropulsionAggregator = agg;
-                    if (PerfProbe.Enabled) PerfProbe.AggRebuild(group.GroupId, group.entitySetVersion, stamp, n);
+                    if (PerfProbe.Enabled) PerfProbe.AggRebuild(group, group.entitySetVersion, stamp, n);
                 }
                 else if (PerfProbe.Enabled)
                 {
@@ -2678,6 +2892,8 @@ namespace PioneerFramework
             base.ExposeData();
             Scribe_Collections.Look(ref entities, "entities", LookMode.Value, LookMode.Deep);
             Scribe_Collections.Look(ref groups, "groups", LookMode.Value, LookMode.Deep);
+            Scribe_Values.Look(ref nextGroupId, "nextGroupId", 0);
+            Scribe_Values.Look(ref nextEntityId, "nextEntityId", 0);
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
                 planetGrids = new Dictionary<int, SpatialGrid3D<ISpatialEntity>>();

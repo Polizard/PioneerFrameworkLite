@@ -60,9 +60,16 @@ powershell -ExecutionPolicy Bypass -File tools/check-committed-dll.ps1
 
 `1.6/Assemblies/PioneerFrameworkLite.dll` 是已提交二进制，CI 会校验它必须等于固定 SDK 的 Release 构建结果。
 
-⚠️ **`PioneerFramework.csproj` 的 `OutputPath` 对 Debug/Release 都指向 `1.6/Assemblies/`**，所以
-**任何 `dotnet build -c Debug`（包括 `dotnet test`）都会把已提交的 DLL 覆盖成 Debug 版**。
-改完 C# 后务必**最后**跑一次 `rebuild-dll.ps1`（或用 `tools/test-all.ps1`，它会把重建+校验放在最后一步）。
+✅ **输出路径按配置分离（2026-09-14 起）**：`PioneerFramework.csproj` 的 `OutputPath` 现在
+Release → `1.6/Assemblies/`、Debug → 项目内 `bin/`（被 `.gitignore` 忽略）。因此
+**Debug 构建（含 `dotnet test`）在结构上不可能再覆盖已提交的 DLL**——以前需要靠"最后跑一次
+`rebuild-dll.ps1`"来兜的坑已经不存在了。改完 C# 后仍需重建并提交 Release DLL（那是交付物本身）。
+
+要在**游戏内跑 Debug 版**（带行号的 `.pdb`）时，显式指定输出目录即可（opt-in，不是默认）：
+
+```powershell
+dotnet build Source/PioneerFramework/PioneerFramework.csproj -c Debug -p:OutputPath=../../1.6/Assemblies/
+```
 
 提交 DLL 前请使用：
 

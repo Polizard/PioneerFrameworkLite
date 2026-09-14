@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace PioneerFramework
 {
@@ -54,6 +54,7 @@ namespace PioneerFramework
         /// bodyFrameOffset 的正确来源 = SpaceEntityGroup.GetCentralBodyOffset 口径（行星 → 零；卫星 → 绕行星偏移），
         /// 与碰撞 / 圆轨解析 / N 体积分同系——**不是** CelestialBodyManager.GetBodyWorldPosition
         /// （那是递归到恒星的绝对位置，地球绕日 120,000 km，2026-09-10 初版曾误用）。
+        /// 坐标系约定的**唯一出处**见 `CelestialBodyManager.GetBodyWorldPosition` 的文档块。
         /// dir 用「天体固连系」的 tile 中心方向（不含自转相位）——锚点是静态初始化的编组占位，
         /// 自转带来的漂移见设计文档 §12（未来组网通信需要精确位置时挂解析刷新）。
         /// dir 退化（零向量）时退回天体中心，不产生 NaN。

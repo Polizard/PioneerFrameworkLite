@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
@@ -117,8 +117,8 @@ namespace PioneerFramework.Launch
                 return null;
             }
 
-            int groupId = GetNextGroupId(spaceGame);
-            int entityId = GetNextEntityId(spaceGame);
+            int groupId = spaceGame.AllocGroupId();
+            int entityId = spaceGame.AllocEntityId();
             int factionId = Faction.OfPlayer?.loadID ?? 0;
 
             // ── 出生状态：天地映射（设计 §3，取代随机角度瞬移）──
@@ -515,25 +515,5 @@ namespace PioneerFramework.Launch
             }
         }
 
-        private static int GetNextGroupId(SpaceGameComp spaceGame)
-        {
-            int maxId = 0;
-            foreach (var g in spaceGame.GetAllGroups())
-                if (g.GroupId > maxId)
-                    maxId = g.GroupId;
-            return maxId + 1;
-        }
-
-        private static int GetNextEntityId(SpaceGameComp spaceGame)
-        {
-            int maxId = 0;
-            foreach (var g in spaceGame.GetAllGroups())
-            {
-                foreach (int eid in g.GetEntityIds())
-                    if (eid > maxId)
-                        maxId = eid;
-            }
-            return maxId + 1;
-        }
     }
 }

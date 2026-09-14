@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Reflection;
 using LudeonTK;
 using PioneerFramework.Combat;
@@ -33,9 +33,21 @@ namespace PioneerFramework
 
             // ═══ 验收（性能优化 9 条 + 中低优先批）═══
             AddAction("一键验收", "00 验收", 100, PerfAcceptanceRunner.Run,
-                () => PerfAcceptanceRunner.Running ? "一键验收（运行中…）" : "一键验收（自动跑 5 个场景出结论）");
+                () => PerfAcceptanceRunner.Running
+                    ? "一键验收（运行中…）"
+                    : "一键验收（引力自检电池 + 7 个场景 → 硬指标/值判据/覆盖度结论）");
             AddAction("中止验收（立即打印结论与计数）", "00 验收", 90, PerfAcceptanceRunner.Abort, null);
             AddCheckbox("性能优化验收探针（影子校验 + 周期汇总）", "00 验收", 80, typeof(PerfProbe), "Enabled");
+            AddAction("自检进度窗口（实时：阶段进度 + 引力读数 + 失败清单）", "00 验收", 70,
+                Window_PFLSelfTest.OpenIfClosed, null);
+
+            // ═══ 场景 · 引力场（A0 回归；判据见 PerfProbe 汇总行 ㉑㉒）═══
+            AddAction("引力场自检电池（即时：数据路径 + 场数学 + A1 参数）", "05 场景 · 引力场(A0)", 110,
+                GravityFieldSelfTest.Run, null);
+            AddAction("月球引力回归（月球附近非圆轨群组）", "05 场景 · 引力场(A0)", 100,
+                DebugShipSpawner.SpawnMoonGravityTest, null);
+            AddAction("漏靶弹头（A2：段内插值飞行 + 引力弯曲）", "05 场景 · 引力场(A0)", 90,
+                DebugShipSpawner.SpawnMissedWarheadTest, null);
 
             // ═══ 场景 · 轨道 / 空间站 ═══
             AddAction("部署空间站", "10 场景 · 轨道/空间站", 100, DebugShipSpawner.SpawnTestStation, null);

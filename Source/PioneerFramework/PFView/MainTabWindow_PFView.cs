@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -1478,9 +1478,9 @@ namespace PioneerFramework
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return;
 
-            int gidA = GetNextGroupId(spaceGame);
+            int gidA = spaceGame.AllocGroupId();
             int gidB = gidA + 1;
-            int eidA = GetNextEntityId(spaceGame);
+            int eidA = spaceGame.AllocEntityId();
             int eidB = eidA + 1;
 
             int bodyId = currentSystemBodyId;
@@ -1538,21 +1538,5 @@ namespace PioneerFramework
             spaceGame.RegisterEntity(entity);
         }
 
-        private static int GetNextGroupId(SpaceGameComp spaceGame)
-        {
-            int maxId = 0;
-            foreach (var g in spaceGame.GetAllGroups())
-                if (g.GroupId > maxId) maxId = g.GroupId;
-            return maxId + 1;
-        }
-
-        private static int GetNextEntityId(SpaceGameComp spaceGame)
-        {
-            int maxId = 0;
-            foreach (var g in spaceGame.GetAllGroups())
-                foreach (int eid in g.GetEntityIds())
-                    if (eid > maxId) maxId = eid;
-            return maxId + 1;
-        }
     }
 }

@@ -1,30 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Defs>
-  <PioneerFramework.Combat.WeaponDef>
-    <defName>PF_Weapon_Cannon</defName>
-    <label>加农炮</label>
-    <description>标准的太空加农炮，发射高速射弹。</description>
-    <weaponType>Projectile</weaponType>
-    <damagePerShot>15</damagePerShot>
-    <armorPenetration>5</armorPenetration>
-    <fireRate>0.5</fireRate>
-    <maxRange>5000</maxRange>
-    <minRange>50</minRange>
-    <accuracyRadius>2</accuracyRadius>
-    <accuracyFalloff>0.001</accuracyFalloff>
-    <cooldownTicks>60</cooldownTicks>
-    <overheatThreshold>10</overheatThreshold>
-    <overheatCooldownTicks>300</overheatCooldownTicks>
-    <mountSize>(2, 1, 2)</mountSize>
-    <turret>true</turret>
-    <turretRotationSpeed>30</turretRotationSpeed>
-    <trackingArc>360</trackingArc>
-    <projectileSpeed>800</projectileSpeed>
-    <projectileMass>0.5</projectileMass>
-    <affectedByGravity>true</affectedByGravity>
-    <projectileLifetime>30</projectileLifetime>
-  </PioneerFramework.Combat.WeaponDef>
-
   <PioneerFramework.Combat.WeaponDef>
     <defName>PF_Weapon_ProjectileCannon</defName>
     <label>加农炮</label>
@@ -47,28 +22,6 @@
     <projectileMass>0.5</projectileMass>
     <affectedByGravity>false</affectedByGravity>
     <projectileLifetime>600</projectileLifetime>
-  </PioneerFramework.Combat.WeaponDef>
-
-  <PioneerFramework.Combat.WeaponDef>
-    <defName>PF_Weapon_Default</defName>
-    <label>默认武器</label>
-    <description>部件未指定武器时使用的默认武器（3km/s 射弹，射程 10km）。</description>
-    <weaponType>Projectile</weaponType>
-    <damagePerShot>20</damagePerShot>
-    <armorPenetration>5</armorPenetration>
-    <fireRate>1</fireRate>
-    <maxRange>10000</maxRange>
-    <minRange>5</minRange>
-    <cooldownTicks>60</cooldownTicks>
-    <overheatThreshold>10</overheatThreshold>
-    <overheatCooldownTicks>300</overheatCooldownTicks>
-    <turret>true</turret>
-    <turretRotationSpeed>30</turretRotationSpeed>
-    <trackingArc>360</trackingArc>
-    <projectileSpeed>3000</projectileSpeed>
-    <projectileMass>0.5</projectileMass>
-    <affectedByGravity>false</affectedByGravity>
-    <projectileLifetime>6000</projectileLifetime>
   </PioneerFramework.Combat.WeaponDef>
 
   <PioneerFramework.Combat.WeaponDef>

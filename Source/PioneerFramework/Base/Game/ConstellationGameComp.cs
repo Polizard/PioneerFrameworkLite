@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using PioneerFramework.Launch;
 using RimWorld;
 using RimWorld.Planet;
@@ -74,6 +74,9 @@ namespace PioneerFramework
 
         // ── 核心数据 ──
         private List<Constellation> constellations = new List<Constellation>();
+
+        /// <summary>星座 id 单调计数器（A5a 统一；≤0 = 未初始化 → 首次分配时播种）。</summary>
+        private int nextConstellationId;
         /// <summary>派生索引：groupId → 星座 id 集（多归属）。由成员表全量推导，读档后惰性重建。</summary>
         private readonly ConstellationIndex index = new ConstellationIndex();
         /// <summary>据点 → 锚点 group 登记表（WorldObject.ID → groupId）：防重复创建 + 惰性回收。</summary>
@@ -265,13 +268,24 @@ namespace PioneerFramework
             return true;
         }
 
-        /// <summary>分配星座 id：扫 max+1（不序列化计数器 → 无复用冲突，与 AllocGroupId 行为一致）。</summary>
+        /// <summary>
+        /// 分配星座 id：**持久化单调计数器**（2026-09-14 随 A5a 统一）。
+        /// 旧注释说"不序列化计数器 → 无复用冲突"，实则相反：扫 max+1 是**派生状态**，
+        /// 删掉当前最大 id 的星座后，下一个新星座会复用该 id（成员索引/存档引用会认错星座）。
+        /// 现在与 SpaceGameComp 的 group/entity 分配同一条规则：单调计数器 + 缺失时一次性自愈播种。
+        /// </summary>
         private int AllocConstellationId()
+        {
+            if (nextConstellationId <= 0) nextConstellationId = MaxLiveConstellationId() + 1;
+            return nextConstellationId++;
+        }
+
+        private int MaxLiveConstellationId()
         {
             int max = 0;
             for (int i = 0; i < constellations.Count; i++)
                 if (constellations[i].ConstellationId > max) max = constellations[i].ConstellationId;
-            return max + 1;
+            return max;
         }
 
         // ════════════════════════════════════════════════════════════
@@ -514,6 +528,7 @@ namespace PioneerFramework
         /// 与碰撞检查（SpaceGameComp.GetBodyWorldOffset）、圆轨解析（GetCircularPositionAtTick）、
         /// N 体积分器（NBodyIntegrator 用 GetBodyLocalPosition）同系。
         /// ⚠ 不可改用 CelestialBodyManager.GetBodyWorldPosition：那是"递归到恒星"的绝对位置
+        /// （坐标系约定的**唯一出处**就在那个方法的文档块里）
         /// （地球绕日 orbitRadius = 120,000 km），当成群组系坐标会把地球锚点甩到 12 万 km 外，且随公转时变
         /// ——2026-09-10 初版即此错，游戏内日志 pos=(116920,3284,-3453)km 暴露。
         /// </summary>
@@ -663,6 +678,7 @@ namespace PioneerFramework
         {
             base.ExposeData();
             Scribe_Collections.Look(ref constellations, "constellations", LookMode.Deep);
+            Scribe_Values.Look(ref nextConstellationId, "nextConstellationId", 0);
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
                 if (constellations == null) constellations = new List<Constellation>();

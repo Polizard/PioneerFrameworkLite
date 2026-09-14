@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
 using UnityEngine;
@@ -13,6 +13,11 @@ namespace PioneerFramework
     {
         private Dictionary<int, CelestialBodyDef> bodiesById;
         private bool initialized;
+
+        /// <summary>行星系成员缓存（根天体 id → 该系全部天体，含根）。天体 Def 静态，构建一次即可。</summary>
+        private Dictionary<int, List<CelestialBodyDef>> systemMembersCache = new Dictionary<int, List<CelestialBodyDef>>();
+
+        private static readonly List<CelestialBodyDef> EmptyBodyList = new List<CelestialBodyDef>();
 
         // ── 天体-棋子双向索引 ──
         private Dictionary<int, HashSet<int>> bodyToGroupIds = new Dictionary<int, HashSet<int>>();
@@ -67,6 +72,19 @@ namespace PioneerFramework
                 }
             }
 
+            // ── 天体 Def 集被重建（首局 / 读档 PostLoadInit 把它置回未初始化）→ 按 tick 记忆的采样
+            //    必须一并作废，且槽位映射要重建：采样按"tick 逐位相等"命中，而读旧档会让 tick 回退到
+            //    曾经用过的值（届时若槽位指向别的天体，命中就会给出错天体的值）。
+            bodySlots = new Dictionary<int, int>(bodiesById.Count);
+            int slot = 0;
+            foreach (var kv in bodiesById)
+                bodySlots[kv.Key] = slot++;
+            localSamples.EnsureCapacity(slot);
+            localSamples.Reset();
+            worldSamples.EnsureCapacity(slot);
+            worldSamples.Reset();
+            systemMembersCache.Clear();
+
             Log.Message(string.Format("[CelestialBodyManager] Loaded {0} celestial bodies, built moon indices. World radius = {1:F0} m ({2} tiles).",
                 allDefs.Count, SpaceConstants.PlanetRadiusMeters, (int)(SpaceConstants.PlanetRadiusMeters / SpaceConstants.MetersPerUnit)));
         }
@@ -102,6 +120,119 @@ namespace PioneerFramework
         {
             EnsureInitialized();
             return bodiesById.Values.Where(b => b.ParentBodyId == parentBodyId).ToList();
+        }
+
+        /// <summary>行星系成员（含根）：根 = 沿父链遇到的第一个行星或恒星（与 GetReferenceFrameId 同规则）。</summary>
+        public List<CelestialBodyDef> GetSystemMembers(int anyBodyId)
+        {
+            EnsureInitialized();
+
+            int rootId = GetReferenceFrameId(anyBodyId);
+            if (rootId < 0) return EmptyBodyList;
+
+            if (systemMembersCache.TryGetValue(rootId, out var cached))
+                return cached;
+
+            var members = new List<CelestialBodyDef>();
+            int guard = 0;
+            var frontier = new Queue<int>();
+            frontier.Enqueue(rootId);
+            while (frontier.Count > 0 && guard++ < 64)
+            {
+                int id = frontier.Dequeue();
+                var body = GetBodyById(id);
+                if (body == null) continue;
+                members.Add(body);
+                foreach (var child in GetChildrenOf(id))
+                    frontier.Enqueue(child.bodyId);
+            }
+
+            systemMembersCache[rootId] = members;
+            return members;
+        }
+
+        /// <summary>
+        /// 收集该行星系内**全部天体**在系统系（根天体为中心、根钉住）内的位置/速度。
+        /// 根的贡献在原点、速度为零；子天体沿父链累加（GetBodyLocalPosition 是相对父天体的）。
+        ///
+        /// 只计入 GM &gt; 0 的天体（无质量装饰天体不产生引力）；**根例外**——根是参考系锚点，
+        /// GM 缺失时按 SpaceConstants 兜底（沿用旧 EffectiveMu 语义，保证根一定在场）。
+        /// </summary>
+        public void CollectSystemSources(int anyBodyId, double tick, List<GravitySource> into)
+        {
+            if (into == null) return;
+            into.Clear();
+
+            var members = GetSystemMembers(anyBodyId);
+            if (members.Count == 0) return;
+
+            int rootId = members[0].bodyId;
+
+            for (int i = 0; i < members.Count; i++)
+            {
+                var body = members[i];
+                if (body.bodyId == rootId)
+                {
+                    into.Add(new GravitySource(DVector3.zero, DVector3.zero,
+                        NBodyIntegrator.EffectiveMu(body.gravitationalParameter), body.bodyId));
+                    continue;
+                }
+
+                if (body.gravitationalParameter <= 0.0) continue;
+
+                DVector3 pos, vel;
+                AccumulateToRoot(body, rootId, tick, out pos, out vel);
+                into.Add(new GravitySource(pos, vel, body.gravitationalParameter, body.bodyId));
+            }
+        }
+
+        /// <summary>
+        /// **"场 − 计划"差分**（= 参考天体局部系里的潮汐/间接项）。这是全库唯一的差分口径：
+        /// 验算仪器（PerfProbe 探针、GravityFieldSelfTest 电池）与轨道保持的抵消量都用它，
+        /// 避免两处各写一遍再漂（2026-09-14 曾因此把"地球全量"误报成"潮汐"，实测 6.86%）。
+        ///
+        /// 计划 = 中心天体的二体项 + 中心天体**自身受迫**加速度（其父天体在中心天体处的拉力）。
+        /// 物理含义：局部系随中心天体自由落体，故"外面那个天体"的均匀项被抵消，只剩差分。
+        /// 1 层层级（如地球→月球）精确；更深的链需要逐级递归（PFL 数据无此情形，已注释）。
+        /// </summary>
+        public void ComputeFieldMinusPlan(DVector3 pos, DVector3 vel, int centerBodyId,
+            List<GravitySource> sources, out DVector3 acc, out DVector3 jerk)
+        {
+            acc = DVector3.zero;
+            jerk = DVector3.zero;
+            if (sources == null || sources.Count == 0) return;
+
+            bool hasCenter = NBodyIntegrator.TryFindSource(sources, centerBodyId, out var center);
+            if (!hasCenter)
+            {
+                // 中心天体不在场里（如深空群组）：无计划可言，差分退化为全量场
+                NBodyIntegrator.FieldAccelJerk(pos, vel, sources, out acc, out jerk);
+                return;
+            }
+
+            var centerDef = GetBodyById(centerBodyId);
+            GravitySource parent = default;
+            bool hasParent = false;
+            if (centerDef != null && centerDef.ParentBodyId >= 0)
+                hasParent = NBodyIntegrator.TryFindSource(sources, centerDef.ParentBodyId, out parent);
+
+            NBodyIntegrator.FieldMinusPlanAccelJerk(pos, vel, center, hasCenter, parent, hasParent,
+                sources, out acc, out jerk);
+        }
+
+        /// <summary>把天体的位置/速度从"相对父天体"累加到"相对根天体"（不含根自身轨道）。</summary>
+        private void AccumulateToRoot(CelestialBodyDef body, int rootId, double tick, out DVector3 pos, out DVector3 vel)        {
+            pos = DVector3.zero;
+            vel = DVector3.zero;
+
+            var cur = body;
+            int guard = 0;
+            while (cur != null && cur.bodyId != rootId && guard++ < 64)
+            {
+                pos += GetBodyLocalPosition(cur.bodyId, tick);
+                vel += GetBodyLocalVelocity(cur.bodyId, tick);
+                cur = cur.ParentBodyId >= 0 ? GetBodyById(cur.ParentBodyId) : null;
+            }
         }
 
         public CelestialBodyDef GetStar()
@@ -263,47 +394,65 @@ namespace PioneerFramework
 
         // ── 轨道位置计算 ──
 
-        // 第 8 条（2026-09-10）：天体世界位置/速度是 (bodyId, tick) 的**纯函数**（递归父链 + 每级
-        // Cos/Sin），而射弹弹道是"每弹每步 × 每个引力源"都要查一遍（ComputeProjectileGravity）。
-        // 故按 bodyId 记忆最近一次 tick 的结果：同 tick 内重复查询直接命中（天体数少，内存可忽略）。
-        private readonly Dictionary<int, (double tick, DVector3 v)> bodyPosCache = new Dictionary<int, (double, DVector3)>();
-        private readonly Dictionary<int, (double tick, DVector3 v)> bodyVelCache = new Dictionary<int, (double, DVector3)>();
+        // 第 8 条（2026-09-10）世界系 + 第 24 条（2026-09-14）局部系：天体位置/速度是 (bodyId, tick) 的
+        // **纯函数**（递归父链 + 每级 Cos/Sin），同一个 tick 内会被反复查询 —— 世界系来自射弹弹道
+        // （每段每引力源一次）、局部系来自 A0 之后的群组引力场（每群组每步一次）。故按天体槽位记住
+        // "最近一次算过的 tick → 位置/速度"。
+        // 缓存本体是 **BodySampleCache**（纯类型，见其文档）：不可变采样 + 原子槽位写入 ——
+        // 因为群组物理在 Parallel.For 里，这些缓存会被多线程并发读写（2026-09-14 游戏内实测到
+        // 值类型元组 + Dictionary 版本的撕裂写入，详见那个类型的注释）。
+        private readonly BodySampleCache localSamples = new BodySampleCache();
+        private readonly BodySampleCache worldSamples = new BodySampleCache();
+
+        /// <summary>bodyId → 槽位（`EnsureInitialized` 里重建后**只读**；并发读字典安全，写只落在数组元素上）。</summary>
+        private Dictionary<int, int> bodySlots = new Dictionary<int, int>();
+
+        private int SlotOf(int bodyId)
+            => bodySlots.TryGetValue(bodyId, out var s) ? s : -1;
 
         /// <summary>
-        /// 计算天体在给定 tick 的世界空间位置（第 8 条：按 (bodyId, tick) 记忆化）。
+        /// 计算天体在给定 tick 的**绝对位置**（递归到恒星：地球的值里含着 120,000 km 的绕日偏移）。
+        ///
+        /// ⚠ **坐标系约定 —— 全库唯一出处**。历史上两次事故都源于跨系混用
+        /// （2026-09-10 星座锚点把绝对位置当群组系用 → 12 万 km 帧错；2026-09-14 弹头引力
+        /// 拿系统系坐标减绝对坐标 → 太阳项被算成 800 m/s²）。改相关代码前先读这一段：
+        ///
+        ///   · **系统系**（根行星/恒星为中心、根钉住）：
+        ///     `SpaceEntityGroup.CurrentOrbit.position`、`ProjectileInstance.position`、
+        ///     `CollectSystemSources` 给出的源位置。**碰撞 / 圆轨解析 / N 体积分 / 制导全在此系** ——
+        ///     做这些运算就别离开系统系（这也是 A0 让"引力不需要环绕天体参量"的前提）。
+        ///   · **天体局部系**（相对该天体的父天体）：
+        ///     `GetBodyLocalPosition/Velocity(bodyId)`、`SpaceEntityGroup.localPosition`（相对 `CelestialBodyId`）、
+        ///     `GetCentralBodyOffset`。
+        ///   · **绝对系**（递归到恒星）：本方法。**只用于渲染与跨系展示**（星图 / 3D 视图 / 轨道线）。
+        ///     拿它去减系统系坐标 = 凭空叠加一个行星公转偏移，量级上直接毁掉结果。
+        ///
+        ///   跨系运算必须**显式换算**（例：目标系坐标 = 该天体在目标系中的位置 + 对象在目标系中的偏移）。
+        ///   相关交叉引用：`ConstellationGameComp.AnchorWorldPosition`、`ConstellationCore.AnchorWorldPosition`、
+        ///   `ConstellationSelfTest`（独立口径校验）、`NBodyIntegrator.FieldMinusPlanAccelJerk`。
         /// </summary>
         public DVector3 GetBodyWorldPosition(int bodyId, double tick)
         {
-            if (bodyPosCache.TryGetValue(bodyId, out var c) && c.tick == tick)
-            {
-                if (PerfProbe.Enabled) PerfProbe.NoteBodyPosHit();
-                return c.v;
-            }
             var body = GetBodyById(bodyId);
             if (body == null) return DVector3.zero;
+
+            int slot = SlotOf(bodyId);
+            if (slot >= 0 && worldSamples.TryGet(slot, tick, out var cPos, out _))
+            {
+                if (PerfProbe.Enabled) PerfProbe.NoteBodyPosHit();
+                return cPos;
+            }
+
             var pos = GetBodyWorldPosition(body, tick);
-            bodyPosCache[bodyId] = (tick, pos);
+            var vel = GetBodyWorldVelocity(body, tick);
+            worldSamples.Store(slot, tick, pos, vel);   // slot<0 时 Store 空转（未登记天体：不缓存）
             if (PerfProbe.Enabled) PerfProbe.NoteBodyPosMiss();
             return pos;
         }
 
         private DVector3 GetBodyWorldPosition(CelestialBodyDef body, double tick)
         {
-            DVector3 localPos = DVector3.zero;
-
-            if (body.HasOrbit)
-            {
-                double angularVelocity = 2.0 * System.Math.PI / body.orbitPeriod;
-                double phase = body.initialPhase + angularVelocity * tick;
-
-                DVector3 refX, refY;
-                body.GetOrbitFrame(out refX, out refY);
-
-                double cos = System.Math.Cos(phase);
-                double sin = System.Math.Sin(phase);
-
-                localPos = body.orbitRadius * (cos * refX + sin * refY);
-            }
+            DVector3 localPos = GetBodyLocalPositionCore(body, tick);
 
             if (body.ParentBodyId >= 0)
             {
@@ -322,15 +471,19 @@ namespace PioneerFramework
         /// </summary>
         public DVector3 GetBodyWorldVelocity(int bodyId, double tick)
         {
-            if (bodyVelCache.TryGetValue(bodyId, out var c) && c.tick == tick)
-            {
-                if (PerfProbe.Enabled) PerfProbe.NoteBodyPosHit();
-                return c.v;
-            }
             var body = GetBodyById(bodyId);
             if (body == null || !body.HasOrbit) return DVector3.zero;
+
+            int slot = SlotOf(bodyId);
+            if (slot >= 0 && worldSamples.TryGet(slot, tick, out _, out var cVel))
+            {
+                if (PerfProbe.Enabled) PerfProbe.NoteBodyPosHit();
+                return cVel;
+            }
+
+            var pos = GetBodyWorldPosition(body, tick);
             var vel = GetBodyWorldVelocity(body, tick);
-            bodyVelCache[bodyId] = (tick, vel);
+            worldSamples.Store(slot, tick, pos, vel);
             if (PerfProbe.Enabled) PerfProbe.NoteBodyPosMiss();
             return vel;
         }
@@ -339,17 +492,7 @@ namespace PioneerFramework
         {
             if (!body.HasOrbit) return DVector3.zero;
 
-            double angularVelocity = 2.0 * System.Math.PI / body.orbitPeriod;
-            double phase = body.initialPhase + angularVelocity * tick;
-
-            DVector3 refX, refY;
-            body.GetOrbitFrame(out refX, out refY);
-
-            // 位置 = R·(cos·refX + sin·refY)
-            // 速度 = ω·R·(-sin·refX + cos·refY)
-            double cos = System.Math.Cos(phase);
-            double sin = System.Math.Sin(phase);
-            DVector3 localVel = (body.orbitRadius * angularVelocity) * (-sin * refX + cos * refY);
+            DVector3 localVel = GetBodyLocalVelocityCore(body, tick);
 
             // 若绕父天体公转，父天体本身也可能在运动 → 叠加父天体速度
             if (body.ParentBodyId >= 0)
@@ -363,14 +506,14 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 计算天体在其父天体中心坐标系中的轨道位置。
-        /// 例如月球的返回值是「以地球为原点的月球轨道位置」。
-        /// 对没有轨道或 Star 类型返回零向量。
+        /// （无缓存）天体在其父天体中心系中的轨道位置 = R·(cos·refX + sin·refY)。
+        /// **全库唯一出处**——世界系递归（`GetBodyWorldPosition`）、局部系缓存入口
+        /// （`GetBodyLocalPosition`）都经此，相位/参考系算式不再有第二份（改这里 = 改全部调用方）。
+        /// （`GetOrbitPathUnity` 不在列：它画的是整条椭圆，逐点取 angle=2πi/N，不评估相位。）
         /// </summary>
-        public DVector3 GetBodyLocalPosition(int bodyId, double tick)
+        private DVector3 GetBodyLocalPositionCore(CelestialBodyDef body, double tick)
         {
-            var body = GetBodyById(bodyId);
-            if (body == null || !body.HasOrbit) return DVector3.zero;
+            if (!body.HasOrbit) return DVector3.zero;
 
             double angularVelocity = 2.0 * System.Math.PI / body.orbitPeriod;
             double phase = body.initialPhase + angularVelocity * tick;
@@ -383,14 +526,10 @@ namespace PioneerFramework
             return body.orbitRadius * (cos * refX + sin * refY);
         }
 
-        /// <summary>
-        /// 计算天体在其父天体中心坐标系中的轨道速度。
-        /// 对没有轨道或 Star 类型返回零向量。
-        /// </summary>
-        public DVector3 GetBodyLocalVelocity(int bodyId, double tick)
+        /// <summary>（无缓存）局部轨道速度 = ωR·(-sin·refX + cos·refY)。同上，唯一出处。</summary>
+        private DVector3 GetBodyLocalVelocityCore(CelestialBodyDef body, double tick)
         {
-            var body = GetBodyById(bodyId);
-            if (body == null || !body.HasOrbit) return DVector3.zero;
+            if (!body.HasOrbit) return DVector3.zero;
 
             double angularVelocity = 2.0 * System.Math.PI / body.orbitPeriod;
             double phase = body.initialPhase + angularVelocity * tick;
@@ -401,6 +540,69 @@ namespace PioneerFramework
             double cos = System.Math.Cos(phase);
             double sin = System.Math.Sin(phase);
             return (body.orbitRadius * angularVelocity) * (-sin * refX + cos * refY);
+        }
+
+        // 第 24 条（2026-09-14）：**局部系**变体此前没有缓存。A0 之后每个群组每物理步都要经
+        // CollectSystemSources → AccumulateToRoot 沿父链对每颗子天体各查一次位置/速度，于是
+        // 同一 tick 内同一颗月球被**每个群组各重算一遍**（N 组 × 天体数 × 2 次三角）。
+        // 与第 8 条同型：局部位置是 (bodyId, tick) 的纯函数（轨道参数来自静态 Def，父链不经此）。
+        // 注意读档会在 ExposeData 里把 initialized 置回 false，而 tick 会回退到曾经用过的值
+        // ——所以 EnsureInitialized 重建天体表时必须 Reset 这些缓存（连同槽位映射一起重建）。
+
+        /// <summary>
+        /// 计算天体在其父天体中心坐标系中的轨道位置。
+        /// 例如月球的返回值是「以地球为原点的月球轨道位置」。
+        /// 对没有轨道或 Star 类型返回零向量。
+        /// </summary>
+        public DVector3 GetBodyLocalPosition(int bodyId, double tick)
+        {
+            var body = GetBodyById(bodyId);
+            if (body == null || !body.HasOrbit) return DVector3.zero;
+
+            int slot = SlotOf(bodyId);
+            if (slot >= 0 && localSamples.TryGet(slot, tick, out var cPos, out _))
+            {
+                if (PerfProbe.Enabled) PerfProbe.NoteBodyLocalPosHit();
+                if (PerfProbe.Enabled && PerfProbe.ShadowChecks)
+                {
+                    // 影子：命中时用无缓存算式再算一遍。算式本身已无第二份（同一 Core），所以这里
+                    // 能抓的只有**采样与 tick 不一致**（撕裂写入 / 缓存陈旧）。2026-09-14 就是这么
+                    // 抓到"值类型元组 + Dictionary"版本在 Parallel.For 下的撕裂（3 次，Δ=5–31 m）。
+                    PerfProbe.BodyLocalShadow(bodyId, cPos, GetBodyLocalPositionCore(body, tick), tick, "局部位置");
+                }
+                return cPos;
+            }
+
+            var pos = GetBodyLocalPositionCore(body, tick);
+            var vel = GetBodyLocalVelocityCore(body, tick);
+            localSamples.Store(slot, tick, pos, vel);   // slot<0 = 未登记天体：不缓存，直接算
+            if (PerfProbe.Enabled) PerfProbe.NoteBodyLocalPosMiss();
+            return pos;
+        }
+
+        /// <summary>
+        /// 计算天体在其父天体中心坐标系中的轨道速度。
+        /// 对没有轨道或 Star 类型返回零向量。
+        /// </summary>
+        public DVector3 GetBodyLocalVelocity(int bodyId, double tick)
+        {
+            var body = GetBodyById(bodyId);
+            if (body == null || !body.HasOrbit) return DVector3.zero;
+
+            int slot = SlotOf(bodyId);
+            if (slot >= 0 && localSamples.TryGet(slot, tick, out _, out var cVel))
+            {
+                if (PerfProbe.Enabled) PerfProbe.NoteBodyLocalPosHit();
+                if (PerfProbe.Enabled && PerfProbe.ShadowChecks)
+                    PerfProbe.BodyLocalShadow(bodyId, cVel, GetBodyLocalVelocityCore(body, tick), tick, "局部速度");
+                return cVel;
+            }
+
+            var pos = GetBodyLocalPositionCore(body, tick);
+            var vel = GetBodyLocalVelocityCore(body, tick);
+            localSamples.Store(slot, tick, pos, vel);
+            if (PerfProbe.Enabled) PerfProbe.NoteBodyLocalPosMiss();
+            return vel;
         }
 
         /// <summary>

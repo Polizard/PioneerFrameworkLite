@@ -316,54 +316,10 @@ namespace PioneerFramework
             int currentTick = Find.TickManager.TicksGame;
             combatStartTick = currentTick;
             var spaceGameComp = Current.Game.GetComponent<SpaceGameComp>();
-            var celestialMgr = Current.Game.GetComponent<CelestialBodyManager>();
+            if (spaceGameComp == null) return;
 
-            if (spaceGameComp == null || celestialMgr == null) return;
-
-            foreach (var group in spaceGameComp.GetAllGroups())
-            {
-                if (!group.IsMovable) continue;
-
-                DVector3 currentPos = group.CurrentOrbit.position;
-                DVector3 currentVel = group.CurrentOrbit.velocity;
-
-                var primaryBody = celestialMgr.GetBodyById(group.CelestialBodyId);
-                if (primaryBody != null)
-                {
-                    // 重力采样用 physicsTick（物理时间轴）；baseTick 保持 realTick 供插值索引
-                    double physicsTick = GetPhysicsTick();
-                    DVector3 relPos, relVel;
-                    if (primaryBody.bodyType != CelestialBodyType.Planet)
-                    {
-                        DVector3 bodyPos = celestialMgr.GetBodyLocalPosition(primaryBody.bodyId, physicsTick);
-                        DVector3 bodyVel = celestialMgr.GetBodyLocalVelocity(primaryBody.bodyId, physicsTick);
-                        relPos = currentPos - bodyPos;
-                        relVel = currentVel - bodyVel;
-                    }
-                    else
-                    {
-                        relPos = currentPos;
-                        relVel = currentVel;
-                    }
-
-                    NBodyIntegrator.MultiBodyAccelJerk(
-                        relPos, relVel,
-                        physicsTick, primaryBody, celestialMgr,
-                        group.orbitKeepingWhitelist,
-                        out var acc, out var jerk);
-
-                    group.CombatCache = new SpaceEntityGroup.PhysicsStateCache
-                    {
-                        baseTick = currentTick,
-                        startPos = currentPos,
-                        startVel = currentVel,
-                        acc = acc,
-                        jerk = jerk,
-                        dt = 2.0,
-                        offset = 0.0
-                    };
-                }
-            }
+            // 采样与插值算式的唯一实现在 SpaceGameComp（此前这里是一份平行副本，已废止）
+            spaceGameComp.RebuildAllCombatCaches(currentTick);
         }
 
         private int GetNextStepBoundary(int currentTick)

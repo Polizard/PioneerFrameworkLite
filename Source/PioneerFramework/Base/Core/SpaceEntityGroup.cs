@@ -233,12 +233,14 @@ namespace PioneerFramework
 
             public DVector3 InterpolatePosition(double t)
             {
-                return startPos + t * startVel + 0.5 * t * t * acc + (t * t * t) / 6.0 * jerk;
+                NBodyIntegrator.TaylorInterpolate(startPos, startVel, acc, jerk, t, out var p, out _);
+                return p;
             }
 
             public DVector3 InterpolateVelocity(double t)
             {
-                return startVel + t * acc + 0.5 * t * t * jerk;
+                NBodyIntegrator.TaylorInterpolate(startPos, startVel, acc, jerk, t, out _, out var v);
+                return v;
             }
         }
 

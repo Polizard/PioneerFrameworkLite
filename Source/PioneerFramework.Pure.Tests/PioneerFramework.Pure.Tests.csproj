@@ -23,6 +23,9 @@
     <Compile Include="..\PioneerFramework\Base\Orbital\OrbitMath.cs" Link="Pure\OrbitMath.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\Gooding.cs" Link="Pure\Gooding.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\NBodyIntegrator.cs" Link="Pure\NBodyIntegrator.cs" />
+    <!-- 第 24 条的缓存本体是纯类型（不可变采样 + 原子槽位写入）：链接进来是为了能用纯测试**直接压测
+         它在多线程下的不变式**（命中 tick 相同 ⇒ 值必定属于该 tick）。游戏内的撕裂写入就是这么抓到的。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\BodySampleCache.cs" Link="Pure\BodySampleCache.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\BurnCore.cs" Link="Pure\BurnCore.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\LaunchGuidanceCore.cs" Link="Pure\LaunchGuidanceCore.cs" />
     <Compile Include="..\PioneerFramework\Base\Game\MissileGuidanceCore.cs" Link="Pure\MissileGuidanceCore.cs" />

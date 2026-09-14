@@ -8,6 +8,11 @@ namespace PioneerFramework
     /// 手动操舵 HUD 窗口（KSP 式）：绑定固定键位控制飞船平移/旋转/动作组/姿态对准。
     /// 打开时读键（Input.GetKey 保持态 + Event.current 离散态），状态写 SteeringController，
     /// 由 SpaceGameComp 每物理步应用。ESC 关闭。
+    ///
+    /// 目录说明（2026-09-14 D1）：本文件原在 `Base/Debug/`，但它是**玩家可达的正式 UI**
+    /// （由 `CompSteeringConsole` 的 Gizmo 打开，非 dev-only），放在 Debug 目录会误导
+    /// （让人以为"仅开发者可见"而低估其开销与回归面）。现与开它的 Comp 同目录——
+    /// 同惯例：`Window_VolleyCountSlider` 就在 `CompMissileLauncher.cs` 内。
     /// </summary>
     public class Window_Steering : Window
     {

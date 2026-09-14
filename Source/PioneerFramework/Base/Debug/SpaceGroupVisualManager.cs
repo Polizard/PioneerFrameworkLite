@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Emit;
@@ -100,8 +100,16 @@ namespace PioneerFramework
             cubeMesh = UnityEngine.Object.Instantiate(cubeGO.GetComponent<MeshFilter>().sharedMesh);
             UnityEngine.Object.DestroyImmediate(cubeGO);
 
-            // 应用 Harmony 补丁
+            // 应用 Harmony 补丁。
+            // B2：整段包 try/catch —— 补丁失败（如 RW 升级后 IL 改名）原本会让**静态构造抛异常**，
+            // 后果有两层且都不是"整个 mod 加载失败"（框架 `StaticConstructorOnStartupUtility.CallAll`
+            // 对每个类型独立 try/catch 只 Log.Error）：① 其后未执行的补丁**静默缺失**；
+            // ② 类型被 CLR 标记为不可用，之后任何静态访问都抛 TypeInitializationException
+            //    （`LaunchService` 会调本类的 `SetLaunchSiteTile` → **发射流程连带炸**）。
+            // 现在改为逐段可失败：报错并继续，让 mod 主功能与发射流程不受牵连。
             var harmony = new Harmony("PioneerFramework.SpaceGroupVisualManager");
+            try
+            {
             // 补丁1：渲染世界地图时绘制图标和轨道
             harmony.Patch(AccessTools.Method(typeof(WorldRenderer), "DrawWorldLayers"),
                 postfix: new HarmonyMethod(typeof(SpaceGroupVisualManager), nameof(WorldRenderer_DrawWorldLayers_Postfix)));
@@ -122,6 +130,12 @@ namespace PioneerFramework
             // 补丁4：在世界地图右下角添加开关按钮（更可靠）
             harmony.Patch(AccessTools.Method(typeof(WorldInterface), "WorldInterfaceOnGUI"),
                 prefix: new HarmonyMethod(typeof(SpaceGroupVisualManager), nameof(WorldInterface_OnGUI_Prefix_AddGizmo)));
+            }
+            catch (System.Exception ex)
+            {
+                Log.Error("[SpaceGroupVisualManager] Harmony 补丁应用失败（世界视图轨道/相机增强可能部分失效；"
+                    + "主功能与发射流程不受影响）：" + ex);
+            }
         }
 
         #region Harmony 补丁方法
