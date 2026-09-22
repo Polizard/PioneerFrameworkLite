@@ -107,5 +107,66 @@ namespace PioneerFramework
         /// </summary>
         public static double DeliveredOverCommanded(double appliedDvMagnitude, double commandedDv)
             => commandedDv > 1e-9 ? appliedDvMagnitude / commandedDv : double.NaN;
+
+        // ══════════════════════════════════════════════════════════════════════════════
+        //  ④ **队列整体**（B5-3，2026-09-23）—— 之前台架上"队列整体不存在"，只有
+        //  `LadderVsLawComparison.LadderPilot` 一个近似物（缺原子烧 / 三个 dt / 一步延迟）。
+        //  这里把**队列消费循环里那几条判据**收成一份；队列的状态本体仍在
+        //  `SpaceEntityGroup.plannedManeuvers`（本类**不另立队列类型** —— J3 影子类型禁令）。
+        // ══════════════════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// **队列非空 ⇒ 引导让位**（游戏 `SpaceGameComp.cs:3204`：`if (group.plannedManeuvers.Count > 0) continue;`）。
+        /// ⚠ 比纯规则严：`PlanOwnerRules.GuidanceMustYieldTo` 只让 Manual，而这里**任何**条目都让
+        /// （阶梯排的节点也算）—— 台架照这条走，否则会出现"两套机制交替上场"（实测：日志交替出现
+        /// `[阶梯] … 排入 2 发` 与 `[Guidance] … correction burn started (new-law)`）。
+        /// </summary>
+        public static bool GuidanceYieldsToQueue(int queueCount) => queueCount > 0;
+
+        /// <summary>
+        /// **预点火窗口**（游戏 `SpaceGameComp.cs:2607`）：进入节点前 `lookahead` 秒才开始处理这一条
+        /// （可行性校验 + 居中点火）。窗口值由调用方给（游戏是 `ManeuverPreBurnLookaheadTicks = 600`），
+        /// **本类不复制它的数值** —— 免得又多一份口径。
+        /// </summary>
+        public static bool InPreBurnWindow(double now, double executeTick, double lookaheadSeconds)
+            => now >= executeTick - lookaheadSeconds;
+
+        /// <summary>
+        /// **居中点火时刻**（游戏 `SpaceGameComp.cs:2717` 的唯一算式）：
+        /// `ignitionTick = UT − 燃时/2 + 相位扫描偏移 − 执行延迟`。
+        /// · 居中 ⇒ 冲量模型的"瞬间"落在燃烧中点（与 MJ 的 `ignitionUT = node.UT − halfBurnTime` 同构）；
+        /// · **燃时必须用点火那一刻的活质量估**（计划里的值是排队时算的，而轨道保持一直在扣工质 ⇒ 会过期
+        ///   ⇒ "半程"对不上 ⇒ 居中两端不对称）；
+        /// · 减**一个执行延迟** = 补掉"首次交付比点火晚一步"（见 `BurnArc.ExecutionDelaySeconds`）。
+        /// </summary>
+        public static double CenteredIgnitionTick(double executeTick, double burnSecondsForCenter,
+            double phaseShiftSeconds, double executionDelaySeconds)
+            => executeTick - burnSecondsForCenter / 2.0 + phaseShiftSeconds - executionDelaySeconds;
+
+        /// <summary>
+        /// ★ **MJ 的反打转纪律**（游戏 `SpaceGameComp.cs:3767-3785`）：**已进入"停下尺度"、
+        /// 而队列里下一条节点还在遥远的未来** ⇒ 删掉队列、改为就地匹配速度。
+        /// 上游原文：*If we get within the target distance and then next maneuver node is still far in the
+        /// future, delete it and we will create a new one to match velocities immediately.*
+        /// 作用：贴到目标附近之后，别再执行那些"为远处设计"的节点（实测没抄它 ⇒ 末端在 20 km 上反复画拦截，
+        /// `Intercept` ×63、Δv 合计 7397 m/s vs 政策估计 642）。
+        /// </summary>
+        /// <param name="distNow">到目标的当前距离（m）</param>
+        /// <param name="matchDistance">"停下尺度"（游戏 `rendezvousMatchDist`，100 m；**不是**完成容差）</param>
+        /// <param name="nextUt">队列里下一条节点的时刻</param>
+        /// <param name="now">当前时刻</param>
+        /// <param name="guardSeconds">"还在未来"的严格判据用的守卫（游戏传 1.0）</param>
+        public static bool ShouldDropRemoteNodes(double distNow, double matchDistance,
+            double nextUt, double now, double guardSeconds = 1.0)
+            => distNow < matchDistance && nextUt > now + guardSeconds;
+
+        /// <summary>
+        /// **撤回上一条计划未执行的节点**（游戏 `BeginLadderPlanEpoch` / `InvalidateStaleLadderNodes`）：
+        /// 阶梯一次排一对（起飞 + 到达刹车），重规划又排一对 ⇒ **旧的刹车仍会执行、且按过期计划的到达点施加**
+        /// ⇒ 一记按过期计划打的错向冲量（实测一步 1.5 km → 11.2 km）。
+        /// 判据：条目所属的 plan epoch 落后于当前 epoch ⇒ 撤回。
+        /// </summary>
+        public static bool ShouldRetractStaleNode(double nodePlanEpoch, double currentPlanEpoch)
+            => nodePlanEpoch < currentPlanEpoch;
     }
 }

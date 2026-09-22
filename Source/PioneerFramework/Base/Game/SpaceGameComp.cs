@@ -2604,7 +2604,8 @@ namespace PioneerFramework
                 }
 
                 // 预点火窗口：进入节点前 ManeuverPreBurnLookaheadTicks 才开始处理本条机动（可行性/点火）
-                if (physicsTick < pm.executeTick - ManeuverPreBurnLookaheadTicks)
+                // ★ B5：判据本体在 `BurnExecutorPolicy.InPreBurnWindow`（窗口值仍由这里给，不许复制数值）
+                if (!BurnExecutorPolicy.InPreBurnWindow(physicsTick, pm.executeTick, ManeuverPreBurnLookaheadTicks))
                     continue;
 
                 // ── 机动可行性校验（按本条机动选用的工质网络），区分失败原因 ──
@@ -2714,8 +2715,10 @@ namespace PioneerFramework
                 }
                 // ⚠ 偏移取自**群上**（跨步保留）；第一版用局部变量 ⇒ 每步归零、扫描白扫 ✗（见字段注释）
                 // − 一步 = 补掉"首次交付比点火晚一步"（见上）；+ 扫描出的相位（若选中）。
-                double ignitionTick = pm.executeTick - burnSecForCenter / 2.0 + group.burnPhaseShift
-                    - BurnArc.ExecutionDelaySeconds;
+                // ★ B5（2026-09-23）：这条算式的**唯一权威**已收到 `BurnExecutorPolicy.CenteredIgnitionTick`
+                //   （台架/纯测试同一份）——本处只调用，逐位同算式。
+                double ignitionTick = BurnExecutorPolicy.CenteredIgnitionTick(
+                    pm.executeTick, burnSecForCenter, group.burnPhaseShift, BurnArc.ExecutionDelaySeconds);
                 if (physicsTick < ignitionTick)
                     continue;
                 // ★★ **对准才点火**（上游纪律，2026-09-21 补）——
@@ -3201,7 +3204,9 @@ namespace PioneerFramework
                 if (group.HasActiveBurn && !group.burnIsCorrection) continue; // 机动 burn 不打断；修正 burn 允许重规划
 
                 // 队列里还有未执行机动（出发段在排队 / 玩家新排队）→ 引导让位
-                if (group.plannedManeuvers.Count > 0) continue;
+                // ★ B5：判据本体在 `BurnExecutorPolicy.GuidanceYieldsToQueue`（任何条目都让，不只 Manual ——
+                //   比纯规则 `PlanOwnerRules.GuidanceMustYieldTo` 严；台架同一份）
+                if (BurnExecutorPolicy.GuidanceYieldsToQueue(group.plannedManeuvers.Count)) continue;
 
                 // 出发段尚未执行（仅精确交会模式）：若机动已被弹出（被阻止/取消）则引导作废
                 // 接近模式无出发段（登记即生效），跳过此检查
@@ -3772,7 +3777,8 @@ namespace PioneerFramework
                     double nextUt = group.plannedManeuvers[0].executeTick;
                     // ⚠ 用**停下尺度**（上游的 100 m），不是完成容差 2 km ——
                     //   用 2 km 会在 2 km 就清队列（提前“就地匹配”）⇒ 又跟接近级打架 ✗
-                    if (distNow < group.rendezvousMatchDist && nextUt > physicsTick + 1.0)
+                    // ★ B5：判据本体在 `BurnExecutorPolicy.ShouldDropRemoteNodes`（台架同一份）
+                    if (BurnExecutorPolicy.ShouldDropRemoteNodes(distNow, group.rendezvousMatchDist, nextUt, physicsTick))
                     {
                         int dropped = group.plannedManeuvers.Count;
                         group.plannedManeuvers.Clear();
