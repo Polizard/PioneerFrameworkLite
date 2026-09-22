@@ -23,8 +23,7 @@ namespace PioneerFramework
         private static float followLerpSpeed = 5f;
         private static float lastFollowTime;
 
-        // 视觉自转不再累积存储，改用 GetVisualRotationAngle() 即时计算
-        private const float VisualDegPerDay = 360f / 60000f; // 0.006° 每 tick
+        // 视觉自转不再累积存储，改用 `ViewFrame.ToViewUnity` 即时计算（含被查看天体的自转周期）
 
         // 材质与资源
         private static Material iconMaterial;
@@ -206,30 +205,26 @@ namespace PioneerFramework
                 if (group.IsActive && !group.IsSurfaceAnchor && earthSystemBodyIds.Contains(group.CelestialBodyId))
                     DrawGroupIcon(group, camera);
 
-            // ── 天然卫星渲染（地球的卫星，根据 XML 定义动态渲染）──
+            // ── 天体渲染（2026-09-23：**除"被查看的那颗"以外**的全部，含地球与太阳）──
+            //   被查看的那颗由 RimWorld 的 PlanetLayer 画（球心 = 视图系原点）；其余天体按**系统系位置**摆
+            //   ⇒ 切到月球时，地球与绕地的船都在 −月球偏移 处（1,570 Unity 单位外，看得见但很远）。
             if (celestialMgr != null)
             {
-                var earthDef = celestialMgr.GetBodyById(EARTH_BODY_ID);
-                if (earthDef != null && earthDef.moonBodies.Count > 0)
+                double bodyTick = PhysicsTickNow();
+                foreach (var body in celestialMgr.GetAllBodies())
                 {
-                    int currentTick = (int)TimeScaleManager.GetPhysicsTickSafe();
-                    foreach (var moon in earthDef.moonBodies)
-                    {
-                        DVector3 moonPosMeters = celestialMgr.GetBodyLocalPosition(moon.bodyId, currentTick);
-                        Vector3 moonPosUnity = (Vector3)(moonPosMeters * SpaceConstants.UnitsPerMeter);
-                        Vector3 worldPos = GetOrbitOrigin() + ApplyVisualRotation(moonPosUnity);
+                    if (body.bodyId == ViewFrame.ViewedBodyId) continue;   // 自己被 RW 画
+                    if (!body.IsGravitySource) continue;                    // 无质量装饰天体不画
+                    Vector3 worldPos = ViewFrame.ToViewUnity(
+                        ViewFrame.BodySystemPosition(body.bodyId, bodyTick), bodyTick);
+                    if (!IsWorldPosVisible(worldPos, 1f)) continue;
 
-                        if (!IsWorldPosVisible(worldPos, 1f)) continue;
-
-                        // 卫星大小：物理半径映射到Unity单位，保证最小可见大小
-                        float moonRadiusUnity = (float)(moon.radius * SpaceConstants.UnitsPerMeter);
-                        float minMoonSize = 2f;
-                        float size = Mathf.Max(moonRadiusUnity, minMoonSize);
-
-                        // 渲染为白色3D球体
-                        Matrix4x4 sphereMatrix = Matrix4x4.TRS(worldPos, Quaternion.identity, Vector3.one * size);
-                        Graphics.DrawMesh(sphereMesh, sphereMatrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer);
-                    }
+                    // 物理半径 → Unity 缩放（⚠ 球网格直径 1 ⇒ 见 ViewFrame.RadiusToSphereScale；原来按半径缩放
+                    //   画出来只有一半，切到月球视图时"地球半径/绕地轨道看着不对"就是这么来的）
+                    float scale = ViewFrame.RadiusToSphereScale((float)body.radius, sphereMesh);
+                    if (scale < 2f) scale = 2f;   // 远距离最小可见尺寸（缩放值口径）
+                    Matrix4x4 sphereMatrix = Matrix4x4.TRS(worldPos, Quaternion.identity, Vector3.one * scale);
+                    Graphics.DrawMesh(sphereMesh, sphereMatrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer);
                 }
             }
 
@@ -366,8 +361,7 @@ namespace PioneerFramework
                         if (targetPos.HasValue)
                         {
                             // 目标到达点用不同颜色
-                            Vector3 origin = GetOrbitOrigin();
-                            Vector3 worldPos = origin + ApplyVisualRotation(targetPos.Value);
+                            Vector3 worldPos = ToView(targetPos.Value);
                             if (IsWorldPosVisible(worldPos, 1f))
                             {
                                 Vector3 toCam = Find.WorldCamera.transform.position - worldPos;
@@ -546,41 +540,32 @@ namespace PioneerFramework
 
         #region 核心辅助函数（单位转换关键）
 
-        private static Vector3 GetOrbitOrigin()
-        {
-            // 在 PioneerFramework 中，星球中心为原点（Unity 单位）
-            return Vector3.zero;
-        }
+        /// <summary>本帧的物理时刻（**保留 double**）：渲染与物理必须同一 tick —— int 化在 1/60× 流速下
+        /// 会让天体位置每 60 真实 tick 跳 1 秒（PFView `:1003-1008` 的实测结论）。</summary>
+        private static double PhysicsTickNow() => TimeScaleManager.GetPhysicsTickSafe();
+
+        /// <summary>系统系（Unity 单位）→ 视图系。**薄转发**，算式在 `ViewFrame` 里只有一份。</summary>
+        private static Vector3 ToView(Vector3 systemFrameUnity)
+            => ViewFrame.ToViewUnityFromUnity(systemFrameUnity, PhysicsTickNow());
 
         /// <summary>
-        /// 对轨道相对位置叠加视觉自转（绕极轴旋转，仅影响渲染）。
-        /// 输入/输出均为相对于轨道原点的 Unity 单位矢量。
-        /// 视觉自转 = 360°/游戏日，用当前 tick 即时计算，无累计漂移。
+        /// 视图系的原点 = **被查看天体的球心**（`ViewFrame.ToViewUnity` 已减掉它的系统系偏移）
+        /// ⇒ 这里恒为零。⚠ 2026-09-23 前它被当作"根行星球心"用，而玩家切到月球时那就不成立了。
         /// </summary>
-        private static Vector3 ApplyVisualRotation(Vector3 posUnity)
-        {
-            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
-            float visAngle = (float)(physicsTick % 60000) * VisualDegPerDay;
-            return Quaternion.AngleAxis(visAngle, Vector3.up) * posUnity;
-        }
+        private static Vector3 GetOrbitOrigin() => Vector3.zero;
 
         /// <summary>
-        /// 获取 Group 在世界地图中的 Unity 单位位置（已从米制转换）
-        /// 视觉自转对所有 Group 统一叠加，圆轨/积分切换时无跳变。
+        /// 获取 Group 在**视图系**中的 Unity 单位位置。
+        /// 位置源恒为**系统系**（圆轨解析位置内部已含中心天体偏移）；换系与视觉自转由 `ViewFrame` 一并处理
+        /// ⇒ 圆轨/积分切换无跳变，切天体视图时整场一起平移（2026-09-23）。
         /// </summary>
         private static Vector3 GetGroupWorldPositionUnity(SpaceEntityGroup group)
         {
-            Vector3 posMeters;
-            if (group.IsCircularOrbit)
-            {
-                double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
-                posMeters = group.GetCircularPositionAtTick(physicsTick);
-            }
-            else
-                posMeters = group.CurrentOrbit.position;
-
-            Vector3 posUnity = (Vector3)((DVector3)posMeters * SpaceConstants.UnitsPerMeter);
-            return GetOrbitOrigin() + ApplyVisualRotation(posUnity);
+            double physicsTick = PhysicsTickNow();
+            DVector3 posSystemFrame = group.IsCircularOrbit
+                ? group.GetCircularPositionAtTick(physicsTick)
+                : group.CurrentOrbit.position;
+            return ViewFrame.ToViewUnity(posSystemFrame, physicsTick);
         }
 
         private static bool IsWorldPosVisible(Vector3 worldPosUnity, float occlusionMargin)
@@ -596,7 +581,7 @@ namespace PioneerFramework
             if (facing >= 0) return true;
 
             float perpDist = radius * Mathf.Sqrt(1 - facing * facing);
-            float planetRadius = Find.WorldGrid.Surface.Radius;
+            float planetRadius = ViewFrame.ViewedBodyRadiusUnity;   // 被查看天体的球半径（地球 100 / 月球 30）
             return perpDist > planetRadius + occlusionMargin;
         }
 
@@ -652,21 +637,14 @@ namespace PioneerFramework
 
             var points = new List<Vector3>(sampleCount);
 
-            // 如果中心天体不是行星，需要偏移到中心天体位置
+            // 中心天体在**系统系**里的偏移：根行星为 0、卫星为绕地位置。
+            // ⚠ 走 `ViewFrame.BodySystemPosition`（"天体在系统系的位置"的唯一口径），
+            //   并**保留 double tick** —— 原来这里是 `(int)Math.Round` ⇒ 1/60× 流速下位置离散跳变。
             Vector3 centralBodyOffsetUnity = Vector3.zero;
             if (group.circularCentralBodyId >= 0)
             {
-                var celestialMgrVis = Current.Game?.GetComponent<CelestialBodyManager>();
-                if (celestialMgrVis != null)
-                {
-                    var centralDefVis = celestialMgrVis.GetBodyById(group.circularCentralBodyId);
-                    if (centralDefVis != null && centralDefVis.bodyType != CelestialBodyType.Planet)
-                    {
-                        DVector3 offsetMeters = celestialMgrVis.GetBodyLocalPosition(
-                            group.circularCentralBodyId, (int)TimeScaleManager.GetPhysicsTickSafe());
-                        centralBodyOffsetUnity = (Vector3)(offsetMeters * SpaceConstants.UnitsPerMeter);
-                    }
-                }
+                centralBodyOffsetUnity = (Vector3)(ViewFrame.BodySystemPosition(
+                    group.circularCentralBodyId, PhysicsTickNow()) * SpaceConstants.UnitsPerMeter);
             }
 
             for (int i = 0; i < sampleCount; i++)
@@ -689,31 +667,47 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 世界视图发射点标记：红色正方体钉在发射 tile 表面（固连系）。
-        /// 位置直接取 Find.WorldGrid.GetTileCenter（星球贴图渲染真值）——与叠加渲染的火箭
-        /// （ApplyVisualRotation 后钉在同一 tile）形成天地对照锚点；未发射时回退到玩家据点 tile。
+        /// 世界视图发射点标记：红色正方体钉在**被查看天体**地表的发射 tile 上。
+        /// 2026-09-23 改：原来写死 `Find.WorldGrid.Surface`（地球层）+ 地球半径 ⇒ 切到月球后标记会飞；
+        /// 现在按被查看天体的 layer 取 tile 真值，经 `SurfaceFrame.FixedToEci` 折进系统系，再走唯一换系口。
         /// </summary>
         private static void DrawLaunchSiteMarker(Camera cam)
         {
-            int tile = launchSiteTile;
-            if (tile < 0)
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            int viewed = ViewFrame.ViewedBodyId;
+            var viewLayer = Launch.GetSurfaceState.GetLayerForBody(mgr, viewed);
+            var viewBody = mgr?.GetBodyById(viewed);
+            if (viewLayer == null || viewBody == null) return;
+
+            // tile 来源：优先"发射点"（在地球上 ⇒ 只有看地球时才画），否则玩家据点的 tile（自带 layer）
+            int tile = -1;
+            if (launchSiteTile >= 0 && viewed == ViewFrame.RootPlanetId(mgr))
+                tile = launchSiteTile;
+            else
             {
                 foreach (var s in Find.WorldObjects.Settlements)
                 {
-                    if (s != null && s.Faction == Faction.OfPlayer && s.Tile >= 0) { tile = s.Tile; break; }
+                    if (s == null || s.Faction != Faction.OfPlayer || !s.Tile.Valid) continue;
+                    if (s.Tile.LayerDef?.defName != viewLayer.Def?.defName) continue;
+                    tile = s.Tile.tileId;
+                    break;
                 }
             }
-            if (tile < 0) return;
+            if (tile < 0 || tile >= viewLayer.TilesCount) return;
 
-            float radius = Find.WorldGrid.Surface.Radius;
-            Vector3 radial = Find.WorldGrid.GetTileCenter(tile).normalized;
-            Vector3 drawPos = radial * (radius + 4f);   // 贴表面略抬（云层 +0.2，辉光 +16）
+            double tick = PhysicsTickNow();
+            double omega = Launch.GetSurfaceState.RotationOmega(mgr, viewed);
+            DVector3 systemPos = SurfaceFrame.FixedToEci(
+                Launch.GetSurfaceState.TileToFixedPosition(viewLayer, tile, viewBody.radius), omega, tick);
+            Vector3 onSurface = ViewFrame.ToViewUnity(systemPos, tick);
+            Vector3 radialView = onSurface.sqrMagnitude > 1e-6f ? onSurface.normalized : Vector3.up;
+            Vector3 drawPos = onSurface + radialView * 4f;   // 贴表面略抬（云层 +0.2，辉光 +16）
 
             if (!IsWorldPosVisible(drawPos, 0.5f)) return;
 
             // 立方体 Y 轴对齐地表法线"立"在地面，轻微脉动便于远距离辨认
             float pulse = 1f + 0.12f * Mathf.Sin(Time.realtimeSinceStartup * 3f);
-            Quaternion rot = Quaternion.FromToRotation(Vector3.up, radial);
+            Quaternion rot = Quaternion.FromToRotation(Vector3.up, radialView);
             Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, Vector3.one * (12f * pulse));
             orbitMarkerPropertyBlock.SetColor("_Color", new Color(1f, 0.15f, 0.1f, 0.95f));
             Graphics.DrawMesh(cubeMesh, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
@@ -724,10 +718,9 @@ namespace PioneerFramework
         /// </summary>
         private static void DrawOrbitPath(List<Vector3> pointsUnity, Color color, float size, Camera cam)
         {
-            Vector3 origin = GetOrbitOrigin();
             for (int i = 0; i < pointsUnity.Count; i++)
             {
-                Vector3 worldPos = origin + ApplyVisualRotation(pointsUnity[i]);
+                Vector3 worldPos = ToView(pointsUnity[i]);
                 if (!IsWorldPosVisible(worldPos, 1f)) continue;
 
                 Vector3 toCam = cam.transform.position - worldPos;
@@ -746,8 +739,7 @@ namespace PioneerFramework
         /// </summary>
         private static void DrawManeuverNode(Vector3 nodePosUnity, Camera cam, Color? color = null, float baseSize = 2.5f)
         {
-            Vector3 origin = GetOrbitOrigin();
-            Vector3 worldPos = origin + ApplyVisualRotation(nodePosUnity);
+            Vector3 worldPos = ToView(nodePosUnity);
             if (!IsWorldPosVisible(worldPos, 1f)) return;
 
             Vector3 toCam = cam.transform.position - worldPos;
@@ -771,7 +763,6 @@ namespace PioneerFramework
         private static void DrawOrbitMarkersForGroup(SpaceEntityGroup group, Camera cam)
         {
             float toUnity = (float)SpaceConstants.UnitsPerMeter;
-            Vector3 origin = GetOrbitOrigin();
 
             // 获取轨道状态
             DVector3 posMetersD, velMetersD;
@@ -799,8 +790,8 @@ namespace PioneerFramework
                 Vector3 pePos = (Vector3)(eDir * peDist * toUnity);
                 Vector3 apPos = (Vector3)(-eDir * apDist * toUnity);
 
-                DrawOrbitMarker(origin + ApplyVisualRotation(pePos), MarkerColorPeriapsis, 1.8f, cam, "Pe");
-                DrawOrbitMarker(origin + ApplyVisualRotation(apPos), MarkerColorApoapsis, 1.8f, cam, "Ap");
+                DrawOrbitMarker(ToView(pePos), MarkerColorPeriapsis, 1.8f, cam, "Pe");
+                DrawOrbitMarker(ToView(apPos), MarkerColorApoapsis, 1.8f, cam, "Ap");
             }
 
             // 绘制 AN/DN 标记（非共面时）。
@@ -818,8 +809,8 @@ namespace PioneerFramework
                 DVector3 dnPos = OrbitView.ToD(ovDbg.DescendingNodePositionEquatorial(0.0));
                 if (anPos.sqrMagnitude > 0.001)
                 {
-                    DrawOrbitMarker(origin + ApplyVisualRotation((Vector3)(anPos * toUnity)), MarkerColorAn, 1.6f, cam, "AN");
-                    DrawOrbitMarker(origin + ApplyVisualRotation((Vector3)(dnPos * toUnity)), MarkerColorDn, 1.6f, cam, "DN");
+                    DrawOrbitMarker(ToView((Vector3)(anPos * toUnity)), MarkerColorAn, 1.6f, cam, "AN");
+                    DrawOrbitMarker(ToView((Vector3)(dnPos * toUnity)), MarkerColorDn, 1.6f, cam, "DN");
                 }
             }
         }
@@ -1378,6 +1369,11 @@ namespace PioneerFramework
                 : "机动队列 (0)";
             if (Widgets.ButtonText(new Rect(leftX, y, panel.width - 24f, rowH), queueLabel))
                 Find.WindowStack.Add(new ManeuverQueueWindow(group));
+            y += rowH + rowGap;
+
+            // 行6：主动降落（选 tile + 付 Δv；结算在 SpaceGameComp.TryLandAtTile）
+            if (Widgets.ButtonText(new Rect(leftX, y, panel.width - 24f, rowH), "降落（选落点）"))
+                Find.WindowStack.Add(new Window_LandingTarget(spaceGame, group));
             GUI.color = Color.white;
             y += rowH + 12f;
         }

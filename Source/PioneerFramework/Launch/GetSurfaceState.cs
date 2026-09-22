@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using RimWorld.Planet;
 using UnityEngine;
 using Verse;
@@ -33,7 +33,7 @@ namespace PioneerFramework.Launch
         public const double DefaultDayLengthTicks = 60000.0;
 
         /// <summary>自转角速度 ω (rad/s)：2π/dayLengthTicks（1 tick = 1 s）。</summary>
-        public static double RotationOmega(CelestialBodyManager mgr, int bodyId)
+        public static double RotationOmega(CelestialBodyManager? mgr, int bodyId)
         {
             var body = mgr?.GetBodyById(bodyId);
             double dayTicks = body != null && body.dayLengthTicks > 0.0 ? body.dayLengthTicks : DefaultDayLengthTicks;
@@ -41,7 +41,7 @@ namespace PioneerFramework.Launch
         }
 
         /// <summary>地心半径 (m)。</summary>
-        public static double BodyRadius(CelestialBodyManager mgr, int bodyId)
+        public static double BodyRadius(CelestialBodyManager? mgr, int bodyId)
         {
             var body = mgr?.GetBodyById(bodyId);
             return body != null && body.radius > 0.0 ? body.radius : SpaceConstants.PlanetRadiusMeters;
@@ -95,7 +95,7 @@ namespace PioneerFramework.Launch
         /// 匹配规则与 CelestialBodyLayerManager 一致：planetLayerDefName 优先，否则用 body.defName。
         /// 无表面 / 未创建 layer 返回 null。
         /// </summary>
-        public static PlanetLayer GetLayerForBody(CelestialBodyManager mgr, int bodyId)
+        public static PlanetLayer GetLayerForBody(CelestialBodyManager? mgr, int bodyId)
         {
             var body = mgr?.GetBodyById(bodyId);
             if (body == null || !body.hasSurface) return null;
@@ -107,6 +107,21 @@ namespace PioneerFramework.Launch
                 if (kv.Value?.Def?.defName == defName) return kv.Value;
             }
             return null;
+        }
+
+        /// <summary>
+        /// <see cref="GetLayerForBody"/> 的**反向**：PlanetLayer → bodyId（找不到返回 -1）。
+        /// 与正向配对、**只有这一份**（渲染层"我现在在看哪颗天体"靠它反查；此前这段逻辑只内联在
+        /// `ConstellationGameComp.ResolveBodyIdForTile` 里）。
+        /// </summary>
+        public static int GetBodyForLayer(CelestialBodyManager? mgr, PlanetLayer layer)
+        {
+            if (mgr == null || layer == null) return -1;
+            foreach (var body in mgr.GetAllBodies())
+            {
+                if (GetLayerForBody(mgr, body.bodyId) == layer) return body.bodyId;
+            }
+            return -1;
         }
 
         /// <summary>tile → 固连系位置（米）：layer.GetTileCenter（渲染网格顶点中心）归一化 × 物理半径。任意 PlanetLayer。</summary>

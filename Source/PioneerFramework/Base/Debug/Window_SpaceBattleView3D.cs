@@ -316,13 +316,17 @@ namespace PioneerFramework
             if (celestialManager == null) return;
             var bodies = celestialManager.GetAllBodies();
             float toUnity = (float)SpaceConstants.UnitsPerMeter;
-            int tick = (int)Math.Round(TimeScaleManager.GetPhysicsTickSafe());
+            // ⚠ 2026-09-23 参考系统一：本窗口的**船**走系统系（`GetGroupUnityPos`），天体原来却走**绝对系**
+            //   （`GetBodyWorldPosition`，递归到恒星）⇒ 两者系统性错位 2,400 Unity 单位（地球绕日 120,000 km
+            //   ÷ 50 km/单位）。现在天体也走系统系（`ViewFrame.BodySystemPosition`），并**保留 double tick**
+            //   （int 化在 1/60× 流速下会让天体位置离散跳变）。
+            double tick = TimeScaleManager.GetPhysicsTickSafe();
 
             bodyPositionsUnity = new Dictionary<int, Vector3>(bodies.Count);
             foreach (var body in bodies)
             {
-                DVector3 worldPos = celestialManager.GetBodyWorldPosition(body.bodyId, tick);
-                bodyPositionsUnity[body.bodyId] = (Vector3)(worldPos * toUnity);
+                bodyPositionsUnity[body.bodyId] =
+                    (Vector3)(ViewFrame.BodySystemPosition(body.bodyId, tick) * toUnity);
             }
             ComputeSameSystemBodyIds();
         }
@@ -645,7 +649,9 @@ namespace PioneerFramework
             double latRad = longLat.y * Mathf.Deg2Rad;
             double lonRad0 = longLat.x * Mathf.Deg2Rad;
             var surf = GetSurfaceState.SurfaceState(radius, latRad, lonRad0, omega, physicsTick);
-            Vector3 markPos = (Vector3)(surf.pos * SpaceConstants.UnitsPerMeter);
+            // 天体**局部系** → **系统系**（本窗口的船与天体都在系统系；2026-09-23 前这里少加了这份偏移）
+            Vector3 markPos = (Vector3)((surf.pos + ViewFrame.BodySystemPosition(rootBodyId, physicsTick))
+                * SpaceConstants.UnitsPerMeter);
 
             if (colonyMarkerObject == null)
             {
@@ -720,9 +726,10 @@ namespace PioneerFramework
                 }
 
                 go.transform.position = worldPos;
-                float toUnity = (float)SpaceConstants.UnitsPerMeter;
-                float realRadius = Mathf.Max((float)(body.radius * toUnity), MinBodySize);
-                go.transform.localScale = Vector3.one * realRadius;
+                // ⚠ 球网格直径 1 ⇒ 半径要乘 2（`ViewFrame.RadiusToSphereScale`；2026-09-23 与叠加层一起修）
+                var bodyMesh = go.GetComponent<MeshFilter>()?.sharedMesh;
+                float scale = Mathf.Max(ViewFrame.RadiusToSphereScale((float)body.radius, bodyMesh), MinBodySize * 2f);
+                go.transform.localScale = Vector3.one * scale;
                 go.SetActive(true);
             }
         }

@@ -411,14 +411,17 @@ namespace PioneerFramework
             if (primaryBody == null) return result;
 
             double toUnity = SpaceConstants.UnitsPerMeter;
-            int futureTick = Find.TickManager.TicksGame + Mathf.RoundToInt(predictionTimeSeconds);
+            // ⚠ 时刻用 **physicsTick 时间轴**（天体位置是它的函数）：原来用 `Find.TickManager.TicksGame`
+            //   （真实 tick）⇒ 战斗 1/60× 流速下会预测到错误的未来。
+            double futureTick = TimeScaleManager.GetPhysicsTickSafe() + predictionTimeSeconds;
 
-            // 添加中心天体的卫星（用 GetBodyWorldPosition 自动递归算世界坐标）
+            // 中心天体的卫星：**系统系**坐标（与 `SpaceGroupVisualManager` 叠加层同系 —— 2026-09-23 前
+            // 这里给的是绝对系，标记与叠加层差 2,400 Unity 单位）
             for (int i = 0; i < primaryBody.moonBodies.Count; i++)
             {
                 var moon = primaryBody.moonBodies[i];
-                DVector3 moonWorldPos = mgr.GetBodyWorldPosition(moon.bodyId, futureTick);
-                result.Add((Vector3)(moonWorldPos * toUnity));
+                Vector3 moonPos = (Vector3)(ViewFrame.BodySystemPosition(moon.bodyId, futureTick) * toUnity);
+                result.Add(moonPos);
             }
 
             return result;

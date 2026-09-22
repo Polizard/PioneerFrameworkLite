@@ -178,6 +178,17 @@ namespace PioneerFramework.Tests
             Assert.Contains("PF_MoonSurfaceTerrain", values);
         }
 
+        /// <summary>
+        /// 判据：**编译产物**里 `GenerateTileFor` 确实构造了 `RimWorld.Planet.SurfaceTile`（而不是某个泛化的
+        /// `Tile`）—— 与下面的源码文本检查互补：这条查的是 IL。
+        ///
+        /// ⚠ **2026-09-23 修仪器**（本库纪律：失败先怀疑仪器、先修仪器）：原写法"扫到第一个 `0x73` 就当 newobj"
+        /// 是错的 —— **IL 是变长指令流**，操作数里也会出现 `0x73` 字节。新增类型使元数据 RID 位移之后，
+        /// 假 newobj 解出一个不存在的 token（实测 `0x0a06000a`，RID 393226）⇒ `ResolveMethod` 直接抛，
+        /// 报出来的是"仪器崩了"，而不是"被测物错了"。
+        /// 改成：把所有 `0x73` 候选都试一遍、**跳过解不出来的**，断言"解析出的构造函数里有 SurfaceTile"
+        /// ⇒ 判据**没有放宽**（仍然要求那个构造函数来自 SurfaceTile），只是不再被假字节误导。
+        /// </summary>
         [Fact]
         public void MoonTiles_GenerateTileForConstructsSurfaceTile()
         {
@@ -188,7 +199,7 @@ namespace PioneerFramework.Tests
             byte[] il = method.GetMethodBody().GetILAsByteArray();
             byte newobj = (byte)System.Reflection.Emit.OpCodes.Newobj.Value;
 
-            string constructed = null;
+            var constructedTypes = new System.Collections.Generic.List<string>();
             for (int i = 0; i <= il.Length - 5; i++)
             {
                 if (il[i] != newobj)
@@ -196,13 +207,22 @@ namespace PioneerFramework.Tests
                     continue;
                 }
 
-                int token = BitConverter.ToInt32(il, i + 1);
-                ConstructorInfo ctor = method.Module.ResolveMethod(token) as ConstructorInfo;
-                constructed = ctor.DeclaringType.FullName;
-                break;
+                ConstructorInfo ctor;
+                try
+                {
+                    ctor = method.Module.ResolveMethod(BitConverter.ToInt32(il, i + 1)) as ConstructorInfo;
+                }
+                catch (System.ArgumentException)
+                {
+                    continue;   // 假 newobj：token 在该模块里不存在 ⇒ 跳过（不是被测物的错）
+                }
+                if (ctor?.DeclaringType != null)
+                {
+                    constructedTypes.Add(ctor.DeclaringType.FullName);
+                }
             }
 
-            Assert.Equal("RimWorld.Planet.SurfaceTile", constructed);
+            Assert.Contains("RimWorld.Planet.SurfaceTile", constructedTypes);
         }
 
         [Fact]
