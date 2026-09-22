@@ -351,6 +351,29 @@ namespace PioneerFramework.Pure.Tests
         /// 与 <c>MissileGuidanceCore</c> 的"接近率 + 横向修正"同族，但终点是零相对速度而非撞击。
         /// </summary>
         public bool TerminalHandoff = true;   // 终端 = CW/多圈 Lambert 取更省者（§14.3 E1）
+        // ══════════════════════════════════════════════════════════════════════════════
+        //  ⚖ **台架独有旋钮：裁决表**（B5-5，2026-09-23）
+        //  计划稿 §2.6 的原话：*"这类'只在台架里存在的政策'是**幻觉的来源**"* —— 逐个裁定：
+        //  **要么建模进游戏，要么从台架删除**。本轮裁定如下（依据：游戏侧 `Source/PioneerFramework/`
+        //  grep 零命中 + 连续律已于 2026-09-21 从流程切除、2026-09-22 被用户裁定"不能用了"）：
+        //
+        //  | 旋钮 | 域 | 裁定 |
+        //  |---|---|---|
+        //  | `TerminalHandoff` / `TerminalEngageFraction` / `TerminalUseShortestHorizon` / | 已退休的**连续律终端** | **游戏永不采用**：保留只为重跑历史读数（T5/T7/T13）， | 
+        //  | `TerminalHorizonFrac` / `TerminalLateFraction` / `TerminalLateBudgets` / | （"滚动 CW 终端"） | **不得作为游戏行为的参照**；将来要做"总修缮"阶段、 | 
+        //  | `TerminalSlideFraction` / `TerminalSlideTau` / `TerminalSlideClosingCap` | | 且**必须搭在 MJ 实现上**时才重新评估 |
+        //  | `TerminalUseExactLambert` | 同上（且**已实测发散**，注释已判死刑） | **保留仅作反例**：别重试 |
+        //  | `CommitTwoImpulse` / `CommitResolveAtBurn` | 同上（"两冲量提交"的台架版） | **游戏已有对应物**（阶梯排两发：起飞+刹车）⇒ 台架这份只作历史对照 |
+        //  | `AdaptiveCapEnabled` / `EccentricityCap` | 律的限权政策 | **游戏永不采用**（游戏是 `ManeuverRegime` + 固定限权） |
+        //  | `ShapeFirstLadder` / `LegSeconds` / `ReArmLegs` | 分腿/形状优先 | 游戏侧**有各自的权威**（`NewLawLegSeconds` / `PlanLeg`）⇒ 台架这份是**同题第二份**，只作历史 |
+        //  | `ModelSafetyClip` | 撞行星裁剪的台架模型 | 游戏侧权威在 `ApplyGuidanceCorrection`（`safeK ≥ 0.05`）⇒ 同上 |
+        //  | `ActuatorDeadband` | 死区 | **已有游戏侧对应物**（`GuidanceBurnDeadband` / `NewLawDeadbandFraction`）⇒ 台架这份只作对照 |
+        //  | `MainOnly` | 诊断开关（禁用 RCS 以分离"选网政策"的贡献） | **保留**：它是**探针**不是政策 |
+        //  | ~~`TerminalStallFraction`~~ | — | **已删**（只声明、无任何使用 ⇒ 死字段） |
+        //
+        //  ⇒ **结论**：上表里"游戏永不采用"的那些**不建模进游戏**（连续律已退休）；
+        //    它们的价值只剩"重跑历史读数"，故**本文件的读数一律标注域**（见类注释）。
+        // ══════════════════════════════════════════════════════════════════════════════
         /// <summary>
         /// 交接判据：相对距离 &lt; 该比例 × 轨道半径 时切滑道。
         /// **必须很小**：滑道律假定相对运动是线性的，而 CW 耦合 $1.5n\cdot\Delta r$ 在
@@ -359,8 +382,6 @@ namespace PioneerFramework.Pure.Tests
         /// 0.5% ⇒ GEO 下 ≈130 km，那里耦合项可忽略。
         /// </summary>
         public double TerminalEngageFraction = 0.05;
-        /// <summary>停滞兜底的外圈比例：远场若在此半径内停止进展，也交班。</summary>
-        public double TerminalStallFraction = 0.20;
         /// <summary>
         /// 兜底交班的**外圈比例**与**机会倍数**：距离进入外圈、且远场已用掉这么多倍预算时交班。
         ///

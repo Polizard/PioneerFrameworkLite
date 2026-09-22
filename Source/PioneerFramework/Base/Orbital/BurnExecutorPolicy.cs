@@ -65,6 +65,23 @@ namespace PioneerFramework
         /// <summary>有没有任何可用推进（主网或 RCS）。</summary>
         public static bool HasAnyActuator(double aMain, double aRcs) => aMain > 0.0 || aRcs > 0.0;
 
+        /// <summary>
+        /// **"RCS 一个物理步烧得完的活才交给 RCS"**（`dv ≤ aRcs·dt`）——
+        /// 无 Map 执行器里**注释声明**的那条判据（`SpaceGameComp.cs:1690-1694`）。
+        ///
+        /// ⚠⚠ **2026-09-23 实测：这条判据在代码里没有实现**（`SpaceGameComp.cs:1675-1708` 实际只按
+        /// "全向 / 已对准 / 燃料"分支选网，**没有任何 `dv` 比较**）⇒ **注释与代码不一致**，已登记。
+        /// 本函数把它落成**可测的形式**，好让"要不要采用它"变成一个能被判的命题（而不是注释里的一句话）。
+        ///
+        /// ## 为什么它与 <see cref="UseRcs" /> 是**两条不同的政策**（不是"两份口径"）
+        /// · <see cref="UseRcs" />（`aRcs×15 s`）服务**引导修正的分发**：小修正走 RCS ⇒ 免对准、冻结时间可控；
+        /// · 本条服务**逐步执行**：RCS 一步只给 `aRcs·dt` ⇒ 大一点的活交给它就要烧很多步 ⇒ 拖长燃烧、错过节点。
+        /// 量级（m≈69 t、aRcs≈0.4356、dt=2 s）：一步阈值 **0.87 m/s** vs 15 s 阈值 **6.53 m/s**
+        /// ⇒ 中间那一段（0.87–6.53）两条政策**结论相反**。实测那组 `Δv=6.09` 正落在这一段里。
+        /// </summary>
+        public static bool UseRcsWithinOneStep(double dvMagnitude, double aRcs, double physicsDtSeconds)
+            => aRcs > 0.0 && physicsDtSeconds > 0.0 && dvMagnitude <= aRcs * physicsDtSeconds;
+
         // ══════════════════════════════════════════════════════════════════════════════
         //  ② **三个 dt 是不同的数**（B5-4，2026-09-23）
         //  游戏侧它们各有自己的权威（本类**只认名字与关系，绝不复制数值**）：
@@ -121,14 +138,19 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// ★★ **级联的量级**（为什么燃时估错会把整条时间表弄垮）：点火是**居中**的
-        /// （`t_ign = UT − T_est/2`），所以实际燃时 T_real 的收尾落在 `UT + (T_real − T_est)/2`。
-        /// ⇒ 燃时差 ΔT 只会让**收尾**偏离节点 ΔT/2，但下一发节点若排在 `UT + <ΔT/2` 之内，
-        /// 它的点火时刻就已经在**过去**了 ⇒ "每一发都晚 ⇒ 下一发落进过去"的级联。
-        /// 实测样本：T_est 0.8 s、T_real 14 s ⇒ 收尾偏离节点 **+6.6 s**。
+        /// ★★ **收尾偏离节点的量**（"级联"的量级）。
+        ///
+        /// 点火按**估的**燃时居中（`ignition = UT − T_est/2 − delay`），而燃烧按**真的**燃时进行
+        /// ⇒ 收尾落在 `UT + (T_real − T_est/2 − delay)`。
+        /// ⚠⚠ **2026-09-23 更正**（我第一版写成 `(T_real − T_est)/2`，**错**，被数字对账逮住）：
+        /// 那不是"估错燃时"的后果，而是"**居中用了真燃时**"的后果。点火时刻一旦按估算定死，
+        /// 误差就**不会**对半分 —— **整个 `ΔT = T_real − T_est` 都堆到收尾那一边**。
+        /// （理想居中收尾应在 `UT + T_est/2`；实际在 `UT + T_real − T_est/2` ⇒ 差 `ΔT` ✓）
         /// </summary>
-        public static double BurnEndOffsetFromNode(double actualSeconds, double estimatedSeconds)
-            => (actualSeconds - estimatedSeconds) / 2.0;
+        /// <returns>收尾相对节点的偏移（s，正 = 晚于节点）</returns>
+        public static double BurnEndOffsetFromNode(double actualSeconds, double estimatedSeconds,
+            double executionDelaySeconds)
+            => actualSeconds - estimatedSeconds / 2.0 - executionDelaySeconds;
 
         /// <summary>
         /// `实交/指令` 的**读数口径**（与游戏 `SpaceGameComp.cs:1372-1377` 同一个定义）：

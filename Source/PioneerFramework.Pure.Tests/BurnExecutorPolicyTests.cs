@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Xunit;
 
 namespace PioneerFramework.Pure.Tests
@@ -88,9 +88,11 @@ namespace PioneerFramework.Pure.Tests
             Assert.InRange(actual, 13.5, 14.5);           // 游戏读 14 s
             Assert.InRange(ratio, 17.0, 19.0);            // 实测 17.5 倍（= aMain/aRcs）
 
-            // ★ 级联的量级：居中点火 ⇒ 收尾偏离节点 (T_real − T_est)/2 ≈ +6.6 s
-            double endOffset = BurnExecutorPolicy.BurnEndOffsetFromNode(actual, planned);
-            Assert.InRange(endOffset, 6.5, 6.7);
+            // ★ 级联的量级（⚠ 2026-09-23 更正：**整个 ΔT 堆到收尾**，不是对半分）：
+            //   点火按**估**的燃时居中、燃烧按**真**的燃时进行 ⇒ 收尾 = UT + T_real − T_est/2 − delay
+            double endOffset = BurnExecutorPolicy.BurnEndOffsetFromNode(actual, planned,
+                executionDelaySeconds: 2.0);
+            Assert.InRange(endOffset, 11.5, 11.7);
         }
 
         /// <summary>
@@ -99,14 +101,17 @@ namespace PioneerFramework.Pure.Tests
         /// 而不是"某处算错了一个数"。反向也要钉：估准（T_real = T_est）⇒ 收尾正好落在节点上。
         /// </summary>
         [Fact]
-        public void BurnEndOffset_IsHalfTheDurationError_AndZeroWhenEstimateIsRight()
+        public void BurnEndOffset_IsTheWholeDurationError_AccumulatedAtTheTail()
         {
-            Assert.Equal(0.0, BurnExecutorPolicy.BurnEndOffsetFromNode(120.0, 120.0), 9);
-            Assert.Equal(+30.0, BurnExecutorPolicy.BurnEndOffsetFromNode(180.0, 120.0), 9);  // 烧久了 ⇒ 收尾晚 30 s
-            Assert.Equal(-30.0, BurnExecutorPolicy.BurnEndOffsetFromNode(60.0, 120.0), 9);   // 烧快了 ⇒ 收尾早 30 s
+            // 估准（T_real = T_est）⇒ 收尾落在 UT + T_est/2 − delay（居中，扣掉执行延迟）
+            Assert.Equal(60.0 - 2.0, BurnExecutorPolicy.BurnEndOffsetFromNode(120.0, 120.0, 2.0), 9);
+            // 实际比估算**久** ΔT ⇒ 收尾晚**整个 ΔT**（不是一半）：180 vs 120 ⇒ 60 s
+            Assert.Equal(60.0 + 60.0 - 2.0, BurnExecutorPolicy.BurnEndOffsetFromNode(180.0, 120.0, 2.0), 9);
+            // 实际比估算**短** ΔT ⇒ 收尾早**整个 ΔT**：60 vs 120 ⇒ −60 s
+            Assert.Equal(60.0 - 60.0 - 2.0, BurnExecutorPolicy.BurnEndOffsetFromNode(60.0, 120.0, 2.0), 9);
 
-            // 级联判据：偏移 6.6 s > 下一发节点的提前量（这里取 5 s）⇒ 下一发已经迟到
-            double offset = BurnExecutorPolicy.BurnEndOffsetFromNode(13.98, 0.753);
+            // 级联判据：偏移 11.6 s 远大于下一发节点的提前量（取 5 s）⇒ 下一发必定迟到
+            double offset = BurnExecutorPolicy.BurnEndOffsetFromNode(13.98, 0.753, executionDelaySeconds: 2.0);
             Assert.True(offset > 5.0, $"偏移 {offset:F1}s 应当已经吃掉下一发节点的提前量");
         }
 

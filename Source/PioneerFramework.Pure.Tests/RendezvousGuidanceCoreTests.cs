@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using PioneerFramework;
 using Xunit;
 using Xunit.Abstractions;
@@ -40,15 +40,9 @@ namespace PioneerFramework.Pure.Tests
             return new DVector3(-Math.Sin(ang) * v, 0, Math.Cos(ang) * v);
         }
 
-        /// <summary>中推力船：主网 8 kN / ve 4000 / 工质 12000 kg；RCS 1.5 kN / ve 1500 / 500 kg。</summary>
-        private static RendezvousShip MidThrustShip(double r, double ang)
-        {
-            var s = RendezvousShip.Spawn(CircularPos(r, ang), CircularVel(r, ang), new DVector3(0, 0, 1));
-            s.DryMass = 5000.0;
-            s.MainThrust = 8000.0; s.MainVe = 4000.0; s.MainMassFlow = 2.0; s.MainFuel = 12000.0;
-            s.RcsThrust = 1500.0; s.RcsVe = 1500.0; s.RcsMassFlow = 1.0; s.RcsFuel = 500.0;
-            return s;
-        }
+        /// <summary>中推力船：**唯一实现已收到 <see cref="TestPlants.MidThrust" />**（B5-5：
+        /// 此前 `TerminalCommitComparison.T5Ship` 是它的逐字副本）。本函数只转发，调用方零改动。</summary>
+        private static RendezvousShip MidThrustShip(double r, double ang) => TestPlants.MidThrust(r, ang);
 
         // ── T0：台架自检 ────────────────────────────────────────────────────
         /// <summary>RK4 在纯引力下必须保能量；否则后面所有数字都不可信。</summary>

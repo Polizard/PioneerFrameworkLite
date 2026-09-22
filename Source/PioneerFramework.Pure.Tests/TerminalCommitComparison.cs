@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 using Xunit;
@@ -80,15 +80,7 @@ namespace PioneerFramework.Pure.Tests
         /// ⇒ 初速与**主推轴**都用 `(0,0,+1)`。我上一版写成 `(0,0,-1)` ⇒ **船在逆行** ⇒ 与目标永远交不上、
         /// 一直烧到 9.5 km/s 逃逸 ✗（而三档全逃逸正是"仪器坏"的签名——**连已知会通过的 A 档也逃逸**）。
         /// </summary>
-        private static RendezvousShip T5Ship()
-        {
-            var s = RendezvousShip.Spawn(new DVector3(R2, 0, 0),
-                new DVector3(0, 0, Math.Sqrt(Mu / R2)), new DVector3(0, 0, 1));
-            s.DryMass = 5000.0;
-            s.MainThrust = 8000.0; s.MainVe = 4000.0; s.MainMassFlow = 2.0; s.MainFuel = 12000.0;
-            s.RcsThrust = 1500.0; s.RcsVe = 1500.0; s.RcsMassFlow = 1.0; s.RcsFuel = 500.0;
-            return s;
-        }
+        private static RendezvousShip T5Ship() => TestPlants.MidThrustAtGeo();   // B5-5：唯一 plant
 
         [Fact]
         public void ThreeTerminalPolicies()
