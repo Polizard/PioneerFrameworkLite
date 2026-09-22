@@ -1381,7 +1381,7 @@ namespace PioneerFramework
             DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
             int enemyGroupId = spaceGame.AllocGroupId();
             int enemyEntityId = spaceGame.AllocEntityId();
-            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
+            int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -1456,7 +1456,7 @@ namespace PioneerFramework
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 30000.0;
             int enemyGroupId = spaceGame.AllocGroupId();
             int enemyEntityId = spaceGame.AllocEntityId();
-            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
+            int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（导弹靶）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -1518,7 +1518,7 @@ namespace PioneerFramework
             DVector3 enemyPos = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 1500);
             int enemyGroupId = spaceGame.AllocGroupId();
             int enemyEntityId = spaceGame.AllocEntityId();
-            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
+            int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（导弹靶 1.5km）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -1582,7 +1582,7 @@ namespace PioneerFramework
             DVector3 enemyPos = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 1500);
             int enemyGroupId = spaceGame.AllocGroupId();
             int enemyEntityId = spaceGame.AllocEntityId();
-            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
+            int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（巡航测试靶）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -1645,7 +1645,7 @@ namespace PioneerFramework
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 8000.0;
             int enemyGroupId = spaceGame.AllocGroupId();
             int enemyEntityId = spaceGame.AllocEntityId();
-            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
+            int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（弹群靶 ~25km）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -1704,7 +1704,7 @@ namespace PioneerFramework
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 2000.0;
             int enemyGroupId = spaceGame.AllocGroupId();
             int enemyEntityId = spaceGame.AllocEntityId();
-            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
+            int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（合并弹群撞击探针）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -1796,7 +1796,7 @@ namespace PioneerFramework
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 25000.0;
             int enemyGroupId = spaceGame.AllocGroupId();
             int enemyEntityId = spaceGame.AllocEntityId();
-            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
+            int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（长距靶 ~60km）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -1860,7 +1860,7 @@ namespace PioneerFramework
             DVector3 enemyPos = sameOrbitPoint + (sameOrbitPoint / sameOrbitPoint.magnitude) * 30000.0;
             int enemyGroupId = spaceGame.AllocGroupId();
             int enemyEntityId = spaceGame.AllocEntityId();
-            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
+            int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站（来袭导弹基地）");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -2021,7 +2021,7 @@ namespace PioneerFramework
                 ("敌站-y", new DVector3(0, -20000, 0), 2),
             };
 
-            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
+            int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
             var enemyGroupIds = new List<int>();
             string mapping = "";
             foreach (var d in directions)
@@ -2128,7 +2128,7 @@ namespace PioneerFramework
             DVector3 enemyPos = playerPos + new DVector3(0, -20000, 0);
             int enemyGroupId = spaceGame.AllocGroupId();
             int enemyEntityId = spaceGame.AllocEntityId();
-            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
+            int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "正下方敌站");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -2209,7 +2209,7 @@ namespace PioneerFramework
             DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
             int enemyGroupId = spaceGame.AllocGroupId();
             int enemyEntityId = spaceGame.AllocEntityId();
-            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
+            int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "敌对空间站");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -2246,7 +2246,7 @@ namespace PioneerFramework
             DVector3 playerPos = playerGroup.IsCircularOrbit
                 ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
                 : playerGroup.CurrentOrbit.position;
-            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
+            int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
 
             // 1. 近敌站（挡路）：玩家 +x 10km
             DVector3 nearPos = playerPos + new DVector3(10000, 0, 0);
@@ -2329,7 +2329,7 @@ namespace PioneerFramework
             DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
             int enemyGroupId = spaceGame.AllocGroupId();
             int enemyEntityId = spaceGame.AllocEntityId();
-            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
+            int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
             spaceGame.CreateStation(enemyEntityId, enemyGroupId, enemyFactionId, enemyPos, 60, 60, "旋转敌站");
             var enemyGroup = spaceGame.GetGroupById(enemyGroupId);
             if (enemyGroup != null)
@@ -2382,7 +2382,7 @@ namespace PioneerFramework
                 ("敌站+z", new DVector3(0, 0, 20000)),
                 ("敌站-z", new DVector3(0, 0, -20000)),
             };
-            int enemyFactionId = (Faction.OfPlayer.loadID) + 1;
+            int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
             var enemyGroupIds = new List<int>();
             string mapping = "";
             foreach (var d in directions)

@@ -1652,8 +1652,8 @@ namespace PioneerFramework
             double speed = System.Math.Sqrt(mu / orbitRadius);
             DVector3 vel = new DVector3(-System.Math.Sin(angle) * speed, 0, System.Math.Cos(angle) * speed);
 
-            CreateTestShip(spaceGame, gidA, eidA, basePos, vel, 0, bodyId);
-            CreateTestShip(spaceGame, gidB, eidB, basePos + new DVector3(200, 0, 0), vel, 1, bodyId);
+            CreateTestShip(spaceGame, gidA, eidA, basePos, vel, Faction.OfPlayer.loadID, bodyId);   // [V12] 真阵营 id
+            CreateTestShip(spaceGame, gidB, eidB, basePos + new DVector3(200, 0, 0), vel, FactionResolver.HostileFactionIdForPlayer(), bodyId);
 
             selectedGroupId = gidA;
             targetGroupId = gidB;

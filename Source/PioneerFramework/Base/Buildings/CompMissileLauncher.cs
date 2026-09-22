@@ -210,7 +210,8 @@ namespace PioneerFramework
 
         private static bool IsHostile(SpaceEntityGroup g, SpaceEntityGroup myGroup)
         {
-            return g.FactionId != myGroup.FactionId; // factionId 不同即敌对（PFL 简化阵营判定）
+            // [V12] 2026-09-23：**真阵营语义**（同上，`FactionResolver` 是唯一判定口）
+            return FactionResolver.IsHostile(g.FactionId, myGroup.FactionId);
         }
 
         // ── 发射 ──

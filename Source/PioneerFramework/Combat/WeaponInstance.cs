@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace PioneerFramework.Combat
 {
@@ -7,7 +7,6 @@ namespace PioneerFramework.Combat
         public const int AmmoInfinite = -1;
 
         public WeaponDef def;
-        public int mountPartIndex = -1;
         public int cooldownRemaining = 0;
         public int overheatCounter = 0;
         public bool isOverheated = false;

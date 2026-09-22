@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using Verse;
 using RimWorld;
@@ -160,7 +160,9 @@ namespace PioneerFramework
         {
             var myGroup = GetMyGroup();
             if (myGroup == null) return false;
-            return g.FactionId != myGroup.FactionId; // factionId 不同即敌对（PFL 简化阵营判定）
+            // [V12] 2026-09-23：**真阵营语义**（`Faction.HostileTo`，含附庸/同盟）；
+            // 解析失败按"未知即敌"处理 —— 见 `FactionResolver` 的语义与读数说明。
+            return FactionResolver.IsHostile(g.FactionId, myGroup.FactionId);
         }
 
         private bool IsInRange(SpaceEntityGroup g)

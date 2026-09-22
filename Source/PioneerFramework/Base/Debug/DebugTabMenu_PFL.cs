@@ -166,6 +166,8 @@ namespace PioneerFramework
             AddCheckbox("详细导弹制导日志", "80 调试日志", 80, typeof(AutonomousVehicleManager), "DebugDetailedGuidance");
             AddCheckbox("详细跳帮日志", "80 调试日志", 75, typeof(BoardingManager), "DebugDetailedBoarding");
             AddCheckbox("详细发射日志", "80 调试日志", 70, typeof(RocketLaunchController), "DebugDetailedLaunch");
+            // [V12]（2026-09-23）：阵营解析读数 —— 把"解析失败"的限频警告变成可查的一行
+            AddAction("阵营解析读数（[V12]：敌对阵营 / 解析失败累计）", "80 调试日志", 68, FactionResolver.LogProbe, null);
             AddCheckbox("详细星座日志（入编/收尸/锚点）", "80 调试日志", 60, typeof(ConstellationGameComp), "DebugDetailedConstellation");
             AddCheckbox("交会用新远场律（RendezvousGuidanceLaw；**默认开**，关=回退旧范式）", "80 调试日志", 58, typeof(SpaceGameComp), "UseNewRendezvousLaw");
             AddAction("旧范式交会规划器（Lambert + 出发段；仅供对照/回退）", "80 调试日志", 57,

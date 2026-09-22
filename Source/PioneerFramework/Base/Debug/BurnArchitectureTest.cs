@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using RimWorld;
 using UnityEngine;
 using Verse;
@@ -186,7 +186,7 @@ namespace PioneerFramework
 
             // 500km LEO
             double orbitRadius = SpaceConstants.PlanetRadiusMeters + 500000.0;
-            var entity = spaceGame.CreateStation(entityId, groupId, 0,
+            var entity = spaceGame.CreateStation(entityId, groupId, Faction.OfPlayer.loadID,   // [V12] 真阵营 id（原硬编码 0）
                 new DVector3(orbitRadius, 0, 0), mapWidth: 60, mapHeight: 60, stationName: "架构验证站");
             if (entity == null) return false;
 
