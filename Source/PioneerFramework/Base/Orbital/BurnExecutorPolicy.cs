@@ -65,6 +65,37 @@ namespace PioneerFramework
         /// <summary>有没有任何可用推进（主网或 RCS）。</summary>
         public static bool HasAnyActuator(double aMain, double aRcs) => aMain > 0.0 || aRcs > 0.0;
 
+        // ══════════════════════════════════════════════════════════════════════════════
+        //  ② **三个 dt 是不同的数**（B5-4，2026-09-23）
+        //  游戏侧它们各有自己的权威（本类**只认名字与关系，绝不复制数值**）：
+        //   · 物理步：`UPDATE_INTERVAL_TICKS = 2`（Normal）· Fast ×8 ⇒ 16 s · Combat 1/60 ⇒ 1÷30 s
+        //     （`TimeScaleManager.PhysicsSpeedMultiplier` / `SubSteps`）；
+        //   · 控制周期：`NewLawControlDt = 10 s`（引导/限额的评估拍）；
+        //   · 重规划周期：`ladderMinReplanSeconds = 30 s`。
+        //  台架此前**只有一个硬编码的 5 s**（`RendezvousGuidanceCoreTests` 一族）——**哪一档都不是**，
+        //  这就是计划稿说的"量纲错配"：读数怎么换到游戏里？⇒ 判据是"控制/重规划**在物理步上取样**"，
+        //  即"距上次多久了"（不是取模，也不是平均），见下。
+        // ══════════════════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// **周期到点判据**（游戏侧 `GuidanceCheckInterval` / `ladderMinReplanSeconds` /
+        /// `NewLawControlDt` 用的是同一个形状：`now − 上次 ≥ 周期` ⇒ 本次做，而不是 `now % 周期 == 0`）。
+        /// 三个时钟各自传入自己的周期 ⇒ **不由本类替它们记数值**。
+        /// </summary>
+        public static bool ElapsedDue(double now, double lastAtSeconds, double periodSeconds)
+            => now - lastAtSeconds >= periodSeconds;
+
+        /// <summary>
+        /// **一个控制周期内有几个物理步**（`ceil`）：物理步是积分/执行的粒度，控制周期是"律多久看一次"的粒度
+        /// ⇒ 台架要建模"三个 dt"就必须能回答这个数（例：Normal 2 s / 控制 10 s ⇒ **5**；
+        /// Fast 16 s / 控制 10 s ⇒ **1**，即控制比物理还快，此时控制周期不再限制任何东西）。
+        /// </summary>
+        public static int PhysicsStepsPerControlPeriod(double physicsDtSeconds, double controlSeconds)
+        {
+            if (!(physicsDtSeconds > 0.0) || !(controlSeconds > 0.0)) return 0;
+            return (int)Math.Ceiling(controlSeconds / physicsDtSeconds);
+        }
+
         /// <summary>
         /// ① **原子烧门**：正在烧 ⇒ 新的机动**不许开烧**（只能排队、等这一发烧完）。
         /// 游戏侧的三个拒绝点：队列循环 `SpaceGameComp.cs:2501`、新律 `:3635`、引导 `:3201`。
