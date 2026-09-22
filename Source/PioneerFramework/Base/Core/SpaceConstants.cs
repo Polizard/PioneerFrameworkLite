@@ -21,8 +21,16 @@ namespace PioneerFramework
         public static double AtmoOuterRadiusMeters => PlanetRadiusMeters + AtmosphereThicknessMeters;
 
         // ── 着陆/碰撞参数 ──
-        /// <summary>最大安全着陆速度 (米/秒)，超过则视为坠毁</summary>
-        public const double MaxSafeLandingSpeedMps = 10.0;
+        /// <summary>
+        /// 最大安全着陆速度（米/秒）：**接地速度**超过它 = 坠毁，不超过 = 着陆
+        /// （2026-09-22 用户裁定："着陆就是以一个安全的速度撞击天体"，暂取 100，
+        ///  原话"有点荒谬但也是游戏性处理"）。
+        ///
+        /// ⚠ **口径 = 相对地表**（`SurfaceFrame.GroundSpeed`：已扣天体平动与地表共转），
+        /// **不是惯性系总速度** —— 地球赤道地表共转 = ω·R = 523.6 m/s（ω=2π/60000、R=5000 km），
+        /// 用惯性口径时"跟着地面一起垂直下降"也读 524 m/s ⇒ 阈值取多少都永远判坠毁。
+        /// </summary>
+        public const double MaxSafeLandingSpeedMps = 100.0;
 
         // ── 派生常量（高性能场景下可直接引用） ──
         /// <summary>行星半径平方，用于距离比较优化</summary>

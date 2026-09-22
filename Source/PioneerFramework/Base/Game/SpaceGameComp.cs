@@ -2429,7 +2429,7 @@ namespace PioneerFramework
             foreach (int groupId in groupsToCheck)
             {
                 if (!groups.TryGetValue(groupId, out var group)) continue;
-                CheckPlanetCollision(group);
+                CheckPlanetCollision(group, physicsTick);   // ⚠ 传物理时钟：撞击判据与经纬度都用它
             }
 
             // ── 每 240 真实 tick（4秒）检查一次流速：有机动→Normal，无机动→恢复设置 ──
@@ -4690,43 +4690,88 @@ namespace PioneerFramework
             return mgr.GetBodyLocalVelocity(celestialBodyId, tick);
         }
 
-        private void CheckPlanetCollision(SpaceEntityGroup group)
+        /// <summary>天体**表面**半径（不含大气）。撞击判定用这个，不用 <see cref="GetBodySafeRadius"/>。</summary>
+        public double GetBodySurfaceRadius(int celestialBodyId)
+        {
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            var body = mgr?.GetBodyById(celestialBodyId);
+            if (body == null || body.radius <= 0.0) return SpaceConstants.PlanetRadiusMeters;
+            return body.radius;
+        }
+
+        /// <summary>经纬度（弧度）→ "北纬 30.0° 东经 120.0°"。**落点读数的唯一格式口**（两处各写一份即两套口径）。</summary>
+        private static string FormatLongLat(double latRad, double lonRad)
+        {
+            double latDeg = latRad * 180.0 / Math.PI;
+            double lonDeg = lonRad * 180.0 / Math.PI;
+            return string.Format("{0} {1:F1}° {2} {3:F1}°",
+                latDeg >= 0.0 ? "北纬" : "南纬", Math.Abs(latDeg),
+                lonDeg >= 0.0 ? "东经" : "西经", Math.Abs(lonDeg));
+        }
+
+        /// <summary>
+        /// 撞击天体的判定与结算 —— **"着陆 / 坠毁"的唯一事件源**。
+        ///
+        /// ## 语义（2026-09-22 用户裁定）
+        /// **着陆 = 以一个安全的速度撞击天体**：接地速度 ≤ <see cref="SpaceConstants.MaxSafeLandingSpeedMps"/> ⇒ 着陆，
+        /// 超过 ⇒ 坠毁。两种结果**各自的事件树尚未实现**，本步只做两件事：Message 结果 + 该时刻的
+        /// **天体经纬度**（落点是事件树要用的输入）。
+        ///
+        /// ## 三处口径（2026-09-22 全部更正 —— 旧写法三条都错）
+        /// ① **速度取天体相对**（`group.localVelocity`）而不是 `CurrentOrbit.velocity`（根系/惯性）：
+        ///    后者对**月球**会把月球自身 ~2 km/s 的公转算进"撞击速度" ⇒ 任何月球着陆都判坠毁；
+        /// ② **再扣地表共转**（<see cref="SurfaceFrame.GroundSpeed"/>）：地球赤道地表共转
+        ///    ω·R = 523.6 m/s，不扣的话"跟着地面一起垂直下降"也读 524 ⇒ 阈值取多少都不可能达成"着陆"；
+        /// ③ **时刻用 `physicsTick`**（与 `group.localPosition` 同一个时钟）。旧写法用
+        ///    `Find.TickManager.TicksGame`（真实 tick）⇒ 战斗 1/60× 流速下两者差着量级，
+        ///    有平动的天体（月球）会把偏移量算在错误的相位上。
+        ///
+        /// ⚠ **撞击面 = 天体表面半径**（不含大气）：旧写法用"安全半径 = 半径 + 大气厚度"
+        ///   ⇒ 撞击在**大气顶**（地球 100 km 高空）就结算，与"撞击天体"不符。
+        ///   撞行星**保护**仍用含大气的安全半径（那是给引导燃烧设的下限，两者不是一回事）。
+        /// </summary>
+        private void CheckPlanetCollision(SpaceEntityGroup group, double physicsTick)
         {
             if (group == null || !group.IsActive) return;
-            if (group.exemptPlanetCollision) return; // 火箭爬升段豁免：出生在大气层内、初速高于着陆阈值，入轨时清除
+            if (group.exemptPlanetCollision) return; // 火箭爬升段豁免（出生于大气层内），入轨时清除
 
-            int tick = Find.TickManager.TicksGame;
-            DVector3 bodyOffset = GetBodyWorldOffset(group.CelestialBodyId, tick);
-            DVector3 relPos = group.CurrentOrbit.position - bodyOffset;
-            double safeRadius = GetBodySafeRadius(group.CelestialBodyId);
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            double surfaceRadius = GetBodySurfaceRadius(group.CelestialBodyId);
 
-            double distSqr = relPos.sqrMagnitude;
-            if (distSqr > safeRadius * safeRadius)
-                return;
+            // 天体相对的位置/速度：本物理步**刚算好**（`localPosition/localVelocity`），不再另算一份
+            DVector3 relPos = group.localPosition;
+            DVector3 relVel = group.localVelocity;
+            if (relPos.sqrMagnitude > surfaceRadius * surfaceRadius) return;
 
-            double speed = group.CurrentOrbit.velocity.magnitude;
+            // ⚠ 管理器为 null 时 `RotationOmega` 是**显式容忍**的（内部 `mgr?.GetBodyById` ⇒ 取不到天体则用默认一天）
+            //   ⇒ 这里给 `!` 只是免去可空标注噪声，不是假设它非空。
+            double omega = Launch.GetSurfaceState.RotationOmega(mgr!, group.CelestialBodyId);
+            double impactSpeed = SurfaceFrame.GroundSpeed(relPos, relVel, omega);
+            (double latRad, double lonRad) = SurfaceFrame.EciToLongLat(relPos, omega, physicsTick);
+            string spot = FormatLongLat(latRad, lonRad);
+            string bodyName = mgr?.GetBodyName(group.CelestialBodyId) ?? "天体";
             int groupId = group.GroupId;
 
-            if (speed > SpaceConstants.MaxSafeLandingSpeedMps)
+            if (impactSpeed > SpaceConstants.MaxSafeLandingSpeedMps)
             {
                 Log.Message(string.Format(
-                    "[Collision] Group {0} CRASHED into planet! Impact speed: {1:F1} m/s (max safe: {2:F0} m/s). Entities destroyed.",
-                    groupId, speed, SpaceConstants.MaxSafeLandingSpeedMps));
+                    "[Collision] Group {0} CRASHED into {1} at ({2}) — ground-relative impact speed {3:F1} m/s (max safe {4:F0} m/s). Entities destroyed.",
+                    groupId, bodyName, spot, impactSpeed, SpaceConstants.MaxSafeLandingSpeedMps));
 
                 Messages.Message(string.Format(
-                    "Group {0} 坠毁！撞击速度 {1:F1} m/s，超出安全限值 {2:F0} m/s。",
-                    groupId, speed, SpaceConstants.MaxSafeLandingSpeedMps),
+                    "Group {0} 坠毁于{1}（{2}）：撞击速度 {3:F1} m/s，超过安全限值 {4:F0} m/s。",
+                    groupId, bodyName, spot, impactSpeed, SpaceConstants.MaxSafeLandingSpeedMps),
                     MessageTypeDefOf.ThreatBig);
             }
             else
             {
                 Log.Message(string.Format(
-                    "[Collision] Group {0} LANDED safely on planet surface. Touchdown speed: {1:F1} m/s.",
-                    groupId, speed));
+                    "[Collision] Group {0} LANDED on {1} at ({2}) — ground-relative touchdown speed {3:F1} m/s.",
+                    groupId, bodyName, spot, impactSpeed));
 
                 Messages.Message(string.Format(
-                    "Group {0} 成功着陆于行星表面！着陆速度 {1:F1} m/s。",
-                    groupId, speed),
+                    "Group {0} 着陆于{1}（{2}）：接地速度 {3:F1} m/s。",
+                    groupId, bodyName, spot, impactSpeed),
                     MessageTypeDefOf.TaskCompletion);
             }
 

@@ -90,5 +90,20 @@ namespace PioneerFramework
         /// <summary>表面点自转速度（ECI，米/秒）：`v = ω·(p×up) = ω·(−p_z, 0, p_x)`（**与 ω×p 反向**）。</summary>
         public static DVector3 SurfaceVelocity(DVector3 pEci, double omega)
             => new DVector3(-pEci.z, 0.0, pEci.x) * omega;
+
+        /// <summary>
+        /// **相对地表**（共转系）的速度 = 相对天体的速度 − 地表共转速度。
+        /// ⚠ 两个输入都必须**以天体中心为原点**（`SpaceEntityGroup.localPosition/localVelocity` 就是这个口径）。
+        /// </summary>
+        public static DVector3 GroundRelativeVelocity(DVector3 pEci, DVector3 vEci, double omega)
+            => vEci - SurfaceVelocity(pEci, omega);
+
+        /// <summary>
+        /// **接地速度**（m/s）= <see cref="GroundRelativeVelocity"/> 的模。
+        /// 这是"着陆/坠毁"唯一该用的速度口径（见 <see cref="SpaceConstants.MaxSafeLandingSpeedMps"/>）：
+        /// 惯性系速度会白送你一份地表共转（地球赤道 523.6 m/s）。
+        /// </summary>
+        public static double GroundSpeed(DVector3 pEci, DVector3 vEci, double omega)
+            => GroundRelativeVelocity(pEci, vEci, omega).magnitude;
     }
 }

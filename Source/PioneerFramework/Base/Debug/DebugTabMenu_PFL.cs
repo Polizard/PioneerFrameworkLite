@@ -78,6 +78,8 @@ namespace PioneerFramework
             // ═══ 场景 · 着陆（2026-09-22：反推制导纯核 + 着陆控制器）═══
             AddAction("反推着陆（地表上方 8 km、纯径向下降 150 m/s ⇒ 应当落地）", "05 场景 · 引力场(A0)", 80,
                 DebugShipSpawner.SpawnLandingTest, null);
+            AddAction("撞击事件（地表上方 200 m：20 m/s ⇒ 着陆｜300 m/s ⇒ 坠毁，消息带经纬度）", "05 场景 · 引力场(A0)", 78,
+                DebugShipSpawner.SpawnImpactEventTest, null);
 
             // ═══ 场景 · 轨道 / 空间站 ═══
             AddAction("部署空间站", "10 场景 · 轨道/空间站", 100, DebugShipSpawner.SpawnTestStation, null);

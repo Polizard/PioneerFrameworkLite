@@ -113,5 +113,49 @@ namespace PioneerFramework.Tests
                 p.x * vEast.y - p.y * vEast.x);
             Assert.Equal(-1.0, h.normalized.y, 9);
         }
+
+        /// <summary>
+        /// ⭐ **接地速度的口径**（2026-09-22，撞击事件判据的唯一速度口径）：<see cref="SurfaceFrame.GroundSpeed"/>
+        /// 必须扣掉地表共转。
+        ///
+        /// 判据用**可心算的构造**：把船放在某条经线上、速度取"该点地表共转速度 + 纯径向下降 d"
+        /// ⇒ 接地速度必须**恰好等于 d**，与纬度无关（`d = 0` 那行 = 停在地面上 ⇒ 0）。
+        /// 这不是同义反复：它同时钉住"下降是径向的"与"共转按同一点算"。
+        /// </summary>
+        [Theory]
+        [InlineData(0.0, 0.0)]      // 赤道：共转最快（523.6 m/s）；d=0 = 停在地面
+        [InlineData(0.0, 150.0)]    // 赤道：垂直下降 150
+        [InlineData(0.6, 150.0)]    // 中纬度
+        [InlineData(1.4, 60.0)]     // 近极：共转几乎为 0 ⇒ 扣不扣都一样
+        [InlineData(-1.0, 60.0)]    // 南半球（符号）
+        public void GroundSpeed_CoRotatingDescent_EqualsDescentRate(double lat, double descent)
+        {
+            (DVector3 pos, DVector3 velSurface) = SurfaceFrame.SurfaceState(R, lat, 0.9, Omega, 12345.0);
+            DVector3 vel = velSurface - pos.normalized * descent;   // 相对地表：纯垂直下降
+
+            Assert.Equal(descent, SurfaceFrame.GroundSpeed(pos, vel, Omega), 6);
+        }
+
+        /// <summary>
+        /// ⭐⭐ **陷阱本身**（这条测试存在的理由）：地球赤道地表共转 = ω·R ≈ **523.6 m/s**。
+        /// 同一个"跟着地面一起垂直下降 60 m/s"的状态，**用惯性系速度**读出来是 ~527 m/s
+        /// ⇒ 拿它跟 `MaxSafeLandingSpeedMps`（100）比，**任何**着陆都判坠毁。
+        /// 两条断言必须一起看：前一条 = 正确口径，后两条 = 曾经的口径（以及它为什么不可能对）。
+        /// </summary>
+        [Fact]
+        public void GroundSpeed_Equator_InertialReadingIsTheTrap()
+        {
+            const double descent = 60.0;
+            (DVector3 pos, DVector3 velSurface) = SurfaceFrame.SurfaceState(R, 0.0, 0.9, Omega, 12345.0);
+            DVector3 vel = velSurface - pos.normalized * descent;
+
+            Assert.Equal(descent, SurfaceFrame.GroundSpeed(pos, vel, Omega), 6);
+
+            // 惯性口径 = 共转 523.6 与下降 60 的合成（近似正交）⇒ 模长 ≈ 527
+            Assert.True(vel.magnitude > 500.0,
+                $"赤道惯性系速度应当 ≈527（共转 523.6 + 下降 {descent}），实得 {vel.magnitude:F1}");
+            Assert.True(vel.magnitude > 5.0 * SpaceConstants.MaxSafeLandingSpeedMps,
+                "旧口径下这个状态会被判**坠毁** —— 这正是阈值必须配『相对地表』口径的原因");
+        }
     }
 }

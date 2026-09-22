@@ -582,6 +582,65 @@ namespace PioneerFramework
                 group.GroupId, altStart, descent, body.radius / 1000.0));
         }
 
+        /// <summary>
+        /// ★ **撞击事件探针**（2026-09-22）：一次跑出**两种结果**，验证"着陆 / 坠毁"判定与落点经纬度。
+        ///
+        /// 摆法：两颗船都放在**地表上方 200 m**、**纯径向下降**（无切向 ⇒ 接地速度只由"初速 + 重力"决定；
+        /// 地表 g = μ/R² = 8 m/s² ⇒ 自由落体 200 m 只加 √(2gh) ≈ 57 m/s），只是初速不同：
+        /// · **着陆**：初速 20 m/s ⇒ 撞击 ≈ √(20² + 2·8·200) ≈ **60 m/s ≤ 100**；
+        /// · **坠毁**：初速 300 m/s ⇒ 撞击 ≈ **305 m/s > 100**。
+        /// 两颗都**不带碰撞豁免**（豁免会让事件根本不触发），也**不挂着陆控制器** —— 本探针只验事件本身。
+        ///
+        /// 落点对照：着陆那颗在**赤道 0°/0°**，坠毁那颗在**北纬 30° / 东经 120°**
+        /// ⇒ 用来证明经纬度**不是恒等于 (0,0)**（纬度那一路真的被算进去了）。
+        ///
+        /// 判据（消息 + `[Collision]` 日志）：应出现一条"着陆于地球（北纬 0.0° 东经 0.0°）"与
+        /// 一条"坠毁于地球（北纬 30.0° 东经 120.0°）"，接地速度分别 ≈60 与 ≈305。
+        /// </summary>
+        public static void SpawnImpactEventTest()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (spaceGame == null || celestialMgr == null) return;
+
+            var body = celestialMgr.GetBodyById(EARTH_BODY_ID);
+            if (body == null)
+            {
+                Log.Error("[撞击事件] 天体 Def 缺失（bodyId=1）");
+                return;
+            }
+
+            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
+            double omega = GetSurfaceState.RotationOmega(celestialMgr, EARTH_BODY_ID);
+
+            SpawnImpactProbeShip(spaceGame, body.radius, omega, physicsTick,
+                0.0, 0.0, 20.0);                                // 赤道 0°/0° ⇒ 预期"着陆"
+            SpawnImpactProbeShip(spaceGame, body.radius, omega, physicsTick,
+                30.0 * System.Math.PI / 180.0, 120.0 * System.Math.PI / 180.0, 300.0);  // 北纬 30°/东经 120° ⇒ 预期"坠毁"
+        }
+
+        /// <summary>撞击事件探针的单颗摆法（<see cref="SpawnImpactEventTest"/>）：地表上方 200 m、相对地表的纯径向下降。</summary>
+        private static void SpawnImpactProbeShip(SpaceGameComp spaceGame, double radius, double omega,
+            double physicsTick, double latRad, double lonRad0, double descentMps)
+        {
+            const double altitude = 200.0;
+            (DVector3 surfPos, DVector3 surfVel) = SurfaceFrame.SurfaceState(radius, latRad, lonRad0, omega, physicsTick);
+            DVector3 up = surfPos.normalized;
+            DVector3 pos = surfPos + up * altitude;
+            // **相对地表**的纯径向下降：ECI 速度 = 共转速度 − 下降率×径向
+            DVector3 vel = surfVel - up * descentMps;
+
+            var g = CreateShipNoMap(spaceGame, Faction.OfPlayer.loadID, pos,
+                new DVector3(6f, 6f, 12f), Quaternion.identity, "撞击事件", vel);
+            if (g == null) return;
+            g.CelestialBodyId = EARTH_BODY_ID;      // ⚠ 不设 exemptPlanetCollision：要让撞击事件真的触发
+
+            Log.Message(string.Format(
+                "[撞击事件] G{0} 已创建：高度 {1:F0} m、相对地表纯径向下降 {2:F0} m/s、落点预期 ({3:F1}°, {4:F1}°)" +
+                "｜无碰撞豁免 ⇒ 撞到地表时应出现『着陆 / 坠毁』消息",
+                g.GroupId, altitude, descentMps, latRad * 180.0 / System.Math.PI, lonRad0 * 180.0 / System.Math.PI));
+        }
+
         public static void SpawnMoonGravityTest()
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
