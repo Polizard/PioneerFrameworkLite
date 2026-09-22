@@ -40,3 +40,20 @@ AGENTS.md
 # Agent workspace / debug artifacts
 .zcode/
 Source/PioneerFramework.Pure.Tests/*.txt
+
+# ── 入库边界（2026-09-22 用户裁定）─────────────────────────────────────────────
+# 备份：不入库。快照仅作本机回退点（含 DLL 与全量 diff），展开近千个文件。
+_backups/
+
+# 设计思路文档：**新增**的不入库。历史已跟踪的那批（31 份）留库不动
+# —— gitignore 不作用于已跟踪文件，故这条只管"以后新写的稿"。
+#   例外 = 属「Todo 清单性质」的照常入库：TODO 台账、交接文件（跨会话/跨机器的作业链）。
+Source/PioneerFramework/DesignNotes/*
+!Source/PioneerFramework/DesignNotes/TODO.md
+!Source/PioneerFramework/DesignNotes/交接-*.md
+
+# 外部分析报告（设计输入，非交付物）
+MechJeb交会自动驾驶_分析与优化 (1).md
+
+# 测试/探针的一次性输出
+tools/_*.txt

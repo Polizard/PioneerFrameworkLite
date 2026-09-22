@@ -73,6 +73,28 @@ namespace PioneerFramework
             }
         }
 
+        /// <summary>
+        /// 本 DLL 的构建时间（取程序集文件最后写入时刻），缓存一次。
+        /// 用途：**自证游戏加载的是哪一份 DLL**——"找不到新加的按钮"最常见的根因是加载了旧 DLL。
+        /// </summary>
+        private static string? cachedDllTime;
+        private static string DllWriteTime()
+        {
+            if (cachedDllTime != null) return cachedDllTime;
+            try
+            {
+                string loc = typeof(Window_PFLSelfTest).Assembly.Location;
+                cachedDllTime = string.IsNullOrEmpty(loc)
+                    ? "未知（内存加载）"
+                    : System.IO.File.GetLastWriteTime(loc).ToString("yyyy-MM-dd HH:mm");
+            }
+            catch
+            {
+                cachedDllTime = "未知";
+            }
+            return cachedDllTime;
+        }
+
         /// <summary>该阶段"拿什么判过"——写在这里，省得再翻计划文档。</summary>
         private static string CriterionAt(int index)
         {
@@ -98,9 +120,17 @@ namespace PioneerFramework
 
             // ── 标题 + 总进度条 ──
             Text.Font = GameFont.Medium;
-            Widgets.Label(new Rect(0, y, inRect.width, 28f), "PFL 自检进度");
-            y += 30f;
+            Widgets.Label(new Rect(0, y, 200f, 28f), "PFL 自检进度");
+            // 用法提示：放在标题右侧（Tiny），**零垂直成本**——可发现性是本面板的历史痛点
+            // （"找不到按钮"两次的同一个根因：面板不自解释，且按钮同质、语义混杂）。
+            Text.Font = GameFont.Tiny;
+            Color hintPrev = GUI.color;
+            GUI.color = new Color(0.68f, 0.68f, 0.68f);
+            Widgets.Label(new Rect(206f, y + 9f, inRect.width - 206f, 18f),
+                "勾选 → 点「运行一键验收」→ 看下方明细与日志 [验收] 段；勾选改动下次运行生效");
+            GUI.color = hintPrev;
             Text.Font = GameFont.Small;
+            y += 30f;
 
             string state = running
                 ? string.Format("运行中 · 第 {0}/{1} 阶段：{2}",
@@ -110,7 +140,18 @@ namespace PioneerFramework
                 : PerfAcceptanceRunner.Verdict != null
                     ? "已出结论（见下方「值判据」与日志 [验收] 段）"
                     : "未运行";
+            // 状态着色：运行中=蓝 / 通过=绿 / 失败=红 / 未运行=灰 —— 让"现在什么状态"一眼可读
+            Color stateColor = running
+                ? new Color(0.55f, 0.8f, 1f)
+                : PerfAcceptanceRunner.Verdict == null
+                    ? Color.gray
+                    : PerfAcceptanceRunner.VerdictIsFail
+                        ? new Color(1f, 0.5f, 0.5f)
+                        : new Color(0.5f, 1f, 0.5f);
+            Color statePrev = GUI.color;
+            GUI.color = stateColor;
             Widgets.Label(new Rect(0, y, inRect.width - 150f, 22f), state);
+            GUI.color = statePrev;
             Widgets.Label(new Rect(inRect.width - 150f, y, 150f, 22f),
                 string.Format("勾选：电池{0} 阶段 {1}/{2}",
                     PerfAcceptanceRunner.IsBatteryEnabled ? "开" : "关",
@@ -185,6 +226,11 @@ namespace PioneerFramework
             var inner = detailRect.ContractedBy(6f);
             var sb = new StringBuilder();
 
+            // DLL 构建时间：**自证"游戏加载的是哪一份 DLL"**。此前两次"找不到按钮"的根因都是
+            // 游戏加载的是旧 DLL（`1.6/Assemblies/` 只在 Release 构建时更新，Debug 出到 bin/Debug）。
+            // 若这里显示的不是你刚构建的时刻 ⇒ 先跑 tools/rebuild-dll.ps1 + tools/Deploy-LiteToGame.ps1。
+            sb.AppendLine(string.Format("── DLL 构建时间 ── {0}（不符即说明游戏加载的是旧 DLL）", DllWriteTime()));
+            sb.AppendLine("");
             sb.AppendLine("── 引力场读数（㉑㉒）──");
             sb.AppendLine(string.Format("根域影子：检查 {0} 次 / 不一致 {1}{2}",
                 PerfProbe.GravityRootChecked, PerfProbe.GravityRootMismatch,
@@ -254,27 +300,31 @@ namespace PioneerFramework
                 GUI.color = prev;
             }
 
-            // ── 选择预设行（仅在非运行时显示）──
-            float presetY = buttonsY - 34f;
+            // ── 选择预设行（仅在非运行时显示）；y 用上面已算好的 presetRowY（此前在这里又算了一遍 presetY）──
             if (!running)
             {
                 float pw = (inRect.width - 8f) / 3f;
-                if (Widgets.ButtonText(new Rect(0, presetY, pw, 28f), "全选所有测试项"))
+                if (Widgets.ButtonText(new Rect(0, presetRowY, pw, 28f), "全选所有测试项"))
                 {
                     PerfAcceptanceRunner.SetBatteryEnabled(true);
                     PerfAcceptanceRunner.SetAllStages(true);
                 }
-                if (Widgets.ButtonText(new Rect(pw + 4f, presetY, pw, 28f), "只跑引力相关（电池 + 6/7 + 7/7）"))
+                if (Widgets.ButtonText(new Rect(pw + 4f, presetRowY, pw, 28f), "只跑引力相关（电池 + 6/7 + 7/7）"))
                     PerfAcceptanceRunner.SelectGravityOnly();
-                if (Widgets.ButtonText(new Rect(2f * (pw + 4f), presetY, pw, 28f), "跳过慢阶段（4/7 等）"))
+                if (Widgets.ButtonText(new Rect(2f * (pw + 4f), presetRowY, pw, 28f), "跳过慢阶段（4/7 等）"))
                 {
                     PerfAcceptanceRunner.SetStageEnabled(3, false); // 4/7 无 Map 碰撞：等船漂到接触，最慢
                     PerfAcceptanceRunner.SetStageEnabled(0, false); // 1/7 弹群齐射：弹群多、耗时长
                 }
             }
             // 勾选项改动在**下一次运行**生效（运行中复选框是灰的）
+            // 底部按钮行**按语义分段 + 关闭靠右独立**：
+            //   第 1 位 = 运行控制（运行 / 中止，互斥）；第 2–4 位 = 一次性动作（点一下跑一次或打一份日志）；
+            //   最右 = 关闭（与前四个拉开空隙，避免与"运行"误点相邻）。
             float y2 = buttonsY;
-            float bw = (inRect.width - 12f) / 4f;
+            const float closeW = 76f;
+            const float closeGap = 16f;
+            float bw = (inRect.width - closeW - closeGap - 3f * 4f) / 4f;
             if (!running)
             {
                 if (Widgets.ButtonText(new Rect(0, y2, bw, 30f), "运行一键验收"))
@@ -290,9 +340,13 @@ namespace PioneerFramework
             }
             if (Widgets.ButtonText(new Rect(bw + 4f, y2, bw, 30f), "只跑自检电池"))
                 GravityFieldSelfTest.Run();
-            if (Widgets.ButtonText(new Rect(2 * (bw + 4f), y2, bw, 30f), "打完整探针汇总"))
+            if (Widgets.ButtonText(new Rect(2f * (bw + 4f), y2, bw, 30f), "打完整探针汇总"))
                 PerfProbe.LogSummaryNow();
-            if (Widgets.ButtonText(new Rect(3 * (bw + 4f), y2, bw, 30f), "关闭"))
+            // 可见性快照（[V1]）：与"探针汇总"同类（点一下打一份日志）⇒ 并排。
+            // 跨存档检查用它，而不是靠点选群组的面板读数。
+            if (Widgets.ButtonText(new Rect(3f * (bw + 4f), y2, bw, 30f), "打印可见性快照"))
+                VisibilityProbe.PrintSnapshot();
+            if (Widgets.ButtonText(new Rect(inRect.width - closeW, y2, closeW, 30f), "关闭"))
                 Close();
         }
 

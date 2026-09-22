@@ -30,13 +30,18 @@ namespace PioneerFramework
 
         private const float MinPitch = 5f;
         private const float MaxPitch = 85f;
-        private const float ScrollSensitivity = 0.1f;
+        private const float WheelSensitivity = 0.1f;      // 滚轮每格缩放比例
         private const float MinDistance = 0.5f;
         private const float MaxDistance = 500_000_000f;
         private const float OrbitSensitivity = 0.3f;
 
         private const float PartRenderDist = 30000f;       // View 单位 = 300km
         private const float MinBodyVisRadius = 2f;
+
+        // 太阳的"等效替代"摆放（见 DrawCelestialBodies）：恒星真实距离远超远裁剪面，
+        // 故只保留方向、把距离/尺寸随相机距离等比放大 —— 角大小恒定，任意缩放下都看得见。
+        private const float SunMinPlaceDist = 5000f;
+        private const float SunAngularScale = 0.06f;       // 视半径/距离 ≈ 3.4°
 
         // ════════════════════════════════════════════════════
         //  状态
@@ -46,7 +51,6 @@ namespace PioneerFramework
         private List<CelestialBodyDef> selectableSystems = new List<CelestialBodyDef>();
 
         private float camDistance = 50000f;
-        private float zoomLevel;                    // log2(camDistance), 每次滚轮 ±0.5
         private float camYaw;
         private float camPitch = 45f;
         private Vector3 camFocusOffset;
@@ -58,8 +62,30 @@ namespace PioneerFramework
         private int targetGroupId = -1;   // 手动标记的攻击目标（射手 = selectedGroupId）
 
         private bool debugScaleParts;    // 调试：放大所有渲染部件以观测远处飞船
-        private bool debugShowSunMarker = true;  // 调试：在太阳位置显示黄色标记
+        private bool debugShowSunMarker; // 调试：在太阳位置显示黄色标记（默认关；面板上可勾）
         private int cachedRenderTick;           // 缓存渲染 tick，避免 OnPostRender 中重复获取
+
+        // 本帧被 UI 占用的矩形（顶栏按钮 / 调试勾选 / 信息面板）。
+        // 用于把鼠标输入与"点选编队、右键旋转、滚轮缩放"隔开：否则点面板上的按钮会
+        // 同时选中按钮底下那艘船并把相机拽回去（§HandleGUIEvents 顺序问题）。
+        private readonly List<Rect> uiBlockRects = new List<Rect>();
+
+        /// <summary>
+        /// 本帧鼠标是否落在"3D 视口"上：在窗口内、不在自己的 UI 矩形上、且没有被更上层的窗口
+        /// （浮动菜单 / 对话窗）盖住。三个判据都必要——只挡自己的矩形挡不住菜单：菜单画在本窗口之后，
+        /// 点菜单那一下仍会被本窗口先看到。
+        /// </summary>
+        private bool MouseInViewport(Rect inRect)
+        {
+            var e = Event.current;
+            if (e == null || !inRect.Contains(e.mousePosition)) return false;
+
+            for (int i = 0; i < uiBlockRects.Count; i++)
+                if (uiBlockRects[i].Contains(e.mousePosition)) return false;
+
+            var top = Find.WindowStack?.GetWindowAt(e.mousePosition);
+            return top == null || top == this;
+        }
 
         // 第 12 条（2026-09-10）：本窗口每帧重建 id 集合（GetLocalSystemBodyIds + 三处内联
         // {currentSystemBodyId}+卫星）。天体/卫星在开局后不可变，故按"所属天体 id"记忆化即精确复用；
@@ -72,6 +98,8 @@ namespace PioneerFramework
 #if DEBUG
         // 射弹渲染连续检测：相邻帧弹头渲染位置跳变超阈值 → 提示（抓折线/集体闪现）
         private readonly Dictionary<int, DVector3> debugLastProjRender = new Dictionary<int, DVector3>();
+        private readonly HashSet<int> debugLiveProjectileIds = new HashSet<int>();  // 帧末清理用（免字典无界增长）
+        private readonly List<int> debugDeadProjIds = new List<int>();              // 清理暂存（复用，免每帧分配）
         private int debugJumpLogTick = -9999;
 #endif
 
@@ -81,6 +109,7 @@ namespace PioneerFramework
 
         private Camera renderCamera;
         private Light sunLight;
+        private Light? fillLight;         // 必须留引用：DontDestroyOnLoad 的补光 GameObject 不销毁就每次开窗漏一盏
         private RenderTexture renderTexture;
         private GameObject cameraObject;
         private bool resourcesCreated;
@@ -160,7 +189,11 @@ namespace PioneerFramework
             doCloseX = false;
             draggable = false;
             resizeable = false;
-            preventCameraMotion = false;
+            // MainTabWindow 基类给的是 false（普通页签只占屏幕中间一块，地图相机该继续能动）。
+            // 本页签是**全屏不透明**视图：再让地图相机跟着鼠标走，玩家一边看太空一边就把地图相机的
+            // 位置拖到别处去了（返回地图时视角已漂）。故按全屏窗口的惯例挡住它（只有 CameraDriver/
+            // WorldCameraDriver 读这个标志，不影响本视图自己的相机）。
+            preventCameraMotion = true;
             absorbInputAroundWindow = false;
             closeOnClickedOutside = false;
             closeOnAccept = false;
@@ -191,15 +224,20 @@ namespace PioneerFramework
         {
             if (!resourcesCreated) EnsureResources();
 
-            if (selectedGroupId >= 0)
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (mgr != null)
             {
                 UpdateCamera();
-                RenderScene();
+                RenderScene(mgr);
                 if (renderTexture != null)
                     GUI.DrawTexture(inRect, renderTexture, ScaleMode.StretchToFill);
             }
             else
             {
+                // 只有"没有天体管理器"（未开局）才无可看之物。旧版把"未选中编队"也归进这个分支，
+                // 于是刚打开页签就是一块黑屏：而相机取景（InitCameraForCurrentBody 已按天体半径退开）、
+                // 渲染原点（GetRenderOrigin 回退到天体）、天体/轨道线绘制全都支持无选中状态 —— 那条
+                // 路径从没被执行过。现在未选中编队 = 正常渲染当前星系视图。
                 Widgets.DrawBoxSolid(inRect, new Color(0.005f, 0.005f, 0.03f));
                 Text.Font = GameFont.Medium;
                 Text.Anchor = TextAnchor.MiddleCenter;
@@ -207,14 +245,17 @@ namespace PioneerFramework
                 Widgets.Label(inRect, "无 信 号");
                 GUI.contentColor = Color.white;
                 Text.Anchor = TextAnchor.UpperLeft;
+                Text.Font = GameFont.Small;   // 与 Anchor 一起还原：字体是全局状态，不还原会污染后画的页签栏
             }
 
-            // 2. 渲染纹理之上画 UI 覆盖层
-            HandleGUIEvents(inRect);
+            // 顺序：先画覆盖层（控件自行消费落在自己身上的左键），再处理输入。
+            // 旧顺序（先输入后画 UI）会让点面板按钮的那次点击**同时**触发"点选按钮底下那艘船"，
+            // 并把相机拽回新选中的编队（initCameraForCurrentBody）。
             DrawOverlay(inRect);
 
-            // 3. 处理本帧输入（影响下一帧渲染）
-            HandleInput();
+            // 处理本帧输入（影响下一帧渲染）
+            HandleGUIEvents(inRect);
+            HandleInput(inRect);
         }
 
         public override void PreClose()
@@ -344,9 +385,7 @@ namespace PioneerFramework
             renderCamera.nearClipPlane = NearClip;
             renderCamera.farClipPlane = FarClip;
 
-            int rw = Mathf.Max(1, UI.screenWidth);
-            int rh = Mathf.Max(1, UI.screenHeight);
-            renderTexture = new RenderTexture(rw, rh, 24);
+            RecreateRenderTexture();
             renderCamera.targetTexture = renderTexture;
 
             // 方向光独立于相机，避免 parent 层级干扰世界空间旋转
@@ -359,7 +398,7 @@ namespace PioneerFramework
 
             var light2 = new GameObject("PFViewFill");
             UnityEngine.Object.DontDestroyOnLoad(light2);
-            var fillLight = light2.AddComponent<Light>();
+            fillLight = light2.AddComponent<Light>();
             fillLight.type = LightType.Directional;
             fillLight.intensity = 0.05f;
             fillLight.color = new Color(0.5f, 0.6f, 1f);
@@ -369,10 +408,26 @@ namespace PioneerFramework
             resourcesCreated = true;
         }
 
+        /// <summary>按当前屏幕尺寸（重）建渲染纹理。窗口尺寸变化后不重建的话，画面会被 StretchToFill 拉变形/发糊。</summary>
+        private void RecreateRenderTexture()
+        {
+            int rw = Mathf.Max(1, UI.screenWidth);
+            int rh = Mathf.Max(1, UI.screenHeight);
+            if (renderTexture != null)
+            {
+                if (renderTexture.width == rw && renderTexture.height == rh) return;
+                renderTexture.Release();
+                UnityEngine.Object.Destroy(renderTexture);
+            }
+            renderTexture = new RenderTexture(rw, rh, 24);
+            if (renderCamera != null) renderCamera.targetTexture = renderTexture;
+        }
+
         private void CleanupResources()
         {
             if (renderTexture != null) { renderTexture.Release(); UnityEngine.Object.Destroy(renderTexture); renderTexture = null; }
             if (sunLight != null) { UnityEngine.Object.Destroy(sunLight.gameObject); sunLight = null; }
+            if (fillLight != null) { UnityEngine.Object.Destroy(fillLight.gameObject); fillLight = null; }
             if (cameraObject != null) { UnityEngine.Object.Destroy(cameraObject); cameraObject = null; }
             renderCamera = null;
             resourcesCreated = false;
@@ -489,10 +544,7 @@ namespace PioneerFramework
             if (mgr == null) return;
             var body = mgr.GetBodyById(currentSystemBodyId);
             if (body != null)
-            {
                 camDistance = (float)(body.radius * MetersToView) * 2f;
-                zoomLevel = Mathf.Log(camDistance, 2f);
-            }
         }
 
         private static Vector3 WorldToView(DVector3 worldMeters, DVector3 originMeters)
@@ -513,13 +565,16 @@ namespace PioneerFramework
             if (cs.z + r < renderCamera.nearClipPlane || cs.z - r > renderCamera.farClipPlane)
                 return false;
 
-            // 水平/垂直 FOV 裁剪
+            // 水平/垂直 FOV 裁剪。注意 Unity 的 fieldOfView 是**垂直** FOV，水平半角 = atan(tanV·aspect)；
+            // 曾把两者写反（水平用 tanV、垂直用 tanV/aspect）⇒ 屏幕上半高之外的可视区域被误剔：
+            // 16:9 下水平方向只有真实视野的 ~56%，靠屏幕左右/上下边缘的船与天体标记会凭空消失。
             float halfFov = renderCamera.fieldOfView * 0.5f * Mathf.Deg2Rad;
-            float tanH = Mathf.Tan(halfFov);
-            float tanV = tanH / renderCamera.aspect;
+            float tanV = Mathf.Tan(halfFov);
+            float tanH = tanV * renderCamera.aspect;
+            float margin = r / Mathf.Max(Mathf.Cos(halfFov), 0.001f);
 
-            float hLimit = cs.z * tanH + r / Mathf.Max(Mathf.Cos(halfFov), 0.001f);
-            float vLimit = cs.z * tanV + r / Mathf.Max(Mathf.Cos(halfFov), 0.001f);
+            float hLimit = cs.z * tanH + margin;
+            float vLimit = cs.z * tanV + margin;
 
             if (Mathf.Abs(cs.x) > hLimit || Mathf.Abs(cs.y) > vLimit)
                 return false;
@@ -527,19 +582,27 @@ namespace PioneerFramework
             return true;
         }
 
-        private void HandleInput()
+        private void HandleInput(Rect inRect)
         {
             var e = Event.current;
             if (e == null) return;
 
-            if (e.type == EventType.ScrollWheel)
+            // 鼠标不在视口上时不接管相机输入（面板按钮/勾选/信息面板/上层菜单占用的区域见 MouseInViewport）
+            bool inViewport = MouseInViewport(inRect);
+
+            if (e.type == EventType.ScrollWheel && inViewport)
             {
-                camDistance = Mathf.Clamp(camDistance * (1f - e.delta.y * 0.1f), MinDistance, MaxDistance);
+                camDistance = Mathf.Clamp(camDistance * (1f - e.delta.y * WheelSensitivity), MinDistance, MaxDistance);
                 e.Use();
             }
-            // 右键拖拽 = 旋转
-            if (e.type == EventType.MouseDown && e.button == 1) { isDraggingRight = true; lastMousePos = e.mousePosition; e.Use(); }
-            if (e.type == EventType.MouseUp && e.button == 1) { isDraggingRight = false; e.Use(); }
+            // 右键拖拽 = 旋转（只在视口内起手，避免在面板上拖拽时相机乱转）
+            if (e.type == EventType.MouseDown && e.button == 1 && inViewport) { isDraggingRight = true; lastMousePos = e.mousePosition; e.Use(); }
+            // 只在真的拖过时才消费右键抬起（否则会把别人的右键事件吃掉，比如上层菜单/取消操作）
+            if (e.type == EventType.MouseUp && e.button == 1)
+            {
+                if (isDraggingRight) e.Use();
+                isDraggingRight = false;
+            }
             if (isDraggingRight && e.type == EventType.MouseDrag && e.button == 1)
             {
                 Vector2 d = e.mousePosition - lastMousePos;
@@ -552,6 +615,7 @@ namespace PioneerFramework
         private void UpdateCamera()
         {
             if (renderCamera == null) return;
+            RecreateRenderTexture();   // 分辨率/窗口尺寸变化 → 重建（尺寸相同则空转）
             Vector3 camViewPos = GetCameraViewPos();
             renderCamera.transform.position = camViewPos;
             renderCamera.transform.LookAt(camFocusOffset, Vector3.up);
@@ -596,24 +660,16 @@ namespace PioneerFramework
         //  场景渲染
         // ════════════════════════════════════════════════════
 
-        private void RenderScene()
+        private void RenderScene(CelestialBodyManager mgr)
         {
             if (renderCamera == null || renderTexture == null) return;
 
-            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            double tick = mgr != null ? TimeScaleManager.GetPhysicsTickSafe() : 0;
+            double tick = TimeScaleManager.GetPhysicsTickSafe();
             cachedRenderTick = (int)Math.Round(tick); // int 缓存仅作 OnPostRender 轨道线采样/键，天体位置一律用 double tick
             DVector3 origin = GetRenderOrigin(tick);
 
-            if (mgr != null)
-            {
-                UpdateLighting(mgr, tick, origin);
-                DrawAllObjects(origin, mgr, tick);
-            }
-            else
-            {
-                Log.Warning("[PFView] CelestialBodyManager is null!");
-            }
+            UpdateLighting(mgr, tick, origin);
+            DrawAllObjects(origin, mgr, tick);
 
             renderCamera.Render();
         }
@@ -706,36 +762,38 @@ namespace PioneerFramework
                 // ═══ 恒星：等效替代，方向对即可 ═══
                 if (isStar)
                 {
-                    const float SunPlaceDist = 5000f;
-                    const float SunPlaceSize = 300f;
-
-                    Vector3 sunDir = vp.normalized;
-                    if (sunDir.sqrMagnitude < 0.001f) sunDir = Vector3.forward;
-                    Vector3 sunRenderPos = sunDir * SunPlaceDist;
+                    // 恒星真实距离（1 AU 量级）远超远裁剪面，故画"等效替代"：只保留方向。
+                    // 距离随相机距离等比放大 → 角大小恒定，缩放到全星系尺度时太阳不会退成一个点；
+                    // 方向取**相机→恒星**（旧版取锚点→恒星，相机离锚点远时方向本身就有视差偏差）。
+                    Vector3 sunDir = (vp - camPos);
+                    if (sunDir.sqrMagnitude < 1e-6f) sunDir = -camPos;
+                    if (sunDir.sqrMagnitude < 1e-6f) sunDir = Vector3.forward;
+                    float placeDist = Mathf.Clamp(Mathf.Max(camDistance, SunMinPlaceDist), SunMinPlaceDist, FarClip * 0.25f);
+                    float sunSize = placeDist * SunAngularScale;
+                    Vector3 sunRenderPos = camPos + sunDir.normalized * placeDist;
 
                     if (SunBillboardMat != null)
                     {
                         // 发光球体（大，保证可见）
                         Matrix4x4 sphereMtx = Matrix4x4.TRS(sunRenderPos, Quaternion.identity,
-                            Vector3.one * SunPlaceSize * 2f);
+                            Vector3.one * sunSize * 2f);
                         Graphics.DrawMesh(sphereMeshLOD2, sphereMtx, SunBillboardMat, SceneLayer);
 
                         // billboard 叠加（朝向相机，RW 风格）
                         Vector3 toCam = (camPos - sunRenderPos).normalized;
                         if (toCam.sqrMagnitude < 0.0001f) toCam = Vector3.forward;
                         Quaternion sunRot = Quaternion.LookRotation(toCam, Vector3.up);
-                        Matrix4x4 sunMtx = Matrix4x4.TRS(sunRenderPos, sunRot, Vector3.one * SunPlaceSize);
+                        Matrix4x4 sunMtx = Matrix4x4.TRS(sunRenderPos, sunRot, Vector3.one * sunSize);
                         Graphics.DrawMesh(quadMesh, sunMtx, SunBillboardMat, SceneLayer);
                     }
 
-                    // ── 调试：在太阳位置放黄色大方块 ──
+                    // ── 调试：在太阳位置放黄色方块（默认关闭；面板上"太阳标记"勾选）──
                     if (debugShowSunMarker && renderMat != null)
                     {
-                        MaterialPropertyBlock dbgBlock = new MaterialPropertyBlock();
-                        dbgBlock.SetColor("_Color", new Color(1f, 1f, 0f));
+                        matBlock.SetColor("_Color", new Color(1f, 1f, 0f));
                         Matrix4x4 dbgMtx = Matrix4x4.TRS(sunRenderPos, Quaternion.identity,
-                            Vector3.one * 800f);
-                        Graphics.DrawMesh(cubeMesh, dbgMtx, renderMat, SceneLayer, null, 0, dbgBlock);
+                            Vector3.one * sunSize * 2.5f);
+                        Graphics.DrawMesh(cubeMesh, dbgMtx, renderMat, SceneLayer, null, 0, matBlock);
                     }
                     continue;
                 }
@@ -820,51 +878,43 @@ namespace PioneerFramework
 
             var sysIds = GetCurrentSystemBodyIds(mgr); // 第 12 条：记忆化复用（此前每帧新建 HashSet + 填卫星）
 
-            int totalGroups = 0, activeCount = 0, sysMatchCount = 0, partsRendered = 0, markerRendered = 0;
-            float minDist = float.MaxValue, maxDist = 0f;
-
             foreach (var g in spaceGame.GetAllGroups())
             {
-                totalGroups++;
                 if (!g.IsActive) continue;
-                activeCount++;
                 if (!sysIds.Contains(g.CelestialBodyId)) continue;
-                sysMatchCount++;
 
                 DVector3 gWorldMeters = GetGroupAbsoluteWorldPos(g, tick);
                 Vector3 vp = WorldToView(gWorldMeters, origin);
                 float dist = vp.magnitude;
 
-                if (dist > 0.01f)
-                {
-                    if (dist < minDist) minDist = dist;
-                    if (dist > maxDist) maxDist = dist;
-                }
-
                 if (dist < PartRenderDist)
                 {
-                    partsRendered++;
                     DrawGroupParts(g, gWorldMeters, origin, spaceGame);
+                    continue;
                 }
-                else if (SphereInFrustum(vp, 30f))
-                {
-                    markerRendered++;
-                    // Billboard 面片：始终朝向相机，尺寸随距离增大保持屏幕可见
-                    Quaternion rot = Quaternion.LookRotation(renderCamera.transform.forward, renderCamera.transform.up);
-                    float s = Mathf.Clamp(dist * 0.005f, 10f, 500f);
-                    Matrix4x4 mtx = Matrix4x4.TRS(vp, rot, Vector3.one * s);
-                    matBlock.SetColor("_Color", new Color(0.3f, 0.9f, 1.0f, 0.9f));
-                    Graphics.DrawMesh(quadMesh, mtx, renderMat, SceneLayer, null, 0, matBlock);
-                }
+
+                // Billboard 面片：始终朝向相机，尺寸随距离增大保持屏幕可见
+                float s = Mathf.Clamp(dist * 0.005f, 10f, 500f);
+                if (!SphereInFrustum(vp, s)) continue;
+
+                Quaternion rot = Quaternion.LookRotation(renderCamera.transform.forward, renderCamera.transform.up);
+                Matrix4x4 mtx = Matrix4x4.TRS(vp, rot, Vector3.one * s);
+                matBlock.SetColor("_Color", new Color(0.3f, 0.9f, 1.0f, 0.9f));
+                Graphics.DrawMesh(quadMesh, mtx, renderMat, SceneLayer, null, 0, matBlock);
+
+                // 远距离也要能看出朝向：指示棒长度随标记尺寸同比（= 屏幕尺寸恒定）
+                DrawHeadingBar(g, spaceGame, vp, s * 1.5f);
             }
 
         }
 
         private void DrawGroupParts(SpaceEntityGroup group, DVector3 groupWorldMeters, DVector3 origin, SpaceGameComp spaceGame)
         {
-            DVector3 vel = group.CurrentOrbit.velocity;
-            Vector3 fwd = vel.sqrMagnitude > 0.001 ? ((Vector3)vel.normalized) : Vector3.forward;
-            Quaternion gRot = Quaternion.LookRotation(fwd, Vector3.up);
+            // 姿态 = 编队真实姿态（CurrentOrbit.rotation）。
+            // 旧实现用**速度方向**做 LookRotation（船头永远朝轨道切线）：那是轨道运动的切线，不是船的
+            // 朝向 —— 船转到任何姿态画面都一样，玩家看到的朝向与物理（主推对准 / 碰撞盒 / 命中几何，
+            // 三者都消费同一个 rotation）毫无关系。改用真姿态后，船怎么转、画面就怎么转。
+            Quaternion gRot = group.CurrentOrbit.rotation;
             float scale = debugScaleParts ? 200f : 1f;
 
             foreach (int eid in group.GetEntityIds())
@@ -881,6 +931,42 @@ namespace PioneerFramework
                 if (entity.Parts.Count > 0)
                     DrawRuntimeParts(entity, eVp, gRot, scale);
             }
+
+            // 朝向指示棒长：以本组包围盒对角线的 0.7 倍为准（"放大部件"调试模式下同比放大），
+            // 下限 3 view 单位 = 30m —— 棒子要能从船体里伸出来才看得见朝向
+            float hull = 0f;
+            foreach (int eid in group.GetEntityIds())
+            {
+                var e = spaceGame.GetEntityById(eid);
+                if (e != null) hull = Mathf.Max(hull, (float)e.BoundsSize.magnitude);
+            }
+            DrawHeadingBar(group, spaceGame, WorldToView(groupWorldMeters, origin),
+                Mathf.Max(hull * MetersToView * 0.7f, 3f) * scale);
+        }
+
+        /// <summary>
+        /// 朝向指示棒：从编队中心沿**主推轴**画一根细棒。
+        /// 主推轴 = 点火会把本编队推向哪边，取自 `SpaceGameComp.GetMainThrustWorldAxis`（与 burn / SAS
+        /// 自动对准 / 主推方向同一出处），所以画出来的方向就是物理会执行的方向。
+        /// 无引擎（无推力）/ 全向类（无主推轴）时不画 —— 不摆一根物理上不存在的箭头。
+        /// </summary>
+        private static void DrawHeadingBar(SpaceEntityGroup group, SpaceGameComp spaceGame, Vector3 centerVp, float barLen)
+        {
+            if (spaceGame == null || barLen <= 0.01f) return;
+
+            DVector3 axisWorld = spaceGame.GetMainThrustWorldAxis(group);
+            if (axisWorld.sqrMagnitude < 1e-12) return;
+
+            // WorldToView 只有平移 + 正等比缩放 ⇒ 方向在视图系与世界系同向，直接当视图方向用
+            Vector3 dir = (Vector3)axisWorld.normalized;
+            if (dir.sqrMagnitude < 0.5f) return;
+
+            float width = Mathf.Max(barLen * 0.08f, 0.05f);
+            Vector3 mid = centerVp + dir * (barLen * 0.5f);
+            Quaternion rot = Quaternion.LookRotation(dir, Mathf.Abs(dir.y) < 0.9f ? Vector3.up : Vector3.forward);
+            Matrix4x4 mtx = Matrix4x4.TRS(mid, rot, new Vector3(width, width, barLen));
+            matBlock.SetColor("_Color", new Color(1f, 0.75f, 0.15f, 1f));
+            Graphics.DrawMesh(cubeMesh, mtx, renderMat, SceneLayer, null, 0, matBlock);
         }
 
         private static void DrawRuntimeParts(SpaceEntity entity, Vector3 eVp, Quaternion gRot, float scale = 1f)
@@ -920,6 +1006,7 @@ namespace PioneerFramework
             // 天体偏移同样用 double physicsTick：int 化在 1/60x 下每 60 real tick 才跳 1 秒，
             // 天体位置离散跳变 → 射弹/场景"集体闪现"。全部用 double 后完全连续。
             double tick = TimeScaleManager.GetPhysicsTickSafe();
+            Vector3 camView = GetCameraViewPos();   // 逐弹重复求一次相机位（含三角函数）没有意义
 
             foreach (var proj in cm.ActiveProjectiles)
             {
@@ -934,7 +1021,6 @@ namespace PioneerFramework
                 // 射弹位置是行星系相对坐标，渲染需转绝对（加所属行星世界偏移）
                 DVector3 bodyOff = GetBodyWorldPos(proj.systemBodyId, tick);
                 Vector3 vp = WorldToView(renderPos + bodyOff, origin);
-                Vector3 camView = GetCameraViewPos();
                 float dist = Vector3.Distance(vp, camView);
 
                 // 按相机距离自适应放大：射弹在行星系尺度下极小，固定尺寸不可见
@@ -961,6 +1047,7 @@ namespace PioneerFramework
                     }
                 }
                 debugLastProjRender[proj.id] = renderPos;
+                debugLiveProjectileIds.Add(proj.id);
 #endif
 
                 // 尾迹：沿 velocity 反方向固定延伸 1 个物理步（长度恒定、端点连续）。
@@ -1006,6 +1093,18 @@ namespace PioneerFramework
                 matBlock.SetColor("_Color", new Color(1f, 0.45f, 0.1f, alpha));
                 Graphics.DrawMesh(sphereMeshLOD1, mtx, renderMat, SceneLayer, null, 0, matBlock);
             }
+
+#if DEBUG
+            // 清理已消失射弹的检测残留（否则一次会话内字典无界增长：每个弹 id 一条，永不回收）
+            if (debugLastProjRender.Count > debugLiveProjectileIds.Count)
+            {
+                debugDeadProjIds.Clear();
+                foreach (var kv in debugLastProjRender)
+                    if (!debugLiveProjectileIds.Contains(kv.Key)) debugDeadProjIds.Add(kv.Key);
+                for (int i = 0; i < debugDeadProjIds.Count; i++) debugLastProjRender.Remove(debugDeadProjIds[i]);
+            }
+            debugLiveProjectileIds.Clear();
+#endif
         }
 
         private void OnPostRender(ScriptableRenderContext context, Camera cam)
@@ -1066,7 +1165,8 @@ namespace PioneerFramework
             var e = Event.current;
             if (e == null) return;
 
-            if (e.type == EventType.MouseDown && e.button == 0 && !isDraggingRight)
+            // 点在 UI 或上层窗口上时不点选（画 UI 在前、控件已消费自己身上的左键；本判据是第二道保险）
+            if (e.type == EventType.MouseDown && e.button == 0 && !isDraggingRight && MouseInViewport(inRect))
             {
                 TrySelectGroup(e.mousePosition - inRect.position, inRect.size);
             }
@@ -1083,7 +1183,9 @@ namespace PioneerFramework
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (spaceGame == null || mgr == null || renderCamera == null) return;
 
-            int tick = (int)Math.Round(TimeScaleManager.GetPhysicsTickSafe());
+            // 拾取必须与**渲染**用同一个 tick：physicsTick 单位是秒，取整会带来最多半秒的位移
+            // （几 km/s 的船上就是几 km），相机拉近到船附近时这点偏差等于整屏——船会点不中。
+            double tick = TimeScaleManager.GetPhysicsTickSafe();
             DVector3 origin = GetRenderOrigin();
 
             var sysIds = GetCurrentSystemBodyIds(mgr); // 第 12 条：记忆化复用（此前每帧新建 HashSet + 填卫星）
@@ -1119,28 +1221,37 @@ namespace PioneerFramework
 
         private void DrawOverlay(Rect inRect)
         {
+            uiBlockRects.Clear();   // 每帧重新登记（画在输入处理之前，故同帧内几何一致）
+
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            string sysName = mgr != null ? mgr.GetBodyName(currentSystemBodyId) : "Unknown";
+            string sysName = mgr != null ? mgr.GetBodyName(currentSystemBodyId) : "未知";
 
             // 锚定状态：编队 or 天体
             string anchorLabel = selectedGroupId >= 0
-                ? $"<b>Anchor: Group {selectedGroupId}</b> (System: {sysName})"
-                : $"<b>System: {sysName}</b>";
-            Widgets.Label(new Rect(inRect.x + 10, inRect.y + 10, 500, 30), anchorLabel);
+                ? $"<b>锚定: 编队 {selectedGroupId}</b>（星系: {sysName}）"
+                : $"<b>星系: {sysName}</b>　滚轮缩放 · 右键拖拽转视角 · R 复位 · 左键点选编队";
+            Widgets.Label(new Rect(inRect.x + 10, inRect.y + 10, 600, 30), anchorLabel);
 
             float bx = inRect.xMax - 10;
-            if (Widgets.ButtonText(new Rect(bx - 120, inRect.y + 10, 120, 25), "Select Group"))
+            var rSelect = new Rect(bx - 120, inRect.y + 10, 120, 25);
+            if (Widgets.ButtonText(rSelect, "选择编队"))
                 ShowGroupMenu();
             bx -= 130;
-            if (Widgets.ButtonText(new Rect(bx, inRect.y + 10, 120, 25), "Switch System"))
+            var rSystem = new Rect(bx, inRect.y + 10, 120, 25);
+            if (Widgets.ButtonText(rSystem, "切换星系"))
                 ShowSystemMenu();
             bx -= 130;
-            if (Widgets.ButtonText(new Rect(bx, inRect.y + 10, 120, 25), "Deploy Pair"))
+            var rDeploy = new Rect(bx, inRect.y + 10, 120, 25);
+            if (Widgets.ButtonText(rDeploy, "部署交火测试对"))
                 DeployCombatTestPair();
+            uiBlockRects.Add(rSelect);
+            uiBlockRects.Add(rSystem);
+            uiBlockRects.Add(rDeploy);
 
-            Widgets.CheckboxLabeled(
-                new Rect(inRect.x + 10, inRect.y + 35, 200, 25),
-                "Scale Up Parts", ref debugScaleParts);
+            var debugRow = new Rect(inRect.x + 10, inRect.y + 35, 320, 25);
+            Widgets.CheckboxLabeled(new Rect(debugRow.x, debugRow.y, 120, 25), "放大部件", ref debugScaleParts);
+            Widgets.CheckboxLabeled(new Rect(debugRow.x + 120, debugRow.y, 200, 25), "太阳标记（调试）", ref debugShowSunMarker);
+            uiBlockRects.Add(debugRow);
 
             if (selectedGroupId >= 0)
                 DrawInfoPanel(inRect);
@@ -1231,7 +1342,7 @@ namespace PioneerFramework
                 if (!g.IsActive || !sysIds.Contains(g.CelestialBodyId)) continue;
                 var gg = g;
                 int entityCount = gg.GetEntityIds()?.Count ?? 0;
-                string label = $"Group {gg.GroupId} ({entityCount} entities)";
+                string label = $"编队 {gg.GroupId}（{entityCount} 个实体）";
                 opts.Add(new FloatMenuOption(label, () =>
                 {
                     selectedGroupId = gg.GroupId;
@@ -1240,7 +1351,7 @@ namespace PioneerFramework
             }
 
             if (opts.Count == 0)
-                opts.Add(new FloatMenuOption("(No groups in this system)", null));
+                opts.Add(new FloatMenuOption("（本星系无编队）", null));
 
             Find.WindowStack.Add(new FloatMenu(opts));
         }
@@ -1288,75 +1399,112 @@ namespace PioneerFramework
                     }
                 }
             }
-            float roomSectionH = roomParts.Count > 0 ? 30 + roomParts.Count * 26 : 0;
+            float roomSectionH = roomParts.Count > 0 ? 20 + roomParts.Count * 26 + 26 : 0;
 
+            var target = targetGroupId >= 0 ? spaceGame.GetGroupById(targetGroupId) : null;
+
+            // 面板高度 = 下面逐行累加的行高之和（旧版是手写常数 195 + …，与实际画出的行对不上：
+            // 无目标时底部空出一大块，而"目标被销毁"时又按 80 预留 → 高度与内容长期错位）。
+            const float RowTitle = 22f, RowText = 18f, RowBtn = 30f, RowAtt = 16f;
             float pw = 280;
-            float ph = 195 + shownWeapons * 22 + (targetGroupId >= 0 ? 80 : 0) + roomSectionH;
+            float ph = 5                                             // 上留白
+                     + RowTitle + 2 * RowAtt                         // 标题 + 朝向/主推轴两行
+                     + RowText + RowBtn                              // 目标行 + 设为目标
+                     + shownWeapons * 22 + (weapons.Count > shownWeapons ? RowText : 0) + 4 + RowBtn
+                     + (target != null ? 26 + 30 : 0)                 // 传送 + 调速
+                     + roomSectionH
+                     + RowBtn + 6;                                    // 取消选中
             Rect p = new Rect(inRect.xMax - pw - 10, inRect.yMax - ph - 10, pw, ph);
             Widgets.DrawBox(p);
+            uiBlockRects.Add(p);
 
             float x = p.x + 5;
             float w = pw - 10;
             float y = p.y + 5;
 
-            Widgets.Label(new Rect(x, y, w, 22), $"<b>Group {g.GroupId}</b> (射手)");
-            y += 22;
+            Widgets.Label(new Rect(x, y, w, RowTitle), $"<b>编队 {g.GroupId}</b>（射手）");
+            y += RowTitle;
 
-            var target = targetGroupId >= 0 ? spaceGame.GetGroupById(targetGroupId) : null;
-            if (target != null)
+            // ── 朝向读数（与 3D 指示棒同一份数据：姿态来自 group.CurrentOrbit.rotation，
+            //    主推轴来自 SpaceGameComp.GetMainThrustWorldAxis）──
+            var font = Text.Font;
+            Text.Font = GameFont.Tiny;
+            Vector3 euler = g.CurrentOrbit.rotation.eulerAngles;
+            Widgets.Label(new Rect(x, y, w, RowAtt), string.Format(
+                "朝向 yaw {0:F0}° / pitch {1:F0}° / roll {2:F0}°　角速度 {3:F1}°/s",
+                euler.y, euler.x, euler.z, g.angularVelocity.magnitude * Mathf.Rad2Deg));
+            y += RowAtt;
+
+            DVector3 thrustAxis = spaceGame.GetMainThrustWorldAxis(g);
+            if (thrustAxis.sqrMagnitude > 1e-12)
             {
-                double dist = (GetGroupRelPos(g) - GetGroupRelPos(target)).magnitude;
-                Widgets.Label(new Rect(x, y, w, 18), $"目标 G{target.GroupId}  距离 {dist / 1000.0:F0} km");
+                DVector3 vel = g.CurrentOrbit.velocity;
+                string align = vel.sqrMagnitude > 1e-6
+                    ? string.Format("　与速度夹角 {0:F0}°", Mathf.Acos(Mathf.Clamp((float)DVector3.Dot(thrustAxis.normalized, vel.normalized), -1f, 1f)) * Mathf.Rad2Deg)
+                    : "";
+                Widgets.Label(new Rect(x, y, w, RowAtt), "主推轴（黄棒）→ " + DirectionLabel(thrustAxis) + align);
             }
             else
             {
-                Widgets.Label(new Rect(x, y, w, 18), "目标: 无（点 Mark 设置）");
+                Widgets.Label(new Rect(x, y, w, RowAtt), "主推轴: 无（无引擎 / 全向类）");
             }
-            y += 18;
+            y += RowAtt;
+            Text.Font = font;
 
-            if (Widgets.ButtonText(new Rect(x, y, w, 24), targetGroupId == selectedGroupId ? "清除目标" : "Mark as Target"))
+            if (target != null)
+            {
+                double dist = (GetGroupRelPos(g) - GetGroupRelPos(target)).magnitude;
+                Widgets.Label(new Rect(x, y, w, RowText), $"目标 编队 {target.GroupId}　距离 {dist / 1000.0:F0} km");
+            }
+            else
+            {
+                Widgets.Label(new Rect(x, y, w, RowText), "目标: 无（选中目标编队后按钮设置）");
+            }
+            y += RowText;
+
+            if (Widgets.ButtonText(new Rect(x, y, w, 24), targetGroupId == selectedGroupId ? "清除目标" : "设为目标"))
             {
                 targetGroupId = targetGroupId == selectedGroupId ? -1 : selectedGroupId;
             }
-            y += 30;
+            y += RowBtn;
 
-            // 武器列表（逐把 Fire）
+            // 武器列表（逐把开火）
             for (int i = 0; i < shownWeapons; i++)
             {
                 var wp = weapons[i];
                 string wState = wp.isOverheated ? "过热" : (wp.cooldownRemaining > 0 ? "冷却" + wp.cooldownRemaining : "就绪");
-                Widgets.Label(new Rect(x, y, w - 60, 18), $"W{i} {wp.def.defName} [{wState}]");
-                if (Widgets.ButtonText(new Rect(x + w - 55, y, 50, 18), "Fire"))
+                Widgets.Label(new Rect(x, y, w - 60, RowText), $"W{i} {wp.def.defName} [{wState}]");
+                if (Widgets.ButtonText(new Rect(x + w - 55, y, 50, RowText), "开火"))
                     FireAtTarget(wp);
                 y += 22;
             }
             if (weapons.Count > shownWeapons)
             {
-                Widgets.Label(new Rect(x, y, w, 16), $"... +{weapons.Count - shownWeapons} 把武器");
-                y += 18;
+                Widgets.Label(new Rect(x, y, w, RowText - 2), $"... +{weapons.Count - shownWeapons} 把武器");
+                y += RowText;
             }
             y += 4;
 
-            if (Widgets.ButtonText(new Rect(x, y, w, 24), "Fire All Weapons"))
+            if (Widgets.ButtonText(new Rect(x, y, w, 24), "全部开火"))
             {
                 if (target != null)
                     foreach (var wp in weapons)
                         if (wp.CanFire())
                             FireAtTarget(wp);
             }
-            y += 30;
+            y += RowBtn;
 
             // 目标操作
             if (target != null)
             {
-                if (Widgets.ButtonText(new Rect(x, y, w, 24), "Teleport Target (+1km 前方)"))
+                if (Widgets.ButtonText(new Rect(x, y, w, 24), "把目标传送到正前方 1km"))
                     TeleportTargetHere();
                 y += 26;
-                if (Widgets.ButtonText(new Rect(x, y, w * 0.48f, 24), "Target +100m/s"))
+                if (Widgets.ButtonText(new Rect(x, y, w * 0.48f, 24), "目标 +100 m/s"))
                     AdjustTargetSpeed(100.0);
-                if (Widgets.ButtonText(new Rect(x + w * 0.52f, y, w * 0.48f, 24), "Target -100m/s"))
+                if (Widgets.ButtonText(new Rect(x + w * 0.52f, y, w * 0.48f, 24), "目标 -100 m/s"))
                     AdjustTargetSpeed(-100.0);
-                y += 30;
+                y += RowBtn;
             }
 
             // 舱室操作：进入舱室 / 预生成地图（测试）
@@ -1389,12 +1537,25 @@ namespace PioneerFramework
                 y += 26;
             }
 
-            if (Widgets.ButtonText(new Rect(x, y, w, 24), "Deselect"))
+            if (Widgets.ButtonText(new Rect(x, y, w, 24), "取消选中"))
             {
                 selectedGroupId = -1;
                 targetGroupId = -1;
                 InitCameraForCurrentBody();
             }
+        }
+
+        /// <summary>方向 → "方位 x° / 仰角 y°"（方位 = 绕 +Y 从 +Z 起算，仰角 = 相对 XZ 平面）。
+        /// 用方向读数而不是"前/后/左/右"这类船体局部轴向名：局部轴的命名在本库里本身有歧义
+        /// （`ThrustAxis` 的逐项注释说 +Z 是船头，`RotateByRot4` 的注释与导弹默认 `mainAxisLocal=-Z`
+        /// 都指向 -Z 是船头），表现层不替它选边；方位/仰角与画面上那根黄棒一一对应。</summary>
+        private static string DirectionLabel(DVector3 dir)
+        {
+            DVector3 n = dir.normalized;
+            float azimuth = Mathf.Atan2((float)n.x, (float)n.z) * Mathf.Rad2Deg;
+            if (azimuth < 0f) azimuth += 360f;
+            float elevation = Mathf.Asin(Mathf.Clamp((float)n.y, -1f, 1f)) * Mathf.Rad2Deg;
+            return string.Format("方位 {0:F0}° / 仰角 {1:F0}°", azimuth, elevation);
         }
 
         /// <summary>获取编队在行星系相对坐标下的当前位置（与 CombatManager 开火基准一致）。</summary>

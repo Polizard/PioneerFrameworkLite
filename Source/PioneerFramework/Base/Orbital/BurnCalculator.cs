@@ -9,32 +9,40 @@ namespace PioneerFramework
         public PropellantDef Propellant;
         public float Ve;
         public float MassFlow;
-        public float AllocatedDv;        // 本次机动按推力比例分给该网络的 ΔV（m/s）
-        public float RequiredPropellant; // 完成该分配所需工质（kg）
-        public float Available;          // 当前可用存量（kg）
-        public float MaxDv;              // 该网络单独全部烧完的可达 ΔV（m/s，近似）
-        public bool Feasible;            // 所需 ≤ 可用
+        /// <summary>该网络承担的冲量份额对应 ΔV（m/s，按推力占比）。</summary>
+        public float AllocatedDv;
+        /// <summary>本次机动从该网络抽取的工质（kg，按质量流率占比——与实际扣料同口径）。</summary>
+        public float RequiredPropellant;
+        /// <summary>当前可用存量（kg）。</summary>
+        public float Available;
+        /// <summary>该网络单独全部烧完的可达 ΔV（m/s，近似）。</summary>
+        public float MaxDv;
+        /// <summary>所需 ≤ 可用（备用网络恒 true）。</summary>
+        public bool Feasible;
+        /// <summary>true = 本次机动不动它（RCS 备用 / 未承担机动的网络）。</summary>
+        public bool IsReserve;
     }
 
     /// <summary>
     /// 一次机动的燃烧估算结果（MechJeb 式：用实际推进参数反推规划值）。
-    /// 多工质网络并行烧：ΔV 按各网络推力比例分配，各自消耗各自工质，时长取最慢网络。
+    /// 口径 = 实际燃烧语义（见 <see cref="BurnCore"/>）：主网并行承担机动、按质量流率耗料；
+    /// RCS 网不参与分配（备用/兜底），整船无主网时才由 RCS 承担。
     /// </summary>
     public struct BurnEstimate
     {
-        /// <summary>全部启用网络都能完成本次机动。</summary>
+        /// <summary>承担机动的网络都能完成本次机动。</summary>
         public bool Feasible;
 
-        /// <summary>总所需工质（kg）= Σ 各网络所需。</summary>
+        /// <summary>承担机动的网络所需工质合计（kg）。</summary>
         public float RequiredPropellant;
 
-        /// <summary>燃烧时长（s）= max(Δm_i/ṁ_i)（并行烧，最慢网络决定）。</summary>
+        /// <summary>燃烧时长（s）= 抽料 / 承担网络总流率。</summary>
         public float BurnSeconds;
 
-        /// <summary>等效网络（全网络并行）当前最大可达 ΔV（m/s）。</summary>
+        /// <summary>承担机动的网络全烧完的可达 ΔV（m/s）。</summary>
         public float MaxDeltaV;
 
-        /// <summary>逐网络明细（UI 展示用）。</summary>
+        /// <summary>逐网络明细（UI 展示用；含未承担机动的备用网络）。</summary>
         public List<NetworkEstimate> Networks;
     }
 
@@ -78,7 +86,8 @@ namespace PioneerFramework
                     n.Thrust,
                     n.MassFlow,
                     n.Ve,
-                    n.AvailableMass(src)));
+                    n.AvailableMass(src),
+                    isRcs: n.HasRcsEngines));   // 角色：RCS 网不参与机动分配（见 BurnCore）
             }
 
             var core = BurnCore.Estimate(dvMps, dryMass, inputs);
@@ -103,7 +112,8 @@ namespace PioneerFramework
                         RequiredPropellant = r.RequiredPropellant,
                         Available = r.Available,
                         MaxDv = r.MaxDv,
-                        Feasible = r.Feasible
+                        Feasible = r.Feasible,
+                        IsReserve = r.IsReserve
                     });
                 }
             }

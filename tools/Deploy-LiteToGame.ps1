@@ -12,6 +12,44 @@ param(
 $ErrorActionPreference = 'Stop'
 $srcRoot = Split-Path -Parent $PSScriptRoot
 
+# ── 硬门（2026-09-19 加，用户批准）：**闸门红就别部署** ──────────────────────────────
+# 起因：那天我在"Debug 全量重建失败"之后照样跑了本脚本 ⇒ 把**上一版** DLL 部署进游戏，
+# 而"构建失败时不要部署"是我自己写进台账的规矩（B30）—— 靠人记没用，改成本脚本自己拦。
+# 两道检查：
+#   ① 主工程能过 Release 构建（红 ⇒ 直接退出，不部署任何东西）；
+#   ② 交付物 `1.6/Assemblies/PioneerFrameworkLite.dll` **不比最新源文件旧**
+#      （否则就是把旧 DLL 送进游戏 —— 那天真正发生的事）。
+Write-Host "=== 部署前闸门 ===" -ForegroundColor Cyan
+
+$proj = Join-Path $srcRoot 'Source\PioneerFramework\PioneerFramework.csproj'
+$buildLog = & dotnet build $proj -c Release --nologo 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "闸门红：Release 构建失败 ⇒ **拒绝部署**（先修构建）" -ForegroundColor Red
+    $buildLog | Select-Object -Last 12 | ForEach-Object { Write-Host "  $_" }
+    exit 1
+}
+
+$dllPath = Join-Path $srcRoot '1.6\Assemblies\PioneerFrameworkLite.dll'
+if (-not (Test-Path -LiteralPath $dllPath)) {
+    Write-Host "闸门红：交付物 DLL 不存在 ⇒ 拒绝部署" -ForegroundColor Red
+    exit 1
+}
+$dllTime = (Get-Item -LiteralPath $dllPath).LastWriteTimeUtc
+# ⚠ 必须用 `-Filter` 而**不是** `-Include *.cs`：PowerShell 5.1 里 `-Include` 与 `-Recurse` 同用
+#   会**把过滤丢掉**（实测它返回了 `Source\PioneerFramework\DesignNotes` 这个**目录**，
+#   于是"最新源文件"变成了一份 `.md` 交班文档的时间戳 ⇒ 闸门随机变红、拦住合法部署）✗✗。
+#   2026-09-21 修（`tools/` 下只此一处用 `-Include`，已核对）。
+#   `-Filter` 由文件系统提供者执行、快得多，且不会退化。
+$newestSrc = Get-ChildItem -LiteralPath (Join-Path $srcRoot 'Source') -Recurse -File -Filter *.cs |
+             Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+if ($newestSrc -and $newestSrc.LastWriteTimeUtc -gt $dllTime.AddSeconds(2)) {
+    Write-Host ("闸门红：交付物 DLL 比最新源文件旧（DLL {0:u} vs {1} {2:u}）⇒ 这是'部署旧 DLL'的情形，拒绝" `
+        -f $dllTime, $newestSrc.Name, $newestSrc.LastWriteTimeUtc) -ForegroundColor Red
+    Write-Host "  先跑 tools/test-all.ps1（它会重建 Release 交付物）" -ForegroundColor Yellow
+    exit 1
+}
+Write-Host "闸门绿：Release 构建通过、交付物不比源文件旧" -ForegroundColor Green
+
 if (-not (Test-Path -LiteralPath $DeployDir)) {
     Write-Host "部署目录不存在，已创建: $DeployDir"
     New-Item -ItemType Directory -Force -Path $DeployDir | Out-Null

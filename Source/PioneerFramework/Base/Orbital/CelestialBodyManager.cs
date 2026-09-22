@@ -87,6 +87,43 @@ namespace PioneerFramework
 
             Log.Message(string.Format("[CelestialBodyManager] Loaded {0} celestial bodies, built moon indices. World radius = {1:F0} m ({2} tiles).",
                 allDefs.Count, SpaceConstants.PlanetRadiusMeters, (int)(SpaceConstants.PlanetRadiusMeters / SpaceConstants.MetersPerUnit)));
+
+            // ── 构建自证（2026-09-17）────────────────────────────────────────────
+            // 为什么必须有：这个 mod"交付物路径只在 Release 生效"，而开发期间每次重建都会覆盖它
+            // ⇒ **日志里的读数到底来自哪一版代码**这个问题，历史上反复浪费排查时间
+            //   （前两次"探针找不到"的根因都是旧 DLL）。把**内容身份**打进日志，
+            //   任何一份日志都能自证版本，不用再靠时间戳猜。
+            //   · MVID（模块版本 id）= 每次编译唯一、由内容决定 ⇒ 逐位可比；
+            //   · 构建时间 = 人读友好，用来和 `1.6/Assemblies` 的时间戳对。
+            try
+            {
+                var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                var loc = string.IsNullOrEmpty(asm.Location) ? null : asm.Location;
+                string built = "?";
+                if (loc != null && System.IO.File.Exists(loc))
+                    built = System.IO.File.GetLastWriteTime(loc).ToString("yyyy-MM-dd HH:mm:ss");
+                Log.Message(string.Format(
+                    "[PFL] 构建自证：MVID={0}｜DLL 构建时间={1}｜交会新律={2}",
+                    asm.ManifestModule.ModuleVersionId, built,
+                    SpaceGameComp.UseNewRendezvousLaw ? "开" : "关"));
+            }
+            catch (System.Exception e)
+            {
+                Log.Warning("[PFL] 构建自证失败（不影响运行）：" + e.Message);
+            }
+
+            // ── 移植面日志桥（2026-09-19）────────────────────────────────────────
+            // 为什么必须有：移植来的 `MechJebLib.Utils.Logger` 靠宿主调 `GlobalRegister` 才会有输出，
+            // 而在此之前**没有任何地方注册过** ⇒ `Logger.Print` 全库都是**静默空操作**。
+            // 实测（2026-09-19）：规划器初始化那句 "发现 N 个操作" 在游戏日志里**查无此句**，
+            // 而它其实已经跑过了。
+            //
+            // **教训：看不见的探针不是探针**——没接桥时，"日志里没有"与"事情没发生"**无法区分**，
+            // 而这正是历史上反复浪费时间的那类误判。
+            //
+            // 注册之后：纯层（不含 Verse）的诊断经这个委托落到游戏日志 ✓ **纯层依旧是纯的**
+            //（它只认 `Action<object>`，不认识 `Verse.Log`）。
+            MechJebLib.Utils.Logger.GlobalRegister(o => Log.Message("[MJLib] " + o));
         }
 
         // ── 查询方法 ──

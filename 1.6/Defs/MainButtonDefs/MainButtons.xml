@@ -3,7 +3,7 @@
   <MainButtonDef>
     <defName>PF_View</defName>
     <label>PF_View</label>
-    <description>Space battle tactical view</description>
+    <description>独立 3D 太空视图：环绕/缩放查看编队与星系，显示船体姿态、主推轴、射弹与轨道。</description>
     <tabWindowClass>PioneerFramework.MainTabWindow_PFView</tabWindowClass>
     <order>50</order>
     <validWithoutMap>true</validWithoutMap>

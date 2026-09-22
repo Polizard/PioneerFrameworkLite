@@ -4,6 +4,7 @@ using System.Linq;
 using UnityEngine;
 using Verse;
 using RimWorld;
+using MechJebLib.Lambert;
 
 namespace PioneerFramework
 {
@@ -19,10 +20,14 @@ namespace PioneerFramework
         private Vector2 scrollPos;
 
         private double transferTimeFraction = 0.5;
-        private const double MaxTransferFractions = 2.0;
+        // 转移时长上限放宽到 4 倍自轨道周期：LEO→同步这类跨高度转移需要 ~2.5 倍
+        // （旧上限 2.0 恰好卡在门外，见 2026-09-16 实测 dt=11461s 顶到上界）
+        private const double MaxTransferFractions = 4.0;
         /// <summary>出发延时：等待多少倍自轨道周期后再点火。</summary>
         private double departureDelayFraction = 0.0;
-        private const double MaxDepartureDelayFraction = 1.5;
+        // 等待上限放宽到 2 倍自轨道周期：覆盖一个会合周期（LEO↔同步 ≈1.1 倍自周期），
+        // 让"相位不对就多绕一圈（零 Δv）"这条路可选——MechJeb 的相位优先在同一处发力。
+        private const double MaxDepartureDelayFraction = 2.0;
         private bool progradeTransfer = true;
         /// <summary>精确交会（默认）：到达段启用闭环引导（飞行中按实际状态修正）。
         /// false = 粗交会：两段开环机动（出发+到达），沿用旧行为。</summary>
@@ -288,9 +293,10 @@ namespace PioneerFramework
 
             double physicsTickNow = TimeScaleManager.GetPhysicsTickSafe();
 
-            for (double delay = 0.0; delay <= 1.01; delay += 0.1)
+            // 粗扫：等待跨 2 圈（覆盖会合周期），转移时长到 4 倍自周期
+            for (double delay = 0.0; delay <= 2.001; delay += 0.1)
             {
-                for (double frac = 0.1; frac <= 2.01; frac += 0.05)
+                for (double frac = 0.1; frac <= 4.001; frac += 0.1)
                 {
                     departureDelayFraction = delay;
                     transferTimeFraction = frac;
@@ -331,6 +337,28 @@ namespace PioneerFramework
                 }
             }
 
+            // 细扫：在粗扫最优点邻域加密（相位窗口窄，粗扫 0.1 圈 ≈ 573s 会错过窗口）
+            if (bestDV < double.MaxValue)
+            {
+                double fineDelayLo = Math.Max(0.0, bestDelay - 0.1);
+                double fineTransferLo = Math.Max(0.1, bestTransfer - 0.1);
+                for (double delay = fineDelayLo; delay <= bestDelay + 0.1001; delay += 0.025)
+                {
+                    for (double frac = fineTransferLo; frac <= bestTransfer + 0.1001; frac += 0.025)
+                    {
+                        departureDelayFraction = delay;
+                        transferTimeFraction = frac;
+                        ComputeTransfer(targetGroup);
+                        if (solutionValid && totalDV < bestDV)
+                        {
+                            bestDV = totalDV;
+                            bestDelay = delay;
+                            bestTransfer = frac;
+                        }
+                    }
+                }
+            }
+
             if (bestDV < double.MaxValue)
             {
                 departureDelayFraction = bestDelay;
@@ -338,8 +366,8 @@ namespace PioneerFramework
                 ComputeTransfer(targetGroup);
                 sweepPerformed = true;
                 double selfPeriod = EstimateOrbitPeriod(selfGroup);
-                sweepResultMsg = string.Format("扫参完成: 延时 {0:F0}s + 转移 {1:F0}s, 总dV={2:F1} m/s",
-                    bestDelay * selfPeriod, bestTransfer * selfPeriod, bestDV);
+                sweepResultMsg = string.Format("扫参完成: 等待 {0:F0}s（{1:F1} 圈）+ 转移 {2:F0}s, 总dV={3:F1} m/s",
+                    bestDelay * selfPeriod, bestDelay, bestTransfer * selfPeriod, bestDV);
             }
             else
             {
@@ -704,9 +732,14 @@ namespace PioneerFramework
                 }
             }
 
-            double sma = OrbitMath.SemiMajorAxis(pos, vel, gm);
-            if (sma <= 0.0) return 10000.0;
-            return 2.0 * System.Math.PI * System.Math.Sqrt(sma * sma * sma / gm);
+            // ── 周期收敛（《大修计划》§14.3『周期』行）──
+            // 本方法原先自带一份 2π√(a³/μ)。现在统一由 `OrbitView.period` 给（唯一权威）。
+            // ⚠ **只换了算式，上面的参考系处理一字未动**——换错参考系是这类 bug 的老家，
+            //   而这一步是"收敛"不是"改行为"，读数必须逐位不变。
+            OrbitView ov = OrbitView.FromStateVectors(OrbitAdapter.ToV3(pos), OrbitAdapter.ToV3(vel), gm, 0.0);
+            double period = ov.period;
+            if (double.IsNaN(period) || period <= 0.0) return 10000.0; // 原有兜底（双曲/退化）
+            return period;
         }
 
         public override void Close(bool doCloseSound = true)

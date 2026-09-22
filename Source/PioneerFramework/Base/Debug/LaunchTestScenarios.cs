@@ -109,6 +109,7 @@ namespace PioneerFramework
             };
             entity.GroupId = groupId;
             entity.SetPositionVelocity(DVector3.zero, DVector3.zero);
+            entity.SetRotation(Quaternion.identity);   // 不设就留 (0,0,0,0)：物理端恰好等价单位姿态，但已不是合法四元数
             var part = new SpacePart
             {
                 partId = 1,

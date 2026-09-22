@@ -57,25 +57,11 @@ namespace PioneerFramework.Launch
         /// <param name="omega">自转角速度 ω (rad/s)。</param>
         /// <param name="physicsTick">当前物理时间 (s)。</param>
         public static (DVector3 pos, DVector3 vel) SurfaceState(double radius, double latRad, double lonRad0, double omega, double physicsTick)
-        {
-            double lon = lonRad0 + omega * physicsTick;   // ECI 经度 = λ0 + ωt（Ry(−ωt) 自转）
-            double cosP = Math.Cos(latRad), sinP = Math.Sin(latRad);
-            double sinL = Math.Sin(lon), cosL = Math.Cos(lon);
-            // p = R·(cosφ·sinλ, sinφ, −cosφ·cosλ)（RimWorld 轴向约定）
-            var p = new DVector3(sinL * cosP, sinP, -cosL * cosP) * radius;
-            // v = ω·(p×up) = ωRcosφ·(cosλ, 0, sinλ)（真实自转切向；注意与 ω×p 反向）
-            var v = new DVector3(cosL, 0.0, sinL) * (omega * radius * cosP);
-            return (p, v);
-        }
+            => SurfaceFrame.SurfaceState(radius, latRad, lonRad0, omega, physicsTick);
 
         /// <summary>表面上方出生点：p + radial·alt，速度继承地表（尚未被推力改变）。</summary>
         public static (DVector3 pos, DVector3 vel) SurfaceStateAbove((DVector3 pos, DVector3 vel) surface, double altMeters)
-        {
-            double r = surface.pos.magnitude;
-            if (r < 1e-3) return (surface.pos, surface.vel);
-            var radial = surface.pos / r;
-            return (surface.pos + radial * altMeters, surface.vel);
-        }
+            => SurfaceFrame.SurfaceStateAbove(surface, altMeters);
 
         /// <summary>
         /// 发射台 → 惯性出生状态（点火时刻现算，发射台随自转在动）。
@@ -134,21 +120,17 @@ namespace PioneerFramework.Launch
         public static DVector3 TileToFixedPosition(int tile, double bodyRadiusMeters)
             => TileToFixedPosition(Find.WorldGrid.Surface, tile, bodyRadiusMeters);
 
-        /// <summary>固连系 → ECI：Ry(−ωt)（惯性系太阳固定 + 固连系太阳星下点西移 ⇒ 唯一自转解）。</summary>
-        public static DVector3 FixedToEci(DVector3 pFixed, double omega, double physicsTick)
-        {
-            double ang = omega * physicsTick;
-            double c = Math.Cos(ang), s = Math.Sin(ang);
-            return new DVector3(pFixed.x * c - pFixed.z * s, pFixed.y, pFixed.x * s + pFixed.z * c);
-        }
+        // 【2026-09-18】本文件里的**纯数学**已搬到 `Base/Orbital/SurfaceFrame.cs`
+        // （**实现只有一份**，纯层可复用、可单测；那段"冻结约定"的文档也随之停到实现现场）。
+        // 这里只**转发**，以保持 `GetSurfaceState` 的公开 API 与全部调用方不变。
 
-        /// <summary>ECI → 固连系：Ry(+ωt)（FixedToEci 的逆变换，与渲染端 ApplyVisualRotation 同构）。</summary>
+        /// <summary>固连系 → ECI：Ry(−ωt)。见 <see cref="SurfaceFrame.FixedToEci" />。</summary>
+        public static DVector3 FixedToEci(DVector3 pFixed, double omega, double physicsTick)
+            => SurfaceFrame.FixedToEci(pFixed, omega, physicsTick);
+
+        /// <summary>ECI → 固连系：Ry(+ωt)。见 <see cref="SurfaceFrame.EciToFixed" />。</summary>
         public static DVector3 EciToFixed(DVector3 pEci, double omega, double physicsTick)
-        {
-            double ang = omega * physicsTick;
-            double c = Math.Cos(ang), s = Math.Sin(ang);
-            return new DVector3(pEci.x * c + pEci.z * s, pEci.y, -pEci.x * s + pEci.z * c);
-        }
+            => SurfaceFrame.EciToFixed(pEci, omega, physicsTick);
 
         /// <summary>tile → ECI 位置（米，行星中心原点，随自转时变）。任意 PlanetLayer。</summary>
         public static DVector3 TileToEci(PlanetLayer layer, int tileId, double bodyRadiusMeters, double omega, double physicsTick)
@@ -212,17 +194,10 @@ namespace PioneerFramework.Launch
         /// 经纬度→ECI 走 SurfaceState；此为反向。
         /// </summary>
         public static (double latRad, double lonRad) EciToLongLat(DVector3 pEci, double omega, double physicsTick)
-        {
-            DVector3 pFixed = EciToFixed(pEci, omega, physicsTick);
-            double r = pFixed.magnitude;
-            if (r < 1e-9) return (0.0, 0.0);
-            double lat = Math.Asin(Math.Max(-1.0, Math.Min(1.0, pFixed.y / r)));
-            double lon = Math.Atan2(pFixed.x, -pFixed.z);
-            return (lat, lon);
-        }
+            => SurfaceFrame.EciToLongLat(pEci, omega, physicsTick);
 
         /// <summary>表面点自转速度（ECI，米/秒）：v = ω·(p×up) = ω·(−p_z, 0, p_x)（真实自转切向，与 ω×p 反向）。</summary>
         public static DVector3 SurfaceVelocity(DVector3 pEci, double omega)
-            => new DVector3(-pEci.z, 0.0, pEci.x) * omega;
+            => SurfaceFrame.SurfaceVelocity(pEci, omega);
     }
 }

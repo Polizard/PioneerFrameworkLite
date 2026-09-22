@@ -336,6 +336,13 @@ namespace PioneerFramework
                 : string.Join("+", pm.useNetworks.Select(d => d != null ? d.label : "?"));
             Color statusColor = pm.active ? AccentOk : TextDim;
 
+            // P2（§2.5 / B1.2）：条目上带着"意图（目标条件）"时就挂个 tooltip。
+            // 用 tooltip 而不是再加一行：**零布局风险**（这一版没法开游戏看排版）。
+            if (pm.intent != null)
+                TooltipHandler.TipRegion(entry,
+                    "计划意图（目标条件）：" + pm.intent.DescribeSelf() +
+                    "\nP2：执行时按「活轨道」重解 Δv 与方向，而不是照烧规划那一刻的冻结向量。");
+
             // 行1：编号徽章 + 状态 + 时间 + 网络 + 取消按钮
             Rect badge = new Rect(entry.x + 6f, entry.y + 8f, 26f, 22f);
             Widgets.DrawBoxSolid(badge, new Color(0.15f, 0.35f, 0.5f, 0.95f));
@@ -379,9 +386,19 @@ namespace PioneerFramework
             if (est.Feasible)
             {
                 GUI.color = TextDim;
+                // 备用网络（RCS）：本机动不动它，只报存量——与物理的选网语义一致（见 BurnCore）
+                string reserve = "";
+                if (est.Networks != null)
+                {
+                    foreach (var ne in est.Networks)
+                    {
+                        if (!ne.IsReserve || ne.Propellant == null) continue;
+                        reserve += string.Format("　备「{0}」{1:F0} kg", ne.Propellant.label, ne.Available);
+                    }
+                }
                 Widgets.Label(estRect,
-                    string.Format("  需工质 {0:F0} kg · 燃烧 {1:F0} s · 最大可达 ΔV {2:F0} m/s",
-                        est.RequiredPropellant, est.BurnSeconds, est.MaxDeltaV));
+                    string.Format("  需工质 {0:F0} kg · 燃烧 {1:F0} s · 最大可达 ΔV {2:F0} m/s{3}",
+                        est.RequiredPropellant, est.BurnSeconds, est.MaxDeltaV, reserve));
                 GUI.color = Color.white;
             }
             else if (est.Networks == null || est.Networks.Count == 0)
@@ -414,11 +431,17 @@ namespace PioneerFramework
         {
             float btnW = (inRect.width - 20f) * 0.5f;
             GUI.color = GrayButton;
-            if (Widgets.ButtonText(new Rect(4f, y, btnW, ButtonHeight), "清除所有机动"))
+            // P1-8：从这里开规划器（队列与规划器共用同一个 group ✓ 新计划的归属与队列语义一致）
+            if (Widgets.ButtonText(new Rect(4f, y, btnW, ButtonHeight), "规划机动…"))
+            {
+                Find.WindowStack.Add(new Window_PlanEditor(group));
+            }
+            if (Widgets.ButtonText(new Rect(4f + btnW + 12f, y, btnW, ButtonHeight), "清除所有机动"))
             {
                 group.ClearManeuvers();
             }
-            if (Widgets.ButtonText(new Rect(4f + btnW + 12f, y, btnW, ButtonHeight), "关闭"))
+            y += ButtonHeight;
+            if (Widgets.ButtonText(new Rect(4f, y, btnW, ButtonHeight), "关闭"))
             {
                 Close();
             }

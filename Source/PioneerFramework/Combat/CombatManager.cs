@@ -56,8 +56,9 @@ namespace PioneerFramework.Combat
         private double collisionMsAccum = 0;
         private int collisionSamples = 0;
 
-        public TargetingSystem TargetingSystem { get; private set; }
-        public bool IsBattleActive => activeProjectiles.Count > 0 || TargetingSystem != null;
+        /// <summary>是否处于交战状态。原为 `activeProjectiles.Count > 0 || TargetingSystem != null`，
+        /// 而 `TargetingSystem` 恒为 null（死代码，2026-09-16 随 [V9] 删除）⇒ 语义等价退化为弹量判断。</summary>
+        public bool IsBattleActive => activeProjectiles.Count > 0;
 
         internal IReadOnlyList<ProjectileInstance> ActiveProjectiles => activeProjectiles;
 
@@ -1504,7 +1505,6 @@ namespace PioneerFramework.Combat
                 }
             }
 
-            TargetingSystem?.Update(currentTick);
         }
 
         private void LogGridStats(int currentTick)
@@ -1629,57 +1629,6 @@ namespace PioneerFramework.Combat
 #endif
         }
 
-        private const double ENGAGEMENT_RANGE_METERS = 1000000.0;
-
-        public bool CanEngage(int groupIdA, int groupIdB)
-        {
-            var spaceGame = GetSpaceGameComp();
-            if (spaceGame == null) return false;
-
-            var a = spaceGame.GetGroupById(groupIdA);
-            var b = spaceGame.GetGroupById(groupIdB);
-            if (a == null || b == null) return false;
-
-            double dist = (GetGroupPos(a) - GetGroupPos(b)).magnitude;
-            return dist <= ENGAGEMENT_RANGE_METERS;
-        }
-
-        public void EngageGroups(int groupIdA, int groupIdB)
-        {
-            var spaceGame = GetSpaceGameComp();
-            if (spaceGame == null) return;
-
-            var a = spaceGame.GetGroupById(groupIdA);
-            var b = spaceGame.GetGroupById(groupIdB);
-            if (a == null || b == null) return;
-
-            if (!CanEngage(groupIdA, groupIdB))
-            {
-                Log.Warning("[战斗系统] 距离过远，无法发起战斗");
-                return;
-            }
-
-            if (TargetingSystem == null)
-                TargetingSystem = new TargetingSystem(this);
-
-            Log.Message(string.Format("[战斗系统] Group {0} 与 Group {1} 进入战斗", groupIdA, groupIdB));
-        }
-
-        public void EndBattle()
-        {
-            var combatGrid = GetCombatGrid();
-            combatGrid?.Clear();
-
-            TargetingSystem = null;
-
-            Log.Message("[战斗系统] 战斗结束");
-        }
-
-        public void InitializeGroupWeapons(int groupId, List<WeaponInstance> weapons)
-        {
-            groupWeapons[groupId] = weapons;
-        }
-
         /// <summary>
         /// 按索引获取 Group 的第 N 把武器（供调试窗口使用；战斗逻辑请直接传 WeaponInstance 引用）。
         /// </summary>
@@ -1691,7 +1640,7 @@ namespace PioneerFramework.Combat
         }
 
         /// <summary>获取 Group 的全部武器列表（供调试/UI 展示）。</summary>
-        /// <summary>未注册组的共享空容器（第 7 条）：调用方只读（TargetingSystem 索引 / PFView 读 Count），
+        /// <summary>未注册组的共享空容器（第 7 条）：调用方只读（PFView 读 Count），
         /// 不要往里写——它是共享实例。</summary>
         private static readonly List<WeaponInstance> EmptyWeaponList = new List<WeaponInstance>();
 
@@ -2024,6 +1973,10 @@ namespace PioneerFramework.Combat
                 IsActive = true,
                 IsMovable = true,
                 IsCollidable = true,
+                // [N3]：弹体默认匿踪——导弹不广播自己的坐标，只能被探测到。
+                // 巡航段不点火 ⇒ 信号只有弹体尺寸基数（很弱）；进入 homing 边界点火 ⇒ 信号跃升。
+                // 冷发射语义（设计稿 §4.3）由此保住：信号源是弹不是船，发射器不因此暴露。
+                IsStealth = true,
                 CelestialBodyId = celestialBodyId
             };
             Quaternion birthRotation = Quaternion.FromToRotation(Vector3.back,
@@ -2156,6 +2109,8 @@ namespace PioneerFramework.Combat
                 IsActive = true,
                 IsMovable = true,
                 IsCollidable = true,
+                // [N3]：弹群同样默认匿踪（同 CreateMissileGroup 的理由）
+                IsStealth = true,
                 CelestialBodyId = celestialBodyId
             };
             Quaternion birthRotation = Quaternion.FromToRotation(Vector3.back,

@@ -1,7 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!--
+      ⚠ 2026-09-18 由 net8.0 改为 net48（用户裁定："不要照顾 Linux/macOS，我们就是面向 Win 系统的"）。
+      理由：**第三方移植物只能在 net48 编译**（`Functions/Angles.cs` 靠 net48 没有 `Math.Asinh/Acosh/Atanh`
+      才写得通，net8 上 CS0121 二义性，见 ThirdParty/MechJebLib/README.md）。
+      而 net48 **就是交付目标** ⇒ 纯测试跑在 net48 上比 net8 更忠实。
+      ⇒ 这个分裂曾挡住三件事（MJStatics 的删除、纯文件里的周期收敛、OrbitMath 整批重复权威收敛）。
+    -->
+    <TargetFramework>net48</TargetFramework>
+    <!-- net48 的默认 LangVersion 是 7.3 ⇒ 必须显式抬到与主工程一致 -->
+    <LangVersion>12.0</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <DefineConstants>$(DefineConstants);PURE_MATH</DefineConstants>
@@ -12,24 +21,70 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- 移植面 `Functions/Angles.cs` 的 [UsedImplicitly]。本工程无 Unity（那个属性由 UnityEngine.CoreModule 提供）
+         ⇒ 必须像上游那样显式引；无 Unity ⇒ 不会 CS0433。与 MechJebLibTest 的同一行同理。 -->
+    <PackageReference Include="JetBrains.Annotations" Version="2023.3.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 第三方移植物（J2 单一来源）：**整份**链进来。
+         ⚠ 2026-09-18 起本工程是 net48 ⇒ 不再需要"net8 能编的子集"这个补丁
+         （那时 `Angles.cs`/`Astro.cs` 在 net8 编不过，只能挑着链）。见 ThirdParty/MechJebLib/README.md。 -->
+    <Compile Include="..\PioneerFramework\ThirdParty\MechJebLib\**\*.cs"
+             Link="MechJebLib\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Pure\DVector3.cs" />
     <Compile Include="..\PioneerFramework\Base\Core\DVector3Extensions.cs" Link="Pure\DVector3Extensions.cs" />
-    <Compile Include="..\PioneerFramework\Base\Core\MJStatics.cs" Link="Pure\MJStatics.cs" />
     <Compile Include="..\PioneerFramework\Base\Core\SlabMath.cs" Link="Pure\SlabMath.cs" />
     <Compile Include="..\PioneerFramework\Base\Core\SpaceConstants.cs" Link="Pure\SpaceConstants.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\OrbitMath.cs" Link="Pure\OrbitMath.cs" />
+    <!-- 适配层：纯文件（如 RendezvousGuidanceLaw）现在可以用它去调移植的 Astro（net48 打通之后）。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\OrbitView.cs" Link="Pure\OrbitView.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\Gooding.cs" Link="Pure\Gooding.cs" />
+    <!-- `TransferGeometry` 是上游定义在 `Lambert/Gooding.cs` 里的共用枚举；逐字移植的 `Izzo.cs`
+         （ThirdParty 那侧被本工程通配进来）需要它在**上游的命名空间**里存在。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\TransferGeometry.cs" Link="Pure\TransferGeometry.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\NBodyIntegrator.cs" Link="Pure\NBodyIntegrator.cs" />
     <!-- 第 24 条的缓存本体是纯类型（不可变采样 + 原子槽位写入）：链接进来是为了能用纯测试**直接压测
          它在多线程下的不变式**（命中 tick 相同 ⇒ 值必定属于该 tick）。游戏内的撕裂写入就是这么抓到的。 -->
     <Compile Include="..\PioneerFramework\Base\Orbital\BodySampleCache.cs" Link="Pure\BodySampleCache.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\BurnCore.cs" Link="Pure\BurnCore.cs" />
+    <!-- 交会"恢复/兜底"纯核心（S1/S2）：重规划扫描 + 安全缩放上限——引导的失败自愈靠它，
+         纯测试钉住"安全缩放单调二分"与"重规划能找回便宜窗口"。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousCore.cs" Link="Pure\RendezvousCore.cs" />
+    <!-- 交会「不变量闭环」纯核心（2026-09-17）：近圆约化 ⇒ 面内交会是**标量双积分器**，
+         原点即交会点。理论依据 DesignNotes/交会物理本质与闭环提法-20260917.md §5/§10。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGuidanceCore.cs" Link="Pure\RendezvousGuidanceCore.cs" />
+    <!-- CW（Hill）两冲量交会闭式解：终端的"温柔解"，替掉高接近率拦截。设计稿 §14.3 E1。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\CwRendezvousCore.cs" Link="Pure\CwRendezvousCore.cs" />
+    <!-- 远场律的**完整合成**（唯一入口）：台架与游戏共用，律只写一次。设计稿 §21。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGuidanceLaw.cs" Link="Pure\RendezvousGuidanceLaw.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\LaunchGuidanceCore.cs" Link="Pure\LaunchGuidanceCore.cs" />
+    <!-- 反推着陆制导纯核（2026-09-22）：垂直反推有闭式（MJ 那条走 alglib/ODE，我们拒），
+         链进来钉住"能不能刹住"的可判定性与"点火高度"的量级。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\LandingGuidanceCore.cs" Link="Pure\LandingGuidanceCore.cs" />
     <Compile Include="..\PioneerFramework\Base\Game\MissileGuidanceCore.cs" Link="Pure\MissileGuidanceCore.cs" />
     <Compile Include="..\PioneerFramework\Base\Game\ConstellationCore.cs" Link="Pure\ConstellationCore.cs" />
+    <!-- 视野/电子战（实施计划 P1）：探测判据与认知对象形状——P2 的 SensorManager 与 P3/P4 的共同输入，
+         先行在纯测试里钉住形状（秒级回路），避免形状定错导致两边返工。 -->
+    <Compile Include="..\PioneerFramework\Base\Game\SensorCore.cs" Link="Pure\SensorCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\Game\ContactCore.cs" Link="Pure\ContactCore.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\PioneerFramework\Base\Orbital\BurnStep.cs" Link="Pure\BurnStep.cs" />
+    <!-- B2.2-b 闭环微调（2026-09-20）：把本点速度拨到意图轨道的**唯一算式**。
+         链接进来是为了用纯测试钉"定义判据"（打完 (a,|h|) 必须等于目标）与登记的局限（a 落在 r）。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\TrimBurn.cs" Link="Pure\TrimBurn.cs" />
+    <!-- 区制判据（B2.1）：纯函数（无状态、无引擎）⇒ 链接进来钉住两档船的判定。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\ManeuverRegime.cs" Link="Pure\ManeuverRegime.cs" />
+    <!-- 交会目的（B3 延伸，2026-09-22）：纯描述量（无状态、无引擎）⇒ 链进来钉住"有符号相位"的方向性
+         与相位判据的三条条件。相位判据最容易错的方向就是**符号**（前/后不分）。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGoal.cs" Link="Pure\RendezvousGoal.cs" />
+
   </ItemGroup>
 
 </Project>

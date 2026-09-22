@@ -1,3 +1,4 @@
+using MechJebLib.Utils;
 using System;
 using System.Linq;
 using System.Threading;
@@ -111,7 +112,9 @@ namespace PioneerFramework.Pure.Tests
             Assert.Equal(0.0, (vel - VelAt(10.0)).magnitude);
 
             // tick 必须**逐位相等**：差一个最小可表示量即视为未命中
-            double justOff = Math.BitIncrement(10.0);
+            // ⚠ net48 没有 `Math.BitIncrement`（net5+）。改用移植来的 `Statics.NextAfter` —— 同一个语义，
+            // 且它正好是本库"最小可表示量的下一个双精度数"的**唯一权威**（上游 `MechJebLib.Utils.Statics:457`）。
+            double justOff = Statics.NextAfter(10.0, double.PositiveInfinity);
             Assert.NotEqual(10.0, justOff);
             Assert.False(cache.TryGet(0, justOff, out _, out _));
 

@@ -638,6 +638,30 @@ namespace PioneerFramework
             System.Threading.Interlocked.Increment(ref GravitySegments);
         }
 
+        /// <summary>自动打印间隔（步）：300 步 ≈ 600 s 游戏时间（1× 下每步 2 s）⇒ 每轮约一行。</summary>
+        public const long AutoLogEverySteps = 300;
+
+        /// <summary>
+        /// **步钟自动打印**（2026-09-20 加）：开发者模式下每 <see cref="AutoLogEverySteps"/> 步打印一次并清零
+        /// ⇒ 读数 = "上一份读数以来这些步"的 平均/最慢。
+        /// ⚠ 为什么不让用户手按按钮：**要用户记住按一下的仪器等于没有仪器**（本次就因为没按到 ⇒ 白跑一轮）。
+        /// 成本：每步一次比较（纳秒级）+ 每 300 步一行日志 ✓。
+        /// </summary>
+        public static void StepClockMaybeAutoLog()
+        {
+            if (StepClocks < AutoLogEverySteps) return;
+            if (Prefs.DevMode) Log.Message("[步耗时] " + StepClockReport());
+            ResetStepClock();
+        }
+
+        /// <summary>清零步钟累加器（打印并清零 ⇒ 每次读数 = "上一份读数以来的这 N 步"）。</summary>
+        public static void ResetStepClock()
+        {
+            StepClocks = 0; StepTicksTotal = 0; StepTicksMax = 0;
+            StepTicksMaxAtStep = 0; StepTicksMaxAtTick = 0;
+            GravityTicksTotal = 0; GravitySegments = 0;
+        }
+
         /// <summary>Stopwatch tick → µs（报告侧换算）。</summary>
         private static double ToMicros(long stopwatchTicks)
             => stopwatchTicks * 1e6 / System.Diagnostics.Stopwatch.Frequency;
@@ -654,6 +678,13 @@ namespace PioneerFramework
             return string.Format(
                 "步数={0} 平均={1:F1}µs/步 最慢={2:F1}µs（第{3}步 / t={4}）｜引力场段={5:F1}µs/步 占整步={6:P1}（采样 {7:F1} 段/步）",
                 StepClocks, avg, max, StepTicksMaxAtStep, StepTicksMaxAtTick, gravPerStep, share, segPerStep);
+        }
+
+        /// <summary>打印步钟读数并清零（供调试菜单按钮用；不依赖 `Enabled`）。</summary>
+        public static void LogStepClockNow()
+        {
+            Log.Message("[步耗时] " + StepClockReport());
+            ResetStepClock();
         }
 
         public static void LogSummaryNow()        {

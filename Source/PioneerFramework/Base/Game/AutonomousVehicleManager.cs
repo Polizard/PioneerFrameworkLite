@@ -826,6 +826,11 @@ namespace PioneerFramework
                     IsActive = true,
                     IsMovable = true,
                     IsCollidable = true,
+                    // ⚠ **派生点清单**：这是全库唯一一处"从既有 group 派生新 group"的地方（其余 11 处都是从零构造）。
+                    // 逐字段复制的写法意味着**每新增一个 group 字段都要回来加一行**，否则子群静默回到默认值。
+                    // 2026-09-16 步 1 就漏过一次：`IsStealth` 未复制 ⇒ 弹群一解离（进入末制导段）子群全部变"公开坐标"，
+                    // 匿踪语义**在最该隐蔽的时刻丢失**。新增 group 字段时请对照此清单（§0.3 纪律）。
+                    IsStealth = group.IsStealth,
                     CelestialBodyId = group.CelestialBodyId
                 };
                 ng.CurrentOrbit = new OrbitState

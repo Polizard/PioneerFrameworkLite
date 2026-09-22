@@ -4,6 +4,7 @@ using UnityEngine;
 using Verse;
 using PioneerFramework.Combat;
 using PioneerFramework.Components;
+using PioneerFramework.Launch;   // GetSurfaceState.RotationOmega（自转角速度唯一出处）
 
 namespace PioneerFramework
 {
@@ -530,6 +531,57 @@ namespace PioneerFramework
         /// 判据（配合 PerfProbe 的汇总行 ㉑）：子天体域「差分/局部引力」应落在 **0.1%–2%**（地球潮汐）；
         /// 若为 0 → 月球周围仍未带上根天体的贡献（A0 未生效）；若 ≈7% → 走了"全量求和"的错路。
         /// </summary>
+        /// <summary>
+        /// ★★ **反推着陆验收场景**（2026-09-22）：在**赤道**上把船摆到地表上方 8 km、**纯径向下降 150 m/s**，
+        /// 然后交给 <see cref="LandingController" /> 做垂直反推。
+        ///
+        /// ## 为什么这么摆
+        /// · **纯径向下降**（无切向速度）= 反推制导纯核的**唯一假设**（它只解径向一维）⇒
+        ///   这个场景测的是**制导与执行**，不带"消水平速度"那一层（那是后续的段）；
+        /// · 起点 8 km / 150 m/s：按闭式点火高度 `v²/(2·(aMax−g))`，本船的推力余量下有
+        ///   一倍以上裕度（"能不能刹住"应当判**能**）⇒ 跑起来就该落地；
+        /// · 用**过推档**的调试船（560kN 主推）⇒ 推重比 ≫1，不会被"推重比不足"那条拦住。
+        ///
+        /// 观察点（日志）：`[着陆·诊断]`（h / 下降率 / aMax / 动作）→ 最终 `[着陆] **着陆完成**`。
+        /// </summary>
+        public static void SpawnLandingTest()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (spaceGame == null || celestialMgr == null) return;
+
+            var body = celestialMgr.GetBodyById(EARTH_BODY_ID);
+            if (body == null)
+            {
+                Log.Error("[着陆测试] 天体 Def 缺失（bodyId=1）");
+                return;
+            }
+
+            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
+            double altStart = 8_000.0;
+            double descent = 150.0;
+            double r = body.radius + altStart;
+
+            // 赤道方向：从自转相位取一个固定的径向（与 `EquatorialRadial` 同口径）
+            DVector3 up = EquatorialRadial(physicsTick);
+            DVector3 pos = up * r;
+            DVector3 vel = -up * descent;          // **纯径向下降**（无切向 ⇒ 反推核的适用域）
+
+            var group = CreateShipNoMap(spaceGame, Faction.OfPlayer.loadID, pos,
+                new DVector3(6f, 6f, 12f), Quaternion.identity, "着陆测试", vel);
+            if (group == null) return;
+
+            group.CelestialBodyId = EARTH_BODY_ID;
+            group.exemptPlanetCollision = true;     // 着陆段允许贴地（由制导判到达，不靠碰撞豁免）
+
+            LandingController.BeginLanding(group.GroupId, EARTH_BODY_ID);
+
+            Log.Message(string.Format(
+                "[着陆测试] G{0} 已创建：高度 {1:F0} m、纯径向下降 {2:F0} m/s、地表半径 {3:F0} km｜" +
+                "看 [着陆·诊断] → [着陆] 着陆完成",
+                group.GroupId, altStart, descent, body.radius / 1000.0));
+        }
+
         public static void SpawnMoonGravityTest()
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
@@ -569,6 +621,413 @@ namespace PioneerFramework
                 group.GroupId, r / 1000.0, vCirc, vCirc * 0.92));
         }
 
+
+        #region 无 Map 编队放置（预设圆轨）
+
+        /// <summary>无 Map 编队的预设圆轨（<see cref="PlaceNoMapOrbitGroup"/>）。</summary>
+        public enum NoMapOrbitPreset
+        {
+            /// <summary>近地轨道：地表上方 500km，赤道面**顺行**圆轨（与发射入轨同向）。</summary>
+            Leo,
+            /// <summary>同步轨道：周期 = 天体自转周期（dayLengthTicks）⇒ 与地表相对静止。</summary>
+            GeoSynchronous,
+            /// <summary>绕月轨道：月面上方 1800km 圆轨（与 <see cref="SpawnMoonGravityTest"/> 同口径）。</summary>
+            MoonOrbit,
+        }
+
+        /// <summary>落点相位（赤道面内的单位径向）：由 physicsTick 推得，可复现（不用 DateTime.Now）。</summary>
+        private static DVector3 EquatorialRadial(double physicsTick)
+        {
+            double angle = (physicsTick % 60000.0) / 60000.0 * System.Math.PI * 2.0;
+            return new DVector3(System.Math.Cos(angle), 0, System.Math.Sin(angle));
+        }
+
+        /// <summary>
+        /// 赤道面**顺行**单位切向 = cross(radial, up)，与 `GetSurfaceState` 的地表自转同向
+        /// （那里冻结了 v = ω·(p×up)，并注明"与 prograde up×radial 反向"）。
+        /// ⚠ 方向必须显式给：零速度会让 EnterCircularOrbit 退化到 cross(up, radial) 的解 —— 那是**逆行**，
+        /// 与地面发射入轨的船相对角速度翻倍，同步轨道也"静止"不了。
+        /// </summary>
+        private static DVector3 ProgradeEquatorialTangent(DVector3 radial)
+            => DVector3.Cross(radial, DVector3.up);
+
+        /// <summary>
+        /// 放置一个**无 Map**编队到预设圆轨（调试用）。
+        ///
+        /// 船：单 part 长条盒 40×20×80m（长轴 = 主推轴 -Z，视图里朝向一眼可读）+ 结构干质量 5t
+        ///     + 主网（液氢 ve4000 ṁ4）12t + RCS（肼 ve1500 ṁ1，全矢量）0.5t，满罐
+        ///     ⇒ **有 dV 可机动**（口径 = `SpaceGameComp.GetGroupDeltaV`，与世界视图面板「剩余 dV」同一算式）。
+        ///
+        /// 圆轨：一律走 `group.EnterCircularOrbit`（解析位置 + 自动轨道保持 + 按中心天体 GM 复核速度）；
+        ///     同步轨道半径按 **μ/ω² 开立方**现算（ω 取 `GetSurfaceState.RotationOmega`，不用"24h 假设"的常数）。
+        /// 控制：放置后在世界视图选中该编队 →「机动规划 / 转移到圆轨 / 交会规划」即可消耗 dV。
+        /// </summary>
+        public static void PlaceNoMapOrbitGroup(NoMapOrbitPreset preset)
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (spaceGame == null || mgr == null)
+            {
+                Messages.Message("SpaceGameComp / CelestialBodyManager 未找到！", MessageTypeDefOf.RejectInput);
+                return;
+            }
+
+            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
+            int bodyId;
+            double radius;
+            DVector3 pos, vel;
+            string presetLabel;
+            string dirLabel;
+
+            switch (preset)
+            {
+                case NoMapOrbitPreset.GeoSynchronous:
+                {
+                    bodyId = EARTH_BODY_ID;
+                    double mu = spaceGame.GetBodyGM(bodyId);
+                    double omega = GetSurfaceState.RotationOmega(mgr, bodyId);       // 2π / dayLengthTicks
+                    radius = System.Math.Pow(mu / (omega * omega), 1.0 / 3.0);       // 同步半径 (μ/ω²)^(1/3)
+                    DVector3 radial = EquatorialRadial(physicsTick);
+                    pos = radial * radius;
+                    vel = ProgradeEquatorialTangent(radial) * System.Math.Sqrt(mu / radius);
+                    presetLabel = string.Format("同步轨道（周期 {0:F0}s = 天体自转周期 ⇒ 与地表相对静止）",
+                        2.0 * System.Math.PI / omega);
+                    dirLabel = "顺行（与地表自转同向 = 地面发射入轨方向）";
+                    break;
+                }
+                case NoMapOrbitPreset.MoonOrbit:
+                {
+                    bodyId = MOON_BODY_ID;
+                    var moon = mgr.GetBodyById(MOON_BODY_ID);
+                    if (moon == null)
+                    {
+                        Log.Error("[放置] 月球天体 Def 缺失（bodyId=2）");
+                        return;
+                    }
+                    radius = moon.radius + 1_800_000.0;                              // 同 SpawnMoonGravityTest
+                    // 群组系 = 根行星（地球）为原点 ⇒ 月心相对状态要加月球的位置/速度
+                    DVector3 moonPos = mgr.GetBodyLocalPosition(MOON_BODY_ID, physicsTick);
+                    DVector3 moonVel = mgr.GetBodyLocalVelocity(MOON_BODY_ID, physicsTick);
+                    // 初始径向 = 背地侧（月心 → 远离地球），落在月球公转面内；切向取该面内的顺行方向
+                    DVector3 radial = moonPos.normalized;
+                    DVector3 planeNormal = DVector3.Cross(moonPos, moonVel).normalized;
+                    if (planeNormal.sqrMagnitude < 0.01) planeNormal = DVector3.up;
+                    DVector3 tangent = DVector3.Cross(planeNormal, radial).normalized;
+                    if (tangent.sqrMagnitude < 0.01) tangent = ProgradeEquatorialTangent(radial);
+                    pos = moonPos + radial * radius;
+                    vel = moonVel + tangent * System.Math.Sqrt(spaceGame.GetBodyGM(bodyId) / radius);
+                    presetLabel = string.Format("绕月轨道（月面上方 {0:F0}km，背地侧起点）", 1_800_000.0 / 1000.0);
+                    dirLabel = "顺行（与月球公转同向；月球公转相对地球自转是反向，故不要拿它跟地球轨道比方向）";
+                    break;
+                }
+                default: // Leo
+                {
+                    bodyId = EARTH_BODY_ID;
+                    radius = SpaceConstants.PlanetRadiusMeters + 500_000.0;          // 同 SpawnAxialThrustTest
+                    DVector3 radial = EquatorialRadial(physicsTick);
+                    pos = radial * radius;
+                    vel = ProgradeEquatorialTangent(radial) * System.Math.Sqrt(spaceGame.GetBodyGM(bodyId) / radius);
+                    presetLabel = string.Format("近地轨道（地表上方 {0:F0}km）", 500_000.0 / 1000.0);
+                    dirLabel = "顺行（与地表自转同向 = 地面发射入轨方向）";
+                    break;
+                }
+            }
+
+            var group = CreateNoMapShipGroup(spaceGame, bodyId, pos, vel, out int entityId);
+            if (group == null) return;
+            int groupId = group.GroupId;
+
+            var centralDef = mgr.GetBodyById(bodyId);
+            var (remainingDv, maxDv, propMass, propCap) = spaceGame.GetGroupDeltaV(group);
+            double period = 2.0 * System.Math.PI * System.Math.Sqrt(radius * radius * radius / spaceGame.GetBodyGM(bodyId));
+            Log.Message(string.Format(
+                "[放置] G{0} E{1} 无Map编队 → {2}｜中心={3}(ID={4}) r={5:F0}km（高度 {6:F0}km）圆轨周期={7:F0}s " +
+                "v={8:F0}m/s dV={9:F0}/{10:F0} m/s 工质={11:F0}/{12:F0}kg｜{13}｜轨道保持=开（维持圆轨会持续耗料，设计如此）",
+                groupId, entityId, presetLabel,
+                centralDef != null ? centralDef.label : "?", bodyId,
+                radius / 1000.0, (radius - (centralDef != null ? centralDef.radius : 0.0)) / 1000.0, period,
+                group.IsCircularOrbit ? group.GetCircularVelocityAtTick(physicsTick).magnitude : vel.magnitude,
+                remainingDv, maxDv, propMass, propCap, dirLabel));
+
+            Messages.Message(string.Format(
+                "已放置无Map编队 G{0}：{1}｜dV {2:F0} m/s（世界视图选中它 →「机动规划/转移到圆轨」消耗 dV）",
+                groupId, presetLabel, remainingDv), MessageTypeDefOf.TaskCompletion, false);
+        }
+
+        /// <summary>放置：近地轨道圆轨（地表 500km，顺行）。</summary>
+        public static void PlaceLeoNoMapGroup() => PlaceNoMapOrbitGroup(NoMapOrbitPreset.Leo);
+
+        /// <summary>放置：同步轨道圆轨（周期 = 天体自转周期 ⇒ 与地表相对静止）。</summary>
+        public static void PlaceGeoSyncNoMapGroup() => PlaceNoMapOrbitGroup(NoMapOrbitPreset.GeoSynchronous);
+
+        /// <summary>
+        /// **放置：GTO 椭圆轨道目标**（近地点 LEO 500km、远地点 = 同步半径）——**用户原始工况的载体**。
+        ///
+        /// 为什么补这个（2026-09-17 用户质问"你怎么一直弃置异轨情况"）：放置预设此前**只有圆轨**
+        /// ⇒ **游戏里根本没法摆一个椭圆轨道目标** ⇒ 用户最初的 LEO→GTO 交会在游戏内**无法复现**，
+        /// 而我一直在测同轨/圆-圆异轨。台架侧已补 `EllipticTarget`（T16：LEO→GTO 收敛 0.95 个目标周期、
+        /// Δv 2182、从未侵地 ✓），游戏侧补这个预设后两边才对齐。
+        /// </summary>
+        public static void PlaceGtoNoMapGroup()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null)
+            {
+                Messages.Message("SpaceGameComp 未找到！", MessageTypeDefOf.RejectInput);
+                return;
+            }
+            int bodyId = EARTH_BODY_ID;
+            double mu = spaceGame.GetBodyGM(bodyId);
+            double rp = SpaceConstants.PlanetRadiusMeters + 500_000.0;      // 近地点：LEO 500km
+            double ra = 26_322_000.0;                                       // 远地点：同步半径
+            double a = 0.5 * (rp + ra);
+            double vp = System.Math.Sqrt(mu * (2.0 / rp - 1.0 / a));        // 近地点速度（vis-viva）
+            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
+            DVector3 radial = EquatorialRadial(physicsTick);
+            DVector3 pos = radial * rp;
+            DVector3 vel = ProgradeEquatorialTangent(radial) * vp;
+
+            var group = CreateNoMapShipGroup(spaceGame, bodyId, pos, vel, out int entityId,
+                overThrust: true, circularOrbit: false);
+            if (group == null) return;
+            double e = (ra - rp) / (ra + rp);
+            double period = 2.0 * System.Math.PI * System.Math.Sqrt(a * a * a / mu);
+            Log.Message(string.Format(
+                "[放置] G{0} E{1} 无Map编队 → **GTO 椭圆轨道**｜rp={2:F0}km ra={3:F0}km a={4:F0}km e={5:F3} " +
+                "周期={6:F0}s vp={7:F0}m/s｜dV={8:F0} m/s｜**非圆轨**（走引力积分，不进圆轨解析模式）",
+                group.GroupId, entityId, rp / 1000.0, ra / 1000.0, a / 1000.0, e, period, vp,
+                spaceGame.GetGroupDeltaV(group).remainingDv));
+            Messages.Message(string.Format(
+                "已放置 GTO 椭圆目标 G{0}（近地点 {1:F0}km / 远地点 {2:F0}km，e={3:F2}）。" +
+                "再放一个 LEO 编队去「交会」它 —— 这就是 LEO→GTO 的原始工况。",
+                group.GroupId, rp / 1000.0, ra / 1000.0, e), MessageTypeDefOf.TaskCompletion, false);
+        }
+
+        /// <summary>放置：绕月轨道圆轨（月面 1800km）。</summary>
+        public static void PlaceMoonOrbitNoMapGroup() => PlaceNoMapOrbitGroup(NoMapOrbitPreset.MoonOrbit);
+
+        /// <summary>
+        /// **无 Map 船编队的工厂**（放置类场景共用）：注册群组 + 单 part 长条件 + 主网/ RCS 两副推进，
+        /// 并调用 <see cref="SpaceEntityGroup.EnterCircularOrbit"/> 让位置由解析圆轨给出。
+        /// 失败（工质 Def 缺失）返回 null。
+        /// </summary>
+        // 公开：供 P0 适配层的一键验收铺"受控轨道"的场景组（吃显式 pos/vel）。
+        public static SpaceEntityGroup? CreateNoMapShipGroup(SpaceGameComp spaceGame, int bodyId,
+            DVector3 pos, DVector3 vel, out int entityId, bool overThrust = true, bool circularOrbit = true)
+        {
+            entityId = -1;
+            var hydrogen = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Hydrogen");
+            var hydrazine = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Hydrazine");
+            if (hydrogen == null || hydrazine == null)
+            {
+                Log.Error("[放置] 工质 Def 缺失（PF_Propellant_Hydrogen / PF_Propellant_Hydrazine）→ 放置的船不会有 dV");
+                return null;
+            }
+
+            int factionId = Faction.OfPlayer?.loadID ?? 0;
+            int groupId = spaceGame.AllocGroupId();
+            entityId = spaceGame.AllocEntityId();
+
+            var group = new SpaceEntityGroup(groupId, factionId)
+            {
+                IsMovable = true,
+                IsCollidable = true,
+                CelestialBodyId = bodyId
+            };
+            group.CurrentOrbit = new OrbitState { position = pos, velocity = vel, rotation = Quaternion.identity };
+            spaceGame.RegisterGroup(group);
+
+            var entity = new SpaceEntity(entityId, factionId)
+            {
+                HasMap = false,          // 无 Map（纯物理）
+                IsMapArchived = false,
+                IsCollidable = true,
+                IsMovable = true,
+                CanInteract = false,
+                IsAffectedByGravity = true
+            };
+            entity.GroupId = groupId;
+            entity.SetPositionVelocity(DVector3.zero, DVector3.zero);
+            entity.SetRotation(Quaternion.identity);
+            entity.mainAxisLocal = new DVector3(0, 0, -1);   // D15：无 Map 船的主推轴来源
+
+            var part = new SpacePart
+            {
+                partId = 1,
+                defName = "PF_ShipPart_Cube",
+                localPosition = DVector3.zero,
+                localBoundsSize = new DVector3(40.0, 20.0, 80.0),   // 长轴 = Z = 主推轴向
+                hp = 1000f,
+                isIndestructible = false
+            };
+            part.AddComponent(new HullMassComponent { mass = 5000f });   // 结构干质量（碰撞动量交换也用它）
+            entity.SetParts(new List<SpacePart> { part });
+
+            // ── 推进（两个档）────────────────────────────────────────────────
+            // 默认档（overThrust=true）：**推力给足 + 油量给到 dV≈10000 m/s**。
+            //   · 推力：机动规划器是脉冲模型（一次点火等效瞬时机动脉冲，燃烧居中只补偿"中点对齐"）。
+            //     ṁ 太小 ⇒ 一次 LEO→同步轨道注入要烧 28 分钟、横跨 104° 轨道，有限燃烧把轨道打偏，
+            //     闭环引导只能用单脉冲 Lambert 追 → 近地点处"逆行修正"被判撞行星 → 死锁
+            //     （2026-09-16 游戏内实测：99 次 skipped 后 dv 涨到 2733.7 m/s 而终止）。
+            //   · 油量：**2026-09-17 扩到 dV≈10000**（原 4385）。理由：LEO→同步轨道的交会账单实测
+            //     ≈4911 m/s（螺旋价 3274×1.5 + 相位 + 终端，纯台架 T11），4385 会被预算闸门**正确拒掉**
+            //     ⇒ 那个工况在游戏内根本跑不起来。给足油才能验收。
+            //     ⚠ Δv 口径 = ve_eff·ln(湿/干)，ve_eff = ΣF/Σṁ = (560k+30k)/(140+20) = 3687.5
+            //     ⇒ 3687.5·ln(75000/5000) ≈ 9986 m/s。
+            //   · **推力档不影响交会动力学**：新律的限权是 min(aMax, 0.05·g) = 0.05·g（LEO 0.33 m/s²），
+            //     只要 aMax > 0.05g 就与船无关 ⇒ 实测应与纯台架 T11（同一限权）**同量级可比**。
+            // 台架档（overThrust=false）：**纯台架 RendezvousShip 的原参数**（8kN 主/ṁ2、1.5kN RCS/ṁ1、
+            //   工质 12000+500、干重 5000）——要跟台架读数逐位对照时必须用这一档（同一 plant 才有同一读数）。
+            //   ⚠ 它的 dV 只有 ~3967 m/s，**故意不放大**（放大就不再是台架的 plant）；LEO→GEO 那种大账单
+            //   在台架侧由 T11 覆盖，游戏内用默认档。
+            entity.AddPropulsion(new PropulsionData
+            {
+                propellant = hydrogen,
+                ve = 4000f,
+                massFlow = overThrust ? 140f : 2f,
+                mass = overThrust ? 66000f : 12000f,
+                capacity = overThrust ? 66000f : 12000f
+            });
+            entity.AddPropulsion(new PropulsionData
+            {
+                propellant = hydrazine,
+                ve = 1500f,
+                massFlow = overThrust ? 20f : 1f,
+                mass = overThrust ? 4000f : 500f,
+                capacity = overThrust ? 4000f : 500f,
+                isVectoredRcs = true
+            });
+
+            spaceGame.RegisterEntity(entity);
+            group.AddEntity(entityId);
+
+            // 圆轨（解析位置 + **自动轨道保持**；中心天体 = 预设天体 → 顺带置位 group.CelestialBodyId）
+            // ⚠ 轨道保持**故意留着**（2026-09-16 用户澄清）：维持圆轨本来就该持续烧工质抵消非白名单
+            // 天体的潮汐扰动（ComputeOrbitKeepingCorrection 的 ①②差分），并按质量流率分摊到各网络
+            // （⇒ 20% 从 RCS 罐扣）。数量级：LEO ≈6 m/s/天、同步 ≈31、绕月 ≈155。**这是设计意图，别关**。
+            // 圆轨走解析推进；**椭圆轨道不能进圆轨模式**（那会把它当圆轨解析推进 ⇒ 轨道被抹掉），
+            // 只开轨道保持（抵消非中心天体引力，仍是设计意图）。
+            if (circularOrbit) group.EnterCircularOrbit(Find.TickManager.TicksGame, bodyId);
+            else group.EnterOrbitKeeping(new HashSet<int> { bodyId });
+            return group;
+        }
+
+        /// <summary>
+        /// **新远场律的游戏内验收场景**（2026-09-17）：同轨两船、相位差 120°，追击方用
+        /// <see cref="RendezvousGuidanceLaw"/> 自主收相位（**没有出发段机动** —— 律本身就是整条转移）。
+        ///
+        /// 为什么选"同轨 120°"：这是"单弧 Lambert 无便宜解"的经典工况（纯测试 §14 实测最小单弧解
+        /// ≈3,848 m/s，而相位规划只要几十~几百）⇒ 它同时检验"新律确实在走相位机动而不是硬追"。
+        ///
+        /// <param name="overThrust">false = 用**纯台架 <c>RendezvousShip</c> 的原参数**（8kN 主 / 1.5kN RCS）
+        /// ⇒ 读数可与台架 T1/T2/T5 直接对照；true = 用调试放置船的 160kN 档（高推执行者的极端）。
+        /// ⚠ 高推档每轮点火冲量 aMax×dt≈100 m/s 会撞上"该轨道能安全吸收的 Δv"上界（LEO ≈100 m/s）
+        /// ⇒ 每轮被撞行星保护裁剪：**只会更慢、不会发散**（环增益被削小 = 更阻尼），但读数不可与台架对照。</param>
+        ///
+        /// 本场景会**打开** <see cref="SpaceGameComp.UseNewRendezvousLaw"/>（调试场景的职责就是验收它）。
+        /// 观察点：日志 `[NewLaw] φ=… C0=… ecc=…`（需"详细操舵日志"）→ 最终应出现
+        /// 「交会完成（距离 … 相对速度 …）」。
+        /// </summary>
+        /// <param name="phaseDegAhead">目标在追击方顺行**前方**的相位差（度）。
+        /// ⚠ 它直接决定**时长**（不是可调的性能参数，是物理）：收相位的速度上限来自"轨道能缩多深"——
+        /// LEO 500km 缩到大气层边缘（地表+100km）只给出 δn≈6.3e-5 rad/s ⇒ 收 120° 要 ≈3.4e4 模拟秒
+        /// （≈6 个轨道周期；8 倍速下约 70 真实分钟）。故另给一个 30° 快例（≈9e3 秒/19 分钟）用于快速回归。
+        /// 代价遵循相位守恒律 Δv·t = (2/3)·r·Δφ ⇒ 快例与硬例的 Δv **同量级**，只有时间不同。</param>
+        /// <param name="phaseDegAhead">目标在追击方顺行**前方**的相位差（度）。</param>
+        /// <param name="legSeconds">远场每段的时间预算（0 = 游戏默认 60000s）。
+        /// ⚠ **时长由它定，不由相位差定**：律的 S 形式目标是"在本段末恰好闭合"
+        /// ⇒ 只要没撞上物理上界（缩轨到大气层边缘给出的 δn 上限），**段多长就等多久**。
+        /// 代价同时由它定：相位守恒律 Δv·t = (2/3)·r·Δφ ⇒ 段短则快且贵。这是"时间当自由变量"的旋钮。</param>
+        /// <param name="targetAltKm">目标的高度（km）相对追击方的差值：0 = 同轨（只考相位段）；
+        /// >0 = 目标在更高的圆轨（**考形状段**：先变轨、再收相位）。</param>
+        /// <param name="targetIncDeg">目标轨道的**倾角**（度）：把目标的半径方向绕**当地切向**转过去实现
+        /// —— 同半径 + 异面时速度仍切向（`dot(r′,v′)=0` 且 `|v′|=v_c(R)`）⇒ 仍是圆轨、升交点在目标当前位置。
+        /// ⚠ **异面是阶梯「匹配平面」那一级唯一会上场的几何**（同面时那一级永远不会被选中）
+        /// ⇒ 不设它，那一级就只能靠台架/纯测试覆盖。</param>
+        public static void SpawnRendezvousLawTest(bool overThrust, double phaseDegAhead, double legSeconds,
+            double targetAltKm = 0.0, double targetIncDeg = 0.0)
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (spaceGame == null || mgr == null)
+            {
+                Messages.Message("SpaceGameComp / CelestialBodyManager 未找到！", MessageTypeDefOf.RejectInput);
+                return;
+            }
+
+            SpaceGameComp.UseNewRendezvousLaw = true;
+
+            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
+            int bodyId = EARTH_BODY_ID;
+            double mu = spaceGame.GetBodyGM(bodyId);
+            double radius = SpaceConstants.PlanetRadiusMeters + 500_000.0;
+            DVector3 radialChaser = EquatorialRadial(physicsTick);
+            double vCirc = System.Math.Sqrt(mu / radius);
+            double phaseRad = phaseDegAhead * System.Math.PI / 180.0;
+            // 目标在追击方**顺行前方**（沿用纯测试 §14 的工况：Lambert 无便宜解、必须收相位）
+            DVector3 radialTgt = RotateAboutUp(radialChaser, phaseRad);
+            double radiusTgt = radius + System.Math.Max(targetAltKm, 0.0) * 1000.0;
+            double vCircTgt = System.Math.Sqrt(mu / radiusTgt);
+
+            // 倾角：把半径方向绕**当地切向**转 i（切向自身不变 ⇒ 速度仍切向、轨道仍圆，升交点在本位置）
+            DVector3 radialTgtUse = radialTgt;
+            if (System.Math.Abs(targetIncDeg) > 1e-9)
+            {
+                double inc = targetIncDeg * System.Math.PI / 180.0;
+                radialTgtUse = radialTgt * System.Math.Cos(inc) - DVector3.up * System.Math.Sin(inc);
+            }
+            var target = CreateNoMapShipGroup(spaceGame, bodyId, radialTgtUse * radiusTgt,
+                ProgradeEquatorialTangent(radialTgt) * vCircTgt, out _, overThrust);
+            if (target == null) return;
+            var chaser = CreateNoMapShipGroup(spaceGame, bodyId, radialChaser * radius,
+                ProgradeEquatorialTangent(radialChaser) * vCirc, out _, overThrust);
+            if (chaser == null) return;
+
+            // 登记**新律**交会：无出发段 ⇒ 登记即生效（旧路径要等出发机动点火才 armed，
+            // 而新律本身就是整条转移、不需要出发段）。
+            chaser.RegisterRendezvousGuidance(target.GroupId, physicsTick, prograde: true, useNetworks: null);
+            chaser.ArmRendezvousGuidance();
+            // 腿长写在登记**之后**（Register 会 ResetRendezvousLawState 把它清零）
+            chaser.rendezvousLawLegSeconds = legSeconds;
+            // 期望估计用**游戏在跑的那条政策**（RendezvousGuidanceLaw.PlanLeg）——不另写一套估计，
+            // 否则"场景说的"和"律做的"又成两份（这正是本轮教训）。
+            bool shapeProbe = false;
+            double legEndProbe = double.NegativeInfinity;   // -∞ ⇒ PlanLeg 必然重排一段，用它要估计值
+            double aMaxEst = spaceGame.EstimateMaxAcceleration(chaser);
+            double legUse = legSeconds > 0.0 ? legSeconds : 60000.0;
+            RendezvousGuidanceLaw.PlanLeg(chaser.localPosition, chaser.localVelocity,
+                target.localPosition, target.localVelocity, mu, aMaxEst, physicsTick, legUse, 0.0,
+                ref shapeProbe, ref legEndProbe, out double legPlan, out double dvShapePlan);
+            double dvPhasePlan = (2.0 / 3.0) * chaser.localPosition.magnitude * System.Math.Abs(phaseRad)
+                                 / System.Math.Max(legPlan, 1.0);
+            double dvTotalEst = dvShapePlan * RendezvousGuidanceLaw.ShapeCostFactor + dvPhasePlan;
+            double dvBudget = spaceGame.GetGroupDeltaV(chaser).remainingDv;
+            Log.Message(string.Format(
+                "[交会验收] G{0}(追击) → G{1}(目标)｜追击 r={2:F0}km 目标 r={3:F0}km 相位差 {4:F0}° 目标倾角 {12:F1}°｜" +
+                "政策预估：模式={5} 腿长={6:F0}s Δv≈{7:F0} m/s（变轨 {8:F0} + 相位 {9:F0}）×1.5余量 vs 预算 {10:F0} m/s{11}｜" +
+                "新律=开 · 无出发段（律即转移）· 期望：先变轨 → 再收相位 → 5% 半径内交班 CW 终端 → 交会完成",
+                chaser.GroupId, target.GroupId, radius / 1000.0, radiusTgt / 1000.0, phaseDegAhead,
+                shapeProbe ? "形状/变轨" : "相位", legPlan, dvTotalEst, dvShapePlan, dvPhasePlan, dvBudget,
+                dvTotalEst > dvBudget ? " ⚠ 超预算（此场景绕过玩家路径的预算闸门，仍会跑）" : "", targetIncDeg));
+            Messages.Message(string.Format(
+                "交会验收已布置：G{0} 追击 G{1}（相位 {2:F0}°，目标高 {3:F0}km）。政策预估 Δv≈{4:F0} m/s、" +
+                "耗时 ≈{5:F0} 模拟秒；中途读数见日志 [NewLaw]（需先开「详细操舵日志」）。",
+                chaser.GroupId, target.GroupId, phaseDegAhead, targetAltKm, dvTotalEst, legPlan),
+                MessageTypeDefOf.TaskCompletion, false);
+        }
+
+        /// <summary>
+        /// 绕 <c>up</c>（+Y）轴把矢量旋转 angle（**顺行方向为正**：radial(θ)=(cosθ,0,sinθ)，
+        /// 而 <see cref="ProgradeEquatorialTangent"/> = d/dθ 同号 ⇒ 正角 = 顺行前方）。
+        /// </summary>
+        private static DVector3 RotateAboutUp(DVector3 v, double angle)
+        {
+            double c = System.Math.Cos(angle), s = System.Math.Sin(angle);
+            return new DVector3(v.x * c - v.z * s, v.y, v.x * s + v.z * c);
+        }
+
+
+        #endregion
 
         /// 核热引擎(液氢) + 氢储罐(满 5000kg)、离子引擎(氙) + 氙储罐(满 1000kg)，
         /// 规划两条各自绑定网络的机动（①核热径向 ②离子切向），并打开机动队列窗口。

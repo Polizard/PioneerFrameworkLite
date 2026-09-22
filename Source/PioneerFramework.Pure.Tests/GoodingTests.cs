@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using PioneerFramework;
 using Xunit;
+using MechJebLib.Lambert;
 
 namespace PioneerFramework.Pure.Tests
 {

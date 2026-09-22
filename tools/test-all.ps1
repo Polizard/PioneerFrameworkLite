@@ -2,8 +2,9 @@
 #
 # Steps, in this order:
 #   1. Build (Debug, full rebuild)                  -> 0 errors, unique warning count reported
-#   2. Pure math tests (net8)                       -> Source/PioneerFramework.Pure.Tests
+#   2. Pure math tests (net48)                      -> Source/PioneerFramework.Pure.Tests
 #   3. Game integration tests (net48)               -> Source/PioneerFramework.Tests
+#   3b. Ported MechJebLib tests (net48)             -> Source/MechJebLibTest (third-party 移植面)
 #   4. Def/XML validation                           -> python tools/validate_config.py
 #   5. Committed runtime assets present
 #   6. Deterministic Release build                  -> two builds, identical DLL bytes
@@ -153,7 +154,7 @@ Step "Build (Debug, full rebuild)" {
 }
 
 # -- 2. Pure math tests -------------------------------------------------------
-Step "Pure math tests (net8)" {
+Step "Pure math tests (net48)" {
     $out = Invoke-Dotnet @("test", "Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.csproj", "-v:minimal")
     return (Get-TestSummary $out)
 }
@@ -161,6 +162,14 @@ Step "Pure math tests (net8)" {
 # -- 3. Game integration tests ------------------------------------------------
 Step "Game integration tests (net48)" {
     $out = Invoke-Dotnet @("test", "Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj", "-v:minimal")
+    return (Get-TestSummary $out)
+}
+
+# -- 3b. 第三方移植物：上游 MechJebLib 测试套 ---------------------------------
+# net48、零 RimWorld/Unity 依赖；它验收的是 ThirdParty/MechJebLib/ 下的移植面本身，
+# 而不是我们的代码，所以单独一个桶 —— 红了就能一眼看出是哪一侧的问题。
+Step "Ported MechJebLib tests (net48)" {
+    $out = Invoke-Dotnet @("test", "Source/MechJebLibTest/MechJebLibTest.csproj", "-v:minimal")
     return (Get-TestSummary $out)
 }
 

@@ -240,6 +240,10 @@ namespace PioneerFramework
                 shipStats.shieldCapacity += ps.shieldCapacity;
                 shipStats.sensorRange += ps.sensorRange; // 聚合语义待定（max vs sum），先求和
                 shipStats.cargoCapacity += ps.cargoCapacity;
+                // [N2] 抗压制 / 抗欺骗：与其余字段同为求和。**新增 ShipStats 字段必须在此加一行**，
+                // 否则组件贡献进不了实体级聚合——本方法是唯一的"必须同步点"。
+                shipStats.ecmResist += ps.ecmResist;
+                shipStats.eccmResist += ps.eccmResist;
             }
             statsDirty = false;
         }
@@ -248,6 +252,11 @@ namespace PioneerFramework
         public void InvalidateStats()
         {
             statsDirty = true;
+            // 部件集变化 ⇒ 本船所属群组的派生信号（[V8]，吃 AggregatedStats 的热/电/尺寸项）也失效。
+            // 本方法是"部件集可能变化"的**唯一既有收口**（AddComponent / RemoveComponent / 部件销毁都汇聚到这里），
+            // 所以同步点放这里最省。⚠ 若将来新增改部件的路径绕开本方法，群组信号会静默过期
+            // —— 与 AVM:824 的"派生点"是同一类陷阱，新加部件变更入口时请对照此处。
+            Current.Game?.GetComponent<SpaceGameComp>()?.GetGroupById(GroupId)?.InvalidateSignal();
         }
 
         // ── 无 Map 实体的自带推进数据（IPropulsionSource）──
@@ -315,17 +324,24 @@ namespace PioneerFramework
         public float TryConsumePropellant(PropellantDef def, float kg)
         {
             if (def == null || kg <= 0f) return 0f;
-            for (int i = 0; i < propulsion.Count; i++)
+            // ⚠ 原来这里是"**扣第一个匹配的条目就 return**" ✗ —— 同一工质有多个条目（多罐同种料）时
+            //   只烧得到第一罐，余量被**静默丢弃**（调用方会把剩余传给下一个**实体**，永不回头）⇒
+            //   燃耗记不满、群质量掉不到位 ⇒ 燃烧按偏大的质量算 `a` ⇒ **多给 Δv**（2026-09-19 实测：
+            //   `Σ(a·dt)=808` 而工质只够 749.6 ⇒ 白送 58 m/s）。
+            // ⇒ 跨**全部**同工质条目扣足本次请求的量。
+            float consumed = 0f;
+            for (int i = 0; i < propulsion.Count && consumed < kg; i++)
             {
                 var d = propulsion[i];
                 if (d.propellant != def) continue;
-                float actual = Mathf.Min(kg, d.mass);
-                if (actual <= 0f) return 0f;
-                d.mass -= actual;
-                totalPropulsionMass = Mathf.Max(0f, totalPropulsionMass - actual);
-                return actual;
+                float take = Mathf.Min(kg - consumed, d.mass);
+                if (take <= 0f) continue;
+                d.mass -= take;
+                consumed += take;
             }
-            return 0f;
+            if (consumed > 0f)
+                totalPropulsionMass = Mathf.Max(0f, totalPropulsionMass - consumed);
+            return consumed;
         }
 
         /// <summary>自带工质总质量（kg）。</summary>

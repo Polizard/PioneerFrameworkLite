@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Emit;
@@ -56,7 +56,8 @@ namespace PioneerFramework
         private const float PanelWidth = 320f;
         private const float PanelHeight = 500f;          // 基础高度（无 burn 区）
         private const float BurnSectionHeight = 112f;    // 机动执行区附加高度
-        private const float RendezvousSectionHeight = 112f; // 交会引导区附加高度
+        private const float RendezvousSectionHeight = 112f; // 交会引导区附加高度（旧范式显示：3 行）
+        private const float RendezvousSectionHeightNewLaw = 133f; // 新律显示多一行（相位/距离/相对速度）
         private const float ApproachSectionHeight = 112f; // 近距离接近区附加高度
 
         // 面板配色（与机动队列窗口一致）
@@ -140,7 +141,39 @@ namespace PioneerFramework
 
         #region Harmony 补丁方法
 
+        // ★ 每帧耗时探针（2026-09-20）：整步墙钟测的是**物理步**（实测 0.2 ms/步 ⇒ 不是"卡"的原因 ✗），
+        //   而"一直卡"的代价在**每帧**的渲染/UI 这一侧 —— 这一侧此前**从未量过**。
+        //   口径与步钟相同：累加 + 最慢 + 每 1200 帧（≈20 s）在开发者模式下打一行并清零。
+        private static long _frameClocks, _frameTicksTotal, _frameTicksMax;
+        private const long FrameAutoLogEvery = 1200;
+
         public static void WorldRenderer_DrawWorldLayers_Postfix()
+        {
+            long frameClock = System.Diagnostics.Stopwatch.GetTimestamp();
+            try
+            {
+                DrawWorldLayersBody();
+            }
+            finally
+            {
+                long dt = System.Diagnostics.Stopwatch.GetTimestamp() - frameClock;
+                _frameClocks++;
+                _frameTicksTotal += dt;
+                if (dt > _frameTicksMax) _frameTicksMax = dt;
+                if (_frameClocks >= FrameAutoLogEvery)
+                {
+                    if (Prefs.DevMode)
+                    {
+                        double toMs = 1e3 / System.Diagnostics.Stopwatch.Frequency;
+                        Log.Message(string.Format("[帧耗时] 帧数={0} 平均={1:F2} ms/帧 最慢={2:F2} ms",
+                            _frameClocks, _frameTicksTotal * toMs / _frameClocks, _frameTicksMax * toMs));
+                    }
+                    _frameClocks = 0; _frameTicksTotal = 0; _frameTicksMax = 0;
+                }
+            }
+        }
+
+        private static void DrawWorldLayersBody()
         {
             if (!WorldRendererUtility.WorldSelected) return;
             if (!EnableVisualization) return;
@@ -356,6 +389,34 @@ namespace PioneerFramework
         }
 
         public static void WorldInterface_OnGUI_Postfix()
+        {
+            // ★ 每帧 GUI 侧同样计时（2026-09-20）：与"世界层绘制"同一把尺 ⇒ 两侧合起来才是我们代码的每帧代价。
+            long guiClock = System.Diagnostics.Stopwatch.GetTimestamp();
+            try
+            {
+                WorldInterfaceOnGUIBody();
+            }
+            finally
+            {
+                long dt = System.Diagnostics.Stopwatch.GetTimestamp() - guiClock;
+                _guiClocks++; _guiTicksTotal += dt;
+                if (dt > _guiTicksMax) _guiTicksMax = dt;
+                if (_guiClocks >= FrameAutoLogEvery)
+                {
+                    if (Prefs.DevMode)
+                    {
+                        double toMs = 1e3 / System.Diagnostics.Stopwatch.Frequency;
+                        Log.Message(string.Format("[帧耗时·GUI] 帧数={0} 平均={1:F2} ms/帧 最慢={2:F2} ms",
+                            _guiClocks, _guiTicksTotal * toMs / _guiClocks, _guiTicksMax * toMs));
+                    }
+                    _guiClocks = 0; _guiTicksTotal = 0; _guiTicksMax = 0;
+                }
+            }
+        }
+
+        private static long _guiClocks, _guiTicksTotal, _guiTicksMax;
+
+        private static void WorldInterfaceOnGUIBody()
         {
             if (!EnableVisualization) return;
             if (!WorldRendererUtility.WorldSelected) return;
@@ -742,12 +803,24 @@ namespace PioneerFramework
                 DrawOrbitMarker(origin + ApplyVisualRotation(apPos), MarkerColorApoapsis, 1.8f, cam, "Ap");
             }
 
-            // 绘制 AN/DN 标记（非共面时）
-            var (anPos, dnPos) = OrbitMath.GetNodePositions(posMetersD, velMetersD, DVector3.up);
-            if (anPos.sqrMagnitude > 0.001)
+            // 绘制 AN/DN 标记（非共面时）。
+            // 【V2 收敛 2026-09-18】原先走 `OrbitMath.GetNodePositions(pos, vel, DVector3.up)`；
+            // 那是同一能力的第二份实现，且它的参考法向是"调用方传 +Y"而适配层是 +z。
+            // 现在改走 `OrbitView` 的交点族：`FromGameStateVectors` 会把游戏系 +Y 映射成适配层 +z，
+            // 于是 `*Equatorial*` 一族要的正是**相对游戏世界赤道**的交点 —— 与这里的意图一致。
+            var celestialMgrDbg = Current.Game?.GetComponent<CelestialBodyManager>();
+            CelestialBodyDef? defDbg = celestialMgrDbg?.GetBodyById(group.CelestialBodyId);
+            if (defDbg != null)
             {
-                DrawOrbitMarker(origin + ApplyVisualRotation((Vector3)(anPos * toUnity)), MarkerColorAn, 1.6f, cam, "AN");
-                DrawOrbitMarker(origin + ApplyVisualRotation((Vector3)(dnPos * toUnity)), MarkerColorDn, 1.6f, cam, "DN");
+                OrbitView ovDbg = OrbitView.FromGameStateVectors(posMetersD, velMetersD,
+                    defDbg.gravitationalParameter, TimeScaleManager.GetPhysicsTickSafe(), DVector3.up, defDbg.radius);
+                DVector3 anPos = OrbitView.ToD(ovDbg.AscendingNodePositionEquatorial(0.0));
+                DVector3 dnPos = OrbitView.ToD(ovDbg.DescendingNodePositionEquatorial(0.0));
+                if (anPos.sqrMagnitude > 0.001)
+                {
+                    DrawOrbitMarker(origin + ApplyVisualRotation((Vector3)(anPos * toUnity)), MarkerColorAn, 1.6f, cam, "AN");
+                    DrawOrbitMarker(origin + ApplyVisualRotation((Vector3)(dnPos * toUnity)), MarkerColorDn, 1.6f, cam, "DN");
+                }
             }
         }
 
@@ -862,7 +935,8 @@ namespace PioneerFramework
             var grp = selectedGroupId != -1 ? spaceGame?.GetGroupById(selectedGroupId) : null;
             if (grp != null && grp.HasActiveBurn) h += BurnSectionHeight;
             if (grp != null && grp.HasApproachGuidance) h += ApproachSectionHeight;
-            if (grp != null && grp.HasRendezvousGuidance && !grp.rendezvousIsApproach) h += RendezvousSectionHeight;
+            if (grp != null && grp.HasRendezvousGuidance && !grp.rendezvousIsApproach)
+                h += SpaceGameComp.UseNewRendezvousLaw ? RendezvousSectionHeightNewLaw : RendezvousSectionHeight;
             return new Rect(24f, 80f, PanelWidth, h);
         }
 
@@ -930,10 +1004,18 @@ namespace PioneerFramework
 
             string typeInfo = group.HasGravityWell ? "引力源" : (group.IsMovable ? "可移动" : "静态");
             string orbitInfo = group.IsCircularOrbit ? "圆轨" : "积分";
+            // [V1] 探针（步 1/2/3）：匿踪闸门 / 侦测技术 / 信号强度都还没有消费方，用面板读数充当
+            // "存档往返存活"与"派生量是否正确"的可执行检查——设置 / 观测 / 存档 / 读档 / 再看一眼。
+            // 单次 string.Format：面板是每帧绘制路径，原写法（再套一层 Format + 拼接）每帧多两次分配。
             Text.Font = GameFont.Tiny;
             GUI.color = DimColor;
             Widgets.Label(new Rect(panel.x + 12f, y + 30f, panel.width - 24f, 18f),
-                string.Format("{0} · {1} · {2}", typeInfo, orbitInfo, status));
+                string.Format("{0} · {1} · {2} · {3}{4} · 灵{5:F0}km/抗压{6:F1}/抗骗{7:F1} · S={8:F3}",
+                    typeInfo, orbitInfo, status, group.IsStealth ? "匿踪" : "公开",
+                    group.ActivePingEnabled ? "/主动" : "/被动",
+                    group.DetectTech.sensitivityMeters / 1000f,
+                    group.DetectTech.ecmResist, group.DetectTech.eccmResist,
+                    group.SignalStrength));
             GUI.color = Color.white;
             Text.Font = GameFont.Small;
             y += 54f;
@@ -1029,7 +1111,9 @@ namespace PioneerFramework
             y += 36f;
         }
 
-        /// <summary>交会引导状态区：目标 / 状态（待命·引导中）/ 距到达时间 / 取消按钮（精确交会引导激活时显示）。</summary>
+        /// <summary>交会引导状态区：目标 / 状态 / 剩余 / 取消按钮（精确交会引导激活时显示）。
+        /// 读数按**当前引擎**给：新律要的是相位差（它的状态量），旧范式要的是到达倒计时——
+        /// 混着显示会出现"面板说还剩 3 小时，律根本不看这个数"的错配。</summary>
         private static void DrawPanelRendezvous(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)
         {
             DrawSectionTitle(panel, ref y, "交会引导", CyanColor);
@@ -1038,23 +1122,76 @@ namespace PioneerFramework
             string targetLabel = target != null
                 ? string.Format("Group {0}", group.rendezvousTargetId)
                 : string.Format("Group {0}（已消失）", group.rendezvousTargetId);
-            string state = group.rendezvousArmed ? "引导中" : "待命（等待出发段点火）";
-            double remain = group.rendezvousArrivalTick - TimeScaleManager.GetPhysicsTickSafe();
+            double now = TimeScaleManager.GetPhysicsTickSafe();
 
             float rowH = 21f;
             Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
                 string.Format("目标: {0}", targetLabel));
             y += rowH;
-            Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
-                string.Format("状态: {0}", state));
-            y += rowH;
-            GUI.color = DimColor;
-            Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
-                remain > 0
-                    ? string.Format("距到达约 {0:F0} 秒（{1:F1} 分钟）", remain, remain / 60.0)
-                    : "已过到达时刻");
-            GUI.color = Color.white;
-            y += rowH + 6f;
+
+            if (SpaceGameComp.UseNewRendezvousLaw)
+            {
+                // ── 新律读数：状态 / 本段模式 / 轨道进度 / 相位与相对状态 ──
+                //   ⚠ **必须给"在干活"的证据**（2026-09-17 教训）：腿长动辄 8 万秒（≈28 游戏小时），
+                //   面板原先只显示腿倒计时 ⇒ 玩家看到的是"还有个 82 小时"，而不是"半长轴正在爬"，
+                //   于是以为"飞一半不干了"。这里给**变轨进度**（本船 a vs 目标 a）与段模式。
+                Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
+                    string.Format("状态: {0} · {1}", group.rendezvousArmed ? "引导中" : "待命",
+                        group.rendezvousLawShapeMode ? "变轨段" : "相位段"));
+                y += rowH;
+
+                double aSelf = double.NaN, aTgt = double.NaN, phaseDeg = double.NaN, distKm = double.NaN, rel = double.NaN;
+                if (target != null)
+                {
+                    aSelf = OrbitMath.SemiMajorAxis(group.localPosition, group.localVelocity,
+                        spaceGame.GetBodyGM(group.CelestialBodyId));
+                    DVector3 vTgtNow = target.localVelocity;
+                    if (spaceGame.TryGetRendezvousReadout(group, target, out double phi, out double dist, out double rv))
+                    {
+                        phaseDeg = phi * 180.0 / System.Math.PI;
+                        distKm = dist / 1000.0;
+                        rel = rv;
+                    }
+                    aTgt = OrbitMath.SemiMajorAxis(target.localPosition, vTgtNow,
+                        spaceGame.GetBodyGM(group.CelestialBodyId));
+                }
+
+                GUI.color = DimColor;
+                if (!double.IsNaN(aTgt))
+                {
+                    double remainA = (aTgt - aSelf) / 1000.0;
+                    Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
+                        string.Format("半长轴 {0:F0} / {1:F0} km（{2}{3:F0} km）",
+                            aSelf / 1000.0, aTgt / 1000.0,
+                            System.Math.Abs(remainA) < 1.0 ? "已对齐" : (remainA > 0 ? "待升 " : "待降 "),
+                            System.Math.Abs(remainA)));
+                }
+                y += rowH;
+                double remLeg = group.rendezvousLawLegEndTick - now;
+                double leg = group.rendezvousLawLegSeconds > 0.0
+                    ? group.rendezvousLawLegSeconds : 60000.0;
+                Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
+                    string.Format("相位差 {0:F1}° · {1:F0} km · {2:F1} m/s｜本段剩 {3:F1}/{4:F1} h",
+                        phaseDeg, distKm, rel, remLeg / 3600.0, leg / 3600.0));
+                GUI.color = Color.white;
+                y += rowH + 6f;
+            }
+            else
+            {
+                // ── 旧范式读数：等待出发段 / 到达倒计时 ──
+                string state = group.rendezvousArmed ? "引导中" : "待命（等待出发段点火）";
+                double remain = group.rendezvousArrivalTick - now;
+                Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
+                    string.Format("状态: {0}", state));
+                y += rowH;
+                GUI.color = DimColor;
+                Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
+                    remain > 0
+                        ? string.Format("距到达约 {0:F0} 秒（{1:F1} 分钟）", remain, remain / 60.0)
+                        : "已过到达时刻");
+                GUI.color = Color.white;
+                y += rowH + 6f;
+            }
 
             GUI.color = WarnColor;
             if (Widgets.ButtonText(new Rect(panel.x + 12f, y, panel.width - 24f, 28f), "取消交会引导"))
@@ -1164,9 +1301,36 @@ namespace PioneerFramework
                 Find.WindowStack.Add(new ManeuverPlanner(group));
             y += rowH + rowGap;
 
-            // 行3：交会规划 | 转移到圆轨
-            if (Widgets.ButtonText(new Rect(leftX, y, btnW, rowH), "交会规划"))
-                Find.WindowStack.Add(new RendezvousPlanner(group, spaceGame));
+            // 行3：交会（新律：选目标 → 选时间/燃料档） | 转移到圆轨
+            // ⚠ 2026-09-17 起玩家路径**不再走旧范式**：旧路径是「Lambert 算转移轨道 + 排一次出发段大机动，
+            //   引导只在出发之后做修正」；新律不需要出发段（律本身就是整条转移），登记即接管。
+            //   旧规划窗口仍在（调试页签），仅用于对照与回退。
+            if (Widgets.ButtonText(new Rect(leftX, y, btnW, rowH), "交会"))
+            {
+                var sameBody = spaceGame.GetAllGroups()
+                    .Where(g => g.IsActive && g.GroupId != group.GroupId
+                        && g.CelestialBodyId == group.CelestialBodyId)
+                    .ToList();
+                if (sameBody.Count == 0)
+                {
+                    Messages.Message("同一中心天体下没有其它编队可交会（跨天体交会未实现）",
+                        MessageTypeDefOf.RejectInput);
+                }
+                else
+                {
+                    var options = new List<FloatMenuOption>();
+                    foreach (var c in sameBody)
+                    {
+                        int capturedId = c.GroupId;
+                        options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）",
+                            c.GroupId, (c.localPosition - group.localPosition).magnitude / 1000.0), () =>
+                        {
+                            OpenRendezvousLegMenu(selectedGroupId, capturedId);
+                        }));
+                    }
+                    Find.WindowStack.Add(new FloatMenu(options));
+                }
+            }
             if (Widgets.ButtonText(new Rect(rightX, y, btnW, rowH), "转移到圆轨"))
                 Find.WindowStack.Add(new OrbitTransferPlanner(group, spaceGame));
             y += rowH + rowGap;
@@ -1218,8 +1382,44 @@ namespace PioneerFramework
             y += rowH + 12f;
         }
 
-        private static void DrawPanelMap(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)
+        /// <summary>
+        /// 交会的**第二级菜单**：选时间/燃料档（同一个旋钮的两端，相位守恒律 Δv·t = (2/3)·r·Δφ）。
+        /// 选项里的耗时与 Δv 由 <see cref="SpaceGameComp.BuildRendezvousLawOptions"/> 现算——
+        /// 界面给的数就是律会走的量级，不是写死的文案。
+        /// </summary>
+        private static void OpenRendezvousLegMenu(int selfGroupId, int targetGroupId)
         {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var self = spaceGame?.GetGroupById(selfGroupId);
+            var target = spaceGame?.GetGroupById(targetGroupId);
+            if (spaceGame == null || self == null || target == null) return;
+
+            var options = spaceGame.BuildRendezvousLawOptions(self, target);
+            if (options.Count == 0)
+            {
+                Messages.Message("无法规划交会：目标不在同一中心天体 / 本编队没有可用推进 / 状态不可预测",
+                    MessageTypeDefOf.RejectInput);
+                return;
+            }
+
+            var menu = new List<FloatMenuOption>();
+            foreach (var opt in options)
+            {
+                double leg = opt.LegSeconds;
+                menu.Add(new FloatMenuOption(opt.Label, () =>
+                {
+                    var sg = Current.Game?.GetComponent<SpaceGameComp>();
+                    var g = sg?.GetGroupById(selfGroupId);
+                    var t = sg?.GetGroupById(targetGroupId);
+                    if (sg == null || g == null || t == null) return;
+                    if (!sg.BeginRendezvousLaw(g, t, leg, out string reason))
+                        Messages.Message("交会未能启动：" + reason, MessageTypeDefOf.RejectInput);
+                }));
+            }
+            Find.WindowStack.Add(new FloatMenu(menu));
+        }
+
+        private static void DrawPanelMap(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)        {
             var mapEntity = GetMapEntityForGroup(group);
             if (mapEntity == null) return;
 

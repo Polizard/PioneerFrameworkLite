@@ -586,10 +586,11 @@ namespace PioneerFramework.Combat
             systemGrids.Remove(systemBodyId);
         }
 
-        public void Clear()
-        {
-            systemGrids.Clear();
-        }
+        // ⚠ [V9] 2026-09-16：原 public void Clear() 已删除——它是零调用者的死 API，
+        // 且若被调用会**静默破坏碰撞检测**：它只清 systemGrids，不同步清 CombatManager.shipLastPositions，
+        // 于是位置未变的船在 SyncAllShipsToGrid 里既不 AddShip 也不 UpdateShipPosition，永远缺席细网格。
+        // ClearSystem 保留（语义上可用于卸某个行星系），但**同一个坑存在**：调用方若要用它，
+        // 必须同时让 CombatManager 忘记该系的 shipLastPositions。
 
         public int CellCount
         {

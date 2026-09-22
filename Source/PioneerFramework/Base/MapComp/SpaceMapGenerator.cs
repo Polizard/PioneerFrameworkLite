@@ -353,6 +353,9 @@ namespace PioneerFramework
             };
             // entity.Position/Velocity 为相对 group 原点的局部偏移（实体在 group 原点 → zero）
             entity.SetPositionVelocity(DVector3.zero, DVector3.zero);
+            // 姿态必须显式置位：不设就是 (0,0,0,0)，物理端（Rotate/AABB 展开式）恰好等价单位姿态，
+            // 但它不是合法四元数——表现层（Matrix4x4.TRS）拿到它会把网格压成一个点（不可见）。
+            entity.SetRotation(Quaternion.identity);
 
             // 创建空间站主体 Part：宽=mapWidth, 高=50m(厚度), 深=mapHeight
             var part = new SpacePart

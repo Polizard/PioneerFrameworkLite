@@ -1,5 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using MechJebLib.Functions;        // Astro：要素/传播/周期的移植权威（V1/V2 收敛目标）
+using MechJebLib.Primitives;       // V3（适配层的向量类型）
+using MechJebLib.Utils;            // Statics
 
 namespace PioneerFramework
 {
@@ -33,10 +36,12 @@ namespace PioneerFramework
         /// </summary>
         public static double SemiMajorAxis(DVector3 posMeters, DVector3 velMeters, double mu = double.NaN)
         {
+            // 【V2 已收敛 2026-09-18】算式改为移植权威 `Astro.SmaFromStateVectors`（与本式代数逐字相同）。
+            // **抛物线守卫保留**：`Astro` 那边分母趋零会给 ±∞，而旧契约是 `double.MaxValue`。
             double gm = ResolveGM(mu);
             double eps = SpecificEnergy(posMeters, velMeters, gm);
             if (Math.Abs(eps) < 1e-10) return double.MaxValue; // 抛物线
-            return -gm / (2.0 * eps);
+            return Astro.SmaFromStateVectors(gm, OrbitView.ToV3(posMeters), OrbitView.ToV3(velMeters));
         }
 
         /// <summary>
@@ -44,66 +49,32 @@ namespace PioneerFramework
         /// </summary>
         public static void GetEccentricity(DVector3 posMeters, DVector3 velMeters, out DVector3 eVec, out double e, double mu = double.NaN)
         {
+            // 【V2 已收敛 2026-09-18】改为移植权威 `Astro.EccVecFromStateVectors`
+            // （`cross(v/μ, r×v) − r̂`，与本式代数逐字相同）。**`r < 0.001` 守卫保留**。
             double gm = ResolveGM(mu);
             double r = posMeters.magnitude;
             if (r < 0.001) { eVec = DVector3.zero; e = 0.0; return; }
 
-            // e = (v × h) / μ - r̂, 其中 h = r × v
-            DVector3 h = DVector3.Cross(posMeters, velMeters);
-            eVec = DVector3.Cross(velMeters, h) / gm - posMeters / r;
+            V3 vec = Astro.EccVecFromStateVectors(gm, OrbitView.ToV3(posMeters), OrbitView.ToV3(velMeters));
+            eVec = OrbitView.ToD(vec);
             e = eVec.magnitude;
         }
 
-        /// <summary>
-        /// 获取轨道平面法线 (角动量方向)。
-        /// </summary>
-        public static DVector3 GetOrbitNormal(DVector3 posMeters, DVector3 velMeters)
-        {
-            return DVector3.Cross(posMeters, velMeters).normalized;
-        }
-
-        /// <summary>
-        /// 计算近心点幅角 (Argument of Periapsis)，即偏心矢量方向与 ascending node 的夹角。
-        /// 简化版：直接返回偏心矢量在轨道平面内的方向角。
-        /// </summary>
-        public static double GetArgumentOfPeriapsis(DVector3 posMeters, DVector3 velMeters, DVector3 eVec, double e)
-        {
-            if (e < 0.001) return 0.0;
-
-            DVector3 h = DVector3.Cross(posMeters, velMeters);
-            DVector3 node = DVector3.Cross(new DVector3(0, 1, 0), h);
-            double nodeMag = node.magnitude;
-            if (nodeMag < 0.001) return 0.0;
-
-            double cosOmega = DVector3.Dot(node, eVec) / (nodeMag * e);
-            return Math.Acos(Math.Max(-1.0, Math.Min(1.0, cosOmega)));
-        }
-
+        // 【V2 已删 2026-09-18】本段原先有 `GetOrbitNormal` 与 `GetArgumentOfPeriapsis`：
+        //   · `GetOrbitNormal` 零调用点（等价式 `DVector3.Cross(r, v).normalized` 就够，
+        //     而"轨道法向"的权威是 `OrbitView.OrbitNormal()`）；
+        //   · `GetArgumentOfPeriapsis` 零调用点，且它**只给象限不满的解**（对 `cos` 反余弦、丢掉符号
+        //     ⇒ 第二/三象限的 ω 被折叠到第一象限）—— 正是《大修计划》§11.2 列为 PARTIAL 的那条。
+        //     移植权威是 `Astro.KeplerianFromStateVectors(...).argp`（`OrbitView.argumentOfPeriapsis` 走它）。
         #endregion
 
         #region 轨道点生成
 
-        /// <summary>
-        /// 计算给定位置/速度下的真近点角。
-        /// </summary>
-        public static double GetTrueAnomaly(DVector3 posMeters, DVector3 velMeters, double mu = double.NaN)
-        {
-            DVector3 eVec;
-            double e;
-            GetEccentricity(posMeters, velMeters, out eVec, out e, mu);
-
-            double r = posMeters.magnitude;
-            double cosNu = DVector3.Dot(eVec, posMeters) / (e * r);
-            cosNu = Math.Max(-1.0, Math.Min(1.0, cosNu));
-
-            // 如果径向速度为正 → 远离中心 → 0 < ν < π
-            double radVel = DVector3.Dot(posMeters, velMeters);
-            double nu = Math.Acos(cosNu);
-            if (radVel < 0.0)
-                nu = 2.0 * Math.PI - nu;
-
-            return nu;
-        }
+        // 【V1 已删 2026-09-18】`GetTrueAnomaly(DVector3, DVector3, double)` 零调用点 ⇒ 删。**
+        // ⚠ 它正是那个**带已知缺陷**的副本：`cos ν = (e⃗·r⃗)/(e·r)` 在圆轨上分子分母同为舍入噪声
+        //   ⇒ 返回任意角，并曾使圆轨传播被整体旋转一个常数角（记录见
+        //   `MechJebLibPortTests.CircularOrbitPropagation_IsExact_AndHyperbolicIsNoLongerANoOp`）。
+        //   移植权威是 `Astro.TrueAnomalyFromStateVectors` / `OrbitView.trueAnomaly`。
 
         #endregion
 
@@ -114,8 +85,8 @@ namespace PioneerFramework
         /// </summary>
         public static double GetPeriapsisDistance(double semiMajorAxis, double eccentricity)
         {
-            if (semiMajorAxis <= 0.0) return -1.0;
-            return semiMajorAxis * (1.0 - eccentricity);
+            if (semiMajorAxis <= 0.0) return -1.0; // 旧契约：非椭圆给 -1（移植的 Astro 没有这个守卫）
+            return Astro.PeriapsisFromKeplerian(semiMajorAxis, eccentricity);
         }
 
         /// <summary>
@@ -123,8 +94,8 @@ namespace PioneerFramework
         /// </summary>
         public static double GetApoapsisDistance(double semiMajorAxis, double eccentricity)
         {
-            if (semiMajorAxis <= 0.0) return -1.0;
-            return semiMajorAxis * (1.0 + eccentricity);
+            if (semiMajorAxis <= 0.0) return -1.0; // 同上
+            return Astro.ApoapsisFromKeplerian(semiMajorAxis, eccentricity);
         }
 
         /// <summary>
@@ -186,139 +157,42 @@ namespace PioneerFramework
 
         /// <summary>
         /// 计算从当前位置到近心点所需时间 (秒)。
+        ///
+        /// ⚠ **2026-09-18（V1，§14.3『近点角』行）：已收敛到 <see cref="OrbitView.NextPeriapsisTime" />。**
+        /// 原先这里自算 `GetTrueAnomaly` + `TrueToEccentricAnomaly` + 手工平均近点角差，
+        /// 只在椭圆上成立（`GetOrbitFrame` 拒绝 `a<=0 || e>=1` ⇒ 双曲返回 0.0）。
+        /// **本步是"收敛"不是"改行为"，所以双曲仍然返回 0.0**（`OrbitView` 会给出真实值，
+        /// 但那是另一个提升，不夹带在这一步里——见下方 `GetTimeToApoapsis` 的同款处理）。
         /// </summary>
         public static double GetTimeToPeriapsis(DVector3 posMeters, DVector3 velMeters)
         {
-            double a, e, p;
-            DVector3 eDir, yDir;
-            if (!GetOrbitFrame(posMeters, velMeters, out a, out e, out p, out eDir, out yDir))
-                return 0.0;
-
-            double currentNu = GetTrueAnomaly(posMeters, velMeters);
-            double dNu = -currentNu;
-            if (dNu < 0.0) dNu += 2.0 * Math.PI;
-
-            double n = MeanMotion(a);
-            if (n <= 0.0) return 0.0;
-
-            if (e < 0.001)
-            {
-                return dNu / n;
-            }
-
-            double currentE = TrueToEccentricAnomaly(currentNu, e);
-            double peE = TrueToEccentricAnomaly(0.0, e);
-            double dM = (peE - e * Math.Sin(peE)) - (currentE - e * Math.Sin(currentE));
-            if (dM < 0.0) dM += 2.0 * Math.PI;
-            return dM / n;
+            OrbitView ov = OrbitView.FromStateVectors(OrbitView.ToV3(posMeters), OrbitView.ToV3(velMeters), GM, 0.0);
+            if (!(ov.eccentricity < 1.0)) return 0.0; // 旧契约：非椭圆给 0（双曲没有远近心点的椭圆口径）
+            return ov.NextPeriapsisTime(0.0);
         }
 
         /// <summary>
-        /// 计算从当前位置到远心点所需时间 (秒)。
+        /// 计算从当前位置到远心点所需时间 (秒)。**同 <see cref="GetTimeToPeriapsis" />：已收敛，双曲仍返回 0.0。**
+        /// ⚠ `OrbitView.NextApoapsisTime` 对双曲**抛 `ArgumentException`** ⇒ 这里的守卫是**功能性的**，
+        /// 不是装饰（去掉它会把 `SpaceGameComp` 的候选时刻计算变成抛异常）。
         /// </summary>
         public static double GetTimeToApoapsis(DVector3 posMeters, DVector3 velMeters)
         {
-            double a, e, p;
-            DVector3 eDir, yDir;
-            if (!GetOrbitFrame(posMeters, velMeters, out a, out e, out p, out eDir, out yDir))
-                return 0.0;
-
-            double currentNu = GetTrueAnomaly(posMeters, velMeters);
-            double dNu = Math.PI - currentNu;
-            if (dNu < 0.0) dNu += 2.0 * Math.PI;
-
-            double n = MeanMotion(a);
-            if (n <= 0.0) return 0.0;
-
-            if (e < 0.001)
-            {
-                return dNu / n;
-            }
-
-            double currentE = TrueToEccentricAnomaly(currentNu, e);
-            double apE = TrueToEccentricAnomaly(Math.PI, e);
-            double dM = (apE - e * Math.Sin(apE)) - (currentE - e * Math.Sin(currentE));
-            if (dM < 0.0) dM += 2.0 * Math.PI;
-            return dM / n;
+            OrbitView ov = OrbitView.FromStateVectors(OrbitView.ToV3(posMeters), OrbitView.ToV3(velMeters), GM, 0.0);
+            if (!(ov.eccentricity < 1.0)) return 0.0;
+            return ov.NextApoapsisTime(0.0);
         }
 
         #endregion
 
         #region 升/降交点 (AN/DN) 与轨道倾角
 
-        /// <summary>
-        /// 计算轨道倾角 (弧度)。
-        /// </summary>
-        public static double GetInclination(DVector3 posMeters, DVector3 velMeters, DVector3 refNormal = default)
-        {
-            if (refNormal == default) refNormal = DVector3.up;
-            DVector3 h = DVector3.Cross(posMeters, velMeters);
-            if (h.sqrMagnitude < 0.0001) return 0.0;
-            return Math.Acos(Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(h.normalized, refNormal))));
-        }
-
-        /// <summary>
-        /// 计算升/降交点位置。
-        /// </summary>
-        public static (DVector3 an, DVector3 dn) GetNodePositions(DVector3 posMeters, DVector3 velMeters, DVector3 refNormal = default)
-        {
-            if (refNormal == default) refNormal = DVector3.up;
-
-            double a, e, p;
-            DVector3 eDir, yDir;
-            if (!GetOrbitFrame(posMeters, velMeters, out a, out e, out p, out eDir, out yDir))
-                return (DVector3.zero, DVector3.zero);
-
-            double dotE = DVector3.Dot(eDir, refNormal);
-            double dotY = DVector3.Dot(yDir, refNormal);
-
-            if (Math.Abs(dotE) < 1e-10 && Math.Abs(dotY) < 1e-10)
-                return (DVector3.zero, DVector3.zero);
-
-            double nu0 = Math.Atan2(-dotE, dotY);
-            double nu1 = nu0 + Math.PI;
-
-            DVector3 GetPosAtNu(double nu)
-            {
-                double cosNu = Math.Cos(nu);
-                double r = p / (1.0 + e * cosNu);
-                if (r < 0.0) r = -r;
-                return eDir * (r * cosNu) + yDir * (r * Math.Sin(nu));
-            }
-
-            DVector3 pos0 = GetPosAtNu(nu0);
-            DVector3 pos1 = GetPosAtNu(nu1);
-
-            DVector3 vel0 = GetVelocityAtFraction(posMeters, velMeters, nu0 / (2.0 * Math.PI));
-            // 用 DVector3.Dot 判断升/降
-            if (DVector3.Dot(vel0, refNormal) > 0.0)
-                return (pos0, pos1);
-            else
-                return (pos1, pos0);
-        }
-
-        /// <summary>
-        /// 获取升交点经度 (弧度)。
-        /// </summary>
-        public static double GetLongitudeOfAscendingNode(DVector3 posMeters, DVector3 velMeters, DVector3 refNormal = default)
-        {
-            if (refNormal == default) refNormal = DVector3.up;
-
-            var (anPos, _) = GetNodePositions(posMeters, velMeters, refNormal);
-            if (anPos.sqrMagnitude < 0.001) return 0.0;
-
-            DVector3 proj = anPos - refNormal * DVector3.Dot(anPos, refNormal);
-            if (proj.sqrMagnitude < 0.001) return 0.0;
-
-            // 与参考方向夹角（默认 Z 轴正方向）
-            DVector3 refDir = new DVector3(0, 0, 1);
-            double lan = Math.Acos(Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(proj.normalized, refDir))));
-            DVector3 crossDir = DVector3.Cross(refDir, proj.normalized);
-            if (DVector3.Dot(crossDir, refNormal) > 0.0)
-                lan = 2.0 * Math.PI - lan;
-            return lan;
-        }
-
+        // 【V2 已删 2026-09-18】本段原先有 `GetInclination` / `GetNodePositions` / `GetLongitudeOfAscendingNode`
+        // —— 三者都是「参考法向由调用方传」的口径（默认 `DVector3.up` = 游戏世界 +Y），
+        // 与适配层（+z 极轴）是**两个口径**。它们的调用点已重指到 `OrbitView`：
+        //   · `GetInclination`     → `OrbitView.FromGameStateVectors(...).inclination`（ManeuverPlanner 的手册规划器）
+        //   · `GetNodePositions`   → `OrbitView.Ascending/DescendingNodePositionEquatorial`（调试标记；`OrbitView` 原先只有交点时刻、没有位置，那处缺口已补）
+        //   · `GetLongitudeOfAscendingNode` → 零调用点，直接删（`OrbitView.LAN` 是权威）
         #endregion
 
         #region 轨道点生成
@@ -369,46 +243,9 @@ namespace PioneerFramework
             return points;
         }
 
-        /// <summary>
-        /// 获取轨道上指定比例位置处的点。
-        /// </summary>
-        public static DVector3 GetPositionAtFraction(DVector3 posMeters, DVector3 velMeters, double fraction)
-        {
-            double a, e, p;
-            DVector3 eDir, yDir;
-            if (!GetOrbitFrame(posMeters, velMeters, out a, out e, out p, out eDir, out yDir))
-                return posMeters;
-
-            double nu = 2.0 * Math.PI * fraction;
-            double cosNu = Math.Cos(nu);
-            double r = p / (1.0 + e * cosNu);
-            if (r < 0.0) r = -r;
-
-            return eDir * (r * cosNu) + yDir * (r * Math.Sin(nu));
-        }
-
-        /// <summary>
-        /// 获取轨道上指定比例位置处的速度向量。
-        /// </summary>
-        public static DVector3 GetVelocityAtFraction(DVector3 posMeters, DVector3 velMeters, double fraction)
-        {
-            double a, e, p;
-            DVector3 eDir, yDir;
-            if (!GetOrbitFrame(posMeters, velMeters, out a, out e, out p, out eDir, out yDir))
-                return velMeters;
-
-            double nu = 2.0 * Math.PI * fraction;
-            double cosNu = Math.Cos(nu);
-            double sinNu = Math.Sin(nu);
-
-            double sqrtMuOverP = Math.Sqrt(GM / p);
-            double vRadial = sqrtMuOverP * e * sinNu;
-            double vTangential = sqrtMuOverP * (1.0 + e * cosNu);
-
-            return eDir * (vRadial * cosNu - vTangential * sinNu)
-                 + yDir * (vRadial * sinNu + vTangential * cosNu);
-        }
-
+        // 【V2 已删 2026-09-18】`GetPositionAtFraction` 与 `GetVelocityAtFraction` 都零调用点 ⇒ 删。
+        // 它们是"按真近点角比例取轨道点"的椭圆专用版（且同样受 `GetOrbitFrame` 的椭圆限制）；
+        // 对应能力在 `OrbitView`（`RightHandedStateVectorsAtUT` + `TrueAnomalyAtRadius`/`trueAnomaly`）。
         /// <summary>
         /// 提取轨道平面坐标系和要素。
         /// </summary>
@@ -439,126 +276,46 @@ namespace PioneerFramework
 
         #region 时间传播 (Kepler)
 
-        /// <summary>
-        /// 平均角速度: n = √(μ/a³) (rad/s)
-        /// </summary>
-        public static double MeanMotion(double semiMajorAxis, double mu = double.NaN)
-        {
-            if (semiMajorAxis <= 0.0) return 0.0;
-            double gm = double.IsNaN(mu) ? GM : mu;
-            return Math.Sqrt(gm / (semiMajorAxis * semiMajorAxis * semiMajorAxis));
-        }
+        // 【V1 已删 2026-09-18】`MeanMotion` 零调用点 ⇒ 删；`Astro.MeanMotion(mu, sma)` 是同一算式的移植权威。
+        // 它原先挂在『周期』那一族（§14.3）名下 —— 删掉的就是「同一条算式的又一份」。
 
-        /// <summary>
-        /// 从真近点角 ν 计算偏近点角 E。
-        /// </summary>
-        public static double TrueToEccentricAnomaly(double trueAnomaly, double e)
-        {
-            double tanHalfNu = Math.Tan(trueAnomaly / 2.0);
-            double tanHalfE = Math.Sqrt((1.0 - e) / (1.0 + e)) * tanHalfNu;
-            return 2.0 * Math.Atan(tanHalfE);
-        }
-
-        /// <summary>
-        /// 从偏近点角 E 计算真近点角 ν。
-        /// </summary>
-        public static double EccentricToTrueAnomaly(double eccentricAnomaly, double e)
-        {
-            double tanHalfE = Math.Tan(eccentricAnomaly / 2.0);
-            double tanHalfNu = Math.Sqrt((1.0 + e) / (1.0 - e)) * tanHalfE;
-            return 2.0 * Math.Atan(tanHalfNu);
-        }
-
-        /// <summary>
-        /// 解 Kepler 方程 E - e·sin(E) = M (牛顿迭代法)。
-        /// </summary>
-        public static double SolveKepler(double meanAnomaly, double e)
-        {
-            double E = meanAnomaly;
-            for (int i = 0; i < 20; i++)
-            {
-                double dE = (E - e * Math.Sin(E) - meanAnomaly) / (1.0 - e * Math.Cos(E));
-                E -= dE;
-                if (Math.Abs(dE) < 1e-12) break;
-            }
-            return E;
-        }
+        // 【V1 已删 2026-09-18】`TrueToEccentricAnomaly` 零调用点 ⇒ 删
+        // （`GetTimeToPeriapsis`/`GetTimeToApoapsis` 已收敛到 `OrbitView.Next*`，不再需要它）。
+        // 『近点角』行（§14.3）的移植权威是 `Angles.EFromNu` / `NuFromE`。
+        // 同批 `EccentricToTrueAnomaly` 与 `SolveKepler` 也早已零调用点、已删。
 
         /// <summary>
         /// 获取指定时间 Δt 后的轨道位置。
+        ///
+        /// ⚠ **2026-09-18（V1，§14.3『传播』行）：本方法已改成薄转发。**
+        /// 原先这里是一份**椭圆专用**的解算（`GetOrbitFrame` + `GetTrueAnomaly` + `SolveKepler` 串起来），
+        /// 它有两个已实测的毛病：
+        ///   · `a<=0 || e>=1` 时**静默原样返回输入** ⇒ 双曲/抛物上"传播"是 no-op（登记为 **Q11**）；
+        ///   · `e < 0.001` 分支用的真近点角是**舍入噪声**（`e⃗·r̂/e`）⇒ **输出被整体旋转一个任意常数角**
+        ///     （见 `MechJebLibPortTests.KnownDefect_CircularOrbitPropagationIsRotatedByGarbage`）。
+        /// 现在**唯一实现是移植来的 `Shepperd`**（普适变量法，椭圆/抛物/双曲全域有效），经 `OrbitView` 转发。
+        /// **转发的名字与调用点都保留**（12 个调用点里不少在交会路径上），所以这是一次"就地取代"。
+        ///
+        /// **参考系无关**：二体传播对参考系的**旋转**不变（输入整体旋转 ⇒ 输出同样旋转），
+        /// 所以游戏系 `DVector3` 直接喂进来是对的，**不需要换系**
+        /// （换系只服务 `inclination`/`LAN`/`argP`/`ν` 那些**方向**量，传播不读它们）。
+        /// `epoch` 取 0 ⇒ 入参 `deltaSeconds` 就是 `Shepperd` 的 `tau`，与原签名语义一致。
         /// </summary>
         public static DVector3 GetPositionAtTimeDelta(DVector3 posMeters, DVector3 velMeters, double deltaSeconds, double mu = double.NaN)
         {
-            double gm = ResolveGM(mu);
-            double a, e, p;
-            DVector3 eDir, yDir;
-            if (!GetOrbitFrame(posMeters, velMeters, out a, out e, out p, out eDir, out yDir, mu))
-                return posMeters;
-
-            double currentNu = GetTrueAnomaly(posMeters, velMeters, mu);
-
-            if (e < 0.001)
-            {
-                double nCirc = MeanMotion(a, gm);
-                double nu = currentNu + nCirc * deltaSeconds;
-                double r = a;
-                double cosNu = Math.Cos(nu);
-                double sinNu = Math.Sin(nu);
-                return eDir * (r * cosNu) + yDir * (r * sinNu);
-            }
-
-            double currentE = TrueToEccentricAnomaly(currentNu, e);
-            double currentM = currentE - e * Math.Sin(currentE);
-            double nEll = MeanMotion(a, gm);
-            double newM = currentM + nEll * deltaSeconds;
-            double newE = SolveKepler(newM, e);
-            double newNu = EccentricToTrueAnomaly(newE, e);
-
-            double rNew = p / (1.0 + e * Math.Cos(newNu));
-            if (rNew < 0.0) rNew = -rNew;
-
-            double cosNuNew = Math.Cos(newNu);
-            double sinNuNew = Math.Sin(newNu);
-            return eDir * (rNew * cosNuNew) + yDir * (rNew * sinNuNew);
+            OrbitView ov = OrbitView.FromStateVectors(
+                OrbitView.ToV3(posMeters), OrbitView.ToV3(velMeters), ResolveGM(mu), 0.0);
+            return OrbitView.ToD(ov.RightHandedStateVectorsAtUT(deltaSeconds).pos);
         }
 
         /// <summary>
-        /// 获取指定时间 Δt 后的轨道速度。
+        /// 获取指定时间 Δt 后的轨道速度。**同上：薄转发到 `Shepperd`**（见 <see cref="GetPositionAtTimeDelta" /> 的说明）。
         /// </summary>
         public static DVector3 GetVelocityAtTimeDelta(DVector3 posMeters, DVector3 velMeters, double deltaSeconds, double mu = double.NaN)
         {
-            double gm = ResolveGM(mu);
-            double a, e, p;
-            DVector3 eDir, yDir;
-            if (!GetOrbitFrame(posMeters, velMeters, out a, out e, out p, out eDir, out yDir, mu))
-                return velMeters;
-
-            double currentNu = GetTrueAnomaly(posMeters, velMeters, mu);
-            double newNu;
-
-            if (e < 0.001)
-            {
-                double n = MeanMotion(a, gm);
-                newNu = currentNu + n * deltaSeconds;
-            }
-            else
-            {
-                double currentE = TrueToEccentricAnomaly(currentNu, e);
-                double currentM = currentE - e * Math.Sin(currentE);
-                double n = MeanMotion(a, gm);
-                double newM = currentM + n * deltaSeconds;
-                double newE = SolveKepler(newM, e);
-                newNu = EccentricToTrueAnomaly(newE, e);
-            }
-
-            double cosNu = Math.Cos(newNu);
-            double sinNu = Math.Sin(newNu);
-            double sqrtMuOverP = Math.Sqrt(gm / p);
-            double vRadial = sqrtMuOverP * e * sinNu;
-            double vTangential = sqrtMuOverP * (1.0 + e * cosNu);
-
-            return eDir * (vRadial * cosNu - vTangential * sinNu)
-                 + yDir * (vRadial * sinNu + vTangential * cosNu);
+            OrbitView ov = OrbitView.FromStateVectors(
+                OrbitView.ToV3(posMeters), OrbitView.ToV3(velMeters), ResolveGM(mu), 0.0);
+            return OrbitView.ToD(ov.RightHandedStateVectorsAtUT(deltaSeconds).vel);
         }
 
         #endregion

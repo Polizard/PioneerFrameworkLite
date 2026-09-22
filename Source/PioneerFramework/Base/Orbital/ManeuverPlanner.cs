@@ -538,7 +538,12 @@ namespace PioneerFramework
             double currentSMA = OrbitMath.SemiMajorAxis(pos, vel, centralGM);
             currentPe = OrbitMath.GetPeriapsisDistance(currentSMA, currentE);
             currentAp = OrbitMath.GetApoapsisDistance(currentSMA, currentE);
-            currentInclination = OrbitMath.GetInclination(pos, vel);
+            // 【V2 收敛 2026-09-18】原先 `OrbitMath.GetInclination(pos, vel)` —— 它默认参考法向是
+            // `DVector3.up`（游戏世界 +Y）。改走 `OrbitView.FromGameStateVectors`：那次换系的目的正是
+            // 把游戏系 +Y 映射成适配层 +z ⇒ `.inclination` 得到的**正好**是"相对游戏世界赤道的倾角"，
+            // 与旧口径逐字一致（不是"换了个参考系"，是"把同一个参考系说清楚"）。
+            currentInclination = OrbitView.FromGameStateVectors(
+                pos, vel, centralGM, TimeScaleManager.GetPhysicsTickSafe(), DVector3.up, 0.0).inclination;
 
             // 当前轨道的点列（中心天体参考系 → 转换到地心系）
             bool usePerturbed = CurrentPreviewMode == PreviewMode.Perturbed && group.CelestialBodyId >= 0;

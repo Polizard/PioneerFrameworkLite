@@ -1,18 +1,14 @@
 using System;
 using System.Runtime.CompilerServices;
-using static PioneerFramework.MJStatics;
+// 数学工具的唯一权威是移植来的 MechJebLib.Utils.Statics（J2）。
+// 曾用我们自己手抄的 PioneerFramework.MJStatics —— 它与上游已经漂移（Asinh/Atanh/Acosh 是朴素一行式），
+// 已于 2026-09-18 删除。本文件只用它的 SafeAcos，而那一项两份逐字相同。
+using MechJebLib.Lambert;
+using static MechJebLib.Utils.Statics;
 using static System.Math;
 
 namespace PioneerFramework
 {
-    public enum TransferGeometry
-    {
-        ShortWay,
-        LongWay,
-        Prograde,
-        Retrograde
-    }
-
     /// <summary>
     /// MechJeb2 的 Gooding Lambert 求解器直接移植。
     /// </summary>

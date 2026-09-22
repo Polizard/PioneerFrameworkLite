@@ -28,6 +28,7 @@ jobs:
             Source/PioneerFramework/PioneerFramework.csproj
             Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj
             Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.csproj
+            Source/MechJebLibTest/MechJebLibTest.csproj
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -55,8 +56,13 @@ jobs:
       - name: Run game integration tests
         run: dotnet test Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_test_game -p:AppendTargetFrameworkToOutputPath=false
 
-      - name: Run pure math tests
+      - name: Run pure math tests (net48)
         run: dotnet test Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_test_pure -p:AppendTargetFrameworkToOutputPath=false
+
+      # 第三方移植物（MechJebLib 数值底座）的上游测试套：net48、零 RimWorld/Unity 依赖。
+      # 详见 Source/PioneerFramework/ThirdParty/MechJebLib/README.md
+      - name: Run ported MechJebLib tests
+        run: dotnet test Source/MechJebLibTest/MechJebLibTest.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_test_mjl -p:AppendTargetFrameworkToOutputPath=false
 
       - name: Validate XML / DefOf / localization
         run: python tools/validate_config.py
