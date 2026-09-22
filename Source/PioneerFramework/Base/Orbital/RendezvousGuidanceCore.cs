@@ -477,21 +477,13 @@ namespace PioneerFramework
         public static Actuator SelectActuator(double dvMagnitude, double aMain, double aRcs,
             bool mainAligned, double rcsWindowSeconds = 15.0)
         {
-            bool hasMain = aMain > 0.0;
-            bool hasRcs = aRcs > 0.0;
-            if (!hasMain && !hasRcs) return Actuator.None;
-
-            // 小修正优先 RCS：全矢量、免对准、烧得快（唯一不依赖姿态的通道）
-            if (hasRcs && dvMagnitude <= aRcs * rcsWindowSeconds) return Actuator.Rcs;
-
-            // 大 Δv：主网（要求对准）
-            if (hasMain && mainAligned) return Actuator.Main;
-
-            // 主推未对准或主网尽：RCS 兜底（哪怕要烧很久——有界总比烧不动好）
-            if (hasRcs) return Actuator.Rcs;
-
-            // 只剩主网且未对准：返回 Main 让调用方继续转姿态（本步不出力）
-            return Actuator.Main;
+            // ⚠ 2026-09-23（B5）：**规则本体已收到 `BurnExecutorPolicy`**（政策件是唯一权威；游戏侧那两处
+            //   内联规则将来也调它）—— 本函数退化为"布尔判决 → 三态枚举"的翻译，行为与收敛前**逐位一致**
+            //   （有等价性测试钉住：`BurnExecutorPolicyTests`）。
+            if (!BurnExecutorPolicy.HasAnyActuator(aMain, aRcs)) return Actuator.None;
+            return BurnExecutorPolicy.UseRcs(dvMagnitude, aMain, aRcs, mainAligned, rcsWindowSeconds)
+                ? Actuator.Rcs
+                : Actuator.Main;
         }
 
         /// <summary>

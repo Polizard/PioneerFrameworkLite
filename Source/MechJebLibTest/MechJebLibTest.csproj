@@ -111,6 +111,8 @@
          阶梯 + 三个交会纯核心 + 台架 ⇒ 同一根跑道跑"阶梯 vs 连续律"。 -->
     <Compile Include="..\PioneerFramework.Pure.Tests\RendezvousFlightSim.cs" Link="Sim\RendezvousFlightSim.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGuidanceCore.cs" Link="Sim\RendezvousGuidanceCore.cs" />
+    <!-- B5：政策件（`RendezvousGuidanceCore.SelectActuator` 转发到它 ⇒ 本工程也要链） -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\BurnExecutorPolicy.cs" Link="Sim\BurnExecutorPolicy.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGuidanceLaw.cs" Link="Sim\RendezvousGuidanceLaw.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousCore.cs" Link="Sim\RendezvousCore.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\CwRendezvousCore.cs" Link="Sim\CwRendezvousCore.cs" />

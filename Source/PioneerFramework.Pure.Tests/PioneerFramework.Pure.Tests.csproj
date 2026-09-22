@@ -73,6 +73,9 @@
 
   <ItemGroup>
     <Compile Include="..\PioneerFramework\Base\Orbital\BurnStep.cs" Link="Pure\BurnStep.cs" />
+    <!-- B5（2026-09-23）：烧执行器的**政策**（原子烧门 / 执行器选择 / 计划-实际燃时口径 / 诊断比值口径）。
+         `RendezvousGuidanceCore.SelectActuator` 已转发到它 ⇒ 本工程必须一并链。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\BurnExecutorPolicy.cs" Link="Pure\BurnExecutorPolicy.cs" />
     <!-- B2.2-b 闭环微调（2026-09-20）：把本点速度拨到意图轨道的**唯一算式**。
          链接进来是为了用纯测试钉"定义判据"（打完 (a,|h|) 必须等于目标）与登记的局限（a 落在 r）。 -->
     <Compile Include="..\PioneerFramework\Base\Orbital\TrimBurn.cs" Link="Pure\TrimBurn.cs" />
