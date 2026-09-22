@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using RimWorld;
+using RimWorld.Planet;   // PlanetTile（降落探针：tile 自带 layer ⇒ 跨层错配从类型上就挡得住）
 using UnityEngine;
 using Verse;
 using PioneerFramework.Combat;
@@ -519,70 +520,6 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 月球系引力回归场景（A0 §9 第 3 项）：在月球附近放一个**非圆轨**群组。
-        ///
-        /// 为什么必须非圆轨：圆轨群组走 `GetCircularPositionAtTick` 解析推进，**不经过引力场积分**，
-        /// 验不到 A0 的改动；非圆轨才走 `ComputeGroupPhysics` 的场积分路径。
-        ///
-        /// 起手数据：月球表面上方 1800km、速度 = 0.92×月球圆轨速度（切向）→ 稳定椭圆
-        /// （a≈0.866r，e≈0.154，近月点 ≈2.4e6 m > 月半径 1.5e6 m，不会立刻撞月），
-        /// 半径在 2.4–3.3e6 m 间变化，全程都在积分。
-        ///
-        /// 判据（配合 PerfProbe 的汇总行 ㉑）：子天体域「差分/局部引力」应落在 **0.1%–2%**（地球潮汐）；
-        /// 若为 0 → 月球周围仍未带上根天体的贡献（A0 未生效）；若 ≈7% → 走了"全量求和"的错路。
-        /// </summary>
-        /// <summary>
-        /// ★★ **反推着陆验收场景**（2026-09-22）：在**赤道**上把船摆到地表上方 8 km、**纯径向下降 150 m/s**，
-        /// 然后交给 <see cref="LandingController" /> 做垂直反推。
-        ///
-        /// ## 为什么这么摆
-        /// · **纯径向下降**（无切向速度）= 反推制导纯核的**唯一假设**（它只解径向一维）⇒
-        ///   这个场景测的是**制导与执行**，不带"消水平速度"那一层（那是后续的段）；
-        /// · 起点 8 km / 150 m/s：按闭式点火高度 `v²/(2·(aMax−g))`，本船的推力余量下有
-        ///   一倍以上裕度（"能不能刹住"应当判**能**）⇒ 跑起来就该落地；
-        /// · 用**过推档**的调试船（560kN 主推）⇒ 推重比 ≫1，不会被"推重比不足"那条拦住。
-        ///
-        /// 观察点（日志）：`[着陆·诊断]`（h / 下降率 / aMax / 动作）→ 最终 `[着陆] **着陆完成**`。
-        /// </summary>
-        public static void SpawnLandingTest()
-        {
-            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
-            var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            if (spaceGame == null || celestialMgr == null) return;
-
-            var body = celestialMgr.GetBodyById(EARTH_BODY_ID);
-            if (body == null)
-            {
-                Log.Error("[着陆测试] 天体 Def 缺失（bodyId=1）");
-                return;
-            }
-
-            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
-            double altStart = 8_000.0;
-            double descent = 150.0;
-            double r = body.radius + altStart;
-
-            // 赤道方向：从自转相位取一个固定的径向（与 `EquatorialRadial` 同口径）
-            DVector3 up = EquatorialRadial(physicsTick);
-            DVector3 pos = up * r;
-            DVector3 vel = -up * descent;          // **纯径向下降**（无切向 ⇒ 反推核的适用域）
-
-            var group = CreateShipNoMap(spaceGame, Faction.OfPlayer.loadID, pos,
-                new DVector3(6f, 6f, 12f), Quaternion.identity, "着陆测试", vel);
-            if (group == null) return;
-
-            group.CelestialBodyId = EARTH_BODY_ID;
-            group.exemptPlanetCollision = true;     // 着陆段允许贴地（由制导判到达，不靠碰撞豁免）
-
-            LandingController.BeginLanding(group.GroupId, EARTH_BODY_ID);
-
-            Log.Message(string.Format(
-                "[着陆测试] G{0} 已创建：高度 {1:F0} m、纯径向下降 {2:F0} m/s、地表半径 {3:F0} km｜" +
-                "看 [着陆·诊断] → [着陆] 着陆完成",
-                group.GroupId, altStart, descent, body.radius / 1000.0));
-        }
-
-        /// <summary>
         /// ★ **撞击事件探针**（2026-09-22）：一次跑出**两种结果**，验证"着陆 / 坠毁"判定与落点经纬度。
         ///
         /// 摆法：两颗船都放在**地表上方 200 m**、**纯径向下降**（无切向 ⇒ 接地速度只由"初速 + 重力"决定；
@@ -639,6 +576,175 @@ namespace PioneerFramework
                 "[撞击事件] G{0} 已创建：高度 {1:F0} m、相对地表纯径向下降 {2:F0} m/s、落点预期 ({3:F1}°, {4:F1}°)" +
                 "｜无碰撞豁免 ⇒ 撞到地表时应出现『着陆 / 坠毁』消息",
                 g.GroupId, altitude, descentMps, latRad * 180.0 / System.Math.PI, lonRad0 * 180.0 / System.Math.PI));
+        }
+
+        /// <summary>
+        /// 月球系引力回归场景（A0 §9 第 3 项）：在月球附近放一个**非圆轨**群组。
+        ///
+        /// 为什么必须非圆轨：圆轨群组走 `GetCircularPositionAtTick` 解析推进，**不经过引力场积分**，
+        /// 验不到 A0 的改动；非圆轨才走 `ComputeGroupPhysics` 的场积分路径。
+        ///
+        /// 起手数据：月球表面上方 1800km、速度 = 0.92×月球圆轨速度（切向）→ 稳定椭圆
+        /// （a≈0.866r，e≈0.154，近月点 ≈2.4e6 m > 月半径 1.5e6 m，不会立刻撞月），
+        /// 半径在 2.4–3.3e6 m 间变化，全程都在积分。
+        ///
+        /// 判据（配合 PerfProbe 的汇总行 ㉑）：子天体域「差分/局部引力」应落在 **0.1%–2%**（地球潮汐）；
+        /// 若为 0 → 月球周围仍未带上根天体的贡献（A0 未生效）；若 ≈7% → 走了"全量求和"的错路。
+        /// </summary>
+        // ═══ 选 tile 主动降落（2026-09-22）：报价探针 + 执行探针（地月各一）═══
+
+        /// <summary>
+        /// ★ **选 tile 降落的报价探针**：近地圆轨 + 绕月圆轨各摆一颗（**顺行赤道** ⇒ 报价取该天体的最小值档），
+        /// 打印它们**星下点 tile** 的报价 + 一个"远处对照"落点（用来同时看到**距离门**与"Δv 随落点变"）。
+        ///
+        /// 预期量级（口径见 <see cref="LandingQuote"/>）：
+        /// · 近地圆轨（500 km）落赤道 ≈ **5.5 km/s**（= 圆轨 6030 − 地表共转 523.6）；
+        /// · 绕月圆轨（1800 km）落月球赤道 ≈ **1.17 km/s**（= 1231 − 58.9）；
+        /// · 远处对照落点应当被距离门拒（门：地球 1000 km / 月球 525 km）。
+        /// </summary>
+        public static void SpawnLandingQuoteProbe()
+        {
+            if (!TrySpawnLandingProbeShips(out var sg, out var mgr, out var tick, out var eShip, out var mShip)) return;
+            if (sg == null || mgr == null || eShip == null || mShip == null) return;   // 可空标注所需；上面已保证非空
+            ProbeLandingQuotes(sg, mgr, eShip, EARTH_BODY_ID, tick, "近地圆轨");
+            ProbeLandingQuotes(sg, mgr, mShip, MOON_BODY_ID, tick, "绕月圆轨");
+        }
+
+        /// <summary>
+        /// ★ **选 tile 降落的执行探针**：对上面两颗船的**星下点 tile** 真的执行一次
+        /// <see cref="SpaceGameComp.TryLandAtTile"/> ⇒ 验证三件事：**消息 + 扣料 + 销毁**
+        /// （执行前后各打一行剩余 Δv，扣料看这一对数）。
+        /// </summary>
+        public static void RunLandingExecutionProbe()
+        {
+            if (!TrySpawnLandingProbeShips(out var sg, out var mgr, out var tick, out var eShip, out var mShip)) return;
+            if (sg == null || mgr == null || eShip == null || mShip == null) return;   // 同上
+            RunOneLanding(sg, mgr, eShip, EARTH_BODY_ID, tick, "近地圆轨");
+            RunOneLanding(sg, mgr, mShip, MOON_BODY_ID, tick, "绕月圆轨");
+        }
+
+        /// <summary>两颗探针船：近地圆轨（500 km）+ 绕月圆轨（1800 km），都是**顺行赤道**（按 `SurfaceFrame` 的东向约定）。
+        /// 返回 false（并保证 sg == null）＝ 场景没搭起来 ⇒ 调用方直接返回。</summary>
+        private static bool TrySpawnLandingProbeShips(out SpaceGameComp? sg, out CelestialBodyManager? mgr,
+            out double physicsTick, out SpaceEntityGroup? eShip, out SpaceEntityGroup? mShip)
+        {
+            sg = Current.Game?.GetComponent<SpaceGameComp>();
+            mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            physicsTick = 0.0;
+            eShip = null;
+            mShip = null;
+            if (sg == null || mgr == null) return false;
+
+            var earth = mgr.GetBodyById(EARTH_BODY_ID);
+            var moon = mgr.GetBodyById(MOON_BODY_ID);
+            if (earth == null || moon == null)
+            {
+                Log.Error("[降落探针] 天体 Def 缺失（need bodyId 1/2）");
+                return false;
+            }
+            physicsTick = TimeScaleManager.GetPhysicsTickSafe();
+
+            // ── 近地圆轨：+x̂ 处顺行（东向 = +ẑ），速度取该高度的圆轨速度 ──
+            double rE = earth.radius + 500_000.0;
+            eShip = CreateShipNoMap(sg, Faction.OfPlayer.loadID, new DVector3(rE, 0, 0),
+                new DVector3(6f, 6f, 12f), Quaternion.identity, "降落探针·近地",
+                new DVector3(0, 0, System.Math.Sqrt(earth.gravitationalParameter / rE)));
+            if (eShip != null) eShip.CelestialBodyId = EARTH_BODY_ID;
+            // ── 绕月圆轨：月球固连赤道点上方 1800 km，速度 = 月球绕地平动 + 月球相对圆轨速度（东向）──
+            double omegaM = GetSurfaceState.RotationOmega(mgr, MOON_BODY_ID);
+            (DVector3 mSurfPos, DVector3 mSurfVel) = SurfaceFrame.SurfaceState(moon.radius, 0.0, 0.0, omegaM, physicsTick);
+            DVector3 moonPos = mgr.GetBodyLocalPosition(MOON_BODY_ID, physicsTick);   // 月球的父系（= 根系）偏移
+            DVector3 moonVel = mgr.GetBodyLocalVelocity(MOON_BODY_ID, physicsTick);
+            double rM = moon.radius + 1_800_000.0;
+            DVector3 upM = mSurfPos.normalized;
+            DVector3 eastM = mSurfVel.normalized;                                     // 地表自转方向 = 东向
+            mShip = CreateShipNoMap(sg, Faction.OfPlayer.loadID, moonPos + upM * rM,
+                new DVector3(6f, 6f, 12f), Quaternion.identity, "降落探针·绕月",
+                moonVel + eastM * System.Math.Sqrt(moon.gravitationalParameter / rM));
+            if (mShip != null) mShip.CelestialBodyId = MOON_BODY_ID;
+
+            // ⚠ **无 Map 船必须显式加油**：`CreateShipNoMap` 只造壳（一个 `PF_ShipPart_Cube`），
+            //   推进与工质全靠 `AddPropulsion` ⇒ 不加的话报价会被"工质不足"拒掉，探针就成了废的。
+            GiveLandingProbePropulsion(sg, eShip);
+            GiveLandingProbePropulsion(sg, mShip);
+
+            return eShip != null && mShip != null;
+        }
+
+        /// <summary>
+        /// 探针船的推进档（照抄既有的"过推档"）：主网 ve 4000 / ṁ140 / 66000 kg＋RCS 网 ve 1500 / ṁ20 / 4000 kg。
+        /// ve_eff = ΣF/Σṁ = (4000·140 + 1500·20)/160 = **3687.5 m/s**；干重 ≈ 船体几百 kg
+        /// ⇒ Δv ≈ 3687.5·ln(wet/dry) ≈ **10 km/s 量级**，够付近地圆轨那笔 5.5 km/s，也远超绕月那笔 1.17 km/s。
+        /// </summary>
+        private static void GiveLandingProbePropulsion(SpaceGameComp sg, SpaceEntityGroup? group)
+        {
+            if (group == null) return;
+            var hydrogen = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Hydrogen");
+            var hydrazine = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Hydrazine");
+            if (hydrogen == null || hydrazine == null)
+            {
+                Log.Error("[降落探针] 工质 Def 缺失（PF_Propellant_Hydrogen / PF_Propellant_Hydrazine）");
+                return;
+            }
+            foreach (int eid in group.GetEntityIds())
+            {
+                var e = sg.GetEntityById(eid);
+                if (e == null) continue;
+                e.AddPropulsion(new PropulsionData
+                {
+                    propellant = hydrogen, ve = 4000f, massFlow = 140f, mass = 66000f, capacity = 66000f
+                });
+                e.AddPropulsion(new PropulsionData
+                {
+                    propellant = hydrazine, ve = 1500f, massFlow = 20f, mass = 4000f, capacity = 4000f, isVectoredRcs = true
+                });
+            }
+        }
+
+        /// <summary>打印某颗船在目标天体上的报价：星下点 tile + 一个"远处对照"落点。</summary>
+        private static void ProbeLandingQuotes(SpaceGameComp sg, CelestialBodyManager mgr,
+            SpaceEntityGroup g, int bodyId, double physicsTick, string tag)
+        {
+            var layer = GetSurfaceState.GetLayerForBody(mgr, bodyId);
+            if (layer == null || layer.TilesCount <= 0)
+            {
+                Log.Error(string.Format("[降落探针] {0}：天体 {1} 没有地表网格", tag, bodyId));
+                return;
+            }
+            int tile = GetSurfaceState.EciToTile(g.localPosition, mgr, bodyId, physicsTick);
+            Log.Message(string.Format("[降落探针] {0} G{1}：星下点 tile={2}（layer 共 {3} 格）",
+                tag, g.GroupId, tile, layer.TilesCount));
+
+            PrintLandingQuote(sg, g, bodyId, new PlanetTile(tile, layer), tag + "·星下点");
+            int far = (tile + System.Math.Max(1, layer.TilesCount / 3)) % layer.TilesCount;
+            PrintLandingQuote(sg, g, bodyId, new PlanetTile(far, layer), tag + "·远处对照");
+        }
+
+        /// <summary>报价读数（一行）；被拒时打印拒绝原因（含"距离/上界"两个数）。</summary>
+        private static void PrintLandingQuote(SpaceGameComp sg, SpaceEntityGroup g, int bodyId, PlanetTile tile, string tag)
+        {
+            if (sg.TryQuoteLanding(g, bodyId, tile, out var q, out var est, out var bodyName, out var spot, out var reason))
+                Log.Message(string.Format(
+                    "[降落探针] {0} {1} tile={2}（{3}）⇒ **可落** Δv={4:F1} m/s（工质 {5:F1} kg）｜地表 {6:F0} km / 门 {7:F0} km",
+                    tag, bodyName, tile.tileId, spot, q.deltaV, est.RequiredPropellant,
+                    q.surfaceDistance / 1000.0, q.maxDistance / 1000.0));
+            else
+                Log.Message(string.Format("[降落探针] {0} tile={1} ⇒ **拒绝**：{2}", tag, tile.tileId, reason));
+        }
+
+        /// <summary>对星下点 tile 真的执行一次降落（消息 + 扣料 + 销毁三件事的探针）。</summary>
+        private static void RunOneLanding(SpaceGameComp sg, CelestialBodyManager mgr,
+            SpaceEntityGroup g, int bodyId, double physicsTick, string tag)
+        {
+            var layer = GetSurfaceState.GetLayerForBody(mgr, bodyId);
+            if (layer == null) { Log.Error(string.Format("[降落探针] {0}：没有地表网格", tag)); return; }
+            int tile = GetSurfaceState.EciToTile(g.localPosition, mgr, bodyId, physicsTick);
+            var before = sg.GetGroupDeltaV(g);
+            bool ok = sg.TryLandAtTile(g, bodyId, new PlanetTile(tile, layer), out var reason);
+            Log.Message(string.Format(
+                "[降落探针] {0} G{1} 执行 tile={2} ⇒ {3}｜{4}｜执行前剩余 Δv={5:F0} m/s，执行后编队{6}",
+                tag, g.GroupId, tile, ok ? "**成功**" : "**被拒**", reason, before.remainingDv,
+                sg.GetGroupById(g.GroupId) == null ? "已销毁 ✓" : "**仍在（应当已销毁）**"));
         }
 
         public static void SpawnMoonGravityTest()

@@ -75,11 +75,13 @@ namespace PioneerFramework
             AddAction("漏靶弹头（A2：段内插值飞行 + 引力弯曲）", "05 场景 · 引力场(A0)", 90,
                 DebugShipSpawner.SpawnMissedWarheadTest, null);
 
-            // ═══ 场景 · 着陆（2026-09-22：反推制导纯核 + 着陆控制器）═══
-            AddAction("反推着陆（地表上方 8 km、纯径向下降 150 m/s ⇒ 应当落地）", "05 场景 · 引力场(A0)", 80,
-                DebugShipSpawner.SpawnLandingTest, null);
+            // ═══ 场景 · 着陆（2026-09-22：撞击事件 = "着陆 / 坠毁"的唯一事件源）═══
             AddAction("撞击事件（地表上方 200 m：20 m/s ⇒ 着陆｜300 m/s ⇒ 坠毁，消息带经纬度）", "05 场景 · 引力场(A0)", 78,
                 DebugShipSpawner.SpawnImpactEventTest, null);
+            AddAction("降落·报价探针（近地圆轨 + 绕月圆轨：星下点 vs 远处对照）", "05 场景 · 引力场(A0)", 77,
+                DebugShipSpawner.SpawnLandingQuoteProbe, null);
+            AddAction("降落·执行探针（对星下点落点真降一次：消息 + 扣料 + 销毁）", "05 场景 · 引力场(A0)", 76,
+                DebugShipSpawner.RunLandingExecutionProbe, null);
 
             // ═══ 场景 · 轨道 / 空间站 ═══
             AddAction("部署空间站", "10 场景 · 轨道/空间站", 100, DebugShipSpawner.SpawnTestStation, null);

@@ -32,6 +32,16 @@ namespace PioneerFramework
         /// </summary>
         public const double MaxSafeLandingSpeedMps = 100.0;
 
+        // ── 选 tile 主动降落（2026-09-22 用户裁定："选一个 tile、消耗一定 dV、瞬间完成降落"）──
+        /// <summary>落点距**星下点**的地表大圆距离上限（米）= 1000 km，与既有"附近"口径同量级。</summary>
+        public const double MaxLandingSurfaceDistanceMeters = 1000000.0;
+        /// <summary>
+        /// 距离门随天体半径缩的比例：小天体必须用它，否则"1000 km"在半径 1500 km 的月球上
+        /// 等于把大半个球面都算成"邻近"。实际门 = `min(绝对上限, 本值 × 天体半径)`，
+        /// **规则的唯一实现在 `LandingQuote.MaxSurfaceDistance`**（地球 1000 km / 月球 525 km）。
+        /// </summary>
+        public const double MaxLandingDistanceRadiiFraction = 0.35;
+
         // ── 派生常量（高性能场景下可直接引用） ──
         /// <summary>行星半径平方，用于距离比较优化</summary>
         public static double PlanetRadiusSqr => PlanetRadiusMeters * PlanetRadiusMeters;

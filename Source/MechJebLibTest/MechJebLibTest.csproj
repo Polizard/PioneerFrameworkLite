@@ -56,6 +56,9 @@
     <Compile Include="..\PioneerFramework\Base\Orbital\OrbitView.cs" Link="Adapter\OrbitView.cs" />
     <!-- 天地映射的纯数学（原在 Launch/GetSurfaceState.cs，2026-09-18 搬到纯层、原处转发） -->
     <Compile Include="..\PioneerFramework\Base\Orbital\SurfaceFrame.cs" Link="Adapter\SurfaceFrame.cs" />
+    <!-- 选 tile 主动降落的报价（2026-09-22）：Δv = |v 船 − v 落点地表| + 距离门；
+         链进来钉住"平动不能丢""赤道/极地价差""地月量级"这些口径（纯测试）。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\LandingQuote.cs" Link="Adapter\LandingQuote.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\BodyView.cs" Link="Adapter\BodyView.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\PlanNode.cs" Link="Adapter\PlanNode.cs" />
     <!-- P2：计划的"意图/目标条件"（活重解的载体，§2.5） -->

@@ -63,9 +63,6 @@
     <!-- 远场律的**完整合成**（唯一入口）：台架与游戏共用，律只写一次。设计稿 §21。 -->
     <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGuidanceLaw.cs" Link="Pure\RendezvousGuidanceLaw.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\LaunchGuidanceCore.cs" Link="Pure\LaunchGuidanceCore.cs" />
-    <!-- 反推着陆制导纯核（2026-09-22）：垂直反推有闭式（MJ 那条走 alglib/ODE，我们拒），
-         链进来钉住"能不能刹住"的可判定性与"点火高度"的量级。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\LandingGuidanceCore.cs" Link="Pure\LandingGuidanceCore.cs" />
     <Compile Include="..\PioneerFramework\Base\Game\MissileGuidanceCore.cs" Link="Pure\MissileGuidanceCore.cs" />
     <Compile Include="..\PioneerFramework\Base\Game\ConstellationCore.cs" Link="Pure\ConstellationCore.cs" />
     <!-- 视野/电子战（实施计划 P1）：探测判据与认知对象形状——P2 的 SensorManager 与 P3/P4 的共同输入，

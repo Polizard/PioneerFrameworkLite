@@ -4584,7 +4584,12 @@ namespace PioneerFramework
                     aUsed / 1000.0, (aUsed - group.trimTargetA) / 1000.0));
         }
 
-        private void ConsumeDeltaVOneShot(SpaceEntityGroup group, double dv)
+        /// <summary>
+        /// **一次性付一笔 Δv**（火箭方程唯一算式：`Δm = m₀(1 − e^(−Δv/ve))`，按各网络 ṁ 占比分摊扣料）。
+        /// <paramref name="tag"/> 只影响日志前缀（既有调用方传默认值 ⇒ 输出逐字不变）；
+        /// 主动降落那条路传 "降落" —— 免得日志里打出"残差"这种与场景不符的假话。
+        /// </summary>
+        private void ConsumeDeltaVOneShot(SpaceEntityGroup group, double dv, string tag = "Circularize")
         {
             if (dv <= 0.001) return;
             var src = GetGroupPropulsionSource(group);
@@ -4605,8 +4610,8 @@ namespace PioneerFramework
                 double share = dm * (n.MassFlow / mfTotal);
                 ConsumeGroupPropellant(group, n.propellant, (float)share);
             }
-            Log.Message(string.Format("[Circularize] Group {0} 残差 dV 一次性消耗: {1:F1} m/s → 工质 {2:F1} kg",
-                group.GroupId, dv, dm));
+            Log.Message(string.Format("[{0}] Group {1} {2}dV 一次性消耗: {3:F1} m/s → 工质 {4:F1} kg",
+                tag, group.GroupId, tag == "Circularize" ? "残差 " : "", dv, dm));
         }
 
         /// <summary>
@@ -4779,6 +4784,112 @@ namespace PioneerFramework
         }
 
         /// <summary>
+        /// **选 tile 主动降落的报价**（只读，不动任何状态）—— 校验链 + <see cref="LandingQuote"/> + 工质可行性。
+        /// UI 的"能不能落/要多少"与结算 <see cref="TryLandAtTile"/> **共用这一条链**（两处各写一份 = 两套权威）。
+        ///
+        /// 校验链（顺序即拒绝优先级）：① 编队有效可动 · ② 目标天体有固体表面 · ③ 该天体有地表网格且 tile 合法
+        /// · ④ 距离门（<see cref="LandingQuote.MaxSurfaceDistance"/>）· ⑤ Δv 可行性（工质）。
+        /// </summary>
+        public bool TryQuoteLanding(SpaceEntityGroup group, int targetBodyId, PlanetTile target,
+            out LandingQuote.Result quote, out BurnEstimate est, out string bodyName, out string spot,
+            out string? reason)
+        {
+            quote = default;
+            est = default;
+            bodyName = string.Empty;
+            spot = string.Empty;
+            reason = null;
+
+            if (group == null || !group.IsActive) { reason = "编队无效"; return false; }
+            if (!group.IsMovable) { reason = "编队不可动"; return false; }
+
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (mgr == null) { reason = "天体管理器缺失"; return false; }
+            var body = mgr.GetBodyById(targetBodyId);
+            if (body == null) { reason = string.Format("天体 {0} 不存在", targetBodyId); return false; }
+            bodyName = mgr.GetBodyName(targetBodyId);
+            if (!body.hasSurface) { reason = string.Format("{0} 没有固体表面 ⇒ 不能降落", bodyName); return false; }
+
+            var layer = Launch.GetSurfaceState.GetLayerForBody(mgr, targetBodyId);
+            if (layer == null) { reason = string.Format("{0} 没有地表网格（layer 缺失）", bodyName); return false; }
+
+            // ⚠ **跨层错配必须在这里挡住**：tile 索引在另一层上"看起来合法"（越界检查会放行），
+            //   但落点会在**另一个天体**上 ⇒ 静默落到别处。比的是 LayerDef（实例可能不是同一个对象）。
+            if (!target.Valid) { reason = "尚未选中落点（在星球视图上点一个 tile）"; return false; }
+            if (!string.Equals(target.LayerDef?.defName, layer.Def?.defName, StringComparison.Ordinal))
+            {
+                reason = string.Format("选中的落点不在{0}的地表上（当前选中的是另一层地表 —— 先用「查看天体」切过去）",
+                    bodyName);
+                return false;
+            }
+            int tile = target.tileId;
+            if (tile < 0 || tile >= layer.TilesCount)
+            {
+                reason = string.Format("落点 tile {0} 越界（合法 0..{1}）", tile, layer.TilesCount - 1);
+                return false;
+            }
+
+            double tick = TimeScaleManager.GetPhysicsTickSafe();
+            int tickI = (int)Math.Round(tick);
+            double omega = Launch.GetSurfaceState.RotationOmega(mgr, targetBodyId);
+            // ⚠ 参考系硬约定（见 LandingQuote 类注释）：船用 **CurrentOrbit**（根系）、天体用 GetBody*Offset
+            DVector3 offPos = GetBodyWorldOffset(targetBodyId, tickI);
+            DVector3 offVel = GetBodyWorldVelOffset(targetBodyId, tickI);
+            DVector3 tileFixed = Launch.GetSurfaceState.TileToFixedPosition(layer, tile, body.radius);
+
+            quote = LandingQuote.Evaluate(group.CurrentOrbit.position, group.CurrentOrbit.velocity,
+                offPos, offVel, body.radius, omega, tileFixed, tick);
+            if (!quote.ok) { reason = quote.reason; return false; }
+
+            // 落点经纬度（tile 的**固连**经纬度；走既有唯一实现 —— 这里只是把落点换到天体中心系）
+            (double latRad, double lonRad) = SurfaceFrame.EciToLongLat(quote.tilePos - offPos, omega, tick);
+            spot = FormatLongLat(latRad, lonRad);
+
+            // Δv 可行性：**沿用既有唯一判据**（主网/RCS 接力语义），不另写一份火箭方程
+            var src = GetGroupPropulsionSource(group);
+            double mDry = GetGroupMass(group, null);
+            est = BurnCalculator.Estimate((float)quote.deltaV, (float)mDry, src, src?.Networks);
+            if (!est.Feasible)
+            {
+                reason = string.Format("工质不足：本次需 Δv {0:F0} m/s（工质 {1:F0} kg），当前可达 {2:F0} m/s",
+                    quote.deltaV, est.RequiredPropellant, est.MaxDeltaV);
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// **选 tile 主动降落的唯一收口**（2026-09-22 用户裁定："接近天体时选一个 tile、消耗一定 Δv、
+        /// 瞬间完成降落"）。校验与报价走 <see cref="TryQuoteLanding"/>；本函数只做**动作**：
+        /// 扣料（<see cref="ConsumeDeltaVOneShot"/>：火箭方程唯一算式）→ 消息（落点经纬度）→ 销毁编队。
+        /// 拒绝时**不动任何状态**。
+        ///
+        /// ⚠ 与"物理撞击"的分工（别混）：<see cref="CheckPlanetCollision"/> 是**没付钱**的那条路
+        ///   （接地速度 > 100 m/s ⇒ 坠毁）；本函数是**主动付费**那条，永远安全。
+        /// 事件树的空位：将来"着陆/坠毁各自的事件树"就挂在两处的消息收口旁边。
+        /// </summary>
+        public bool TryLandAtTile(SpaceEntityGroup group, int targetBodyId, PlanetTile target, out string? reason)
+        {
+            if (!TryQuoteLanding(group, targetBodyId, target, out var q, out var est,
+                    out var bodyName, out var spot, out reason))
+                return false;
+
+            ConsumeDeltaVOneShot(group, q.deltaV, "降落");
+
+            Log.Message(string.Format(
+                "[降落] G{0} 主动降落于{1}（{2}）tile={3}｜付出 Δv={4:F1} m/s（工质 {5:F1} kg）｜地表距离 {6:F0} km",
+                group.GroupId, bodyName, spot, target.tileId, q.deltaV, est.RequiredPropellant,
+                q.surfaceDistance / 1000.0));
+            Messages.Message(string.Format(
+                "Group {0} 着陆于{1}（{2}）：付出 Δv {3:F0} m/s（工质 {4:F0} kg）。",
+                group.GroupId, bodyName, spot, q.deltaV, est.RequiredPropellant),
+                MessageTypeDefOf.TaskCompletion);
+
+            DestroyGroup(group.GroupId);
+            return true;
+        }
+
+        /// <summary>
         /// 从 group 的推进源工质池扣除工质。返回实际扣除量（kg，受存量截断）。
         /// 实际扣除 < 需求表示工质已耗尽（或无推进源）。
         /// </summary>
@@ -4911,10 +5022,8 @@ namespace PioneerFramework
         /// <summary>油门份额（aCmd/可用 a，截到 1）——头步定点读数用。</summary>
         private static double dvFullSafe(double aCmd, double accel) => accel > 0.0 ? Math.Min(1.0, aCmd / accel) : 0.0;
 
-        /// <summary>编组质量（kg）。`src = null` ⇒ **干质量**口径。
-        /// ⚠ 2026-09-22 由 `private` 放宽到 `internal`：`LandingController` 要算**干质量/总质量**两个口径
-        ///   （反推的能力上限用它们），而它不该另写一份质量求和（J2 单一来源）。</summary>
-        internal double GetGroupMass(SpaceEntityGroup group, IPropulsionSource src)
+        /// <summary>编组质量（kg）。`src = null` ⇒ **干质量**口径（故参数显式可空）。</summary>
+        private double GetGroupMass(SpaceEntityGroup group, IPropulsionSource? src)
         {
             double mass = 0.0;
             foreach (int eid in group.GetEntityIds())
