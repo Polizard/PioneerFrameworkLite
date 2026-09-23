@@ -321,9 +321,24 @@ namespace PioneerFramework
                 if (d < minDot) minDot = d;
                 if (d > maxDot) maxDot = d;
             }
+            // 判性质用的补充读数（2026-09-24）：帽状分布 vs "网格里大量 tile 退化成同一个方向" 是两件事，
+            // 用"有多少 tile 挤在 û₀ 附近" + "游戏自己的纬度覆盖多宽"就能分开。
+            int near0 = 0;
+            float latMin = 90f, latMax = -90f;
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 c = layer.GetTileCenter(i);
+                if (Vector3.Dot(c.normalized, u0) > 0.9998f) near0++;      // 与 û₀ 夹角 < ~1°
+                float lat = layer.LongLatOf(i).y;                          // 游戏自己的纬度（Asin(c.y/Radius)）
+                if (lat < latMin) latMin = lat;
+                if (lat > latMax) latMax = lat;
+            }
+            Vector3 axis = sumDir.normalized;
             return string.Format("网格诊断：n={0}｜|c| {1:F3}..{2:F3}（均 {3:F3}／layer.Radius={4:F3}）" +
-                "｜|Σû|/n={5:F4}（≈0=球心在原点）｜dot(û,û₀) {6:F3}..{7:F3}",
-                n, minR, maxR, sumR / n, layer.Radius, sumDir.magnitude / n, minDot, maxDot);
+                "｜|Σû|/n={5:F4}（≈0=球心在原点）｜dot(û,û₀) {6:F3}..{7:F3}｜近 û₀ 的 tile≈{8}" +
+                "｜游戏纬度覆盖 {9:F1}°..{10:F1}°｜帽轴 û=( {11:F3}, {12:F3}, {13:F3} )",
+                n, minR, maxR, sumR / n, layer.Radius, sumDir.magnitude / n, minDot, maxDot, near0,
+                latMin, latMax, axis.x, axis.y, axis.z);
         }
 
         /// <summary>执行三件事：**消息 + 扣料 + 销毁**（用户 2026-09-22 的原话就这三件）。</summary>
