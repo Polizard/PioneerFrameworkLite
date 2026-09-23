@@ -260,10 +260,19 @@ namespace PioneerFramework
             return bodiesById.Values.FirstOrDefault(b => b.bodyType == CelestialBodyType.Star);
         }
 
+        /// <summary>
+        /// **行星**（不含恒星、不含卫星）。
+        ///
+        /// ⚠ 2026-09-24 修：原来还要求 `ParentBodyId == -1`（"父天体 id 为 -1"，本意 = 绕恒星）——**恒不成立**：
+        /// 星系定义里地球写的是 `<parentBodyDefName>Sun</parentBodyDefName>` ⇒ 它的 `ParentBodyId` 是
+        /// **太阳的 bodyId**，不是 -1 ⇒ 本方法**永远返回空列表**。唯一调用者 `ViewFrame.RootPlanetId` 恰好有
+        /// `planets.Count > 0 ? … : 1` 的兜底 ⇒ 症状被那个硬编码 1 盖住了（"根行星"实际一直写死为 1）。
+        /// 行星的定义本来就是"绕恒星"⇒ 过滤器只留 `bodyType`。
+        /// </summary>
         public List<CelestialBodyDef> GetPlanets()
         {
             EnsureInitialized();
-            return bodiesById.Values.Where(b => b.bodyType == CelestialBodyType.Planet && b.ParentBodyId == -1).ToList();
+            return bodiesById.Values.Where(b => b.bodyType == CelestialBodyType.Planet).ToList();
         }
 
         public List<CelestialBodyDef> GetMoonsOf(int planetBodyId)

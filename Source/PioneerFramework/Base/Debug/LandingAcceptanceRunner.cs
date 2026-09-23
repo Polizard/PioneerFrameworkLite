@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using PioneerFramework.Launch;   // GetSurfaceState（layer↔天体、tile↔固连位置、星下点反查）
@@ -99,11 +99,12 @@ namespace PioneerFramework
                 return;
             }
 
-            int tile = GetSurfaceState.EciToTile(g.localPosition, mgr, bodyId, tick);
+            int tile = GetSurfaceState.EciToTile(BodyRelativePos(sg, g, bodyId, tick), mgr, bodyId, tick);
             bool ok = sg.TryQuoteLanding(g, bodyId, new PlanetTile(tile, layer),
                 out var q, out var est, out var bodyName, out var spot, out var reason);
 
-            PflTestKit.Check(PflTestKit.Kind.Value, ok, "星下点必须可落（探针工质充裕）", reason);
+            PflTestKit.Check(PflTestKit.Kind.Value, ok, "星下点必须可落（探针工质充裕）",
+                string.Format("tile={0}｜{1}", tile, reason));
             if (!ok) { PflTestKit.End(); return; }
 
             PflTestKit.Check(PflTestKit.Kind.Value, q.deltaV >= lo && q.deltaV <= hi,
@@ -134,10 +135,13 @@ namespace PioneerFramework
                 return;
             }
 
-            int tile = AntipodeTile(layer, mgr, bodyId, g.localPosition, tick);
+            int tile = AntipodeTile(layer, mgr, bodyId, BodyRelativePos(sg, g, bodyId, tick), tick, out float bestDot);
             bool ok = sg.TryQuoteLanding(g, bodyId, new PlanetTile(tile, layer),
                 out var q, out _, out _, out _, out var reason);
 
+            PflTestKit.Check(PflTestKit.Kind.Invariant, bestDot < -0.9f,
+                "对跖点确实是反方向的（dot ≈ −1）—— 防『选不出对跖点』时那条拒绝**假绿**",
+                string.Format("dot={0:F4}（tile={1}）", bestDot, tile));
             PflTestKit.Check(PflTestKit.Kind.Contract, !ok,
                 "离星下点最远的 tile 必须被拒（距离门）", ok ? "**却通过了**" : reason);
             if (!ok)
@@ -165,7 +169,7 @@ namespace PioneerFramework
                 return;
             }
 
-            int tile = GetSurfaceState.EciToTile(g.localPosition, mgr, bodyId, tick);
+            int tile = GetSurfaceState.EciToTile(BodyRelativePos(sg, g, bodyId, tick), mgr, bodyId, tick);
             bool mismatched = sg.TryQuoteLanding(g, bodyId, new PlanetTile(tile, moonLayer),
                 out _, out _, out _, out _, out var reason);
             bool control = sg.TryQuoteLanding(g, bodyId, new PlanetTile(tile, earthLayer),
@@ -191,7 +195,7 @@ namespace PioneerFramework
                 return;
             }
 
-            int valid = GetSurfaceState.EciToTile(g.localPosition, mgr, bodyId, tick);
+            int valid = GetSurfaceState.EciToTile(BodyRelativePos(sg, g, bodyId, tick), mgr, bodyId, tick);
             bool over = sg.TryQuoteLanding(g, bodyId, new PlanetTile(layer.TilesCount, layer),
                 out _, out _, out _, out _, out var overReason);
             bool under = sg.TryQuoteLanding(g, bodyId, new PlanetTile(-1, layer),
@@ -207,35 +211,44 @@ namespace PioneerFramework
             PflTestKit.End();
         }
 
-        /// <summary>无固体表面的天体必须被拒（Lite 里若没有这种天体 ⇒ **UNCHECKED**，不折算成通过）。</summary>
+        /// <summary>无固体表面的天体必须被拒（本存档若真的没有这种天体 ⇒ **UNCHECKED**，不折算成通过）。
+        /// ⚠ 用 `GetAllBodies`（天体全集），**不是** `GetPlanets()`：首跑用的是后者，它恒为空
+        /// （过滤器要求 `ParentBodyId == -1`，而地球的父天体是太阳）⇒ 用例假报"本存档 0 个天体都有地表"。
+        /// 枚举面选错同样是仪器错 —— 太阳（`hasSurface=false`）本来就在那儿。</summary>
         private static void NoSurfaceCase(SpaceGameComp sg, CelestialBodyManager mgr, SpaceEntityGroup g,
             int bodyId, double tick)
         {
             PflTestKit.Begin("降落拒绝·目标天体无固体表面", Category);
             int target = -1;
-            var planets = mgr.GetPlanets();
-            if (planets != null)
+            string targetName = "?";
+            int withSurface = 0;
+            var bodies = mgr.GetAllBodies();
+            if (bodies != null)
             {
-                for (int i = 0; i < planets.Count; i++)
+                for (int i = 0; i < bodies.Count; i++)
                 {
-                    if (planets[i] != null && !planets[i].hasSurface) { target = planets[i].bodyId; break; }
+                    if (bodies[i] == null) continue;
+                    if (!bodies[i].hasSurface) { target = bodies[i].bodyId; targetName = bodies[i].label; break; }
+                    withSurface++;
                 }
             }
             if (target < 0)
             {
                 PflTestKit.Unchecked("缺表面天体",
-                    string.Format("本存档 {0} 个天体都有地表 ⇒ 这条分支**没有被走到过**（不是通过）",
-                        planets != null ? planets.Count : 0));
+                    string.Format("本存档枚举到 {0} 个天体、其中 {1} 个有地表、**0 个无地表** ⇒ 这条分支没有被走到过（不是通过）",
+                        bodies != null ? bodies.Count : 0, withSurface));
                 return;
             }
 
             var layer = GetSurfaceState.GetLayerForBody(mgr, bodyId);
-            int tile = layer != null ? GetSurfaceState.EciToTile(g.localPosition, mgr, bodyId, tick) : 0;
+            int tile = layer != null ? GetSurfaceState.EciToTile(BodyRelativePos(sg, g, bodyId, tick), mgr, bodyId, tick) : 0;
             bool ok = sg.TryQuoteLanding(g, target, new PlanetTile(tile), out _, out _, out var bodyName,
                 out _, out var reason);
 
             PflTestKit.Check(PflTestKit.Kind.Contract, !ok,
-                string.Format("无地表的 `{0}`（bodyId={1}）必须被拒", bodyName, target), reason);
+                string.Format("无地表的 `{0}`（bodyId={1}）必须被拒", targetName, target), reason);
+            PflTestKit.Check(PflTestKit.Kind.Coverage, !string.IsNullOrEmpty(bodyName),
+                "拒绝信息里带得出天体名（不是空串）", bodyName);
             PflTestKit.End();
         }
 
@@ -251,7 +264,7 @@ namespace PioneerFramework
                 return;
             }
 
-            int tile = GetSurfaceState.EciToTile(g.localPosition, mgr, bodyId, tick);
+            int tile = GetSurfaceState.EciToTile(BodyRelativePos(sg, g, bodyId, tick), mgr, bodyId, tick);
             var target = new PlanetTile(tile, layer);
             int groupId = g.GroupId;
             int tickMark = Find.TickManager?.TicksGame ?? 0;
@@ -408,16 +421,34 @@ namespace PioneerFramework
         //  工具
         // ══════════════════════════════════════════════════════════════════════════
 
-        /// <summary>离星下点**最远**的 tile（与 `EciToTile` 同法：只把 argmax 换成 argmin）。</summary>
+        /// <summary>
+        /// 探针船的**天体相对**位置（= `EciToTile` / `AntipodeTile` 要的口径）。
+        ///
+        /// ⚠ **不许用 `group.localPosition`**（2026-09-24 首跑实测抓到）：那是**每物理步**算出来的缓存，
+        /// 而本 runner 在**摆船的那一拍**就检查 ⇒ 它还是零向量 ⇒ `EciToTile(0) = -1` ⇒ 一整套用例
+        /// 红成"尚未选中落点"（不是产品问题，是我的取数时机错了）。
+        /// 改用 `CurrentOrbit.position`（摆好即有）+ `GetBodyWorldOffset` —— 与 `TryQuoteLanding`
+        /// **同一个约定**（天体侧对根行星返零）⇒ 这不是第二份换系，是同一个换算。
+        /// </summary>
+        private static DVector3 BodyRelativePos(SpaceGameComp sg, SpaceEntityGroup g, int bodyId, double tick)
+        {
+            int tickI = (int)Math.Round(tick);
+            return g.CurrentOrbit.position - sg.GetBodyWorldOffset(bodyId, tickI);
+        }
+
+        /// <summary>离星下点**最远**的 tile（与 `EciToTile` 同法：只把 argmax 换成 argmin）。
+        /// `bestDot` 出参 = 那个 tile 与星下点方向的点积（真对跖点应 ≈ **−1**）——调用方**必须**拿它做健全性检查：
+        /// 第一版没有它，于是"星下点位置是零向量"时 argmin 退化成 tile 0，而 tile 0 照样"离得远"、
+        /// 照样被距离门拒 ⇒ 那条判据会**假绿**（首跑实测：它确实绿了，是假绿）。</summary>
         private static int AntipodeTile(PlanetLayer layer, CelestialBodyManager mgr, int bodyId,
-            DVector3 relPosLocal, double tick)
+            DVector3 relPosLocal, double tick, out float bestDot)
         {
             double omega = GetSurfaceState.RotationOmega(mgr, bodyId);
             DVector3 pFixed = SurfaceFrame.EciToFixed(relPosLocal, omega, tick);
             Vector3 dir = ((Vector3)pFixed).normalized;
 
             int best = 0;
-            float bestDot = float.MaxValue;
+            bestDot = float.MaxValue;
             for (int i = 0; i < layer.TilesCount; i++)
             {
                 float d = Vector3.Dot(layer.GetTileCenter(i), dir);

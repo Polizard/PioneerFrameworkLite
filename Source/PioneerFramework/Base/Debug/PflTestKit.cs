@@ -189,17 +189,26 @@ namespace PioneerFramework
 
             var sb = new StringBuilder();
             int bad = 0;
+            var reads = new StringBuilder();   // 通过判据的读数（最多 3 条）——"读数必须无条件"：
+                                               // 只打失败明细的后果就是"PASS 了但一个数都没留下"，无从跨版本对照。
             for (int i = 0; i < c.checks.Count; i++)
             {
-                if (c.checks[i].ok) continue;
+                var ch = c.checks[i];
+                if (ch.ok)
+                {
+                    if (reads.Length < 240 && !string.IsNullOrEmpty(ch.detail))
+                        reads.Append(reads.Length == 0 ? "" : "｜").Append(ch.label).Append('=').Append(ch.detail);
+                    continue;
+                }
                 bad++;
                 if (bad > 2) continue;   // 一行里最多列两条明细
-                sb.Append("｜").Append(c.checks[i].label);
-                if (!string.IsNullOrEmpty(c.checks[i].detail)) sb.Append('：').Append(c.checks[i].detail);
+                sb.Append("｜").Append(ch.label);
+                if (!string.IsNullOrEmpty(ch.detail)) sb.Append('：').Append(ch.detail);
             }
-            Log.Message(string.Format("[测试框架] 用例「{0}」结算：{1}（判据 {2} 条，未过 {3} 条）{4}{5}",
+            Log.Message(string.Format("[测试框架] 用例「{0}」结算：{1}（判据 {2} 条，未过 {3} 条）{4}{5}{6}",
                 c.name, tag, c.checks.Count, bad,
-                string.IsNullOrEmpty(c.note) ? "" : "｜" + c.note, sb.ToString()));
+                string.IsNullOrEmpty(c.note) ? "" : "｜" + c.note, sb.ToString(),
+                reads.Length > 0 ? "｜读数：" + reads : ""));
         }
 
         /// <summary>记一条判据（用例内）。</summary>

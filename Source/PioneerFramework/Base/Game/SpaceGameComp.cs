@@ -4692,7 +4692,12 @@ namespace PioneerFramework
             return body.gravitationalParameter;
         }
 
-        private DVector3 GetBodyWorldOffset(int celestialBodyId, int tick)
+        /// <summary>
+        /// 天体在**群组系（= 根行星系）**里的偏移：根行星（Planet）返零、卫星给"绕父天体"的偏移。
+        /// `internal`（2026-09-24）：`LandingAcceptanceRunner` 要按**同一个约定**把船的
+        /// `CurrentOrbit.position` 折成天体相对位置（换系只准有一处，不许复制一份）。
+        /// </summary>
+        internal DVector3 GetBodyWorldOffset(int celestialBodyId, int tick)
         {
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (mgr == null) return DVector3.zero;
