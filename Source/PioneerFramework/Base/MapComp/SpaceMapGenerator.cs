@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using RimWorld.Planet;
 using Verse;
 using UnityEngine;
@@ -373,6 +373,11 @@ namespace PioneerFramework
             // 口径：part 体积 mapW×50×mapH m³ × 90kg/m³（低密度站壳，内部空旷）
             // ≈ 60×60 站 1.6e4 t → 弹头冲量对站速影响 <1m/s（站保持轨道，受击不漂移）。
             part.AddComponent(new HullMassComponent { mass = mapWidth * 50.0f * mapHeight * 90.0f });
+            // [V7] 站载传感器阵列：空间站是固定大平台 ⇒ 灵敏度最高的一档（2000 km）+ 一点抗性
+            part.AddComponent(new SensorArrayComponentData
+            {
+                passiveRangeMeters = 2_000_000f, ecmResist = 1.0f, eccmResist = 1.0f
+            });
             entity.SetParts(new List<SpacePart> { part });
 
             return entity;

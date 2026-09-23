@@ -53,11 +53,26 @@ namespace PioneerFramework
         /// **字段名与类型名 `SensorTech` 刻意不同**——同名会让"类内引用该类型"变成字段引用
         /// （`SensorTech x = ...` 报 CS0119），是个会埋很久的坑。取 `DetectTech`（＝侦测技术）避开。
         ///
-        /// 推送方式：由部件传感器组件与 EW 建筑**投影**写入（[V7]/[N7]，解挂-1 的形态；
-        /// **不由建筑的 comp 直接改**——pocket map 隐藏时 `Thing.CompTick` 不可靠）。
-        /// ⚠ **本步（P1 步 2）尚无写入者**：先落字段与序列化，消费者在 [V3]/[V7]。
+        /// **来源（[V7]，2026-09-24 起）**：**派生量** —— 由所属各实体的部件聚合
+        /// （`ShipStats.sensorRange` / `ecmResist` / `eccmResist`）求和得到，与 <see cref="SignalStrength"/>
+        /// **共用一个缓存、同一批失效点**（部件集变化 ⇒ `SpaceEntity.InvalidateStats` ⇒ 本组失效 ✓）。
+        ///
+        /// ⚠ **不落盘**（序列化已删）：派生量存进去只会在读档时带出一份陈旧副本，
+        /// 而"陈旧"正是本库反复踩的坑（`SignalStrength` 那批失效点注释、AVM:824 的派生点清单）。
+        /// 原来的"投影写入"形态（[N7] 的建筑级通道）留给 EW **建筑**；**部件级**不需要它——
+        /// 部件聚合链是既有的、每帧不需要跑的那种（读触发重算）。
+        ///
+        /// 消费者：[V3] 认知层（`EffectiveDetectRange` / 抗压制 / 抗欺骗三个判据输入）；
+        /// 探针：世界视图面板、`VisibilityProbe` 快照、`FrameworkSelfTest` 的"三分量"项。
         /// </summary>
-        public SensorTech DetectTech;
+        public SensorTech DetectTech
+        {
+            get
+            {
+                if (derivedDirty) RecomputeDerived();
+                return cachedDetect;
+            }
+        }
 
         private bool activePing;
         /// <summary>
@@ -81,7 +96,7 @@ namespace PioneerFramework
             {
                 if (activePing == value) return;
                 activePing = value;
-                signalDirty = true;
+                derivedDirty = true;   // 派生量（信号 + DetectTech 视角）失效
             }
         }
 
@@ -90,7 +105,8 @@ namespace PioneerFramework
         // （§1.8 [F] 的简化）：[L](b)(c)+[O1] 之后**没有任何东西每步读它**——探测只在
         // "读触发刷新"时读，所以既不需要每步重算，也不需要把算式拆成两半。
         private double cachedSignal;
-        private bool signalDirty = true;
+        private SensorTech cachedDetect;
+        private bool derivedDirty = true;   // 失效位**同时**管 cachedSignal 与 cachedDetect（同一批驱动点，见 InvalidateSignal）
 
         /// <summary>
         /// 信号强度（[V8]；无量纲，标称 1.0 = 一艘静默基准船）。
@@ -105,15 +121,18 @@ namespace PioneerFramework
         {
             get
             {
-                if (signalDirty) RecomputeSignal();
+                if (derivedDirty) RecomputeDerived();
                 return cachedSignal;
             }
         }
 
-        /// <summary>派生信号失效。四个驱动点见 `SignalStrength` 文档。</summary>
-        public void InvalidateSignal() => signalDirty = true;
+        /// <summary>
+        /// **派生量失效**：一次置脏同时管 `SignalStrength` 与 `DetectTech`（两者同一批驱动点 —— 见 `SignalStrength` 文档的四处）。
+        /// 名字保留 `InvalidateSignal`（既有调用点与测试都在用它）；语义已扩到"全部派生量"。
+        /// </summary>
+        public void InvalidateSignal() => derivedDirty = true;
 
-        private void RecomputeSignal()
+        private void RecomputeDerived()
         {
             var x = new SignalInputs
             {
@@ -123,6 +142,7 @@ namespace PioneerFramework
                 // 各自会带一个窗口字段；落地时在此读它们。
             };
 
+            var dt = new SensorTech();   // 编队级 = 各实体聚合的**求和**（与实体级聚合同口径）
             var sg = Current.Game?.GetComponent<SpaceGameComp>();
             if (sg != null)
             {
@@ -138,11 +158,16 @@ namespace PioneerFramework
                     var st = e.AggregatedStats;
                     x.heatWatts += st.heatProduction + st.heatDissipation;
                     x.powerWatts += st.powerGen + st.powerDraw;
+                    // [V7]：侦测技术（传感器组件 / 未来的 EW 建筑投影都进这里）
+                    dt.sensitivityMeters += st.sensorRange;
+                    dt.ecmResist += st.ecmResist;
+                    dt.eccmResist += st.eccmResist;
                 }
             }
 
             cachedSignal = SignalModel.Total(x);
-            signalDirty = false;
+            cachedDetect = dt;
+            derivedDirty = false;
         }
 
         public OrbitState CurrentOrbit;
@@ -912,7 +937,7 @@ namespace PioneerFramework
             // 这正是"冷发射信号 profile"的来源（巡航低信号 / 末段高信号）。
             // `HasActiveBurn` 是 public 字段，钩子只能挂在本方法与 EndBurn 两处；
             // **任何别处直接赋 `HasActiveBurn = true` 都会让派生信号静默过期**（与 AVM:824 的"派生点"同类陷阱）。
-            signalDirty = true;
+            derivedDirty = true;
             burnDirection = dV.normalized;
             remainingBurnDV = dV.magnitude;
             appliedBurnDV = 0.0;
@@ -961,7 +986,7 @@ namespace PioneerFramework
         public void EndBurn()
         {
             HasActiveBurn = false;
-            signalDirty = true;   // 信号失效点之一（熄火 ⇒ burning 项归零），与 StartBurn 成对
+            derivedDirty = true;   // 失效点之一（熄火 ⇒ burning 项归零），与 StartBurn 成对
             remainingBurnDV = 0.0;
             burnUseRcs = false;
             burnIsCorrection = false;
@@ -1603,10 +1628,6 @@ namespace PioneerFramework
             Scribe_Values.Look(ref HasGravityWell, "hasGravityWell", false);
             // 匿踪闸门（[V1]）：旧存档无此节点 → 默认 false（公开坐标），与"飞船/站不广播"一致
             Scribe_Values.Look(ref IsStealth, "isStealth", false);
-            // 侦测技术三分量（[V1]）：旧存档无节点 → 全 0（看不见任何东西 & 无抗性），即"无传感器"
-            Scribe_Values.Look(ref DetectTech.sensitivityMeters, "sensorSensitivity", 0f);
-            Scribe_Values.Look(ref DetectTech.ecmResist, "sensorEcmResist", 0f);
-            Scribe_Values.Look(ref DetectTech.eccmResist, "sensorEccmResist", 0f);
             // 主动探测开关（[V1]）：旧存档无节点 → false（被动）
             Scribe_Values.Look(ref activePing, "activePing", false);
             Scribe_Deep.Look(ref CurrentOrbit, "currentOrbit");

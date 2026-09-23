@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Verse;
@@ -120,6 +120,8 @@ namespace PioneerFramework
                 isIndestructible = false
             };
             part.AddComponent(new HullMassComponent { mass = (float)TestDryMass });
+            // [V7] 火箭的导航雷达（500 km）
+            part.AddComponent(new SensorArrayComponentData { passiveRangeMeters = 500_000f });
             entity.SetParts(new List<SpacePart> { part });
             foreach (var p in TestPropulsion())
                 entity.AddPropulsion(p);

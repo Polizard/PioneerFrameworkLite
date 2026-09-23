@@ -179,6 +179,51 @@ namespace PioneerFramework
             AddCheckbox("详细发射日志", "80 调试日志", 70, typeof(RocketLaunchController), "DebugDetailedLaunch");
             // [V12]（2026-09-23）：阵营解析读数 —— 把"解析失败"的限频警告变成可查的一行
             AddAction("阵营解析读数（[V12]：敌对阵营 / 解析失败累计）", "80 调试日志", 68, FactionResolver.LogProbe, null);
+
+            // [V7] 传感器读数（2026-09-24）：逐部件列组件 + 实体级聚合 + 编队级派生 DetectTech 三档一起看，
+            // 用来核"给量纲"这条链（机器判据在 `FrameworkSelfTest`：编队级 = 实体级求和）。
+            AddAction("传感器读数（[V7]：选中编队 → 部件组件 / 实体聚合 / 编队派生）", "80 调试日志", 67,
+                () =>
+                {
+                    var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+                    if (spaceGame == null)
+                    {
+                        Messages.Message("不在太空场景（无 SpaceGameComp）", MessageTypeDefOf.RejectInput);
+                        return;
+                    }
+                    var g = spaceGame.GetGroupById(SpaceGroupVisualManager.GetSelectedGroupId());
+                    if (g == null)
+                    {
+                        Messages.Message("先在世界上选中一个编队", MessageTypeDefOf.RejectInput);
+                        return;
+                    }
+
+                    var sb = new System.Text.StringBuilder();
+                    sb.Append("[V7·传感器] G").Append(g.GroupId)
+                      .Append(" 实体 ").Append(g.GetEntityIds().Count).Append(" 个");
+                    foreach (int eid in g.GetEntityIds())
+                    {
+                        var e = spaceGame.GetEntityById(eid);
+                        if (e == null) continue;
+                        var agg = e.AggregatedStats;                 // 触发实体级懒聚合
+                        sb.Append("\n  E").Append(eid)
+                          .Append(" 实体聚合：灵 ").Append(agg.sensorRange.ToString("F0")).Append(" m")
+                          .Append("｜抗压 ").Append(agg.ecmResist.ToString("F2"))
+                          .Append("｜抗骗 ").Append(agg.eccmResist.ToString("F2"));
+                        foreach (var part in e.Parts)
+                        {
+                            if (part.isDestroyed) continue;
+                            for (int i = 0; i < part.components.Count; i++)
+                                sb.Append("\n    part#").Append(part.partId).Append(" ← ").Append(part.components[i].TypeId);
+                        }
+                    }
+                    var dt = g.DetectTech;                            // 编队级**派生量**（与 SignalStrength 同趟重算）
+                    sb.Append("\n  **编队派生 DetectTech**：灵 ").Append(dt.sensitivityMeters.ToString("F0")).Append(" m")
+                      .Append("｜抗压 ").Append(dt.ecmResist.ToString("F2"))
+                      .Append("｜抗骗 ").Append(dt.eccmResist.ToString("F2"))
+                      .Append("｜信号 S=").Append(g.SignalStrength.ToString("F3"));
+                    Log.Message(sb.ToString());
+                }, null);
             AddCheckbox("详细星座日志（入编/收尸/锚点）", "80 调试日志", 60, typeof(ConstellationGameComp), "DebugDetailedConstellation");
             AddCheckbox("交会用新远场律（RendezvousGuidanceLaw；**默认开**，关=回退旧范式）", "80 调试日志", 58, typeof(SpaceGameComp), "UseNewRendezvousLaw");
             AddAction("旧范式交会规划器（Lambert + 出发段；仅供对照/回退）", "80 调试日志", 57,

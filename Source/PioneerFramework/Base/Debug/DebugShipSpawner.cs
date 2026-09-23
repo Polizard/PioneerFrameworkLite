@@ -1069,6 +1069,11 @@ namespace PioneerFramework
                 isIndestructible = false
             };
             part.AddComponent(new HullMassComponent { mass = 5000f });   // 结构干质量（碰撞动量交换也用它）
+            // [V7] 船载传感器阵列（1000 km；抗性取站的一半 ⇒ 面板上"站 > 船"看得出来）
+            part.AddComponent(new SensorArrayComponentData
+            {
+                passiveRangeMeters = 1_000_000f, ecmResist = 0.5f, eccmResist = 0.5f
+            });
             entity.SetParts(new List<SpacePart> { part });
 
             // ── 推进（两个档）────────────────────────────────────────────────

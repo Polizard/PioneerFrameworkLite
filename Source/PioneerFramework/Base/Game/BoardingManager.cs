@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
 using UnityEngine;
@@ -708,6 +708,8 @@ namespace PioneerFramework
             };
             if (dryMass > 0f)
                 part.AddComponent(new HullMassComponent { mass = dryMass });
+            // [V7] 跳帮载具的短程传感器（300 km）——它对 300 m 级靠帮精度够用，但不给远距探测
+            part.AddComponent(new SensorArrayComponentData { passiveRangeMeters = 300_000f });
             entity.SetParts(new List<SpacePart> { part });
             foreach (var p in propulsion)
                 entity.AddPropulsion(p);
