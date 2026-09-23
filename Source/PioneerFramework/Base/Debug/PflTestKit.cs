@@ -110,14 +110,29 @@ namespace PioneerFramework
             Total = Passed = Failed = Uncovered = UncheckedCount = Skipped = 0;
         }
 
-        /// <summary>开一个用例。`timeoutTicks &gt; 0` ⇒ 异步段（由 <see cref="Tick"/> 判超时）。</summary>
+        /// <summary>开一个用例。`timeoutTicks &gt; 0` ⇒ 异步段（由 <see cref="Tick"/> 判超时）。
+        ///
+        /// ⚠ **同一时刻只能有一个未结算的用例**（登记表只有 `current` 一个槽位）。异步段开着的时候再
+        /// `Begin` 别的用例，异步段落地时会把判据写进**那个别人的用例**并把它提前结算（静默串味）。
+        /// 所以：**异步段要最后登记**；异步段的驱动方还要用 <see cref="IsCurrent"/> 确认"现在是它"。
+        /// 顶掉未结算用例时会打一行警告（不静默）。</summary>
         public static Case Begin(string name, string? category = null, int timeoutTicks = 0)
         {
+            if (current != null && !current.finished)
+            {
+                Log.Warning(string.Format(
+                    "[测试框架] 用例「{0}」还没结算，就被新用例「{1}」顶掉了 ⇒ 它永远不会结算（异步段只能用最后一个登记的；见 Begin 注释）",
+                    current.name, name));
+            }
             current = new Case(name, category ?? "", timeoutTicks);
             current.startedTick = Find.TickManager?.TicksGame ?? 0;
             Cases.Add(current);
             return current;
         }
+
+        /// <summary>现在开着的用例是「<paramref name="name"/>」吗（异步段的驱动方在写判据前必须先问这一句）。</summary>
+        public static bool IsCurrent(string name)
+            => current != null && !current.finished && string.Equals(current.name, name, StringComparison.Ordinal);
 
         /// <summary>结一个用例：状态由它的判据决定（**没有任何判据 ⇒ UNCHECKED，不是 PASS**）。</summary>
         public static void End()
@@ -149,7 +164,42 @@ namespace PioneerFramework
                 default: Skipped++; break;
             }
             Total++;
+            Announce(current);
             current = null;
+        }
+
+        /// <summary>
+        /// **每个用例在结算的当下就打一行**（2026-09-23 补）。
+        ///
+        /// 为什么必须有：<see cref="PrintVerdict"/> 只在跑批结束时打一次，而**异步用例**（带 `timeoutTicks`
+        /// 的那些）是在**结论块之后**才落地的 ⇒ 只靠结论块，它们的结局永远没人报（"永久静默"的另一种形态）。
+        /// 一行里带：判定词 + 判据条数 + **前两条未过的明细**（异步用例没有第二次机会解释自己）。
+        /// </summary>
+        private static void Announce(Case c)
+        {
+            string tag;
+            switch (c.state)
+            {
+                case State.Pass: tag = "PASS"; break;
+                case State.Fail: tag = "**FAIL**"; break;
+                case State.Uncovered: tag = "UNCOVERED"; break;
+                case State.Skipped: tag = "SKIP"; break;
+                default: tag = "UNCHECKED"; break;
+            }
+
+            var sb = new StringBuilder();
+            int bad = 0;
+            for (int i = 0; i < c.checks.Count; i++)
+            {
+                if (c.checks[i].ok) continue;
+                bad++;
+                if (bad > 2) continue;   // 一行里最多列两条明细
+                sb.Append("｜").Append(c.checks[i].label);
+                if (!string.IsNullOrEmpty(c.checks[i].detail)) sb.Append('：').Append(c.checks[i].detail);
+            }
+            Log.Message(string.Format("[测试框架] 用例「{0}」结算：{1}（判据 {2} 条，未过 {3} 条）{4}{5}",
+                c.name, tag, c.checks.Count, bad,
+                string.IsNullOrEmpty(c.note) ? "" : "｜" + c.note, sb.ToString()));
         }
 
         /// <summary>记一条判据（用例内）。</summary>
@@ -183,6 +233,7 @@ namespace PioneerFramework
             current.finished = true;
             current.state = State.Unchecked;
             UncheckedCount++; Total++;
+            Announce(current);
             current = null;
         }
 
@@ -194,6 +245,7 @@ namespace PioneerFramework
             current.finished = true;
             current.state = State.Uncovered;
             Uncovered++; Total++;
+            Announce(current);
             current = null;
         }
 
@@ -205,6 +257,7 @@ namespace PioneerFramework
             c.finished = true;
             c.state = State.Skipped;
             Skipped++; Total++;
+            Announce(c);
             current = null;
         }
 
@@ -220,6 +273,7 @@ namespace PioneerFramework
                 current.finished = true;
                 current.state = State.Uncovered;
                 Uncovered++; Total++;
+                Announce(current);
                 current = null;
             }
         }
@@ -300,7 +354,10 @@ namespace PioneerFramework
                 var c = Cases[i];
                 if (c.state == State.Pass) continue;
                 anyBad = true;
-                sb.Append("  · [").Append(c.state).Append("] ").Append(c.name);
+                // ⚠ **还没结算的异步用例**要单独说清（它的 `state` 还是默认的 UNCHECKED，但那是"在等"，
+                //   不是"验不了"）—— 混在一起会让人以为这一条今天做了结论。它结算时会自己打一行「用例…结算」。
+                sb.Append("  · [").Append(c.finished ? c.state.ToString() : "WAITING（异步段未结算）")
+                  .Append("] ").Append(c.name);
                 if (!string.IsNullOrEmpty(c.note)) sb.Append("｜").Append(c.note);
                 sb.Append('\n');
                 for (int j = 0; j < c.checks.Count; j++)

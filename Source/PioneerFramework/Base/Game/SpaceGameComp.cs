@@ -1048,6 +1048,7 @@ namespace PioneerFramework
             // 游戏内一键验收状态机（未运行时立即返回，空闲零开销）
             PerfAcceptanceRunner.Tick();
             PflTestKit.Tick();   // S1 框架：异步段的超时判定（同步用例不受影响）
+            LandingAcceptanceRunner.Tick();   // S3 判据：撞击事件（异步段；空闲时第一行返回）
 
             // 调试场景驱动（原 DebugShipSpawner.CompTick：场景自动下令 + 碰撞距离探针）
             DebugShipSpawner.Tick();
@@ -4596,29 +4597,38 @@ namespace PioneerFramework
         /// <paramref name="tag"/> 只影响日志前缀（既有调用方传默认值 ⇒ 输出逐字不变）；
         /// 主动降落那条路传 "降落" —— 免得日志里打出"残差"这种与场景不符的假话。
         /// </summary>
-        private void ConsumeDeltaVOneShot(SpaceEntityGroup group, double dv, string tag = "Circularize")
+        /// <summary>
+        /// 一次性扣工质（火箭方程唯一算式）。**返回实际扣掉的工质 (kg)**（受存量截断 ⇒ 可与需求不等）。
+        ///
+        /// ⚠ 返回值存在的理由（2026-09-23）：`TryLandAtTile` 扣完料就**销毁编队**，
+        /// 于是"到底扣了多少"事后**无从观测**（实体没了、工质池没了）⇒ 验收只能靠翻日志文案（坏仪器）。
+        /// 把实际扣量作为返回值往上抛，让调用方存进读数面（见 `lastLandingConsumedKg`）。
+        /// </summary>
+        private double ConsumeDeltaVOneShot(SpaceEntityGroup group, double dv, string tag = "Circularize")
         {
-            if (dv <= 0.001) return;
+            if (dv <= 0.001) return 0.0;
             var src = GetGroupPropulsionSource(group);
-            if (src == null) return;
+            if (src == null) return 0.0;
             double ve = src.EffectiveVe;
-            if (ve <= 0.0) return;
+            if (ve <= 0.0) return 0.0;
             double m0 = GetGroupMass(group, src);
             // Δm = m0·(1 − e^(−ΔV/ve))
             double dm = m0 * (1.0 - Math.Exp(-dv / ve));
-            if (dm <= 0.0) return;
+            if (dm <= 0.0) return 0.0;
 
-            float mfTotal = 0f;
+            double mfTotal = 0.0;
             foreach (var n in src.Networks)
                 mfTotal += n.MassFlow;
-            if (mfTotal <= 0f) return;
+            if (mfTotal <= 0.0) return 0.0;
+            double actual = 0.0;
             foreach (var n in src.Networks)
             {
                 double share = dm * (n.MassFlow / mfTotal);
-                ConsumeGroupPropellant(group, n.propellant, (float)share);
+                actual += ConsumeGroupPropellant(group, n.propellant, (float)share);
             }
-            Log.Message(string.Format("[{0}] Group {1} {2}dV 一次性消耗: {3:F1} m/s → 工质 {4:F1} kg",
-                tag, group.GroupId, tag == "Circularize" ? "残差 " : "", dv, dm));
+            Log.Message(string.Format("[{0}] Group {1} {2}dV 一次性消耗: {3:F1} m/s → 需工质 {4:F1} kg／实扣 {5:F1} kg",
+                tag, group.GroupId, tag == "Circularize" ? "残差 " : "", dv, dm, actual));
+            return actual;
         }
 
         /// <summary>
@@ -4876,17 +4886,29 @@ namespace PioneerFramework
         ///   （接地速度 > 100 m/s ⇒ 坠毁）；本函数是**主动付费**那条，永远安全。
         /// 事件树的空位：将来"着陆/坠毁各自的事件树"就挂在两处的消息收口旁边。
         /// </summary>
+        /// <summary>
+        /// **最近一次主动降落的读数**（只作探针/判据用，不序列化）—— 见 `TryLandAtTile` 里"编队随即销毁"那段。
+        /// 语义：`lastLandingQuotedDeltaV` = 当时报的价（m/s）；`lastLandingConsumedKg` = 实际扣掉的工质（kg）。
+        /// 两者应满足同一套火箭方程（判据在 `LandingAcceptanceRunner`）。
+        /// </summary>
+        public double lastLandingQuotedDeltaV = -1.0;
+        public double lastLandingConsumedKg = -1.0;
+
         public bool TryLandAtTile(SpaceEntityGroup group, int targetBodyId, PlanetTile target, out string? reason)
         {
             if (!TryQuoteLanding(group, targetBodyId, target, out var q, out var est,
                     out var bodyName, out var spot, out reason))
                 return false;
 
-            ConsumeDeltaVOneShot(group, q.deltaV, "降落");
+            double consumed = ConsumeDeltaVOneShot(group, q.deltaV, "降落");
+            // 探针读数（**编队随即被销毁 ⇒ 扣料量事后无从观测**）。本库既有范式：把"会沉默的量"做成无条件读数
+            // （`FactionResolver.UnresolvedCount` / `GravityFieldSelfTest.LastPassed` 同理）⇒ 验收不许靠翻日志文案。
+            lastLandingConsumedKg = consumed;
+            lastLandingQuotedDeltaV = q.deltaV;
 
             Log.Message(string.Format(
-                "[降落] G{0} 主动降落于{1}（{2}）tile={3}｜付出 Δv={4:F1} m/s（工质 {5:F1} kg）｜地表距离 {6:F0} km",
-                group.GroupId, bodyName, spot, target.tileId, q.deltaV, est.RequiredPropellant,
+                "[降落] G{0} 主动降落于{1}（{2}）tile={3}｜付出 Δv={4:F1} m/s（需工质 {5:F1} kg／实扣 {6:F1} kg）｜地表距离 {7:F0} km",
+                group.GroupId, bodyName, spot, target.tileId, q.deltaV, est.RequiredPropellant, consumed,
                 q.surfaceDistance / 1000.0));
             Messages.Message(string.Format(
                 "Group {0} 着陆于{1}（{2}）：付出 Δv {3:F0} m/s（工质 {4:F0} kg）。",

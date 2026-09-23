@@ -547,6 +547,7 @@ namespace PioneerFramework
                 return;
             }
 
+            LastImpactProbeGroups.Clear();
             double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
             double omega = GetSurfaceState.RotationOmega(celestialMgr, EARTH_BODY_ID);
 
@@ -555,6 +556,13 @@ namespace PioneerFramework
             SpawnImpactProbeShip(spaceGame, body.radius, omega, physicsTick,
                 30.0 * System.Math.PI / 180.0, 120.0 * System.Math.PI / 180.0, 300.0);  // 北纬 30°/东经 120° ⇒ 预期"坠毁"
         }
+
+        /// <summary>
+        /// 最近一次 <see cref="SpawnImpactEventTest"/> 摆出的两颗探针组 id（**顺序 = 着陆颗、坠毁颗**）。
+        /// 给 `LandingAcceptanceRunner` 跟踪它们的结局用（判据不许靠"看日志里有没有消息"当唯一证据）。
+        /// </summary>
+        internal static readonly System.Collections.Generic.List<int> LastImpactProbeGroups =
+            new System.Collections.Generic.List<int>();
 
         /// <summary>撞击事件探针的单颗摆法（<see cref="SpawnImpactEventTest"/>）：地表上方 200 m、相对地表的纯径向下降。</summary>
         private static void SpawnImpactProbeShip(SpaceGameComp spaceGame, double radius, double omega,
@@ -571,6 +579,7 @@ namespace PioneerFramework
                 new DVector3(6f, 6f, 12f), Quaternion.identity, "撞击事件", vel);
             if (g == null) return;
             g.CelestialBodyId = EARTH_BODY_ID;      // ⚠ 不设 exemptPlanetCollision：要让撞击事件真的触发
+            LastImpactProbeGroups.Add(g.GroupId);
 
             Log.Message(string.Format(
                 "[撞击事件] G{0} 已创建：高度 {1:F0} m、相对地表纯径向下降 {2:F0} m/s、落点预期 ({3:F1}°, {4:F1}°)" +
@@ -624,8 +633,9 @@ namespace PioneerFramework
         }
 
         /// <summary>两颗探针船：近地圆轨（500 km）+ 绕月圆轨（1800 km），都是**顺行赤道**（按 `SurfaceFrame` 的东向约定）。
-        /// 返回 false（并保证 sg == null）＝ 场景没搭起来 ⇒ 调用方直接返回。</summary>
-        private static bool TrySpawnLandingProbeShips(out SpaceGameComp? sg, out CelestialBodyManager? mgr,
+        /// 返回 false（并保证 sg == null）＝ 场景没搭起来 ⇒ 调用方直接返回。
+        /// `internal`（2026-09-23）：`LandingAcceptanceRunner` 的判据要**复用**这份摆场（两处各写一份 = 两套权威）。</summary>
+        internal static bool TrySpawnLandingProbeShips(out SpaceGameComp? sg, out CelestialBodyManager? mgr,
             out double physicsTick, out SpaceEntityGroup? eShip, out SpaceEntityGroup? mShip)
         {
             sg = Current.Game?.GetComponent<SpaceGameComp>();

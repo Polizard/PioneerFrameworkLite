@@ -34,7 +34,7 @@ namespace PioneerFramework
             // ═══ 验收（性能优化 9 条 + 中低优先批）═══
             // S2 首片（2026-09-23）：单一入口「一键测试（全覆盖）」—— 跑得完的全收进统一判定框架，
             // 跑不完/还没判据的**逐条显式登记**（不许用沉默冒充全覆盖）
-            AddAction("一键测试（全覆盖：框架自检 + 引力电池 + 未覆盖项登记）", "00 验收", 35, FullTestRunner.Run, null);
+            AddAction("一键测试（全覆盖：框架自检 + 引力电池 + 降落/撞击判据 + 未覆盖项登记）", "00 验收", 35, FullTestRunner.Run, null);
             // S1（2026-09-23）：统一判定框架的首两个用例 —— 把"只打印数字"的探针变成有判据的用例
             // （阵营解析 [V12] · 可见性四字段 [P1]；"今天验不了"的显式登记为 UNCHECKED 子项）
             AddAction("测试框架自检（统一判定：阵营解析 + 可见性四字段）", "00 验收", 30, FrameworkSelfTest.Run, null);
@@ -88,6 +88,11 @@ namespace PioneerFramework
                 DebugShipSpawner.SpawnLandingQuoteProbe, null);
             AddAction("降落·执行探针（对星下点落点真降一次：消息 + 扣料 + 销毁）", "05 场景 · 引力场(A0)", 76,
                 DebugShipSpawner.RunLandingExecutionProbe, null);
+
+            // ═══ 着陆判据（S3，2026-09-23）：把上面三个探针的"人读日志"变成机器判定（走统一框架）═══
+            AddAction("降落/撞击·判据（S3：报价·距离门·跨层错配·越界·缺表面·执行三件事 + 撞击事件）",
+                "05 场景 · 引力场(A0)", 74, RunLandingJudgments, null);
+            AddAction("降落/撞击·判据中止", "05 场景 · 引力场(A0)", 73, LandingAcceptanceRunner.Abort, null);
 
             // ═══ 场景 · 轨道 / 空间站 ═══
             AddAction("部署空间站", "10 场景 · 轨道/空间站", 100, DebugShipSpawner.SpawnTestStation, null);
@@ -215,6 +220,19 @@ namespace PioneerFramework
         private static void ToggleProjectileProbe()
         {
             CombatManager.DebugProjectileProbeInterval = CombatManager.DebugProjectileProbeInterval > 0 ? 0 : 30;
+        }
+
+        /// <summary>
+        /// 降落/撞击判据（S3）：**同步段立刻出结论块**（报价/距离门/跨层错配/越界/缺表面/执行三件事），
+        /// 撞击事件登记为**异步用例**（两颗探针落地后自己结算并打一行「用例…结算」）——所以结论块打完不等于
+        /// 全跑完：那行会晚几秒出现。
+        /// </summary>
+        private static void RunLandingJudgments()
+        {
+            PflTestKit.Reset();
+            LandingAcceptanceRunner.RunSync();
+            LandingAcceptanceRunner.StageImpact();
+            PflTestKit.PrintVerdict("降落/撞击判据（S3）");
         }
 
         private DebugActionNode AddAction(string label, string category, int priority, Action action, Func<string>? labelGetter)
