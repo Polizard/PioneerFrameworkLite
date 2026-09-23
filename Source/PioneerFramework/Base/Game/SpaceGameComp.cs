@@ -1047,6 +1047,7 @@ namespace PioneerFramework
 
             // 游戏内一键验收状态机（未运行时立即返回，空闲零开销）
             PerfAcceptanceRunner.Tick();
+            PflTestKit.Tick();   // S1 框架：异步段的超时判定（同步用例不受影响）
 
             // 调试场景驱动（原 DebugShipSpawner.CompTick：场景自动下令 + 碰撞距离探针）
             DebugShipSpawner.Tick();

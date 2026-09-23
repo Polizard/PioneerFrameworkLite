@@ -32,6 +32,9 @@ namespace PioneerFramework
             absRoot.AddChild(myRoot);
 
             // ═══ 验收（性能优化 9 条 + 中低优先批）═══
+            // S1（2026-09-23）：统一判定框架的首两个用例 —— 把"只打印数字"的探针变成有判据的用例
+            // （阵营解析 [V12] · 可见性四字段 [P1]；"今天验不了"的显式登记为 UNCHECKED 子项）
+            AddAction("测试框架自检（统一判定：阵营解析 + 可见性四字段）", "00 验收", 30, FrameworkSelfTest.Run, null);
             AddAction("一键验收", "00 验收", 100, PerfAcceptanceRunner.Run,
                 () => PerfAcceptanceRunner.Running
                     ? "一键验收（运行中…）"
