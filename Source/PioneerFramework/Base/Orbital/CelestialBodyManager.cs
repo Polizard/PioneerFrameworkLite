@@ -88,29 +88,11 @@ namespace PioneerFramework
             Log.Message(string.Format("[CelestialBodyManager] Loaded {0} celestial bodies, built moon indices. World radius = {1:F0} m ({2} tiles).",
                 allDefs.Count, SpaceConstants.PlanetRadiusMeters, (int)(SpaceConstants.PlanetRadiusMeters / SpaceConstants.MetersPerUnit)));
 
-            // ── 构建自证（2026-09-17）────────────────────────────────────────────
-            // 为什么必须有：这个 mod"交付物路径只在 Release 生效"，而开发期间每次重建都会覆盖它
-            // ⇒ **日志里的读数到底来自哪一版代码**这个问题，历史上反复浪费排查时间
-            //   （前两次"探针找不到"的根因都是旧 DLL）。把**内容身份**打进日志，
-            //   任何一份日志都能自证版本，不用再靠时间戳猜。
-            //   · MVID（模块版本 id）= 每次编译唯一、由内容决定 ⇒ 逐位可比；
-            //   · 构建时间 = 人读友好，用来和 `1.6/Assemblies` 的时间戳对。
-            try
-            {
-                var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                var loc = string.IsNullOrEmpty(asm.Location) ? null : asm.Location;
-                string built = "?";
-                if (loc != null && System.IO.File.Exists(loc))
-                    built = System.IO.File.GetLastWriteTime(loc).ToString("yyyy-MM-dd HH:mm:ss");
-                Log.Message(string.Format(
-                    "[PFL] 构建自证：MVID={0}｜DLL 构建时间={1}｜交会新律={2}",
-                    asm.ManifestModule.ModuleVersionId, built,
-                    SpaceGameComp.UseNewRendezvousLaw ? "开" : "关"));
-            }
-            catch (System.Exception e)
-            {
-                Log.Warning("[PFL] 构建自证失败（不影响运行）：" + e.Message);
-            }
+            // ── 构建自证：**已搬到 `Base/Core/BuildIdentity.cs`**（2026-09-23）──────────
+            // 原来在这里：本方法是**懒调用**的（由各访问器触发）⇒ 在一局**没有编队**的场景里
+            // 物理步不会查任何天体 ⇒ 这行**根本不打**，于是那份日志无法自证版本 ✗
+            // （实测：489 行日志里有 `[步耗时]` 却没有构建自证）。⇒ 提为 `[StaticConstructorOnStartup]`，
+            // **加载即打、无条件**（本库纪律：读数必须无条件）。
 
             // ── 移植面日志桥（2026-09-19）────────────────────────────────────────
             // 为什么必须有：移植来的 `MechJebLib.Utils.Logger` 靠宿主调 `GlobalRegister` 才会有输出，
