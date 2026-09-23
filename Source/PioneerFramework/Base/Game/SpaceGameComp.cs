@@ -4764,7 +4764,8 @@ namespace PioneerFramework
             string bodyName = mgr?.GetBodyName(group.CelestialBodyId) ?? "天体";
             int groupId = group.GroupId;
 
-            if (impactSpeed > SpaceConstants.MaxSafeLandingSpeedMps)
+            // 判据本体 = `SpaceConstants.IsSafeLandingSpeed`（唯一权威、可纯测；本处只调用）
+            if (!SpaceConstants.IsSafeLandingSpeed(impactSpeed))
             {
                 Log.Message(string.Format(
                     "[Collision] Group {0} CRASHED into {1} at ({2}) — ground-relative impact speed {3:F1} m/s (max safe {4:F0} m/s). Entities destroyed.",

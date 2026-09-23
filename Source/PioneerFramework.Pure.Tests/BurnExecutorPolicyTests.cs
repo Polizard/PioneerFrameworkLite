@@ -148,5 +148,20 @@ namespace PioneerFramework.Pure.Tests
             Assert.True(double.IsInfinity(BurnExecutorPolicy.PlannedOverActualBurnSeconds(10.0, 5.0, 0.0)));
             Assert.Equal(2.0, BurnExecutorPolicy.BurnSeconds(10.0, 5.0), 9);
         }
+
+        /// <summary>
+        /// **MJ 反打转纪律**（`ShouldDropRemoteNodes`，游戏 `SpaceGameComp:3775` 调它）：
+        /// 已进停下尺度**且**下一条节点还在未来 ⇒ 删光队列。两侧都要钉：
+        /// 距离还远 ⇒ **不许删**（否则误杀正常远场节点）；下一条已在眼前/当前时刻 ⇒ 也不删（删了是丢活儿）。
+        /// </summary>
+        [Fact]
+        public void RemoteNodesAreDroppedOnlyInsideMatchDistanceAndAheadOfTime()
+        {
+            const double match = 100.0;   // `rendezvousMatchDist`
+            Assert.True(BurnExecutorPolicy.ShouldDropRemoteNodes(50.0, match, nextUt: 5000.0, now: 100.0));
+            Assert.False(BurnExecutorPolicy.ShouldDropRemoteNodes(50_000.0, match, 5000.0, 100.0));
+            Assert.False(BurnExecutorPolicy.ShouldDropRemoteNodes(50.0, match, 100.5, 100.0));   // 守卫 1 s
+            Assert.False(BurnExecutorPolicy.ShouldDropRemoteNodes(50.0, match, 100.0, 100.0));   // 就是当前时刻
+        }
     }
 }

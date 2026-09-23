@@ -32,6 +32,14 @@ namespace PioneerFramework
         /// </summary>
         public const double MaxSafeLandingSpeedMps = 100.0;
 
+        /// <summary>
+        /// **"着陆还是坠毁"的唯一判据**（把 `CheckPlanetCollision` 里那句内联比较收成一件可测的纯函数）。
+        /// ⚠ 入参是**接地速度**（`SurfaceFrame.GroundSpeed`：相对地表、已扣共转），**不是惯性系速度**
+        /// —— 地球赤道共转 523.6 m/s，用惯性速度则任何着陆都判坠毁（见上一节的更正记录）。
+        /// ⚠ **边界含在内**：`speed == 阈值` ⇒ 着陆（与 `CheckPlanetCollision` 原来的 `>` 一致）。
+        /// </summary>
+        public static bool IsSafeLandingSpeed(double groundSpeed) => groundSpeed <= MaxSafeLandingSpeedMps;
+
         // ── 选 tile 主动降落（2026-09-22 用户裁定："选一个 tile、消耗一定 dV、瞬间完成降落"）──
         /// <summary>落点距**星下点**的地表大圆距离上限（米）= 1000 km，与既有"附近"口径同量级。</summary>
         public const double MaxLandingSurfaceDistanceMeters = 1000000.0;

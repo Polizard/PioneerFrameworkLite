@@ -30,8 +30,9 @@ namespace PioneerFramework
     ///   ⇒ 调用点不许自己再写一遍 `origin + Rot(p)`；
     /// · 时刻**保留 double**（`physicsTick`）：int 化在 1/60× 流速下会让天体位置每 60 真实 tick 跳 1 秒
     ///   （PFView `:1003-1008` 的实测结论）；
-    /// · 旋转方向 `Ry(+ωt)` 与 `SurfaceFrame.FixedToEci = Ry(−ωt)` **互逆**（`GetSurfaceState.cs:14`
-    ///   的冻结约定）⇒ 钉在地表 tile 上的东西才不会从地面飞走。
+        /// · 旋转方向 `Ry(+ωt)` 与 `SurfaceFrame.FixedToEci = Ry(−ωt)` **互逆**（`GetSurfaceState.cs:14`
+        ///   的冻结约定）⇒ 钉在地表 tile 上的东西才不会从地面飞走。**该旋转直接调 `SurfaceFrame.EciToFixed`**
+        ///   （不是各写一份再指望符号凑对；`ViewFrameTests` 用"固连点往返"逐 tick 钉住）。
     /// </summary>
     internal static class ViewFrame
     {
@@ -91,6 +92,17 @@ namespace PioneerFramework
         /// <summary>
         /// 同上，但入参**已经是 Unity 单位**的系统系坐标 —— 轨道采样点与规划器预览（`*Unity` 系列）走这条。
         /// `ToViewUnity(米)` 内部就是调它 ⇒ 变换算式仍然**只有一份**。
+        ///
+        /// ⚠ 2026-09-23 改：旋转**不再用 `Quaternion.AngleAxis`**，改调 `SurfaceFrame.EciToFixed`（两者算式逐项相同，
+        /// 见下）。两个理由，都不是"为了好测"：
+        /// 1. **消除两份权威**：原来"视图旋转"（Unity 四元数）与"固连↔ECI 冻结约定"（`SurfaceFrame`，纯双精度）
+        ///    是**两份独立实现**，上文那句"互逆"只能靠巧合成立 —— 而本类的存在理由正是"换系只准有一处"。
+        ///    改调之后"互逆"是**结构性事实**（`EciToFixed` 就是 `FixedToEci` 的逆），地表物体不会飞走这件事
+        ///    不再依赖两个文件各自的符号写对。
+        /// 2. **去 ECall**：`Quaternion.AngleAxis` 在 Unity 引用程序集里是 **ECall**（引擎外部调用），
+        ///    headless 一调即 `SecurityException`（与 `BoardingMathTests.cs:44` 登记的 `Quaternion.Euler` 同族）
+        ///    ⇒ 换系口此前**零测试覆盖**；换成纯数学后 `ViewFrameTests` 18 条可 headless 跑。
+        ///    纯双精度还顺手免掉"`% 2π` 取模 + `float` 角度"那段精度折返。
         /// </summary>
         public static Vector3 ToViewUnityFromUnity(Vector3 systemFrameUnity, double tick)
         {
@@ -99,9 +111,8 @@ namespace PioneerFramework
             Vector3 rel = systemFrameUnity - (Vector3)(BodySystemPosition(viewed, tick) * SpaceConstants.UnitsPerMeter);
 
             double omega = GetSurfaceState.RotationOmega(mgr, viewed);
-            const double twoPi = System.Math.PI * 2.0;
-            double angleRad = omega * tick % twoPi;   // 取模只为浮点幅度，不改变角度等价性
-            return Quaternion.AngleAxis((float)(angleRad * Mathf.Rad2Deg), Vector3.up) * rel;
+            // Ry(+ω_view·t)：与 SurfaceFrame.FixedToEci = Ry(−ωt) 互逆（同一份算式，见上）
+            return SurfaceFrame.EciToFixed((DVector3)rel, omega, tick);
         }
         /// <summary>
         /// **物理半径（米）→ Unity 球体的缩放值**（给 `GameObject.CreatePrimitive(PrimitiveType.Sphere)` 这类网格用）。

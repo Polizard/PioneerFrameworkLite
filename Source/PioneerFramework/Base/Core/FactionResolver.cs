@@ -54,6 +54,19 @@ namespace PioneerFramework
         }
 
         /// <summary>
+        /// 限频判据（**纯**，分离出来是为了能被测试钉住 —— 它自己曾经是坏的，见下）。
+        ///
+        /// ⚠ 2026-09-23 修：哨兵 `int.MinValue`（"从未警告过"）**不能**直接参与减法 ——
+        /// `nowTick - int.MinValue` 在 unchecked 下**整型溢出**回负数 ⇒ 判据恒假 ⇒
+        /// **警告从第一次调用起就再也不会打印**（而且 `lastWarnTick` 永不更新 ⇒ 永久失效）。
+        /// 代码里那句"限频 Log.Warning"曾经是一句**做不到的承诺**：`UnresolvedCount` 照常累计、
+        /// `LogProbe` 照常显示，只有日志行是空的 ⇒ 单看日志会得出"没有解析失败"的结论。
+        /// ⇒ 哨兵必须**显式判**（本条由 `FactionResolverTests.WarnPredicate_*` 钉住）。
+        /// </summary>
+        internal static bool ShouldWarn(int nowTick, int lastWarnTick, int intervalTicks)
+            => lastWarnTick == int.MinValue || nowTick - lastWarnTick >= intervalTicks;
+
+        /// <summary>
         /// 两个 loadID 之间是否**敌对**。任一方解析失败 ⇒ **true（未知即敌）** + 记数 + 限频警告。
         /// ⚠ 只用于"**系统替你选目标**"的地方（自动索敌）；玩家自己点选的地方保持"可见即可打"（§11 D7）。
         /// </summary>
@@ -65,7 +78,7 @@ namespace PioneerFramework
             {
                 UnresolvedCount++;
                 int nowTick = Find.TickManager?.TicksGame ?? 0;
-                if (nowTick - lastWarnTick >= WarnIntervalTicks)
+                if (ShouldWarn(nowTick, lastWarnTick, WarnIntervalTicks))
                 {
                     lastWarnTick = nowTick;
                     Log.Warning(string.Format(
@@ -86,8 +99,9 @@ namespace PioneerFramework
         public static int HostileFactionIdForPlayer()
         {
             var fm = Find.FactionManager;
+            if (fm == null) return -1;
             var player = Faction.OfPlayer;
-            if (fm == null || player == null) return -1;
+            if (player == null) return -1;
 
             foreach (var f in fm.AllFactionsVisible)
             {
@@ -124,7 +138,8 @@ namespace PioneerFramework
             return n;
         }
 
-        /// <summary>清缓存与计数（读档/新游戏时调用；缓存是**派生数据**，不是事实源）。</summary>
+        /// <summary>清缓存与计数（读档/新游戏时调用；缓存是**派生数据**，不是事实源）。
+        /// `lastWarnTick` 回到**哨兵** `int.MinValue` = "从未警告过"（见 <see cref="ShouldWarn"/>，别拿它直接做减法）。</summary>
         public static void Clear()
         {
             cache.Clear();
