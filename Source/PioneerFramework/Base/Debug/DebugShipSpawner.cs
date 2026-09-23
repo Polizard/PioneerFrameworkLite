@@ -615,8 +615,8 @@ namespace PioneerFramework
         {
             if (!TrySpawnLandingProbeShips(out var sg, out var mgr, out var tick, out var eShip, out var mShip)) return;
             if (sg == null || mgr == null || eShip == null || mShip == null) return;   // 可空标注所需；上面已保证非空
-            ProbeLandingQuotes(sg, mgr, eShip, EARTH_BODY_ID, tick, "近地圆轨");
-            ProbeLandingQuotes(sg, mgr, mShip, MOON_BODY_ID, tick, "绕月圆轨");
+            ProbeLandingQuotes(sg, mgr, eShip, EARTH_BODY_ID, tick, "近地圆轨", LastEarthProbeTile);
+            ProbeLandingQuotes(sg, mgr, mShip, MOON_BODY_ID, tick, "绕月圆轨", LastMoonProbeTile);
         }
 
         /// <summary>
@@ -628,8 +628,8 @@ namespace PioneerFramework
         {
             if (!TrySpawnLandingProbeShips(out var sg, out var mgr, out var tick, out var eShip, out var mShip)) return;
             if (sg == null || mgr == null || eShip == null || mShip == null) return;   // 同上
-            RunOneLanding(sg, mgr, eShip, EARTH_BODY_ID, tick, "近地圆轨");
-            RunOneLanding(sg, mgr, mShip, MOON_BODY_ID, tick, "绕月圆轨");
+            RunOneLanding(sg, mgr, eShip, EARTH_BODY_ID, tick, "近地圆轨", LastEarthProbeTile);
+            RunOneLanding(sg, mgr, mShip, MOON_BODY_ID, tick, "绕月圆轨", LastMoonProbeTile);
         }
 
         /// <summary>两颗探针船：近地圆轨（500 km）+ 绕月圆轨（1800 km），都是**顺行赤道**（按 `SurfaceFrame` 的东向约定）。
@@ -654,24 +654,36 @@ namespace PioneerFramework
             }
             physicsTick = TimeScaleManager.GetPhysicsTickSafe();
 
-            // ── 近地圆轨：+x̂ 处顺行（东向 = +ẑ），速度取该高度的圆轨速度 ──
+            // ── 两颗探针都锚在**已知 tile 的正上方**（2026-09-24 改）────────────────────────
+            // 为什么不再"随便找个位置 + 事后用 `EciToTile` 反查星下点"：反查走的是 layer 网格**顶点**，
+            // 而判据要问的是"这艘船正对着哪个 tile" ⇒ 由构造保证最省事，也不必先相信反查。
+            // 纬度改用 **RimWorld 自己的 `LongLatOf`**（`Asin(c.y / layer.Radius)`）挑赤道附近的 tile ——
+            // 那是游戏自己的纬度定义，与"网格是否以原点为心"无关（后者是另一条判据在查的事）。
             double rE = earth.radius + 500_000.0;
-            eShip = CreateShipNoMap(sg, Faction.OfPlayer.loadID, new DVector3(rE, 0, 0),
+            int eTile = PickEquatorialTile(GetSurfaceState.GetLayerForBody(mgr, EARTH_BODY_ID));
+            DVector3 eUp = GetSurfaceState.TileToEci(eTile, mgr, EARTH_BODY_ID, physicsTick).normalized;
+            DVector3 eEast = SurfaceFrame.SurfaceVelocity(eUp * earth.radius,
+                GetSurfaceState.RotationOmega(mgr, EARTH_BODY_ID)).normalized;
+            eShip = CreateShipNoMap(sg, Faction.OfPlayer.loadID, eUp * rE,
                 new DVector3(6f, 6f, 12f), Quaternion.identity, "降落探针·近地",
-                new DVector3(0, 0, System.Math.Sqrt(earth.gravitationalParameter / rE)));
+                eEast * System.Math.Sqrt(earth.gravitationalParameter / rE));
             if (eShip != null) eShip.CelestialBodyId = EARTH_BODY_ID;
-            // ── 绕月圆轨：月球固连赤道点上方 1800 km，速度 = 月球绕地平动 + 月球相对圆轨速度（东向）──
+
+            // ── 绕月圆轨：月球某赤道 tile 正上方 1800 km，速度 = 月球绕地平动 + 月球相对圆轨速度（东向）──
             double omegaM = GetSurfaceState.RotationOmega(mgr, MOON_BODY_ID);
-            (DVector3 mSurfPos, DVector3 mSurfVel) = SurfaceFrame.SurfaceState(moon.radius, 0.0, 0.0, omegaM, physicsTick);
             DVector3 moonPos = mgr.GetBodyLocalPosition(MOON_BODY_ID, physicsTick);   // 月球的父系（= 根系）偏移
             DVector3 moonVel = mgr.GetBodyLocalVelocity(MOON_BODY_ID, physicsTick);
             double rM = moon.radius + 1_800_000.0;
-            DVector3 upM = mSurfPos.normalized;
-            DVector3 eastM = mSurfVel.normalized;                                     // 地表自转方向 = 东向
-            mShip = CreateShipNoMap(sg, Faction.OfPlayer.loadID, moonPos + upM * rM,
+            int mTile = PickEquatorialTile(GetSurfaceState.GetLayerForBody(mgr, MOON_BODY_ID));
+            DVector3 mUp = GetSurfaceState.TileToEci(mTile, mgr, MOON_BODY_ID, physicsTick).normalized;
+            DVector3 mEast = SurfaceFrame.SurfaceVelocity(mUp * moon.radius, omegaM).normalized;
+            mShip = CreateShipNoMap(sg, Faction.OfPlayer.loadID, moonPos + mUp * rM,
                 new DVector3(6f, 6f, 12f), Quaternion.identity, "降落探针·绕月",
-                moonVel + eastM * System.Math.Sqrt(moon.gravitationalParameter / rM));
+                moonVel + mEast * System.Math.Sqrt(moon.gravitationalParameter / rM));
             if (mShip != null) mShip.CelestialBodyId = MOON_BODY_ID;
+
+            LastEarthProbeTile = eTile;
+            LastMoonProbeTile = mTile;
 
             // ⚠ **无 Map 船必须显式加油**：`CreateShipNoMap` 只造壳（一个 `PF_ShipPart_Cube`），
             //   推进与工质全靠 `AddPropulsion` ⇒ 不加的话报价会被"工质不足"拒掉，探针就成了废的。
@@ -680,6 +692,27 @@ namespace PioneerFramework
 
             return eShip != null && mShip != null;
         }
+
+        /// <summary>
+        /// 挑一个**赤道附近**的 tile（判据要"船正对哪个 tile"这个事实由构造给出）。纬度用 RimWorld 自己的
+        /// `LongLatOf`（`Asin(c.y / layer.Radius)`）×57.3 转度 ⇒ 与"网格以原点为心"那个假设无关。
+        /// 无 layer 或挑不出来 ⇒ 返回 0（调用方按 tile 0 处理；赤道性只是为了让 Δv 落在登记区间，不是正确性前提）。
+        /// </summary>
+        internal static int PickEquatorialTile(PlanetLayer? layer)
+        {
+            if (layer == null || layer.TilesCount <= 0) return 0;
+            int n = layer.TilesCount;
+            for (int i = 0; i < n; i++)
+            {
+                float lat = layer.LongLatOf(i).y;   // 度
+                if (lat > -5f && lat < 5f) return i;
+            }
+            return 0;
+        }
+
+        /// <summary>最近一次 <see cref="TrySpawnLandingProbeShips"/> 两颗探针**正对着的 tile**（判据/探针共用）。</summary>
+        internal static int LastEarthProbeTile = 0;
+        internal static int LastMoonProbeTile = 0;
 
         /// <summary>
         /// 探针船的推进档（照抄既有的"过推档"）：主网 ve 4000 / ṁ140 / 66000 kg＋RCS 网 ve 1500 / ṁ20 / 4000 kg。
@@ -711,9 +744,9 @@ namespace PioneerFramework
             }
         }
 
-        /// <summary>打印某颗船在目标天体上的报价：星下点 tile + 一个"远处对照"落点。</summary>
+        /// <summary>打印某颗船在目标天体上的报价：**船正对的 tile**（由摆场给出）+ 一个"远处对照"落点。</summary>
         private static void ProbeLandingQuotes(SpaceGameComp sg, CelestialBodyManager mgr,
-            SpaceEntityGroup g, int bodyId, double physicsTick, string tag)
+            SpaceEntityGroup g, int bodyId, double physicsTick, string tag, int shipTile)
         {
             var layer = GetSurfaceState.GetLayerForBody(mgr, bodyId);
             if (layer == null || layer.TilesCount <= 0)
@@ -721,11 +754,11 @@ namespace PioneerFramework
                 Log.Error(string.Format("[降落探针] {0}：天体 {1} 没有地表网格", tag, bodyId));
                 return;
             }
-            int tile = GetSurfaceState.EciToTile(g.localPosition, mgr, bodyId, physicsTick);
-            Log.Message(string.Format("[降落探针] {0} G{1}：星下点 tile={2}（layer 共 {3} 格）",
+            int tile = shipTile;
+            Log.Message(string.Format("[降落探针] {0} G{1}：船正对的 tile={2}（layer 共 {3} 格；摆场时由构造给出）",
                 tag, g.GroupId, tile, layer.TilesCount));
 
-            PrintLandingQuote(sg, g, bodyId, new PlanetTile(tile, layer), tag + "·星下点");
+            PrintLandingQuote(sg, g, bodyId, new PlanetTile(tile, layer), tag + "·正对落点");
             int far = (tile + System.Math.Max(1, layer.TilesCount / 3)) % layer.TilesCount;
             PrintLandingQuote(sg, g, bodyId, new PlanetTile(far, layer), tag + "·远处对照");
         }
@@ -744,11 +777,11 @@ namespace PioneerFramework
 
         /// <summary>对星下点 tile 真的执行一次降落（消息 + 扣料 + 销毁三件事的探针）。</summary>
         private static void RunOneLanding(SpaceGameComp sg, CelestialBodyManager mgr,
-            SpaceEntityGroup g, int bodyId, double physicsTick, string tag)
+            SpaceEntityGroup g, int bodyId, double physicsTick, string tag, int shipTile)
         {
             var layer = GetSurfaceState.GetLayerForBody(mgr, bodyId);
             if (layer == null) { Log.Error(string.Format("[降落探针] {0}：没有地表网格", tag)); return; }
-            int tile = GetSurfaceState.EciToTile(g.localPosition, mgr, bodyId, physicsTick);
+            int tile = shipTile;   // 船**正对**的 tile（摆场时由构造给出；不再用 `EciToTile` 反查）
             var before = sg.GetGroupDeltaV(g);
             bool ok = sg.TryLandAtTile(g, bodyId, new PlanetTile(tile, layer), out var reason);
             Log.Message(string.Format(

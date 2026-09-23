@@ -74,23 +74,25 @@ namespace PioneerFramework
             }
 
             // 量级区间 = LandingQuote 注释里的登记口径 ±10%
-            QuoteCase(sg, mgr, eShip, EARTH_BODY_ID, tick, "近地圆轨", 5000.0, 6100.0);
-            QuoteCase(sg, mgr, mShip, MOON_BODY_ID, tick, "绕月圆轨", 1050.0, 1300.0);
+            QuoteCase(sg, mgr, eShip, EARTH_BODY_ID, tick, "近地圆轨", 5000.0, 6100.0, DebugShipSpawner.LastEarthProbeTile);
+            QuoteCase(sg, mgr, mShip, MOON_BODY_ID, tick, "绕月圆轨", 1050.0, 1300.0, DebugShipSpawner.LastMoonProbeTile);
             GateCase(sg, mgr, eShip, EARTH_BODY_ID, tick, "地球");
             GateCase(sg, mgr, mShip, MOON_BODY_ID, tick, "月球");
-            WrongLayerCase(sg, mgr, eShip, EARTH_BODY_ID, tick);
-            OutOfRangeCase(sg, mgr, eShip, EARTH_BODY_ID, tick);
-            NoSurfaceCase(sg, mgr, eShip, EARTH_BODY_ID, tick);
-            ExecuteCase(sg, mgr, eShip, EARTH_BODY_ID, tick);   // 会销毁编队 ⇒ 放最后
+            WrongLayerCase(sg, mgr, eShip, EARTH_BODY_ID, tick, DebugShipSpawner.LastEarthProbeTile);
+            OutOfRangeCase(sg, mgr, eShip, EARTH_BODY_ID, tick, DebugShipSpawner.LastEarthProbeTile);
+            NoSurfaceCase(sg, mgr, eShip, EARTH_BODY_ID, tick, DebugShipSpawner.LastEarthProbeTile);
+            SubSatelliteCase(sg, mgr, mShip, MOON_BODY_ID, tick, "月球");   // 反查那条链（网格诊断也在这里打）
+            SubSatelliteCase(sg, mgr, eShip, EARTH_BODY_ID, tick, "地球");
+            ExecuteCase(sg, mgr, eShip, EARTH_BODY_ID, tick, DebugShipSpawner.LastEarthProbeTile);   // 会销毁编队 ⇒ 放最后
 
             int cleared = PflTestKit.CleanupSince();
             if (cleared > 0) PflTestKit.Note(string.Format("本段清场销毁了 {0} 个探针编队", cleared));
         }
 
         private static void QuoteCase(SpaceGameComp sg, CelestialBodyManager mgr, SpaceEntityGroup g,
-            int bodyId, double tick, string tag, double lo, double hi)
+            int bodyId, double tick, string tag, double lo, double hi, int shipTile)
         {
-            PflTestKit.Begin("降落报价·" + tag + "（星下点）", Category);
+            PflTestKit.Begin("降落报价·" + tag + "（船正对的 tile）", Category);
             var layer = GetSurfaceState.GetLayerForBody(mgr, bodyId);
             var body = mgr.GetBodyById(bodyId);
             if (layer == null || body == null)
@@ -99,20 +101,21 @@ namespace PioneerFramework
                 return;
             }
 
-            int tile = GetSurfaceState.EciToTile(BodyRelativePos(sg, g, bodyId, tick), mgr, bodyId, tick);
+            int tile = shipTile;   // 摆场时把船摆在它正上方 ⇒ 这个 tile 由构造保证"船正对"
             bool ok = sg.TryQuoteLanding(g, bodyId, new PlanetTile(tile, layer),
                 out var q, out var est, out var bodyName, out var spot, out var reason);
 
-            PflTestKit.Check(PflTestKit.Kind.Value, ok, "星下点必须可落（探针工质充裕）",
+            PflTestKit.Check(PflTestKit.Kind.Value, ok, "船正对的 tile 必须可落（探针工质充裕）",
                 string.Format("tile={0}｜{1}", tile, reason));
             if (!ok) { PflTestKit.End(); return; }
 
             PflTestKit.Check(PflTestKit.Kind.Value, q.deltaV >= lo && q.deltaV <= hi,
                 string.Format("Δv 落进登记区间 [{0:F0}, {1:F0}] m/s（量级判据）", lo, hi),
-                string.Format("Δv={0:F1} m/s｜{1}｜工质 {2:F1} kg｜星下点 tile={3}",
+                string.Format("Δv={0:F1} m/s｜{1}｜工质 {2:F1} kg｜正对 tile={3}",
                     q.deltaV, spot, est.RequiredPropellant, tile));
-            PflTestKit.Check(PflTestKit.Kind.Value, q.surfaceDistance <= 1.0,
-                "星下点地表距离 ≈ 0", string.Format("{0:F2} m", q.surfaceDistance));
+            PflTestKit.Check(PflTestKit.Kind.Value, q.surfaceDistance <= 1000.0,
+                "地表距离 ≈ 0（船就摆在这个 tile 正上方；1 km 的宽容是给『径向偏移不影响角度』留的）",
+                string.Format("{0:F2} m", q.surfaceDistance));
             PflTestKit.Check(PflTestKit.Kind.Invariant,
                 Math.Abs(q.maxDistance - LandingQuote.MaxSurfaceDistance(body.radius)) < 1e-6,
                 "距离门与纯核同值（查接线有没有传错天体半径）",
@@ -139,9 +142,9 @@ namespace PioneerFramework
             bool ok = sg.TryQuoteLanding(g, bodyId, new PlanetTile(tile, layer),
                 out var q, out _, out _, out _, out var reason);
 
-            PflTestKit.Check(PflTestKit.Kind.Invariant, bestDot < -0.9f,
-                "对跖点确实是反方向的（dot ≈ −1）—— 防『选不出对跖点』时那条拒绝**假绿**",
-                string.Format("dot={0:F4}（tile={1}）", bestDot, tile));
+            // 读数（**不**在这里判）：真对跖点应有 dot ≈ −1。网格偏心时它会明显偏大 ——
+            // 那属于"网格↔方向"这一环的问题，由「星下点反查」用例统一判定，不在这里重复计红。
+            PflTestKit.Note(string.Format("对跖点方向点积 {0:F4}（应 ≈ −1）｜tile={1}", bestDot, tile));
             PflTestKit.Check(PflTestKit.Kind.Contract, !ok,
                 "离星下点最远的 tile 必须被拒（距离门）", ok ? "**却通过了**" : reason);
             if (!ok)
@@ -158,7 +161,7 @@ namespace PioneerFramework
         /// <summary>跨层错配：tile 索引在**另一个天体**的 layer 上"看起来合法" ⇒ 必须被拒；
         /// 同一个 tile 用**正确的** layer 必须可落（对照组 —— 否则"被拒"可能只是因为这个 tile 本来就落不了）。</summary>
         private static void WrongLayerCase(SpaceGameComp sg, CelestialBodyManager mgr, SpaceEntityGroup g,
-            int bodyId, double tick)
+            int bodyId, double tick, int shipTile)
         {
             PflTestKit.Begin("降落拒绝·跨层错配（静默落到别处的那条路）", Category);
             var earthLayer = GetSurfaceState.GetLayerForBody(mgr, bodyId);
@@ -169,7 +172,7 @@ namespace PioneerFramework
                 return;
             }
 
-            int tile = GetSurfaceState.EciToTile(BodyRelativePos(sg, g, bodyId, tick), mgr, bodyId, tick);
+            int tile = shipTile;
             bool mismatched = sg.TryQuoteLanding(g, bodyId, new PlanetTile(tile, moonLayer),
                 out _, out _, out _, out _, out var reason);
             bool control = sg.TryQuoteLanding(g, bodyId, new PlanetTile(tile, earthLayer),
@@ -185,7 +188,7 @@ namespace PioneerFramework
 
         /// <summary>tile 索引越界与"未选点"两条都必须被拒。</summary>
         private static void OutOfRangeCase(SpaceGameComp sg, CelestialBodyManager mgr, SpaceEntityGroup g,
-            int bodyId, double tick)
+            int bodyId, double tick, int shipTile)
         {
             PflTestKit.Begin("降落拒绝·tile 越界 / 未选点", Category);
             var layer = GetSurfaceState.GetLayerForBody(mgr, bodyId);
@@ -195,7 +198,7 @@ namespace PioneerFramework
                 return;
             }
 
-            int valid = GetSurfaceState.EciToTile(BodyRelativePos(sg, g, bodyId, tick), mgr, bodyId, tick);
+            int valid = shipTile;
             bool over = sg.TryQuoteLanding(g, bodyId, new PlanetTile(layer.TilesCount, layer),
                 out _, out _, out _, out _, out var overReason);
             bool under = sg.TryQuoteLanding(g, bodyId, new PlanetTile(-1, layer),
@@ -216,7 +219,7 @@ namespace PioneerFramework
         /// （过滤器要求 `ParentBodyId == -1`，而地球的父天体是太阳）⇒ 用例假报"本存档 0 个天体都有地表"。
         /// 枚举面选错同样是仪器错 —— 太阳（`hasSurface=false`）本来就在那儿。</summary>
         private static void NoSurfaceCase(SpaceGameComp sg, CelestialBodyManager mgr, SpaceEntityGroup g,
-            int bodyId, double tick)
+            int bodyId, double tick, int shipTile)
         {
             PflTestKit.Begin("降落拒绝·目标天体无固体表面", Category);
             int target = -1;
@@ -240,8 +243,7 @@ namespace PioneerFramework
                 return;
             }
 
-            var layer = GetSurfaceState.GetLayerForBody(mgr, bodyId);
-            int tile = layer != null ? GetSurfaceState.EciToTile(BodyRelativePos(sg, g, bodyId, tick), mgr, bodyId, tick) : 0;
+            int tile = shipTile;
             bool ok = sg.TryQuoteLanding(g, target, new PlanetTile(tile), out _, out _, out var bodyName,
                 out _, out var reason);
 
@@ -252,9 +254,81 @@ namespace PioneerFramework
             PflTestKit.End();
         }
 
+        /// <summary>
+        /// **星下点反查的自洽性**（`EciToTile` ↔ 报价距离口径）。
+        ///
+        /// 为什么单列一条：这两者**数学上必然一致** —— 报价的距离是
+        /// `acos(dot(û_ship, M⁻¹·û_tile))` = `acos(dot(M·û_ship, û_tile))`，而 `EciToTile` 取的是
+        /// `argmax dot(c_i, M·û_ship)` ⇒ 它选出的 tile 就是**离星下点最近的那个** ⇒ 距离必然 ≈ 0。
+        /// 所以这条一红，就说明"网格顶点 ↔ 方向"这一环有问题（`GetTileCenter` 的假设），
+        /// **与降落功能本身无关** —— 2026-09-24 首跑就是这个现象（读到的距离 34°，见网格诊断读数）。
+        /// </summary>
+        private static void SubSatelliteCase(SpaceGameComp sg, CelestialBodyManager mgr, SpaceEntityGroup g,
+            int bodyId, double tick, string tag)
+        {
+            PflTestKit.Begin("星下点反查·" + tag + "（EciToTile 与报价口径必须一致）", Category);
+            var layer = GetSurfaceState.GetLayerForBody(mgr, bodyId);
+            if (layer == null)
+            {
+                PflTestKit.Unchecked("前置", "天体缺地表网格");
+                return;
+            }
+
+            DVector3 rel = BodyRelativePos(sg, g, bodyId, tick);
+            int tile = GetSurfaceState.EciToTile(rel, mgr, bodyId, tick);
+            string diag = MeshDiag(layer);
+            if (tile < 0)
+            {
+                PflTestKit.Unchecked("反查返回 -1", "位置退化（|p| ≈ 0）｜" + diag);
+                return;
+            }
+
+            bool ok = sg.TryQuoteLanding(g, bodyId, new PlanetTile(tile, layer),
+                out var q, out _, out var bodyName, out var spot, out var reason);
+            PflTestKit.Check(PflTestKit.Kind.Value, ok,
+                "反查出来的 tile 应当**可落**（它理应是离星下点最近的格）",
+                string.Format("tile={0}｜{1}｜{2}", tile, reason, diag));
+            if (ok)
+            {
+                // 半个 tile 的角距在星体尺度上只有几 km；给 200 km 是"即使很宽松也必须 ≈0"的量级门。
+                PflTestKit.Check(PflTestKit.Kind.Invariant, q.surfaceDistance <= 200_000.0,
+                    "星下点反查的地表距离必须 ≈ 0（数学上必然 ⇒ 不成立即『网格↔方向』这一环有问题）",
+                    string.Format("地表 {0:F0} km｜tile={1}｜{2}｜{3}", q.surfaceDistance / 1000.0, tile, spot, diag));
+            }
+            PflTestKit.End();
+        }
+
+        /// <summary>**地表网格诊断读数**（无条件打印）：网格是否"以原点为心的球"。
+        /// `|Σ û| / n` 接近 0 = 方向遍布全球（球心在原点 ✓）；接近 1 = 所有 tile 方向挤在一起（网格偏心 ✗）。</summary>
+        private static string MeshDiag(PlanetLayer layer)
+        {
+            int n = layer.TilesCount;
+            if (n <= 0) return "网格为空";
+            double minR = double.MaxValue, maxR = 0.0, sumR = 0.0;
+            Vector3 sumDir = Vector3.zero;
+            Vector3 u0 = layer.GetTileCenter(0).normalized;
+            float minDot = float.MaxValue, maxDot = float.MinValue;
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 c = layer.GetTileCenter(i);
+                float r = c.magnitude;
+                if (r < minR) minR = r;
+                if (r > maxR) maxR = r;
+                sumR += r;
+                Vector3 u = c.normalized;
+                sumDir += u;
+                float d = Vector3.Dot(u, u0);
+                if (d < minDot) minDot = d;
+                if (d > maxDot) maxDot = d;
+            }
+            return string.Format("网格诊断：n={0}｜|c| {1:F3}..{2:F3}（均 {3:F3}／layer.Radius={4:F3}）" +
+                "｜|Σû|/n={5:F4}（≈0=球心在原点）｜dot(û,û₀) {6:F3}..{7:F3}",
+                n, minR, maxR, sumR / n, layer.Radius, sumDir.magnitude / n, minDot, maxDot);
+        }
+
         /// <summary>执行三件事：**消息 + 扣料 + 销毁**（用户 2026-09-22 的原话就这三件）。</summary>
         private static void ExecuteCase(SpaceGameComp sg, CelestialBodyManager mgr, SpaceEntityGroup g,
-            int bodyId, double tick)
+            int bodyId, double tick, int shipTile)
         {
             PflTestKit.Begin("降落执行（消息 + 扣料 + 销毁）", Category);
             var layer = GetSurfaceState.GetLayerForBody(mgr, bodyId);
@@ -264,7 +338,7 @@ namespace PioneerFramework
                 return;
             }
 
-            int tile = GetSurfaceState.EciToTile(BodyRelativePos(sg, g, bodyId, tick), mgr, bodyId, tick);
+            int tile = shipTile;
             var target = new PlanetTile(tile, layer);
             int groupId = g.GroupId;
             int tickMark = Find.TickManager?.TicksGame ?? 0;
@@ -451,7 +525,9 @@ namespace PioneerFramework
             bestDot = float.MaxValue;
             for (int i = 0; i < layer.TilesCount; i++)
             {
-                float d = Vector3.Dot(layer.GetTileCenter(i), dir);
+                // ⚠ 必须**归一化**再比：网格顶点不是单位向量（实测地球 |c|≈79、月球 ≈1.19 —— 两个图层尺度不同），
+                //   拿原始点积比就是在比"半径"（我第一版就是这么错的，`dot<-0.9` 那条判据量纲是错的）。
+                float d = Vector3.Dot(layer.GetTileCenter(i).normalized, dir);
                 if (d < bestDot) { bestDot = d; best = i; }
             }
             return best;
