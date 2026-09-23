@@ -18,12 +18,19 @@ namespace PioneerFramework
     /// </summary>
     public static class FrameworkSelfTest
     {
+        /// <summary>单独按按钮：重置 + 跑 + 打结论块。</summary>
         public static void Run()
         {
             PflTestKit.Reset();
+            RunCases();
+            PflTestKit.PrintVerdict("测试框架自检（首两用例）");
+        }
+
+        /// <summary>**只跑用例本体**（重置与打结论由调用方负责）—— 供「一键测试（全覆盖）」复用，判据不复制。</summary>
+        public static void RunCases()
+        {
             RunFactionCase();
             RunVisibilityCase();
-            PflTestKit.PrintVerdict("测试框架自检（首两用例）");
         }
 
         /// <summary>

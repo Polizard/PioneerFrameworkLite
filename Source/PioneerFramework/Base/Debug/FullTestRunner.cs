@@ -1,0 +1,74 @@
+using Verse;
+
+namespace PioneerFramework
+{
+    /// <summary>
+    /// **「一键测试（全覆盖）」入口**（S2 首片，2026-09-23）—— 把**一次调用能跑完**的验收收进统一判定，
+    /// 并把**跑不完 / 还没有判据的**逐条**显式登记**（而不是假装覆盖了）。
+    ///
+    /// ## 它现在覆盖什么
+    /// · **框架自检两用例**（阵营解析 [V12] / 可见性四字段 [P1]）—— 直接调用例本体，判据不复制；
+    /// · **引力场自检电池**（34 项，同步）—— 薄壳：跑完把它的通过/失败计数记成一条用例。
+    ///
+    /// ## 它**不**覆盖什么（显式登记：按本库纪律，"没跑"不许静默）
+    /// · **异步段**（弹群齐射/合并态聚合器/炮塔对射/无Map碰撞/轴向燃烧/月球域/弹头引力/漏靶 —— 8 阶段）：
+    ///   要等物理过程跑完，仍在「一键验收」（`PerfAcceptanceRunner`）里；本入口**只登记不重复跑**
+    ///   （重复跑会两个状态机抢同一批场景 ✗）。
+    /// · **场景类探针尚无可判定判据**的：撞击事件（着陆/坠毁 + 接地速度分界）· 降落报价/执行（可落/被拒/扣料/销毁）·
+    ///   交会阶梯（有界时间到达）· 炮塔六场景（命中）· 发射爬升（入轨）—— 属 **S3** 的活，逐条补判据后接进来。
+    /// </summary>
+    public static class FullTestRunner
+    {
+        public static void Run()
+        {
+            PflTestKit.Reset();
+
+            // ① 框架自检的用例本体（共享同一份判据）
+            FrameworkSelfTest.RunCases();
+
+            // ② 引力场自检电池（同步 34 项）—— 薄壳：不重写它的判据，只把结论收进来
+            PflTestKit.Begin("引力场自检电池（同步）", "00 验收");
+            try
+            {
+                GravityFieldSelfTest.Run();
+                PflTestKit.Check(PflTestKit.Kind.Invariant, GravityFieldSelfTest.LastFailed == 0,
+                    "电池失败项为 0",
+                    string.Format("通过 {0} / 失败 {1}", GravityFieldSelfTest.LastPassed, GravityFieldSelfTest.LastFailed));
+                if (GravityFieldSelfTest.LastFailed > 0)
+                {
+                    var detail = new System.Text.StringBuilder();
+                    var fails = GravityFieldSelfTest.LastFailures;
+                    for (int i = 0; i < fails.Count; i++)
+                    {
+                        if (i > 0) detail.Append("；");
+                        detail.Append(fails[i]);
+                    }
+                    PflTestKit.Check(PflTestKit.Kind.Value, false, "电池失败明细", detail.ToString());
+                }
+            }
+            catch (System.Exception e)
+            {
+                // 电池自己炸了 ⇒ 明确记失败（不是静默）
+                PflTestKit.Check(PflTestKit.Kind.Invariant, false, "电池异常", e.Message);
+            }
+            PflTestKit.End();
+
+            // ③ 显式登记"没覆盖的"（**这是本入口最重要的一节**：不许用沉默冒充全覆盖）
+            PflTestKit.Begin("未覆盖项登记（异步段 + 待补判据的场景）", "00 验收");
+            PflTestKit.CheckUnchecked("异步 8 阶段（弹群/对射/碰撞/燃烧/月球域/弹头/漏靶）",
+                "要等物理过程跑完 ⇒ 仍在「一键验收」里跑（本入口不重复跑，避免两个状态机抢同一批场景）");
+            PflTestKit.CheckUnchecked("撞击事件（着陆/坠毁 + 接地速度分界）",
+                "今天只有部署（`SpawnImpactEventTest`），判据在注释里、无机器判定 ⇒ S3");
+            PflTestKit.CheckUnchecked("降落报价/执行（可落/被拒/扣料/销毁）",
+                "今天只有日志文案（`SpawnLandingQuoteProbe`/`RunLandingExecutionProbe`）⇒ S3");
+            PflTestKit.CheckUnchecked("交会阶梯（有界时间到达 300 m / 2 m/s）",
+                "游戏内只有铺场 + 人读；纯核替代（阶梯端到端台架）尚未建 ⇒ S3/S4");
+            PflTestKit.CheckUnchecked("炮塔六场景（命中）· 发射爬升（入轨）",
+                "只有部署与人读 ⇒ S3");
+            PflTestKit.Check(PflTestKit.Kind.Coverage, true, "登记完成");
+            PflTestKit.End();
+
+            PflTestKit.PrintVerdict("一键测试（全覆盖）");
+        }
+    }
+}

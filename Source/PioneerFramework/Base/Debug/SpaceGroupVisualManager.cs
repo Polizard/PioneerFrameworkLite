@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Emit;
@@ -163,9 +163,11 @@ namespace PioneerFramework
                 {
                     if (Prefs.DevMode)
                     {
-                        double toMs = 1e3 / System.Diagnostics.Stopwatch.Frequency;
-                        Log.Message(string.Format("[帧耗时] 帧数={0} 平均={1:F2} ms/帧 最慢={2:F2} ms",
-                            _frameClocks, _frameTicksTotal * toMs / _frameClocks, _frameTicksMax * toMs));
+                        double toUs = 1e6 / System.Diagnostics.Stopwatch.Frequency;   // µs
+                        // ⚠ 2026-09-23 口径改 **µs**：原来 F2 的 ms 在本机量级下恒印 `0.00`（GUI 段实测平均 ~0.003 ms）
+                        //   ⇒ "探针看不懂的读数"；与 `[步耗时]` 统一到 µs（那边是 F1 µs）。
+                        Log.Message(string.Format("[帧耗时] 帧数={0} 平均={1:F1}µs/帧 最慢={2:F1}µs",
+                            _frameClocks, _frameTicksTotal * toUs / _frameClocks, _frameTicksMax * toUs));
                     }
                     _frameClocks = 0; _frameTicksTotal = 0; _frameTicksMax = 0;
                 }
@@ -399,9 +401,10 @@ namespace PioneerFramework
                 {
                     if (Prefs.DevMode)
                     {
-                        double toMs = 1e3 / System.Diagnostics.Stopwatch.Frequency;
-                        Log.Message(string.Format("[帧耗时·GUI] 帧数={0} 平均={1:F2} ms/帧 最慢={2:F2} ms",
-                            _guiClocks, _guiTicksTotal * toMs / _guiClocks, _guiTicksMax * toMs));
+                        double toUs = 1e6 / System.Diagnostics.Stopwatch.Frequency;   // µs
+                        // ⚠ 2026-09-23 同上改 µs（这一条原来恒印 `平均=0.00 ms/帧`，最慢才有值）
+                        Log.Message(string.Format("[帧耗时·GUI] 帧数={0} 平均={1:F1}µs/帧 最慢={2:F1}µs",
+                            _guiClocks, _guiTicksTotal * toUs / _guiClocks, _guiTicksMax * toUs));
                     }
                     _guiClocks = 0; _guiTicksTotal = 0; _guiTicksMax = 0;
                 }
