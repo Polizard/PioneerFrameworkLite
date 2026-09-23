@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using MechJebLib.Functions;
 using MechJebLib.TwoBody;
 using System.Collections.Generic;
@@ -33,6 +33,14 @@ namespace PioneerFramework
 
         // ── 自动检验（用户 2026-09-19 要求：布置完执行到就自己出结论，不必手动按「检查」）──
         private static bool autoPending;
+        private static int autoStagedTick;                 // 登记时刻（真实 tick）——超时判据用
+        /// <summary>
+        /// 等**真实 tick** 上限：超过就出 UNCOVERED 结论（2026-09-24 补）。
+        /// 为什么必须有：原来"等一个可能永不到来的条件"没有任何出口 ⇒ 点火没发生 / 燃烧被中止时
+        /// **一个字都不打**，用户只能干等（本库纪律：未达成 ⇒ UNCOVERED + 写清在等什么，绝不沉默）。
+        /// 60,000 真实 tick ≈ 1× 下 17 分钟、3× 下 5.6 分钟；真跑的燃烧（几分钟游戏时间）绰绰有余。
+        /// </summary>
+        private const int AutoTimeoutRealTicks = 60000;
         private static int autoGroupId = -1;
         private static double autoNodeTick, autoPlanDv;
         private static double autoBurnSeconds;
@@ -50,6 +58,19 @@ namespace PioneerFramework
             var sg = Current.Game?.GetComponent<SpaceGameComp>();
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (sg == null || mgr == null) return;
+
+            int nowReal = Find.TickManager?.TicksGame ?? 0;
+            if (nowReal - autoStagedTick > AutoTimeoutRealTicks)
+            {
+                autoPending = false;
+                var still = sg.GetGroupById(autoGroupId);
+                Log.Message(string.Format(
+                    "[真飞验收] **UNCOVERED**：等了 {0} 真实 tick 仍没等到燃烧结束且过节点（编队{1}）" +
+                    "⇒ 结论不出（不是通过，也不是失败）｜要看原因请开 [Burn]/[Thrust] 日志",
+                    AutoTimeoutRealTicks,
+                    still == null ? "已消失" : string.Format("仍在，appliedDv={0:F1} m/s", still.appliedBurnDV)));
+                return;
+            }
 
             SpaceEntityGroup? g = sg.GetGroupById(autoGroupId);
             if (g == null) { autoPending = false; return; }
@@ -136,6 +157,7 @@ namespace PioneerFramework
 
             stagedGroupId = g.GroupId;
             autoPending = true;
+            autoStagedTick = Find.TickManager?.TicksGame ?? 0;
             autoGroupId = g.GroupId;
             stagedNodeTick = (int)Math.Round(nodes[0].ut);
             stagedPlanDv = nodes[0].dV.magnitude;

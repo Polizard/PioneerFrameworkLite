@@ -1,4 +1,4 @@
-using Verse;
+﻿using Verse;
 
 namespace PioneerFramework
 {
@@ -59,10 +59,26 @@ namespace PioneerFramework
             // ③ 着陆判据（S3，2026-09-23）：同步段 = 报价/距离门/跨层错配/越界/缺表面/执行三件事
             LandingAcceptanceRunner.RunSync();
 
+            // ③b 三个**同步**跑批器（2026-09-24 收编）：不重写它们的判据，只把结论收进来。
+            //     ⚠ 0 判据 ⇒ UNCHECKED（"跑批器没跑起来"不许冒充通过）。
+            SyncBattery("适配层一键验收（同步 · 借判据；收工清场）", AdapterAcceptanceRunner.Run,
+                () => AdapterAcceptanceRunner.LastChecks, () => AdapterAcceptanceRunner.LastFailures,
+                "铺场前置不满足（无 SpaceGameComp / 天体管理器）⇒ 一条判据都没跑", cleanup: true);
+            SyncBattery("计划编辑器验收（同步 · 借判据；**会顺手打开规划器窗口**）", PlanEditorAcceptanceRunner.Run,
+                () => PlanEditorAcceptanceRunner.LastChecks, () => PlanEditorAcceptanceRunner.LastFailures,
+                "前置不满足 ⇒ 一条判据都没跑（它自己会打结论块说明）");
+            // 星座自检自己会清场（`Cleanup(comp)`）⇒ 这里不用再收
+            SyncBattery("星座自检（同步 · 借判据；自带清场）", ConstellationSelfTest.Run,
+                () => ConstellationSelfTest.LastPassed + ConstellationSelfTest.LastFailed,
+                () => ConstellationSelfTest.LastFailed,
+                "前置不满足 ⇒ 一条判据都没跑");
+
             // ④ 显式登记"没覆盖的"（**这是本入口最重要的一节**：不许用沉默冒充全覆盖）
             PflTestKit.Begin("未覆盖项登记（异步段 + 待补判据的场景）", "00 验收");
             PflTestKit.CheckUnchecked("异步 8 阶段（弹群/对射/碰撞/燃烧/月球域/弹头/漏靶）",
                 "要等物理过程跑完 ⇒ 仍在「一键验收」里跑（本入口不重复跑，避免两个状态机抢同一批场景）");
+            PflTestKit.CheckUnchecked("四个**长耗时**燃烧场景（真飞 / 燃烧 A/B / 相位三点 / 架构验证）",
+                "要等真实燃烧跑完（几分钟游戏时间）⇒ 按各自按钮跑；**它们现在都有超时**（等不到会打 UNCOVERED 一行，不再永久静默）");
             PflTestKit.CheckUnchecked("交会阶梯（有界时间到达 300 m / 2 m/s）",
                 "游戏内只有铺场 + 人读；纯核替代（阶梯端到端台架）尚未建 ⇒ S3/S4");
             PflTestKit.CheckUnchecked("炮塔六场景（命中）· 发射爬升（入轨）",
@@ -77,6 +93,43 @@ namespace PioneerFramework
             LandingAcceptanceRunner.StageImpact();
 
             PflTestKit.PrintVerdict("一键测试（全覆盖）");
+        }
+
+        /// <summary>
+        /// 把一个**同步**跑批器收成一条用例：跑它 → 读它的判据计数 → 记结论。
+        /// 判据本体不复制（借用它的计数）；**0 判据 ⇒ UNCHECKED**（不是通过）。
+        /// </summary>
+        private static void SyncBattery(string name, System.Action run,
+            System.Func<int> checks, System.Func<int> failures, string emptyWhy, bool cleanup = false)
+        {
+            PflTestKit.Begin(name, "00 验收");
+            if (cleanup) PflTestKit.SnapshotGroups();   // 只清"本段新建的"
+            try
+            {
+                run();
+            }
+            catch (System.Exception e)
+            {
+                // 跑批器自己炸了 ⇒ 明确记失败（不是静默）
+                PflTestKit.Check(PflTestKit.Kind.Invariant, false, "跑批异常", e.Message);
+                PflTestKit.End();
+                return;
+            }
+            int c = checks();
+            if (c <= 0)
+            {
+                PflTestKit.Unchecked("0 判据", emptyWhy);
+                return;
+            }
+            int f = failures();
+            PflTestKit.Check(PflTestKit.Kind.Invariant, f == 0, "失败判据为 0",
+                string.Format("判据 {0} 条 / 失败 {1} 条", c, f));
+            if (cleanup)
+            {
+                int cleared = PflTestKit.CleanupSince();
+                PflTestKit.Note(string.Format("清场销毁了 {0} 个跑批器自建的编队（**不留资产**）", cleared));
+            }
+            PflTestKit.End();
         }
     }
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using MechJebLib.Primitives;
@@ -33,6 +33,10 @@ namespace PioneerFramework
 
         private static int checks;
         private static int failures;
+
+        /// <summary>最近一次的判据数 / 失败数（供统一入口 `FullTestRunner` 收进结论，不重复跑它）。</summary>
+        public static int LastChecks => checks;
+        public static int LastFailures => failures;
         private static readonly StringBuilder sb = new StringBuilder();
 
         private static void Check(bool ok, string label, string detail)

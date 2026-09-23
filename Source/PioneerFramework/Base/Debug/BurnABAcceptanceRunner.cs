@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using RimWorld;
@@ -40,6 +40,9 @@ namespace PioneerFramework
 
         private static readonly List<Arm> arms = new List<Arm>();
         private static bool pending;
+        private static int stagedTick;                     // 登记时刻（真实 tick）——超时判据用
+        /// <summary>等真实 tick 上限（见 LiveBurn 里同名字段的理由：不许永久静默）。</summary>
+        private const int TimeoutRealTicks = 60000;
 
         private static readonly double[] Orbits = { 7_000_000.0, 6_600_000.0, 8_500_000.0, 7_800_000.0 };
         private static readonly string[] Variants = { "A基准", "C冻结方向", "D全油门", "B无轨道保持" };
@@ -74,6 +77,7 @@ namespace PioneerFramework
             Log.Message(sb.ToString());
             Messages.Message($"矩阵对照：已布置 {arms.Count} 条船，烧完自动出表", MessageTypeDefOf.NeutralEvent);
             pending = arms.Count > 0;
+            stagedTick = Find.TickManager?.TicksGame ?? 0;
         }
 
         private static void Spawn(SpaceGameComp sg, CelestialBodyManager mgr, double mu,
@@ -130,6 +134,8 @@ namespace PioneerFramework
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (sg == null || mgr == null) return;
             double tick = TimeScaleManager.GetPhysicsTickSafe();
+            int nowReal = Find.TickManager?.TicksGame ?? 0;
+            bool timedOut = nowReal - stagedTick > TimeoutRealTicks;
 
             bool allDone = true;
             foreach (var a in arms)
@@ -146,6 +152,20 @@ namespace PioneerFramework
                 a.Argp = ov.argumentOfPeriapsis * 180.0 / Math.PI;
                 a.Applied = g.appliedBurnDV;
                 a.Captured = true;
+            }
+            if (!allDone && timedOut)
+            {
+                // 超时也出结论（按**已捕获**的手臂汇总 ⇒ 矩阵里缺哪几行看得见）——不许永久静默
+                var miss = new StringBuilder();
+                foreach (var a in arms)
+                    if (!a.Captured)
+                        miss.Append(' ').Append(a.Variant).Append('@').Append((a.R0 / 1e3).ToString("F0")).Append("km");
+                Log.Message(string.Format(
+                    "[燃烧 A/B] **UNCOVERED**：{0} 真实 tick 内仍有手臂没跑完（{1}）⇒ 下面按**已捕获**的手臂汇总",
+                    TimeoutRealTicks, miss.Length > 0 ? miss.ToString().Trim() : "见列"));
+                pending = false;
+                Report();
+                return;
             }
             if (!allDone) return;
             pending = false;

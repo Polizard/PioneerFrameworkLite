@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using MechJebLib.Functions;
@@ -46,6 +46,14 @@ namespace PioneerFramework
             { "静止轨道（同步）", new[] { 45.0 } },            // 度
             { "对齐速度", new double[0] },                    // 目标 = 自己 ⇒ 期望 Δv ≈ 0
         };
+
+        // 最近一次的判据数与结果（供统一入口收进结论；`Run()` 里是局部量，末尾回填）
+        private static int lastChecks, lastFailures, lastOpSucceeded, lastOpRefused;
+        /// <summary>最近一次的判据数 / 失败数（0 判据 ⇒ 调用方按 UNCHECKED 处理）。</summary>
+        public static int LastChecks => lastChecks;
+        public static int LastFailures => lastFailures;
+        public static int LastOpSucceeded => lastOpSucceeded;
+        public static int LastOpRefused => lastOpRefused;
 
         public static void Run()
         {
@@ -371,6 +379,11 @@ namespace PioneerFramework
                 from?.ClearManeuvers();
                 to?.ClearManeuvers();
             }
+
+            lastChecks = checks;
+            lastFailures = failures;
+            lastOpSucceeded = opSucceeded;
+            lastOpRefused = opRefused;
 
             // ── E. 结论 ──
             sb.Append("\n\n── D. 结论 ──");

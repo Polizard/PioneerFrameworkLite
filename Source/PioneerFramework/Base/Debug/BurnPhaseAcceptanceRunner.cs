@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using RimWorld;
@@ -53,6 +53,9 @@ namespace PioneerFramework
 
         private static readonly List<Arm> arms = new List<Arm>();
         private static bool pending;
+        private static int stagedTick;                     // 登记时刻（真实 tick）——超时判据用
+        /// <summary>等真实 tick 上限（见 LiveBurn 里同名字段的理由：不许永久静默）。</summary>
+        private const int TimeoutRealTicks = 60000;
 
         public static void Stage()
         {
@@ -109,6 +112,7 @@ namespace PioneerFramework
             Log.Message(sb.ToString());
             Messages.Message($"相位三点：已布置 {arms.Count} 条船", MessageTypeDefOf.NeutralEvent);
             pending = arms.Count > 0;
+            stagedTick = Find.TickManager?.TicksGame ?? 0;
         }
 
         /// <summary>每物理步：各船烧完并过节点后**各自**记账（避免读取时刻差异）。</summary>
@@ -119,6 +123,8 @@ namespace PioneerFramework
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (sg == null || mgr == null) return;
             double tick = TimeScaleManager.GetPhysicsTickSafe();
+            int nowReal = Find.TickManager?.TicksGame ?? 0;
+            bool timedOut = nowReal - stagedTick > TimeoutRealTicks;
 
             bool allDone = true;
             foreach (var a in arms)
@@ -133,6 +139,17 @@ namespace PioneerFramework
                 a.DA = (ov.semiMajorAxis - a.ExpectedSma) / 1000.0;
                 a.Applied = g.appliedBurnDV;
                 a.Captured = true;
+            }
+            if (!allDone && timedOut)
+            {
+                int n = 0;
+                foreach (var a in arms) if (!a.Captured) n++;
+                Log.Message(string.Format(
+                    "[相位三点] **UNCOVERED**：{0} 真实 tick 内仍有 {1} 条手臂没跑完 ⇒ 下面按**已捕获**的手臂汇总",
+                    TimeoutRealTicks, n));
+                pending = false;
+                Report();
+                return;
             }
             if (!allDone) return;
             pending = false;

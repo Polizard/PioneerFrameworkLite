@@ -25,6 +25,10 @@ namespace PioneerFramework
 
         private static int passed;
         private static int failed;
+
+        /// <summary>最近一次的通过 / 失败项数（供统一入口收进结论）。</summary>
+        public static int LastPassed => passed;
+        public static int LastFailed => failed;
         private static readonly StringBuilder log = new StringBuilder();
 
         public static void Run()
