@@ -173,19 +173,19 @@ namespace PioneerFramework.Tests
     {
         private static readonly double Mu = OrbitMath.GM;
         private const double R0 = 7_000_000.0;
-        private static readonly MechJebLib.Primitives.V3 Pole = new MechJebLib.Primitives.V3(0, 0, 1);
+        private static readonly DVector3 Pole = new DVector3(0, 0, 1);
 
         private static OrbitView Eccentric()
         {
             double vc = Math.Sqrt(Mu / R0);
-            return OrbitView.FromStateVectors(new MechJebLib.Primitives.V3(R0, 0, 0),
-                new MechJebLib.Primitives.V3(0, Math.Sqrt(1.3) * vc, 0), Mu, 0.0, Pole, R0 * 0.2);
+            return OrbitView.FromStateVectors(new DVector3(R0, 0, 0),
+                new DVector3(0, Math.Sqrt(1.3) * vc, 0), Mu, 0.0, Pole, R0 * 0.2);
         }
 
-        private static (double eps, double h, double e) Props(MechJebLib.Primitives.V3 r, MechJebLib.Primitives.V3 v)
+        private static (double eps, double h, double e) Props(DVector3 r, DVector3 v)
         {
             double eps = v.sqrMagnitude / 2.0 - Mu / r.magnitude;
-            double h = MechJebLib.Primitives.V3.Cross(r, v).magnitude;
+            double h = DVector3.Cross(r, v).magnitude;
             double e = Math.Sqrt(Math.Max(0.0, 1.0 + 2.0 * eps * h * h / (Mu * Mu)));
             return (eps, h, e);
         }
@@ -195,7 +195,7 @@ namespace PioneerFramework.Tests
         {
             var o = Eccentric();
             double ut = o.NextPeriapsisTime(0.0);
-            MechJebLib.Primitives.V3 dv = OrbitalManeuverCalculator.DeltaVToCircularize(o, ut);
+            DVector3 dv = OrbitalManeuverCalculator.DeltaVToCircularize(o, ut);
 
             // 基准：在节点起燃、居中
             Assert.True(BurnArc.TryPredict(o, ut, dv, 98.0, out BurnArc.Result ideal, out _));
@@ -203,13 +203,13 @@ namespace PioneerFramework.Tests
             // 假设：整条弧晚 2 秒（= 每步冲量晚一步施加的净效果）
             Assert.True(BurnArc.TryPredict(o, ut + 2.0, dv, 98.0, out BurnArc.Result lagged, out _));
 
-            (MechJebLib.Primitives.V3 r0, MechJebLib.Primitives.V3 v0) = o.RightHandedStateVectorsAtUT(ut);
+            (DVector3 r0, DVector3 v0) = o.RightHandedStateVectorsAtUT(ut);
             (double eps0, double h0, double _) = Props(r0, v0);
 
             // 两者都在"节点 + 100 s"处读（同一时刻、同一系）
             double readUt = ut + 100.0;
-            (MechJebLib.Primitives.V3 ri, MechJebLib.Primitives.V3 vi) = ideal.achieved.RightHandedStateVectorsAtUT(readUt);
-            (MechJebLib.Primitives.V3 rl, MechJebLib.Primitives.V3 vl) = lagged.achieved.RightHandedStateVectorsAtUT(readUt);
+            (DVector3 ri, DVector3 vi) = ideal.achieved.RightHandedStateVectorsAtUT(readUt);
+            (DVector3 rl, DVector3 vl) = lagged.achieved.RightHandedStateVectorsAtUT(readUt);
 
             (double epsI, double hI, double eI) = Props(ri, vi);
             (double epsL, double hL, double eL) = Props(rl, vl);

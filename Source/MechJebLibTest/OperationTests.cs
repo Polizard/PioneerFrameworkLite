@@ -23,14 +23,17 @@ namespace PioneerFramework.Tests
     {
         private static readonly double Mu = OrbitMath.GM;
         private const double R0 = 7_000_000.0;
-        private static readonly V3 Pole = new V3(0, 0, 1); // 适配层参考系：+z
+        private static readonly V3 Pole = new V3(0, 1, 0); // 极轴 +Y（批4 P4 极轴统一；旧值与适配层的 +z 一起作废）
         private const double BodyR = 5_000_000.0;
 
-        /// <summary>偏心 0.3 的椭圆（`r·v = 0` ⇒ `e = v²R/μ − 1`），近心点正好在 `ut = epoch` 处。</summary>
+        /// <summary>偏心 0.3 的椭圆（`r·v = 0` ⇒ `e = v²R/μ − 1`），近心点正好在 `ut = epoch` 处。
+        /// 构造向量按 `(x, y, z)_新 = (x, z, −y)_旧` 换元（批4 P4 极轴统一 +Y ⇒ 新赤道面 = x–z 平面；
+        /// 本轨仍是**赤道**轨：`h ∥ +Y`）。</summary>
         private static OrbitView Eccentric(double epoch = 0.0)
         {
             double speed = System.Math.Sqrt(1.3 * Mu / R0);
-            return OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, speed, 0), Mu, epoch, Pole, BodyR);
+            // 位置 `(R0,0,0)` 在 x 轴上 ⇒ 换元不变；速度 `(0,speed,0) → (0,0,−speed)`
+            return OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, 0, -speed), Mu, epoch, Pole, BodyR);
         }
 
         private static OrbitView CircularFrom(V3 r, V3 v, double epoch = 0.0)
@@ -168,7 +171,8 @@ namespace PioneerFramework.Tests
         public void Operation_ErrorContract_OperationExceptionBecomesErrorMessageAndNoNodes()
         {
             double vEsc = System.Math.Sqrt(2.0 * Mu / R0);
-            var hyp = OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, vEsc * 1.4, 0), Mu, 0.0, Pole, BodyR);
+            // 速度按 `(x, y, z)_新 = (x, z, −y)_旧` 换元（批4 P4）：仍是"赤道面内"
+            var hyp = OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, 0, -vEsc * 1.4), Mu, 0.0, Pole, BodyR);
             Assert.True(hyp.eccentricity > 1.0);
 
             var op = new OperationCircularize();
@@ -371,10 +375,11 @@ namespace PioneerFramework.Tests
         {
             var o = Eccentric();
 
-            // 目标：另一个半径上的圆轨（同一个中心天体 ⇒ 同一个 mu）
+            // 目标：另一个半径上的圆轨（同一个中心天体 ⇒ 同一个 mu）。
+            // 构造向量按 `(x, y, z)_新 = (x, z, −y)_旧` 换元（批4 P4）⇒ 仍是赤道圆轨（`h ∥ +Y`）
             double rT = R0 * 1.6;
             var targetOrbit = OrbitView.FromStateVectors(new V3(rT, 0, 0),
-                new V3(0, System.Math.Sqrt(Mu / rT), 0), Mu, 0.0, Pole, BodyR);
+                new V3(0, 0, -System.Math.Sqrt(Mu / rT)), Mu, 0.0, Pole, BodyR);
             var target = new FixedTargetView(targetOrbit, identityGroupId: 2);
 
             var op = new OperationKillRelVel();

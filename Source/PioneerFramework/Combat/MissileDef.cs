@@ -12,7 +12,7 @@ namespace PioneerFramework.Combat
     /// </summary>
     public class MissileDef : Def
     {
-        // ── 弹体（无 Map body Part；SpacePart.localBoundsSize = bodySize）──
+        // ── 弹体（无 Map body Part；SpacePart.boundsSizeShip = bodySize）──
         /// <summary>body Part 局部尺寸（m，定 AABB；主推方向型长 body 沿主推轴拉长）。</summary>
         public Vector3 bodySize = new Vector3(2f, 2f, 8f);
 
@@ -64,7 +64,7 @@ namespace PioneerFramework.Combat
         public bool mainThrustDirectional = true;
 
         /// <summary>主推轴（body 局部，推力方向；默认 -Z 向后）。</summary>
-        public Vector3 mainAxisLocal = new Vector3(0f, 0f, -1f);
+        public Vector3 mainAxisShip = new Vector3(0f, 0f, -1f);
 
         /// <summary>矢量锥半角（度，默认 10°，同 DefaultThrustConeCos）。</summary>
         public float coneDegrees = 10f;
@@ -143,7 +143,7 @@ namespace PioneerFramework.Combat
         public float ConeCos => Mathf.Cos(coneDegrees * Mathf.Deg2Rad);
 
         /// <summary>主推轴（world 计算用，normalized）。</summary>
-        public Vector3 MainAxisLocalNormalized => mainAxisLocal.normalized;
+        public Vector3 MainAxisShipNormalized => mainAxisShip.normalized;
 
         // ── 弱 RCS 副网（全矢量小推力，主推未对准/主网尽时可用；D15/D13 同构）──
         /// <summary>是否带弱 RCS 副网（默认有：主推对准期/修正期仍能出力）。</summary>

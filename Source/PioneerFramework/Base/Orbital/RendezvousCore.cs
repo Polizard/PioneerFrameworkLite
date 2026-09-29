@@ -9,7 +9,7 @@ namespace PioneerFramework
     /// 由纯测试（RendezvousCoreTests）钉住行为；游戏侧（SpaceGameComp 引导 / RendezvousPlanner）
     /// 只负责取状态、传委托、用结果。
     ///
-    /// ⚠ 参考系约定与引导一致：全部量都在**中心天体参考系**里（r/v 用 group.localPosition/localVelocity，
+    /// ⚠ 参考系约定与引导一致：全部量都在**中心天体参考系**里（r/v 用 group.positionBody/velocityBody，
     /// 目标状态由调用方的 predict 委托给出同系值）。对绕月这类子天体，这是标准 SOI 拼接近似
     /// （与既有引导的 Lambert 用法同口径，不是本类引入的新假设）。
     /// </summary>
@@ -23,7 +23,7 @@ namespace PioneerFramework
             public double WaitSeconds;
             /// <summary>转移时长（秒）。</summary>
             public double TransferSeconds;
-            /// <summary>出发段 Δv（在出发点的世界/中心天体参考系里，直接作为 plannedWorldDv）。</summary>
+            /// <summary>出发段 Δv（在出发点的世界/中心天体参考系里，直接作为 plannedDvSystem）。</summary>
             public DVector3 DepartureDv;
             /// <summary>到达段 Δv 的模（信息用；精确交会由闭环引导做终端消速）。</summary>
             public double ArrivalDv;

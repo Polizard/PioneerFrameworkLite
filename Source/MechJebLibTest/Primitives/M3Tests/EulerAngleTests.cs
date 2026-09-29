@@ -269,9 +269,9 @@ namespace MechJebLibTest.Primitives.M3Tests
             double pitch = PI / 4;
             double yaw = PI / 3;
 
-            var qRoll = Q3.AngleAxis(roll, V3.forward);
-            var qPitch = Q3.AngleAxis(pitch, V3.right);
-            var qYaw = Q3.AngleAxis(yaw, V3.down);
+            var qRoll = Q3.AngleAxis(roll, V3.bodyForward);
+            var qPitch = Q3.AngleAxis(pitch, V3.bodyRight);
+            var qYaw = Q3.AngleAxis(yaw, V3.bodyDown);
             Q3 q = qYaw * qPitch * qRoll;
 
             var mFromEuler = M3.EulerAngles(roll, pitch, yaw);

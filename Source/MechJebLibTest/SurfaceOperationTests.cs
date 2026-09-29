@@ -14,7 +14,15 @@ namespace PioneerFramework.Tests
     {
         private static readonly double Mu = OrbitMath.GM;
         private const double R0 = 7_000_000.0;
-        private static readonly V3 Pole = new V3(0, 0, 1);
+        /// <summary>
+        /// 极轴 = **+Y**（批4 P4 极轴统一：适配层与游戏世界同系，与 `SurfaceFrame` 的自转轴一致）。
+        ///
+        /// ⚠ 下面手写的状态矢量（方向/位置/速度）一律按 `(x, y, z)_新 = (x, z, −y)_旧` 换元
+        /// —— 它是 **det = +1 的旋转**、同一个物理轨道（同一个极轴、同一个经度口径）⇒
+        /// **帧不变标量期望（倾角/半径/周期/速度大小/Δv 幅值/经度/真近点角）一律不动**，
+        /// 只有矢量分量的期望需要跟着换元（本文件没有直接断言矢量分量，断言都走帧不变的标量）。
+        /// </summary>
+        private static readonly V3 Pole = new V3(0, 1, 0);
         private const double BodyR = 5_000_000.0;
 
         /// <summary>倾角 30° 的圆轨（**必须非赤道**，否则"赤道交点"不存在、`DeltaVToShiftLAN` 会抛）。</summary>
@@ -22,15 +30,17 @@ namespace PioneerFramework.Tests
         {
             double vc = System.Math.Sqrt(Mu / R0);
             double inc = System.Math.PI / 6;
+            // `(x, y, z)_新 = (x, z, −y)_旧` 换元后的同一个轨道：t=0 仍在升交点（新框架极轴 +Y 下
+            // 该升交点在经度 90°——与旧口径逐位相同），倾角仍是 30°、仍在赤道外。
             return OrbitView.FromStateVectors(new V3(R0, 0, 0),
-                new V3(0, vc * System.Math.Cos(inc), vc * System.Math.Sin(inc)), Mu, 0.0, Pole, BodyR);
+                new V3(0, vc * System.Math.Sin(inc), -vc * System.Math.Cos(inc)), Mu, 0.0, Pole, BodyR);
         }
 
         /// <summary>轨道的**升交点惯性系经度（度）**——与 `DeltaVToShiftLAN` 的目标同口径。</summary>
         private static double LanDeg(OrbitView o, double ut, double omega = 0.0)
         {
             V3 an = o.AscendingNodePositionEquatorial(ut);
-            DVector3 g = OrbitView.ToD(OrbitView.AdapterToGameWorld(an));
+            DVector3 g = OrbitView.AdapterToGameWorld(an);
             double lonFixed = SurfaceFrame.EciToLongLat(g, omega, ut).lonRad;
             double deg = (lonFixed + omega * ut) * 180.0 / System.Math.PI;
             double m = deg % 360.0;
@@ -63,7 +73,8 @@ namespace PioneerFramework.Tests
         [Fact]
         public void ShiftLan_OnEquatorialOrbit_Throws()
         {
-            var o = OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, System.Math.Sqrt(Mu / R0), 0), Mu, 0.0, Pole, BodyR);
+            // 换元后同一件事：`h ∥ 极轴` ⇒ 仍是无交点的赤道轨（新框架下赤道面 = x–z 平面）
+            var o = OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, 0, -System.Math.Sqrt(Mu / R0)), Mu, 0.0, Pole, BodyR);
             Assert.False(o.AscendingNodeEquatorialExists());
             Assert.Throws<OperationException>(() => OrbitalManeuverCalculator.DeltaVToShiftLAN(o, 0.0, 45.0));
         }
@@ -75,7 +86,7 @@ namespace PioneerFramework.Tests
             double vc = System.Math.Sqrt(Mu / R0);
             double inc = 5.0 * System.Math.PI / 180.0; // 5° < 10° 门限
             var o = OrbitView.FromStateVectors(new V3(R0, 0, 0),
-                new V3(0, vc * System.Math.Cos(inc), vc * System.Math.Sin(inc)), Mu, 0.0, Pole, BodyR);
+                new V3(0, vc * System.Math.Sin(inc), -vc * System.Math.Cos(inc)), Mu, 0.0, Pole, BodyR);
 
             var op = new OperationLan();
             op.TimeSelector._currentTimeRef = 2; // X_FROM_NOW
@@ -126,7 +137,7 @@ namespace PioneerFramework.Tests
             const double d2r = System.Math.PI / 180.0;
             (V3 r, V3 v) = o.RightHandedStateVectorsAtUT(ut);
 
-            var latLon = SurfaceFrame.EciToLongLat(OrbitView.ToD(OrbitView.AdapterToGameWorld(r)), o.angularVelocity, ut);
+            var latLon = SurfaceFrame.EciToLongLat(OrbitView.AdapterToGameWorld(r), o.angularVelocity, ut);
             double burnLat = latLon.latRad / d2r;
             double burnLon = (latLon.lonRad + o.angularVelocity * ut) / d2r; // 惯性系经度 = 上游的 `+ rotationAngle`
 
@@ -303,7 +314,8 @@ namespace PioneerFramework.Tests
         private static OrbitView EquatorialRotating()
         {
             double vc = System.Math.Sqrt(Mu / R0);
-            return OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, vc, 0), Mu, 0.0,
+            // 赤道轨（换元后 `h ∥ +Y`，与 `Pole` 同向）：`v` 由 +y 换元到 −z，仍在 x–z 赤道面内
+            return OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, 0, -vc), Mu, 0.0,
                 Pole, BodyR, double.NaN, Omega);
         }
 
@@ -312,14 +324,14 @@ namespace PioneerFramework.Tests
             double vc = System.Math.Sqrt(Mu / R0);
             double inc = System.Math.PI / 6;
             return OrbitView.FromStateVectors(new V3(R0, 0, 0),
-                new V3(0, vc * System.Math.Cos(inc), vc * System.Math.Sin(inc)), Mu, 0.0,
+                new V3(0, vc * System.Math.Sin(inc), -vc * System.Math.Cos(inc)), Mu, 0.0,
                 Pole, BodyR, double.NaN, Omega);
         }
 
         /// <summary>`pos`（**惯性**矢量）在 `t` 时刻**正下方**那条经线的经度（度）。</summary>
         private static double FixedLonDeg(V3 pos, double t)
         {
-            DVector3 g = OrbitView.ToD(OrbitView.AdapterToGameWorld(pos));
+            DVector3 g = OrbitView.AdapterToGameWorld(pos);
             double deg = SurfaceFrame.EciToLongLat(g, Omega, t).lonRad * 180.0 / System.Math.PI;
             double m = deg % 360.0;
             return m < 0.0 ? m + 360.0 : m;
@@ -350,7 +362,7 @@ namespace PioneerFramework.Tests
             // 残差只来自 `周期↔SMA↔状态矢量` 的浮点往返）⇒ 定在 1e-9°，留三个数量级余量。
             Assert.True(err < 1e-9,
                 $"请求地面经度 {want}°，一圈后实得 {lonAtReturn:F6}°（差 {err:E3}°）" +
-                $"｜新周期 {after.period:F1}s｜|Δv|={MechJebLib.Primitives.V3.Distance(v2, v):F3} m/s");
+                $"｜新周期 {after.period:F1}s｜|Δv|={DVector3.Distance(v2, v):F3} m/s");
         }
 
         /// <summary>
@@ -368,8 +380,8 @@ namespace PioneerFramework.Tests
             V3 v2 = v + dv;
 
             // ① 切向：Δv 与速度平行（否则会顺带改偏心率/拱线方向）
-            Assert.True(MechJebLib.Primitives.V3.Cross(dv, v.normalized).magnitude < 1e-6 * dv.magnitude,
-                $"拱点燃烧必须是切向的（横向分量 {MechJebLib.Primitives.V3.Cross(dv, v.normalized).magnitude:E3}）");
+            Assert.True(DVector3.Cross(dv, v.normalized).magnitude < 1e-6 * dv.magnitude,
+                $"拱点燃烧必须是切向的（横向分量 {DVector3.Cross(dv, v.normalized).magnitude:E3}）");
 
             // ② 点火点仍是新轨道的一个拱点
             double pe = Astro.PeriapsisFromStateVectors(Mu, r, v2);

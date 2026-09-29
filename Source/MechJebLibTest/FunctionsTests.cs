@@ -61,25 +61,27 @@ namespace MechJebLibTest.MathsTests
         [Fact]
         public void ECIToPitchHeadingTest1()
         {
-            (double pitch, double heading) = Astro.ECIToPitchHeading(new V3(10, 10, 0), new V3(0, 0, 10));
+            // §13 极轴 +Y：输入按 (x, y, z)_新 = (x, z, −y)_旧 换元（这是个旋转、det=+1）。
+            // pitch/heading 是帧不变标量 ⇒ **期望一个都不动**。
+            (double pitch, double heading) = Astro.ECIToPitchHeading(new V3(10, 0, -10), new V3(0, 10, 0));
             Assert.Equal(0, pitch, 9);
             Assert.Equal(0, heading, 9);
-            (pitch, heading) = Astro.ECIToPitchHeading(new V3(10, 10, 0), new V3(0, 0, -10));
+            (pitch, heading) = Astro.ECIToPitchHeading(new V3(10, 0, -10), new V3(0, -10, 0));
             Assert.Equal(0, pitch, 9);
             Assert.Equal(Deg2Rad(180), heading, 9);
-            (pitch, heading) = Astro.ECIToPitchHeading(new V3(10, 10, 0), new V3(-10, 10, 0));
+            (pitch, heading) = Astro.ECIToPitchHeading(new V3(10, 0, -10), new V3(-10, 0, -10));
             Assert.Equal(0, pitch, 9);
             Assert.Equal(Deg2Rad(90), heading, 9);
-            (pitch, heading) = Astro.ECIToPitchHeading(new V3(10, 10, 0), new V3(10, -10, 0));
+            (pitch, heading) = Astro.ECIToPitchHeading(new V3(10, 0, -10), new V3(10, 0, 10));
             Assert.Equal(0, pitch, 9);
             Assert.Equal(Deg2Rad(270), heading, 9);
-            (pitch, heading) = Astro.ECIToPitchHeading(new V3(10, 10, 0), new V3(10, 10, 0));
+            (pitch, heading) = Astro.ECIToPitchHeading(new V3(10, 0, -10), new V3(10, 0, -10));
             Assert.Equal(Deg2Rad(90), pitch, 9);
             Assert.Equal(Deg2Rad(90), heading, 9);
-            (pitch, heading) = Astro.ECIToPitchHeading(new V3(10, 10, 0), new V3(10, 10, Sqrt(200)));
+            (pitch, heading) = Astro.ECIToPitchHeading(new V3(10, 0, -10), new V3(10, Sqrt(200), -10));
             Assert.Equal(Deg2Rad(45), pitch, 9);
             Assert.Equal(0, heading, 9);
-            (pitch, heading) = Astro.ECIToPitchHeading(new V3(10, 10, 0), new V3(10, 10, -Sqrt(200)));
+            (pitch, heading) = Astro.ECIToPitchHeading(new V3(10, 0, -10), new V3(10, -Sqrt(200), -10));
             Assert.Equal(Deg2Rad(45), pitch, 9);
             Assert.Equal(Deg2Rad(180), heading, 9);
         }
@@ -87,76 +89,79 @@ namespace MechJebLibTest.MathsTests
         [Fact]
         public void IncFromStateVectorsTest1()
         {
-            double inc = Astro.IncFromStateVectors(new V3(10, 10, 0), new V3(0, 10, 0));
+            // §13 极轴 +Y：输入换元 (x, y, z)_新 = (x, z, −y)_旧；inc 是帧不变标量 ⇒ 期望不动。
+            double inc = Astro.IncFromStateVectors(new V3(10, 0, -10), new V3(0, 0, -10));
             Assert.Equal(0, inc);
-            inc = Astro.IncFromStateVectors(new V3(10, 10, 0), new V3(0, 0, 10));
+            inc = Astro.IncFromStateVectors(new V3(10, 0, -10), new V3(0, 10, 0));
             Assert.Equal(PI / 2, inc);
-            inc = Astro.IncFromStateVectors(new V3(10, 10, 0), new V3(0, -10, 0));
+            inc = Astro.IncFromStateVectors(new V3(10, 0, -10), new V3(0, 0, 10));
             Assert.Equal(PI, inc);
-            inc = Astro.IncFromStateVectors(new V3(10, 10, 0), new V3(0, 0, -10));
+            inc = Astro.IncFromStateVectors(new V3(10, 0, -10), new V3(0, -10, 0));
             Assert.Equal(PI / 2, inc);
         }
 
         [Fact]
         public void VelocityForHeadingTest1()
         {
-            V3 vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(0, 10, 0), 0);
-            Assert.Equal(0, vf[0], 9);
-            Assert.Equal(0, vf[1], 9);
-            Assert.Equal(10, vf[2], 9);
-            vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(0, 10, 0), PI / 2);
+            // §13 极轴 +Y：输入换元；**矢量期望也要换元**（同一个物理 dv，不是帧不变标量）。
+            V3 vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(0, 0, -10), 0);
             Assert.Equal(0, vf[0], 9);
             Assert.Equal(10, vf[1], 9);
             Assert.Equal(0, vf[2], 9);
-            vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(0, 10, 0), PI);
+            vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(0, 0, -10), PI / 2);
             Assert.Equal(0, vf[0], 9);
             Assert.Equal(0, vf[1], 9);
             Assert.Equal(-10, vf[2], 9);
-            vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(0, 10, 0), 3 * PI / 2);
+            vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(0, 0, -10), PI);
             Assert.Equal(0, vf[0], 9);
             Assert.Equal(-10, vf[1], 9);
             Assert.Equal(0, vf[2], 9);
-            vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(10, 10, 0), 0);
-            Assert.Equal(10, vf[0], 9);
+            vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(0, 0, -10), 3 * PI / 2);
+            Assert.Equal(0, vf[0], 9);
             Assert.Equal(0, vf[1], 9);
             Assert.Equal(10, vf[2], 9);
-            vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(10, 10, 0), PI / 2);
+            vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(10, 0, -10), 0);
             Assert.Equal(10, vf[0], 9);
             Assert.Equal(10, vf[1], 9);
             Assert.Equal(0, vf[2], 9);
-            vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(10, 10, 0), PI);
+            vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(10, 0, -10), PI / 2);
             Assert.Equal(10, vf[0], 9);
             Assert.Equal(0, vf[1], 9);
             Assert.Equal(-10, vf[2], 9);
-            vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(10, 10, 0), 3 * PI / 2);
+            vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(10, 0, -10), PI);
             Assert.Equal(10, vf[0], 9);
             Assert.Equal(-10, vf[1], 9);
             Assert.Equal(0, vf[2], 9);
+            vf = Astro.VelocityForHeading(new V3(10, 0, 0), new V3(10, 0, -10), 3 * PI / 2);
+            Assert.Equal(10, vf[0], 9);
+            Assert.Equal(0, vf[1], 9);
+            Assert.Equal(10, vf[2], 9);
         }
 
         [Fact]
         public void VelocityForInclinationTest1()
         {
-            V3 vf = Astro.VelocityForInclination(new V3(10, 0, 0), new V3(0, 10, 0), 0);
-            Assert.Equal(0, vf[0], 9);
-            Assert.Equal(10, vf[1], 9);
-            Assert.Equal(0, vf[2], 9);
-            vf = Astro.VelocityForInclination(new V3(10, 0, 0), new V3(0, 10, 0), PI / 2);
-            Assert.Equal(0, vf[0], 9);
-            Assert.Equal(0, vf[1], 9);
-            Assert.Equal(10, vf[2], 9);
-            vf = Astro.VelocityForInclination(new V3(10, 0, 0), new V3(0, 10, 0), PI);
-            Assert.Equal(0, vf[0], 9);
-            Assert.Equal(-10, vf[1], 9);
-            Assert.Equal(0, vf[2], 9);
-            vf = Astro.VelocityForInclination(new V3(10, 0, 0), new V3(0, 10, 0), -PI / 2);
+            // §13 极轴 +Y：输入换元；矢量期望同样换元（见上方 VelocityForHeadingTest1 同注）。
+            V3 vf = Astro.VelocityForInclination(new V3(10, 0, 0), new V3(0, 0, -10), 0);
             Assert.Equal(0, vf[0], 9);
             Assert.Equal(0, vf[1], 9);
             Assert.Equal(-10, vf[2], 9);
-            vf = Astro.VelocityForInclination(new V3(10, 0, 0), new V3(10, 10, 0), 0);
-            Assert.Equal(10, vf[0], 9);
+            vf = Astro.VelocityForInclination(new V3(10, 0, 0), new V3(0, 0, -10), PI / 2);
+            Assert.Equal(0, vf[0], 9);
             Assert.Equal(10, vf[1], 9);
             Assert.Equal(0, vf[2], 9);
+            vf = Astro.VelocityForInclination(new V3(10, 0, 0), new V3(0, 0, -10), PI);
+            Assert.Equal(0, vf[0], 9);
+            Assert.Equal(0, vf[1], 9);
+            Assert.Equal(10, vf[2], 9);
+            vf = Astro.VelocityForInclination(new V3(10, 0, 0), new V3(0, 0, -10), -PI / 2);
+            Assert.Equal(0, vf[0], 9);
+            Assert.Equal(-10, vf[1], 9);
+            Assert.Equal(0, vf[2], 9);
+            vf = Astro.VelocityForInclination(new V3(10, 0, 0), new V3(10, 0, -10), 0);
+            Assert.Equal(10, vf[0], 9);
+            Assert.Equal(0, vf[1], 9);
+            Assert.Equal(-10, vf[2], 9);
         }
 
         [Fact]

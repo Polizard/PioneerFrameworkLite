@@ -53,7 +53,7 @@ namespace MechJebLibTest.LambertTests
 
             (V3 rfShepperd, V3 vfShepperd) = Shepperd.Solve(1.0, dt, r0, v0);
 
-            bool prograde = V3.Cross(r0, v0).z >= 0;
+            bool prograde = V3.Dot(V3.Cross(r0, v0), V3.northpole) >= 0;   // §13.3 硬要求：判向跟 northpole 走（不写死分量）
             TransferGeometry direction = prograde ? TransferGeometry.Prograde : TransferGeometry.Retrograde;
 
             (V3 viIzzo, V3 vfIzzo) = Izzo.Solve(1.0, r0, rfShepperd, dt, direction, 0, V3.northpole);

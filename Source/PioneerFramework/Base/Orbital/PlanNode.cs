@@ -27,7 +27,8 @@ namespace PioneerFramework
     /// 与 MJ 的对应：MJ 的 `ManeuverParameters { Vector3d dV; double UT; }`（`MechJeb2/Maneuver/Operation.cs:11-22`）。
     /// 两者的差别只有"多一个归属"——那是我们自己的队列语义需要的。
     ///
-    /// ⚠ **向量类型是 `V3`**：与 `OrbitView` 同理（用户 2026-09-18 裁定"暂用 V3、日后换 DV3"）。
+    /// ⚠ **向量类型已统一为 `DVector3`**（批5 U2/U3，2026-09-28；`V3` 现为其别名）⇒
+    /// 原先"暂用 V3、日后换 DV3"那条债**已结清**。
     /// 这样 `MakeNodesImpl` 返回 `List<PlanNode>` 时，函数体里构造 `new ManeuverParameters(x, y)` 的地方
     /// 只需把类型名换掉，算术一行不改。
     ///

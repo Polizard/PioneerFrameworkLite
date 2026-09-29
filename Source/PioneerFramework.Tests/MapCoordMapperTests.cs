@@ -15,33 +15,33 @@ namespace PioneerFramework.Tests
         private static readonly IntVec3 Center = new IntVec3(30, 0, 30);
 
         [Fact]
-        public void LocalToMapCell_AddsOffsetToCenter()
+        public void ShipToMapCell_AddsOffsetToCenter()
         {
-            var cell = MapCoordMapper.LocalToMapCell(Center, new Vector3(10, 0, 20), Map60);
+            var cell = MapCoordMapper.ShipToMapCell(Center, new Vector3(10, 0, 20), Map60);
             Assert.Equal(new IntVec3(40, 0, 50), cell);
         }
 
         [Fact]
-        public void LocalToMapCell_NegativeOffset()
+        public void ShipToMapCell_NegativeOffset()
         {
-            var cell = MapCoordMapper.LocalToMapCell(Center, new Vector3(-10, 0, -20), Map60);
+            var cell = MapCoordMapper.ShipToMapCell(Center, new Vector3(-10, 0, -20), Map60);
             Assert.Equal(new IntVec3(20, 0, 10), cell);
         }
 
         [Fact]
-        public void LocalToMapCell_ClampsOutOfBounds()
+        public void ShipToMapCell_ClampsOutOfBounds()
         {
             Assert.Equal(new IntVec3(59, 0, 59),
-                MapCoordMapper.LocalToMapCell(Center, new Vector3(100, 0, 100), Map60));
+                MapCoordMapper.ShipToMapCell(Center, new Vector3(100, 0, 100), Map60));
             Assert.Equal(new IntVec3(0, 0, 0),
-                MapCoordMapper.LocalToMapCell(Center, new Vector3(-100, 0, -100), Map60));
+                MapCoordMapper.ShipToMapCell(Center, new Vector3(-100, 0, -100), Map60));
         }
 
         [Fact]
-        public void LocalToMapCell_RoundsToNearestCell()
+        public void ShipToMapCell_RoundsToNearestCell()
         {
             // Math.Round(10.4)=10 → 40；Math.Round(20.6)=21 → 51
-            var cell = MapCoordMapper.LocalToMapCell(Center, new Vector3(10.4f, 0, 20.6f), Map60);
+            var cell = MapCoordMapper.ShipToMapCell(Center, new Vector3(10.4f, 0, 20.6f), Map60);
             Assert.Equal(new IntVec3(40, 0, 51), cell);
         }
 
@@ -50,18 +50,18 @@ namespace PioneerFramework.Tests
         {
             // 格 → 局部米（纯重载）→ 格（纯重载）应回到原格
             var cell = new IntVec3(42, 0, 17);
-            var local = MapCoordMapper.MapCellToLocal3D(Center, cell);
-            var back = MapCoordMapper.LocalToMapCell(Center, local, Map60);
+            var local = MapCoordMapper.MapCellToShip(Center, cell);
+            var back = MapCoordMapper.ShipToMapCell(Center, local, Map60);
             Assert.Equal(cell, back);
         }
 
         [Fact]
         public void CenterCell_MapsToZeroOffset_AndBack()
         {
-            var local = MapCoordMapper.MapCellToLocal3D(Center, Center);
+            var local = MapCoordMapper.MapCellToShip(Center, Center);
             Assert.Equal(0f, local.x);
             Assert.Equal(0f, local.z);
-            Assert.Equal(Center, MapCoordMapper.LocalToMapCell(Center, local, Map60));
+            Assert.Equal(Center, MapCoordMapper.ShipToMapCell(Center, local, Map60));
         }
 
         // ── RayExitAabb：F2 炮塔出膛点（船体局部系六面求交）──

@@ -83,10 +83,13 @@ namespace PioneerFramework
             return nets;
         }
 
-        public float GetPropellantMass(PropellantDef def)
+        // ⚠ 四个质量成员一律 **double**（2026-09-27 用户裁定）：它们是"每步扣一点"的累加量，
+        //    float 在 72 t 处只剩 7.8 g 分辨率 ⇒ 一步的舍入差被 `a=F/m` 放大成可测的 Δv/位置差
+        //    （逐步指纹实测：`burnDbgMass Δ=0.015625 kg = 2 ULP`）。速率类（ve/ṁ/推力）保持 float。
+        public double GetPropellantMass(PropellantDef def)
         {
-            if (def == null) return 0f;
-            float total = 0f;
+            if (def == null) return 0.0;
+            double total = 0.0;
             foreach (int eid in group.GetEntityIds())
             {
                 var e = spaceGame.GetEntityById(eid);
@@ -95,14 +98,14 @@ namespace PioneerFramework
             return total;
         }
 
-        /// <summary>沿实体分摊扣料（同构同率 → 各枚余额均等；先吃存量大的，天然按可用量截断）。</summary>
-        public float TryConsumePropellant(PropellantDef def, float kg)
+        /// <summary>沿实体分摊扣料（同构同率 → 各枚余额均等；先吃存量大的，天然按可用量截断）。**double**：同上。</summary>
+        public double TryConsumePropellant(PropellantDef def, double kg)
         {
-            if (def == null || kg <= 0f) return 0f;
-            float remaining = kg;
+            if (def == null || kg <= 0.0) return 0.0;
+            double remaining = kg;
             foreach (int eid in group.GetEntityIds())
             {
-                if (remaining <= 0f) break;
+                if (remaining <= 0.0) break;
                 var e = spaceGame.GetEntityById(eid);
                 if (e == null) continue;
                 remaining -= e.TryConsumePropellant(def, remaining);
@@ -110,11 +113,11 @@ namespace PioneerFramework
             return kg - remaining;
         }
 
-        public float TotalPropellantMass
+        public double TotalPropellantMass
         {
             get
             {
-                float total = 0f;
+                double total = 0.0;
                 foreach (int eid in group.GetEntityIds())
                 {
                     var e = spaceGame.GetEntityById(eid);
@@ -124,11 +127,11 @@ namespace PioneerFramework
             }
         }
 
-        public float TotalPropellantCapacity
+        public double TotalPropellantCapacity
         {
             get
             {
-                float total = 0f;
+                double total = 0.0;
                 foreach (int eid in group.GetEntityIds())
                 {
                     var e = spaceGame.GetEntityById(eid);

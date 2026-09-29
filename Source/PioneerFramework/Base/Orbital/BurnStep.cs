@@ -67,7 +67,7 @@ namespace PioneerFramework
 
         /// <summary>
         /// **方向律的唯一算式**：计划的 RTN 分量在**当前** RTN 里取方向（"解不动、方向按时间取"）。
-        /// 与 `OrbitMath.GetWorldDeltaV` 同式（后者是游戏系口径的同一件事）。
+        /// 与 `OrbitMath.GetDeltaVSystem` 同式（后者是游戏系口径的同一件事）。
         /// ⚠ 本轮起**只服务退路律**（拿不到 `burnTargetV` 的燃烧）；有计划向量的燃烧走
         /// <see cref="DeficitToTargetV" />。
         /// </summary>

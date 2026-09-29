@@ -24,8 +24,8 @@ namespace PioneerFramework.Tests
             {
                 partId = 1,
                 defName = "PF_ShipPart_Cube",
-                localPosition = DVector3.zero,
-                localBoundsSize = new DVector3(2, 2, 2),
+                positionShip = DVector3.zero,
+                boundsSizeShip = new DVector3(2, 2, 2),
                 hp = 100f
             };
             foreach (var c in comps) part.AddComponent(c);

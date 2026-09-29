@@ -314,42 +314,42 @@ namespace PioneerFramework
         /// 用指定 GM 传播中心天体相对坐标，在 ManeuverPlanner 中统一替代 OrbitMath 函数使用。
         /// 圆轨直接用角速度旋转（正确支持任何 GM），非圆轨回落至 OrbitMath。
         /// </summary>
-        private void PropagateLocalOrbit(DVector3 localPos, DVector3 localVel, double dt, double gm,
+        private void PropagateOrbitBody(DVector3 posBody, DVector3 velBody, double dt, double gm,
             out DVector3 outPos, out DVector3 outVel)
         {
-            double r = localPos.magnitude;
-            double v2 = localVel.sqrMagnitude;
+            double r = posBody.magnitude;
+            double v2 = velBody.sqrMagnitude;
             double eps = 0.5 * v2 - gm / r;
 
             if (Math.Abs(eps) < 1e-10 || eps >= 0.0) // 抛物线/双曲
             {
-                outPos = localPos;
-                outVel = localVel;
+                outPos = posBody;
+                outVel = velBody;
                 return;
             }
 
             double a = -gm / (2.0 * eps);
-            double e = (DVector3.Cross(localVel, DVector3.Cross(localPos, localVel)) / gm - localPos / r).magnitude;
+            double e = (DVector3.Cross(velBody, DVector3.Cross(posBody, velBody)) / gm - posBody / r).magnitude;
 
             if (e < 0.001 || Math.Abs(e) < 0.001) // 圆轨
             {
                 double omega = Math.Sqrt(gm / (r * r * r));
                 double angle = omega * dt;
-                DVector3 normal = DVector3.Cross(localPos, localVel).normalized;
+                DVector3 normal = DVector3.Cross(posBody, velBody).normalized;
                 // Rodrigues 旋转公式
-                DVector3 rotated = localPos * Math.Cos(angle) + DVector3.Cross(normal, localPos) * Math.Sin(angle);
-                DVector3 velRotated = localVel * Math.Cos(angle) + DVector3.Cross(normal, localVel) * Math.Sin(angle);
+                DVector3 rotated = posBody * Math.Cos(angle) + DVector3.Cross(normal, posBody) * Math.Sin(angle);
+                DVector3 velRotated = velBody * Math.Cos(angle) + DVector3.Cross(normal, velBody) * Math.Sin(angle);
                 outPos = rotated;
                 outVel = velRotated;
                 return;
             }
 
             // 椭圆：回落至 OrbitMath（按标准路径也可近似接受地心 GM）
-            outPos = OrbitMath.GetPositionAtTimeDelta(localPos, localVel, dt, gm);
-            outVel = OrbitMath.GetVelocityAtTimeDelta(localPos, localVel, dt, gm);
+            outPos = OrbitMath.GetPositionAtTimeDelta(posBody, velBody, dt, gm);
+            outVel = OrbitMath.GetVelocityAtTimeDelta(posBody, velBody, dt, gm);
         }
 
-        /// <summary>计算机动后 predictionTimeSeconds 时的卫星位置（地心系 Unity 坐标）。</summary>
+        /// <summary>计算机动后 predictionTimeSeconds 时的卫星位置（系统系 Unity 坐标）。</summary>
         private Vector3? ComputePredictedPositionUnity()
         {
             if (group == null) return null;
@@ -389,9 +389,9 @@ namespace PioneerFramework
             DVector3 nodeVel = OrbitMath.GetVelocityAtTimeDelta(pos, vel, maneuverTimeDeltaSeconds, centralGM);
 
             // 用正确的 GM 传播节点处的中心天体相对位置
-            PropagateLocalOrbit(group.localPosition, group.localVelocity, maneuverTimeDeltaSeconds, centralGM,
-                out DVector3 nodeLocalPos, out DVector3 nodeLocalVel);
-            DVector3 dV = OrbitMath.GetWorldDeltaV(nodeLocalPos, nodeLocalVel, radialDV, tangentialDV, normalDV);
+            PropagateOrbitBody(group.positionBody, group.velocityBody, maneuverTimeDeltaSeconds, centralGM,
+                out DVector3 nodePosBody, out DVector3 nodeVelBody);
+            DVector3 dV = OrbitMath.GetDeltaVSystem(nodePosBody, nodeVelBody, radialDV, tangentialDV, normalDV);
 
             DVector3 postBurnVel = nodeVel + dV;
             double remainingT = t - maneuverTimeDeltaSeconds;
@@ -436,10 +436,10 @@ namespace PioneerFramework
         /// 计划轨道、又带上正确的潮汐摄动——不再需要对父天体做手工"全量拉力"叠加
         /// （那会把均匀部分重复计入，在月球系是 ~224km 量级的错误）。
         /// </summary>
-        private List<DVector3> GeneratePerturbedPreviewPoints(DVector3 localPos, DVector3 localVel, int numSteps, double stepSec)
+        private List<DVector3> GeneratePerturbedPreviewPoints(DVector3 posBody, DVector3 velBody, int numSteps, double stepSec)
         {
             var points = new List<DVector3>(numSteps);
-            points.Add(localPos);
+            points.Add(posBody);
 
             var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (celestialMgr == null) return points;
@@ -449,8 +449,8 @@ namespace PioneerFramework
 
             if (previewSourcesScratch == null) previewSourcesScratch = new List<GravitySource>();
 
-            DVector3 pos = localPos;
-            DVector3 vel = localVel;
+            DVector3 pos = posBody;
+            DVector3 vel = velBody;
 
             for (int i = 0; i < numSteps; i++)
             {
@@ -536,7 +536,7 @@ namespace PioneerFramework
             centralGM = spaceGame.GetBodyGM(group.CelestialBodyId);
             centralOffset = plannedCentralOffset;
 
-            // 获取当前轨道要素（地心系）
+            // 获取当前轨道要素（系统系）
             OrbitMath.GetEccentricity(pos, vel, out _, out double currentE, centralGM);
             double currentSMA = OrbitMath.SemiMajorAxis(pos, vel, centralGM);
             currentPe = OrbitMath.GetPeriapsisDistance(currentSMA, currentE);
@@ -548,14 +548,14 @@ namespace PioneerFramework
             currentInclination = OrbitView.FromGameStateVectors(
                 pos, vel, centralGM, TimeScaleManager.GetPhysicsTickSafe(), DVector3.up, 0.0).inclination;
 
-            // 当前轨道的点列（中心天体参考系 → 转换到地心系）
+            // 当前轨道的点列（中心天体参考系 → 转换到系统系）
             bool usePerturbed = CurrentPreviewMode == PreviewMode.Perturbed && group.CelestialBodyId >= 0;
 
             List<DVector3> currentPoints;
             if (usePerturbed)
-                currentPoints = GeneratePerturbedPreviewPoints(group.localPosition, group.localVelocity, PerturbedStepCount, PerturbedStepSeconds);
+                currentPoints = GeneratePerturbedPreviewPoints(group.positionBody, group.velocityBody, PerturbedStepCount, PerturbedStepSeconds);
             else
-                currentPoints = OrbitMath.GetOrbitPoints(group.localPosition, group.localVelocity, 60, centralGM);
+                currentPoints = OrbitMath.GetOrbitPoints(group.positionBody, group.velocityBody, 60, centralGM);
             if (currentPoints.Count > 0)
             {
                 var geocentricPoints = currentPoints.ConvertAll(p => p + centralOffset);
@@ -575,11 +575,11 @@ namespace PioneerFramework
                 seg.nodePositionMeters = nodePos;
 
                 // 机动节点处的中心天体相对坐标（用正确的 GM 传播）
-                  PropagateLocalOrbit(group.localPosition, group.localVelocity, maneuverTimeDeltaSeconds, centralGM,
-                      out DVector3 nodeLocalPos, out DVector3 nodeLocalVel);
+                  PropagateOrbitBody(group.positionBody, group.velocityBody, maneuverTimeDeltaSeconds, centralGM,
+                      out DVector3 nodePosBody, out DVector3 nodeVelBody);
 
                 // 读取滑块 dV，用节点处的中心天体相对坐标计算 R/T/N 基向量
-                DVector3 dV = OrbitMath.GetWorldDeltaV(nodeLocalPos, nodeLocalVel, radialDV, tangentialDV, normalDV);
+                DVector3 dV = OrbitMath.GetDeltaVSystem(nodePosBody, nodeVelBody, radialDV, tangentialDV, normalDV);
                 float dVMag = Mathf.Sqrt(radialDV * radialDV + tangentialDV * tangentialDV + normalDV * normalDV);
                 dVTotal = dVMag;
 
@@ -601,12 +601,12 @@ namespace PioneerFramework
                 }
 
                 // 添加机动后轨道段（从节点位置开始）
-                DVector3 postBurnNodeLocalVel = nodeLocalVel + dV;
+                DVector3 postBurnNodeVelBody = nodeVelBody + dV;
                 List<DVector3> postPoints;
                 if (usePerturbed)
-                    postPoints = GeneratePerturbedPreviewPoints(nodeLocalPos, postBurnNodeLocalVel, PerturbedStepCount, PerturbedStepSeconds);
+                    postPoints = GeneratePerturbedPreviewPoints(nodePosBody, postBurnNodeVelBody, PerturbedStepCount, PerturbedStepSeconds);
                 else
-                    postPoints = OrbitMath.GetOrbitPoints(nodeLocalPos, postBurnNodeLocalVel, 60, centralGM);
+                    postPoints = OrbitMath.GetOrbitPoints(nodePosBody, postBurnNodeVelBody, 60, centralGM);
                 if (postPoints.Count > 0)
                 {
                     var geocentricPostPoints = postPoints.ConvertAll(p => p + centralOffset);
@@ -662,21 +662,21 @@ namespace PioneerFramework
                 group.orbitKeepingWhitelist = savedOK;
             }
 
-            // R/T/N 基向量用中心天体相对坐标（group.localPosition/Velocity 由 SpaceGameComp 每帧同步）
-            DVector3 dV = OrbitMath.GetWorldDeltaV(group.localPosition, group.localVelocity, radialDV, tangentialDV, normalDV);
+            // R/T/N 基向量用中心天体相对坐标（group.positionBody/Velocity 由 SpaceGameComp 每帧同步）
+            DVector3 dV = OrbitMath.GetDeltaVSystem(group.positionBody, group.velocityBody, radialDV, tangentialDV, normalDV);
             double radDV, tanDV, normDV;
-            OrbitMath.WorldDeltaVToComponents(group.localPosition, group.localVelocity, dV, out radDV, out tanDV, out normDV);
+            OrbitMath.DeltaVSystemToComponents(group.positionBody, group.velocityBody, dV, out radDV, out tanDV, out normDV);
 
             Log.Message(string.Format("[ManeuverPlanner] Group {0} plan localFrame: bodyId={1} |pos|={2:F0}km |vel|={3:F1} m/s |dV|={4:F1} m/s",
-                group.GroupId, group.CelestialBodyId, group.localPosition.magnitude / 1000.0, group.localVelocity.magnitude, dV.magnitude));
+                group.GroupId, group.CelestialBodyId, group.positionBody.magnitude / 1000.0, group.velocityBody.magnitude, dV.magnitude));
 
             // 为预览缓存生成中心天体参考系的轨道点
             double centralGM;
             DVector3 centralOffset;
             centralGM = spaceGame.GetBodyGM(group.CelestialBodyId);
             centralOffset = plannedCentralOffset;
-            var currentLocalPts = OrbitMath.GetOrbitPoints(group.localPosition, group.localVelocity, 60, centralGM);
-            var postLocalPts = OrbitMath.GetPostManeuverOrbitPoints(group.localPosition, group.localVelocity, dV, 60, centralGM);
+            var currentLocalPts = OrbitMath.GetOrbitPoints(group.positionBody, group.velocityBody, 60, centralGM);
+            var postLocalPts = OrbitMath.GetPostManeuverOrbitPoints(group.positionBody, group.velocityBody, dV, 60, centralGM);
             var currentOrbitPts = currentLocalPts.ConvertAll(p => p + centralOffset);
             var postOrbitPts = postLocalPts.ConvertAll(p => p + centralOffset);
 

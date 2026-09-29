@@ -63,8 +63,8 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void MultiplyQuaternions()
         {
-            var q1 = Q3.AngleAxis(PI / 2, V3.up);
-            var q2 = Q3.AngleAxis(PI / 2, V3.forward);
+            var q1 = Q3.AngleAxis(PI / 2, V3.bodyUp);
+            var q2 = Q3.AngleAxis(PI / 2, V3.bodyForward);
             Q3 result = q1 * q2;
 
             var v = new V3(1, 0, 0);
@@ -86,10 +86,10 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void MultiplyQuaternionVector()
         {
-            var q = Q3.AngleAxis(PI / 2, V3.up);
-            V3 v = V3.forward;
+            var q = Q3.AngleAxis(PI / 2, V3.bodyUp);
+            V3 v = V3.bodyForward;
 
-            (q * v).ShouldEqual(V3.left, 1e-14);
+            (q * v).ShouldEqual(V3.bodyLeft, 1e-14);
         }
 
         [Fact]
@@ -116,8 +116,8 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void DotProductNormalized()
         {
-            var q1 = Q3.AngleAxis(PI / 3, V3.up);
-            var q2 = Q3.AngleAxis(PI / 6, V3.up);
+            var q1 = Q3.AngleAxis(PI / 3, V3.bodyUp);
+            var q2 = Q3.AngleAxis(PI / 6, V3.bodyUp);
 
             double dot = Q3.Dot(q1, q2);
             dot.ShouldBePositive();
@@ -157,7 +157,7 @@ namespace MechJebLibTest.Primitives.Q3Tests
         private void AngleSmallDifference()
         {
             Q3 q1 = Q3.identity;
-            var q2 = Q3.AngleAxis(1e-8, V3.up);
+            var q2 = Q3.AngleAxis(1e-8, V3.bodyUp);
 
             Q3.Angle(q1, q2).ShouldEqual(1e-8, 1e-16);
         }
@@ -214,7 +214,7 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void ToEulerAnglesRoll()
         {
-            var q = Q3.AngleAxis(PI / 4, V3.forward);
+            var q = Q3.AngleAxis(PI / 4, V3.bodyForward);
             V3 euler = q.eulerAngles;
 
             euler.roll.ShouldEqual(PI / 4, 1e-14);
@@ -225,7 +225,7 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void ToEulerAnglesPitch()
         {
-            var q = Q3.AngleAxis(PI / 4, V3.left);
+            var q = Q3.AngleAxis(PI / 4, V3.bodyLeft);
             V3 euler = q.eulerAngles;
 
             euler.pitch.ShouldEqual(-PI / 4, 1e-14);
@@ -236,7 +236,7 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void ToEulerAnglesYaw()
         {
-            var q = Q3.AngleAxis(PI / 4, V3.up);
+            var q = Q3.AngleAxis(PI / 4, V3.bodyUp);
             V3 euler = q.eulerAngles;
 
             euler.yaw.ShouldEqual(-PI / 4, 1e-14);
@@ -251,9 +251,9 @@ namespace MechJebLibTest.Primitives.Q3Tests
             double pitch = PI / 4;
             double yaw = PI / 3;
 
-            var qRoll = Q3.AngleAxis(roll, V3.forward);
-            var qPitch = Q3.AngleAxis(pitch, V3.left);
-            var qYaw = Q3.AngleAxis(yaw, V3.up);
+            var qRoll = Q3.AngleAxis(roll, V3.bodyForward);
+            var qPitch = Q3.AngleAxis(pitch, V3.bodyLeft);
+            var qYaw = Q3.AngleAxis(yaw, V3.bodyUp);
             Q3 q = qYaw * qPitch * qRoll;
 
             V3 euler = Q3.ToEulerAngles(q);
@@ -266,7 +266,7 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void ToEulerAnglesGimbalLock()
         {
-            var q = Q3.AngleAxis(PI / 2, V3.left);
+            var q = Q3.AngleAxis(PI / 2, V3.bodyLeft);
             V3 euler = q.eulerAngles;
 
             euler.pitch.ShouldEqual(-PI / 2, 1e-14);
@@ -275,8 +275,8 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void MultiplyNonCommutative()
         {
-            var q1 = Q3.AngleAxis(PI / 3, V3.up);
-            var q2 = Q3.AngleAxis(PI / 4, V3.forward);
+            var q1 = Q3.AngleAxis(PI / 3, V3.bodyUp);
+            var q2 = Q3.AngleAxis(PI / 4, V3.bodyForward);
 
             (q1 * q2).ShouldNotEqual(q2 * q1, 1e-14);
         }
@@ -294,8 +294,8 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void RotateVectorChaining()
         {
-            var q1 = Q3.AngleAxis(PI / 4, V3.up);
-            var q2 = Q3.AngleAxis(PI / 3, V3.forward);
+            var q1 = Q3.AngleAxis(PI / 4, V3.bodyUp);
+            var q2 = Q3.AngleAxis(PI / 3, V3.bodyForward);
             var v = new V3(1, 2, 3);
 
             V3 result1 = q1 * q2 * v;
@@ -316,8 +316,8 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void LargeAngleNormalization()
         {
-            var q1 = Q3.AngleAxis(8 * PI + 0.5, V3.up);
-            var q2 = Q3.AngleAxis(0.5, V3.up);
+            var q1 = Q3.AngleAxis(8 * PI + 0.5, V3.bodyUp);
+            var q2 = Q3.AngleAxis(0.5, V3.bodyUp);
 
             q1.ShouldEqual(q2, 1e-14);
         }

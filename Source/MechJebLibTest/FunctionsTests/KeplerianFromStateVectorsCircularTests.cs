@@ -24,10 +24,10 @@ namespace MechJebLibTest.FunctionsTests
         [Fact]
         public void CircularEquatorialPrograde()
         {
-            AssertElements(new V3(1, 0, 0), new V3(0, 1, 0), 1.0, 0.0, 0.0, 0.0, 0.0, 0.0);
-            AssertElements(new V3(0, 1, 0), new V3(-1, 0, 0), 1.0, 0.0, 0.0, 0.0, 0.0, PI / 2);
-            AssertElements(new V3(-1, 0, 0), new V3(0, -1, 0), 1.0, 0.0, 0.0, 0.0, 0.0, PI);
-            AssertElements(new V3(0, -1, 0), new V3(1, 0, 0), 1.0, 0.0, 0.0, 0.0, 0.0, 3 * PI / 2);
+            AssertElements(new V3(1, 0, -(0)), new V3(0, 0, -(1)), 1.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+            AssertElements(new V3(0, 0, -(1)), new V3(-1, 0, -(0)), 1.0, 0.0, 0.0, 0.0, 0.0, PI / 2);
+            AssertElements(new V3(-1, 0, -(0)), new V3(0, 0, -(-1)), 1.0, 0.0, 0.0, 0.0, 0.0, PI);
+            AssertElements(new V3(0, 0, -(-1)), new V3(1, 0, -(0)), 1.0, 0.0, 0.0, 0.0, 0.0, 3 * PI / 2);
         }
 
         // hhat = -ẑ, i = π. Both Ω and ω are undefined → 0.
@@ -35,10 +35,10 @@ namespace MechJebLibTest.FunctionsTests
         [Fact]
         public void CircularEquatorialRetrograde()
         {
-            AssertElements(new V3(1, 0, 0), new V3(0, -1, 0), 1.0, 0.0, PI, 0.0, 0.0, 0.0);
-            AssertElements(new V3(0, -1, 0), new V3(-1, 0, 0), 1.0, 0.0, PI, 0.0, 0.0, PI / 2);
-            AssertElements(new V3(-1, 0, 0), new V3(0, 1, 0), 1.0, 0.0, PI, 0.0, 0.0, PI);
-            AssertElements(new V3(0, 1, 0), new V3(1, 0, 0), 1.0, 0.0, PI, 0.0, 0.0, 3 * PI / 2);
+            AssertElements(new V3(1, 0, -(0)), new V3(0, 0, -(-1)), 1.0, 0.0, PI, 0.0, 0.0, 0.0);
+            AssertElements(new V3(0, 0, -(-1)), new V3(-1, 0, -(0)), 1.0, 0.0, PI, 0.0, 0.0, PI / 2);
+            AssertElements(new V3(-1, 0, -(0)), new V3(0, 0, -(1)), 1.0, 0.0, PI, 0.0, 0.0, PI);
+            AssertElements(new V3(0, 0, -(1)), new V3(1, 0, -(0)), 1.0, 0.0, PI, 0.0, 0.0, 3 * PI / 2);
         }
 
         // hhat = +x̂, i = π/2. Ascending node = ẑ × x̂ = +ŷ, so Ω = π/2.
@@ -46,20 +46,20 @@ namespace MechJebLibTest.FunctionsTests
         [Fact]
         public void CircularPolarPlusX()
         {
-            AssertElements(new V3(0, 1, 0), new V3(0, 0, 1), 1.0, 0.0, PI / 2, PI / 2, 0.0, 0.0);
-            AssertElements(new V3(0, 0, 1), new V3(0, -1, 0), 1.0, 0.0, PI / 2, PI / 2, 0.0, PI / 2);
-            AssertElements(new V3(0, -1, 0), new V3(0, 0, -1), 1.0, 0.0, PI / 2, PI / 2, 0.0, PI);
-            AssertElements(new V3(0, 0, -1), new V3(0, 1, 0), 1.0, 0.0, PI / 2, PI / 2, 0.0, 3 * PI / 2);
+            AssertElements(new V3(0, 0, -(1)), new V3(0, 1, -(0)), 1.0, 0.0, PI / 2, PI / 2, 0.0, 0.0);
+            AssertElements(new V3(0, 1, -(0)), new V3(0, 0, -(-1)), 1.0, 0.0, PI / 2, PI / 2, 0.0, PI / 2);
+            AssertElements(new V3(0, 0, -(-1)), new V3(0, -1, -(0)), 1.0, 0.0, PI / 2, PI / 2, 0.0, PI);
+            AssertElements(new V3(0, -1, -(0)), new V3(0, 0, -(1)), 1.0, 0.0, PI / 2, PI / 2, 0.0, 3 * PI / 2);
         }
 
         // hhat = -x̂, i = π/2. Ascending node = ẑ × (-x̂) = -ŷ, so Ω = 3π/2.
         [Fact]
         public void CircularPolarMinusX()
         {
-            AssertElements(new V3(0, -1, 0), new V3(0, 0, 1), 1.0, 0.0, PI / 2, 3 * PI / 2, 0.0, 0.0);
-            AssertElements(new V3(0, 0, 1), new V3(0, 1, 0), 1.0, 0.0, PI / 2, 3 * PI / 2, 0.0, PI / 2);
-            AssertElements(new V3(0, 1, 0), new V3(0, 0, -1), 1.0, 0.0, PI / 2, 3 * PI / 2, 0.0, PI);
-            AssertElements(new V3(0, 0, -1), new V3(0, -1, 0), 1.0, 0.0, PI / 2, 3 * PI / 2, 0.0, 3 * PI / 2);
+            AssertElements(new V3(0, 0, -(-1)), new V3(0, 1, -(0)), 1.0, 0.0, PI / 2, 3 * PI / 2, 0.0, 0.0);
+            AssertElements(new V3(0, 1, -(0)), new V3(0, 0, -(1)), 1.0, 0.0, PI / 2, 3 * PI / 2, 0.0, PI / 2);
+            AssertElements(new V3(0, 0, -(1)), new V3(0, -1, -(0)), 1.0, 0.0, PI / 2, 3 * PI / 2, 0.0, PI);
+            AssertElements(new V3(0, -1, -(0)), new V3(0, 0, -(-1)), 1.0, 0.0, PI / 2, 3 * PI / 2, 0.0, 3 * PI / 2);
         }
 
         // hhat = +ŷ, i = π/2. Ascending node = ẑ × ŷ = -x̂, so Ω = π.
@@ -67,20 +67,20 @@ namespace MechJebLibTest.FunctionsTests
         [Fact]
         public void CircularPolarPlusY()
         {
-            AssertElements(new V3(-1, 0, 0), new V3(0, 0, 1), 1.0, 0.0, PI / 2, PI, 0.0, 0.0);
-            AssertElements(new V3(0, 0, 1), new V3(1, 0, 0), 1.0, 0.0, PI / 2, PI, 0.0, PI / 2);
-            AssertElements(new V3(1, 0, 0), new V3(0, 0, -1), 1.0, 0.0, PI / 2, PI, 0.0, PI);
-            AssertElements(new V3(0, 0, -1), new V3(-1, 0, 0), 1.0, 0.0, PI / 2, PI, 0.0, 3 * PI / 2);
+            AssertElements(new V3(-1, 0, -(0)), new V3(0, 1, -(0)), 1.0, 0.0, PI / 2, PI, 0.0, 0.0);
+            AssertElements(new V3(0, 1, -(0)), new V3(1, 0, -(0)), 1.0, 0.0, PI / 2, PI, 0.0, PI / 2);
+            AssertElements(new V3(1, 0, -(0)), new V3(0, -1, -(0)), 1.0, 0.0, PI / 2, PI, 0.0, PI);
+            AssertElements(new V3(0, -1, -(0)), new V3(-1, 0, -(0)), 1.0, 0.0, PI / 2, PI, 0.0, 3 * PI / 2);
         }
 
         // hhat = -ŷ, i = π/2. Ascending node = ẑ × (-ŷ) = +x̂, so Ω = 0.
         [Fact]
         public void CircularPolarMinusY()
         {
-            AssertElements(new V3(1, 0, 0), new V3(0, 0, 1), 1.0, 0.0, PI / 2, 0.0, 0.0, 0.0);
-            AssertElements(new V3(0, 0, 1), new V3(-1, 0, 0), 1.0, 0.0, PI / 2, 0.0, 0.0, PI / 2);
-            AssertElements(new V3(-1, 0, 0), new V3(0, 0, -1), 1.0, 0.0, PI / 2, 0.0, 0.0, PI);
-            AssertElements(new V3(0, 0, -1), new V3(1, 0, 0), 1.0, 0.0, PI / 2, 0.0, 0.0, 3 * PI / 2);
+            AssertElements(new V3(1, 0, -(0)), new V3(0, 1, -(0)), 1.0, 0.0, PI / 2, 0.0, 0.0, 0.0);
+            AssertElements(new V3(0, 1, -(0)), new V3(-1, 0, -(0)), 1.0, 0.0, PI / 2, 0.0, 0.0, PI / 2);
+            AssertElements(new V3(-1, 0, -(0)), new V3(0, -1, -(0)), 1.0, 0.0, PI / 2, 0.0, 0.0, PI);
+            AssertElements(new V3(0, -1, -(0)), new V3(1, 0, -(0)), 1.0, 0.0, PI / 2, 0.0, 0.0, 3 * PI / 2);
         }
     }
 }

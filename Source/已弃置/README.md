@@ -15,6 +15,9 @@
 ## 机制（为什么放这里就自动不编译）
 
 `Source/` 下**没有**任何 `.csproj` 用跨目录通配（各工程只递归收**自己目录**下的 `*.cs`，
+> ⚠ **2026-09-26 更正：这句话是假的。** 两个测试工程都在用跨目录通配——
+> `MechJebLibTest.csproj` 与 `PioneerFramework.Pure.Tests.csproj` 各自 `<Compile Include="..\PioneerFramework\ThirdParty\MechJebLib\**\*.cs" />`。
+> 它只对 `Source/PioneerFramework/` 成立。⇒ **搬文件前要按这两个工程的通配实测一遍**，别只看这句话。
 以及显式 `<Compile Include="..\PioneerFramework\Base\...">` 那批链接文件）。
 ⇒ **在 `Source/` 下直接建目录，就等于"留盘不编译"**，不需要改任何工程文件。
 
@@ -32,25 +35,32 @@
 
 | 移入日期 | 文件（原路径） | 为什么退役 | 取回代价 |
 |---|---|---|---|
+| 2026-09-28 | `Source/PioneerFramework/Base/Orbital/RendezvousGuidanceLaw.cs` | **已作废的自制交会律**（用户 2026-09-22："那个东西不能用了"）。批5.B 撤掉它的玩家入口后，**生产侧零调用者**（原先唯一的活消费者是旧菜单的价目） | 搬回 `Base/Orbital/` + 恢复 `MechJebLibTest` / `Pure.Tests` 各一行 `<Compile Include>`。⚠ 别在没有新判决时接回玩家路径 |
+| 2026-09-28 | `Source/PioneerFramework/Base/Orbital/CwRendezvousCore.cs` | CW（Hill）终端"温柔解" = 旧律的终端；旧律作废后**零生产调用者**（排队中 §2 早已登记）。替代 = MJ 靶执行器 | 同上 |
+| 2026-09-28 | `Source/PioneerFramework.Pure.Tests/RendezvousGuidanceCoreTests.cs` | T1–T16 **全部由旧律驱动** ⇒ 律归档后无法编译。替代 = `MechJebLibTest/LadderEndToEndTests.cs`（**活路径**重跑同四条几何；T0 台架自检一并搬为 `G0`） | 搬回 `PioneerFramework.Pure.Tests/`（靠目录通配，无需改 csproj） |
+| 2026-09-28 | `Source/PioneerFramework/Base/Core/DVector3Extensions.cs` | 它本是"DVector3 ↔ 移植面 V3"的**补齐件**（索引访问 / 安全单位化 / 北天极 / xaxis / zaxis）。批5 U2/U3 把移植面类型并进 `DVector3` 后，这 5 个成员**由类型本身直接提供** ⇒ 它成了第二份权威（J2），且实测**零调用者**（连 `using static` 都没有） | 无（搬回原路径 + 恢复 `MechJebLibTest` / `PioneerFramework.Pure.Tests` 各一行 `<Compile Include>`） |
 | 2026-09-23 | `Source/PioneerFramework.Pure.Tests/NBodyTests.cs` | 2 例**完全被** `GravityFieldTests` 覆盖（后者更全）⇒ 冗余，非独有覆盖 | 无（搬回即可） |
 | 2026-09-23 | `Source/MechJebLibTest/A4_StageBreakdown.cs` | 探针（只 `Assert.True(true)` + 写临时文件），零判据、零引用 | 无 |
 | 2026-09-23 | `Source/PioneerFramework.Pure.Tests/TerminalCommitComparison.cs` | 测**已退休的终端三档政策**；唯一断言 `Assert.True(a.Reached)` 是仪器自证，B/C 档只打印不判定；结论随连续律退休作废 | 无（但见下"排队中"第 1 条：它曾充当 T5 的仪器基准） |
 
 ## 排队中（**不是"忘了"，是"先有替代再搬"**）
 
-1. **`RendezvousGuidanceCoreTests` 的 T1/T2/T7/T8/T9**（整文件内的**用例级**退役，需要手术而非搬文件）：
-   测的是 `RendezvousGuidanceLaw.Compose`（游戏侧**零调用者**）与 `MaxClosablePhase`/`PhaseRateFromElements`
-   等零调用者函数；其中 **T8/T9 连断言都没有**（纯 `WriteLine`）。
-   ⚠ **必须先有新覆盖**：T11/T12/T13/T14/T16 覆盖的是**仍在玩家路径上的需求**（一圈交会 / LEO→GEO /
-   GTO 异轨 / 死区不憋死）⇒ 它们的替代 = **阶梯端到端台架**（四条几何有界时间到 300 m / 2 m/s）。
-   台架不到位就不搬——否则就是"删了测试却没替代"。
-2. **两族零生产调用者的生产代码**：`Base/Orbital/CwRendezvousCore.cs`（+ 引用它的用例）、
-   `Base/Orbital/BurnArcCompensation.cs` + `BurnArcCompensationTests.cs`。
-   ⚠ 它们**被显式链接进测试工程** ⇒ 搬动要连带改 csproj 与调用点，且 `CwRendezvousCore` 是否留作
-   将来"终端温柔解"属**设计选择**（待裁定）。
-3. **文件内的残骸**（手术类，与上面同批做）：`LadderVsLawComparison` 里零调用者的私有 `RunLaw/RunLadder`
-   与 `A4_PlanLevel_CostTable`（`Assert.True(true)`）；`BurnArcTests.cs` 里的 `BurnLagHypothesisTests`
-   （负结果已被 `BurnArcExecutorBench` 的三档覆盖）；两个**死旋钮** `TerminalUseExactLambert`（从未被
-   任何用例设置）与 `MainOnly`（只经一个从未置真的静态字段）。
+1. ✅ **已完成（2026-09-28 批5.B）**：`RendezvousGuidanceCoreTests` **整文件**（T0–T16）已归档。
+   路径 = 先补齐本规则的**前置**（把四条几何端到端台架建到活路径上），再搬：
+   `MechJebLibTest/LadderEndToEndTests.cs`（一圈交会 / LEO→GEO / GTO 异轨 / 死区不憋死**四条全绿**，
+   口径 300 m / 2 m/s；含从 T0 搬过去的台架自检 `G0`）+ `LadderPlanCostTests.cs`（规划墙钟）。
+   ⚠ **一处登记**：`LadderEndToEndTests.G1`（同轨 15°）实测 **5.41 个周期**，而"**一圈交会**"这条
+   用户硬要求**当前阶梯没达成** ⇒ 只断言"**有界**"（≤12 周期）并把读数打出来；阶梯自己的
+   `PlanPhasingOrbit` 注释也把它登记在"**总修缮**"清单里（与"先照 MJ、创新放最后"一致）。
+   ⇒ **不许拿旧律的 1.68 周期当基准**（旧律是废物：它快在相位、贵在别处——LEO→GEO 3.27× 螺旋价且超预算、
+   末端极限环、反复买冲量）。
+2. 🔶 **部分完成（2026-09-28 批5.B）**：`CwRendezvousCore.cs`（+ 引用它的用例）**已归档** ✅
+   （用户裁定"旧律完全不要"⇒ 排队时留的"是否留作终端温柔解"这个设计选择已由该裁定解决）。
+   **仍欠**：`Base/Orbital/BurnArcCompensation.cs` + `BurnArcCompensationTests.cs`（同样零生产调用者、
+   同样被显式链接进测试工程 ⇒ 搬动要连带改 csproj）。
+3. 🔶 **残骸部分完成（2026-09-28 批5.B）**：`LadderVsLawComparison` 已**瘦身成 `LadderPlanCostTests`**
+   （零调用者的 `RunLaw`/`RunLadder`、自带的私有 `LadderPilot`、以及 `A4_PlanLevel_CostTable` 探针全删）。
+   **仍欠**：`BurnArcTests.cs` 里的 `BurnLagHypothesisTests`（负结果已被 `BurnArcExecutorBench` 的三档覆盖）；
+   两个**死旋钮** `TerminalUseExactLambert`（从未被任何用例设置）与 `MainOnly`（只经一个从未置真的静态字段）。
 4. **同题第二份**：`MechJebLibTest/BurnRegimeTests.cs`（与 `ManeuverRegimeTests` 同一条 Θ 判据；
    `BurnRegime` 的唯一调用者是 `Window_PlanEditor` 的 UI 显示 ⇒ 搬它等于接受"UI 读数无人守"，待裁定）。

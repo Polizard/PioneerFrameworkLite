@@ -111,6 +111,11 @@ namespace PioneerFramework
         /// 地图上储罐液面真实下降。1x 下物理步 2s 扣一次、1/60x 下每 2/60s 扣一次均适用。
         /// 只改本地存量不回写向量（向量是目标值），避免与 RegisterToMap 双向循环。
         /// </summary>
+        // P51 分组用的复用容器（**每 tick 调用** ⇒ 不许每 tick 分配）：D 与 T 都是玩家可建的量。
+        private static readonly Dictionary<PropellantDef, List<int>> _groupScratch =
+            new Dictionary<PropellantDef, List<int>>();
+        private static readonly List<PropellantDef> _leaderOrder = new List<PropellantDef>();
+
         public static void TickDifferenceSync(Map map)
         {
             if (map == null || !tanksByMap.TryGetValue(map, out var list) || list.Count == 0)
@@ -119,38 +124,61 @@ namespace PioneerFramework
             var mapComp = map.GetComponent<SpaceMapComp>();
             if (mapComp == null) return;
 
-            // 按工质分组处理（每种工质组内第一个储罐作为执行者）
-            for (int g = 0; g < list.Count; g++)
+            // ── P51（2026-09-27）：**一趟分组 O(T)**，替掉原实现"每个工质组都要扫全表两遍"的 O(T²) ──
+            // 本函数**每 tick** 被 `SpaceMapComp` 驱动，而储罐数 T 是**玩家可建**的 ⇒ T 大时这一项是
+            // 帧内可见的二次项。改法 = 先一趟按工质分组（**保列表顺序**），再逐组处理。
+            // ⚠ **保序即保结果**：分组与求和都按列表顺序 ⇒ float 累加顺序不变 ⇒ 逐位相同（零行为变化）。
+            // ⚠ **刻意保留原实现的一处怪癖**：首领（该工质在列表里**第一个**出现的那个）若无效
+            //   （null / 已毁 / 无工质 Def），则**整组跳过** —— 原实现用"前面有没有同工质的"来定首领，
+            //   而无效项也会被它读到并占住首领位 ⇒ 组被跳掉。这里按同样语义实现（不顺手"修好"它：
+            //   那是独立决定，见下方登记）。
+            _groupScratch.Clear();
+            _leaderOrder.Clear();
+            for (int i = 0; i < list.Count; i++)
             {
-                var leader = list[g];
-                if (leader == null || leader.parent == null || leader.parent.Destroyed) continue;
-                var def = leader.PropellantDef;
+                var t = list[i];
+                if (t == null) continue;
+                var def = t.PropellantDef;
                 if (def == null) continue;
-
-                // 找到同工质组内第一个注册者，仅它执行（其余跳过）
-                bool isLeader = true;
-                for (int i = 0; i < g; i++)
+                if (!_groupScratch.TryGetValue(def, out var bucket))
                 {
-                    if (list[i].PropellantDef == def) { isLeader = false; break; }
+                    bucket = new List<int>();
+                    _groupScratch[def] = bucket;
+                    _leaderOrder.Add(def);
                 }
-                if (!isLeader) continue;
+                bucket.Add(i);   // 存**下标**（不存对象，避免持有已毁零件的引用）
+            }
+
+            for (int gi = 0; gi < _leaderOrder.Count; gi++)
+            {
+                var def = _leaderOrder[gi];
+                var bucket = _groupScratch[def];
+
+                // 首领 = 该工质在列表里第一个出现者；它无效 ⇒ 整组跳过（原语义）
+                var leader = list[bucket[0]];
+                if (leader.parent == null || leader.parent.Destroyed) continue;
 
                 float localTotal = 0f;
-                for (int i = 0; i < list.Count; i++)
+                for (int k = 0; k < bucket.Count; k++)
                 {
-                    if (list[i].PropellantDef != def || list[i].parent == null || list[i].parent.Destroyed) continue;
-                    localTotal += list[i].storedMass;
+                    var t = list[bucket[k]];
+                    if (t.parent == null || t.parent.Destroyed) continue;
+                    localTotal += t.storedMass;
                 }
-                float vectorMass = mapComp.GetPropellantMass(def);
-                float diff = localTotal - vectorMass;
-                if (diff <= 0.01f) continue;
+                // ⚠ P51 同批（2026-09-27）：池侧已是 double ⇒ 这里的镜像比对也用 double，
+                //   免得"池追罐"的误差被 float 截断吃回去（本地 `storedMass` 仍是 float：它是显示镜像）。
+                double vectorMass = mapComp.GetPropellantMass(def);
+                double diff = localTotal - vectorMass;
+                if (diff <= 0.01) continue;
+                if (localTotal <= 0f) continue;   // 与原实现里那句 `break` 等价：本组不做分摊
 
-                for (int i = 0; i < list.Count; i++)
+                for (int k = 0; k < bucket.Count; k++)
                 {
-                    var t = list[i];
-                    if (t.PropellantDef != def || t.parent == null || t.parent.Destroyed) continue;
-                    if (localTotal <= 0f) break;
-                    float share = diff * (t.storedMass / localTotal);
+                    var t = list[bucket[k]];
+                    if (t.parent == null || t.parent.Destroyed) continue;
+                    // ⚠ 本地 `storedMass` 仍是 float（**显示镜像**：真值是 `SpaceMapComp` 池里的 double）
+                    //    ⇒ 这里一次边界 cast，镜像的算术与改前逐位相同（只跟随 double 的 diff，不改它的行为）。
+                    float share = (float)(diff * ((double)t.storedMass / localTotal));
                     if (share > 0f)
                         t.storedMass = Mathf.Max(0f, t.storedMass - share);
                 }

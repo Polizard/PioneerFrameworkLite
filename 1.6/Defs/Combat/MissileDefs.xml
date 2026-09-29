@@ -36,7 +36,7 @@
 
     <!-- ── D15 主推方向型 ── -->
     <mainThrustDirectional>true</mainThrustDirectional>
-    <mainAxisLocal>(0, 0, -1)</mainAxisLocal>
+    <mainAxisShip>(0, 0, -1)</mainAxisShip>
     <coneDegrees>10</coneDegrees>
     <maxAngularRateDegrees>20</maxAngularRateDegrees>
 
@@ -77,7 +77,7 @@
     <guidanceLostMarginMeters>30000</guidanceLostMarginMeters>
     <bodyLifetimeSeconds>600</bodyLifetimeSeconds>
     <mainThrustDirectional>true</mainThrustDirectional>
-    <mainAxisLocal>(0, 0, -1)</mainAxisLocal>
+    <mainAxisShip>(0, 0, -1)</mainAxisShip>
     <coneDegrees>10</coneDegrees>
     <maxAngularRateDegrees>20</maxAngularRateDegrees>
     <warheadDamage>800</warheadDamage>

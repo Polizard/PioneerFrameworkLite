@@ -30,12 +30,28 @@ namespace PioneerFramework
         // ── 探针计数（纯 C#、无 Verse 依赖——本文件同时被 Pure.Tests 链接编译，故不用 Log/Find）──
         // 由 PerfProbe 汇总打印读取。判据：DebugSeriesCapHits 正常玩法下必须恒为 0；
         // DebugMaxSeriesIter 用于确认 200 的余量（真实收敛所需迭代数应远小于它）。
-        /// <summary>TLAMB 调用次数。</summary>
+        /// <summary>TLAMB 调用次数。
+        /// ⚠ **R6（2026-09-26）：原子化**。本文件当前**不可达**并行区（`Gooding.Solve` 只有两处调用者，
+        ///   都在制导的主线程路径上——审计逐行核过），所以这不是"在修一个活竞争"，而是**前置**：
+        ///   批 7 要把规划调用批并行（Lambert 网格扫描是最值钱的那一项）⇒ 到时候这三个计数会是竞争面。
+        ///   现在改成原子 = 那时不用回头补，且**现在就是零风险改动**。</summary>
         public static long DebugTlambCalls;
-        /// <summary>级数迭代触顶次数（触顶 = 判定不收敛并抛异常）。</summary>
+        /// <summary>级数迭代触顶次数（触顶 = 判定不收敛并抛异常）。原子化，理由同 <see cref="DebugTlambCalls"/>。</summary>
         public static long DebugSeriesCapHits;
-        /// <summary>实测最大级数迭代数。</summary>
+        /// <summary>实测最大级数迭代数。⚠ 它是**max 聚合**（可交换）⇒ 原子化后与单线程**结果相同**。</summary>
         public static int DebugMaxSeriesIter;
+
+        /// <summary>原子 max（int）。**max 可交换可结合** ⇒ 原子化后结果与单线程逐位相同（R6）。</summary>
+        private static void AtomicMaxInt(ref int target, int v)
+        {
+            int cur = System.Threading.Volatile.Read(ref target);
+            while (v > cur)
+            {
+                int seen = System.Threading.Interlocked.CompareExchange(ref target, v, cur);
+                if (seen == cur) return;
+                cur = seen;
+            }
+        }
 
         public static (DVector3 Vi, DVector3 Vf) Solve(double mu, DVector3 r1, DVector3 r2, double tof,
             TransferGeometry direction = TransferGeometry.ShortWay, int nrev = 0, DVector3? h = null)
@@ -312,7 +328,7 @@ namespace PioneerFramework
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static (double T, double DT, double D2T, double D3T) TLAMB(int M, double Q, double QSQFM1, double X, int N)
         {
-            DebugTlambCalls++;
+            System.Threading.Interlocked.Increment(ref DebugTlambCalls);
             const double SW = 0.4;
             bool LM1 = N == -1;
             bool L1 = N >= 1;
@@ -368,10 +384,11 @@ namespace PioneerFramework
                                 T += TERM / TWOI1;
                                 converged = (T == TOLD);
                             } while (!converged && ++iter < MAX_SERIES_ITER);
-                            if (iter > DebugMaxSeriesIter) DebugMaxSeriesIter = iter;
+                            // max 聚合用 CAS（可交换 ⇒ 与单线程同结果）
+                            AtomicMaxInt(ref DebugMaxSeriesIter, iter);
                             if (!converged)
                             {
-                                DebugSeriesCapHits++;
+                                System.Threading.Interlocked.Increment(ref DebugSeriesCapHits);
                                 throw new Exception("Gooding TLAMB series did not converge");
                             }
                         }
@@ -435,10 +452,10 @@ namespace PioneerFramework
                     converged2 = I >= N && T == TOLD;
                 } while (!converged2 && ++iter2 < maxIter);
 
-                if (iter2 > DebugMaxSeriesIter) DebugMaxSeriesIter = iter2;
+                AtomicMaxInt(ref DebugMaxSeriesIter, iter2);
                 if (!converged2)
                 {
-                    DebugSeriesCapHits++;
+                    System.Threading.Interlocked.Increment(ref DebugSeriesCapHits);
                     throw new Exception("Gooding TLAMB series expansion did not converge");
                 }
 

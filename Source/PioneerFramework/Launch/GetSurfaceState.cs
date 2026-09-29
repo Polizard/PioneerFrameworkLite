@@ -19,12 +19,12 @@ namespace PioneerFramework.Launch
     ///   自转相位时间基准 = physicsTick（与轨道物理同源）。
 /// 公开转换 API（tile ↔ ECI 单一事实源，支持任意 PlanetLayer 天体）：
 ///   GetLayerForBody（bodyId → PlanetLayer）/ TileToFixedPosition / FixedToEci / EciToFixed /
-///   TileToEci / TileToWorldEci / EciToTile（星下点反查）/ EciToLongLat / SurfaceVelocity。
+///   TileToEci / TileToEciAbs / EciToTile（星下点反查）/ EciToLongLat / SurfaceVelocity。
 ///   所有 tile 转换均接受 PlanetLayer 参数（地表层快捷重载默认 Find.WorldGrid.Surface）。
 /// ⚠ 坐标系语义：本类所有 ECI 结果都以【天体中心为原点】（local ECI，与 SpaceGameComp 积分系一致，
 ///   group.CurrentOrbit 直接兼容，发射出生状态无需额外换算）。若需行星系/世界参考系坐标
-///   （与其它天体比较、渲染绝对位置、跨天体轨道计算），使用 TileToWorldEci，或手动加
-///   CelestialBodyManager.GetBodyWorldPosition(bodyId, physicsTick)。
+///   （与其它天体比较、渲染绝对位置、跨天体轨道计算），使用 TileToEciAbs，或手动加
+///   CelestialBodyManager.GetBodyPositionAbs(bodyId, physicsTick)。
     /// 出生状态 = 地表点 + 离地高度 alt，速度继承自转初速 v_surface（赤道 ≈ 524 m/s）。
     /// 注意（设计缺口）：高纬度发射会入倾斜圆轨（控制律无面外项）。
     /// </summary>
@@ -166,11 +166,11 @@ namespace PioneerFramework.Launch
         }
 
         /// <summary>
-        /// tile → 世界参考系 ECI（行星系/世界坐标）：local ECI + 天体世界位置（GetBodyWorldPosition）。
+        /// tile → 世界参考系 ECI（行星系/世界坐标）：local ECI + 天体世界位置（GetBodyPositionAbs）。
         /// 用于跨天体比较 / 渲染绝对位置 / 与其它天体轨道叠加。天体级入口。
         /// </summary>
-        public static DVector3 TileToWorldEci(int tile, CelestialBodyManager mgr, int bodyId, double physicsTick)
-            => TileToEci(tile, mgr, bodyId, physicsTick) + (mgr?.GetBodyWorldPosition(bodyId, physicsTick) ?? DVector3.zero);
+        public static DVector3 TileToEciAbs(int tile, CelestialBodyManager mgr, int bodyId, double physicsTick)
+            => TileToEci(tile, mgr, bodyId, physicsTick) + (mgr?.GetBodyPositionAbs(bodyId, physicsTick) ?? DVector3.zero);
 
         /// <summary>
         /// ECI → tile（星下点反查）：Ry(+ωt) 回固连系后取该 layer 中方向最近的 tile。

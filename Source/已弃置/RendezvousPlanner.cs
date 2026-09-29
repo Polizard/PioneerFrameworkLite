@@ -1,3 +1,8 @@
+// 【已弃置 2026-09-27】旧范式交会规划器窗口。用户裁定「不留」（2026-09-22 已裁定该套旧律不能用了）。
+// 归档而非删除：留盘不编译（`Source/` 下无跨目录通配 ⇒ 本目录不参与编译）。
+// 原路径：Source/PioneerFramework/Base/Orbital/RendezvousPlanner.cs
+// 解锁前提（若要恢复）：需同时恢复 SpaceGroupVisualManager 的预览绘制分支 + 调试页签入口。
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -736,7 +741,7 @@ namespace PioneerFramework
             // 本方法原先自带一份 2π√(a³/μ)。现在统一由 `OrbitView.period` 给（唯一权威）。
             // ⚠ **只换了算式，上面的参考系处理一字未动**——换错参考系是这类 bug 的老家，
             //   而这一步是"收敛"不是"改行为"，读数必须逐位不变。
-            OrbitView ov = OrbitView.FromStateVectors(OrbitAdapter.ToV3(pos), OrbitAdapter.ToV3(vel), gm, 0.0);
+            OrbitView ov = OrbitView.FromStateVectors(pos, vel, gm, 0.0);
             double period = ov.period;
             if (double.IsNaN(period) || period <= 0.0) return 10000.0; // 原有兜底（双曲/退化）
             return period;

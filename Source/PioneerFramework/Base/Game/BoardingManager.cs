@@ -50,7 +50,7 @@ namespace PioneerFramework
         public List<BoardingMember> members = new List<BoardingMember>();
         public int targetGroupId = -1;
         public int targetPartId = -1;
-        public DVector3 landingLocalOffset;  // 落点 = 目标空间站局部系 3D 偏移（格 → 米）
+        public DVector3 landingOffsetShip;  // 落点 = 目标空间站局部系 3D 偏移（格 → 米）
         public int shuttleId = -1;           // 穿梭机稳定身份；EVA 恒 -1
         public BoardingState state = BoardingState.Flying;
 
@@ -71,7 +71,7 @@ namespace PioneerFramework
                 members = new List<BoardingMember>();
             Scribe_Values.Look(ref targetGroupId, "targetGroupId", -1);
             Scribe_Values.Look(ref targetPartId, "targetPartId", -1);
-            DVector3.Scribe("landingLocalOffset", ref landingLocalOffset);
+            DVector3.Scribe("landingOffsetShip", ref landingOffsetShip);
             Scribe_Values.Look(ref shuttleId, "shuttleId", -1);
             Scribe_Values.Look(ref state, "state", BoardingState.Flying);
         }
@@ -281,7 +281,7 @@ namespace PioneerFramework
                 group.ClearApproachGuidance();
 
             // 降落判定：距移动落点 < 阈值 且 相对速度 < 阈值 → 降落成功
-            DVector3 aim = GetWorldAimPoint(unit);
+            DVector3 aim = GetAimPointSystem(unit);
             DVector3 groupPos = GetGroupPos(group);
             DVector3 unitVel = GetGroupVelocity(group);
             DVector3 targetVel = GetGroupVelocity(target);
@@ -336,7 +336,7 @@ namespace PioneerFramework
         /// </summary>
         /// <param name="initialVelocityOffset">初始速度偏移（m/s，测试用：模拟高速接近/偏离共轨）。null = 共轨起飞。</param>
         /// <param name="initialPositionOffset">初始位置偏移（m，相对母船原点，测试用：多兵分散出生避免 AABB 重叠互撞）。null = 母船原点。</param>
-        public BoardingUnit LaunchEva(Pawn pawn, int targetGroupId, int targetPartId, DVector3 landingLocalOffset,
+        public BoardingUnit LaunchEva(Pawn pawn, int targetGroupId, int targetPartId, DVector3 landingOffsetShip,
             DVector3? initialVelocityOffset = null, DVector3? initialPositionOffset = null)
         {
             if (pawn == null || pawn.Destroyed) return null;
@@ -366,7 +366,7 @@ namespace PioneerFramework
                 entityId = entity.EntityId,
                 targetGroupId = targetGroupId,
                 targetPartId = targetPartId,
-                landingLocalOffset = landingLocalOffset,
+                landingOffsetShip = landingOffsetShip,
                 state = BoardingState.Flying
             };
             unit.members.Add(new BoardingMember { pawn = pawn });
@@ -378,7 +378,7 @@ namespace PioneerFramework
             Log.Message(string.Format("[Boarding] EVA 起飞 Unit {0} 兵 {1} → 站 G{2}/Part{3} 参考系 body{4} " +
                 "落点({5:F0},{6:F1},{7:F0})m 初位({8:F0},{9:F0},{10:F0})km 初速({11:F1},{12:F1},{13:F1})m/s",
                 id, pawn.LabelShort, targetGroupId, targetPartId, group.CelestialBodyId,
-                landingLocalOffset.x, landingLocalOffset.y, landingLocalOffset.z,
+                landingOffsetShip.x, landingOffsetShip.y, landingOffsetShip.z,
                 startPos.x / 1000.0, startPos.y / 1000.0, startPos.z / 1000.0,
                 startVel.x, startVel.y, startVel.z));
             return unit;
@@ -389,7 +389,7 @@ namespace PioneerFramework
         /// 临时 3D 实体（继承 ShuttleId）+ 接近引导。
         /// </summary>
         public BoardingUnit LaunchShuttle(Thing shuttleThing, List<Pawn> passengers,
-            int targetGroupId, int targetPartId, DVector3 landingLocalOffset,
+            int targetGroupId, int targetPartId, DVector3 landingOffsetShip,
             DVector3? initialPositionOffset = null, DVector3? initialVelocityOffset = null)
         {
             if (shuttleThing == null || shuttleThing.Destroyed) return null;
@@ -434,7 +434,7 @@ namespace PioneerFramework
                 entityId = entity.EntityId,
                 targetGroupId = targetGroupId,
                 targetPartId = targetPartId,
-                landingLocalOffset = landingLocalOffset,
+                landingOffsetShip = landingOffsetShip,
                 shuttleId = shuttleId,
                 state = BoardingState.Flying
             };
@@ -446,7 +446,7 @@ namespace PioneerFramework
 
             Log.Message(string.Format("[Boarding] 穿梭机起飞 Unit {0} Shuttle{1} 乘客 {2} 名 → 站 G{3} 落点({4:F0},{5:F1},{6:F0})m",
                 id, shuttleId, unit.members.Count, targetGroupId,
-                landingLocalOffset.x, landingLocalOffset.y, landingLocalOffset.z));
+                landingOffsetShip.x, landingOffsetShip.y, landingOffsetShip.z));
             return unit;
         }
 
@@ -471,7 +471,7 @@ namespace PioneerFramework
                 return;
             }
 
-            IntVec3 cell = MapCoordMapper.LocalToMapCell(targetMap, unit.landingLocalOffset);
+            IntVec3 cell = MapCoordMapper.ShipToMapCell(targetMap, (Vector3)unit.landingOffsetShip);
 
             if (unit.type == VesselType.Shuttle)
             {
@@ -485,7 +485,7 @@ namespace PioneerFramework
                     unit.state = BoardingState.Destroyed;
                     return;
                 }
-                // 占地足迹钳制：LocalToMapCell 只收敛单格，3x3 足迹需整体不出界
+                // 占地足迹钳制：ShipToMapCell 只收敛单格，3x3 足迹需整体不出界
                 IntVec2 foot = def.size;
                 int fx = Mathf.Clamp(cell.x, 0, targetMap.Size.x - foot.x);
                 int fz = Mathf.Clamp(cell.z, 0, targetMap.Size.z - foot.z);
@@ -546,7 +546,7 @@ namespace PioneerFramework
             if (otherGroupId != unit.targetGroupId) return false;
 
             // 已对准落点（距移动落点 < 阈值）→ 消费
-            double dist = (GetGroupPos(unitGroup) - GetWorldAimPoint(unit)).magnitude;
+            double dist = (GetGroupPos(unitGroup) - GetAimPointSystem(unit)).magnitude;
             bool consumed = dist < LandingDistanceThreshold;
             if (consumed)
                 Log.Message(string.Format("[Boarding] 接舷消费 G{0}(Unit{1}) vs G{2} vRel={3:F1}m/s dist落点={4:F0}m",
@@ -588,7 +588,7 @@ namespace PioneerFramework
 
             s.resolved = true;
             s.unitPos = GetGroupPos(group);
-            s.aimPoint = GetWorldAimPoint(unit);
+            s.aimPoint = GetAimPointSystem(unit);
             s.distToAim = (s.aimPoint - s.unitPos).magnitude;
             if (target != null)
                 s.relVel = (GetGroupVelocity(group) - GetGroupVelocity(target)).magnitude;
@@ -633,14 +633,14 @@ namespace PioneerFramework
         }
 
         /// <summary>移动落点（世界，米）= 目标 group 位置 + 实体偏移 + 姿态旋转(落点局部偏移)。</summary>
-        private DVector3 GetWorldAimPoint(BoardingUnit unit)
+        private DVector3 GetAimPointSystem(BoardingUnit unit)
         {
             var target = ResolveTargetGroup(unit);
             if (target == null) return DVector3.zero;
             DVector3 groupPos = GetGroupPos(target);
             var targetEntity = ResolveTargetEntity(unit);
-            if (targetEntity == null) return groupPos + unit.landingLocalOffset;
-            return BoardingMath.WorldAimPoint(groupPos, targetEntity.Position, targetEntity.Rotation, unit.landingLocalOffset);
+            if (targetEntity == null) return groupPos + unit.landingOffsetShip;
+            return BoardingMath.AimPointSystem(groupPos, targetEntity.Position, targetEntity.Rotation, unit.landingOffsetShip);
         }
 
         /// <summary>与 CombatManager.GetGroupPos 同基准：圆轨解析位置 / 非圆轨 CurrentOrbit.position。</summary>
@@ -701,8 +701,8 @@ namespace PioneerFramework
             {
                 partId = 1,
                 defName = type == VesselType.Eva ? "PF_ShipPart_Eva" : "PF_ShipPart_Shuttle",
-                localPosition = DVector3.zero,
-                localBoundsSize = new DVector3(size, size, size),
+                positionShip = DVector3.zero,
+                boundsSizeShip = new DVector3(size, size, size),
                 hp = hp,
                 isIndestructible = false
             };
@@ -799,10 +799,10 @@ namespace PioneerFramework
         /// 世界落点 = 目标 group 位置 + 目标实体偏移 + 姿态旋转(落点局部偏移)。
         /// 落点局部偏移在目标空间站局部系（格 → 米，y=0）；空间站旋转时随姿态换算。
         /// </summary>
-        public static DVector3 WorldAimPoint(DVector3 groupPos, DVector3 entityPosition,
-            UnityEngine.Quaternion rotation, DVector3 localOffset)
+        public static DVector3 AimPointSystem(DVector3 groupPos, DVector3 entityPosition,
+            UnityEngine.Quaternion rotation, DVector3 offsetShip)
         {
-            return groupPos + entityPosition + DVector3.Rotate(localOffset, rotation);
+            return groupPos + entityPosition + DVector3.Rotate(offsetShip, rotation);
         }
 
         /// <summary>降落窗口判定：距移动落点 &lt; 阈值 且 相对速度 &lt; 阈值（低速接舷）。</summary>

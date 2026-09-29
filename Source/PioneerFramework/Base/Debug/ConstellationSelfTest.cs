@@ -125,17 +125,17 @@ namespace PioneerFramework
                 if (anchor != null && body != null)
                 {
                     // **独立口径**校验：反推用 SpaceEntityGroup.GetCentralBodyOffset（碰撞检查 / 圆轨解析 /
-                    // N 体积分器共用的群组系规则），不是重算一遍 AnchorWorldPosition 的输入。
-                    // （坐标系约定的唯一出处：CelestialBodyManager.GetBodyWorldPosition 的文档块）
-                    // 初版检查与实现同错（两边都用"递归到恒星"的 GetBodyWorldPosition）→ 12 万 km 的
+                    // N 体积分器共用的系统系规则），不是重算一遍 AnchorPositionSystem 的输入。
+                    // （坐标系约定的唯一出处：CelestialBodyManager.GetBodyPositionAbs 的文档块）
+                    // 初版检查与实现同错（两边都用"递归到恒星"的 GetBodyPositionAbs）→ 12 万 km 的
                     // 帧错误被判成 PASS；换成独立口径后这类错误必 FAIL。
                     DVector3 frameOffset = anchor.GetCentralBodyOffset(TimeScaleManager.GetPhysicsTickSafe());
                     double distMeters = (anchor.CurrentOrbit.position - frameOffset).magnitude;
                     Check(System.Math.Abs(distMeters - body.radius) < 1.0,
-                        string.Format("锚点在群组坐标系：距中心天体 {0:F0} km == R_body（{1:F0} km）",
+                        string.Format("锚点在系统系：距中心天体 {0:F0} km == R_body（{1:F0} km）",
                             distMeters / 1000.0, body.radius / 1000.0));
 
-                    // 根行星（地球）在群组系就是原点 → |pos| 必须等于 R_body，与天体绝对位置无关的硬校验
+                    // 根行星（地球）在系统系就是原点 → |pos| 必须等于 R_body，与天体绝对位置无关的硬校验
                     if (celestialMgr != null && celestialMgr.GetRootPlanetId(anchor.CelestialBodyId) == anchor.CelestialBodyId)
                     {
                         Check(System.Math.Abs(anchor.CurrentOrbit.position.magnitude - body.radius) < 1.0,

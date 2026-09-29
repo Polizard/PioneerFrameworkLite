@@ -84,12 +84,12 @@ namespace PioneerFramework.Pure.Tests
                 ConstellationCore.CheckAdd(true, true, false, false, false));
         }
 
-        // ── 锚点位置：天体在群组系中的位置 + R_body × dir(tile) ──────
+        // ── 锚点位置：天体在系统系中的位置 + R_body × dir(tile) ──────
 
         [Fact]
-        public void AnchorWorldPosition_PlacesPointOnSurfaceAlongTileDirection()
+        public void AnchorPositionSystem_PlacesPointOnSurfaceAlongTileDirection()
         {
-            var p = ConstellationCore.AnchorWorldPosition(
+            var p = ConstellationCore.AnchorPositionSystem(
                 bodyFrameOffset: DVector3.zero,
                 tileCenterDir: DVector3.up,
                 bodyRadiusMeters: 5_000_000.0);
@@ -100,10 +100,10 @@ namespace PioneerFramework.Pure.Tests
         }
 
         [Fact]
-        public void AnchorWorldPosition_NormalizesNonUnitTileDirection()
+        public void AnchorPositionSystem_NormalizesNonUnitTileDirection()
         {
             // GetTileCenter 返回渲染网格顶点（半径≠1）→ 必须归一化后再乘物理半径，否则锚点浮在地表外
-            var p = ConstellationCore.AnchorWorldPosition(DVector3.zero, new DVector3(30, 40, 0), 1000.0);
+            var p = ConstellationCore.AnchorPositionSystem(DVector3.zero, new DVector3(30, 40, 0), 1000.0);
 
             Assert.Equal(600.0, p.x, 6);
             Assert.Equal(800.0, p.y, 6);
@@ -111,23 +111,23 @@ namespace PioneerFramework.Pure.Tests
         }
 
         [Fact]
-        public void AnchorWorldPosition_OffsetByBodyFrameOffset()
+        public void AnchorPositionSystem_OffsetByBodyFrameOffset()
         {
-            // 月球据点：锚点 = 月球**在群组系中**的位置（绕地 80,000 km，PFL 口径）+ R_body × 固连方向。
-            // 群组系 = 根行星（地球）为原点——用绝对位置（GetBodyWorldPosition）会把地球公转偏移串进来。
+            // 月球据点：锚点 = 月球**在系统系中**的位置（绕地 80,000 km，PFL 口径）+ R_body × 固连方向。
+            // 系统系 = 根行星（地球）为原点——用绝对位置（GetBodyPositionAbs）会把地球公转偏移串进来。
             var moonFrameOffset = new DVector3(80_000_000.0, 0.0, 0.0);
-            var p = ConstellationCore.AnchorWorldPosition(moonFrameOffset, DVector3.up, 1_500_000.0);
+            var p = ConstellationCore.AnchorPositionSystem(moonFrameOffset, DVector3.up, 1_500_000.0);
 
             Assert.Equal(80_000_000.0, p.x, 3);
             Assert.Equal(1_500_000.0, p.y, 3);
         }
 
         [Fact]
-        public void AnchorWorldPosition_DegenerateDirection_FallsBackToBodyCenter()
+        public void AnchorPositionSystem_DegenerateDirection_FallsBackToBodyCenter()
         {
             // 退化输入（未初始化 tile / 网格缺失）不得产出 NaN
             var bodyOffset = new DVector3(100.0, 200.0, 300.0);
-            var p = ConstellationCore.AnchorWorldPosition(bodyOffset, DVector3.zero, 5_000_000.0);
+            var p = ConstellationCore.AnchorPositionSystem(bodyOffset, DVector3.zero, 5_000_000.0);
 
             Assert.Equal(100.0, p.x, 9);
             Assert.Equal(200.0, p.y, 9);
@@ -264,23 +264,23 @@ namespace PioneerFramework.Pure.Tests
         }
 
         /// <summary>
-        /// C4：`AnchorWorldPosition` 的 `radius = 0` 退化（原缺；L64 的 `sqrMagnitude &lt; 1e-18`
+        /// C4：`AnchorPositionSystem` 的 `radius = 0` 退化（原缺；L64 的 `sqrMagnitude &lt; 1e-18`
         /// 只处理"方向退化"，半径为零走的是正常分支，必须有断言钉住它退化为纯偏移）。
         /// </summary>
         [Fact]
-        public void AnchorWorldPosition_ZeroRadius_ReturnsBodyFrameOffset()
+        public void AnchorPositionSystem_ZeroRadius_ReturnsBodyFrameOffset()
         {
             var offset = new DVector3(1200.0, -300.0, 45.0);
             var dir = new DVector3(0.0, 1.0, 0.0);
 
-            var p = ConstellationCore.AnchorWorldPosition(offset, dir, 0.0);
+            var p = ConstellationCore.AnchorPositionSystem(offset, dir, 0.0);
 
             Assert.Equal(offset.x, p.x, 9);
             Assert.Equal(offset.y, p.y, 9);
             Assert.Equal(offset.z, p.z, 9);
 
             // 方向为零向量（退化）且半径为零：两者同时退化也必须返回偏移本身，不得产生 NaN
-            var degenerate = ConstellationCore.AnchorWorldPosition(offset, DVector3.zero, 0.0);
+            var degenerate = ConstellationCore.AnchorPositionSystem(offset, DVector3.zero, 0.0);
             Assert.Equal(offset.x, degenerate.x, 9);
             Assert.False(double.IsNaN(degenerate.x) || double.IsNaN(degenerate.y) || double.IsNaN(degenerate.z));
         }

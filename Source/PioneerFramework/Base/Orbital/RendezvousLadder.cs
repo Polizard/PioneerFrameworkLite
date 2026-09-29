@@ -248,11 +248,13 @@ namespace PioneerFramework
                 //     · 起飞发：`self@burnUt`（= 点火前轨道在节点处的状态，与执行器的旧口径**等价** ⇒ 行为不变）；
                 //     · 刹车发：转移轨道（= 打完起飞发之后的那条，±dv1）。
                 (V3 rTakeoff, V3 vTakeoff) = self.RightHandedStateVectorsAtUT(burnUt);
+                // ⚠ `equatorialAxis` 一律**从 `self` 取**（批4 P4）：原先这里写死 `new V3(0, 0, 1)`
+                //   （+z 适配层的产物）⇒ 极轴统一后它是**第二权威**，与实际赤道轴不一致时静默算错倾角。
                 OrbitView refTakeoff = OrbitView.FromStateVectors(rTakeoff, vTakeoff, self.mu, burnUt,
-                    new V3(0, 0, 1), self.bodyRadius);
+                    self.equatorialAxis, self.bodyRadius);
                 // 转移轨道 = 起飞时刻打完 dv1 = 计划真正会飞的那条
                 OrbitView afterBurn = OrbitView.FromStateVectors(rTakeoff, vTakeoff + dv1, self.mu, burnUt,
-                    new V3(0, 0, 1), self.bodyRadius);
+                    self.equatorialAxis, self.bodyRadius);
                 nodes.Add(new PlanNode(dv1, burnUt, PlanOwner.Guidance, 0.0, refTakeoff, true));
                 nodes.Add(new PlanNode(dv2Arrive, arriveUt, PlanOwner.Guidance, 0.0, afterBurn, true));
                 // ★ **"这一发真会到达吗"必须成为读数**（2026-09-21）：游戏里拦截级被连续选中 **63 次**
@@ -303,6 +305,7 @@ namespace PioneerFramework
                 //     而搜索给出的窗口圈数 < 5 ✓）。**两处都要判 ⇒ 就变成两份权威、且其中一份是错的。**
                 double period = self.period;
                 double maxPhasing = Math.Max(p.MaxPhasingOrbits, 5.0);   // 上游：忽略不合理的小值
+                string? hohmannFail = null;   // ⚠ 批5.C：霍曼级若被**异常**兜住，把原因带出去（原先整口吞掉）
                 try
                 {
                     (V3 hdv1, double hut1, V3 hdv2, double hut2) =
@@ -317,12 +320,17 @@ namespace PioneerFramework
                         return Rung.Hohmann;
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // 退化几何仍可能抛（Lambert 对某些输入会拒绝）⇒ 落到调相支
+                    // 退化几何仍可能抛（Lambert 对某些输入会拒绝）⇒ 落到调相支。
+                    // ⚠ 批5.C（2026-09-29）：**原先把异常整口吞掉** ⇒ 日志里"Hohmann ⇄ PhasingOrbit 反复翻转"
+                    //   到底是**按几何翻转**、还是**抛异常被静默兜住**，无从分辨（用户："测来测去看不出个长短"）。
+                    //   ⇒ 现在把类型与消息**带进 status**（本文件是纯核心、没有 `Log` ⇒ 由调用方打出来）。
+                    hohmannFail = ex.GetType().Name + ": " + ex.Message;
                 }
 
                 PlanPhasingOrbit(self, target, now, maxPhasing, p, nodes, out status);
+                if (hohmannFail != null) status += "｜⚠霍曼级异常被兜住：" + hohmannFail;
                 return Rung.PhasingOrbit;
             }
 
@@ -390,6 +398,13 @@ namespace PioneerFramework
             return ut;
         }
 
+        /// <summary>调相轨道的**半径倍率**：`(1 + 1.25/max(N,5))^{2/3}`（上游原式，N=5 时 ≈1.1604）。
+        /// 抬轨那支用 `aTgt × ratio`、压轨那支用 `aTgt / ratio`。
+        /// ⚠ 只在本文件内用（2026-09-29：曾被提为 public 供"近场夹具"构造初相，那个夹具已按用户意见
+        ///   换成**异轨档 + 用阶梯自己当 oracle 扫相位** ⇒ 外部零调用者 ⇒ 收回 private）。</summary>
+        private static double PhasingAxisRatio(double maxPhasingOrbits) =>
+            Math.Pow(1.0 + 1.25 / Math.Max(maxPhasingOrbits, 5.0), 2.0 / 3.0);
+
         /// <summary>上游第 7 级：相位太慢就建一条**调相轨道**（改近/远点 + 在对面拱点圆化，或直接圆化）。
         /// ⚠ **2026-09-21：半径公式已回到上游原样** —— 我曾叠一层"按需要几圈"的线性式（A4 表引出，
         /// 动机是"5° 小相位差不该花 383 m/s"），但它**并没有更快**、只是多一个概念 ⇒ 删（见函数内注释）。
@@ -402,7 +417,7 @@ namespace PioneerFramework
             //   （我曾在它上面叠一层"按需要几圈"的线性式并取更激进者 ✗ —— 实测它**并没有更快**，
             //    只是多了一个概念 ✗ ⇒ 删。）上游在 N=5 时 `axisRatio = 1.16` ⇒ **每圈收 ~86°**，几圈就完事 ✓。
             //   ⚠ A4 表当年测到"5° 小相位差也要 383 m/s" ⇒ 归入**"总修缮"清单**（先照 MJ 跑通）。
-            double axisRatio = Math.Pow(1.0 + 1.25 / Math.Max(maxPhasing, 5.0), 2.0 / 3.0);
+            double axisRatio = PhasingAxisRatio(maxPhasing);
             double aTgt = target.semiMajorAxis;
             double lowRadius = aTgt / axisRatio;
             double highRadius = aTgt * axisRatio;
@@ -416,7 +431,7 @@ namespace PioneerFramework
                 V3 dv1 = OrbitalManeuverCalculator.DeltaVToChangeApoapsis(self, ut1, phasingRadius);
                 (V3 r1, V3 v1) = self.RightHandedStateVectorsAtUT(ut1);
                 OrbitView transfer = OrbitView.FromStateVectors(r1, v1 + dv1, self.mu, ut1,
-                    new V3(0, 0, 1), self.bodyRadius);
+                    self.equatorialAxis, self.bodyRadius);
                 double ut2 = transfer.NextApoapsisTime(ut1);
                 nodes.Add(new PlanNode(dv1, ut1));
                 nodes.Add(new PlanNode(OrbitalManeuverCalculator.DeltaVToCircularize(transfer, ut2), ut2));
@@ -429,7 +444,7 @@ namespace PioneerFramework
                 V3 dv1 = OrbitalManeuverCalculator.DeltaVToChangePeriapsis(self, ut1, phasingRadius);
                 (V3 r1, V3 v1) = self.RightHandedStateVectorsAtUT(ut1);
                 OrbitView transfer = OrbitView.FromStateVectors(r1, v1 + dv1, self.mu, ut1,
-                    new V3(0, 0, 1), self.bodyRadius);
+                    self.equatorialAxis, self.bodyRadius);
                 double ut2 = transfer.NextPeriapsisTime(ut1);
                 nodes.Add(new PlanNode(dv1, ut1));
                 nodes.Add(new PlanNode(OrbitalManeuverCalculator.DeltaVToCircularize(transfer, ut2), ut2));

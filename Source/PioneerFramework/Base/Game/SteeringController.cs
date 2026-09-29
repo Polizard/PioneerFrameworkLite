@@ -58,12 +58,12 @@ namespace PioneerFramework
         public static DVector3 GetTranslationWorldDir(SpaceEntityGroup g)
         {
             DVector3 dir = DVector3.zero;
-            if (KeyForward) dir += g.GetWorldAxis(ThrustAxis.Forward);
-            if (KeyBack) dir += g.GetWorldAxis(ThrustAxis.Back);
-            if (KeyLeft) dir += g.GetWorldAxis(ThrustAxis.Left);
-            if (KeyRight) dir += g.GetWorldAxis(ThrustAxis.Right);
-            if (KeyUp) dir += g.GetWorldAxis(ThrustAxis.Up);
-            if (KeyDown) dir += g.GetWorldAxis(ThrustAxis.Down);
+            if (KeyForward) dir += g.GetThrustAxisSystem(ThrustAxis.Forward);
+            if (KeyBack) dir += g.GetThrustAxisSystem(ThrustAxis.Back);
+            if (KeyLeft) dir += g.GetThrustAxisSystem(ThrustAxis.Left);
+            if (KeyRight) dir += g.GetThrustAxisSystem(ThrustAxis.Right);
+            if (KeyUp) dir += g.GetThrustAxisSystem(ThrustAxis.Up);
+            if (KeyDown) dir += g.GetThrustAxisSystem(ThrustAxis.Down);
             return dir;
         }
 
@@ -97,16 +97,16 @@ namespace PioneerFramework
                 case SasTargetKind.Normal:
                 case SasTargetKind.Antinormal:
                 {
-                    DVector3 radial = g.localPosition.normalized;
-                    DVector3 h = DVector3.Cross(radial, g.localVelocity).normalized;
+                    DVector3 radial = g.positionBody.normalized;
+                    DVector3 h = DVector3.Cross(radial, g.velocityBody).normalized;
                     if (h.sqrMagnitude < 1e-9)
                         h = DVector3.up;
                     return SasKind == SasTargetKind.Normal ? h : -h;
                 }
                 case SasTargetKind.RadialOut:
-                    return g.localPosition.normalized;
+                    return g.positionBody.normalized;
                 case SasTargetKind.RadialIn:
-                    return -g.localPosition.normalized;
+                    return -g.positionBody.normalized;
                 default:
                     return DVector3.zero;
             }

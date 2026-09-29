@@ -16,8 +16,12 @@ namespace PioneerFramework
     ///    全部传播走移植来的 `Shepperd`，全部近点角换算走移植来的 `Angles`。
     ///    ⇒ 真数学都在**已被上游 4989 条测试验收**的那一层；本类型只负责"把状态摆到 MJ 期望的成员名下"。
     ///
-    /// ⚠ **向量类型**：按用户 2026-09-18 裁定，本类型内部用 MJ 的 `V3`（`DVector3` 是明确目标，见 P-1 §3.1
-    /// 的迁移债）。**`V3` 只许出现在本类型及其构造工厂里，不得渗进我们自己的代码。**
+    /// ⚠ **向量类型已统一**（批5 U2/U3，2026-09-28）：全库只剩一个双精度三矢量类型 `DVector3`，
+    /// `V3` 只是移植面沿用的**别名**（`ThirdParty/MechJebLib/_PFL/GlobalAlias.cs`）⇒
+    /// P-1 §3.1「日后把 `V3` 换成 `DVector3`」这条迁移债**已结清**，
+    /// 那句"`V3` 只许出现在本类型及其构造工厂里"随之作废（现在写 `V3` 就是写 `DVector3`）。
+    /// ⚠ **但"系"那一维的歧义仍在**：本类型的 `r`/`v` 是**天体参考系**，宿主侧另有一套游戏系语义，
+    /// 今天两者恰好同轴（批4 P4 换系恒等）⇒ 归属批6 的 S1（命名）/ S2（封边界），**不要在这里自行换算**。
     ///
     /// ⚠ **无缓存重构的余地**：要素在构造时算一次并缓存（与 MJ 的 `Orbit` 一致）。
     /// 传播不使用要素，直接用原始 `(r, v)`，所以 `NextClosestApproachTime` 那种 160 次采样的循环不会被放大。
@@ -131,7 +135,7 @@ namespace PioneerFramework
         private const double NearCircularEcc = 1e-6;
 
         /// <summary>
-        /// 升交点方向 `ẑ × ĥ` 的**退化阈值**：`|ẑ × ĥ|` 小于它（等价于 `|sin i| &lt; 1e-8`，即近赤道轨道）时，
+        /// 升交点方向 `极轴(+Y) × ĥ` 的**退化阈值**：模长小于它（等价于 `|sin i| &lt; 1e-8`，即近赤道轨道）时，
         /// 升交点方向在数值上已无意义，按标准约定取 **+x**（于是 `LAN = 0`）。
         /// 与 <see cref="NearCircularEcc" /> 同源：一个方向只有在"定义它的那个量的模长远高于 1e-16 噪声地板"时才有意义。
         /// </summary>
@@ -147,7 +151,7 @@ namespace PioneerFramework
         private static (double lan, double argp, double nu) NearCircularAngles(V3 r, V3 v)
         {
             V3 hhat = V3.Cross(r, v).normalized;
-            V3 node = V3.Cross(new V3(0, 0, 1), hhat); // 适配层极轴 = +z
+            V3 node = V3.Cross(V3.northpole, hhat); // 极轴 = +Y（批4 P4 统一；`V3.northpole` 的唯一权威）
 
             if (node.magnitude < DegenerateNodeMag)
                 node = new V3(1, 0, 0); // 赤道轨道：升交点取 +x ⇒ LAN = 0
@@ -156,63 +160,59 @@ namespace PioneerFramework
 
             V3 rhat = r.normalized;
 
-            double lan = Statics.Clamp2Pi(System.Math.Atan2(node.y, node.x));
+            // ⚠ LAN 必须与 `Astro` 的节点线口径一致：`PerifocalToECIMatrix` 用 `node=(cosλ, 0, −sinλ)`
+            //   ⇒ LAN 从 **+x 量向 −z**。极轴换成 +Y 之后节点线整条落在 x–z 平面里（`node.y ≡ 0`），
+            //   旧写法 `Atan2(node.y, node.x)` 会恒给 0 或 180（LAN 静默失效）。
+            double lan = Statics.Clamp2Pi(System.Math.Atan2(-node.z, node.x));
             double nu = Statics.Clamp2Pi(System.Math.Atan2(V3.Dot(rhat, V3.Cross(hhat, node)), V3.Dot(rhat, node)));
 
             return (lan, 0.0, nu);
         }
 
         /// <summary>
-        /// ⚠⚠ **参考系约定（2026-09-18 实测确定，务必先读）**
+        /// ⚠⚠ **参考系约定（2026-09-28 更定；极轴统一后务必先读）**
         ///
-        /// **适配层参考系以 +z 为极轴**，因为移植来的 `Astro`/`Angles` 全是这么定义的
-        /// （`KeplerianFromStateVectors` 用 `hhat[2]` 判顺逆行、`LatitudeFromBCI` 取 `r.z`、
-        /// `RhatFromLatLng` 以 +z 为北）。**只有让适配层跟着上游的约定走，那些公式才能逐字用、
-        /// 才被上游 4989 条测试直接覆盖。**
+        /// **适配层与游戏世界共用同一个参考系：极轴 = +Y**（`DVector3.up`）。
+        /// 2026-09-18 起曾让适配层跟着上游走 +z、由下面那对函数换系；**批4 的 P1–P3 把上游那一整族
+        /// 公式（`KeplerianFromStateVectors` 的 `hhat[1]` 判顺逆、`LatitudeFromBCI` 取 `r.y`、
+        /// `RhatFromLatLng`/`ENU` 一族的基向量…）全部改写成 +Y 口径，并由上游 6207 条测试逐条钉住**
+        /// ⇒ 两个系已经是同一个系，换系**退化为恒等**。
         ///
-        /// **而游戏世界的极轴是 +Y**（`DVector3.up`；`EnterCircularOrbit` 退化时取它、
-        /// `OrbitMath` 的默认参考法向也是它）。**两者不同，混用会让 `inclination`/`LAN`/`argP`/`nu`
-        /// 静默地算出另一个数——正是 P-1 §6 R1 那一类。**
-        ///
-        /// ⇒ **唯一的转换点就是下面这个方法**（`GameWorldToAdapter` / `AdapterToGameWorld` 一对互逆旋转）。
-        /// 它与"`DVector3` → `V3`"的转换同处一个咽喉，所以 R1 的风险仍然只集中在一个函数里。
-        /// **游戏侧代码一律用 `FromGameStateVectors`，不要自己去凑 +z。**
+        /// ⚠ **但"直觉倾角 → 180° − i"那一类换算并没有消失（别误删）**：它换的不是极轴，而是**自转方向**。
+        /// 游戏侧天体是 `Ry(−ωt)` 自转（见 `SurfaceFrame.SurfaceState` 的 `v = ω(p×up)`，注释点明
+        /// "与 ω×p **反向**"）⇒ 游戏里"沿自转方向的顺行轨道"其 `h ∥ −Y`，而上游 `inc = 0` 的定义是
+        /// `h ∥ +极轴` ⇒ 面向玩家的直觉倾角与适配层倾角差 `180° − i`（换算在 `OperationInclination` 里），
+        /// **这与本次极轴统一无关，也不随统一而失效**。
         /// </summary>
         public static OrbitView FromGameStateVectors(DVector3 r, DVector3 v, double mu, double epoch,
             DVector3 equatorialAxis, double bodyRadius, double soiRadiusApprox = double.NaN,
             double angularVelocity = 0.0)
         {
             return FromStateVectors(
-                GameWorldToAdapter(new V3(r.x, r.y, r.z)),
-                GameWorldToAdapter(new V3(v.x, v.y, v.z)),
+                new V3(r.x, r.y, r.z),
+                new V3(v.x, v.y, v.z),
                 mu,
                 epoch,
-                GameWorldToAdapter(new V3(equatorialAxis.x, equatorialAxis.y, equatorialAxis.z)),
+                new V3(equatorialAxis.x, equatorialAxis.y, equatorialAxis.z),
                 bodyRadius,
                 soiRadiusApprox,
                 angularVelocity);
         }
 
         /// <summary>
-        /// 游戏世界（+Y 极轴）→ 适配层（+z 极轴）。一个**正常旋转**（行列式 = +1，右手性不变）：
-        /// `x→x`、`y→z`、`z→-y`，即游戏北极 +Y 映射到适配层的 +z。
-        ///
-        /// ⚠ 逆变换见 `AdapterToGameWorld`，**必须成对使用**；只有这一对是允许的换系。
+        /// ⚠ **已退化为恒等**（批4 P4，2026-09-28）：适配层与游戏世界同轴 +Y ⇒ 不再有换系。
+        /// 保留这两个名字只为让"`DVector3`→`V3` 的咽喉只在一处"这个形状在调用点上看得到
+        /// （宿主侧仍有 20+ 处按"换系"的语义读它）。**待 [V1] 收敛（`git grep` 归零）后删除这一对，
+        /// 并把调用点直接写成分量搬运。** 在那之前**不要**往里加任何实质变换。
         /// </summary>
-        public static V3 GameWorldToAdapter(V3 game) => new V3(game.x, -game.z, game.y);
+        public static V3 GameWorldToAdapter(V3 game) => game;
 
-        /// <summary>适配层（+z 极轴）→ 游戏世界（+Y 极轴）。<see cref="GameWorldToAdapter" /> 的逆。</summary>
-        public static V3 AdapterToGameWorld(V3 adapter) => new V3(adapter.x, adapter.z, -adapter.y);
+        /// <summary>恒等；见 <see cref="GameWorldToAdapter" /> 的说明。</summary>
+        public static V3 AdapterToGameWorld(V3 adapter) => adapter;
 
-        /// <summary>
-        /// `DVector3` → `V3`：**原样搬运三个分量，不做换系**（换系只在 <see cref="FromGameStateVectors" /> 里发生）。
-        /// 供**与参考系无关**的纯代码去调 `Astro`（如 `a`、`period` —— 这两个量对旋转不变，
-        /// 所以纯文件不必、也不该知道参考系）。**唯一实现**；`OrbitAdapter.ToV3` 只是转发。
-        /// </summary>
-        public static V3 ToV3(DVector3 v) => new V3(v.x, v.y, v.z);
-
-        /// <summary>`V3` → `DVector3`：同样**不换系**。</summary>
-        public static DVector3 ToD(V3 v) => new DVector3(v.x, v.y, v.z);
+        // 批5 U4（2026-09-28）：`DVector3` 与移植面三矢量之间的**两个恒等转换函数已删除**
+        // （类型统一 U2/U3 之后移植面那个类型就是 `DVector3` ⇒ 它们退化成原样搬运三个分量）。
+        // 「`DVector3`→移植面类型的咽喉只在一处」这个形状随类型合并自然消失；调用点直接写变量本身。
 
         // ── 轨道标量与要素（MJ 的 Orbit 同名成员） ────────────────────────────────
 
@@ -271,6 +271,21 @@ namespace PioneerFramework
         /// <summary>轨道法向。约定：**沿着它向下看，卫星逆时针转**（与 MJ 的注释一致，也与 R1 的判据一致）。</summary>
         public V3 OrbitNormal() => V3.Cross(r, v).normalized;
 
+        /// <summary>
+        /// **原始状态的两体传播**（`DVector3` 进、`DVector3` 出）——给"只有 (pos, vel, Δt, μ)、
+        /// 并不想建 `OrbitView`"的调用方用（22 处）。**唯一实现仍是 `Shepperd`**，与
+        /// `RightHandedStateVectorsAtUT` 是同一句，只是不做"建 `OrbitView` 再取回"那趟空转。
+        ///
+        /// 为什么把它放在这里而不放在 `OrbitMath`：**`V3` 只许出现在本类型及其构造工厂里**
+        /// （用户 2026-09-18 裁定，见本文件顶部）。放这里 ⇒ 宿主层永远看不到 `V3`/`Shepperd`。
+        /// **参考系无关**：二体传播对旋转不变 ⇒ 游戏系 `DVector3` 可直接喂入（`epoch` 取 0）。
+        /// </summary>
+        public static (DVector3 pos, DVector3 vel) Propagate(DVector3 r, DVector3 v, double mu, double deltaSeconds)
+        {
+            (V3 p, V3 q) = Shepperd.Solve(mu, deltaSeconds, r, v);
+            return (p, q);
+        }
+
         /// <summary>径向单位矢量（背离中心天体）。</summary>
         public V3 Up(double ut) => RightHandedBCIPositionAtUT(ut).normalized;
 
@@ -306,12 +321,6 @@ namespace PioneerFramework
             V3 e = V3.Cross(up, n);
             return e.sqrMagnitude > 0.0 ? e.normalized : V3.zero;
         }
-
-        /// <summary>本瞬时半径处的圆轨速度（MJ 的同名成员：走 `Astro.CircularVelocity`）。</summary>
-        public double CircularOrbitSpeed() => Astro.CircularVelocity(mu, radius);
-
-        /// <summary>本瞬时半径处的圆轨周期（MJ 的同名成员：走 `OrbitView.period` 的同一算式）。</summary>
-        public double CircularOrbitPeriod() => Statics.TAU * radius / CircularOrbitSpeed();
 
         // ── 两体间几何（语义逐字对齐 MJ 的 OrbitExtensions） ─────────────────────
 

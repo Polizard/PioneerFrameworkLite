@@ -21,22 +21,20 @@ namespace PioneerFramework.Tests
         private const double R0 = 7_000_000.0;
 
         /// <summary>
-        /// 适配层参考系的赤道轴 = **+z**（见 `OrbitView` 的参考系约定注释）。
-        /// ⚠ **不是**游戏世界的 `DVector3.up`（那是 +Y）；两者的转换由
-        /// `OrbitView.GameWorldToAdapter` 独家负责。
+        /// 极轴 = **+Y**（批4 P4 极轴统一：适配层与游戏世界同系，`GameWorldToAdapter` 已退化为恒等）。
+        /// ⚠ 手写的构造向量按 `(x, y, z)_新 = (x, z, −y)_旧` 换元（一个 det=+1 的旋转、同一个物理轨道）
+        /// ⇒ **帧不变标量期望（倾角/半径/周期/ν/Δv 幅值）不动**，矢量分量期望才换元。
         /// </summary>
-        private static readonly V3 Pole = new V3(0, 0, 1);
+        private static readonly V3 Pole = new V3(0, 1, 0);
         private const double BodyR = 5_000_000.0;
 
-        /// <summary>构造一个**真圆轨**：速度必须与位置相切（`ĥ × r̂`，ĥ = +z ⇒ 顺行）。</summary>
+        /// <summary>构造一个**真圆轨**：速度必须与位置相切（`Pole × r̂`，`Pole` = +Y ⇒ 绕 +Y 顺行）。</summary>
         private static OrbitView Circular(double radius, V3 r, bool prograde = true)
         {
             double vc = System.Math.Sqrt(Mu / radius);
             V3 tangent = V3.Cross(Pole, r.normalized).normalized; // ĥ × r̂
             return OrbitView.FromStateVectors(r, tangent * (prograde ? vc : -vc), Mu, 0.0, Pole);
         }
-
-        private static DVector3 ToD(V3 v) => new DVector3(v.x, v.y, v.z);
 
         // ── A1：形状可用 ────────────────────────────────────────────────────────
 
@@ -92,7 +90,8 @@ namespace PioneerFramework.Tests
 
         /// <summary>
         /// ⭐ **R1 的旋转方向判据，这次落在 `OrbitView` 上**：
-        /// 圆轨 `r=(R,0,0)`、`v=(0,vc,0)` ⇒ `h = r×v = +z`；`r(T/4)` 必须是 `(0,R,0)`。
+        /// 圆轨 `r=(R,0,0)`、`v = Pole×r̂·vc = (0,0,−vc)` ⇒ `h = r×v = +Y`；绕 +Y 的右手旋转把
+        /// `x̂` 送到 `(0,0,−1)` ⇒ `r(T/4)` 必须是 `(0,0,−R)`。
         /// 若参考系手性反了，这条会红——而它正是"每个移植物都给出看起来合理的错数"的那种坑。
         /// </summary>
         [Fact]
@@ -100,55 +99,40 @@ namespace PioneerFramework.Tests
         {
             var ov = Circular(R0, new V3(R0, 0, 0));
 
-            Assert.True(ov.OrbitNormal().z > 0, $"OrbitNormal 应为 +z，实得 {ov.OrbitNormal()}");
+            Assert.True(ov.OrbitNormal().y > 0, $"OrbitNormal 应为 +Y，实得 {ov.OrbitNormal()}");
 
             (V3 p, V3 vel) = ov.RightHandedStateVectorsAtUT(ov.period * 0.25);
-            AssertRel(p, new V3(0, R0, 0), 1e-9, "OrbitView r(T/4)（应为 +z 旋转 90°）");
+            AssertRel(p, new V3(0, 0, -R0), 1e-9, "OrbitView r(T/4)（绕 +Y 转 90°：x̂ → −ẑ）");
             AssertRel(vel, new V3(-System.Math.Sqrt(Mu / R0), 0, 0), 1e-9, "OrbitView v(T/4)");
 
-            // 反向对照：不是碰巧落在 +y
+            // 反向对照：不是碰巧落在 +z
             (V3 pb, V3 _) = ov.RightHandedStateVectorsAtUT(-ov.period * 0.25);
-            AssertRel(pb, new V3(0, -R0, 0), 1e-9, "OrbitView r(-T/4)（应为 -y）");
+            AssertRel(pb, new V3(0, 0, R0), 1e-9, "OrbitView r(-T/4)（应为 +z）");
         }
 
         /// <summary>
-        /// 要素提取 ↔ 上游 `Astro`（**同一参考系**），并用一次跨系对照钉住"两个参考系差的就是那一次旋转"。
+        /// 要素提取 ↔ 上游 `Astro`（**现在与 `OrbitView` 是同一个参考系**）。
         ///
-        /// ⚠ **不能拿 `OrbitMath.GetInclination` 直接比**：它默认参考法向是 `DVector3.up`（游戏世界 **+Y**），
-        /// 而 `OrbitView` 在适配层 **+z**。两个数本来就该不同——这正是 `GameWorldToAdapter` 存在的理由。
-        /// 真风险是"那次旋转写错了"，所以下面第二条断言用**游戏系**重算，要求两者相等。
+        /// ⚠ 2026-09-28（批4 P5）：本条原先还带一次**跨系对照**（换到"游戏世界 +Y 极轴"再重算倾角、
+        /// 要求两数相等）——**那条判据已随被测量一起消失**：适配层与游戏世界已是同一个系、
+        /// `GameWorldToAdapter` 退化为恒等 ⇒ 再"跨系"比一次就是自己跟自己比（恒真判据，故删，
+        /// 不留"永远为真"的空判据）。"两系同轴"这一事实现在由
+        /// `A3_OrbitView_RotationSenseIsRightHanded` 与移植面 6207 条上游测试共同承担。
         /// </summary>
         [Fact]
-        public void A3_Elements_AgreeWithUpstream_AndFrameRotationIsExact()
+        public void A3_Elements_AgreeWithUpstream()
         {
-            // 偏心 0.3、倾角 30°（在适配层 +z 极轴下）的一般位置
+            // 偏心 0.3、倾角 30°（+Y 极轴下）的一般位置
             double v = System.Math.Sqrt(1.3 * Mu / R0);
             var r = new V3(R0, 0, 0);
-            var vv = new V3(0, v * System.Math.Cos(0.5), v * System.Math.Sin(0.5));
+            // 构造向量按 `(x, y, z)_新 = (x, z, −y)_旧` 换元（倾角 0.5 rad 不变 ⇒ 见最后一条断言）
+            var vv = new V3(0, v * System.Math.Sin(0.5), -v * System.Math.Cos(0.5));
             var ov = OrbitView.FromStateVectors(r, vv, Mu, 0.0, Pole);
 
             Assert.Equal(Astro.SmaFromStateVectors(Mu, r, vv), ov.semiMajorAxis, 6);
             Assert.Equal(Astro.EccFromStateVectors(Mu, r, vv), ov.eccentricity, 12);
             Assert.Equal(Astro.IncFromStateVectors(r, vv), ov.inclination, 12);
-            Assert.Equal(0.5, ov.inclination, 9); // 由 v 的构造决定：atan2(sin0.5, cos0.5) = 0.5
-
-            // ⭐ 跨系对照：换到**游戏世界**（+Y 极轴）后，用**不依赖我们库**的方式重算倾角，必须得到同一个数。
-            //    这条若红，说明适配层那次旋转不是"正确的那一个"，而只是"某个旋转"。
-            //    ⚠ 2026-09-18：原先这里调 `OrbitMath.GetInclination`（它默认参考法向 `DVector3.up` = +Y，
-            //    正好是游戏系口径）—— 但那个函数已按 V2 收敛删除（它"参考法向由调用方传"的口径与适配层 +z 是两个口径）。
-            //    改成直接叉乘 + 与 `DVector3.up` 取夹角：**更独立**（只依赖原始矢量与游戏极轴，不依赖我们任何一层）。
-            DVector3 gameR = ToD(OrbitView.AdapterToGameWorld(r));
-            DVector3 gameV = ToD(OrbitView.AdapterToGameWorld(vv));
-            V3 hGame = V3.Cross(OrbitView.ToV3(gameR), OrbitView.ToV3(gameV)).normalized;
-            double incGameFrame = System.Math.Acos(
-                System.Math.Max(-1.0, System.Math.Min(1.0, V3.Dot(hGame, OrbitView.ToV3(DVector3.up)))));
-            Assert.Equal(incGameFrame, ov.inclination, 12);
-
-            // 来回转换必须是恒等
-            V3 round = OrbitView.GameWorldToAdapter(OrbitView.AdapterToGameWorld(r));
-            Assert.Equal(r.x, round.x, 12);
-            Assert.Equal(r.y, round.y, 12);
-            Assert.Equal(r.z, round.z, 12);
+            Assert.Equal(0.5, ov.inclination, 9); // 由 v 的构造决定：h ∝ (0, cos0.5, sin0.5) ⇒ acos(ĥ·ŷ) = 0.5
         }
 
         /// <summary>
@@ -166,7 +150,8 @@ namespace PioneerFramework.Tests
 
             // 双曲：period 必须给 NaN（守卫），meanMotion 必须为正（上游拿它算"大块双曲弧"）
             double vEsc = System.Math.Sqrt(2.0 * Mu / R0);
-            var hyp = OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, vEsc * 1.4, 0), Mu, 0.0, Pole);
+            // 换元 `(x,y,z)_新=(x,z,−y)_旧`（"是不是双曲"是帧不变量 ✓ 期望不动）
+            var hyp = OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, 0, -vEsc * 1.4), Mu, 0.0, Pole);
             Assert.True(hyp.eccentricity > 1.0);
             Assert.True(double.IsNaN(hyp.period), $"双曲 period 应为 NaN，实得 {hyp.period}");
             Assert.True(hyp.meanMotion > 0.0);
@@ -190,17 +175,17 @@ namespace PioneerFramework.Tests
             // 当前点 → ν = 0
             Assert.Equal(0.0, ov.TrueAnomalyFromVector(ov.r), 9);
 
-            // 沿运动方向 90°（+y）→ ν = π/2
-            Assert.Equal(System.Math.PI / 2, ov.TrueAnomalyFromVector(new V3(0, R0, 0)), 9);
+            // 沿运动方向 90°（绕 +Y 转 90°：x̂ → −ẑ）→ ν = π/2
+            Assert.Equal(System.Math.PI / 2, ov.TrueAnomalyFromVector(new V3(0, 0, -R0)), 9);
 
-            // 反向 90°（-y）→ ν = 3π/2
-            Assert.Equal(3 * System.Math.PI / 2, ov.TrueAnomalyFromVector(new V3(0, -R0, 0)), 9);
+            // 反向 90°（+ẑ）→ ν = 3π/2
+            Assert.Equal(3 * System.Math.PI / 2, ov.TrueAnomalyFromVector(new V3(0, 0, R0)), 9);
 
             // 对跖点 → ν = π
             Assert.Equal(System.Math.PI, ov.TrueAnomalyFromVector(new V3(-R0, 0, 0)), 9);
 
-            // 法向分量必须被投影掉（纯 ±z 的矢量投影后是零 ⇒ 走零矢量分支返回 0，且不产生 NaN）
-            double fromPole = ov.TrueAnomalyFromVector(new V3(0, 0, R0));
+            // 法向分量必须被投影掉（纯 ±极轴方向的矢量投影后是零 ⇒ 走零矢量分支返回 0，且不产生 NaN）
+            double fromPole = ov.TrueAnomalyFromVector(new V3(0, R0, 0));
             Assert.False(double.IsNaN(fromPole));
         }
 
@@ -215,7 +200,7 @@ namespace PioneerFramework.Tests
         [Fact]
         public void NorthEast_AreOrthonormal_AndNorthPointsToPoleAtEquator()
         {
-            // 赤道上的点（适配层 +z 极轴 ⇒ 赤道面 = xy 平面）
+            // 赤道上的点（批4 P4：极轴 +Y ⇒ 赤道面 = x–z 平面）
             var o = Circular(R0, new V3(R0, 0, 0));
 
             V3 up = o.Up(0.0), north = o.North(0.0), east = o.East(0.0);
@@ -238,7 +223,7 @@ namespace PioneerFramework.Tests
             Assert.Equal(1.0, V3.Dot(north, Pole), 9);
 
             // 沿轨道走一段再验一次（换个位置、同一结论）
-            var o2 = Circular(R0, new V3(R0 * System.Math.Cos(1.1), R0 * System.Math.Sin(1.1), 0));
+            var o2 = Circular(R0, new V3(R0 * System.Math.Cos(1.1), 0, -R0 * System.Math.Sin(1.1))); // 仍是赤道上的点（+Y 口径）
             Assert.Equal(1.0, V3.Dot(o2.North(0.0), Pole), 9);
         }
 
@@ -252,7 +237,7 @@ namespace PioneerFramework.Tests
         {
             double vc = System.Math.Sqrt(Mu / R0);
             double inc = System.Math.PI / 6;
-            var v = new V3(0, vc * System.Math.Cos(inc), vc * System.Math.Sin(inc));
+            var v = new V3(0, vc * System.Math.Sin(inc), -vc * System.Math.Cos(inc)); // 换元 (x,y,z)_新=(x,z,−y)_旧
             var o = OrbitView.FromStateVectors(new V3(R0, 0, 0), v, Mu, 0.0, Pole, BodyR); // 起点即赤道升交点
 
             Assert.Equal(1.0, V3.Dot(o.North(0.0), Pole), 9);
@@ -265,8 +250,8 @@ namespace PioneerFramework.Tests
         [Fact]
         public void NorthAtPole_IsZeroNotNaN()
         {
-            // 一条穿过极点正上方的轨道（r ∥ pole，此时速度垂直于极轴 ⇒ 仍是合法轨道）
-            var o = OrbitView.FromStateVectors(new V3(0, 0, R0), new V3(System.Math.Sqrt(Mu / R0), 0, 0), Mu, 0.0, Pole, BodyR);
+            // 一条穿过极点正上方的轨道（r ∥ pole = +Y ⇒ `(0, R0, 0)`；速度垂直于极轴 ⇒ 仍是合法轨道）
+            var o = OrbitView.FromStateVectors(new V3(0, R0, 0), new V3(System.Math.Sqrt(Mu / R0), 0, 0), Mu, 0.0, Pole, BodyR);
 
             V3 north = o.North(0.0);
             V3 east = o.East(0.0);
@@ -294,8 +279,9 @@ namespace PioneerFramework.Tests
         [Fact]
         public void ProgradeEquatorialOrbit_HasInclination180_Not0()
         {
-            // 游戏系 +ẑ 在适配层里的表示（换系后）：GameWorldToAdapter((0,0,1)) = (0,-1,0)
-            V3 gameEast = OrbitView.GameWorldToAdapter(new V3(0, 0, 1));
+            // 在 p = +x̂ 处，游戏侧东向 = +ẑ（`SurfaceFrame.SurfaceState`：v = ωRcosφ(cosλ, 0, sinλ)）。
+            // 批4 P4 起适配层与游戏世界同系 ⇒ **就是 `(0,0,1)` 本身**，不再有换系那一步。
+            V3 gameEast = new V3(0, 0, 1);
             V3 rAt = new V3(R0, 0, 0);
             double vCirc = System.Math.Sqrt(Mu / R0);
 
@@ -321,10 +307,10 @@ namespace PioneerFramework.Tests
         [Fact]
         public void NextClosestApproach_MatchesClosedForm_ForRetrogradePair()
         {
-            var chaser = Circular(R0, new V3(R0, 0, 0));                    // 顺行，h = +z
-            var target = Circular(R0, new V3(0, R0, 0), prograde: false);   // 目标在 +y（相差 90°）、逆行，h = -z
+            var chaser = Circular(R0, new V3(R0, 0, 0));                    // 顺行，h = +Y
+            var target = Circular(R0, new V3(0, 0, -R0), prograde: false);  // 目标在 −ẑ（沿追赶者运动方向相差 90°）、逆行，h = −Y
 
-            Assert.True(target.OrbitNormal().z < 0, "目标应为逆行（h = -z）");
+            Assert.True(target.OrbitNormal().y < 0, "目标应为逆行（h = −Y）");
 
             double t = chaser.NextClosestApproachTime(target, 0.0);
             double expected = chaser.period / 8.0;
@@ -345,7 +331,7 @@ namespace PioneerFramework.Tests
         {
             var a = Circular(R0, new V3(R0, 0, 0));
             double theta = System.Math.PI / 3; // 60°
-            var b = Circular(R0, new V3(R0 * System.Math.Cos(theta), R0 * System.Math.Sin(theta), 0));
+            var b = Circular(R0, new V3(R0 * System.Math.Cos(theta), 0, -R0 * System.Math.Sin(theta))); // 共面（赤道面 x–z）且相位差 θ
 
             double expected = 2 * R0 * System.Math.Sin(theta / 2);
             foreach (double ut in new[] { 0.0, 100.0, 1000.0, a.period * 0.37 })
@@ -386,7 +372,7 @@ namespace PioneerFramework.Tests
             // e = 0.3、带倾角的一般椭圆（在 r·v = 0 的族里 e = v²R/μ − 1）
             double speed = System.Math.Sqrt(1.3 * Mu / R0);
             var r = new V3(R0, 0, 0);
-            var v = new V3(0, speed * System.Math.Cos(0.4), speed * System.Math.Sin(0.4));
+            var v = new V3(0, speed * System.Math.Sin(0.4), -speed * System.Math.Cos(0.4)); // 换元 (x,y,z)_新=(x,z,−y)_旧（e = 0.3 是帧不变量）
             var ov = OrbitView.FromStateVectors(r, v, Mu, 0.0, Pole);
             Assert.Equal(0.3, ov.eccentricity, 9);
 
@@ -433,7 +419,7 @@ namespace PioneerFramework.Tests
 
                 // 位置确实落在 nu（与反解无关的独立检查）。
                 // ⚠ `atan2` 值域是 (-π, π]，而 ν 在 [0, 2π) ⇒ 必须先 Clamp2Pi 再比，否则 5.5 rad 会以 -0.783 出现。
-                Assert.Equal(nu, Statics.Clamp2Pi(System.Math.Atan2(p.y, p.x)), 8);
+                Assert.Equal(nu, Statics.Clamp2Pi(System.Math.Atan2(-p.z, p.x)), 8);
 
                 // 用 OrbitView 自己的入口重建：ν 必须回到 nu
                 var at = OrbitView.FromStateVectors(p, v, Mu, t, Pole);
@@ -450,17 +436,18 @@ namespace PioneerFramework.Tests
 
         /// <summary>
         /// 赤道交点：把 `equatorialAxis` 真的用起来了。
-        /// 判据不靠解析式，而是**直接采样传播结果**：返回时刻处位置 z 分量必须过零且向上。
+        /// 判据不靠解析式，而是**直接采样传播结果**：返回时刻处位置沿**极轴**的分量必须过零且向上。
+        /// （批4 P4：极轴 = +Y ⇒ 该分量是 `y`；测试名随之由 `ZCrosses` 改为 `YCrosses`。）
         /// </summary>
         [Fact]
-        public void TimeOfAscendingNodeEquatorial_IsWhereZCrossesNorthward()
+        public void TimeOfAscendingNodeEquatorial_IsWhereYCrossesNorthward()
         {
             // 倾角 30° 的**圆轨**（适配层 +z 极轴）：起点在赤道面内 (+x)、速度按 30° 仰角出发。
             // ⚠ 必须是真圆轨 ⇒ 速度分量要按 cos/sin 分配，|v| = vc；否则得到的是椭圆，倾角也不是 30°。
             double vc = System.Math.Sqrt(Mu / R0);
             double inc = System.Math.PI / 6;
             var r = new V3(R0, 0, 0);
-            var v = new V3(0, vc * System.Math.Cos(inc), vc * System.Math.Sin(inc));
+            var v = new V3(0, vc * System.Math.Sin(inc), -vc * System.Math.Cos(inc)); // 换元 (x,y,z)_新=(x,z,−y)_旧
             var ov = OrbitView.FromStateVectors(r, v, Mu, 0.0, Pole);
 
             Assert.Equal(inc, ov.inclination, 9);
@@ -470,11 +457,11 @@ namespace PioneerFramework.Tests
             double t = ov.TimeOfAscendingNodeEquatorial(0.0);
             Assert.True(t >= 0.0 && t <= ov.period + 1e-6, $"升交点时刻应落在 [0, T] 内，实得 {t}");
 
-            // 采样：返回时刻处 z 必须 ≈ 0，且紧邻之后 z > 0
-            double zAt = ov.RightHandedBCIPositionAtUT(t).z;
-            double zAfter = ov.RightHandedBCIPositionAtUT(t + ov.period * 0.01).z;
-            Assert.True(System.Math.Abs(zAt) / R0 < 1e-6, $"升交点处 z 应为 0，实得 {zAt:E3}");
-            Assert.True(zAfter > 0.0, $"升交点之后 z 应为正，实得 {zAfter:E3}");
+            // 采样：返回时刻处 y 必须 ≈ 0（赤道面 = x–z），且紧邻之后 y > 0（"向北"= 朝 +Y）
+            double yAt = ov.RightHandedBCIPositionAtUT(t).y;
+            double yAfter = ov.RightHandedBCIPositionAtUT(t + ov.period * 0.01).y;
+            Assert.True(System.Math.Abs(yAt) / R0 < 1e-6, $"升交点处 y 应为 0，实得 {yAt:E3}");
+            Assert.True(yAfter > 0.0, $"升交点之后 y 应为正（向北穿越），实得 {yAfter:E3}");
         }
 
         // ── 机动坐标 ────────────────────────────────────────────────────────────
@@ -489,7 +476,7 @@ namespace PioneerFramework.Tests
             var ov = Circular(R0, new V3(R0, 0, 0));
             const double ut = 0.0;
 
-            var progradeDv = ov.DeltaVToManeuverNodeCoordinates(ut, new V3(0, 100, 0));
+            var progradeDv = ov.DeltaVToManeuverNodeCoordinates(ut, new V3(0, 0, -100)); // 顺行 = 速度方向 = −ẑ（+Y 口径）
             Assert.Equal(0.0, progradeDv.x, 6);
             Assert.Equal(0.0, progradeDv.y, 6);
             Assert.Equal(100.0, progradeDv.z, 6);
@@ -498,8 +485,8 @@ namespace PioneerFramework.Tests
             Assert.Equal(100.0, radialDv.x, 6);
             Assert.Equal(0.0, radialDv.z, 6);
 
-            // 世界系 +z（= 轨道法向）在 MJ 的节点坐标里是 **-|Δv|**（`-NormalPlus`）
-            var normalDv = ov.DeltaVToManeuverNodeCoordinates(ut, new V3(0, 0, 100));
+            // 世界系 +Y（= 轨道法向）在 MJ 的节点坐标里是 **-|Δv|**（`-NormalPlus`）
+            var normalDv = ov.DeltaVToManeuverNodeCoordinates(ut, new V3(0, 100, 0));
             Assert.Equal(-100.0, normalDv.y, 6);
         }
 

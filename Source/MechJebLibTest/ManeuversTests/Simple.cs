@@ -106,15 +106,17 @@ namespace MechJebLibTest.ManeuversTests
             double v185 = Astro.CircularVelocity(mu, r185);
 
             var r0 = new V3(r185, 0, 0);
-            var v0 = new V3(0, v185, 0);
+            var v0 = new V3(0, 0, -v185);   // §13 极轴 +Y：顺行赤道 = 法线 +ŷ（旧框架下是 (0, v185, 0)）
 
             V3 dv = MechJebLib.Maneuvers.Simple.DeltaVToChangeInclination(r0, v0, 0);
             Assert.Equal(V3.zero, dv);
 
             dv = MechJebLib.Maneuvers.Simple.DeltaVToChangeInclination(r0, v0, Deg2Rad(90));
+            // 极轴换元的等价说法：同一个物理 dv 在新框架里是 `(x, z, −y)_旧` ⇒
+            // 旧断言 `.x=0 / .y=0 / .z=v185` 变成 `.x=0 / .y=v185 / .z=0`
             Assert.Equal(0, (v0 + dv).x, 9);
-            Assert.Equal(0, (v0 + dv).y, 9);
-            Assert.Equal(v185, (v0 + dv).z, 9);
+            Assert.Equal(v185, (v0 + dv).y, 9);
+            Assert.Equal(0, (v0 + dv).z, 9);
         }
 
         [Fact]
@@ -126,20 +128,29 @@ namespace MechJebLibTest.ManeuversTests
             double v185 = Astro.CircularVelocity(mu, r185);
 
             var r0 = new V3(r185, 0, 0);
-            var v0 = new V3(0, v185, 0);
+            var v0 = new V3(0, 0, -v185);   // §13 极轴 +Y：顺行赤道 = 法线 +ŷ
 
             V3 dv = MechJebLib.Maneuvers.Simple.DeltaVToChangeFPA(r0, v0, 0);
             Assert.Equal(V3.zero, dv);
 
+            // 分量期望按 `(x, y, z)_新 = (x, z, −y)_旧` 换元（同一个物理 dv ✓ 期望不是"帧不变标量"）
             dv = MechJebLib.Maneuvers.Simple.DeltaVToChangeFPA(r0, v0, Deg2Rad(90));
             Assert.Equal(v185, dv.x, 9);
-            Assert.Equal(-v185, dv.y, 9);
-            Assert.Equal(0, dv.z, 9);
+            Assert.Equal(0, dv.y, 9);
+            Assert.Equal(v185, dv.z, 9);
 
             dv = MechJebLib.Maneuvers.Simple.DeltaVToChangeFPA(r0, v0, Deg2Rad(-90));
             Assert.Equal(-v185, dv.x, 9);
-            Assert.Equal(-v185, dv.y, 9);
-            Assert.Equal(0, dv.z, 9);
+            Assert.Equal(0, dv.y, 9);
+            Assert.Equal(v185, dv.z, 9);
+
+            r0 = new V3(r185, 0, 0);
+            v0 = new V3(v185 / Sqrt(2), 0, -v185 / Sqrt(2));
+
+            dv = MechJebLib.Maneuvers.Simple.DeltaVToChangeFPA(r0, v0, 0);
+            Assert.Equal(-v185 / Sqrt(2), dv.x, 9);
+            Assert.Equal(0, dv.y, 9);
+            Assert.Equal(-(v185 - v185 / Sqrt(2)), dv.z, 9);
 
             r0 = new V3(r185, 0, 0);
             v0 = new V3(v185 / Sqrt(2), v185 / Sqrt(2), 0);
@@ -148,14 +159,6 @@ namespace MechJebLibTest.ManeuversTests
             Assert.Equal(-v185 / Sqrt(2), dv.x, 9);
             Assert.Equal(v185 - v185 / Sqrt(2), dv.y, 9);
             Assert.Equal(0, dv.z, 9);
-
-            r0 = new V3(r185, 0, 0);
-            v0 = new V3(v185 / Sqrt(2), 0, v185 / Sqrt(2));
-
-            dv = MechJebLib.Maneuvers.Simple.DeltaVToChangeFPA(r0, v0, 0);
-            Assert.Equal(-v185 / Sqrt(2), dv.x, 9);
-            Assert.Equal(0, dv.y, 9);
-            Assert.Equal(v185 - v185 / Sqrt(2), dv.z, 9);
         }
     }
 }

@@ -27,12 +27,19 @@ namespace PioneerFramework
             }
             if (value == null)
             {
+                // ⭐⭐ **R5 的守卫就挂在这里**（2026-09-26）：`GameComponentRef` 是**唯一**发生真
+                // `GetComponent`（组件表线性扫描）的地方 ⇒ 相位里"第一次取某个组件"在这里会被当场记下；
+                // 之后是纯缓存命中（不写任何共享状态）⇒ 恒 0 是可满足的。
+                // ⚠ 覆盖不到："有人绕过本类直接 `Current.Game.GetComponent<T>()`"——那条路没有可挂的钩子，
+                //   只能靠验收判据（`GlobalLookups` 增量 = 0）+ 复核来守。
+                ParallelRegionGuard.GuardLookup("GameComponentRef<" + typeof(T).Name + "> 首次实查（组件表线性扫描）");
                 value = g.GetComponent<T>();
                 // 未命中不写缓存：组件尚未注册时下次重试（探针区分"实查成功"与"组件缺失"）
                 if (PerfProbe.Enabled) PerfProbe.CompRefMiss(typeof(T).Name, value != null);
             }
             else if (PerfProbe.Enabled)
             {
+                // R7/R8 同款：这几个探针计数在相位里被调用过 ⇒ 原子化（聚合量那一档）。
                 PerfProbe.CompRefHit(typeof(T).Name); // 命中 = 省下的一次组件表线性扫描
                 if (PerfProbe.ShadowChecks && PerfProbe.ShouldShadowCompRef(typeof(T).Name))
                     PerfProbe.CompRefShadow(typeof(T).Name, value, g.GetComponent<T>());

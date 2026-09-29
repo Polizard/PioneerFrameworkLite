@@ -85,6 +85,8 @@ namespace PioneerFramework
                 "只有部署与人读 ⇒ S3");
             PflTestKit.CheckUnchecked("降落 UI 的选点交互（鼠标拾取 / 落点窗口）",
                 "要人在屏幕前点（S3 的手动清单）；报价与执行本身已由「降落执行」用例覆盖");
+            PflTestKit.CheckUnchecked("规模验收（≥32 组 · 可复现性）两变体：A 解析圆轨 / B 积分+全群燃烧",
+                "异步段单槽位 ⇒ 不并进本入口抢槽位；按调试页签「规模验收A / B」按钮单独跑（批 2 正确性改动的开工前提：R1–R5 只在 ≥32 组暴露，不先建场景就无从判对错；B 变体另提供 R3/R4/R7 的判据面）");
             PflTestKit.Check(PflTestKit.Kind.Coverage, true, "登记完成");
             PflTestKit.End();
 

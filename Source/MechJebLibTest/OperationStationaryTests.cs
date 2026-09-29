@@ -18,12 +18,14 @@ namespace PioneerFramework.Tests
         private const double R0 = 7.0e6;
         private const double BodyR = 5.0e6;
         private const double Omega = 2.0 * Math.PI / 60000.0; // 1 游戏天 = 60000 s
-        private static readonly V3 Pole = new V3(0, 0, 1);
+        private static readonly V3 Pole = new V3(0, 1, 0); // 极轴 +Y（批4 P4 极轴统一为 +Y；旧的 +z 与适配层的换系一起作废）
 
         private static OrbitView EquatorialRotating(double soi = double.NaN)
         {
             double vc = Math.Sqrt(Mu / R0);
-            return OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, vc, 0), Mu, 0.0, Pole, BodyR, soi, Omega);
+            // 构造向量按 `(x, y, z)_新 = (x, z, −y)_旧` 换元（同一个物理轨道的像：圆、赤道、
+            // 相对 +Y 极轴顺行 ⇒ 倾角仍为 0°）；极轴 +Y ⇒ 赤道面 = x–z 平面。
+            return OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, 0, -vc), Mu, 0.0, Pole, BodyR, soi, Omega);
         }
 
         private static double Wrap360(double d)
@@ -71,11 +73,12 @@ namespace PioneerFramework.Tests
                 $"终态必须在赤道面内：|ĥ·极轴|={Math.Abs(V3.Dot(h.normalized, Pole)):E3}");
 
             // "同向"的判据**从天体自己的共转速度推**，不用我猜符号：
-            // 本 mod 里顺行是 h ∥ −Y(游戏) ⇒ 适配层是 −z，与"游戏 +Y 极轴"直觉相反（踩过一次）。
-            DVector3 gPosForRot = OrbitView.ToD(OrbitView.AdapterToGameWorld(r2));
+            // 本 mod 里顺行是 h ∥ −Y（批4 P4 极轴统一为 +Y：适配层与游戏世界同系，
+            // 不再有"适配层是 −z"那一层），与"游戏 +Y 极轴"的直觉相反（踩过一次）。
+            DVector3 gPosForRot = OrbitView.AdapterToGameWorld(r2);
             // ⚠ 共转速度是**切向**的，而 `h` 是**转轴** ⇒ 两者本来垂直（点乘 0）。
             // 转轴要从"位置 × 共转速度"推：`轴 ∝ r × v_共转`。
-            V3 coRotVel = OrbitView.GameWorldToAdapter(OrbitView.ToV3(SurfaceFrame.SurfaceVelocity(gPosForRot, Omega)));
+            V3 coRotVel = OrbitView.GameWorldToAdapter(SurfaceFrame.SurfaceVelocity(gPosForRot, Omega));
             V3 coRotAxis = V3.Cross(r2, coRotVel).normalized;
             Assert.True(V3.Dot(h.normalized, coRotAxis) > 0.99,
                 $"必须与天体共转：ĥ·共转轴={V3.Dot(h.normalized, coRotAxis):F6}（<0 就是反向同步，不是静止）");
@@ -87,7 +90,7 @@ namespace PioneerFramework.Tests
                 $"周期必须是自转周期：{final.period:F6} vs {period:F6} s");
 
             // ④ 落点在目标经线正上方（**上游这条不成立**：它差一个转移期间的自转量）
-            DVector3 g = OrbitView.ToD(OrbitView.AdapterToGameWorld(r2));
+            DVector3 g = OrbitView.AdapterToGameWorld(r2);
             double lon = Wrap360(SurfaceFrame.EciToLongLat(g, Omega, n2.ut).lonRad * 180.0 / Math.PI);
             Assert.True(AngDiff(lon, wantLon) < 1e-2,
                 $"落点经度：{lon:F6}° vs 请求 {wantLon}°（差 {AngDiff(lon, wantLon):E3}°）");
@@ -98,7 +101,8 @@ namespace PioneerFramework.Tests
         public void Stationary_WithoutRotationData_Throws()
         {
             double vc = Math.Sqrt(Mu / R0);
-            var o = OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, vc, 0), Mu, 0.0, Pole, BodyR);
+            // 与 `EquatorialRotating` 同一换元 `(x, y, z)_新 = (x, z, −y)_旧`（同一物理轨道：圆、赤道）
+            var o = OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, 0, -vc), Mu, 0.0, Pole, BodyR);
 
             var op = new OperationStationary();
             // ⚠ 守卫是 `MakeNodesImpl` 抛、`Operation.MakeNodes` **吞成 `ErrorMessage` 并返回 null**

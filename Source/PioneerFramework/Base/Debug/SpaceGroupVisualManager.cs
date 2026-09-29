@@ -191,11 +191,15 @@ namespace PioneerFramework
             var groups = spaceGame.GetAllGroups(); // 第 11 条：直接遍历字典视图（此前每帧 ToList 复制整表）
 
             // 收集地球系统（地球 + 所有卫星）的天体 ID 集合，渲染该系统中所有群组
-            var earthSystemBodyIds = new HashSet<int> { EARTH_BODY_ID };
+            // ⚠ P52（2026-09-27）：**这个集合每帧都在 `OnGUI` 路径上新建**（一个 `HashSet` + 每次 `Add`
+            // 的桶扩容）⇒ 每帧 GC。依据与 P32 的 `cachedAllBodies` **同一条**：天体 Def 静态
+            // ⇒ 建一次即可。生命周期按"管理器换局"失效（不按帧）。
             var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            if (celestialMgr != null)
+            if (earthSystemBodyIds == null || !ReferenceEquals(earthSystemBodyIdsMgr, celestialMgr))
             {
-                var earthDef = celestialMgr.GetBodyById(EARTH_BODY_ID);
+                earthSystemBodyIdsMgr = celestialMgr;
+                earthSystemBodyIds = new HashSet<int> { EARTH_BODY_ID };
+                var earthDef = celestialMgr?.GetBodyById(EARTH_BODY_ID);
                 if (earthDef != null)
                 {
                     foreach (var moon in earthDef.moonBodies)
@@ -217,15 +221,15 @@ namespace PioneerFramework
                 {
                     if (body.bodyId == ViewFrame.ViewedBodyId) continue;   // 自己被 RW 画
                     if (!body.IsGravitySource) continue;                    // 无质量装饰天体不画
-                    Vector3 worldPos = ViewFrame.ToViewUnity(
+                    Vector3 viewPos = ViewFrame.ToViewUnity(
                         ViewFrame.BodySystemPosition(body.bodyId, bodyTick), bodyTick);
-                    if (!IsWorldPosVisible(worldPos, 1f)) continue;
+                    if (!IsViewPosVisible(viewPos, 1f)) continue;
 
                     // 物理半径 → Unity 缩放（⚠ 球网格直径 1 ⇒ 见 ViewFrame.RadiusToSphereScale；原来按半径缩放
                     //   画出来只有一半，切到月球视图时"地球半径/绕地轨道看着不对"就是这么来的）
                     float scale = ViewFrame.RadiusToSphereScale((float)body.radius, sphereMesh);
                     if (scale < 2f) scale = 2f;   // 远距离最小可见尺寸（缩放值口径）
-                    Matrix4x4 sphereMatrix = Matrix4x4.TRS(worldPos, Quaternion.identity, Vector3.one * scale);
+                    Matrix4x4 sphereMatrix = Matrix4x4.TRS(viewPos, Quaternion.identity, Vector3.one * scale);
                     Graphics.DrawMesh(sphereMesh, sphereMatrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer);
                 }
             }
@@ -255,9 +259,20 @@ namespace PioneerFramework
                         if (orbitPathCacheGroupId != selected.GroupId
                             || !orbitPathCachePos.Equals(pos) || !orbitPathCacheVel.Equals(vel))
                         {
-                            var dPoints = OrbitMath.GetOrbitPoints(pos, vel, 60);
+                            // ⚠ 2026-09-26（D6）：**必须显式给 mu**。原先是 `GetOrbitPoints(pos, vel, 60)`
+                            // —— `mu` 省略 ⇒ `ResolveGM` 静默取**默认 GM**（地球）⇒ **绕月编队画的轨道线是按地球 GM 算的**（活缺陷）。
+                            // ⚠⚠ 批5.C（2026-09-29，用户报"交会引导中的 Group 看不到轨迹点"）：
+                            //   **光给对 mu 还不够** —— `CurrentOrbit` 是**世界系（系统系 = 根行星中心）**，
+                            //   而 mu 是**中心天体**的 ⇒ 绕月编队等于"用月球的 GM 去算一条以地心为焦点的轨道"
+                            //   ⇒ 算出一条**穿过地球的假轨道**，点全在视野外 ⇒ **什么都看不到**（用户报的就是它）。
+                            //   正确做法：**在中心天体的体心系里算轨道，再把点搬回世界系**（渲染用世界系）。
+                            double tickNow = TimeScaleManager.GetPhysicsTickSafe();
+                            DVector3 bodyOff = selected.GetCentralBodyOffset((int)tickNow);
+                            DVector3 bodyOffV = selected.GetCentralBodyVelocity((int)tickNow);
+                            var dPoints = OrbitMath.GetOrbitPoints(pos - bodyOff, vel - bodyOffV, 60,
+                                spaceGame.GetBodyGM(selected.CelestialBodyId));
                             orbitPathCachePoints = dPoints != null && dPoints.Count > 0
-                                ? dPoints.ConvertAll(p => (Vector3)(p * SpaceConstants.UnitsPerMeter))
+                                ? dPoints.ConvertAll(p => (Vector3)((p + bodyOff) * SpaceConstants.UnitsPerMeter))
                                 : null;
                             orbitPathCacheGroupId = selected.GroupId;
                             orbitPathCachePos = pos;
@@ -309,8 +324,7 @@ namespace PioneerFramework
                     }
 
                     // ── 已确认机动队列（规划器关闭时）──
-                    if (!ManeuverPlanner.HasPlanner && !RendezvousPlanner.PreviewValid
-                        && selected.plannedManeuvers.Count > 0)
+                    if (!ManeuverPlanner.HasPlanner && selected.plannedManeuvers.Count > 0)
                     {
                         float toUnity = (float)SpaceConstants.UnitsPerMeter;
                         for (int i = 0; i < selected.plannedManeuvers.Count; i++)
@@ -321,17 +335,20 @@ namespace PioneerFramework
                             float alphaFactor = 1f - i * 0.25f;
                             if (alphaFactor < 0.25f) alphaFactor = 0.25f;
 
+                            // ⚠ P52（2026-09-27）：`ConvertAll` **每帧各分配一个新 List**（每条预览轨道一份）
+                            // ⇒ 改用**复用 scratch**（`DrawOrbitPath` 只当帧读它、不持有 ⇒ 复用它安全；
+                            //    两个分支是顺序调用且各自立即绘制 ⇒ 共用一份 scratch 也安全）。
                             if (pm.previewCurrentOrbit != null && pm.previewCurrentOrbit.Count > 0)
                             {
-                                var currentPts = pm.previewCurrentOrbit.ConvertAll(p => p * toUnity);
-                                DrawOrbitPath(currentPts,
+                                FillScaled(pm.previewCurrentOrbit, toUnity, previewPtsScratch);
+                                DrawOrbitPath(previewPtsScratch,
                                     new Color(0.25f, 0.9f, 1f, 0.4f * alphaFactor), 0.6f, camera);
                             }
 
                             if (pm.previewPostOrbit != null && pm.previewPostOrbit.Count > 0)
                             {
-                                var postPts = pm.previewPostOrbit.ConvertAll(p => p * toUnity);
-                                DrawOrbitPath(postPts,
+                                FillScaled(pm.previewPostOrbit, toUnity, previewPtsScratch);
+                                DrawOrbitPath(previewPtsScratch,
                                     new Color(1f, 0.7f, 0.1f, 0.4f * alphaFactor), 0.6f, camera);
                             }
 
@@ -339,47 +356,10 @@ namespace PioneerFramework
                             Color nodeColor = i == 0
                                 ? new Color(1f, 0.9f, 0.2f, 0.9f)
                                 : new Color(1f, 0.5f, 0.1f, 0.8f - i * 0.15f);
-                            DrawManeuverNode(nodePosUnity, camera, nodeColor, 2.2f);
+                            DrawManeuverNode((Vector3)nodePosUnity, camera, nodeColor, 2.2f);
                         }
                     }
 
-                    // ── 交会规划预览 ──
-                    if (RendezvousPlanner.PreviewValid)
-                    {
-                        var transferPts = RendezvousPlanner.TransferOrbitUnity;
-                        var depPos = RendezvousPlanner.DeparturePosUnity;
-                        var arrPos = RendezvousPlanner.ArrivalPosUnity;
-                        var targetPos = RendezvousPlanner.TargetPosAtArrivalUnity;
-
-                        if (transferPts != null && transferPts.Count > 0)
-                            DrawOrbitPath(transferPts, OrbitColorTransfer, 0.8f, camera);
-
-                        if (depPos.HasValue)
-                            DrawManeuverNode(depPos.Value, camera);
-
-                        if (arrPos.HasValue)
-                            DrawManeuverNode(arrPos.Value, camera);
-
-                        if (targetPos.HasValue)
-                        {
-                            // 目标到达点用不同颜色
-                            Vector3 worldPos = ToView(targetPos.Value);
-                            if (IsWorldPosVisible(worldPos, 1f))
-                            {
-                                Vector3 toCam = Find.WorldCamera.transform.position - worldPos;
-                                if (toCam.sqrMagnitude > 0.01f)
-                                {
-                                    float pulse = 1f + 0.2f * Mathf.Sin(Time.realtimeSinceStartup * 3f);
-                                    float nodeSize = 2.2f * pulse;
-                                    Quaternion rot = Quaternion.LookRotation(Find.WorldCamera.transform.up, toCam.normalized);
-                                    Vector3 drawPos = worldPos + toCam.normalized * 0.5f;
-                                    Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, new Vector3(nodeSize, 1f, nodeSize));
-                                    orbitMarkerPropertyBlock.SetColor("_Color", new Color(1f, 0.3f, 0.3f, 0.7f));
-                                    Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -443,9 +423,9 @@ namespace PioneerFramework
                 return;
             }
 
-            Vector3 worldPos = GetGroupWorldPositionUnity(group);
+            Vector3 viewPos = GetGroupWorldPositionUnity(group);
             Vector3 origin = GetOrbitOrigin();
-            Vector3 direction = (worldPos - origin).normalized;
+            Vector3 direction = (viewPos - origin).normalized;
             if (direction == Vector3.zero) return;
 
             Quaternion targetRot = Quaternion.Inverse(Quaternion.LookRotation(-direction));
@@ -571,10 +551,10 @@ namespace PioneerFramework
             return ViewFrame.ToViewUnity(posSystemFrame, physicsTick);
         }
 
-        private static bool IsWorldPosVisible(Vector3 worldPosUnity, float occlusionMargin)
+        private static bool IsViewPosVisible(Vector3 viewPosUnity, float occlusionMargin)
         {
             Vector3 origin = GetOrbitOrigin();
-            Vector3 offset = worldPosUnity - origin;
+            Vector3 offset = viewPosUnity - origin;
             float radius = offset.magnitude;
             if (radius < 0.01f) return false;
 
@@ -590,10 +570,10 @@ namespace PioneerFramework
 
         private static void DrawGroupIcon(SpaceEntityGroup group, Camera cam)
         {
-            Vector3 worldPos = GetGroupWorldPositionUnity(group);
-            if (!IsWorldPosVisible(worldPos, 2f)) return;
+            Vector3 viewPos = GetGroupWorldPositionUnity(group);
+            if (!IsViewPosVisible(viewPos, 2f)) return;
 
-            Vector3 toCam = cam.transform.position - worldPos;
+            Vector3 toCam = cam.transform.position - viewPos;
             if (toCam.sqrMagnitude < 0.01f) return;
 
             Quaternion rot = Quaternion.LookRotation(cam.transform.up, toCam.normalized);
@@ -602,7 +582,7 @@ namespace PioneerFramework
             float size = SurfaceIconSize * scale;
             if (selectedGroupId == group.GroupId) size *= 1.12f;
 
-            Vector3 drawPos = worldPos + toCam.normalized * 1.5f; // 避免深度冲突
+            Vector3 drawPos = viewPos + toCam.normalized * 1.5f; // 避免深度冲突
             Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, new Vector3(size, 1f, size));
             Graphics.DrawMesh(MeshPool.plane10, matrix, iconMaterial, WorldCameraManager.WorldLayer);
         }
@@ -633,9 +613,9 @@ namespace PioneerFramework
             // 轨道平面
             bool usePlane = group.circularOrbitNormal.sqrMagnitude > 0.001f
                          && group.circularRadialRef.sqrMagnitude > 0.001f;
-            Vector3 radialRef = group.circularRadialRef;
+            Vector3 radialRef = (Vector3)group.circularRadialRef;
             Vector3 yDir = usePlane
-                ? Vector3.Cross(group.circularOrbitNormal, radialRef).normalized
+                ? Vector3.Cross((Vector3)group.circularOrbitNormal, radialRef).normalized
                 : Vector3.forward;
 
             var points = new List<Vector3>(sampleCount);
@@ -658,8 +638,8 @@ namespace PioneerFramework
 
                 if (usePlane)
                 {
-                    Vector3 localMeters = (Vector3)((DVector3)(radialRef * cosA + yDir * sinA) * radiusMetersD);
-                    points.Add(((Vector3)((DVector3)localMeters * SpaceConstants.UnitsPerMeter)) + centralBodyOffsetUnity);
+                    Vector3 metersBody = (Vector3)((DVector3)(radialRef * cosA + yDir * sinA) * radiusMetersD);
+                    points.Add(((Vector3)((DVector3)metersBody * SpaceConstants.UnitsPerMeter)) + centralBodyOffsetUnity);
                 }
                 else
                 {
@@ -688,13 +668,26 @@ namespace PioneerFramework
                 tile = launchSiteTile;
             else
             {
-                foreach (var s in Find.WorldObjects.Settlements)
+                // ⚠ P52（2026-09-27）：`Find.WorldObjects.Settlements` 是**线性扫**，而本方法是**每帧**调的
+                //   ⇒ 玩家据点多了就是每帧扫一遍。据点极少变 ⇒ 缓存结果、10 s 或换层才重扫
+                //   （标记晚 10 s 更新在视觉上不可见；换被查看天体层立刻重扫，不会串层）。
+                int nowTick = Find.TickManager.TicksGame;
+                string? layerName = viewLayer.Def?.defName;
+                if (cachedSiteMarkerTick < 0 || nowTick < cachedSiteMarkerTick
+                    || nowTick - cachedSiteMarkerTick >= 600 || cachedSiteMarkerLayer != layerName)
                 {
-                    if (s == null || s.Faction != Faction.OfPlayer || !s.Tile.Valid) continue;
-                    if (s.Tile.LayerDef?.defName != viewLayer.Def?.defName) continue;
-                    tile = s.Tile.tileId;
-                    break;
+                    cachedSiteMarkerTick = nowTick;
+                    cachedSiteMarkerLayer = layerName;
+                    cachedSiteMarkerTile = -1;
+                    foreach (var s in Find.WorldObjects.Settlements)
+                    {
+                        if (s == null || s.Faction != Faction.OfPlayer || !s.Tile.Valid) continue;
+                        if (s.Tile.LayerDef?.defName != layerName) continue;
+                        cachedSiteMarkerTile = s.Tile.tileId;
+                        break;
+                    }
                 }
+                tile = cachedSiteMarkerTile;
             }
             if (tile < 0 || tile >= viewLayer.TilesCount) return;
 
@@ -706,7 +699,7 @@ namespace PioneerFramework
             Vector3 radialView = onSurface.sqrMagnitude > 1e-6f ? onSurface.normalized : Vector3.up;
             Vector3 drawPos = onSurface + radialView * 4f;   // 贴表面略抬（云层 +0.2，辉光 +16）
 
-            if (!IsWorldPosVisible(drawPos, 0.5f)) return;
+            if (!IsViewPosVisible(drawPos, 0.5f)) return;
 
             // 立方体 Y 轴对齐地表法线"立"在地面，轻微脉动便于远距离辨认
             float pulse = 1f + 0.12f * Mathf.Sin(Time.realtimeSinceStartup * 3f);
@@ -716,6 +709,27 @@ namespace PioneerFramework
             Graphics.DrawMesh(cubeMesh, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
         }
 
+        // ── P52（2026-09-27）：渲染路径上的每帧分配，改成"建一次/复用" ──
+        // ⚠ 两条都声明为**可空**：它们靠"管理器同一性"判有效性（`== null` 就是"还没建"）
+        //   ⇒ 声明成非空会让 nullable 分析报 CS8618/CS8601（新增警告 = 0 是硬线）。
+        private static HashSet<int>? earthSystemBodyIds;              // 地球系天体 id 集（建一次）
+        private static CelestialBodyManager? earthSystemBodyIdsMgr;   // 建它时的管理器（换局 ⇒ 重建）
+        private static readonly List<Vector3> previewPtsScratch = new List<Vector3>();  // 预览轨道点（复用）
+        // P52：玩家据点标记的 tile（每帧扫据点 ⇒ 改成缓存；见 `DrawLaunchSiteMarker`）
+        private static int cachedSiteMarkerTile = -1;
+        private static string? cachedSiteMarkerLayer;
+        private static int cachedSiteMarkerTick = -1;   // <0 = 还没扫过
+
+        /// <summary>`src` 逐点乘 `scale` 填进 `dst`（替代 `ConvertAll`：**不分配**，`dst` 复用）。
+        /// 只在渲染路径用 ⇒ `dst` 一定是本帧刚清空/刚填满的。</summary>
+        private static void FillScaled(List<Vector3> src, float scale, List<Vector3> dst)
+        {
+            dst.Clear();
+            if (dst.Capacity < src.Count) dst.Capacity = src.Count;
+            for (int i = 0; i < src.Count; i++)
+                dst.Add(src[i] * scale);   // 与原来的 lambda 逐字同式（`Vector3 * float`）
+        }
+
         /// <summary>
         /// 绘制轨道路径 (点列)。自动叠加视觉自转。
         /// </summary>
@@ -723,14 +737,14 @@ namespace PioneerFramework
         {
             for (int i = 0; i < pointsUnity.Count; i++)
             {
-                Vector3 worldPos = ToView(pointsUnity[i]);
-                if (!IsWorldPosVisible(worldPos, 1f)) continue;
+                Vector3 viewPos = ToView(pointsUnity[i]);
+                if (!IsViewPosVisible(viewPos, 1f)) continue;
 
-                Vector3 toCam = cam.transform.position - worldPos;
+                Vector3 toCam = cam.transform.position - viewPos;
                 if (toCam.sqrMagnitude < 0.01f) continue;
 
                 Quaternion rot = Quaternion.LookRotation(cam.transform.up, toCam.normalized);
-                Vector3 drawPos = worldPos + toCam.normalized * 0.5f;
+                Vector3 drawPos = viewPos + toCam.normalized * 0.5f;
                 Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, new Vector3(size, 1f, size));
                 orbitMarkerPropertyBlock.SetColor("_Color", color);
                 Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
@@ -742,10 +756,10 @@ namespace PioneerFramework
         /// </summary>
         private static void DrawManeuverNode(Vector3 nodePosUnity, Camera cam, Color? color = null, float baseSize = 2.5f)
         {
-            Vector3 worldPos = ToView(nodePosUnity);
-            if (!IsWorldPosVisible(worldPos, 1f)) return;
+            Vector3 viewPos = ToView(nodePosUnity);
+            if (!IsViewPosVisible(viewPos, 1f)) return;
 
-            Vector3 toCam = cam.transform.position - worldPos;
+            Vector3 toCam = cam.transform.position - viewPos;
             if (toCam.sqrMagnitude < 0.01f) return;
 
             // 节点：脉冲效果
@@ -753,7 +767,7 @@ namespace PioneerFramework
             float nodeSize = baseSize * pulse;
 
             Quaternion rot = Quaternion.LookRotation(cam.transform.up, toCam.normalized);
-            Vector3 drawPos = worldPos + toCam.normalized * 0.5f;
+            Vector3 drawPos = viewPos + toCam.normalized * 0.5f;
             Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, new Vector3(nodeSize, 1f, nodeSize));
             Color c = color ?? new Color(1f, 0.9f, 0.2f, 0.9f);
             orbitMarkerPropertyBlock.SetColor("_Color", c);
@@ -766,6 +780,14 @@ namespace PioneerFramework
         private static void DrawOrbitMarkersForGroup(SpaceEntityGroup group, Camera cam)
         {
             float toUnity = (float)SpaceConstants.UnitsPerMeter;
+
+            // ⚠ 2026-09-26（D6）：中心天体 GM 必须**显式**给（唯一权威 `GetBodyGM`）。
+            //   原先下面两处 `OrbitMath` 调用都省略 `mu` ⇒ `ResolveGM` 静默取默认 GM（地球）
+            //   ⇒ **绕月编队的 Pe/Ap 标记是按地球 GM 算的**（与轨道线同一个病）。
+            //   取不到就直接不画：宁可什么都不画，也不拿错的 GM 画。
+            var sgForGm = Current.Game?.GetComponent<SpaceGameComp>();
+            if (sgForGm == null) return;
+            double muBody = sgForGm.GetBodyGM(group.CelestialBodyId);
 
             // 获取轨道状态
             DVector3 posMetersD, velMetersD;
@@ -783,7 +805,7 @@ namespace PioneerFramework
                 velMetersD = group.CurrentOrbit.velocity;
             }
 
-            OrbitMath.GetOrbitFrame(posMetersD, velMetersD, out double a, out double e, out double _, out DVector3 eDir, out DVector3 _);
+            OrbitMath.GetOrbitFrame(posMetersD, velMetersD, out double a, out double e, out double _, out DVector3 eDir, out DVector3 _, muBody);
 
             // 绘制 Pe/Ap 标记（仅椭圆轨且 e > 0.005 时）
             if (a > 0.0 && e > 0.005)
@@ -808,8 +830,11 @@ namespace PioneerFramework
             {
                 OrbitView ovDbg = OrbitView.FromGameStateVectors(posMetersD, velMetersD,
                     defDbg.gravitationalParameter, TimeScaleManager.GetPhysicsTickSafe(), DVector3.up, defDbg.radius);
-                DVector3 anPos = OrbitView.ToD(ovDbg.AscendingNodePositionEquatorial(0.0));
-                DVector3 dnPos = OrbitView.ToD(ovDbg.DescendingNodePositionEquatorial(0.0));
+                // ⚠ 这两个位置来自 `*Equatorial*` 族 ⇒ 是**适配层系**的；下面 `ToView` 的读者按**游戏系**理解。
+                //   批4 P4 之后换系恒等（两系同轴 +Y）⇒ 今天是空操作；**批6 S2（封边界）要把它显式化**。
+                //   （批5 U4 之前这里套着 `OrbitView.ToD`，那只是"不换系"的搬运，已随类型统一删除。）
+                DVector3 anPos = ovDbg.AscendingNodePositionEquatorial(0.0);
+                DVector3 dnPos = ovDbg.DescendingNodePositionEquatorial(0.0);
                 if (anPos.sqrMagnitude > 0.001)
                 {
                     DrawOrbitMarker(ToView((Vector3)(anPos * toUnity)), MarkerColorAn, 1.6f, cam, "AN");
@@ -821,11 +846,11 @@ namespace PioneerFramework
         /// <summary>
         /// 绘制单个轨道标记点（Pe/Ap/AN/DN 通用）。
         /// </summary>
-        private static void DrawOrbitMarker(Vector3 worldPos, Color color, float size, Camera cam, string label = null)
+        private static void DrawOrbitMarker(Vector3 viewPos, Color color, float size, Camera cam, string label = null)
         {
-            if (!IsWorldPosVisible(worldPos, 1f)) return;
+            if (!IsViewPosVisible(viewPos, 1f)) return;
 
-            Vector3 toCam = cam.transform.position - worldPos;
+            Vector3 toCam = cam.transform.position - viewPos;
             if (toCam.sqrMagnitude < 0.01f) return;
 
             // 标记：慢速脉冲
@@ -833,7 +858,7 @@ namespace PioneerFramework
             float markerSize = size * pulse;
 
             Quaternion rot = Quaternion.LookRotation(cam.transform.up, toCam.normalized);
-            Vector3 drawPos = worldPos + toCam.normalized * 0.6f;
+            Vector3 drawPos = viewPos + toCam.normalized * 0.6f;
             Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, new Vector3(markerSize, 1f, markerSize));
             orbitMarkerPropertyBlock.SetColor("_Color", color);
             Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
@@ -855,9 +880,9 @@ namespace PioneerFramework
             foreach (var group in spaceGame.GetAllGroups())
             {
                 if (!group.IsActive) continue;
-                Vector3 worldPos = GetGroupWorldPositionUnity(group);
-                if (!IsWorldPosVisible(worldPos, 2f)) continue;
-                Vector2 screenPos = GenWorldUI.WorldToUIPosition(worldPos);
+                Vector3 viewPos = GetGroupWorldPositionUnity(group);
+                if (!IsViewPosVisible(viewPos, 2f)) continue;
+                Vector2 screenPos = GenWorldUI.WorldToUIPosition(viewPos);
                 float dist = Vector2.Distance(mousePos, screenPos);
                 if (dist < minDist)
                 {
@@ -902,10 +927,10 @@ namespace PioneerFramework
         {
             anchor = default;
             occluded = false;
-            Vector3 worldPos = GetGroupWorldPositionUnity(group);
-            if (IsWorldPosVisible(worldPos, 2f))
+            Vector3 viewPos = GetGroupWorldPositionUnity(group);
+            if (IsViewPosVisible(viewPos, 2f))
             {
-                anchor = GenWorldUI.WorldToUIPosition(worldPos);
+                anchor = GenWorldUI.WorldToUIPosition(viewPos);
                 return true;
             }
             // 被遮挡时，计算屏幕边缘指示点
@@ -1125,28 +1150,27 @@ namespace PioneerFramework
 
             if (SpaceGameComp.UseNewRendezvousLaw)
             {
-                // ── 新律读数：状态 / 本段模式 / 轨道进度 / 相位与相对状态 ──
-                //   ⚠ **必须给"在干活"的证据**（2026-09-17 教训）：腿长动辄 8 万秒（≈28 游戏小时），
-                //   面板原先只显示腿倒计时 ⇒ 玩家看到的是"还有个 82 小时"，而不是"半长轴正在爬"，
-                //   于是以为"飞一半不干了"。这里给**变轨进度**（本船 a vs 目标 a）与段模式。
+                // ── 阶梯引导读数（批5.B 2026-09-28 改）：状态 / 半长轴进度 / 相位与相对状态 ──
+                //   ⚠ **必须给"在干活"的证据**：交会要跑很多圈，面板只给一个"引导中"会让玩家以为"飞一半不干了"。
+                //   ⚠ 旧律的"变轨段/相位段"与"本段剩 X/Y h"**已退役**（用户："相位让我们的 MJ 接管"）：
+                //     那两处读的状态（`rendezvousLaw*`）只有旧入口会写 ⇒ 新路上它们恒为初值 = **撒谎读数**。
                 Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
-                    string.Format("状态: {0} · {1}", group.rendezvousArmed ? "引导中" : "待命",
-                        group.rendezvousLawShapeMode ? "变轨段" : "相位段"));
+                    string.Format("状态: {0}", group.rendezvousArmed ? "引导中" : "待命"));
                 y += rowH;
 
                 double aSelf = double.NaN, aTgt = double.NaN, phaseDeg = double.NaN, distKm = double.NaN, rel = double.NaN;
                 if (target != null)
                 {
-                    aSelf = OrbitMath.SemiMajorAxis(group.localPosition, group.localVelocity,
+                    aSelf = OrbitMath.SemiMajorAxis(group.positionBody, group.velocityBody,
                         spaceGame.GetBodyGM(group.CelestialBodyId));
-                    DVector3 vTgtNow = target.localVelocity;
-                    if (spaceGame.TryGetRendezvousReadout(group, target, out double phi, out double dist, out double rv))
+                    DVector3 vTgtNow = target.velocityBody;
+                    if (spaceGame.TryGetRendezvousReadout(group, target, out double phiDeg, out double dist, out double rv))
                     {
-                        phaseDeg = phi * 180.0 / System.Math.PI;
+                        phaseDeg = phiDeg;      // 已是度（RendezvousGoal.SignedPhaseDeg）
                         distKm = dist / 1000.0;
                         rel = rv;
                     }
-                    aTgt = OrbitMath.SemiMajorAxis(target.localPosition, vTgtNow,
+                    aTgt = OrbitMath.SemiMajorAxis(target.positionBody, vTgtNow,
                         spaceGame.GetBodyGM(group.CelestialBodyId));
                 }
 
@@ -1161,12 +1185,9 @@ namespace PioneerFramework
                             System.Math.Abs(remainA)));
                 }
                 y += rowH;
-                double remLeg = group.rendezvousLawLegEndTick - now;
-                double leg = group.rendezvousLawLegSeconds > 0.0
-                    ? group.rendezvousLawLegSeconds : 60000.0;
                 Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
-                    string.Format("相位差 {0:F1}° · {1:F0} km · {2:F1} m/s｜本段剩 {3:F1}/{4:F1} h",
-                        phaseDeg, distKm, rel, remLeg / 3600.0, leg / 3600.0));
+                    string.Format("沿轨相位差 {0:F1}°（+ = 目标在前）· 距离 {1:F0} km · 相对速度 {2:F1} m/s",
+                        phaseDeg, distKm, rel));
                 GUI.color = Color.white;
                 y += rowH + 6f;
             }
@@ -1206,8 +1227,8 @@ namespace PioneerFramework
             double dist = double.NaN, relvel = double.NaN;
             if (target != null)
             {
-                DVector3 dr = target.localPosition - group.localPosition;
-                DVector3 dv = target.localVelocity - group.localVelocity;
+                DVector3 dr = target.positionBody - group.positionBody;
+                DVector3 dv = target.velocityBody - group.velocityBody;
                 dist = dr.magnitude;
                 relvel = dv.magnitude;
             }
@@ -1295,37 +1316,11 @@ namespace PioneerFramework
                 Find.WindowStack.Add(new ManeuverPlanner(group));
             y += rowH + rowGap;
 
-            // 行3：交会（新律：选目标 → 选时间/燃料档） | 转移到圆轨
-            // ⚠ 2026-09-17 起玩家路径**不再走旧范式**：旧路径是「Lambert 算转移轨道 + 排一次出发段大机动，
-            //   引导只在出发之后做修正」；新律不需要出发段（律本身就是整条转移），登记即接管。
-            //   旧规划窗口仍在（调试页签），仅用于对照与回退。
-            if (Widgets.ButtonText(new Rect(leftX, y, btnW, rowH), "交会"))
-            {
-                var sameBody = spaceGame.GetAllGroups()
-                    .Where(g => g.IsActive && g.GroupId != group.GroupId
-                        && g.CelestialBodyId == group.CelestialBodyId)
-                    .ToList();
-                if (sameBody.Count == 0)
-                {
-                    Messages.Message("同一中心天体下没有其它编队可交会（跨天体交会未实现）",
-                        MessageTypeDefOf.RejectInput);
-                }
-                else
-                {
-                    var options = new List<FloatMenuOption>();
-                    foreach (var c in sameBody)
-                    {
-                        int capturedId = c.GroupId;
-                        options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）",
-                            c.GroupId, (c.localPosition - group.localPosition).magnitude / 1000.0), () =>
-                        {
-                            OpenRendezvousLegMenu(selectedGroupId, capturedId);
-                        }));
-                    }
-                    Find.WindowStack.Add(new FloatMenu(options));
-                }
-            }
-            if (Widgets.ButtonText(new Rect(rightX, y, btnW, rowH), "转移到圆轨"))
+            // 行3：转移到圆轨
+            // ⚠ 批5.B（2026-09-28）：本行左边原本是「交会」按钮 → 旧律的"选时间/燃料档"二级菜单
+            //   （`OpenRendezvousLegMenu`）——那是**已作废自制律**的旋钮（腿长/螺旋价），按用户裁定
+            //   **撤销**（原话："我们之前的冗余按钮就不需要了"）。交会入口现在只有「行7 · 交会（选目标）」。
+            if (Widgets.ButtonText(new Rect(leftX, y, btnW, rowH), "转移到圆轨"))
                 Find.WindowStack.Add(new OrbitTransferPlanner(group, spaceGame));
             y += rowH + rowGap;
 
@@ -1337,11 +1332,11 @@ namespace PioneerFramework
             {
                 var candidates = spaceGame.GetAllGroups()
                     .Where(g => g.IsActive && g.GroupId != group.GroupId
-                        && (g.localPosition - group.localPosition).magnitude < SpaceGameComp.ApproachMaxStartDistance)
+                        && (g.positionBody - group.positionBody).magnitude < SpaceGameComp.ApproachMaxStartDistance)
                     .ToList();
                 if (candidates.Count == 0)
                 {
-                    Messages.Message("附近（1000km 内）没有可接近的群组，距离太远建议用「交会规划」", MessageTypeDefOf.RejectInput);
+                    Messages.Message("附近（1000km 内）没有可接近的群组，距离太远建议用「交会（选目标）」", MessageTypeDefOf.RejectInput);
                 }
                 else
                 {
@@ -1350,7 +1345,7 @@ namespace PioneerFramework
                     {
                         int capturedId = c.GroupId;
                         options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）",
-                            c.GroupId, (c.localPosition - group.localPosition).magnitude / 1000.0), () =>
+                            c.GroupId, (c.positionBody - group.positionBody).magnitude / 1000.0), () =>
                         {
                             var sg = Current.Game?.GetComponent<SpaceGameComp>();
                             if (sg == null) return;
@@ -1378,45 +1373,21 @@ namespace PioneerFramework
             if (Widgets.ButtonText(new Rect(leftX, y, panel.width - 24f, rowH), "降落（选落点）"))
                 Find.WindowStack.Add(new Window_LandingTarget(spaceGame, group));
             GUI.color = Color.white;
+            y += rowH + rowGap;
+
+            // 行7：交会（**独立入口**，2026-09-28 用户："把 MJ 的那套 UI 从机动节点下面迁移出来"）
+            //   = 选目标 + 接合/断开，照 MJ 的 `MechJebModuleRendezvousAutopilotWindow` 的控件面。
+            //   ✅ 批5.B（2026-09-28）：**前置已满足**（用户游戏内亲验"点击正常"）⇒ 旧律那串
+            //   "时间/燃料档"按钮（`OpenRendezvousLegMenu`）已随之撤销，本行是交会**唯一**的玩家入口。
+            if (Widgets.ButtonText(new Rect(leftX, y, panel.width - 24f, rowH), "交会（选目标）"))
+                Find.WindowStack.Add(new Window_Rendezvous(spaceGame, group));
             y += rowH + 12f;
         }
 
-        /// <summary>
-        /// 交会的**第二级菜单**：选时间/燃料档（同一个旋钮的两端，相位守恒律 Δv·t = (2/3)·r·Δφ）。
-        /// 选项里的耗时与 Δv 由 <see cref="SpaceGameComp.BuildRendezvousLawOptions"/> 现算——
-        /// 界面给的数就是律会走的量级，不是写死的文案。
-        /// </summary>
-        private static void OpenRendezvousLegMenu(int selfGroupId, int targetGroupId)
-        {
-            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
-            var self = spaceGame?.GetGroupById(selfGroupId);
-            var target = spaceGame?.GetGroupById(targetGroupId);
-            if (spaceGame == null || self == null || target == null) return;
-
-            var options = spaceGame.BuildRendezvousLawOptions(self, target);
-            if (options.Count == 0)
-            {
-                Messages.Message("无法规划交会：目标不在同一中心天体 / 本编队没有可用推进 / 状态不可预测",
-                    MessageTypeDefOf.RejectInput);
-                return;
-            }
-
-            var menu = new List<FloatMenuOption>();
-            foreach (var opt in options)
-            {
-                double leg = opt.LegSeconds;
-                menu.Add(new FloatMenuOption(opt.Label, () =>
-                {
-                    var sg = Current.Game?.GetComponent<SpaceGameComp>();
-                    var g = sg?.GetGroupById(selfGroupId);
-                    var t = sg?.GetGroupById(targetGroupId);
-                    if (sg == null || g == null || t == null) return;
-                    if (!sg.BeginRendezvousLaw(g, t, leg, out string reason))
-                        Messages.Message("交会未能启动：" + reason, MessageTypeDefOf.RejectInput);
-                }));
-            }
-            Find.WindowStack.Add(new FloatMenu(menu));
-        }
+        // 批5.B（2026-09-28）：此处原有 `OpenRendezvousLegMenu`（旧律的第二级菜单：选时间/燃料档，
+        // 价目由 `SpaceGameComp.BuildRendezvousLawOptions` 现算）。它与那一族一起**撤销**——
+        // 旧律已作废（用户 2026-09-22 裁定），而阶梯**没有"腿长"这个旋钮**（价格由它自己出）。
+        // 要回看：git 历史 / `_backups/20260928-2315-pre-legacy-rendezvous-removal-459f7e2b1fc681fa/`。
 
         private static void DrawPanelMap(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)        {
             var mapEntity = GetMapEntityForGroup(group);

@@ -146,9 +146,9 @@ namespace MechJebLibTest.Primitives.M3Tests
             double pitch = PI / 4;
             double yaw = PI / 3;
 
-            var qRoll = Q3.AngleAxis(roll, V3.forward);
-            var qPitch = Q3.AngleAxis(pitch, V3.left);
-            var qYaw = Q3.AngleAxis(yaw, V3.up);
+            var qRoll = Q3.AngleAxis(roll, V3.bodyForward);
+            var qPitch = Q3.AngleAxis(pitch, V3.bodyLeft);
+            var qYaw = Q3.AngleAxis(yaw, V3.bodyUp);
             Q3 qCombined = qYaw * qPitch * qRoll;
 
             var m = M3.Rotate(qCombined);

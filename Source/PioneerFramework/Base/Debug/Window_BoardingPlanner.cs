@@ -265,7 +265,7 @@ namespace PioneerFramework
                 && !inRect.Contains(Event.current.mousePosition)
                 && hover.InBounds(pickingMap) && hover.Walkable(pickingMap))
             {
-                units[pickingIndex].offset = (DVector3)MapCoordMapper.MapCellToLocal3D(pickingMap, hover);
+                units[pickingIndex].offset = (DVector3)MapCoordMapper.MapCellToShip(pickingMap, hover);
                 marker.cells.Add(hover);
                 Log.Message(string.Format("[Boarding] {0} 落点格 {1} 偏移({2:F1},{3:F1},{4:F1})m",
                     units[pickingIndex].Label, hover, units[pickingIndex].offset.Value.x,

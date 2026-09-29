@@ -25,7 +25,7 @@ namespace PioneerFramework
         private static readonly ThrustAxis[] XzAxes =
             { ThrustAxis.Forward, ThrustAxis.Back, ThrustAxis.Left, ThrustAxis.Right };
 
-        public static DVector3 LocalVector(this ThrustAxis axis)
+        public static DVector3 ShipVector(this ThrustAxis axis)
         {
             switch (axis)
             {
@@ -48,12 +48,12 @@ namespace PioneerFramework
         public static ThrustAxis RotateByRot4(this ThrustAxis axis, Rot4 rot)
         {
             if (axis == ThrustAxis.Up || axis == ThrustAxis.Down) return axis;
-            DVector3 v = axis.LocalVector();
+            DVector3 v = axis.ShipVector();
             double rad = -rot.AsInt * 90f * Mathf.Deg2Rad;
             DVector3 r = DVector3.Rotate(v, DVector3.up, rad);
             foreach (var a in XzAxes)
             {
-                if (DVector3.Dot(r, a.LocalVector()) > 0.999)
+                if (DVector3.Dot(r, a.ShipVector()) > 0.999)
                     return a;
             }
             return axis;
@@ -71,17 +71,21 @@ namespace PioneerFramework
         /// <summary>全部工质网络（引擎聚合：ve/ṁ/推力）。</summary>
         IReadOnlyList<PropellantNetwork> Networks { get; }
 
-        /// <summary>某工质当前存量（kg）。未记录返回 0。</summary>
-        float GetPropellantMass(PropellantDef def);
+        /// <summary>某工质当前存量（kg）。未记录返回 0。
+        /// ⚠ **质量一律 `double`**（2026-09-27 用户裁定）：工质质量的消耗是**逐步累加**（每步 `-= 一点`），
+        /// 而 float 在 72 t 处只有 **7.8 g** 分辨率 ⇒ 一步的舍入差（2 ULP = 15.6 g）会被 `accel = F/m`
+        /// 放大成 3.4e-6 m/s 的 Δv 差、末端 7e-5 m 的位置差（逐步指纹实测钉死）。
+        /// 速率类（ve/ṁ/推力）保持 float：它们是**瞬时量**、不做累加，且当前取值都可精确表示。</summary>
+        double GetPropellantMass(PropellantDef def);
 
-        /// <summary>消耗工质（kg），返回实际扣除量（受存量截断，用于判定耗尽）。</summary>
-        float TryConsumePropellant(PropellantDef def, float kg);
+        /// <summary>消耗工质（kg），返回实际扣除量（受存量截断，用于判定耗尽）。**double**：见上。</summary>
+        double TryConsumePropellant(PropellantDef def, double kg);
 
-        /// <summary>工质总质量（kg）。</summary>
-        float TotalPropellantMass { get; }
+        /// <summary>工质总质量（kg）。**double**：累加量，见上。</summary>
+        double TotalPropellantMass { get; }
 
-        /// <summary>燃料总容量（kg，MaxDeltaV 用）。</summary>
-        float TotalPropellantCapacity { get; }
+        /// <summary>燃料总容量（kg，MaxDeltaV 用）。**double**：同 <see cref="TotalPropellantMass"/>。</summary>
+        double TotalPropellantCapacity { get; }
 
         /// <summary>等效排气速度 ve = Σ(ve·ṁ)/Σṁ（m/s，全网络并行烧时的加权平均）。</summary>
         float EffectiveVe { get; }
@@ -140,7 +144,8 @@ namespace PioneerFramework
         /// <summary>该网络工质的当前可用存量（kg，动态查推进源工质池）。</summary>
         public float AvailableMass(IPropulsionSource src)
         {
-            return src != null ? src.GetPropellantMass(propellant) : 0f;
+            // 边界 cast：这是**阈值读**（判"还有没有料"），不参与累加 ⇒ float 足够
+            return src != null ? (float)src.GetPropellantMass(propellant) : 0f;
         }
 
         /// <summary>无朝向注册（无 Map 全矢量源）：只入总聚合，不入 per-axis。</summary>
@@ -201,7 +206,6 @@ namespace PioneerFramework
         public int ownerEntityId = -1;
 
         /// <summary>Map → Part：此地图对应的 SpacePart.partId（在 ownerEntity 的 Parts 列表中）。</summary>
-        public int linkedPartId = -1;
 
         // ── PFL 火箭虚拟推进持久化（LA-18）──
         // RocketDesignSpec 与虚拟推进参数不依赖地图建筑，因此需要显式落盘；
@@ -223,13 +227,15 @@ namespace PioneerFramework
         // 多储罐同种工质自然累加；一条船可同时携带多种工质（液氢/化学/氙……）。
         // 该向量是运行时聚合缓存，不落盘：由各储罐建筑在 Spawn 时 +、
         // 在加注/消耗/摧毁时 ±，读档/取档后由建筑重建，避免重复记账。
-        private Dictionary<PropellantDef, float> propellantMass = new Dictionary<PropellantDef, float>();
+        private Dictionary<PropellantDef, double> propellantMass = new Dictionary<PropellantDef, double>();
 
-        /// <summary>工质总质量缓存（float，供并行物理线程只读，避免遍历字典）。</summary>
-        private float totalPropellantMass;
+        /// <summary>工质总质量缓存（**double**，供并行物理线程只读，避免遍历字典）。
+        /// ⚠ double 的理由见 <see cref="IPropulsionSource.GetPropellantMass"/>：累加量在 72 t 处
+        /// float 只有 7.8 g 分辨率 ⇒ 一步的舍入差会被 `a=F/m` 放大成可测的 Δv/位置差。</summary>
+        private double totalPropellantMass;
 
-        /// <summary>储罐总容量缓存（kg）：Σ 全部储罐容量，由储罐 Spawn/DeSpawn 同步。</summary>
-        private float totalPropellantCapacity;
+        /// <summary>储罐总容量缓存（kg）：Σ 全部储罐容量，由储罐 Spawn/DeSpawn 同步。**double**（同 <see cref="totalPropellantMass"/>）。</summary>
+        private double totalPropellantCapacity;
 
         // ── 工质网络（储罐 + 引擎）──
         // 键 = 工质，值 = 使用该工质的引擎聚合（ve/ṁ/推力）。
@@ -262,45 +268,45 @@ namespace PioneerFramework
 
         public SpaceMapComp(Map map) : base(map) { }
 
-        /// <summary>某工质的当前总质量（kg）。未记录返回 0。</summary>
-        public float GetPropellantMass(PropellantDef def)
+        /// <summary>某工质的当前总质量（kg）。未记录返回 0。**double**：见 <see cref="IPropulsionSource.GetPropellantMass"/>。</summary>
+        public double GetPropellantMass(PropellantDef def)
         {
-            if (def == null) return 0f;
-            return propellantMass.TryGetValue(def, out var m) ? m : 0f;
+            if (def == null) return 0.0;
+            return propellantMass.TryGetValue(def, out var m) ? m : 0.0;
         }
 
         /// <summary>
         /// 增减某工质的总质量（kg）。delta 可为负（消耗/摧毁）；结果不落负。
         /// 向量 = Σ 全部储罐存量，由储罐 Comp 在变化点调用。
         /// </summary>
-        public void AddPropellantMass(PropellantDef def, float delta)
+        public void AddPropellantMass(PropellantDef def, double delta)
         {
-            if (def == null || delta == 0f) return;
-            float next = GetPropellantMass(def) + delta;
-            if (next <= 0.0001f)
+            if (def == null || delta == 0.0) return;
+            double next = GetPropellantMass(def) + delta;
+            if (next <= 0.0001)
                 propellantMass.Remove(def);
             else
                 propellantMass[def] = next;
             // 增量维护总量（delta 即本次净变化，键新增/移除均适用）
-            totalPropellantMass = Mathf.Max(0f, totalPropellantMass + delta);
+            totalPropellantMass = System.Math.Max(0.0, totalPropellantMass + delta);
         }
 
         /// <summary>
         /// 消耗工质（推进/轨道保持用）。从船级工质池扣减，返回实际扣除量
-        /// （受当前存量截断，用于判定"工质是否耗尽"）。
+        /// （受当前存量截断，用于判定"工质是否耗尽"）。**double**：见 <see cref="IPropulsionSource.TryConsumePropellant"/>。
         /// </summary>
-        public float TryConsumePropellant(PropellantDef def, float kg)
+        public double TryConsumePropellant(PropellantDef def, double kg)
         {
-            if (def == null || kg <= 0f) return 0f;
-            float have = GetPropellantMass(def);
-            float actual = Mathf.Min(kg, have);
-            if (actual <= 0f) return 0f;
+            if (def == null || kg <= 0.0) return 0.0;
+            double have = GetPropellantMass(def);
+            double actual = System.Math.Min(kg, have);
+            if (actual <= 0.0) return 0.0;
             AddPropellantMass(def, -actual);
             return actual;
         }
 
         /// <summary>全部工质 → 质量 的快照（调试 / dV 计算消费方）。</summary>
-        public IEnumerable<KeyValuePair<PropellantDef, float>> PropellantSnapshot
+        public IEnumerable<KeyValuePair<PropellantDef, double>> PropellantSnapshot
         {
             get
             {
@@ -309,16 +315,16 @@ namespace PioneerFramework
             }
         }
 
-        /// <summary>工质总质量（kg）。</summary>
-        public float TotalPropellantMass => totalPropellantMass;
+        /// <summary>工质总质量（kg）。**double**：见 <see cref="IPropulsionSource.TotalPropellantMass"/>。</summary>
+        public double TotalPropellantMass => totalPropellantMass;
 
-        /// <summary>储罐总容量（kg，满箱工质总量，MaxDeltaV 用）。</summary>
-        public float TotalPropellantCapacity => totalPropellantCapacity;
+        /// <summary>储罐总容量（kg，满箱工质总量，MaxDeltaV 用）。**double**（同上）。</summary>
+        public double TotalPropellantCapacity => totalPropellantCapacity;
 
         /// <summary>储罐总容量增减（由 CompPropellantTank Spawn/DeSpawn 同步）。</summary>
-        public void AddPropellantCapacity(float delta)
+        public void AddPropellantCapacity(double delta)
         {
-            totalPropellantCapacity = Mathf.Max(0f, totalPropellantCapacity + delta);
+            totalPropellantCapacity = System.Math.Max(0.0, totalPropellantCapacity + delta);
         }
 
         // ── 工质网络（引擎注册/聚合）──
@@ -483,15 +489,15 @@ namespace PioneerFramework
         /// 取锥内引擎的聚合推力/流率（跨网络，按网络切片，工质消耗按切片流率分配）。
         /// 调用方（burn/手动平移）传入 group 当前姿态 rotation 做局部→世界换算。
         /// </summary>
-        public void GetThrustAlong(DVector3 worldDir, Quaternion rotation, float coneCos,
+        public void GetThrustAlong(DVector3 dirSystem, Quaternion rotation, float coneCos,
             HashSet<PropellantDef> enabled, List<ThrustSlice> slices, out float totalThrust, out float totalMassFlow)
         {
             totalThrust = 0f;
             totalMassFlow = 0f;
             if (slices != null) slices.Clear();
-            if (worldDir.sqrMagnitude < 1e-12) return;
+            if (dirSystem.sqrMagnitude < 1e-12) return;
 
-            DVector3 dirN = worldDir.normalized;
+            DVector3 dirN = dirSystem.normalized;
             for (int n = 0; n < networkList.Count; n++)
             {
                 var net = networkList[n];
@@ -503,7 +509,7 @@ namespace PioneerFramework
                 for (int a = 0; a < 6; a++)
                 {
                     if (net.FlowByAxis(a) <= 0f) continue;
-                    DVector3 worldAxis = DVector3.Rotate(((ThrustAxis)a).LocalVector(), rotation);
+                    DVector3 worldAxis = DVector3.Rotate(((ThrustAxis)a).ShipVector(), rotation);
                     if (DVector3.Dot(worldAxis, dirN) >= coneCos)
                     {
                         t += net.ThrustByAxis(a);
@@ -525,15 +531,15 @@ namespace PioneerFramework
         /// RCS 引擎**全矢量**（任意方向出力，免对准），主引擎只在矢量锥内出力；
         /// 都受「已武装（动作组）」过滤。返回按工质网络的切片（工质消耗按切片流率分配）。
         /// </summary>
-        public void GetManualThrustAlong(DVector3 worldDir, Quaternion rotation, float coneCos,
+        public void GetManualThrustAlong(DVector3 dirSystem, Quaternion rotation, float coneCos,
             HashSet<PropellantDef> enabled, int armedGroupsMask, List<ThrustSlice> slices,
             out float totalThrust, out float totalMassFlow)
         {
             totalThrust = 0f;
             totalMassFlow = 0f;
             if (slices != null) slices.Clear();
-            if (worldDir.sqrMagnitude < 1e-12) return;
-            DVector3 dirN = worldDir.normalized;
+            if (dirSystem.sqrMagnitude < 1e-12) return;
+            DVector3 dirN = dirSystem.normalized;
 
             var acc = new Dictionary<PropellantDef, (float t, float mf)>();
             for (int i = 0; i < thrusters.Count; i++)
@@ -545,7 +551,7 @@ namespace PioneerFramework
                 // RCS 全矢量（免方向判定）；主引擎需落在目标方向矢量锥内
                 if (!t.IsVectoredRcs)
                 {
-                    DVector3 wAxis = DVector3.Rotate(t.ShipAxis.LocalVector(), rotation);
+                    DVector3 wAxis = DVector3.Rotate(t.ShipAxis.ShipVector(), rotation);
                     if (DVector3.Dot(wAxis, dirN) < coneCos) continue;
                 }
                 float ve = t.Ve, mf = t.MassFlowRate;
@@ -676,12 +682,11 @@ namespace PioneerFramework
             {
                 PropellantDef currentDef = DefDatabase<PropellantDef>.GetNamedSilentFail(virtualPropellantDefName);
                 if (currentDef != null)
-                    virtualFuelMass = GetPropellantMass(currentDef);
+                    virtualFuelMass = (float)GetPropellantMass(currentDef);   // 边界 cast：镜像读数
             }
 
             Scribe_Values.Look(ref stationName, "stationName", "Unnamed Station");
             Scribe_Values.Look(ref ownerEntityId, "ownerEntityId", -1);
-            Scribe_Values.Look(ref linkedPartId, "linkedPartId", -1);
             Scribe_Deep.Look(ref rocketSpec, "rocketSpec");
             Scribe_Values.Look(ref hasVirtualPropulsion, "hasVirtualPropulsion", false);
             Scribe_Values.Look(ref virtualPropellantDefName, "virtualPropellantDefName");

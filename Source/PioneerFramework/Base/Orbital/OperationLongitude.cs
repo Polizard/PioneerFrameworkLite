@@ -55,12 +55,12 @@ namespace PioneerFramework
         protected override List<PlanNode>? MakeNodesImpl(OrbitView o, double universalTime, ITargetView target)
         {
             double ut = TimeSelector.ComputeManeuverTime(o, universalTime, target);
-            MechJebLib.Primitives.V3 dV = OrbitalManeuverCalculator.DeltaVToShiftNodeLongitude(o, ut, NewLongitude.Val);
+            DVector3 dV = OrbitalManeuverCalculator.DeltaVToShiftNodeLongitude(o, ut, NewLongitude.Val);
 
             // 非致命提示：新轨道的外拱点是否会被甩出天体影响范围（判据见类注释 ②）
             if (!double.IsNaN(o.soiRadiusApprox) && o.soiRadiusApprox > 0.0)
             {
-                (MechJebLib.Primitives.V3 r, MechJebLib.Primitives.V3 v) = o.RightHandedStateVectorsAtUT(ut);
+                (DVector3 r, DVector3 v) = o.RightHandedStateVectorsAtUT(ut);
                 double newSma = Astro.SmaFromStateVectors(o.mu, r, v + dV);
                 double outerApsis = 2.0 * newSma - r.magnitude;
                 if (outerApsis > o.soiRadiusApprox)

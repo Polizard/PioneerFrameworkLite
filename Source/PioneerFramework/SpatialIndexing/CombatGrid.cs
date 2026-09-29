@@ -131,7 +131,7 @@ namespace PioneerFramework.Combat
         /// </summary>
         public void AddShip(SpaceEntityGroup ship)
         {
-            var bounds = GetGroupWorldBounds(ship);
+            var bounds = GetGroupBoundsSystem(ship);
             var box = CoverBoxOf(bounds.min, bounds.max);
             int frameId = GetFrameId(ship);
             var grid = GetOrCreateSystem(frameId);
@@ -179,7 +179,7 @@ namespace PioneerFramework.Combat
 
         public void UpdateShipPosition(SpaceEntityGroup ship, DVector3 oldPosMeters)
         {
-            var newBounds = GetGroupWorldBounds(ship);
+            var newBounds = GetGroupBoundsSystem(ship);
             var newBox = CoverBoxOf(newBounds.min, newBounds.max);
 
             if (!shipCoveredCells.TryGetValue(ship, out var oldBox))
@@ -239,7 +239,7 @@ namespace PioneerFramework.Combat
         /// 计算编队的世界 AABB（groupPos + Σ entity 的 position ± BoundsSize/2）。
         /// 坐标基准：行星系相对坐标（与 GetGroupPosMeters 一致）。
         /// </summary>
-        private (DVector3 min, DVector3 max) GetGroupWorldBounds(SpaceEntityGroup ship)
+        private (DVector3 min, DVector3 max) GetGroupBoundsSystem(SpaceEntityGroup ship)
         {
             DVector3 groupPos = GetGroupPosMeters(ship);
             DVector3 min = groupPos, max = groupPos;
@@ -254,7 +254,7 @@ namespace PioneerFramework.Combat
                     if (entity == null || !entity.IsCollidable) continue;
 
                     // 旋转后的世界轴对齐包围盒（覆盖倾斜姿态）
-                    entity.GetWorldAabb(out var relMin, out var relMax);
+                    entity.GetAabbSystem(out var relMin, out var relMax);
                     DVector3 eMin = groupPos + entity.Position + relMin;
                     DVector3 eMax = groupPos + entity.Position + relMax;
 

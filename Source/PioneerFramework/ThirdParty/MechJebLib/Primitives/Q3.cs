@@ -114,7 +114,7 @@ namespace MechJebLib.Primitives
         /*
         public void SetLookRotation(V3 view)
         {
-            V3 up = V3.up;
+            V3 up = V3.bodyUp;
             SetLookRotation(view, up);
         }
 
@@ -203,7 +203,7 @@ namespace MechJebLib.Primitives
         public static Q3 LookRotation(V3 forward, V3 upwards = default)
         {
             if (upwards == V3.zero)
-                upwards = V3.up;
+                upwards = V3.bodyUp;
 
             if (forward == V3.zero)
                 return identity;
@@ -211,7 +211,7 @@ namespace MechJebLib.Primitives
             forward = V3.Normalize(forward);
             var right = V3.Normalize(V3.Cross(forward, upwards));
             if (right == V3.zero)
-                return FromToRotation(V3.forward, forward);
+                return FromToRotation(V3.bodyForward, forward);
             upwards = V3.Cross(right, forward);
 
             double m00 = forward.x;

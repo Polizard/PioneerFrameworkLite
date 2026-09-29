@@ -13,12 +13,12 @@ namespace PioneerFramework
     ///
     /// ## ⚠ 参考系硬约定（最容易错的一处）
     /// 船的 `(r, v)` 与天体的 `(bodyOffsetPos, bodyOffsetVel)` **必须同系**。游戏侧一律传：
-    /// · 船 = `group.CurrentOrbit.position/velocity`（**根系 = 根行星（地球）系**）；
-    /// · 天体 = `SpaceGameComp.GetBodyWorldOffset/VelOffset`（对**根行星**返零、对卫星给"绕父天体"的偏移）。
-    /// **不要**传 `group.localPosition/localVelocity`（那是**天体相对**的）—— 与天体偏移混用会凭空多/少
+    /// · 船 = `group.CurrentOrbit.position/velocity`（**系统系 = 根行星（地球）系**）；
+    /// · 天体 = `SpaceGameComp.GetBodyOffsetSystem/VelOffset`（对**根行星**返零、对卫星给"绕父天体"的偏移）。
+    /// **不要**传 `group.positionBody/velocityBody`（那是**天体相对**的）—— 与天体偏移混用会凭空多/少
     /// 一份天体平动（月球 3141 m/s 量级 ⇒ 报价直接错一个数量级）。与"跨系运算必须显式换算"同一条纪律。
     ///
-    /// 「绕地的船落到月球」就是靠这条成立的：目标状态按 `月球绕地偏移 + 月球固连自转` 拼进根系即可。
+    /// 「绕地的船落到月球」就是靠这条成立的：目标状态按 `月球绕地偏移 + 月球固连自转` 拼进系统系即可。
     ///
     /// ## 已登记的简化（刻意不做，别当隐藏债）
     /// 只有"速度差"这一项，**没有转移/落下能量项** ⇒ 理论上"又远又慢"的船能用接近零的 Δv 落到月球。
@@ -82,23 +82,23 @@ namespace PioneerFramework
                     string.Format("参数不完整（天体半径 {0:F0} m、自转角速度 {1:E2} rad/s、落点方向{2}）",
                         bodyRadius, omega, badDir ? "未给" : "已给"));
 
-            DVector3 pLocal = SurfaceFrame.FixedToEci(tileDirFixed.normalized * bodyRadius, omega, physicsTick);
-            DVector3 pWorld = bodyOffsetPos + pLocal;
-            DVector3 vWorld = bodyOffsetVel + SurfaceFrame.SurfaceVelocity(pLocal, omega);
-            double dv = (shipVel - vWorld).magnitude;
+            DVector3 pEci = SurfaceFrame.FixedToEci(tileDirFixed.normalized * bodyRadius, omega, physicsTick);
+            DVector3 pSystem = bodyOffsetPos + pEci;
+            DVector3 vSystem = bodyOffsetVel + SurfaceFrame.SurfaceVelocity(pEci, omega);
+            double dv = (shipVel - vSystem).magnitude;
 
-            DVector3 rLocal = shipPos - bodyOffsetPos;
-            if (!(rLocal.sqrMagnitude > 1e-12))
-                return new Result(false, dv, double.NaN, maxDist, pWorld, vWorld, "船就在天体中心（星下点无定义）");
+            DVector3 rBody = shipPos - bodyOffsetPos;
+            if (!(rBody.sqrMagnitude > 1e-12))
+                return new Result(false, dv, double.NaN, maxDist, pSystem, vSystem, "船就在天体中心（星下点无定义）");
 
-            double cos = Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(rLocal.normalized, pLocal.normalized)));
+            double cos = Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(rBody.normalized, pEci.normalized)));
             double dist = bodyRadius * Math.Acos(cos);
 
             if (dist > maxDist)
-                return new Result(false, dv, dist, maxDist, pWorld, vWorld,
+                return new Result(false, dv, dist, maxDist, pSystem, vSystem,
                     string.Format("落点太远：地表 {0:F0} km > 上界 {1:F0} km", dist / 1000.0, maxDist / 1000.0));
 
-            return new Result(true, dv, dist, maxDist, pWorld, vWorld,
+            return new Result(true, dv, dist, maxDist, pSystem, vSystem,
                 string.Format("可落：地表距离 {0:F0} km、Δv {1:F0} m/s", dist / 1000.0, dv));
         }
     }

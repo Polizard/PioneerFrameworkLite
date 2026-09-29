@@ -124,16 +124,16 @@ namespace PioneerFramework
                 if (s.bodyId != MOON_BODY_ID) continue;
                 foundMoon = true;
 
-                DVector3 expectPos = mgr.GetBodyLocalPosition(MOON_BODY_ID, tick);
-                DVector3 expectVel = mgr.GetBodyLocalVelocity(MOON_BODY_ID, tick);
+                DVector3 expectPos = mgr.GetBodyPositionParent(MOON_BODY_ID, tick);
+                DVector3 expectVel = mgr.GetBodyVelocityParent(MOON_BODY_ID, tick);
                 double dPos = (s.position - expectPos).magnitude;
                 double dVel = (s.velocity - expectVel).magnitude;
 
                 // 1 层层级（父=根）时，"沿父链累加"必须退化为"取该天体的父系局部位置"
-                Check(dPos < 1.0, "月球源位置 == GetBodyLocalPosition(Moon)（父链累加正确）",
+                Check(dPos < 1.0, "月球源位置 == GetBodyPositionParent(Moon)（父链累加正确）",
                     string.Format("Δ={0:F3} m（源={1:F0}km 期望={2:F0}km）",
                         dPos, s.position.magnitude / 1000.0, expectPos.magnitude / 1000.0));
-                Check(dVel < 1e-3, "月球源速度 == GetBodyLocalVelocity(Moon)",
+                Check(dVel < 1e-3, "月球源速度 == GetBodyVelocityParent(Moon)",
                     string.Format("Δ={0:E3} m/s", dVel));
                 Check(Math.Abs(s.mu - moon.gravitationalParameter) < 1e-6,
                     "月球源 GM == 月球 Def GM", string.Format("{0:E6} vs {1:E6}", s.mu, moon.gravitationalParameter));
@@ -165,8 +165,8 @@ namespace PioneerFramework
             mgr.CollectSystemSources(EARTH_BODY_ID, tick, all);
             if (all.Count < 2) return;
 
-            DVector3 moonPos = mgr.GetBodyLocalPosition(MOON_BODY_ID, tick);
-            DVector3 moonVel = mgr.GetBodyLocalVelocity(MOON_BODY_ID, tick);
+            DVector3 moonPos = mgr.GetBodyPositionParent(MOON_BODY_ID, tick);
+            DVector3 moonVel = mgr.GetBodyVelocityParent(MOON_BODY_ID, tick);
 
             // ── 影子：全域场 vs 「根 + 直接子天体」子集场 ──
             var subset = new List<GravitySource>();
@@ -263,8 +263,8 @@ namespace PioneerFramework
 
             var all = new List<GravitySource>();
             mgr.CollectSystemSources(EARTH_BODY_ID, tick, all);
-            DVector3 moonPos = mgr.GetBodyLocalPosition(MOON_BODY_ID, tick);
-            DVector3 moonVel = mgr.GetBodyLocalVelocity(MOON_BODY_ID, tick);
+            DVector3 moonPos = mgr.GetBodyPositionParent(MOON_BODY_ID, tick);
+            DVector3 moonVel = mgr.GetBodyVelocityParent(MOON_BODY_ID, tick);
             var probe = moonPos + new DVector3(3.3e6, 0.0, 0.0);
             var probeVel = moonVel;
 

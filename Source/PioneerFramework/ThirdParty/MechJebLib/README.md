@@ -100,7 +100,8 @@ Interpolants/   IInterpolant
 | **`Source/MechJebLibTest/`** | **上游自己那套测试**（逐字移植）+ **我们自己的跨求解器互证台**（`MechJebLibPortTests.cs`）。net48、**零 RimWorld/Unity 依赖**（镜像上游 `MechJebLibTest → MechJebLib` 的形状）；程序集名与命名空间保持 `MechJebLibTest`。**共 5012 条用例** | **L1（白拿）+ L3（互证）** |
 
 > 互证台需要**我们这一侧**的 `OrbitMath` 才能做"移植面 ↔ 我们"的互证，所以该工程额外用
-> `<Compile Include>` 链接了 `DVector3` / `DVector3Extensions` / `SpaceConstants` / `OrbitMath`（并定义 `PURE_MATH`）。
+> `<Compile Include>` 链接了 `DVector3` / `SpaceConstants` / `OrbitMath`（并定义 `PURE_MATH`）。
+> （批5 U4 起 `DVector3Extensions` 已退役——它的成员并进了 `DVector3`，见 `Source/已弃置/README.md`。）
 > **它仍然零 RimWorld/Unity 依赖**，只是不再是"纯上游镜像"——这是为了让 L1 与 L3 同处一个桶。
 
 ### L1：搬了哪些、为什么少了那些
@@ -143,12 +144,36 @@ L3 互证台里曾有一段**我们自己写的 RK4** 数值传播。它当时�
 > 它的替代品是上游被 ~5000 条用例验过的积分器。**没有理由再自己写一个。**
 
 
-## ⚠ 逐字不变式（本目录的护栏）
+## ⚠ 移植面改动规则（**2026-09-26 用户裁定后重写；原「逐字不变式＝一个字不许动」已作废**）
 
-> **本目录下任何文件与上游同名文件的 `diff` 都必须为空。**
-> 发现非空 diff ⇒ 要么是有人就地改了移植物（**禁止**），或上游已前进（应整体重新同步）。
+> 用户原话：**「必要时可以修改我们移植过来的 MJ 部分，使得移植的 MJ 和我们的 PFL 之间尽可能少转换。」**
+> ⇒ 旧护栏"**diff 必须为空**"**不再是禁令**。它的真实价值是"**上游 6179 条用例是我们最强的验证资产**"，
+> 所以新规则按"**改一下要付多少验证成本**"分三档：
 
-这条注释是**可被违反的**，因此它是一条护栏，不是装饰。核验方式：
+| 档 | 允许的形态 | 上游用例 | 判据 |
+|---|---|---|---|
+| **T-A ✅ 鼓励** | **语句级重写，公式与求值序都不变**：提循环不变量 / 提局部变量 / 同一个子表达式只算一次 / 加 `AggressiveInlining` | **仍全绿** ⇒ 资产完好 | 逐位差分 + **移植用例数不减** |
+| **T-B ⚠ 逐条裁定** | **加可选参数、默认值 = 上游行为**（例：把"极轴"参数化，默认 `+z`） | 仍绿，但**宿主走的那条路不被上游覆盖** | 需**自建**差分：宿主路径 vs 上游路径（默认参数）逐位比 |
+| **T-C ❌ 不做** | **改公式 / 改约定 / 改默认容差 / 改迭代上限** | **红** ⇒ 资产作废 | 必须自建整套替代验证。**不值得** |
+
+**⚠ `Math.Pow(x,2.0) → x*x` 不算 T-A**：`pow` 是否特判 `y=2.0` 不是 CLR/CRT 保证，
+而目标运行时是 Unity/Mono 的 libm ⇒ 属**待实测**。**可证的只有 `Statics.Powi(x,3)`**（平方-乘序与 C# 同结合序）。
+
+**已改清单（每次改完在此登记：文件 · 为什么 · 上游用例是否仍全绿）**：
+
+### 批5「类型统一」（2026-09-28）—— 全部属 **T-A**（断言与求值序都没变），上游 **6207/6207 仍全绿**
+
+| 改动 | 涉及文件 | 为什么 | 上游用例 |
+|---|---|---|---|
+| **6 个 NED 船体常量改名**：`up/down/left/right/forward/back` → `bodyUp/bodyDown/bodyLeft/bodyRight/bodyForward/bodyBack`（**值一个都没动**） | 原 `Primitives/V3.cs` + 9 个上游测试文件（`Q3Tests/*`、`M3Tests/*`、`V3Tests/*`）**共 139 处** | 类型统一（U2/U3）后这 6 个 NED 常量与宿主 `DVector3` 的**世界系**同名常量撞名（同名、值正交）⇒ 必须有一边改名；改的是"名字在说谎"的那一边 | 仍全绿 |
+| **`Primitives/V3.cs` 删除**，`V3` 改为指向宿主的别名 `global using V3 = PioneerFramework.DVector3;` | 新增 `_PFL/GlobalAlias.cs`（**本目录里唯一的非上游文件**，`_PFL` 前缀 + 文件头声明）；`MechJebLibTest` 的 `LangVersion` 8 → 12（`global using` 要 C# ≥ 10） | 用户 2026-09-26 裁定「`V3` 与 `DVector3` 统一」；上游测试源码因此**一个字不用改** | 仍全绿 |
+| **4 个分歧成员采用上游语义** | 合并后的 `Base/Core/DVector3.cs`：`Equals`（NaN 判相等）· `ToString`（`[G17]` 不变文化 + `IFormattable`）· `normalized`（NaN→zero）· `Normalize()`（NaN→zero + 赋值 `this`） | 让上游赢 ⇒ 那批断言（`EqualityHashingTests` / `StringRepresentationTests`）继续有效 | 仍全绿 |
+| **两个恒等转换函数删除**（`OrbitView` 那一对 + `OrbitAdapter` 的两个转发） | 宿主侧 39 处调用点 + 两个测试工程 27 处 | 类型统一后它们退化为"原样搬运三个分量" ⇒ 零行为变化，纯减法（§12.4） | 不涉及（宿主/自研文件） |
+
+⇒ 净效果：**全库一个双精度三矢量类型**，且宿主 `DVector3` 从此被上游 6207 条用例覆盖（§12.4 的"白拿收益"）。
+⚠ **文件计数口径**：`find . -name '*.cs'` 现在会多出 `_PFL/GlobalAlias.cs` 这一个**我们自己的**文件（它不属上游）。
+
+**核验方式（改成"报出差异"而不是"必须为空"）**：
 
 ```bash
 SRC=/path/to/MechJeb2/MechJebLib; DST=Source/PioneerFramework/ThirdParty/MechJebLib

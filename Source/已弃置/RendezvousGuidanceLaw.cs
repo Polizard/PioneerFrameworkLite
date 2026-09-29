@@ -1,3 +1,12 @@
+// ⚠ **已归档（批5.B，2026-09-28）** —— 本文件**不参与编译**。
+// 原因：用户 2026-09-22 裁定"我们在接入 MJ 之前自己折腾过一个交会算法，那个东西不能用了"
+//       ⇒ 远场连续律 + 5% CW 终端全部作废；玩家路径只剩 **MJ 阶梯 + MJ 靶执行器**。
+// 替代品：`MechJebLibTest/LadderEndToEndTests.cs`（四条几何端到端，口径 300 m / 2 m/s）
+//         与 `LadderPlanCostTests.cs`（规划墙钟判据）。
+// 取回代价：搬回 `Source/PioneerFramework/Base/Orbital/` + 恢复两个 csproj 的 `<Compile Include>`
+//         （`MechJebLibTest` / `PioneerFramework.Pure.Tests` 各一行）。
+//         ⚠ **不要**在没有新判决的情况下把它接回玩家路径。
+
 using System;
 using MechJebLib.Functions;   // Astro：要素/周期的移植权威（§14.3 V1 收敛）
 
@@ -84,7 +93,7 @@ namespace PioneerFramework
             // V1 收敛（§14.3）：本文件是**与参考系无关**的纯文件 ⇒ 走移植的 `Astro`（`OrbitView.period`
             // 本身就是它的转发，实现只有一份）。**不要**在这里构造 `OrbitView` —— 那会隐含一个参考系，
             // 而 `a`/`period` 对旋转不变，纯文件不该知道参考系。
-            double aTgt = Astro.SmaFromStateVectors(mu, OrbitView.ToV3(rTgt), OrbitView.ToV3(vTgt));
+            double aTgt = Astro.SmaFromStateVectors(mu, rTgt, vTgt);
             double vcHere = Math.Sqrt(mu / rMag);
             dvShape = aTgt > 1.0 ? Math.Abs(vcHere - Math.Sqrt(mu / aTgt)) : 0.0;
 
@@ -110,7 +119,7 @@ namespace PioneerFramework
             // 周期收敛到移植权威（§14.3『周期』行）。⚠ `Astro.PeriodFromStateVectors` 对双曲**抛异常**
             // ⇒ 用同一个 `aTgt > 1.0` 守卫短路（与原先的语义逐位一致）。
             double periodTgt = aTgt > 1.0
-                ? Astro.PeriodFromStateVectors(mu, OrbitView.ToV3(rTgt), OrbitView.ToV3(vTgt)) : 0.0;
+                ? Astro.PeriodFromStateVectors(mu, rTgt, vTgt) : 0.0;
             double floorAll = Math.Max(legFloor, periodTgt);
             if (shapeMode)
             {
@@ -250,8 +259,8 @@ namespace PioneerFramework
 
             // ── δn = 相位差速率 = n(a_c) − n(a_t)。**必须用要素口径**：
             //    按"相对局地圆轨速度"算会在"a 相同但目标在别处"时恒为 0 ⇒ 律静默不动（§13.4-I4）──
-            double aNow = Astro.SmaFromStateVectors(mu, OrbitView.ToV3(rSelf), OrbitView.ToV3(vSelf));
-            double aTgt = Astro.SmaFromStateVectors(mu, OrbitView.ToV3(rTgt), OrbitView.ToV3(vTgt));
+            double aNow = Astro.SmaFromStateVectors(mu, rSelf, vSelf);
+            double aTgt = Astro.SmaFromStateVectors(mu, rTgt, vTgt);
             res.PhaseRate = RendezvousGuidanceCore.PhaseRateFromElements(aNow, aTgt, mu);
 
             // ── c₀：限权（**自适应**，见 AdaptiveThrustCap 的推导）──

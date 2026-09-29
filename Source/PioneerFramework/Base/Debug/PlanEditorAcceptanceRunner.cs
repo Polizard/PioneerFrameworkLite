@@ -231,8 +231,8 @@ namespace PioneerFramework
                 // ── 漂移实验：**合成**一条漂移后的轨道（不碰船，避免"改了哪儿根本没人读"这类假实验）──
                 // §2.5 那条语义差别的游戏内版本：同一条意图、同一个点火时刻，只换状态。
                 //
-                // ⚠ 上一版这里是直接改 `g.localVelocity` —— 但 `TryToOrbitView` 读的是
-                // `g.CurrentOrbit.velocity`（适配器注释写的 localPosition/localVelocity 与实现不符，
+                // ⚠ 上一版这里是直接改 `g.velocityBody` —— 但 `TryToOrbitView` 读的是
+                // `g.CurrentOrbit.velocity`（适配器注释写的 positionBody/velocityBody 与实现不符，
                 // **实现以 `CurrentOrbit` 为准**）⇒ 漂移根本没生效：两条对照的 |Δv| 一模一样（749.269）
                 // 就是这个假实验的指纹。**两个本该不同的读数完全相同，先怀疑仪器。**
                 (V3 r0, V3 v0) = ov.RightHandedStateVectorsAtUT(tick);
@@ -270,7 +270,7 @@ namespace PioneerFramework
                         out SpaceEntityGroup.PlannedManeuver res, out string why2);
                     Check(ok && res.intentResolved, "C2 执行层入口 TryResolveIntentForBurn 可用",
                         ok ? $"R/T/N {res.radialDV:F2}/{res.tangentialDV:F2}/{res.normalDV:F2}"
-                             + $"｜世界系 Δv=({res.plannedWorldDv.x:F2},{res.plannedWorldDv.y:F2},{res.plannedWorldDv.z:F2})"
+                             + $"｜世界系 Δv=({res.plannedDvSystem.x:F2},{res.plannedDvSystem.y:F2},{res.plannedDvSystem.z:F2})"
                              : why2);
 
                     if (ok)

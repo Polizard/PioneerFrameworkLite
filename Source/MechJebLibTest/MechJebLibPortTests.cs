@@ -37,8 +37,8 @@ namespace PioneerFramework.Tests
         /// <summary>近圆工作轨道半径（米）。取在行星半径 5000km 之上。</summary>
         private const double R0 = 7_000_000.0;
 
-        private static V3 ToV3(DVector3 d) => new V3(d.x, d.y, d.z);
-        private static DVector3 ToD(V3 v) => new DVector3(v.x, v.y, v.z);
+        // 批5 U4（2026-09-28）：本地那两个"搬运三个分量"的恒等转换助手已删
+        // （类型统一后移植面那个类型就是 `DVector3`）。
 
         /// <summary>`r = (R,0,0)`、`v = (0, vc, 0)` ⇒ `h = r×v` 指向 **+z**。</summary>
         private static void CircularState(double radius, out V3 r, out V3 v)
@@ -113,9 +113,8 @@ namespace PioneerFramework.Tests
                 $"{what}: 相对误差 {err:E3} 超出容差 {relTol:E3}\n  actual   = ({actual.x:R},{actual.y:R},{actual.z:R})\n  expected = ({expected.x:R},{expected.y:R},{expected.z:R})");
         }
 
-        private static void AssertVecRel(V3 actual, V3 expected, double relTol, string what) =>
-            AssertVecRel(ToD(actual), ToD(expected), relTol, what);
-
+        // 批5 U3（2026-09-28）：原先这里还有一个 `AssertVecRel(V3, V3, …)` 转发重载 ——
+        // 类型统一后 `V3` 就是 `DVector3`，两个重载签名相同（CS0111）⇒ 删掉转发那份。
         // ── ② ⭐ R1 本体：旋转方向 ────────────────────────────────────────────────
 
         /// <summary>
@@ -139,12 +138,12 @@ namespace PioneerFramework.Tests
 
             // ① 移植的 Shepperd —— 这是 R1 真正要钉的东西：移植物必须按"右手绕 h 正向"进动
             (V3 rf, V3 vf) = Shepperd.Solve(Mu, quarter, r, v);
-            AssertVecRel(ToD(rf), new DVector3(0, R0, 0), 1e-9, "Shepperd r(T/4)（应为 +z 旋转 90°）");
-            AssertVecRel(ToD(vf), new DVector3(-System.Math.Sqrt(Mu / R0), 0, 0), 1e-9, "Shepperd v(T/4)");
+            AssertVecRel(rf, new DVector3(0, R0, 0), 1e-9, "Shepperd r(T/4)（应为 +z 旋转 90°）");
+            AssertVecRel(vf, new DVector3(-System.Math.Sqrt(Mu / R0), 0, 0), 1e-9, "Shepperd v(T/4)");
 
             // ② 反向对照：T/4 **反**着走必须落在 (0,-R0,0) —— 钉死"不是碰巧落在 +y"
             (V3 rb, V3 _) = Shepperd.Solve(Mu, -quarter, r, v);
-            AssertVecRel(ToD(rb), new DVector3(0, -R0, 0), 1e-9, "Shepperd r(-T/4)（应为 -y）");
+            AssertVecRel(rb, new DVector3(0, -R0, 0), 1e-9, "Shepperd r(-T/4)（应为 -y）");
 
             // ③ 上游数值积分器独立复核同一条约定（它不共享 Shepperd 的代码）
             (V3 rn, V3 _) = IntegrateTwoBody(r, v, quarter);
@@ -152,7 +151,7 @@ namespace PioneerFramework.Tests
 
             // ④ 我们自己的传播：**已知缺陷已修**（`Shepperd` 取代，见 §14.3『传播』行），
             //    所以在这里也断言同一件事 —— 两条路径必须给出同一个 +z 旋转 90°。
-            AssertVecRel(OrbitMath.GetPositionAtTimeDelta(ToD(r), ToD(v), quarter),
+            AssertVecRel(OrbitMath.GetPositionAtTimeDelta(r, v, quarter, Mu),
                 new DVector3(0, R0, 0), 1e-6, "我们的传播 r(T/4)（应为 +z 旋转 90°）");
         }
 
@@ -178,24 +177,24 @@ namespace PioneerFramework.Tests
         public void CircularOrbitPropagation_IsExact_AndHyperbolicIsNoLongerANoOp()
         {
             CircularState(R0, out V3 r, out V3 v);
-            DVector3 rv = ToD(r), vv = ToD(v);
+            DVector3 rv = r, vv = v;
 
             // ① τ = 0 必须是恒等
-            AssertVecRel(OrbitMath.GetPositionAtTimeDelta(rv, vv, 0.0), rv, 1e-12, "τ=0 位置");
-            AssertVecRel(OrbitMath.GetVelocityAtTimeDelta(rv, vv, 0.0), vv, 1e-12, "τ=0 速度");
+            AssertVecRel(OrbitMath.GetPositionAtTimeDelta(rv, vv, 0.0, Mu), rv, 1e-12, "τ=0 位置");
+            AssertVecRel(OrbitMath.GetVelocityAtTimeDelta(rv, vv, 0.0, Mu), vv, 1e-12, "τ=0 速度");
 
             // ② 旋转方向：r(T/4) 必须是 (0, +R₀, 0)，而不是 (0, -R₀, 0)（旧缺陷给出的正是后者）
             double period = Astro.PeriodFromStateVectors(Mu, r, v);
-            AssertVecRel(OrbitMath.GetPositionAtTimeDelta(rv, vv, period * 0.25),
+            AssertVecRel(OrbitMath.GetPositionAtTimeDelta(rv, vv, period * 0.25, Mu),
                 new DVector3(0, R0, 0), 1e-6, "圆轨 r(T/4)（应为 +z 旋转 90°）");
 
             // ③ 与移植的 Shepperd 逐位一致（同一份实现 ⇒ 这条其实是"转发没转错"）
             foreach (double frac in new[] { 0.1, 0.25, 0.5, 1.0, -0.35 })
             {
                 (V3 sp, V3 sv) = Shepperd.Solve(Mu, period * frac, r, v);
-                AssertVecRel(OrbitMath.GetPositionAtTimeDelta(rv, vv, period * frac), ToD(sp), 1e-9,
+                AssertVecRel(OrbitMath.GetPositionAtTimeDelta(rv, vv, period * frac, Mu), sp, 1e-9,
                     $"与 Shepperd 位置一致（{frac} 圈）");
-                AssertVecRel(OrbitMath.GetVelocityAtTimeDelta(rv, vv, period * frac), ToD(sv), 1e-9,
+                AssertVecRel(OrbitMath.GetVelocityAtTimeDelta(rv, vv, period * frac, Mu), sv, 1e-9,
                     $"与 Shepperd 速度一致（{frac} 圈）");
             }
 
@@ -205,12 +204,12 @@ namespace PioneerFramework.Tests
             var hypR = new V3(R0, 0, 0);
             var hypV = new V3(0, vEsc * 1.4, 0);
             const double tau = 1000.0;
-            DVector3 hypAfter = OrbitMath.GetPositionAtTimeDelta(ToD(hypR), ToD(hypV), tau);
-            double moved = (hypAfter - ToD(hypR)).magnitude;
+            DVector3 hypAfter = OrbitMath.GetPositionAtTimeDelta(hypR, hypV, tau, Mu);
+            double moved = (hypAfter - hypR).magnitude;
             Assert.True(moved > 1e6,
                 $"双曲状态传播 {tau}s 后位移应远大于 0（旧实现在这里是 no-op），实得 {moved:E3} m");
             (V3 np, V3 _) = IntegrateTwoBody(hypR, hypV, tau);
-            AssertVecRel(hypAfter, ToD(np), 1e-6, "双曲传播 vs DP5（Q11 根治）");
+            AssertVecRel(hypAfter, np, 1e-6, "双曲传播 vs DP5（Q11 根治）");
         }
 
         // ── ① 周期：移植 ↔ 我们 ↔ 数值 ───────────────────────────────────────────
@@ -227,7 +226,7 @@ namespace PioneerFramework.Tests
 
             double portedPeriod = Astro.PeriodFromStateVectors(Mu, r, v);
 
-            double a = OrbitMath.SemiMajorAxis(ToD(r), ToD(v));
+            double a = OrbitMath.SemiMajorAxis(r, v, Mu);
             double analytic = 2.0 * System.Math.PI * System.Math.Sqrt(a * a * a / Mu);
 
             Assert.True(System.Math.Abs(portedPeriod - analytic) / analytic < 1e-12,
@@ -269,12 +268,12 @@ namespace PioneerFramework.Tests
             double tau = period * periodFraction;
 
             (V3 rf, V3 vf) = Shepperd.Solve(Mu, tau, r, v);
-            DVector3 ourR = OrbitMath.GetPositionAtTimeDelta(ToD(r), ToD(v), tau);
-            DVector3 ourV = OrbitMath.GetVelocityAtTimeDelta(ToD(r), ToD(v), tau);
+            DVector3 ourR = OrbitMath.GetPositionAtTimeDelta(r, v, tau, Mu);
+            DVector3 ourV = OrbitMath.GetVelocityAtTimeDelta(r, v, tau, Mu);
 
             // 相对容差按 r 的量级取；τ 越大累积差越大，2.5 圈仍应在 1e-6 内
-            AssertVecRel(ourR, ToD(rf), 1e-6, $"位置 τ={tau:R}s（{periodFraction} 圈）");
-            AssertVecRel(ourV, ToD(vf), 1e-6, $"速度 τ={tau:R}s（{periodFraction} 圈）");
+            AssertVecRel(ourR, rf, 1e-6, $"位置 τ={tau:R}s（{periodFraction} 圈）");
+            AssertVecRel(ourV, vf, 1e-6, $"速度 τ={tau:R}s（{periodFraction} 圈）");
         }
 
         /// <summary>
@@ -321,14 +320,14 @@ namespace PioneerFramework.Tests
             AssertVecRel(vf, nv, 1e-6, "Shepperd vs DP5 速度（双曲）");
 
             // 守恒量：比机械能与角动量必须逐位保住
-            double energyBefore = ToD(v).sqrMagnitude * 0.5 - Mu / ToD(r).magnitude;
-            double energyAfter = ToD(vf).sqrMagnitude * 0.5 - Mu / ToD(rf).magnitude;
+            double energyBefore = v.sqrMagnitude * 0.5 - Mu / r.magnitude;
+            double energyAfter = vf.sqrMagnitude * 0.5 - Mu / rf.magnitude;
             Assert.True(System.Math.Abs(energyAfter - energyBefore) / System.Math.Abs(energyBefore) < 1e-12,
                 $"比机械能不守恒：{energyBefore:R} → {energyAfter:R}");
 
             V3 hBefore = V3.Cross(r, v);
             V3 hAfter = V3.Cross(rf, vf);
-            AssertVecRel(ToD(hAfter), ToD(hBefore), 1e-12, "角动量不守恒（双曲）");
+            AssertVecRel(hAfter, hBefore, 1e-12, "角动量不守恒（双曲）");
         }
 
         // ── Angles：我们只有椭圆子集，移植版是全集 ────────────────────────────────

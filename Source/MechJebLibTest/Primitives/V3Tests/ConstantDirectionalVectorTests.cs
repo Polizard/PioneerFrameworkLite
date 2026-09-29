@@ -76,16 +76,20 @@ namespace MechJebLibTest.Primitives.V3Tests
         [Fact]
         private void DirectionalVectorsNorthEastDown()
         {
-            V3.down.ShouldEqual(new V3(0.0, 0.0, 1.0));
-            V3.up.ShouldEqual(new V3(0.0, 0.0, -1.0));
-            V3.left.ShouldEqual(new V3(0.0, -1.0, 0.0));
-            V3.right.ShouldEqual(new V3(0.0, 1.0, 0.0));
-            V3.forward.ShouldEqual(new V3(1.0, 0.0, 0.0));
-            V3.back.ShouldEqual(new V3(-1.0, 0.0, 0.0));
+            V3.bodyDown.ShouldEqual(new V3(0.0, 0.0, 1.0));
+            V3.bodyUp.ShouldEqual(new V3(0.0, 0.0, -1.0));
+            V3.bodyLeft.ShouldEqual(new V3(0.0, -1.0, 0.0));
+            V3.bodyRight.ShouldEqual(new V3(0.0, 1.0, 0.0));
+            V3.bodyForward.ShouldEqual(new V3(1.0, 0.0, 0.0));
+            V3.bodyBack.ShouldEqual(new V3(-1.0, 0.0, 0.0));
         }
 
         [Fact]
-        private void NorthPoleVector() => V3.northpole.ShouldEqual(new V3(0, 0, 1));
+        // §13 极轴统一（2026-09-28）：`northpole` 由 +z 改为 +Y ⇒ **期望值随之改**。
+        // ⚠ 这是"被测常量本身变了"的正当改动，不是"拿实现反推期望"：上面那 6 个 NED 船体常量
+        //    （`bodyUp/bodyDown/bodyLeft/bodyRight/bodyForward/bodyBack`）**值一个都没动**
+        //    （§13.2 的 C 类纪律；批5 U1' 只改了名字，因为类型统一后它们与宿主世界系常量撞名）。
+        private void NorthPoleVector() => V3.northpole.ShouldEqual(new V3(0, 1, 0));
 
         [Fact]
         private void AxisVectors()
@@ -98,12 +102,12 @@ namespace MechJebLibTest.Primitives.V3Tests
         [Fact]
         private void DirectionalVectorsAreUnitVectors()
         {
-            V3.down.magnitude.ShouldEqual(1.0);
-            V3.up.magnitude.ShouldEqual(1.0);
-            V3.left.magnitude.ShouldEqual(1.0);
-            V3.right.magnitude.ShouldEqual(1.0);
-            V3.forward.magnitude.ShouldEqual(1.0);
-            V3.back.magnitude.ShouldEqual(1.0);
+            V3.bodyDown.magnitude.ShouldEqual(1.0);
+            V3.bodyUp.magnitude.ShouldEqual(1.0);
+            V3.bodyLeft.magnitude.ShouldEqual(1.0);
+            V3.bodyRight.magnitude.ShouldEqual(1.0);
+            V3.bodyForward.magnitude.ShouldEqual(1.0);
+            V3.bodyBack.magnitude.ShouldEqual(1.0);
             V3.xaxis.magnitude.ShouldEqual(1.0);
             V3.yaxis.magnitude.ShouldEqual(1.0);
             V3.zaxis.magnitude.ShouldEqual(1.0);
@@ -113,9 +117,9 @@ namespace MechJebLibTest.Primitives.V3Tests
         [Fact]
         private void OppositeDirectionsNegateEachOther()
         {
-            (V3.up + V3.down).ShouldBeZero();
-            (V3.left + V3.right).ShouldBeZero();
-            (V3.forward + V3.back).ShouldBeZero();
+            (V3.bodyUp + V3.bodyDown).ShouldBeZero();
+            (V3.bodyLeft + V3.bodyRight).ShouldBeZero();
+            (V3.bodyForward + V3.bodyBack).ShouldBeZero();
         }
 
         [Fact]
@@ -129,9 +133,9 @@ namespace MechJebLibTest.Primitives.V3Tests
         [Fact]
         private void DirectionalVectorsFormRightHandedSystem()
         {
-            V3.Cross(V3.forward, V3.right).ShouldEqual(V3.down);
-            V3.Cross(V3.right, V3.down).ShouldEqual(V3.forward);
-            V3.Cross(V3.down, V3.forward).ShouldEqual(V3.right);
+            V3.Cross(V3.bodyForward, V3.bodyRight).ShouldEqual(V3.bodyDown);
+            V3.Cross(V3.bodyRight, V3.bodyDown).ShouldEqual(V3.bodyForward);
+            V3.Cross(V3.bodyDown, V3.bodyForward).ShouldEqual(V3.bodyRight);
         }
 
         [Fact]

@@ -9,66 +9,66 @@ namespace PioneerFramework
     /// F2 炮塔锚点 / F3 贯穿弹道 / 着陆 共用。
     ///
     /// 映射基准（与 SpaceMapGenerator.CreateStationEntity 约定一致）：
-    /// - 地图中心 = 船体局部原点（空间站 Part.localPosition 为零）
+    /// - 地图中心 = 船体局部原点（空间站 Part.positionShip 为零）
     /// - 地图 1 格 = 船体 1 米（Part 尺寸 = mapWidth × 50m × mapHeight）
     /// - 地图 xz 平面 = 船体局部 xz 平面；船体局部 y = 船体厚度方向（50m）
     /// </summary>
     public static class MapCoordMapper
     {
         /// <summary>地图格 → 船体局部米坐标（y = 0，地面）。1 格 = 1 米。</summary>
-        public static Vector3 MapCellToLocal3D(Map map, IntVec3 cell)
+        public static Vector3 MapCellToShip(Map map, IntVec3 cell)
         {
-            return MapCellToLocal3D(map.Center, cell);
+            return MapCellToShip(map.Center, cell);
         }
 
         /// <summary>纯逻辑重载（不依赖 Map 实例，便于单元测试）：中心格 + 目标格 → 局部米。</summary>
-        public static Vector3 MapCellToLocal3D(IntVec3 center, IntVec3 cell)
+        public static Vector3 MapCellToShip(IntVec3 center, IntVec3 cell)
         {
             return new Vector3(cell.x - center.x, 0f, cell.z - center.z);
         }
 
         /// <summary>船体局部米坐标 → 地图格（xz 截断取整，越界收敛到边界）。跳帮落点用。</summary>
-        public static IntVec3 LocalToMapCell(Map map, Vector3 localMeters)
+        public static IntVec3 ShipToMapCell(Map map, Vector3 shipMeters)
         {
-            return LocalToMapCell(map.Center, localMeters, new IntVec2(map.Size.x, map.Size.z));
+            return ShipToMapCell(map.Center, shipMeters, new IntVec2(map.Size.x, map.Size.z));
         }
 
         /// <summary>
         /// 纯逻辑重载（不依赖 Map 实例，便于单元测试）：中心格 + 局部米偏移 → 目标格。
         /// 1 格 = 1 米，局部米 x/z 直接叠加到中心格并取整，越界收敛到 [0, size-1]。
         /// </summary>
-        public static IntVec3 LocalToMapCell(IntVec3 center, Vector3 localMeters, IntVec2 mapSize)
+        public static IntVec3 ShipToMapCell(IntVec3 center, Vector3 shipMeters, IntVec2 mapSize)
         {
-            int x = center.x + (int)System.Math.Round(localMeters.x);
-            int z = center.z + (int)System.Math.Round(localMeters.z);
+            int x = center.x + (int)System.Math.Round(shipMeters.x);
+            int z = center.z + (int)System.Math.Round(shipMeters.z);
             x = Mathf.Clamp(x, 0, mapSize.x - 1);
             z = Mathf.Clamp(z, 0, mapSize.z - 1);
             return new IntVec3(x, 0, z);
         }
 
         /// <summary>船体局部米坐标 → 世界（含船姿态旋转，米）。</summary>
-        public static DVector3 LocalToWorld(SpaceEntity entity, DVector3 groupPos, Vector3 localMeters)
+        public static DVector3 ShipToSystem(SpaceEntity entity, DVector3 groupPos, Vector3 shipMeters)
         {
-            Vector3 localUnity = localMeters * (float)SpaceConstants.UnitsPerMeter;
-            Vector3 rotatedUnity = entity.Rotation * localUnity;
-            DVector3 rotatedMeters = (DVector3)(rotatedUnity / (float)SpaceConstants.UnitsPerMeter);
+            Vector3 shipUnity = shipMeters * (float)SpaceConstants.UnitsPerMeter;
+            Vector3 rotatedShipUnity = entity.Rotation * shipUnity;
+            DVector3 rotatedMeters = (DVector3)(rotatedShipUnity / (float)SpaceConstants.UnitsPerMeter);
             return groupPos + entity.Position + rotatedMeters;
         }
 
         /// <summary>船体局部米坐标 → Map 场景 3D 坐标（xz = 格坐标，y = 高度单位）。F3 贯穿弹道用。</summary>
-        public static Vector3 ShipLocalToMapWorld(Map map, Vector3 shipLocalMeters)
+        public static Vector3 ShipToMap(Map map, Vector3 shipMeters)
         {
             IntVec3 c = map.Center;
-            return new Vector3(c.x + shipLocalMeters.x, shipLocalMeters.y, c.z + shipLocalMeters.z);
+            return new Vector3(c.x + shipMeters.x, shipMeters.y, c.z + shipMeters.z);
         }
 
         /// <summary>世界 → 船体局部米坐标（含船姿态逆旋转）。</summary>
-        public static Vector3 WorldToShipLocal(SpaceEntity entity, DVector3 groupPos, DVector3 worldMeters)
+        public static Vector3 SystemToShip(SpaceEntity entity, DVector3 groupPos, DVector3 systemMeters)
         {
-            DVector3 delta = worldMeters - (groupPos + entity.Position);
-            Vector3 deltaUnity = (Vector3)(delta * SpaceConstants.UnitsPerMeter);
-            Vector3 localUnity = Quaternion.Inverse(entity.Rotation) * deltaUnity;
-            return localUnity / (float)SpaceConstants.UnitsPerMeter;
+            DVector3 delta = systemMeters - (groupPos + entity.Position);
+            Vector3 deltaSystemUnity = (Vector3)(delta * SpaceConstants.UnitsPerMeter);
+            Vector3 shipUnity = Quaternion.Inverse(entity.Rotation) * deltaSystemUnity;
+            return shipUnity / (float)SpaceConstants.UnitsPerMeter;
         }
 
         /// <summary>

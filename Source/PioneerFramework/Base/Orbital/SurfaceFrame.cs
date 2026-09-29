@@ -93,7 +93,7 @@ namespace PioneerFramework
 
         /// <summary>
         /// **相对地表**（共转系）的速度 = 相对天体的速度 − 地表共转速度。
-        /// ⚠ 两个输入都必须**以天体中心为原点**（`SpaceEntityGroup.localPosition/localVelocity` 就是这个口径）。
+        /// ⚠ 两个输入都必须**以天体中心为原点**（`SpaceEntityGroup.positionBody/velocityBody` 就是这个口径）。
         /// </summary>
         public static DVector3 GroundRelativeVelocity(DVector3 pEci, DVector3 vEci, double omega)
             => vEci - SurfaceVelocity(pEci, omega);

@@ -67,7 +67,7 @@ namespace PioneerFramework
         private int preciseStrikeGroupId = -1;
         private IntVec3 preciseStrikeCell = IntVec3.Invalid;
         /// <summary>格 → 目标船体局部米（y=0；导弹制导每步随目标旋转换算世界瞄准点；持久化）。</summary>
-        private DVector3 preciseAimOffsetLocal;
+        private DVector3 preciseAimOffsetShip;
         /// <summary>目标地图上的选格红色标记（瞬态，不持久化）。</summary>
         private Mote preciseStrikeMarker;
 
@@ -75,7 +75,7 @@ namespace PioneerFramework
         public SpaceEntityGroup CurrentTarget => target;
         public bool ManualMode => manualMode;
         public bool HasPreciseStrike => preciseStrikeGroupId >= 0 && preciseStrikeCell.IsValid;
-        public DVector3 PreciseAimOffsetLocal => preciseAimOffsetLocal;
+        public DVector3 PreciseAimOffsetShip => preciseAimOffsetShip;
 
         /// <summary>生效齐射枚数：发射器覆盖（1..MaxVolleyCount）优先，0 = 跟随武器 Def.missileCount。</summary>
         public int EffectiveVolleyCount()
@@ -111,7 +111,7 @@ namespace PioneerFramework
             Scribe_Values.Look(ref manualTargetGroupId, "manualTargetGroupId", -1);
             Scribe_Values.Look(ref preciseStrikeGroupId, "preciseStrikeGroupId", -1);
             Scribe_Values.Look(ref preciseStrikeCell, "preciseStrikeCell", IntVec3.Invalid);
-            DVector3.Scribe("preciseAimOffsetLocal", ref preciseAimOffsetLocal);
+            DVector3.Scribe("preciseAimOffsetShip", ref preciseAimOffsetShip);
         }
 
         private void BuildWeapon()
@@ -309,19 +309,19 @@ namespace PioneerFramework
             DVector3 targetPos = cm.GetGroupPos(tgt);
             DVector3 targetVel = cm.GetGroupVelocity(tgt);
 
-            UnityEngine.Vector3 muzzleLocal = MapCoordMapper.MapCellToLocal3D(parent.Map, parent.Position);
-            UnityEngine.Vector3 targetLocal = MapCoordMapper.WorldToShipLocal(entity, myPos, targetPos);
-            UnityEngine.Vector3 dirLocal = targetLocal - muzzleLocal;
-            if (dirLocal.sqrMagnitude < 1f) return; // 目标与炮口重合
-            dirLocal.Normalize();
+            UnityEngine.Vector3 muzzleShip = MapCoordMapper.MapCellToShip(parent.Map, parent.Position);
+            UnityEngine.Vector3 targetShip = MapCoordMapper.SystemToShip(entity, myPos, targetPos);
+            UnityEngine.Vector3 dirShip = targetShip - muzzleShip;
+            if (dirShip.sqrMagnitude < 1f) return; // 目标与炮口重合
+            dirShip.Normalize();
             UnityEngine.Vector3 half = (UnityEngine.Vector3)entity.AabbHalfSize;
-            UnityEngine.Vector3 exitLocal = MapCoordMapper.RayExitAabb(muzzleLocal, dirLocal, -half, half, out int exitFace);
-            DVector3 exitWorld = MapCoordMapper.LocalToWorld(entity, myPos, exitLocal);
+            UnityEngine.Vector3 exitShip = MapCoordMapper.RayExitAabb(muzzleShip, dirShip, -half, half, out int exitFace);
+            DVector3 exitSystem = MapCoordMapper.ShipToSystem(entity, myPos, exitShip);
 
             DVector3 aimOffset = (preciseStrikeGroupId == tgt.GroupId && preciseStrikeCell.IsValid)
-                ? preciseAimOffsetLocal
+                ? preciseAimOffsetShip
                 : DVector3.zero;
-            cm.FireFromMapBuilding(myGroup.GroupId, weapon, exitWorld, targetPos, targetVel, tgt.GroupId, aimOffset, EffectiveVolleyCount());
+            cm.FireFromMapBuilding(myGroup.GroupId, weapon, exitSystem, targetPos, targetVel, tgt.GroupId, aimOffset, EffectiveVolleyCount());
             Log.Message(string.Format(
                 "[导弹发射器] G{0}→G{1} 出膛 面={2} 距离={3:F1}km 冷却={4} N={5}{6}",
                 myGroup.GroupId, tgt.GroupId, exitFace,
@@ -411,8 +411,8 @@ namespace PioneerFramework
         {
             preciseStrikeGroupId = groupId;
             preciseStrikeCell = cell;
-            UnityEngine.Vector3 local = MapCoordMapper.MapCellToLocal3D(targetMap, cell);
-            preciseAimOffsetLocal = new DVector3(local.x, 0f, local.z); // 目标局部米（y=0 甲板层）
+            UnityEngine.Vector3 local = MapCoordMapper.MapCellToShip(targetMap, cell);
+            preciseAimOffsetShip = new DVector3(local.x, 0f, local.z); // 目标局部米（y=0 甲板层）
             DestroyPreciseStrikeMarker();
             EnsurePreciseStrikeMarker();
             Log.Message(string.Format(
@@ -427,7 +427,7 @@ namespace PioneerFramework
         {
             preciseStrikeGroupId = -1;
             preciseStrikeCell = IntVec3.Invalid;
-            preciseAimOffsetLocal = DVector3.zero;
+            preciseAimOffsetShip = DVector3.zero;
             DestroyPreciseStrikeMarker();
             if (notify)
                 Messages.Message("精确打击点已清除，恢复瞄准目标船心。", MessageTypeDefOf.TaskCompletion);

@@ -24,15 +24,16 @@ namespace PioneerFramework.Tests
         private static readonly double Mu = OrbitMath.GM;
         private const double R0 = 7_000_000.0;
         private const double BodyR = 5_000_000.0;
-        private static readonly V3 Pole = new V3(0, 0, 1); // 适配层极轴
+        private static readonly V3 Pole = new V3(0, 1, 0); // 极轴 +Y（批4 P4 统一；旧值与适配层的 +z 一起作废）
 
         /// <summary>与游戏内验收铺的**同一条**轨道：倾角 30°、e=0.3（a = 1e7）。</summary>
         private static OrbitView Controlled()
         {
             double vc = Math.Sqrt(Mu / R0);
             double inc = Math.PI / 6;
+            // 构造向量按 `(x, y, z)_新 = (x, z, −y)_旧` 换元（同一个物理轨道的像；倾角 30° 不变）
             return OrbitView.FromStateVectors(new V3(R0, 0, 0),
-                new V3(0, Math.Sqrt(1.3) * vc * Math.Cos(inc), Math.Sqrt(1.3) * vc * Math.Sin(inc)),
+                new V3(0, Math.Sqrt(1.3) * vc * Math.Sin(inc), -Math.Sqrt(1.3) * vc * Math.Cos(inc)),
                 Mu, 0.0, Pole, BodyR);
         }
 
@@ -40,7 +41,7 @@ namespace PioneerFramework.Tests
         private static double LanDeg(OrbitView o, double ut)
         {
             V3 an = o.AscendingNodePositionEquatorial(ut);
-            DVector3 g = OrbitView.ToD(OrbitView.AdapterToGameWorld(an));
+            DVector3 g = OrbitView.AdapterToGameWorld(an);
             double deg = SurfaceFrame.EciToLongLat(g, 0.0, ut).lonRad * 180.0 / Math.PI;
             double m = deg % 360.0;
             return m < 0.0 ? m + 360.0 : m;
@@ -64,7 +65,7 @@ namespace PioneerFramework.Tests
             // 前提自检：轨道是 30°，点火点在赤道上（否则下面那条闭式只是下界、不可达）
             double incNow = Astro.IncFromStateVectors(r, v);
             Assert.True(Math.Abs(incNow - Math.PI / 6) < 1e-9, $"前提：倾角 30°（实得 {incNow * 180 / Math.PI:F6}°）");
-            Assert.True(Math.Abs(r.normalized.z) < 1e-9, $"前提：点火点在赤道上（|r̂·极轴|={Math.Abs(r.normalized.z):E3}）");
+            Assert.True(Math.Abs(r.normalized.y) < 1e-9, $"前提：点火点在赤道上（|r̂·极轴|={Math.Abs(r.normalized.y):E3}）");
 
             double incWant = Math.PI * 135.0 / 180.0; // 直觉 45° ⇒ 适配层 180−45
 

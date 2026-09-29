@@ -196,6 +196,21 @@ Step "Validate Defs/XML (tools/validate_config.py)" {
 }
 }
 
+# -- 4b. Def/Patch XML vs retired (S1-renamed) names ---------------------------
+# WHY this step exists (2026-09-29): renaming the C# field `MissileDef.mainAxisLocal` -> `mainAxisShip`
+# left `<mainAxisLocal>` in `1.6/Defs/Combat/MissileDefs.xml`; RimWorld then could not bind the field and
+# it silently stayed at its default (0,0,0). The build was 0-error, the warning count was at baseline,
+# every other gate step was green, and `validate_config.py` said "ok" -- the only red text was in the
+# game log (`XML error: <mainAxisLocal> ... doesn't correspond to any field in type MissileDef`).
+# This step is the missing judge: no retired name may appear in any XML under 1.6/.
+Step "Def/Patch XML free of retired names (tools/check-def-fields.ps1)" {
+    $r = Invoke-Native "powershell" @("-ExecutionPolicy", "Bypass", "-File", "tools/check-def-fields.ps1")
+    if ($r.ExitCode -ne 0) {
+        throw "check-def-fields.ps1 failed (exit $($r.ExitCode))`n$(($r.Output | Select-Object -Last 15) -join "`n")"
+    }
+    return "ok"
+}
+
 # -- 5. Committed runtime assets ----------------------------------------------
 Step "Committed runtime assets present" {
     $required = @(

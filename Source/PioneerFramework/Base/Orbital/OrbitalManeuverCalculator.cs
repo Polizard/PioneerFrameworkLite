@@ -198,21 +198,23 @@ namespace PioneerFramework
 
         // ── 改升交点经度（LAN） ────────────────────────────────────────────────
 
-        /// <summary>赤道面内、惯性经度 = <paramref name="lonDeg" /> 的**单位方向**（适配层参考系）。</summary>
+        /// <summary>赤道面内、惯性经度 = <paramref name="lonDeg" /> 的**单位方向**。</summary>
         /// <remarks>
-        /// 与 `SurfaceFrame` 共用同一份经度约定：game 里经度 λ 的赤道点是 `(sinλ, 0, −cosλ)`，
-        /// 经 `GameWorldToAdapter` 换到适配层就是 `(sinλ, cosλ, 0)`。
+        /// 与 `SurfaceFrame` 共用同一份经度约定：经度 λ 的赤道点是 `(sinλ, 0, −cosλ)`
+        /// （见 `SurfaceFrame.SurfaceState` 的 `p = R·(cosφ·sinλ, sinφ, −cosφ·cosλ)`）。
+        /// ⚠ 批4 P4 极轴统一后适配层与游戏世界同系 ⇒ **不再需要任何换系**（旧写法 `(sinλ, cosλ, 0)`
+        /// 是 +z 适配层的产物，留着会让 LAN 目标静默偏 90°）。
         /// </remarks>
         private static V3 EquatorialDirection(double lonDeg)
         {
             double lam = lonDeg * (Math.PI / 180.0);
-            return new V3(Math.Sin(lam), Math.Cos(lam), 0.0);
+            return new V3(Math.Sin(lam), 0.0, -Math.Cos(lam));
         }
 
         /// <summary>适配层位置 ⇒ **固连系经度（度）**（"此刻这一点正下方是哪条经线"）。</summary>
         private static double FixedLongitudeDeg(V3 adapterPos, OrbitView o, double ut)
         {
-            DVector3 g = OrbitView.ToD(OrbitView.AdapterToGameWorld(adapterPos));
+            DVector3 g = OrbitView.AdapterToGameWorld(adapterPos);
             var latLon = SurfaceFrame.EciToLongLat(g, o.angularVelocity, ut);
             return latLon.lonRad * 180.0 / Math.PI;
         }
@@ -461,9 +463,9 @@ namespace PioneerFramework
             (V3 rf, V3 vf) = target.RightHandedStateVectorsAtUT(t0 + dt);
 
             var dir = prograde ? TransferGeometry.Prograde : TransferGeometry.Retrograde;
-            DVector3 hRef = OrbitView.ToD(V3.Cross(ri, vi));          // 上游用"本轨道法向"作 h 参考
+            DVector3 hRef = V3.Cross(ri, vi);          // 上游用"本轨道法向"作 h 参考
 
-            (DVector3 ti, DVector3 tf) = Gooding.Solve(o.mu, OrbitView.ToD(ri), OrbitView.ToD(rf), dt, dir, 0, hRef);
+            (DVector3 ti, DVector3 tf) = Gooding.Solve(o.mu, ri, rf, dt, dir, 0, hRef);
 
             if (offsetDistance != 0.0)
             {
@@ -472,10 +474,10 @@ namespace PioneerFramework
                 //   与"停在目标前方 d"这个名字/意图不符（阶梯调用时**不传** offset ⇒ 上游自己也从未用到它）。
                 //   这里按**意图**实现：沿**视线**（本船→目标）后退 offset ⇒ 停短而不是撞上去。
                 V3 rfOff = rf - (rf - ri).normalized * offsetDistance;
-                (ti, tf) = Gooding.Solve(o.mu, OrbitView.ToD(ri), OrbitView.ToD(rfOff), dt, dir, 0, hRef);
+                (ti, tf) = Gooding.Solve(o.mu, ri, rfOff, dt, dir, 0, hRef);
             }
 
-            return (OrbitView.ToV3(ti) - vi, vf - OrbitView.ToV3(tf));
+            return (ti - vi, vf - tf);
         }
     }
 }

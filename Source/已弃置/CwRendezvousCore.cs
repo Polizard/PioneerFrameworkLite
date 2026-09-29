@@ -1,3 +1,9 @@
+// ⚠ **已归档（批5.B，2026-09-28）** —— 本文件**不参与编译**。
+// 原因：CW（Hill）两冲量闭式解是**旧律的终端"温柔解"**，而旧律已作废（用户 2026-09-22 裁定）；
+//       实测它**零生产调用者**，只被随旧律一起退役的用例调用（`已弃置/README.md` 排队中 §2 早已登记）。
+// 替代品：终端由 **MJ 靶执行器**（`BurnStep` 的活差额 + 地板/反向收手）接管。
+// 取回代价：搬回 `Source/PioneerFramework/Base/Orbital/` + 恢复两个 csproj 的 `<Compile Include>`。
+
 using System;
 
 namespace PioneerFramework

@@ -71,7 +71,7 @@ namespace PioneerFramework
         /// 因此行星物理半径 = 100 × MetersPerUnit = 5,000,000 m。
         /// 如果后续支持不同大小的世界，此处会自动适配。
         /// </summary>
-        public static void SyncWithWorld()
+        public static void SyncWithWorldGrid()
         {
             // WorldGrid.PlanetRadius 是 RimWorld 的编译时常量 100f
             PlanetRadiusMeters = WorldGrid.PlanetRadius * MetersPerUnit;

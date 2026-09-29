@@ -221,9 +221,9 @@ namespace PioneerFramework
             Map tMap = SpaceMapGenerator.FindPocketMap(tEntity.MapId);
             if (tMap == null) return centerPos;
 
-            Vector3 localPoint = MapCoordMapper.MapCellToLocal3D(tMap, preciseStrikeCell);
+            Vector3 localPoint = MapCoordMapper.MapCellToShip(tMap, preciseStrikeCell);
             localPoint.y = 0f; // 地面目标（爆炸层）
-            return MapCoordMapper.LocalToWorld(tEntity, centerPos, localPoint);
+            return MapCoordMapper.ShipToSystem(tEntity, centerPos, localPoint);
         }
 
         /// <summary>取目标 group 中第一个带 Map 的实体（空间站本体；无 Map 目标如导弹/无人机返回 null）。</summary>
@@ -328,33 +328,33 @@ namespace PioneerFramework
                 if (mount == null || mount.weapon == null || !mount.weapon.CanFire()) continue;
 
                 // 炮口局部位置：地图格 → 船体局部（整体式炮塔，y=0，无上下表面偏移）
-                Vector3 muzzleLocal = MapCoordMapper.MapCellToLocal3D(parent.Map, binding.turret.Position);
+                Vector3 muzzleShip = MapCoordMapper.MapCellToShip(parent.Map, binding.turret.Position);
 
                 // 目标方向（船体局部系，指向目标当前位置；提前量由 FireWeapon 以出膛点为基准解算）
-                Vector3 targetLocal = MapCoordMapper.WorldToShipLocal(entity, myPos, targetPos);
-                Vector3 dirLocal = targetLocal - muzzleLocal;
-                if (dirLocal.sqrMagnitude < 1f) continue; // 目标与炮口重合（<1m）跳过
-                dirLocal.Normalize();
+                Vector3 targetShip = MapCoordMapper.SystemToShip(entity, myPos, targetPos);
+                Vector3 dirShip = targetShip - muzzleShip;
+                if (dirShip.sqrMagnitude < 1f) continue; // 目标与炮口重合（<1m）跳过
+                dirShip.Normalize();
 
                 // 出膛点：炮口射线与本船 AABB 六面求交（任意一面，360° 全方位出膛）
                 Vector3 half = (Vector3)entity.AabbHalfSize;
-                Vector3 exitLocal = MapCoordMapper.RayExitAabb(muzzleLocal, dirLocal, -half, half, out int exitFace);
-                DVector3 exitWorld = MapCoordMapper.LocalToWorld(entity, myPos, exitLocal);
+                Vector3 exitShip = MapCoordMapper.RayExitAabb(muzzleShip, dirShip, -half, half, out int exitFace);
+                DVector3 exitSystem = MapCoordMapper.ShipToSystem(entity, myPos, exitShip);
 
                 // 炮塔详情（详细日志）：射线输入 + 出射距离（验证六面求交的几何输入）
                 if (CombatManager.DebugDetailedCombat)
                 {
                     Log.Message(string.Format(
-                        "[炮塔详情] G{0}→G{1} 炮口局部=({2:F1},{3:F1},{4:F1}) 目标局部=({5:F1},{6:F1},{7:F1}) dirLocal=({8:F3},{9:F3},{10:F3}) AABB半长=({11:F1},{12:F1},{13:F1}) 出射距离={14:F2}m",
+                        "[炮塔详情] G{0}→G{1} 炮口局部=({2:F1},{3:F1},{4:F1}) 目标局部=({5:F1},{6:F1},{7:F1}) dirShip=({8:F3},{9:F3},{10:F3}) AABB半长=({11:F1},{12:F1},{13:F1}) 出射距离={14:F2}m",
                         myGroup.GroupId, target.GroupId,
-                        muzzleLocal.x, muzzleLocal.y, muzzleLocal.z,
-                        targetLocal.x, targetLocal.y, targetLocal.z,
-                        dirLocal.x, dirLocal.y, dirLocal.z,
+                        muzzleShip.x, muzzleShip.y, muzzleShip.z,
+                        targetShip.x, targetShip.y, targetShip.z,
+                        dirShip.x, dirShip.y, dirShip.z,
                         half.x, half.y, half.z,
-                        (exitLocal - muzzleLocal).magnitude));
+                        (exitShip - muzzleShip).magnitude));
                 }
 
-                cm.FireFromMapBuilding(myGroup.GroupId, mount.weapon, exitWorld, targetPos, targetVel, target.GroupId);
+                cm.FireFromMapBuilding(myGroup.GroupId, mount.weapon, exitSystem, targetPos, targetVel, target.GroupId);
 
                 // 出膛诊断日志：验证六面出膛（射界解除 + 碰撞点准确）+ 目标距离与武器状态
                 Log.Message(string.Format(
@@ -362,13 +362,13 @@ namespace PioneerFramework
                     myGroup.GroupId, target.GroupId,
                     binding.turret.Position.x, binding.turret.Position.z,
                     exitFace,
-                    exitLocal.x, exitLocal.y, exitLocal.z,
-                    exitWorld.x, exitWorld.y, exitWorld.z,
+                    exitShip.x, exitShip.y, exitShip.z,
+                    exitSystem.x, exitSystem.y, exitSystem.z,
                     (targetPos - myPos).magnitude / 1000.0,
                     mount.weapon.cooldownRemaining, mount.weapon.isOverheated, mount.weapon.ammo));
 
                 // Map 出膛视觉弹：从炮塔格飞向出膛点映射格（纯视觉叙事，不伤害己方建筑）
-                SpawnMuzzleShell(parent.Map, muzzleLocal, exitLocal);
+                SpawnMuzzleShell(parent.Map, muzzleShip, exitShip);
 
                 // 开火表现：炮口一道长烟（沿炮口朝向延伸），替代闪光（玩家地图可见）
                 if (binding.turret.Map != null)
@@ -396,14 +396,14 @@ namespace PioneerFramework
         /// Map 内出膛视觉弹（F2 镜像 F3 贯穿弹）：从炮塔格（y=0）沿瞄准方向飞向出膛点映射格。
         /// 纯视觉：不碰撞己方建筑、落点无伤害（PFProjectile3D.visualOnly）。
         /// </summary>
-        private void SpawnMuzzleShell(Map map, Vector3 muzzleLocal, Vector3 exitLocal)
+        private void SpawnMuzzleShell(Map map, Vector3 muzzleShip, Vector3 exitShip)
         {
             if (map == null) return;
             var def = DefDatabase<ThingDef>.GetNamedSilentFail("PF_Projectile_Shell");
             if (def == null) return;
 
-            Vector3 start = MapCoordMapper.ShipLocalToMapWorld(map, muzzleLocal);
-            Vector3 end = MapCoordMapper.ShipLocalToMapWorld(map, exitLocal);
+            Vector3 start = MapCoordMapper.ShipToMap(map, muzzleShip);
+            Vector3 end = MapCoordMapper.ShipToMap(map, exitShip);
             end.x = Mathf.Clamp(end.x, 0f, map.Size.x - 1f);
             end.z = Mathf.Clamp(end.z, 0f, map.Size.z - 1f);
             end.y = Mathf.Max(end.y, 0f); // 出膛点在下表面（y<0）时夹到地面，避免潜入地图下层
@@ -448,8 +448,8 @@ namespace PioneerFramework
                 var mount = binding.turret.TryGetComp<CompMapTurret>()?.Mount;
                 if (mount == null) continue;
 
-                Vector3 localDir = MapCoordMapper.WorldToShipLocal(entity, myPos, targetPos);
-                float angle = Mathf.Atan2(localDir.x, localDir.z) * Mathf.Rad2Deg;
+                Vector3 dirShip = MapCoordMapper.SystemToShip(entity, myPos, targetPos);
+                float angle = Mathf.Atan2(dirShip.x, dirShip.z) * Mathf.Rad2Deg;
                 if (angle < 0f) angle += 360f;
                 mount.rotation = angle;
             }
@@ -675,7 +675,7 @@ namespace PioneerFramework
             {
                 preciseStrikeGroupId = capturedGroupId;
                 preciseStrikeCell = targ.Cell;
-                Vector3 local = MapCoordMapper.MapCellToLocal3D(capturedMap, targ.Cell);
+                Vector3 local = MapCoordMapper.MapCellToShip(capturedMap, targ.Cell);
                 Log.Message(string.Format("[精确炮击] 定位机设定目标点: G{0} 格=({1},{2}) 局部偏移=({3:F1},0,{4:F1})m",
                     capturedGroupId, targ.Cell.x, targ.Cell.z, local.x, local.z));
                 Messages.Message(string.Format("精确炮击点已设置: G{0} ({1},{2})", capturedGroupId, targ.Cell.x, targ.Cell.z),

@@ -25,7 +25,7 @@ namespace PioneerFramework.Tests
         {
             File.WriteAllText(Log, "== A4 成本探针 " + DateTime.Now.ToString("HH:mm:ss") + " ==\n");
             double vc = Math.Sqrt(Mu / R0);
-            var self = OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, 0, -vc), Mu, 0.0, OrbitView.ToV3(DVector3.up), BodyR);
+            var self = OrbitView.FromStateVectors(new V3(R0, 0, 0), new V3(0, 0, -vc), Mu, 0.0, DVector3.up, BodyR);
 
             // ⚠ 直接扫"霍曼求解"这一步的**成本 vs Δa**（Δa=0 就是同轨 ⇒ 退化）
             //   每档写一行文件 ⇒ 进程被杀也知道死在哪一档。硬墙钟 25 s/档，超了就跳过后续档。
@@ -33,8 +33,8 @@ namespace PioneerFramework.Tests
             foreach (double da in daKm)
             {
                 var tgt = CircularTarget.Create(R0 + da * 1000.0, Mu, 90.0 * Math.PI / 180.0, DVector3.up);
-                var tgtOv = OrbitView.FromStateVectors(OrbitView.ToV3(tgt.PosAt(0.0)), OrbitView.ToV3(tgt.VelAt(0.0)),
-                    Mu, 0.0, OrbitView.ToV3(DVector3.up), BodyR);
+                var tgtOv = OrbitView.FromStateVectors(tgt.PosAt(0.0), tgt.VelAt(0.0),
+                    Mu, 0.0, DVector3.up, BodyR);
                 var sw = Stopwatch.StartNew();
                 W(string.Format("… Δa={0:F0} km：霍曼求解开始", da));
                 string res;
@@ -51,8 +51,8 @@ namespace PioneerFramework.Tests
 
             // 阶梯整体一次调用（同轨）：修好之后应当快
             var same = CircularTarget.Create(R0, Mu, 90.0 * Math.PI / 180.0, DVector3.up);
-            var sameOv = OrbitView.FromStateVectors(OrbitView.ToV3(same.PosAt(0.0)), OrbitView.ToV3(same.VelAt(0.0)),
-                Mu, 0.0, OrbitView.ToV3(DVector3.up), BodyR);
+            var sameOv = OrbitView.FromStateVectors(same.PosAt(0.0), same.VelAt(0.0),
+                Mu, 0.0, DVector3.up, BodyR);
             MsPlan = 0.0;
             Probe("② 同轨目标的 MakePlan（整体）", () =>
             {

@@ -153,9 +153,9 @@ namespace PioneerFramework.Pure.Tests
 
                 (V3 rLiveUt, V3 vLiveUt) = Propagate(r, v, nodeUt - tick);
                 _ = rLiveUt;
-                BurnStep.DeficitToTargetV(OrbitView.ToD(vLiveUt), OrbitView.ToD(targetV), OrbitView.ToD(cmdDir),
+                BurnStep.DeficitToTargetV(vLiveUt, targetV, cmdDir,
                     DeficitFloor, out DVector3 defDirD, out double defRem, out _);
-                V3 defDir = OrbitView.ToV3(defDirD);
+                V3 defDir = defDirD;
                 if (defRem > 0.0 && defDir.sqrMagnitude > 0.0) cmdDir = defDir;
 
                 if (tick >= ignitionTick && defRem > 0.0 && defDir.sqrMagnitude > 0.0

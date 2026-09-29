@@ -17,8 +17,8 @@ namespace PioneerFramework
     {
         public int partId;
         public string defName;
-        public DVector3 localPosition;    // 相对 Entity 原点（物理米）
-        public DVector3 localBoundsSize;  // AABB 尺寸（物理米）
+        public DVector3 positionShip;    // 相对 Entity 原点（物理米）
+        public DVector3 boundsSizeShip;  // AABB 尺寸（物理米）
         public float hp = 100f;
         public bool isDestroyed;
 
@@ -205,8 +205,8 @@ namespace PioneerFramework
         {
             Scribe_Values.Look(ref partId, "partId");
             Scribe_Values.Look(ref defName, "defName");
-            DVector3.Scribe("localPosition", ref localPosition);
-            DVector3.Scribe("localBoundsSize", ref localBoundsSize);
+            DVector3.Scribe("positionShip", ref positionShip);
+            DVector3.Scribe("boundsSizeShip", ref boundsSizeShip);
             Scribe_Values.Look(ref hp, "hp", 100f);
             Scribe_Values.Look(ref isDestroyed, "isDestroyed", false);
             Scribe_Values.Look(ref linkedMapId, "linkedMapId", -1);

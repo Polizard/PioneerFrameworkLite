@@ -25,14 +25,14 @@ namespace PioneerFramework.Tests
             File.WriteAllText(Log, "== 分期归因 " + DateTime.Now.ToString("HH:mm:ss") + " ==\n");
             double vc = Math.Sqrt(Mu / R0);
             var ship = RendezvousShip.HighThrustShip(new DVector3(R0, 0, 0), new DVector3(0, 0, -vc), new DVector3(0, 0, -1));
-            var self = OrbitView.FromStateVectors(OrbitView.ToV3(ship.Pos), OrbitView.ToV3(ship.Vel), Mu, 0.0,
-                OrbitView.ToV3(DVector3.up), BodyR);
+            var self = OrbitView.FromStateVectors(ship.Pos, ship.Vel, Mu, 0.0,
+                DVector3.up, BodyR);
 
             foreach (double daKm in new[] { 0.0, 1100.0 })
             {
                 var tgtOnly = CircularTarget.Create(R0 + daKm * 1000.0, Mu, (90.0 + 180.0) * Math.PI / 180.0, DVector3.up);
-                var tgt = OrbitView.FromStateVectors(OrbitView.ToV3(tgtOnly.PosAt(0.0)), OrbitView.ToV3(tgtOnly.VelAt(0.0)),
-                    Mu, 0.0, OrbitView.ToV3(DVector3.up), BodyR);
+                var tgt = OrbitView.FromStateVectors(tgtOnly.PosAt(0.0), tgtOnly.VelAt(0.0),
+                    Mu, 0.0, DVector3.up, BodyR);
 
                 // 逐段（各 50 次取均值）
                 double tPlan = Time(50, () => RendezvousLadder.MakePlan(self, tgt, 0.0,

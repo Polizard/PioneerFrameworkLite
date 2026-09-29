@@ -24,7 +24,7 @@ namespace PioneerFramework
     /// · `ω_view` = 该天体的自转角速度（`GetSurfaceState.RotationOmega`，**不再写死 60000**）。
     ///
     /// ## ⚠ 纪律（违反即事故；`CelestialBodyManager.cs:450-470` 有两次事故的点名）
-    /// · **绝对系**（`GetBodyWorldPosition`，递归到恒星）只准用于"绝对 vs 绝对"的差或跨系展示 ——
+    /// · **绝对系**（`GetBodyPositionAbs`，递归到恒星）只准用于"绝对 vs 绝对"的差或跨系展示 ——
     ///   绝不准拿去减**系统系**坐标（2026-09-10 星座锚点就是这么差出 12 万 km 的）；
     /// · 换系**只允许有一处**（物理侧是 `OrbitAdapter`，渲染侧就是本类的 `ToViewUnity`）
     ///   ⇒ 调用点不许自己再写一遍 `origin + Rot(p)`；
@@ -53,7 +53,16 @@ namespace PioneerFramework
             }
         }
 
-        /// <summary>根行星（系统系的锚点；Lite 就是地球）。</summary>
+        /// <summary>
+        /// 系统系的锚点（**单行星系统下 == `CelestialBodyManager.GetReferenceFrameId`**）。
+        ///
+        /// ⚠ 2026-09-26（D8）：**凡手里有体的 bodyId，就不要再调这个方法**——用
+        /// `mgr.GetReferenceFrameId(bodyId)`，那才是**与物理同一条规则**
+        /// （权威口径见 `CelestialBodyManager` 的坐标系约定：系统系 = 根行星/**恒星**为中心、根钉住；
+        /// 物理侧 8 处建网格/判域都用它）。本方法只留给"**手上没有被查询的体**"的场合（如 `ViewedBodyId` 的兜底）。
+        /// 原先它取"第一个行星 + 硬编码兜底 1"：单一权威被写成两套规则，正是"12 万公里"那一类事故的形状
+        /// （`GetPlanets()` 曾长期返回空，而那个 `1` 把症状盖住了）。
+        /// </summary>
         public static int RootPlanetId(CelestialBodyManager? mgr)
         {
             var planets = mgr?.GetPlanets();
@@ -68,9 +77,11 @@ namespace PioneerFramework
         {
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (mgr == null) return DVector3.zero;
-            int root = RootPlanetId(mgr);
+            // ⚠ 2026-09-26（D8）：锚点按**被查询的体**解析，与物理同规则（`GetReferenceFrameId`）。
+            //   当前天体集（地球/月球）下与旧的"第一个行星"逐值相同；但对恒星/多行星系统旧写法是错的。
+            int root = mgr.GetReferenceFrameId(bodyId);
             if (bodyId == root) return DVector3.zero;
-            return mgr.GetBodyWorldPosition(bodyId, tick) - mgr.GetBodyWorldPosition(root, tick);
+            return mgr.GetBodyPositionAbs(bodyId, tick) - mgr.GetBodyPositionAbs(root, tick);
         }
 
         /// <summary>被查看天体在视图里的半径（Unity 单位）—— 球体遮挡判定用（月亮 30 / 地球 100）。</summary>
@@ -112,7 +123,7 @@ namespace PioneerFramework
 
             double omega = GetSurfaceState.RotationOmega(mgr, viewed);
             // Ry(+ω_view·t)：与 SurfaceFrame.FixedToEci = Ry(−ωt) 互逆（同一份算式，见上）
-            return SurfaceFrame.EciToFixed((DVector3)rel, omega, tick);
+            return (Vector3)SurfaceFrame.EciToFixed((DVector3)rel, omega, tick);
         }
         /// <summary>
         /// **物理半径（米）→ Unity 球体的缩放值**（给 `GameObject.CreatePrimitive(PrimitiveType.Sphere)` 这类网格用）。

@@ -54,7 +54,7 @@ namespace PioneerFramework
 
             double newPeR = NewPeA + o.bodyRadius;
             double newApR = NewApA + o.bodyRadius;
-            MechJebLib.Primitives.V3 deltaV = OrbitalManeuverCalculator.DeltaVToEllipticize(o, ut, newPeR, newApR);
+            DVector3 deltaV = OrbitalManeuverCalculator.DeltaVToEllipticize(o, ut, newPeR, newApR);
 
             return new List<PlanNode> { new PlanNode(deltaV, ut) };
         }

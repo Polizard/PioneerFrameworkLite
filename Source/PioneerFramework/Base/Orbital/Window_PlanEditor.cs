@@ -109,7 +109,7 @@ namespace PioneerFramework
             var est = BurnCalculator.Estimate(dvMag, dryMass, src, src.Networks); // 第 5 参走默认（别显式传 null）
             if (!est.Feasible || est.BurnSeconds <= 0f) return null;
 
-            (MechJebLib.Primitives.V3 r, MechJebLib.Primitives.V3 _) = ov.RightHandedStateVectorsAtUT(plan[0].ut);
+            (DVector3 r, DVector3 _) = ov.RightHandedStateVectorsAtUT(plan[0].ut);
             return BurnRegime.Classify(dvMag, r.magnitude, ov.mu, dvMag / est.BurnSeconds);
         }
 
@@ -261,11 +261,11 @@ namespace PioneerFramework
                         var sgForAlign = Current.Game?.GetComponent<SpaceGameComp>();
                         if (burnSec > 0.0 && sgForAlign != null)
                         {
-                            DVector3 mainAxis = sgForAlign.GetMainThrustWorldAxis(group);
+                            DVector3 mainAxis = sgForAlign.GetMainThrustAxisSystem(group);
                             if (mainAxis.sqrMagnitude > 1e-12)
                             {
                                 double angDeg = Math.Acos(Math.Max(-1.0, Math.Min(1.0,
-                                    DVector3.Dot(mainAxis.normalized, OrbitAdapter.ToD(OrbitView.AdapterToGameWorld(nodes[0].dV)).normalized))))
+                                    DVector3.Dot(mainAxis.normalized, OrbitView.AdapterToGameWorld(nodes[0].dV).normalized))))
                                     * 180.0 / Math.PI;
                                 double leadSeconds = nodes[0].ut - tick;
                                 if (!AlignFeasibility.IsFeasible(angDeg, group.MaxAngularRate * 180.0 / Math.PI,

@@ -72,7 +72,7 @@ namespace PioneerFramework
                 ErrorMessage = $"警告：轨道接近赤道（倾角 {incDeg:F1}°），升交点没有意义，这个机动可能不准。";
 
             double ut = TimeSelector.ComputeManeuverTime(o, universalTime, target);
-            MechJebLib.Primitives.V3 dV = OrbitalManeuverCalculator.DeltaVToShiftLAN(o, ut, NewLAN.Val);
+            DVector3 dV = OrbitalManeuverCalculator.DeltaVToShiftLAN(o, ut, NewLAN.Val);
 
             return new List<PlanNode> { new PlanNode(dV, ut) };
         }

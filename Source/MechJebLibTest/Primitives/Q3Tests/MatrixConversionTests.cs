@@ -15,10 +15,10 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void LookRotationForwardOnly()
         {
-            var q = Q3.LookRotation(V3.forward);
+            var q = Q3.LookRotation(V3.bodyForward);
 
-            (q * V3.forward).ShouldEqual(V3.forward, 1e-14);
-            (q * V3.up).ShouldEqual(V3.up, 1e-14);
+            (q * V3.bodyForward).ShouldEqual(V3.bodyForward, 1e-14);
+            (q * V3.bodyUp).ShouldEqual(V3.bodyUp, 1e-14);
             q.ShouldEqual(Q3.identity, 1e-14);
         }
 
@@ -26,29 +26,29 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void LookRotationBasicDirections()
         {
-            var q = Q3.LookRotation(V3.forward);
-            (q * V3.forward).ShouldEqual(V3.forward, 1e-14);
+            var q = Q3.LookRotation(V3.bodyForward);
+            (q * V3.bodyForward).ShouldEqual(V3.bodyForward, 1e-14);
 
-            q = Q3.LookRotation(V3.back);
-            (q * V3.forward).ShouldEqual(V3.back, 1e-14);
+            q = Q3.LookRotation(V3.bodyBack);
+            (q * V3.bodyForward).ShouldEqual(V3.bodyBack, 1e-14);
 
-            q = Q3.LookRotation(V3.right);
-            (q * V3.forward).ShouldEqual(V3.right, 1e-14);
+            q = Q3.LookRotation(V3.bodyRight);
+            (q * V3.bodyForward).ShouldEqual(V3.bodyRight, 1e-14);
 
-            q = Q3.LookRotation(V3.left);
-            (q * V3.forward).ShouldEqual(V3.left, 1e-14);
+            q = Q3.LookRotation(V3.bodyLeft);
+            (q * V3.bodyForward).ShouldEqual(V3.bodyLeft, 1e-14);
         }
 
         [Fact]
         private void LookRotationWithCustomUp()
         {
-            V3 forward = V3.right;
-            V3 up = V3.forward;
+            V3 forward = V3.bodyRight;
+            V3 up = V3.bodyForward;
             var q = Q3.LookRotation(forward, up);
 
-            (q * V3.forward).ShouldEqual(forward.normalized, 1e-14);
+            (q * V3.bodyForward).ShouldEqual(forward.normalized, 1e-14);
 
-            V3 transformedUp = q * V3.up;
+            V3 transformedUp = q * V3.bodyUp;
             V3.Dot(transformedUp, up).ShouldBePositive();
         }
 
@@ -58,11 +58,11 @@ namespace MechJebLibTest.Primitives.Q3Tests
             var forward = new V3(10, 0, 0);
             var q = Q3.LookRotation(forward);
 
-            (q * V3.forward).ShouldEqual(V3.xaxis, 1e-14);
+            (q * V3.bodyForward).ShouldEqual(V3.xaxis, 1e-14);
 
             forward = new V3(3, 4, 0);
             q = Q3.LookRotation(forward);
-            (q * V3.forward).ShouldEqual(forward.normalized, 1e-14);
+            (q * V3.bodyForward).ShouldEqual(forward.normalized, 1e-14);
         }
 
         [Fact]
@@ -71,27 +71,27 @@ namespace MechJebLibTest.Primitives.Q3Tests
             V3 forward = new V3(1, 2, 3).normalized;
             var q = Q3.LookRotation(forward);
 
-            (q * V3.forward).ShouldEqual(forward, 1e-14);
+            (q * V3.bodyForward).ShouldEqual(forward, 1e-14);
 
-            V3 rotatedUp = q * V3.up;
+            V3 rotatedUp = q * V3.bodyUp;
             V3.Dot(rotatedUp, forward).ShouldBeZero(1e-14);
         }
 
         [Fact]
         private void LookRotationWithParallelUpAndForward()
         {
-            V3 forward = V3.up;
-            V3 up = V3.up;
+            V3 forward = V3.bodyUp;
+            V3 up = V3.bodyUp;
             var q = Q3.LookRotation(forward, up);
 
-            // Degenerate case falls back to FromToRotation(V3.forward, <forward argument>)
-            (q * V3.forward).ShouldEqual(V3.up, 1e-14);
+            // Degenerate case falls back to FromToRotation(V3.bodyForward, <forward argument>)
+            (q * V3.bodyForward).ShouldEqual(V3.bodyUp, 1e-14);
         }
 
         [Fact]
         private void LookRotationDegenerateCaseProducesIdentity()
         {
-            var q = Q3.LookRotation(V3.forward, V3.forward);
+            var q = Q3.LookRotation(V3.bodyForward, V3.bodyForward);
 
             q.ShouldEqual(Q3.identity, 1e-14);
         }
@@ -99,9 +99,9 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void LookRotationOppositeDirection()
         {
-            var q = Q3.LookRotation(V3.back);
+            var q = Q3.LookRotation(V3.bodyBack);
 
-            (q * V3.forward).ShouldEqual(V3.back, 1e-14);
+            (q * V3.bodyForward).ShouldEqual(V3.bodyBack, 1e-14);
 
             double angle = Q3.Angle(Q3.identity, q);
             angle.ShouldEqual(PI, 1e-14);
@@ -113,7 +113,7 @@ namespace MechJebLibTest.Primitives.Q3Tests
             V3 forward = new V3(1, 1e-10, 0).normalized;
             var q = Q3.LookRotation(forward);
 
-            (q * V3.forward).ShouldEqual(forward, 1e-14);
+            (q * V3.bodyForward).ShouldEqual(forward, 1e-14);
             Assert.True(IsFinite(q.x));
             Assert.True(IsFinite(q.y));
             Assert.True(IsFinite(q.z));
@@ -128,26 +128,26 @@ namespace MechJebLibTest.Primitives.Q3Tests
             var q = Q3.LookRotation(forward, up);
             var m = M3.Rotate(q);
 
-            (q * V3.forward).ShouldEqual(forward, 1e-14);
-            (m * V3.forward).ShouldEqual(forward, 1e-14);
-            V3.Dot(q * V3.up, up).ShouldBePositive();
+            (q * V3.bodyForward).ShouldEqual(forward, 1e-14);
+            (m * V3.bodyForward).ShouldEqual(forward, 1e-14);
+            V3.Dot(q * V3.bodyUp, up).ShouldBePositive();
         }
 
         [Fact]
         private void FromToRotationBasicAxes()
         {
-            var q = Q3.FromToRotation(V3.forward, V3.right);
+            var q = Q3.FromToRotation(V3.bodyForward, V3.bodyRight);
 
-            (q * V3.forward).ShouldEqual(V3.right, 1e-14);
+            (q * V3.bodyForward).ShouldEqual(V3.bodyRight, 1e-14);
 
-            q = Q3.FromToRotation(V3.up, V3.down);
-            (q * V3.up).ShouldEqual(V3.down, 1e-14);
+            q = Q3.FromToRotation(V3.bodyUp, V3.bodyDown);
+            (q * V3.bodyUp).ShouldEqual(V3.bodyDown, 1e-14);
         }
 
         [Fact]
         private void FromToRotationIdentity()
         {
-            var q = Q3.FromToRotation(V3.forward, V3.forward);
+            var q = Q3.FromToRotation(V3.bodyForward, V3.bodyForward);
 
             q.ShouldEqual(Q3.identity, 1e-14);
         }
@@ -155,9 +155,9 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void FromToRotationOpposite()
         {
-            var q = Q3.FromToRotation(V3.forward, V3.back);
+            var q = Q3.FromToRotation(V3.bodyForward, V3.bodyBack);
 
-            (q * V3.forward).ShouldEqual(V3.back, 1e-14);
+            (q * V3.bodyForward).ShouldEqual(V3.bodyBack, 1e-14);
 
             double angle = Q3.Angle(Q3.identity, q);
             angle.ShouldEqual(PI, 1e-14);
@@ -199,11 +199,11 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void FromToRotationPreservesOrthogonalVectors()
         {
-            V3 from = V3.forward;
-            V3 to = V3.right;
+            V3 from = V3.bodyForward;
+            V3 to = V3.bodyRight;
             var q = Q3.FromToRotation(from, to);
 
-            V3 orthogonal = V3.up;
+            V3 orthogonal = V3.bodyUp;
             V3 rotatedOrthogonal = q * orthogonal;
 
             V3.Dot(rotatedOrthogonal, to).ShouldBeZero(1e-14);
@@ -227,16 +227,16 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void AngleAxisBasicRotations()
         {
-            var q = Q3.AngleAxis(PI / 2, V3.up);
+            var q = Q3.AngleAxis(PI / 2, V3.bodyUp);
 
-            (q * V3.forward).ShouldEqual(V3.left, 1e-14);
-            (q * V3.right).ShouldEqual(V3.forward, 1e-14);
+            (q * V3.bodyForward).ShouldEqual(V3.bodyLeft, 1e-14);
+            (q * V3.bodyRight).ShouldEqual(V3.bodyForward, 1e-14);
         }
 
         [Fact]
         private void AngleAxisZeroAngle()
         {
-            var q = Q3.AngleAxis(0, V3.up);
+            var q = Q3.AngleAxis(0, V3.bodyUp);
 
             q.ShouldEqual(Q3.identity, 1e-14);
         }
@@ -253,8 +253,8 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void AngleAxisNegativeAngle()
         {
-            var qPos = Q3.AngleAxis(PI / 4, V3.up);
-            var qNeg = Q3.AngleAxis(-PI / 4, V3.up);
+            var qPos = Q3.AngleAxis(PI / 4, V3.bodyUp);
+            var qNeg = Q3.AngleAxis(-PI / 4, V3.bodyUp);
 
             (qPos * qNeg).ShouldEqual(Q3.identity, 1e-14);
         }
@@ -262,8 +262,8 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void AngleAxisLargeAngle()
         {
-            var q1 = Q3.AngleAxis(4 * PI + PI / 3, V3.up);
-            var q2 = Q3.AngleAxis(PI / 3, V3.up);
+            var q1 = Q3.AngleAxis(4 * PI + PI / 3, V3.bodyUp);
+            var q2 = Q3.AngleAxis(PI / 3, V3.bodyUp);
 
             q1.ShouldEqual(q2, 1e-14);
         }

@@ -242,7 +242,7 @@ namespace MechJebLibTest.Primitives.Q3Tests
         [Fact]
         private void ConjugateReversesRotation()
         {
-            var q = Q3.AngleAxis(PI / 3, V3.up);
+            var q = Q3.AngleAxis(PI / 3, V3.bodyUp);
             var v = new V3(1, 2, 3);
 
             V3 rotated = q * v;

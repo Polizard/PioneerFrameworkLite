@@ -50,7 +50,7 @@ namespace PioneerFramework
         private static void Info(string label, string detail) =>
             sb.Append("\n  · ").Append(label).Append("｜").Append(detail);
 
-        private static DVector3 ToD(V3 v) => new DVector3(v.x, v.y, v.z);
+        // 批5 U4（2026-09-28）：本地那个恒等转换助手已删（类型统一后移植面类型就是 `DVector3`）。
 
         public static void Run()
         {
@@ -133,16 +133,16 @@ namespace PioneerFramework
             }
 
             // ═══ C. 构造点（R5）：刚铺出来的组就能算对 ═══
-            // 这一组是**本次改动的正面证据**：`CreateNoMapShipGroup` 的非圆轨分支**不设** `localPosition`，
-            // 所以"从 localPosition 构造"在这里会读到零。能过 ⇒ 构造点确实是"现算 CurrentOrbit"。
+            // 这一组是**本次改动的正面证据**：`CreateNoMapShipGroup` 的非圆轨分支**不设** `positionBody`，
+            // 所以"从 positionBody 构造"在这里会读到零。能过 ⇒ 构造点确实是"现算 CurrentOrbit"。
             sb.Append("\n\n── C. 构造点（R5）：铺完立刻构造，不经任何物理步 ──");
             foreach ((string name, SpaceEntityGroup g, double incDeg, double ecc) in groups)
             {
-                double lpMag = g.localPosition.magnitude;
+                double lpMag = g.positionBody.magnitude;
                 DVector3 cur = g.CurrentOrbit.position - g.GetCentralBodyOffset((int)Math.Round(tick));
-                Info($"{name}：localPosition 与 CurrentOrbit 派生值的模长",
-                    $"|localPosition|={lpMag / 1000.0:F1}km  |CurrentOrbit 派生|={cur.magnitude / 1000.0:F1}km"
-                    + (lpMag < 1.0 ? "  ⚠ localPosition 未同步（新铺组的已知行为，正是构造点不用它的理由）" : ""));
+                Info($"{name}：positionBody 与 CurrentOrbit 派生值的模长",
+                    $"|positionBody|={lpMag / 1000.0:F1}km  |CurrentOrbit 派生|={cur.magnitude / 1000.0:F1}km"
+                    + (lpMag < 1.0 ? "  ⚠ positionBody 未同步（新铺组的已知行为，正是构造点不用它的理由）" : ""));
             }
 
             // ═══ B. F1 换系：对**全部**活动编队 ═══
@@ -168,14 +168,14 @@ namespace PioneerFramework
                 if (!OrbitAdapter.TryToOrbitView(g, celestialMgr, tick, out OrbitView ov)) { f1Fail++; continue; }
 
                 // ① 往返恒等（适配层 → 游戏系）
-                DVector3 backR = ToD(OrbitView.AdapterToGameWorld(ov.r));
-                DVector3 backV = ToD(OrbitView.AdapterToGameWorld(ov.v));
+                DVector3 backR = OrbitView.AdapterToGameWorld(ov.r);
+                DVector3 backV = OrbitView.AdapterToGameWorld(ov.v);
                 double rtErr = Math.Max((backR - gp).magnitude / Math.Max(gp.magnitude, 1.0),
                     (backV - gv).magnitude / Math.Max(gv.magnitude, 1.0));
                 // ② 倾角一致（游戏系独立算）
                 double incDiff = Math.Abs(ov.inclination - incGame);
                 // ③ 法向一致（适配层法向换回游戏系 vs 直接叉乘）
-                DVector3 nBack = ToD(OrbitView.AdapterToGameWorld(ov.OrbitNormal()));
+                DVector3 nBack = OrbitView.AdapterToGameWorld(ov.OrbitNormal());
                 double nErr = (nBack - hHat).magnitude;
 
                 if (rtErr >= 1e-12 || incDiff >= 1e-9 || nErr >= 1e-9)
@@ -237,10 +237,10 @@ namespace PioneerFramework
                     if (queued && after > before)
                     {
                         SpaceEntityGroup.PlannedManeuver m = g2.plannedManeuvers[after - 1];
-                        DVector3 w = m.plannedWorldDv;
+                        DVector3 w = m.plannedDvSystem;
                         bool finite = !double.IsNaN(w.x) && !double.IsNaN(w.y) && !double.IsNaN(w.z);
-                        Check(finite && m.active, "队列条目的 plannedWorldDv 有限且 active",
-                            $"plannedWorldDv=({w.x:F2},{w.y:F2},{w.z:F2}) active={m.active} executeTick={m.executeTick}");
+                        Check(finite && m.active, "队列条目的 plannedDvSystem 有限且 active",
+                            $"plannedDvSystem=({w.x:F2},{w.y:F2},{w.z:F2}) active={m.active} executeTick={m.executeTick}");
                         Check(Math.Abs(m.executeTick - nodes![0].ut) < 1.0, "executeTick 与计划时刻一致",
                             $"executeTick={m.executeTick} 计划 ut={nodes![0].ut:F1}");
                         Info("（这条会真的烧；不想烧可在轨道面板取消）", "");

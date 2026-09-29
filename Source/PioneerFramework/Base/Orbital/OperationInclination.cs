@@ -76,7 +76,7 @@ namespace PioneerFramework
             // ② 直觉口径 → 适配层口径：`180° − i`（见类注释的偏离二）
             double newIncRad = Math.PI - NewInc.Val * Math.PI / 180.0;
 
-            MechJebLib.Primitives.V3 deltaV = OrbitalManeuverCalculator.DeltaVToChangeInclination(o, ut, newIncRad);
+            DVector3 deltaV = OrbitalManeuverCalculator.DeltaVToChangeInclination(o, ut, newIncRad);
 
             return new List<PlanNode> { new PlanNode(deltaV, ut) };
         }

@@ -151,7 +151,7 @@ namespace PioneerFramework
                     var e = sg.GetEntityById(eid);
                     if (e == null) continue;
                     // 尺寸口径**复用既有约定**（AABB 半对角线：AVM:924 / CombatManager:1138），不新发明一份
-                    e.GetWorldAabb(out var mn, out var mx);
+                    e.GetAabbSystem(out var mn, out var mx);
                     double r = (mx - mn).magnitude * 0.5;
                     if (r > x.rcsRadiusMeters) x.rcsRadiusMeters = r;
                     // 热/电项今天恒为 0（无组件写那两个槽），组件就位后自动生效（§3.2 的空槽）
@@ -240,9 +240,9 @@ namespace PioneerFramework
         public int anchorWorldObjectId = -1;
 
         /// <summary>中心天体相对位置（中心天体参考系），用于 R/T/N 基向量计算。</summary>
-        public DVector3 localPosition;
+        public DVector3 positionBody;
         /// <summary>中心天体相对速度（中心天体参考系），用于 R/T/N 基向量计算。</summary>
-        public DVector3 localVelocity;
+        public DVector3 velocityBody;
 
         // ── 轨道保持 (OrbitKeeping) ──
         /// <summary>是否启用轨道保持模式（选择性抵消非白名单天体的引力，消耗 dV）。</summary>
@@ -253,8 +253,8 @@ namespace PioneerFramework
         // ── 主动燃烧（缓释 dV） ──
         /// <summary>是否有正在执行的主动燃烧。</summary>
         public bool HasActiveBurn = false;
-        /// <summary>燃烧方向单位向量。</summary>
-        public DVector3 burnDirection;
+        /// <summary>燃烧方向单位向量（**系统系**；S1 命名：系标记进名字，见计划稿 §11.2）。</summary>
+        public DVector3 burnDirectionSystem;
         /// <summary>本次燃烧剩余 dV (m/s)。</summary>
         public double remainingBurnDV;
         /// <summary>本次 burn 已累计施加的 dV (m/s，诊断/日志用；StartBurn 清零)。</summary>
@@ -402,11 +402,11 @@ namespace PioneerFramework
 
             /// <summary>规划时刻算好的世界系 dV 向量（节点帧）。执行时直接用作惯性方向，
             /// 避免在点火时刻用实际状态换算产生的帧旋转误差（MechJeb 同款）。零 = 未设置（退回分量换算）。</summary>
-            public DVector3 plannedWorldDv;
+            public DVector3 plannedDvSystem;
 
             /// <summary>
             /// ★★ **本机动的参考轨道**（2026-09-21）——"这一发的 Δv 是在哪条轨道上算的"。
-            /// 执行器的靶 = `参考轨道@节点UT 的速度 + plannedWorldDv`（见 `PlanNode.refOrbit` 的完整说明）。
+            /// 执行器的靶 = `参考轨道@节点UT 的速度 + plannedDvSystem`（见 `PlanNode.refOrbit` 的完整说明）。
             /// ⚠ `false` ⇒ 退回旧口径（点火前轨道@UT + Δv）⇒ 既有条目行为逐位不变。
             /// </summary>
             public bool hasResolvedRefOrbit;
@@ -424,7 +424,7 @@ namespace PioneerFramework
 
             /// <summary>
             /// 是否**已按活轨道重解过一次**（P2）。进预点火窗口时解一次就置位——解失败也置位，
-            /// 免得每 tick 反复重试同一条解不出来的意图。重解结果会**写回本条机动的分量与 plannedWorldDv**
+            /// 免得每 tick 反复重试同一条解不出来的意图。重解结果会**写回本条机动的分量与 plannedDvSystem**
             /// ⇒ 下游（预对准方向 / 可行性估算 / 点火）自动用活值，不需要各自改。
             /// </summary>
             public bool intentResolved;
@@ -456,7 +456,7 @@ namespace PioneerFramework
                 Scribe_Values.Look(ref executeTick, "executeTick", 0);
                 Scribe_Values.Look(ref active, "active", false);
                 Scribe_Values.Look(ref armRendezvousGuidance, "armRendezvousGuidance", false);
-                DVector3.Scribe("plannedWorldDv", ref plannedWorldDv);
+                DVector3.Scribe("plannedDvSystem", ref plannedDvSystem);
                 Scribe_Collections.Look(ref useNetworks, "useNetworks", LookMode.Def);
 
                 // 意图（目标条件）：逐字段自己 Scribe（`PlanIntent` 是纯类型、不认识 Verse）
@@ -518,12 +518,24 @@ namespace PioneerFramework
             if (entityIds.Remove(entityId)) entitySetVersion++;
         }
         public bool ContainsEntity(int entityId) => entityIds.Contains(entityId);
-        public IReadOnlyCollection<int> GetEntityIds() => entityIds;
+        /// <summary>
+        /// 本组实体 id（**调用方只读**：增删一律走 <see cref="AddEntity"/>/<see cref="RemoveEntity"/>
+        /// ——它们会推 <c>entitySetVersion</c>；直接改这一个集合会让版本号静默过期）。
+        ///
+        /// ⚠ **返回具体类型 `HashSet&lt;int&gt;` 而不是 `IReadOnlyCollection&lt;int&gt;`**（P45，2026-09-27）：
+        /// `foreach` 走接口时每次都要**装箱一个 `HashSet&lt;int&gt;.Enumerator`** ⇒ 每群每步一次分配；
+        /// 而本方法有 **60 处**调用（其中**并行体内**就有 `GetLinkedMapComp`/`GetGroupMass`/
+        /// `GetGroupPropulsionSource` 三处）⇒ 那正是台账第 22 条「并行区零分配」要消的东西。
+        /// 具体类型让 `foreach` 用**结构体枚举器**、`Count`/`Contains` 也走非虚路径 —— **零调用点改动、零语义变化**。
+        /// </summary>
+        public HashSet<int> GetEntityIds() => entityIds;
 
         /// <summary>取 group 任一实体所属地图的 SpaceMapComp（无 Map 实体 / 未关联时返回 null）。</summary>
         public SpaceMapComp GetLinkedMapComp()
         {
-            var sg = Current.Game?.GetComponent<SpaceGameComp>();
+            // R5（2026-09-26）：改用缓存引用 —— 本方法在相位里被 `GetMainThrustAxisSystem`/
+            // `GetGroupPropulsionSource` 调用（每组每步 ≥1 次），原来每次都做一次组件表线性扫描。
+            var sg = SpaceGameComp.GetCached();
             if (sg == null) return null;
             foreach (int eid in GetEntityIds())
             {
@@ -577,7 +589,7 @@ namespace PioneerFramework
         /// <summary>
         /// 同上，但**带计划的惯性（world）向量**。
         /// ★★ 为什么必须有（2026-09-21 游戏内实测的真 bug）：点火门的判据是
-        /// `MainAxisBurnAngleDeg(group, group.burnDirection)`，而 `burnDirection` 要到 `StartBurn`
+        /// `MainAxisBurnAngleDeg(group, group.burnDirectionSystem)`，而 `burnDirectionSystem` 要到 `StartBurn`
         /// （**门的后面**）才被设 ⇒ 门比的是**上一次燃烧**留下的旧方向；同时 `pendingAlignDir` 的
         /// 预对准瞄的是**队列里下一条**机动 ⇒ 船被转到那个方向、停进 1.5° 死区，
         /// 而门要 2.0° ⇒ **船永远点不着火**（实测：`节点 T+19s` 之后计数器一路走负到 `T--6104s`，
@@ -586,7 +598,7 @@ namespace PioneerFramework
         /// "节点自己携带 `node.patch`/`nextPatch`" 同构）。
         /// </summary>
         public void QueueManeuver(float radDV, float tanDV, float normDV, int deltaTicks,
-            PlanOwner owner, DVector3 plannedWorldDv)
+            PlanOwner owner, DVector3 plannedDvSystem)
         {
             int execTick = (int)System.Math.Round(TimeScaleManager.GetPhysicsTickSafe()) + deltaTicks;
             // 归属规则（`PlanOwnerRules`，唯一权威）：**只有手动**条目才夺走引导。
@@ -603,7 +615,7 @@ namespace PioneerFramework
                 active = true,
                 owner = owner,
                 useNetworks = InheritNetworks(),
-                plannedWorldDv = plannedWorldDv
+                plannedDvSystem = plannedDvSystem
             });
         }
 
@@ -613,7 +625,7 @@ namespace PioneerFramework
         /// 执行器的靶 = `参考轨道@节点 + Δv`；不带参考轨道时退回"点火前轨道@节点 + Δv"。
         /// </summary>
         public void QueueManeuver(float radDV, float tanDV, float normDV, int deltaTicks,
-            PlanOwner owner, DVector3 plannedWorldDv, bool hasRefOrbit, OrbitView refOrbit)
+            PlanOwner owner, DVector3 plannedDvSystem, bool hasRefOrbit, OrbitView refOrbit)
         {
             int execTick = (int)System.Math.Round(TimeScaleManager.GetPhysicsTickSafe()) + deltaTicks;
             if (PlanOwnerRules.TakesOverGuidance(owner))
@@ -627,7 +639,7 @@ namespace PioneerFramework
                 active = true,
                 owner = owner,
                 useNetworks = InheritNetworks(),
-                plannedWorldDv = plannedWorldDv,
+                plannedDvSystem = plannedDvSystem,
                 hasResolvedRefOrbit = hasRefOrbit,
                 resolvedRefOrbit = refOrbit,
                 ladderEpoch = ladderPlanEpoch
@@ -740,12 +752,24 @@ namespace PioneerFramework
         public DVector3 angularVelocity;
         /// <summary>上次诊断的本地状态 + tick + 剩余 Δv（用于把"真正施加的冲量"从状态里扣出来）。</summary>
         /// <summary>⚠ 存的是**适配层系**的状态（与 `Shepperd` 同系 ⇒ 消除换系机会）。</summary>
-        public MechJebLib.Primitives.V3 burnDiagR, burnDiagV;
+        public DVector3 burnDiagR, burnDiagV;
         public double burnDiagTick = -1.0;
         public double burnDiagRemaining = -1.0;
+        /// <summary>本步燃烧的**输入快照**（只作读数，不参与任何算式）：ΣF（N）、Σṁ（kg/s）、本步用的质量（kg）。
+        /// 为什么要它们（2026-09-27 实测）：逐步指纹定位到"某一步、某一个组的 `remainingBurnDV` 差了
+        /// 3.3e-6 m/s"（相对 ~2e-7 ≈ **1–2 个 float ULP**）⇒ 那是**输入里有一次浮点舍入不同**。
+        /// 把这三个输入也进字段表 ⇒ 定位会直接说出**是哪一个输入**差的，不必再去 dump。</summary>
+        public double burnDbgF, burnDbgMf, burnDbgMass;
+        /// <summary>本段燃烧里**这个组被诊断过几次**（2026-09-26 加）。
+        /// 为什么要它：`burnDiagTick` 是**绝对时刻**（不能进指纹：逐轮必然不同 ⇒ 第二例"绝对量进哈希"陷阱），
+        /// 而"被诊断到几次"是**无量纲计数** ⇒ 既能进指纹，又能当 R3 的**直接判据**
+        /// （诊断块原来挂在并行体里 + 全局静态节流 ⇒ 实测 64 个燃烧组每窗口只有 **1 个**被诊断，
+        ///  其余 63 个静默跳过 ⇒ 这个计数在改前是"1 个组=1、63 个组=0"）。</summary>
+        public int burnDiagRuns;
 
-        /// <summary>燃烧弧预测的输入（点火时暂存，供"预测 vs 实测"并排读数用；运行期，不序列化）。</summary>
-        public MechJebLib.Primitives.V3 burnArcDv;
+        /// <summary>燃烧弧预测的输入（**适配层系**——写入点即 `OrbitView.GameWorldToAdapter(dV)`；
+        /// 点火时暂存，供"预测 vs 实测"并排读数用；运行期，不序列化）。</summary>
+        public DVector3 burnArcDvAdapter;
         public double burnArcNodeUt = -1.0;
         public double burnArcSeconds;
 
@@ -785,7 +809,7 @@ namespace PioneerFramework
         /// ⚠ **本轮起降级为退路**：有计划向量的燃烧走 `burnTargetV` 的活差额律（更精确，见那个字段）；
         /// 只有拿不到目标速度的燃烧（微调条目、引导逐帧指令）才用这条 RTN 律。
         /// ⚠ **分解必须用正本**（`CurrentOrbit` 的位置/速度），所以它**不在 `StartBurn` 里算** ——
-        /// 那里只有 `localPosition/localVelocity`（**副本**，与正本差一个帧速 ≈14–16 m/s ⇒ 方向偏 ~0.13°）。
+        /// 那里只有 `positionBody/velocityBody`（**副本**，与正本差一个帧速 ≈14–16 m/s ⇒ 方向偏 ~0.13°）。
         /// 改由刷新回路在**首次刷新时**用正本分解一次（`burnComponentsInit`），见 `SpaceGameComp`。
         /// </summary>
         public double burnRadial, burnTangential, burnNormal;
@@ -921,9 +945,9 @@ namespace PioneerFramework
         /// 船体局部轴向 → 世界方向（当前姿态 rotation 旋转）。
         /// 方向感知推进 / 转向机动的唯一换算入口。
         /// </summary>
-        public DVector3 GetWorldAxis(ThrustAxis axis)
+        public DVector3 GetThrustAxisSystem(ThrustAxis axis)
         {
-            return DVector3.Rotate(axis.LocalVector(), CurrentOrbit.rotation);
+            return DVector3.Rotate(axis.ShipVector(), CurrentOrbit.rotation);
         }
 
         /// <summary>
@@ -938,10 +962,11 @@ namespace PioneerFramework
             // `HasActiveBurn` 是 public 字段，钩子只能挂在本方法与 EndBurn 两处；
             // **任何别处直接赋 `HasActiveBurn = true` 都会让派生信号静默过期**（与 AVM:824 的"派生点"同类陷阱）。
             derivedDirty = true;
-            burnDirection = dV.normalized;
+            burnDirectionSystem = dV.normalized;
             remainingBurnDV = dV.magnitude;
             appliedBurnDV = 0.0;
             burnStartMass = 0.0;      // 首次 burn tick 时记录（此时质量已知）
+            burnDiagRuns = 0;         // R3 的直接判据面：新一段燃烧重新计数
             burnActualStartTick = -1.0; // 诊断：实际点火 tick（B2.2 的"预测 vs 实测"要用）
             burnActualEndTick = -1.0;
             burnConsumedPropellant = 0.0;
@@ -965,7 +990,7 @@ namespace PioneerFramework
             trimHasTarget = false;         // 意图轨道由点火块按计划（脉冲结果）算出
             trimFired = false;             // 每次机动最多微调一次
 
-            // ── B2.3 燃烧弧方向律（§2.2-2：`burnDirection` 原来整段燃烧期冻结）──
+            // ── B2.3 燃烧弧方向律（§2.2-2：`burnDirectionSystem` 原来整段燃烧期冻结）──
             // 解 = 点火时刻的 **RTN 分量**（在 `SpaceGameComp` 的刷新回路由**正本**分解一次），
             // 燃烧中**每步**用**当前 RTN** 重新合成世界方向 ⇒ 解不动、方向按时间取。
             //
@@ -975,7 +1000,7 @@ namespace PioneerFramework
             //   政策的理由（"每 tick **重解**太贵"）不适用：这里只是把**同一个解**在当前 RTN 里重新表达
             //   （~15 次浮点 + 一次归一化），没有求根也没有搜索 ⇒ 节拍机制整体删除。
             //
-            // ⚠ **也不能在这里分解**：本方法的入参只有 `localPosition/localVelocity`（**副本**，
+            // ⚠ **也不能在这里分解**：本方法的入参只有 `positionBody/velocityBody`（**副本**，
             //   与正本差一个帧速 ≈14–16 m/s ⇒ 方向偏 ~0.13°）。这正是 604 行那段注释说的同一个 trap 的
             //   另一半 —— 2026-09-19 修刷新时漏了这处分解。
         }
@@ -1101,7 +1126,7 @@ namespace PioneerFramework
 
         /// <summary>
         /// ★★ **到达判据的统一求值口**（2026-09-22）——把"目的需要哪些量"这件事**收在一处**：
-        /// 距离/速度目的只用 `localPosition`/`localVelocity`；**相位目的还要目标的位置**（算有符号相位差），
+        /// 距离/速度目的只用 `positionBody`/`velocityBody`；**相位目的还要目标的位置**（算有符号相位差），
         /// 且它的"到位门"读的是**半长轴差**（见 `RendezvousGoal.IsMet` 三参版）。
         ///
         /// ⚠ 为什么不让调用方自己拼：`SpaceGameComp` 那边已经在用它做完成判据与捷径，两处**必须同一个口径**
@@ -1118,11 +1143,11 @@ namespace PioneerFramework
             phaseErrDeg = double.NaN;
             var goal = EffectiveRendezvousGoal;
 
-            DVector3 rSelf = localPosition, vSelf = localVelocity;
+            DVector3 rSelf = positionBody, vSelf = velocityBody;
             double dist = double.NaN, relVel = double.NaN;
             if (target != null)
             {
-                DVector3 rTgt = target.localPosition, vTgt = target.localVelocity;
+                DVector3 rTgt = target.positionBody, vTgt = target.velocityBody;
                 dist = (rTgt - rSelf).magnitude;
                 relVel = (vTgt - vSelf).magnitude;
                 if (goal.kind == RendezvousGoal.Kind.PhaseSynced)
@@ -1136,7 +1161,7 @@ namespace PioneerFramework
                         || target.CelestialBodyId != CelestialBodyId)
                         return false;   // 缺量 ⇒ 保守不判达成（不冒充）
                     double aSelf = OrbitMath.SemiMajorAxis(rSelf, vSelf, gm);
-                    double aTgt = OrbitMath.SemiMajorAxis(target.localPosition, target.localVelocity, gm);
+                    double aTgt = OrbitMath.SemiMajorAxis(target.positionBody, target.velocityBody, gm);
                     return goal.IsMet(System.Math.Abs(aSelf - aTgt), relVel, phaseErrDeg);
                 default:
                     return goal.IsMet(dist, relVel);
@@ -1167,39 +1192,12 @@ namespace PioneerFramework
         /// <summary>上次引导修正烧开始的 physicsTick（冷却用，不序列化）。</summary>
         public double rendezvousLastBurnTick = double.NegativeInfinity;
 
-        // ── 新远场律（RendezvousGuidanceLaw）的跨周期状态（全部不序列化）────────────
-        // 为什么可以不序列化：新律是**无截止时刻的反馈律**，任何初值都合法（最坏是重起一段）。
-        // 它与旧路径的"固定到达时刻"不同 —— 旧路径的 rendezvousArrivalTick 是有语义的约定，
-        // 这里的状态只是律的积分器/迟滞器的记忆，丢了只损失一点收敛速度。
-        /// <summary>新律：e 通道迟滞继电器状态（见 RendezvousGuidanceLaw 的"不能用连续比例常开"）。</summary>
-        public bool rendezvousEccRelay = false;
-        /// <summary>新律：当前一段的时间预算终点（physicsTick 秒；-∞ = 尚未分腿）。</summary>
-        public double rendezvousLawLegEndTick = double.NegativeInfinity;
-        /// <summary>新律：上一周期的相位差（rad）——用于估下一段腿长（相位变化慢，足够）。</summary>
-        public double rendezvousLawLastPhaseErr = 0.0;
-        /// <summary>新律：首次求值时刻（physicsTick 秒；-∞ = 尚未求值）——"给够机会"的兜底交班判据用。</summary>
-        public double rendezvousLawStartTick = double.NegativeInfinity;
-        /// <summary>
-        /// 新律：**每段（腿）的时间预算长度（s）**。0 = 用游戏侧的默认值。
-        /// 这是"时间当自由变量"的那个旋钮：相位守恒律 Δv·t = (2/3)·r·Δφ ⇒ 腿越长越省 Δv、越慢。
-        /// （台架固定 60000；游戏内留给场景/将来的 UI 选择"快而贵 / 慢而省"。）
-        /// </summary>
-        public double rendezvousLawLegSeconds = 0.0;
-        /// <summary>
-        /// 新律：**本段的模式**。true = 形状段（先把两条轨道开到同一半长轴，`Compose(closePhase:false)`）；
-        /// false = 相位段（a 已对上，收相位差，`closePhase:true`）。
-        ///
-        /// ⚠ 必须**按段决定、一段内固定**：相位通道本来就靠"改 a"来收相位（δn≠0 正是它的工作手段），
-        /// 若按瞬时 δn 连续判断模式，相位段一建起 δn 就会被形状通道当成"轨道不匹配"给抵消掉。
-        /// </summary>
-        public bool rendezvousLawShapeMode = false;
-        /// <summary>
-        /// 新律：**最近一次交会接近距离**（m，不序列化）。
-        /// 终端卡在极限环时界面看起来"已经交会了"，而判据（300m/2m/s）过不去 —— 差多少必须能被日志读到。
-        /// </summary>
-        public double rendezvousBestDistM = double.PositiveInfinity;
-        /// <summary>新律：终端段下一次打印读数的时刻（physicsTick，不序列化；节流 60 模拟秒）。</summary>
-        public double rendezvousNextLogTick = double.NegativeInfinity;
+        // 批5.B（2026-09-28，用户："相位让我们的 MJ 接管"）：此处原有**旧律的 8 个跨周期状态字段**
+        // （`rendezvousEccRelay` / `rendezvousLaw*` / `rendezvousBestDistM` / `rendezvousNextLogTick`）
+        // 与它们的 `ResetRendezvousLawState()`。旧入口撤掉后**外部用户全为 0**（只剩每次登记时把它们
+        // 复位成初值）⇒ 连同面板那两行"变轨段/相位段"“本段剩 X/Y h”读数一起退役。
+        // 相位与分段一律由**阶梯那一侧**提供（面板的"沿轨相位差"读 `RendezvousGoal.SignedPhaseDeg`）。
+        // 要回看：git 历史 / `_backups/20260928-2347-post-legacy-rendezvous-removal-16c22d39b7117707/`。
 
         /// <summary>
         /// 登记交会引导（精确交会）。出发段机动需带 <see cref="PlannedManeuver.armRendezvousGuidance"/>，
@@ -1217,7 +1215,6 @@ namespace PioneerFramework
             rendezvousUseNetworks = useNetworks != null ? new HashSet<PropellantDef>(useNetworks) : null;
             rendezvousLastCheckTick = double.NegativeInfinity;
             rendezvousLastBurnTick = double.NegativeInfinity;
-            ResetRendezvousLawState();
         }
 
         /// <summary>出发段点火执行，引导生效。</summary>
@@ -1236,20 +1233,6 @@ namespace PioneerFramework
             rendezvousPrograde = true;
             rendezvousUseNetworks = null;
             rendezvousTargetOffset = DVector3.zero;
-            ResetRendezvousLawState();
-        }
-
-        /// <summary>新远场律的跨周期状态复位（每次重新登记/清除引导都做，避免上一段交会的记忆泄漏过来）。</summary>
-        public void ResetRendezvousLawState()
-        {
-            rendezvousEccRelay = false;
-            rendezvousLawLegEndTick = double.NegativeInfinity;
-            rendezvousLawLastPhaseErr = 0.0;
-            rendezvousLawStartTick = double.NegativeInfinity;
-            rendezvousLawLegSeconds = 0.0;
-            rendezvousLawShapeMode = false;
-            rendezvousBestDistM = double.PositiveInfinity;
-            rendezvousNextLogTick = double.NegativeInfinity;
         }
 
         #endregion
@@ -1289,7 +1272,6 @@ namespace PioneerFramework
             rendezvousTargetOffset = targetOffset;
             rendezvousLastCheckTick = double.NegativeInfinity;
             rendezvousLastBurnTick = double.NegativeInfinity;
-            ResetRendezvousLawState();
         }
 
         /// <summary>清除接近引导（等价清除交会引导）。</summary>
@@ -1298,7 +1280,7 @@ namespace PioneerFramework
         #endregion
 
         /// <summary>
-        /// 获取中心天体在行星参考系中的位置偏移。
+        /// 获取中心天体在系统系中的位置偏移。
         /// 如果中心天体是行星（地球自身），返回零向量。
         /// </summary>
         public DVector3 GetCentralBodyOffset(int currentTick)
@@ -1309,27 +1291,29 @@ namespace PioneerFramework
         public DVector3 GetCentralBodyOffset(double currentTick)
         {
             if (CelestialBodyId < 0) return DVector3.zero;
-            var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            // R5（2026-09-26）：缓存引用（本方法由 `OrbitAdapter.TryToOrbitView` 每组每步调用）。
+            var celestialMgr = CelestialBodyManager.GetCached();
             if (celestialMgr == null) return DVector3.zero;
             var centralDef = celestialMgr.GetBodyById(CelestialBodyId);
             if (centralDef == null || centralDef.bodyType == CelestialBodyType.Planet)
                 return DVector3.zero;
-            return celestialMgr.GetBodyLocalPosition(CelestialBodyId, currentTick);
+            return celestialMgr.GetBodyPositionParent(CelestialBodyId, currentTick);
         }
 
         /// <summary>
-        /// 获取中心天体在行星参考系中的速度。
+        /// 获取中心天体在系统系中的速度。
         /// 如果中心天体是行星（地球自身），返回零向量。
         /// </summary>
         public DVector3 GetCentralBodyVelocity(int currentTick)
         {
             if (CelestialBodyId < 0) return DVector3.zero;
-            var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            // R5（2026-09-26）：缓存引用（同 `GetCentralBodyOffset`）。
+            var celestialMgr = CelestialBodyManager.GetCached();
             if (celestialMgr == null) return DVector3.zero;
             var centralDef = celestialMgr.GetBodyById(CelestialBodyId);
             if (centralDef == null || centralDef.bodyType == CelestialBodyType.Planet)
                 return DVector3.zero;
-            return celestialMgr.GetBodyLocalVelocity(CelestialBodyId, currentTick);
+            return celestialMgr.GetBodyVelocityParent(CelestialBodyId, currentTick);
         }
 
         /// <summary>
@@ -1364,8 +1348,8 @@ namespace PioneerFramework
                 var centralDef = celestialMgr.GetBodyById(centralBodyId);
                 if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
                 {
-                    pos -= celestialMgr.GetBodyLocalPosition(centralBodyId, physicsTick);
-                    vel -= celestialMgr.GetBodyLocalVelocity(centralBodyId, physicsTick);
+                    pos -= celestialMgr.GetBodyPositionParent(centralBodyId, physicsTick);
+                    vel -= celestialMgr.GetBodyVelocityParent(centralBodyId, physicsTick);
                 }
             }
 
@@ -1426,10 +1410,10 @@ namespace PioneerFramework
             DVector3 circularVel = tangentDir * v_tan;
 
             // 更新中心天体相对坐标（用于 R/T/N 基向量）
-            localPosition = pos;        // 进入圆轨时已转为相对坐标
-            localVelocity = circularVel; // 纯切向速度，不含中心天体轨道速度
+            positionBody = pos;        // 进入圆轨时已转为相对坐标
+            velocityBody = circularVel; // 纯切向速度，不含中心天体轨道速度
             Log.Message(string.Format("[Orbit] Group {0} EnterCircularOrbit: body={1} r={2:F0}km |localPos|={3:F0}km |localVel|={4:F1} m/s",
-                GroupId, centralBodyId, r / 1000.0, localPosition.magnitude / 1000.0, localVelocity.magnitude));
+                GroupId, centralBodyId, r / 1000.0, positionBody.magnitude / 1000.0, velocityBody.magnitude));
 
             // 如果中心天体不是行星，加回其轨道速度（转回地球参考系）
             if (celestialMgr != null)
@@ -1437,7 +1421,7 @@ namespace PioneerFramework
                 var centralDefInner = celestialMgr.GetBodyById(centralBodyId);
                 if (centralDefInner != null && centralDefInner.bodyType != CelestialBodyType.Planet)
                 {
-                    circularVel += celestialMgr.GetBodyLocalVelocity(centralBodyId, physicsTick);
+                    circularVel += celestialMgr.GetBodyVelocityParent(centralBodyId, physicsTick);
                 }
             }
             CurrentOrbit.velocity = circularVel;
@@ -1476,8 +1460,8 @@ namespace PioneerFramework
             DVector3 newVel = tangentDir * (circularAngularVelocity * circularRadius);
 
             // 更新中心天体相对坐标（用于 R/T/N 基向量）
-            localPosition = pos - GetCentralBodyOffset(physicsTick);
-            localVelocity = newVel;
+            positionBody = pos - GetCentralBodyOffset(physicsTick);
+            velocityBody = newVel;
 
             CurrentOrbit.velocity = newVel;
 
@@ -1490,7 +1474,7 @@ namespace PioneerFramework
                     var centralDef = celestialMgr.GetBodyById(circularCentralBodyId);
                     if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
                     {
-                        CurrentOrbit.velocity += celestialMgr.GetBodyLocalVelocity(circularCentralBodyId, physicsTick);
+                        CurrentOrbit.velocity += celestialMgr.GetBodyVelocityParent(circularCentralBodyId, physicsTick);
                     }
                 }
             }
@@ -1561,7 +1545,7 @@ namespace PioneerFramework
                 localPos = new DVector3(System.Math.Cos(angle) * circularRadius, 0, System.Math.Sin(angle) * circularRadius);
             }
 
-            // 如果中心天体不是行星，将局部坐标转回行星参考系
+            // 如果中心天体不是行星，将局部坐标转回系统系
             // 注意：使用 currentTick（physicsTick），与发动机积分器保持一致
             if (circularCentralBodyId >= 0)
             {
@@ -1609,7 +1593,7 @@ namespace PioneerFramework
                 {
                     var centralDef = celestialMgr.GetBodyById(circularCentralBodyId);
                     if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
-                        vel += celestialMgr.GetBodyLocalVelocity(circularCentralBodyId, currentTick);
+                        vel += celestialMgr.GetBodyVelocityParent(circularCentralBodyId, currentTick);
                 }
             }
 

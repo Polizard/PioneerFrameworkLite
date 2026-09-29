@@ -317,7 +317,7 @@ namespace PioneerFramework
             var bodies = celestialManager.GetAllBodies();
             float toUnity = (float)SpaceConstants.UnitsPerMeter;
             // ⚠ 2026-09-23 参考系统一：本窗口的**船**走系统系（`GetGroupUnityPos`），天体原来却走**绝对系**
-            //   （`GetBodyWorldPosition`，递归到恒星）⇒ 两者系统性错位 2,400 Unity 单位（地球绕日 120,000 km
+            //   （`GetBodyPositionAbs`，递归到恒星）⇒ 两者系统性错位 2,400 Unity 单位（地球绕日 120,000 km
             //   ÷ 50 km/单位）。现在天体也走系统系（`ViewFrame.BodySystemPosition`），并**保留 double tick**
             //   （int 化在 1/60× 流速下会让天体位置离散跳变）。
             double tick = TimeScaleManager.GetPhysicsTickSafe();
@@ -545,7 +545,7 @@ namespace PioneerFramework
             foreach (var part in entity.Parts)
             {
                 if (part.isDestroyed) continue;
-                var sz = part.localBoundsSize;
+                var sz = part.boundsSizeShip;
                 maxDim = System.Math.Max(maxDim, System.Math.Max(sz.x, System.Math.Max(sz.y, sz.z)));
             }
             float visScale = (float)((maxDim > 0.0) ? FallbackShipLength / maxDim : 1.0);
@@ -566,8 +566,8 @@ namespace PioneerFramework
                     mr.material = designerCubeMat;
 
                 // 转换：物理米 → 视觉 Unity 单位
-                Vector3 pos = (Vector3)(part.localPosition * visScale);
-                Vector3 scale = (Vector3)(part.localBoundsSize * visScale);
+                Vector3 pos = (Vector3)(part.positionShip * visScale);
+                Vector3 scale = (Vector3)(part.boundsSizeShip * visScale);
 
                 go.transform.localPosition = pos;
                 go.transform.localRotation = Quaternion.identity;
@@ -701,11 +701,11 @@ namespace PioneerFramework
 
             foreach (int bodyId in sameSystemBodyIds)
             {
-                if (!bodyPositionsUnity.TryGetValue(bodyId, out Vector3 worldPos)) continue;
+                if (!bodyPositionsUnity.TryGetValue(bodyId, out Vector3 viewPos)) continue;
                 var body = celestialManager?.GetBodyById(bodyId);
                 if (body == null) continue;
 
-                float dist = Vector3.Distance(worldPos, observerPosUnity);
+                float dist = Vector3.Distance(viewPos, observerPosUnity);
                 if (dist > FarClip * 0.8f) continue;
 
                 if (!sameSystemBodyObjects.TryGetValue(bodyId, out var go) || go == null)
@@ -725,7 +725,7 @@ namespace PioneerFramework
                     sameSystemBodyObjects[bodyId] = go;
                 }
 
-                go.transform.position = worldPos;
+                go.transform.position = viewPos;
                 // ⚠ 球网格直径 1 ⇒ 半径要乘 2（`ViewFrame.RadiusToSphereScale`；2026-09-23 与叠加层一起修）
                 var bodyMesh = go.GetComponent<MeshFilter>()?.sharedMesh;
                 float scale = Mathf.Max(ViewFrame.RadiusToSphereScale((float)body.radius, bodyMesh), MinBodySize * 2f);
@@ -756,12 +756,12 @@ namespace PioneerFramework
 
             foreach (int bodyId in otherBodyIds)
             {
-                Vector3 worldPos = bodyPositionsUnity[bodyId];
+                Vector3 viewPos = bodyPositionsUnity[bodyId];
                 var body = celestialManager?.GetBodyById(bodyId);
                 if (body == null) continue;
                 if (body.bodyType == CelestialBodyType.Star) continue;
 
-                float dist = Vector3.Distance(worldPos, observerPosUnity);
+                float dist = Vector3.Distance(viewPos, observerPosUnity);
                 if (dist > FarClip * 0.8f) continue;
 
                 if (!billboardObjects.TryGetValue(bodyId, out var billboard) || billboard == null)
@@ -774,7 +774,7 @@ namespace PioneerFramework
                     billboardObjects[bodyId] = billboard;
                 }
 
-                billboard.transform.position = worldPos;
+                billboard.transform.position = viewPos;
                 float toUnity = (float)SpaceConstants.UnitsPerMeter;
                 float radius = Mathf.Max((float)(body.radius * toUnity), BillboardMinSize);
                 float distScale = Mathf.Max(1f, dist * 0.001f);
@@ -794,8 +794,8 @@ namespace PioneerFramework
 
             float toUnity = (float)SpaceConstants.UnitsPerMeter;
             int tick = (int)Math.Round(TimeScaleManager.GetPhysicsTickSafe());
-            DVector3 starWorldPos = celestialManager.GetBodyWorldPosition(star.bodyId, tick);
-            Vector3 starPosUnity = (Vector3)(starWorldPos * toUnity);
+            DVector3 starPosAbs = celestialManager.GetBodyPositionAbs(star.bodyId, tick);
+            Vector3 starPosUnity = (Vector3)(starPosAbs * toUnity);
 
             Vector3 toSun = starPosUnity - observerPosUnity;
             float sunDist = toSun.magnitude;

@@ -32,9 +32,12 @@ namespace PioneerFramework
                 if (loc != null && System.IO.File.Exists(loc))
                     built = System.IO.File.GetLastWriteTime(loc).ToString("yyyy-MM-dd HH:mm:ss");
                 Log.Message(string.Format(
-                    "[PFL] 构建自证：MVID={0}｜DLL 构建时间={1}｜交会新律={2}",
+                    // ⚠ 2026-09-28 更正标签：这里原打"交会新律={2}"，而那套自制远场律已于 2026-09-22 作废
+                    //   （远场段 + 5% CW 终端整段删除）。该开关现在 gate 的是"阶梯引导 vs 旧巡航 Lambert 路径"
+                    //   ⇒ 标签照实写"阶梯"，否则日志会让人误判成"旧律还在跑"——正是本项目最忌讳的标签与内容矛盾。
+                    "[PFL] 构建自证：MVID={0}｜DLL 构建时间={1}｜交会引导=阶梯({2})",
                     asm.ManifestModule.ModuleVersionId, built,
-                    SpaceGameComp.UseNewRendezvousLaw ? "开" : "关"));
+                    SpaceGameComp.UseNewRendezvousLaw ? "开" : "关（回退旧巡航 Lambert 路径）"));
             }
             catch (System.Exception e)
             {

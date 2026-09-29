@@ -12,14 +12,18 @@ namespace PioneerFramework
     /// ## 三条必须守住的约定
     /// ① **构造点唯一（R5）**：`OrbitView` 只从**一个**状态源构造 —— `TryToOrbitView` 读的是
     ///    **`group.CurrentOrbit.position/velocity`**（再减去中心天体的位置/速度）。
-    ///    ⚠ 2026-09-19 更正：本行原写"只从 `localPosition`/`localVelocity` 构造"——**与实现不符**，
-    ///    而且真的害人：验收器一度改 `localVelocity` 造"漂移"，因为它根本不是被读的那个字段，
+    ///    ⚠ 2026-09-19 更正：本行原写"只从 `positionBody`/`velocityBody` 构造"——**与实现不符**，
+    ///    而且真的害人：验收器一度改 `velocityBody` 造"漂移"，因为它根本不是被读的那个字段，
     ///    漂移**静默没发生**（两条本该不同的读数一模一样 = 假实验的指纹）。
-    ///    那两个字段是**天体参考系**的（`CurrentOrbit.position` 是**群组系 = 根行星中心**，
-    ///    见 `SpaceGameComp:1329` 的注释；`localPosition = CurrentOrbit.position − SyncBodyPos`）。
+    ///    那两个字段是**天体参考系**的（`CurrentOrbit.position` 是**系统系 = 根行星中心**，
+    ///    见 `SpaceGameComp:1329` 的注释；`positionBody = CurrentOrbit.position − SyncBodyPos`）。
     ///    **禁止改用 `GetCircularPositionAtTick` 那类圆轨解析函数**——那会引入"第三种状态"。
-    /// ② **换系只在这里发生一次**：`OrbitView.FromGameStateVectors` 内部调 `GameWorldToAdapter`。
-    ///    游戏侧代码**不要**自己去凑 +z（P-1 §1.3 的更正）。
+    /// ② **换系已不存在（批4 P4，2026-09-28）**：适配层与游戏世界同轴 +Y ⇒
+    ///    `OrbitView.GameWorldToAdapter` / `AdapterToGameWorld` 已退化为**恒等**。
+    ///    游戏侧代码仍然一律走 `OrbitView.FromGameStateVectors`（向量类型统一后那里只剩"组装状态"，
+    ///    不再有类型转换；历史上那对恒等转换函数已随批5 U4 删除），
+    ///    **不要在别处自己拼参考系状态**。⚠ 但 `OperationInclination` 的 `180° − i` 仍然必须保留 ——
+    ///    它换的是**天体自转方向**（游戏侧 `Ry(−ωt)`），不是极轴，见 `OrbitView.FromGameStateVectors` 的说明。
     /// ③ **单位**：`physicsTick` 就是**秒**（物理积分器把 `UPDATE_INTERVAL_TICKS` 当 `dtSeconds` 喂进去，
     ///    1 tick = 1 秒），所以 `epoch` / `PlanNode.ut` / `PlannedManeuver.executeTick` 三者同单位、
     ///    与 `mu`（m³/s²）自洽。**不要在这里做任何时间换算。**
@@ -29,11 +33,8 @@ namespace PioneerFramework
     /// </summary>
     public static class OrbitAdapter
     {
-        /// <summary>转发到 `OrbitView.ToV3`（**实现唯一**；这里只是游戏侧的一个顺手的名字）。</summary>
-        public static V3 ToV3(DVector3 v) => OrbitView.ToV3(v);
-
-        /// <summary>转发到 `OrbitView.ToD`。</summary>
-        public static DVector3 ToD(V3 v) => OrbitView.ToD(v);
+        // 批5 U4（2026-09-28）：原先这里有两个转发到 `OrbitView` 的恒等转换函数，已随类型统一一并删除
+        // （移植面三矢量与 `DVector3` 现在是同一个类型 ⇒ 转换这个概念不存在了）。
 
         // ── 天体数据 ────────────────────────────────────────────────────────────
 
@@ -49,9 +50,9 @@ namespace PioneerFramework
         public static BodyView ToBodyView(CelestialBodyDef def, CelestialBodyManager? mgr)
         {
             // ⚠ 我们**没有**模型的轴倾角：本 mod 的天体轨道都在世界 XZ 平面内，
-            //    所以"赤道轴"取世界的极轴 `DVector3.up`。
-            //    这一点有实测支撑：F1 自检里 15/17 个编队的游戏系倾角正好是 0（见 OrbitViewProbe 的输出）。
-            V3 pole = OrbitView.GameWorldToAdapter(ToV3(DVector3.up)); // → 适配层 +z
+            //    所以"赤道轴"取世界的极轴 `DVector3.up`（= +Y；批4 P4 起适配层也是 +Y ⇒ 不再有换系）。
+            //    这一点有实测支撑：自检里 15/17 个编队的游戏系倾角正好是 0（见 OrbitViewProbe 的输出）。
+            V3 pole = OrbitView.GameWorldToAdapter(DVector3.up); // 恒等；保留调用是为"唯一咽喉"的形状
 
             // 自转：1 tick = 1 秒 ⇒ 角速度 = 2π / dayLengthTicks（算式只有一份：AngularVelocity）
             double angularVelocity = AngularVelocity(def);
@@ -105,12 +106,12 @@ namespace PioneerFramework
         /// 把编队的**当前**状态变成 <see cref="OrbitView" />。查不到中心天体时返回 false——**不猜**
         /// （P-1 §4.2：猜错就是把两体问题解成另一个两体问题，且没有任何东西会报警）。
         ///
-        /// ## ⚠ 为什么取 `CurrentOrbit` 而**不是** `localPosition`（R5 的答案，2026-09-18 改）
+        /// ## ⚠ 为什么取 `CurrentOrbit` 而**不是** `positionBody`（R5 的答案，2026-09-18 改）
         /// P-1 §6 R5 的字面要求是“构造点只从 `CurrentOrbit` 取真值”。先前的写法是取
-        /// `g.localPosition`，理由是“它按称是 `CurrentOrbit.position − 中心天体偏移` 的派生副本”。
+        /// `g.positionBody`，理由是“它按称是 `CurrentOrbit.position − 中心天体偏移` 的派生副本”。
         /// **实测把这个理由推翻了**：`DebugShipSpawner.CreateNoMapShipGroup` 在非圆轨分支**根本不设**
-        /// `localPosition`（只设 `CurrentOrbit`，然后 `EnterOrbitKeeping`）⇒ **刚铺出来的编队
-        /// `localPosition` 还是零**，要等下一次物理步才同步。
+        /// `positionBody`（只设 `CurrentOrbit`，然后 `EnterOrbitKeeping`）⇒ **刚铺出来的编队
+        /// `positionBody` 还是零**，要等下一次物理步才同步。
         ///
         /// ⇒ 取字面做法：**现算**。这也正是本项目里已有的口径
         /// （`SpaceGameComp.TryPredictTargetAtTick`：`CurrentOrbit.position − GetCentralBodyOffset(nowTick)`）。
@@ -136,12 +137,16 @@ namespace PioneerFramework
             return true;
         }
 
-        /// <summary>`ut` 时刻的游戏系状态（天体参考系）。走**适配层的 `Shepperd`** 传播，不走
-        /// `OrbitMath.GetPositionAtTimeDelta`（后者在近圆与双曲上已知有问题，见 §14.3『传播』行）。</summary>
+        /// <summary>`ut` 时刻的游戏系状态（天体参考系）。走**适配层的 `Shepperd`** 传播。
+        ///
+        /// ⚠ 2026-09-26 更正：这里原先写"不走 `OrbitMath.GetPositionAtTimeDelta`，后者在近圆与双曲上已知有问题"
+        /// —— **那句已经过期**：`OrbitMath` 的传播族自 2026-09-18（V1）起就是 `Shepperd` 的**薄转发**
+        /// （见 `OrbitMath.cs` 的 `GetPositionAtTimeDelta` 注释），所以两条路是同一个实现。
+        /// 保留本方法的价值只是"换系在适配层收口"，与传播内核无关。</summary>
         public static (DVector3 r, DVector3 v) StateAtUT(OrbitView ov, double ut)
         {
             (V3 r, V3 v) = ov.RightHandedStateVectorsAtUT(ut);
-            return (ToD(OrbitView.AdapterToGameWorld(r)), ToD(OrbitView.AdapterToGameWorld(v)));
+            return (OrbitView.AdapterToGameWorld(r), OrbitView.AdapterToGameWorld(v));
         }
 
         // ── 把计划送进队列 ──────────────────────────────────────────────────────
@@ -150,8 +155,8 @@ namespace PioneerFramework
         /// 把 `Operation.MakeNodes` 产出的计划**逐条**送进编队的机动队列。
         ///
         /// 每条的换算：适配层 Δv →（`AdapterToGameWorld`）→ 游戏世界系 Δv，
-        /// 再按上游约定同时填**分量**（`OrbitMath.WorldDeltaVToComponents`）与 `plannedWorldDv`
-        /// （`PlannedManeuver` 的注释：点火时 dvMag 走分量、实际烧走 plannedWorldDv）。
+        /// 再按上游约定同时填**分量**（`OrbitMath.DeltaVSystemToComponents`）与 `plannedDvSystem`
+        /// （`PlannedManeuver` 的注释：点火时 dvMag 走分量、实际烧走 plannedDvSystem）。
         ///
         /// 失败时返回 false 并给出原因（队列里**一条都不会**被加入——宁可整条不做，也不要半条计划）。
         /// </summary>
@@ -185,8 +190,8 @@ namespace PioneerFramework
                     return false;
                 }
 
-                DVector3 worldDv = ToD(OrbitView.AdapterToGameWorld(node.dV));
-                if (double.IsNaN(worldDv.x) || double.IsNaN(worldDv.y) || double.IsNaN(worldDv.z))
+                DVector3 dvSystem = OrbitView.AdapterToGameWorld(node.dV);
+                if (double.IsNaN(dvSystem.x) || double.IsNaN(dvSystem.y) || double.IsNaN(dvSystem.z))
                 {
                     reason = "节点 Δv 是 NaN";
                     return false;
@@ -194,7 +199,7 @@ namespace PioneerFramework
 
                 // 分量：用**节点时刻**的状态（同样走适配层的传播，不用 OrbitMath 的传播）
                 (DVector3 rAt, DVector3 vAt) = StateAtUT(ov, node.ut);
-                OrbitMath.WorldDeltaVToComponents(rAt, vAt, worldDv, out double rad, out double tan, out double norm);
+                OrbitMath.DeltaVSystemToComponents(rAt, vAt, dvSystem, out double rad, out double tan, out double norm);
 
                 prepared.Add(new SpaceEntityGroup.PlannedManeuver
                 {
@@ -203,7 +208,7 @@ namespace PioneerFramework
                     normalDV = (float)norm,
                     executeTick = (int)Math.Round(node.ut),
                     active = true,
-                    plannedWorldDv = worldDv,
+                    plannedDvSystem = dvSystem,
                     // 意图（目标条件）：P2 的执行层接上活重解后由它接管；现在至少可读可存（§2.5 / B1.2）
                     intent = intent,
                     // 归属（§2.4）：从节点原样带来 —— PlanNode 的默认是 Guidance，规划器窗口显式标 Manual
@@ -224,7 +229,7 @@ namespace PioneerFramework
 
         /// <summary>
         /// **按活轨道重解一条机动的意图**（P2 / 《大修计划》§2.5）：返回"刷新后的条目"——
-        /// 分量与 `plannedWorldDv` 都换成**当前活轨道**算出来的值，`intentResolved` 置位。
+        /// 分量与 `plannedDvSystem` 都换成**当前活轨道**算出来的值，`intentResolved` 置位。
         ///
         /// 调用点在执行侧（进预点火窗口时解一次）：解出来的值**写回队列条目** ⇒ 下游的
         /// 预对准方向、可行性估算、点火全都自动用活值，**不需要各自改**。
@@ -266,14 +271,14 @@ namespace PioneerFramework
             }
 
             PlanNode node = nodes[0];
-            DVector3 worldDv = ToD(OrbitView.AdapterToGameWorld(node.dV));
+            DVector3 dvSystem = OrbitView.AdapterToGameWorld(node.dV);
             (DVector3 rAt, DVector3 vAt) = StateAtUT(ov, node.ut);
-            OrbitMath.WorldDeltaVToComponents(rAt, vAt, worldDv, out double rad, out double tan, out double norm);
+            OrbitMath.DeltaVSystemToComponents(rAt, vAt, dvSystem, out double rad, out double tan, out double norm);
 
             resolved.radialDV = (float)rad;
             resolved.tangentialDV = (float)tan;
             resolved.normalDV = (float)norm;
-            resolved.plannedWorldDv = worldDv;
+            resolved.plannedDvSystem = dvSystem;
             resolved.executeTick = (int)Math.Round(node.ut);
             resolved.intentResolved = true;
             return true;
@@ -287,7 +292,9 @@ namespace PioneerFramework
         /// 所以到不了该到的相位；本函数把"什么时候出发"接上。
         ///
         /// 返回的节点：`[0]` = 出发（`tick + τ`），`[1]` = 到达（`+ tof`）。
-        /// ⚠ 到达后若仍有相位/距离残差，应交给**终端**（`CwRendezvousCore`）——那是调用方的事。
+        /// ⚠ 到达后若仍有相位/距离残差，属于**调用方**的事。
+        /// （原文写"应交给终端 `CwRendezvousCore`"——2026-09-26 更正：`CwRendezvousCore` 在 mod 里
+        /// **零调用者**（只被 `Pure.Tests` 用），指向一个不参与运行时的地方是误导。）
         /// </summary>
         public static bool TryPlanHohmannTransfer(SpaceEntityGroup from, SpaceEntityGroup to,
             CelestialBodyManager? mgr, double tick, out List<PlanNode>? nodes, out string reason)

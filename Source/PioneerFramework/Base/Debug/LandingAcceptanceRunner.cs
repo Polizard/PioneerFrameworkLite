@@ -513,16 +513,16 @@ namespace PioneerFramework
         /// <summary>
         /// 探针船的**天体相对**位置（= `EciToTile` / `AntipodeTile` 要的口径）。
         ///
-        /// ⚠ **不许用 `group.localPosition`**（2026-09-24 首跑实测抓到）：那是**每物理步**算出来的缓存，
+        /// ⚠ **不许用 `group.positionBody`**（2026-09-24 首跑实测抓到）：那是**每物理步**算出来的缓存，
         /// 而本 runner 在**摆船的那一拍**就检查 ⇒ 它还是零向量 ⇒ `EciToTile(0) = -1` ⇒ 一整套用例
         /// 红成"尚未选中落点"（不是产品问题，是我的取数时机错了）。
-        /// 改用 `CurrentOrbit.position`（摆好即有）+ `GetBodyWorldOffset` —— 与 `TryQuoteLanding`
+        /// 改用 `CurrentOrbit.position`（摆好即有）+ `GetBodyOffsetSystem` —— 与 `TryQuoteLanding`
         /// **同一个约定**（天体侧对根行星返零）⇒ 这不是第二份换系，是同一个换算。
         /// </summary>
         private static DVector3 BodyRelativePos(SpaceGameComp sg, SpaceEntityGroup g, int bodyId, double tick)
         {
             int tickI = (int)Math.Round(tick);
-            return g.CurrentOrbit.position - sg.GetBodyWorldOffset(bodyId, tickI);
+            return g.CurrentOrbit.position - sg.GetBodyOffsetSystem(bodyId, tickI);
         }
 
         /// <summary>离星下点**最远**的 tile（与 `EciToTile` 同法：只把 argmax 换成 argmin）。
@@ -530,10 +530,10 @@ namespace PioneerFramework
         /// 第一版没有它，于是"星下点位置是零向量"时 argmin 退化成 tile 0，而 tile 0 照样"离得远"、
         /// 照样被距离门拒 ⇒ 那条判据会**假绿**（首跑实测：它确实绿了，是假绿）。</summary>
         private static int AntipodeTile(PlanetLayer layer, CelestialBodyManager mgr, int bodyId,
-            DVector3 relPosLocal, double tick, out float bestDot)
+            DVector3 relPosEci, double tick, out float bestDot)
         {
             double omega = GetSurfaceState.RotationOmega(mgr, bodyId);
-            DVector3 pFixed = SurfaceFrame.EciToFixed(relPosLocal, omega, tick);
+            DVector3 pFixed = SurfaceFrame.EciToFixed(relPosEci, omega, tick);
             Vector3 dir = ((Vector3)pFixed).normalized;
 
             int best = 0;

@@ -42,7 +42,7 @@ namespace PioneerFramework
             if (o.mu != targetOrbit.mu)
                 throw new OperationException("目标必须与你在同一个中心天体的引力场内。");
 
-            MechJebLib.Primitives.V3 dV = OrbitalManeuverCalculator.DeltaVToMatchVelocities(o, ut, targetOrbit);
+            DVector3 dV = OrbitalManeuverCalculator.DeltaVToMatchVelocities(o, ut, targetOrbit);
 
             return new List<PlanNode> { new PlanNode(dV, ut) };
         }

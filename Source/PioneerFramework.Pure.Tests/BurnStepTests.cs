@@ -8,7 +8,7 @@ namespace PioneerFramework.Pure.Tests
     ///
     /// 抽它的理由见 `BurnStep` 类注释：本会话抓到的每一个"缺陷"实质都是**手写复刻与真代码不一致**，
     /// 所以算式必须只有一份。这里钉三条：
-    ///   ① 方向律 ≡ `OrbitMath.GetWorldDeltaV`（同一件事的两种口径，逐位同解）；
+    ///   ① 方向律 ≡ `OrbitMath.GetDeltaVSystem`（同一件事的两种口径，逐位同解）；
     ///   ② **火箭方程恒等式**：比例油门 ⇒ 整段 Σ(dv) = ve·ln(m0/m1)（与全油门逐位同）；
     ///   ③ 步长无关性：dt 翻倍 ⇒ 步数减半、总 Δv 不变（时间基只改"烧多久"，不改"烧多少"）。
     /// </summary>
@@ -19,7 +19,7 @@ namespace PioneerFramework.Pure.Tests
         private const double MF = 140.0;
         private const double M0 = 74_995.1;
 
-        /// <summary>① 方向律与 `OrbitMath.GetWorldDeltaV` 必须逐位同解（谁是"另一份"都会被这条抓住）。</summary>
+        /// <summary>① 方向律与 `OrbitMath.GetDeltaVSystem` 必须逐位同解（谁是"另一份"都会被这条抓住）。</summary>
         [Fact]
         public void DirectionInRTN_EqualsOrbitMathComposition()
         {
@@ -32,7 +32,7 @@ namespace PioneerFramework.Pure.Tests
                 double rad = rnd.NextDouble() * 800 - 400, tan = rnd.NextDouble() * 800 - 400, nor = rnd.NextDouble() * 100 - 50;
 
                 DVector3 a = BurnStep.DirectionInRTN(pos, vel, rad, tan, nor);
-                DVector3 b = OrbitMath.GetWorldDeltaV(pos, vel, rad, tan, nor).normalized;
+                DVector3 b = OrbitMath.GetDeltaVSystem(pos, vel, rad, tan, nor).normalized;
 
                 Assert.True((a - b).magnitude < 1e-12, $"第 {i} 例：两口径差 {(a - b).magnitude:E3}");
             }

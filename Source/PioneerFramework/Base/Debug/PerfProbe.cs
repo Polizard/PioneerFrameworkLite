@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 using PioneerFramework.Combat;
 using Verse;
 
@@ -243,6 +244,7 @@ namespace PioneerFramework
         /// </summary>
         public static void SliceBuffer(SpaceEntityGroup group, object buffer)
         {
+            ParallelRegionGuard.GuardWrite("PerfProbe.SliceBuffer（两个静态 Dictionary + 三个计数）");
             int groupId = group.GroupId;
             SliceBufferChecks++;
             if (sliceBufferByGroup.TryGetValue(groupId, out var prev))
@@ -278,6 +280,7 @@ namespace PioneerFramework
 
         public static void SliceAlias(bool ok, string detail)
         {
+            ParallelRegionGuard.GuardWrite("PerfProbe.SliceAlias（计数 + Mismatch）");
             if (!ok)
             {
                 SliceAliasMismatch++;
@@ -291,6 +294,48 @@ namespace PioneerFramework
         /// <summary>船-船接触解算（SeparatePositions 收口调用）：碰撞检测链真的解算到接触的证据。</summary>
         public static void NoteContact() => ContactsResolved++;
 
+        // ── P49（2026-09-27）：碰撞对筛的**读数**（只量不改 —— "先量后改"策略的第 6 条）──
+        // 要回答的问题：`EnumerateShipPairs` 每 tick 枚举的对里，**有多少真的进了几何测试**、
+        // 其中**多少是"同 volley 兄弟"**（它们必然被排除，属于白跑）。
+        // 若"同 volley 占比"高 ⇒ 把排除提到几何前（代价：每对两次 `GetRecord` 字典查询）就是净赚；
+        // 若占比低 ⇒ 白跑不是问题，改法要另找（更细的格粒度）。**两种修法的取舍是经验问题 ⇒ 不许猜。**
+        public static long PairCandidates;   // 进入几何判定的候选对（已过 IsActive/IsCollidable/同组 三个 continue）
+        public static long PairSweptHit;     // 过扫掠膨胀盒（= 真的要做后面那一串判定的对）
+        public static long PairSameVolley;   // 其中"同 volley 兄弟"对（必然被排除）
+
+        // ── S-a（2026-09-27）：**"建引力源列表"那一段占引力场段多少**（只量不改）──
+        // 要回答的问题：`CollectSystemSources` 值不值得加"(system,tick) 缓存"。
+        // ★ 先量化：日志里"引力场段"占整步可达 **28.5%**（重场景），但**其中大部分是对 B 个天体求和本身**，
+        //   而 S-a 只管**建列表**那一小段（几次字典查 + 几次结构体 Add；天体位置本身已由
+        //   `BodySampleCache` 按 (body,tick) 记忆化）⇒ **收益占比必须实测，不许靠算**。
+        // 判据用法：`建表段/引力场段` 若只有个位数百分比 ⇒ **不值得**动物理热路径（改它要付"构造上等价"的论证成本）。
+        public static long SystemCollectSegments;
+        private static long systemCollectTicks;
+        public static long SystemCollectStart() => System.Diagnostics.Stopwatch.GetTimestamp();
+
+        // ── S-a（2026-09-27）：把"取引力源表"拆成**两格**（原来混在一起，读数有歧义）──
+        // `相位填充` = 相位里每群每步那句 `FillSystemSources`（tick 命中 ⇒ 只是拷贝）；
+        // `预取建表` = 主线程每系统每步那句 `PrefetchSystemSources`（真正走成员/父链/构造的那次）。
+        // ⚠ **读数前须知**：影子校验开着时（验收场景），每次缓存**命中**仍会重算一遍完整轨道算式
+        //   ⇒ 那部分开销算在"相位填充"里 ⇒ **量生产耗时要把探针关掉**（实测：开影子时 建表/次 ~1.3µs，
+        //   大部分是影子在算轨道，不是取表本身）。
+        public static long PrefetchBuildSegments;
+        private static long prefetchBuildTicks;
+        public static long PrefetchBuildStart() => System.Diagnostics.Stopwatch.GetTimestamp();
+        public static void PrefetchBuildEnd(long start)
+        {
+            Interlocked.Add(ref prefetchBuildTicks, System.Diagnostics.Stopwatch.GetTimestamp() - start);
+            Interlocked.Increment(ref PrefetchBuildSegments);
+        }
+        /// <summary>预取建表段累计墙钟（ticks）。</summary>
+        public static long PrefetchBuildTicksTotal => Interlocked.Read(ref prefetchBuildTicks);
+        public static void SystemCollectEnd(long start)
+        {
+            Interlocked.Add(ref systemCollectTicks, System.Diagnostics.Stopwatch.GetTimestamp() - start);
+            Interlocked.Increment(ref SystemCollectSegments);
+        }
+        /// <summary>建表段累计墙钟（ticks；与 `GravityClock` 同单位 ⇒ 可直接比）。</summary>
+        public static long SystemCollectTicksTotal => Interlocked.Read(ref systemCollectTicks);
         // ── 第 7/10 条（中低优先级批）：省下的分配/查找次数（仅观测量，非判据）──
         public static long EmptyWeaponListHits;   // 第 7 条：走共享空实例的次数 = 省下的空 List 分配
         public static long RecordLookupsAvoided;  // 第 10 条：扫掠未命中而对早退省下的 GetRecord 次数
@@ -299,29 +344,33 @@ namespace PioneerFramework
         public static void NoteRecordLookupsAvoided(int count) => RecordLookupsAvoided += count;
 
         // ── 第 8 条：天体世界位置/速度 (bodyId,tick) 记忆化 ──
+        // ⚠ R8：下面这些计数在**相位里**被调用（可达路径 `GetBodyPositionParent ← AccumulateToRoot ←
+        //   CollectSystemSources ← ComputeGroupPhysics`）⇒ 全部原子化（聚合量那一档）。
         public static long BodyPosHits;   // 命中 = 省下的一次递归父链 + 每级 Cos/Sin
         public static long BodyPosMisses;
-        public static void NoteBodyPosHit() => BodyPosHits++;
-        public static void NoteBodyPosMiss() => BodyPosMisses++;
+        public static void NoteBodyPosHit() => Interlocked.Increment(ref BodyPosHits);
+        public static void NoteBodyPosMiss() => Interlocked.Increment(ref BodyPosMisses);
 
         // ── 第 24 条：天体**局部**位置/速度 (bodyId,tick) 记忆化（系统系引力场的热路径）──
         // 与第 8 条分开计数：世界系缓存服务渲染/展示（低频），局部系缓存服务 A0 后的群组引力场
         // （每群组每步 × 父链每颗天体）。判据：未命中 ≈ 子天体数 × 步数（缓存前是 ×组数），
         // 即命中/未命中 ≈ 同一系统内**同时要场的组数 − 1**。
-        public static long BodyLocalHits;
-        public static long BodyLocalMisses;
-        public static long BodyLocalShadowChecked, BodyLocalShadowMismatch;
-        public static void NoteBodyLocalPosHit() => BodyLocalHits++;
-        public static void NoteBodyLocalPosMiss() => BodyLocalMisses++;
+        public static long BodyParentCacheHits;
+        public static long BodyParentCacheMisses;
+        public static long BodyParentCacheShadowChecked, BodyParentCacheShadowMismatch;
+        public static void NoteBodyPositionParentHit() => Interlocked.Increment(ref BodyParentCacheHits);
+        public static void NoteBodyPositionParentMiss() => Interlocked.Increment(ref BodyParentCacheMisses);
 
         /// <summary>局部位置/速度缓存影子：命中时与无缓存重算值逐位比对（容差 0——同一份 Double 算式，
-        /// 重算必然逐位相同；不等只可能是缓存陈旧）。</summary>
+        /// 重算必然逐位相同；不等只可能是缓存陈旧）。
+        /// ⚠ R8：本方法在相位里被调用 ⇒ 计数原子化（真异常时的 `Mismatch`→`Log.Error` 会跨线程打日志，
+        ///   那一条**已知且接受**：只在"缓存陈旧"这种真故障上发生，此时日志顺序不重要）。</summary>
         public static void BodyLocalShadow(int bodyId, DVector3 cached, DVector3 fresh, double tick, string what)
         {
-            BodyLocalShadowChecked++;
+            Interlocked.Increment(ref BodyParentCacheShadowChecked);
             double d = (cached - fresh).magnitude;
             if (d <= 0.0) return;
-            BodyLocalShadowMismatch++;
+            Interlocked.Increment(ref BodyParentCacheShadowMismatch);
             Mismatch("天体局部缓存", string.Format(
                 "天体{0} {1} 命中值≠重算值 Δ={2:E3} m（t={3:F3}）——缓存陈旧？", bodyId, what, d, tick));
         }
@@ -341,15 +390,17 @@ namespace PioneerFramework
 
         // ════════ 第 5/14 条：组件引用缓存 ════════
 
-        public static void CompRefHit(string typeName) => CompRefHits++;
+        // R7/R8：这四个在**相位里**被调用（`GameComponentRef.Get()` 走 `ComputeGroupPhysics` 等热路径）
+        // ⇒ 原子化（聚合量那一档；丢计数不影响任何判据的结论，只影响读数）。
+        public static void CompRefHit(string typeName) => Interlocked.Increment(ref CompRefHits);
 
         public static void CompRefMiss(string typeName, bool found)
         {
-            if (found) CompRefMissResolved++;
-            else CompRefMissNull++;
+            if (found) Interlocked.Increment(ref CompRefMissResolved);
+            else Interlocked.Increment(ref CompRefMissNull);
         }
 
-        public static void CompRefGameSwitch(string typeName) => CompRefGameSwitched++;
+        public static void CompRefGameSwitch(string typeName) => Interlocked.Increment(ref CompRefGameSwitched);
 
         /// <summary>是否做组件缓存影子校验（前 2 次必查 + 之后每 512 次）。
         /// ⚠️ 调用方必须先问本方法、再执行实时查找——否则被优化的线性扫描每次都跑，探针自身成为热点。</summary>
@@ -458,28 +509,62 @@ namespace PioneerFramework
         private static long warheadLogCounter;
         private static long freeFlightLogCounter;
 
-        /// <summary>限频采样（每 64 次一次）——引力场是热路径，逐次采样自己会变成噪声源。</summary>
-        public static bool ShouldProbeGravity() => (++gravityProbeCounter & 63) == 0;
+        /// <summary>限频采样（1/64）——引力场是热路径，逐次采样自己会变成噪声源。
+        /// ⚠ **R7（2026-09-26）：从「每 64 次调用采一次」改成「(组, 时刻) 的确定性哈希」**。为什么必须改：
+        /// 旧的 `++counter &amp; 63` 是**决策量**（读-改-写）⇒ 相位里"哪一组/哪一拍被采样"随调度变 ⇒
+        /// 采样集逐轮漂（读数不稳定），而且它本身就在共享静态量上写（G1 的判据面）。
+        /// 新式**不含任何共享状态**：同一 `(组, 时刻)` 必得同一答案 ⇒ 可复现，且相位里零写入。
+        /// 覆盖性也保住了：同一组在连续 64 拍内**必然**被采到一次（与旧式的"组数少时仍能采到"一致）。
+        /// </summary>
+        public static bool ShouldProbeGravity(int groupId, double tick)
+            => (((long)groupId * 2654435761L) ^ (long)tick) % 64 == 0;
+
+        /// <summary>原子 min（R7：`GravitySubBodyMinRatio` 在相位里被多线程更新过）。
+        /// min/max 本身**可交换可结合** ⇒ 原子化后结果与单线程**逐位相同**（这就是"聚合量"那一档的待遇）。</summary>
+        private static void AtomicMin(ref double target, double v)
+        {
+            double cur = Volatile.Read(ref target);
+            while (v < cur)
+            {
+                double seen = Interlocked.CompareExchange(ref target, v, cur);
+                if (seen == cur) return;
+                cur = seen;
+            }
+        }
+
+        /// <summary>原子 max（同 <see cref="AtomicMin"/>）。</summary>
+        private static void AtomicMax(ref double target, double v)
+        {
+            double cur = Volatile.Read(ref target);
+            while (v > cur)
+            {
+                double seen = Interlocked.CompareExchange(ref target, v, cur);
+                if (seen == cur) return;
+                cur = seen;
+            }
+        }
 
         /// <summary>根域影子结果：match=false 即异常（字段级累加/层级枚举出错）。</summary>
         public static void GravityRootDomain(bool match, string detail)
         {
-            GravityRootChecked++;
+            Interlocked.Increment(ref GravityRootChecked);   // R7：聚合量 ⇒ 原子化（相位里被多线程调用）
             if (!match) Mismatch("引力场根域", detail);
         }
 
         /// <summary>子天体域差分采样：报告「差分模长 / 局部引力模长」。
         /// **值判据**：≈0 = 旧"只算中心天体"行为（A0 未生效）；~7% = 走了"全量求和"错路；
-        /// 潮汐正确值约 0.1%–0.6%。两种灾难性偏离直接记 Mismatch（→ 进硬指标）。</summary>
+        /// 潮汐正确值约 0.1%–0.6%。两种灾难性偏离直接记 Mismatch（→ 进硬指标）。
+        /// ⚠ R7：本方法在相位里被多线程调用 ⇒ 计数原子化、min/max 用 CAS
+        ///   （`Last*` 三个是"最近一次样本"，多线程下"最近"本无定义 ⇒ 只当读数用，不进判据）。</summary>
         public static void GravitySubBodyDomain(double diffMagnitude, double localGravity)
         {
-            GravitySubBodyProbes++;
+            Interlocked.Increment(ref GravitySubBodyProbes);
             GravitySubBodyLastDiff = diffMagnitude;
             GravitySubBodyLastLocal = localGravity;
             double ratio = localGravity > 1e-9 ? diffMagnitude / localGravity : 0.0;
             GravitySubBodyLastRatio = ratio;
-            if (ratio < GravitySubBodyMinRatio) GravitySubBodyMinRatio = ratio;
-            if (ratio > GravitySubBodyMaxRatio) GravitySubBodyMaxRatio = ratio;
+            AtomicMin(ref GravitySubBodyMinRatio, ratio);
+            AtomicMax(ref GravitySubBodyMaxRatio, ratio);
 
             if (localGravity <= 1e-9) return;
             if (ratio < 1e-4)
@@ -660,6 +745,16 @@ namespace PioneerFramework
             StepClocks = 0; StepTicksTotal = 0; StepTicksMax = 0;
             StepTicksMaxAtStep = 0; StepTicksMaxAtTick = 0;
             GravityTicksTotal = 0; GravitySegments = 0;
+            // S-a 子段也要跟着清零 —— 否则"打印并清零"之后它会**跨读数累积**，
+            // 于是 `建表段/引力段` 这个比值会随会话越跑越低（假象）。**两处清零点必须成对**。
+            SystemCollectSegments = 0; Interlocked.Exchange(ref systemCollectTicks, 0L);
+            PrefetchBuildSegments = 0; Interlocked.Exchange(ref prefetchBuildTicks, 0L);
+            // S-a 的三个计数同理（预取/用上/退回）：不带 ⇒ 读数只增不减，"用上 N 次"会越看越大。
+            // ⚠ 这里普通写（不用 Interlocked）**成立**：清零发生在**主线程、并行区之外**（步钟复位处）
+            //    ⇒ 此刻没有工作线程在递增（递增侧才是 Interlocked）——与既有 `GravityTicksTotal` 同一写法。
+            CelestialBodyManager.DebugSourcesPrefetched = 0;
+            CelestialBodyManager.DebugSourcesHits = 0;
+            CelestialBodyManager.DebugSourcesFallback = 0;
         }
 
         /// <summary>Stopwatch tick → µs（报告侧换算）。</summary>
@@ -675,9 +770,20 @@ namespace PioneerFramework
             double gravPerStep = ToMicros(GravityTicksTotal) / StepClocks;
             double share = avg > 0.0 ? gravPerStep / avg : 0.0;
             double segPerStep = (double)GravitySegments / StepClocks;
+            // S-a 子段（只量不改）：占"引力场段"的比例 ⇒ 决定要不要给 CollectSystemSources 加缓存。
+            double scPerStep = ToMicros(SystemCollectTicksTotal) / StepClocks;
+            // ⚠ 分母用**整步**而不是"引力段"：解析发生在引力段计时**之外** ⇒ 拿它除引力段是两个
+            //   不相交区间的比 ⇒ **会骗人**（2026-09-27 收尾 S-a 时发现并更正）。
+            double scShare = avg > 0.0 ? scPerStep / avg : 0.0;
+            // S-a 拆两格：预取建表（主线程）/ 相位填充（相位里每群每步）
+            double pfPerStep = ToMicros(PrefetchBuildTicksTotal) / StepClocks;
             return string.Format(
-                "步数={0} 平均={1:F1}µs/步 最慢={2:F1}µs（第{3}步 / t={4}）｜引力场段={5:F1}µs/步 占整步={6:P1}（采样 {7:F1} 段/步）",
-                StepClocks, avg, max, StepTicksMaxAtStep, StepTicksMaxAtTick, gravPerStep, share, segPerStep);
+                "步数={0} 平均={1:F1}µs/步 最慢={2:F1}µs（第{3}步 / t={4}）｜引力场段={5:F1}µs/步 占整步={6:P1}（采样 {7:F1} 段/步）｜**解析源表**={8:F2}µs/步（每群每步；占整步={9:P1}）｜**预取建表**={10:F2}µs/步（{11} 段）｜S-a 预取 {12} 张 / **用上 {13} 次** / 退回 {14} 次",
+                StepClocks, avg, max, StepTicksMaxAtStep, StepTicksMaxAtTick, gravPerStep, share, segPerStep,
+                scPerStep, scShare,
+                pfPerStep, PrefetchBuildSegments,
+                CelestialBodyManager.DebugSourcesPrefetched, CelestialBodyManager.DebugSourcesHits,
+                CelestialBodyManager.DebugSourcesFallback);
         }
 
         /// <summary>打印步钟读数并清零（供调试菜单按钮用；不依赖 `Enabled`）。</summary>
@@ -713,6 +819,12 @@ namespace PioneerFramework
 
             sb.Append($"\n⑤⑭组件缓存 命中={CompRefHits} 实查={CompRefMissResolved} 未注册={CompRefMissNull} 换局={CompRefGameSwitched} 影子={CompRefShadowChecked} 不一致={CompRefShadowMismatch}");
 
+            // P49 读数：对筛漏斗（只量不改）。三个数一起看才说明问题：
+            //   候选 →(扫掠盒)→ 命中 →(同 volley 排除)→ 真判定。
+            // "同 volley / 命中" 的比值高 ⇒ 把排除提到几何前是净赚（省掉那次盒测试）。
+            sb.Append($"\nP49 对筛漏斗 候选={PairCandidates} 过扫掠盒={PairSweptHit} 同volley={PairSameVolley}"
+                + $"（同volley/过盒={(PairSweptHit > 0 ? (100.0 * PairSameVolley / PairSweptHit).ToString("F1") + "%" : "n/a")}）");
+
             sb.Append($"\n⑮爆炸网格 查询={ExplGridQueries} 网格候选={ExplGridCandidates} 旧扫候选={ExplOldScanCandidates} 仅旧扫有={ExplOldOnlyNoPartInRange} 漏伤={ExplMissedWithPartInRange} 影子={ExplShadowChecked}");
 
             sb.Append($"\n⑯逆四元数 命中={RotInvHits} 未命中={RotInvMisses} 影子={RotInvShadowChecked} 不一致={RotInvShadowMismatch}");
@@ -726,7 +838,7 @@ namespace PioneerFramework
             sb.Append($"\n㉓id 复用观察={GroupIdReuseObserved} 次（id 分配「扫 max+1」的后果；计划 A5a 的根因，非缺陷）");
             sb.Append($"\n㉒射弹引力段(A2) 段重建={ProjectileSegments} / 步={ProjectileSteps}（预期 ≈步数/120）｜弹头建段={WarheadSegments} 次 最近 |a|={WarheadAccel:F3} m/s²（主导项 {WarheadAccelRatio:F2}×，应 0.2–5×）指向行星中心余弦={WarheadTowardCenterCos:F3}");
 
-            sb.Append($"\n㉔天体局部缓存(第24条) 命中={BodyLocalHits} 未命中={BodyLocalMisses}（未命中应 ≈ 子天体数×步数，不是 ×组数；命中/未命中 ≈ 组数−1）影子={BodyLocalShadowChecked} 不一致={BodyLocalShadowMismatch}");
+            sb.Append($"\n㉔天体局部缓存(第24条) 命中={BodyParentCacheHits} 未命中={BodyParentCacheMisses}（未命中应 ≈ 子天体数×步数，不是 ×组数；命中/未命中 ≈ 组数−1）影子={BodyParentCacheShadowChecked} 不一致={BodyParentCacheShadowMismatch}");
             sb.Append($"\n㉖每物理步墙钟(第25条) {StepClockReport()}");
 
             Log.Message(sb.ToString());
@@ -744,8 +856,14 @@ namespace PioneerFramework
             EmptyWeaponListHits = 0;
             RecordLookupsAvoided = 0;
             BodyPosHits = BodyPosMisses = 0;
-            BodyLocalHits = BodyLocalMisses = BodyLocalShadowChecked = BodyLocalShadowMismatch = 0;
+            BodyParentCacheHits = BodyParentCacheMisses = BodyParentCacheShadowChecked = BodyParentCacheShadowMismatch = 0;
             StepClocks = StepTicksTotal = StepTicksMax = GravityTicksTotal = GravitySegments = 0;
+            SystemCollectSegments = 0; Interlocked.Exchange(ref systemCollectTicks, 0L);
+            PrefetchBuildSegments = 0; Interlocked.Exchange(ref prefetchBuildTicks, 0L);
+            // S-a 三个计数也在这处清（与上一处成对：漏一处 ⇒ 跨读数累积 ⇒ 假象；普通写成立的理由同上）
+            CelestialBodyManager.DebugSourcesPrefetched = 0;
+            CelestialBodyManager.DebugSourcesHits = 0;
+            CelestialBodyManager.DebugSourcesFallback = 0;
             StepTicksMaxAtStep = StepTicksMaxAtTick = 0;
             CompRefHits = CompRefMissResolved = CompRefMissNull = CompRefGameSwitched = 0;
             CompRefShadowChecked = CompRefShadowMismatch = 0;

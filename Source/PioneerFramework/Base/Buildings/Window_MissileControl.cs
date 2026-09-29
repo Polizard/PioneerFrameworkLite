@@ -107,7 +107,7 @@ namespace PioneerFramework
                     burnTxt = group.HasActiveBurn ? "燃烧" : "熄火";
                     var src = spaceGame.GetGroupPropulsionSource(group);
                     // 弹群合并期推进源 = 群级聚合器（Σ 全枚）；燃料按单枚口径显示 = 总量 / logicalCount（§5）
-                    float totalFuel = src != null ? src.TotalPropellantMass : 0f;
+                    double totalFuel = src != null ? src.TotalPropellantMass : 0.0;
                     fuelTxt = src != null
                         ? (rec.logicalCount > 1 ? totalFuel / rec.logicalCount : totalFuel).ToString("F0") + "kg"
                         : "—";

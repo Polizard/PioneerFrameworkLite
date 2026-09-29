@@ -267,7 +267,7 @@ namespace PioneerFramework
                 GUI.color = TextDim;
                 Text.Font = GameFont.Tiny;
                 Widgets.Label(emptyRect.ContractedBy(12f),
-                    "当前无机动规划。\n使用「机动规划」添加机动，或用「转移到圆轨 / 交会规划」生成两段式转移。");
+                    "当前无机动规划。\n使用「机动规划」添加机动，或用「转移到圆轨 / 交会（选目标）」生成两段式转移。");
                 GUI.color = Color.white;
                 Text.Font = GameFont.Small;
                 y = emptyRect.yMax;

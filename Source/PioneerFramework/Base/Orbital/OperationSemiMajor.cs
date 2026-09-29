@@ -54,7 +54,7 @@ namespace PioneerFramework
                 throw new OperationException(
                     $"半长轴不能小于烧点半径的一半（当前半径 {o.Radius(ut).ToSI(3)}m ⇒ 下限 {(o.Radius(ut) / 2.0).ToSI(3)}m）。");
 
-            MechJebLib.Primitives.V3 deltaV =
+            DVector3 deltaV =
                 OrbitalManeuverCalculator.DeltaVForSemiMajorAxis(o, ut, NewSma);
 
             return new List<PlanNode> { new PlanNode(deltaV, ut) };

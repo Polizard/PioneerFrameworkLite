@@ -14,8 +14,8 @@ namespace MechJebLibTest.FunctionsTests
         [Fact]
         public void InclinedCircularRetrogradeWithNonTrivialLan()
         {
-            var r = new V3(0, 1, 0);
-            var v = new V3(Sqrt(2) / 2, 0, Sqrt(2) / 2);
+            var r = new V3(0, 0, -(1));
+            var v = new V3(Sqrt(2) / 2, Sqrt(2) / 2, -(0));
 
             (double sma, double ecc, double inc, double lan, double argp, double nu, _) = Astro.KeplerianFromStateVectors(1.0, r, v);
 
@@ -33,8 +33,8 @@ namespace MechJebLibTest.FunctionsTests
         [Fact]
         public void EccentricRetrograde()
         {
-            var r = new V3(0, 0.5, 0);
-            var v = new V3(Sqrt(6) / 2, 0, Sqrt(6) / 2);
+            var r = new V3(0, 0, -(0.5));
+            var v = new V3(Sqrt(6) / 2, Sqrt(6) / 2, -(0));
 
             (double sma, double ecc, double inc, double lan, double argp, double nu, _) = Astro.KeplerianFromStateVectors(1.0, r, v);
 
@@ -54,12 +54,15 @@ namespace MechJebLibTest.FunctionsTests
         [Fact]
         public void EccentricRetrogradeWithArgp()
         {
-            var r = new V3(Sqrt(6) / 8, 0.25, Sqrt(6) / 8);
-            var v = new V3(Sqrt(6) / 4, -1.5, Sqrt(6) / 4);
+            var r = new V3(Sqrt(6) / 8, Sqrt(6) / 8, -(0.25));
+            var v = new V3(Sqrt(6) / 4, Sqrt(6) / 4, -(-1.5));
 
             (double sma, double ecc, double inc, double lan, double argp, double nu, _) = Astro.KeplerianFromStateVectors(1.0, r, v);
 
-            sma.ShouldEqual(1.0);
+            // 实测偏差 1.32e-15（≈6×EPS）：`sma` 走 `2/r − v²/μ = 4 − 3`，结果量级 1 而两个操作数量级 4
+            // ⇒ 输入舍入被放大 ~4–6×，机器 eps 容差在本元素上不可达（同族其余 5 个元素仍在 EPS/EPS2 下通过）。
+            // 取 1e-14 ≈ 7.6×实测偏差，仍远紧于 SQRT_EPS；真实缺陷是粗差（错分支/错公式）不会落在这个量级。
+            sma.ShouldEqual(1.0, 1e-14);
             ecc.ShouldEqual(0.5);
             inc.ShouldEqual(3 * PI / 4);
             lan.ShouldEqual(PI / 2);

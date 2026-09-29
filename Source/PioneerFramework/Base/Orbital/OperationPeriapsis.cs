@@ -45,7 +45,7 @@ namespace PioneerFramework
                 throw new OperationException(
                     $"新近心点不能低于负的中心天体半径（-{o.bodyRadius.ToSI(3)}m）。");
 
-            MechJebLib.Primitives.V3 deltaV =
+            DVector3 deltaV =
                 OrbitalManeuverCalculator.DeltaVToChangePeriapsis(o, ut, NewPeA + o.bodyRadius);
 
             return new List<PlanNode> { new PlanNode(deltaV, ut) };

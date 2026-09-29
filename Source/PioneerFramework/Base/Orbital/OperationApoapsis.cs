@@ -42,7 +42,7 @@ namespace PioneerFramework
 
             // ⚠ 上游这里**没有**"负值守卫"（而 `OperationPeriapsis` 有）——照搬，不替它加。
             // 高度 → 半径：加中心天体半径（与 `OperationCircularize` 的 ALTITUDE 分支同口径）。
-            MechJebLib.Primitives.V3 deltaV =
+            DVector3 deltaV =
                 OrbitalManeuverCalculator.DeltaVToChangeApoapsis(o, ut, NewApA + o.bodyRadius);
 
             return new List<PlanNode> { new PlanNode(deltaV, ut) };

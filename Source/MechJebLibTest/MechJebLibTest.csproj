@@ -7,18 +7,25 @@
       · net48 —— 与上游、与本项目主工程一致；这也是移植物**唯一能编译**的框架
         （见 ../PioneerFramework/ThirdParty/MechJebLib/README.md：`Angles.cs` 靠 net48 没有
          `Math.Asinh/Acosh/Atanh` 才写得通，net8 上会 CS0121）；
-      · LangVersion 8 + Nullable enable —— 上游设置，保持不动；
+      · Nullable enable —— 上游设置，保持不动；LangVersion 8 → **12**（批5 U3，2026-09-28）：
+        `ThirdParty/MechJebLib/_PFL/GlobalAlias.cs` 的 `global using V3 = PioneerFramework.DVector3;`
+        需要 C# ≥ 10，而上游测试源码在 C# 12 下向后兼容 ⇒ **测试源码没有为这条改动一个字**；
       · **不引用 UnityEngine / Assembly-CSharp / RimWorld** —— 上游测试套零宿主依赖（实测），
         正因如此这里没有 Unity 提供的 `JetBrains.Annotations.UsedImplicitlyAttribute`，
         需要像上游那样显式引包（主工程那侧则由 Unity 白拿，见 README）。
       · 程序集名保持 `MechJebLibTest`、命名空间保持 `MechJebLibTest`（J1：移植物保持上游原名）。
 
-    移植的测试文件**不得就地修改**；与上游同名文件的 diff 必须为空。
+    移植面的改写规则见 `../PioneerFramework/ThirdParty/MechJebLib/README.md`
+    （2026-09-26 用户裁定后重写：「逐字不变式＝一个字不许动」已作废 ⇒ T-A/T-B/T-C 三档 + 已改清单）。
+    ⚠ 批5 U1'（2026-09-28）：**本工程有 9 个测试文件做过一次"纯改名"**
+    （`V3.up/down/left/right/forward/back` → `V3.bodyUp/…`，**值一个都没动**）——
+    原因：类型统一（U2/U3）后这 6 个 NED 船体常量与宿主 `DVector3` 的世界系同名常量撞名。
+    属 T-A（断言与求值序都没变），上游 6207 条仍全绿；逐文件清单见 README 的「已改清单」。
   -->
 
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
-    <LangVersion>8</LangVersion>
+    <LangVersion>12</LangVersion>
     <Nullable>enable</Nullable>
     <RootNamespace>MechJebLibTest</RootNamespace>
     <AssemblyName>MechJebLibTest</AssemblyName>
@@ -49,7 +56,9 @@
     <!-- ② 我们自己的纯算术源码：只被互证台（MechJebLibPortTests.cs）用来做"移植面 ↔ 我们"的互证。
          与 Pure.Tests 同样用**链接**而非 ProjectReference，所以主工程零改动。 -->
     <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Pure\DVector3.cs" />
-    <Compile Include="..\PioneerFramework\Base\Core\DVector3Extensions.cs" Link="Pure\DVector3Extensions.cs" />
+    <!-- 批5 U4（2026-09-28）：`DVector3Extensions.cs` 已退役 ⇒ 这行 `<Compile Include>` 连同删除
+         （它那 5 个成员 - 索引访问/安全单位化/北天极/xaxis/zaxis - 已全部由合并后的 `DVector3` 直接提供，
+          且实测**零调用者**）。要取回：把文件搬回原路径并恢复本行。 -->
     <Compile Include="..\PioneerFramework\Base\Core\SpaceConstants.cs" Link="Pure\SpaceConstants.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\OrbitMath.cs" Link="Pure\OrbitMath.cs" />
     <!-- 适配层（P-1 §3）：必须保持纯（不引 UnityEngine/Verse）——这是它的可测性来源。 -->
@@ -113,9 +122,9 @@
     <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGuidanceCore.cs" Link="Sim\RendezvousGuidanceCore.cs" />
     <!-- B5：政策件（`RendezvousGuidanceCore.SelectActuator` 转发到它 ⇒ 本工程也要链） -->
     <Compile Include="..\PioneerFramework\Base\Orbital\BurnExecutorPolicy.cs" Link="Sim\BurnExecutorPolicy.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGuidanceLaw.cs" Link="Sim\RendezvousGuidanceLaw.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousCore.cs" Link="Sim\RendezvousCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\CwRendezvousCore.cs" Link="Sim\CwRendezvousCore.cs" />
+    <!-- 批5.B（2026-09-28）：`RendezvousGuidanceLaw.cs` 与 `CwRendezvousCore.cs` 已归档（`Source/已弃置/`）
+         ⇒ 这两行 `<Compile Include>` 一并删除。要取回：把文件搬回原路径 + 恢复这两行。 -->
     <!-- P1：alglib 的替换品。**它不在 ThirdParty/ 里**（要偏离上游就破坏"diff 为空"这条唯一不变式），
          所以是我们的文件、但保留上游类名与命名空间。见该文件头的说明。 -->
     <Compile Include="..\PioneerFramework\Base\Orbital\ChangeOrbitalElement.cs" Link="Adapter\ChangeOrbitalElement.cs" />

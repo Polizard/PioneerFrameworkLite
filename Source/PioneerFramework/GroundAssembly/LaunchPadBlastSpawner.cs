@@ -336,8 +336,8 @@ namespace PioneerFramework.GroundAssembly
 
         private static void ThrowChannelColumnPuffs(
             Map map,
-            Vector3 channelWorld,
-            Vector3 fuelWorld,
+            Vector3 channelMap,
+            Vector3 fuelMap,
             float baseAngleDeg,
             int count,
             float speed,
@@ -346,12 +346,12 @@ namespace PioneerFramework.GroundAssembly
             float rangeScale,
             float angleJitterDeg)
         {
-            if (count <= 0 || !channelWorld.ShouldSpawnMotesAt(map))
+            if (count <= 0 || !channelMap.ShouldSpawnMotesAt(map))
             {
                 return;
             }
 
-            Vector3 outward = channelWorld - fuelWorld;
+            Vector3 outward = channelMap - fuelMap;
             outward.y = 0f;
             if (outward.sqrMagnitude < 1e-5f)
             {
@@ -360,7 +360,7 @@ namespace PioneerFramework.GroundAssembly
 
             for (int i = 0; i < count; i++)
             {
-                Vector3 p = channelWorld + Gen.RandomHorizontalVector(0.16f * rangeScale);
+                Vector3 p = channelMap + Gen.RandomHorizontalVector(0.16f * rangeScale);
                 p += outward.normalized * (Rand.Range(0f, 0.12f) * rangeScale);
                 float ang = baseAngleDeg + Rand.Range(-angleJitterDeg, angleJitterDeg);
                 ThrowLaunchPadLChannelSmokeFleck(map, p, ang, speed * Rand.Range(0.92f, 1.08f), scale * Rand.Range(0.92f, 1.08f), rotationRate);
@@ -368,9 +368,9 @@ namespace PioneerFramework.GroundAssembly
         }
 
         /// <summary>水平面内自燃料口经导流槽向外的 Fleck 速度角（度）。</summary>
-        private static float HorizontalOutflowAngleDegrees(Vector3 fuelWorldShifted, Vector3 channelWorldShifted)
+        private static float HorizontalOutflowAngleDegrees(Vector3 fuelMapShifted, Vector3 channelMapShifted)
         {
-            Vector3 d = channelWorldShifted - fuelWorldShifted;
+            Vector3 d = channelMapShifted - fuelMapShifted;
             d.y = 0f;
             if (d.sqrMagnitude < 1e-6f)
             {

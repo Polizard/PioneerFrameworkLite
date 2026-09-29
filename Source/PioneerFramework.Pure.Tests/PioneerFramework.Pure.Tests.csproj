@@ -37,7 +37,7 @@
 
   <ItemGroup>
     <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Pure\DVector3.cs" />
-    <Compile Include="..\PioneerFramework\Base\Core\DVector3Extensions.cs" Link="Pure\DVector3Extensions.cs" />
+    <!-- 批5 U4（2026-09-28）：`DVector3Extensions.cs` 已退役 ⇒ 这行连同删除（成员已并入 `DVector3`，零调用者）。 -->
     <Compile Include="..\PioneerFramework\Base\Core\SlabMath.cs" Link="Pure\SlabMath.cs" />
     <Compile Include="..\PioneerFramework\Base\Core\SpaceConstants.cs" Link="Pure\SpaceConstants.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\OrbitMath.cs" Link="Pure\OrbitMath.cs" />
@@ -58,10 +58,10 @@
     <!-- 交会「不变量闭环」纯核心（2026-09-17）：近圆约化 ⇒ 面内交会是**标量双积分器**，
          原点即交会点。理论依据 DesignNotes/交会物理本质与闭环提法-20260917.md §5/§10。 -->
     <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGuidanceCore.cs" Link="Pure\RendezvousGuidanceCore.cs" />
-    <!-- CW（Hill）两冲量交会闭式解：终端的"温柔解"，替掉高接近率拦截。设计稿 §14.3 E1。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\CwRendezvousCore.cs" Link="Pure\CwRendezvousCore.cs" />
-    <!-- 远场律的**完整合成**（唯一入口）：台架与游戏共用，律只写一次。设计稿 §21。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGuidanceLaw.cs" Link="Pure\RendezvousGuidanceLaw.cs" />
+    <!-- 批5.B（2026-09-28）：`CwRendezvousCore.cs`（CW 终端的"温柔解"）与 `RendezvousGuidanceLaw.cs`（远场律）
+         已归档到 `Source/已弃置/`（用户 2026-09-22 裁定旧律作废；替代品 = 阶梯的端到端台架
+         `MechJebLibTest/LadderEndToEndTests.cs`）⇒ 这两行 `<Compile Include>` 一并删除。
+         要取回：把文件搬回原路径 + 恢复这两行。 -->
     <Compile Include="..\PioneerFramework\Base\Orbital\LaunchGuidanceCore.cs" Link="Pure\LaunchGuidanceCore.cs" />
     <Compile Include="..\PioneerFramework\Base\Game\MissileGuidanceCore.cs" Link="Pure\MissileGuidanceCore.cs" />
     <Compile Include="..\PioneerFramework\Base\Game\ConstellationCore.cs" Link="Pure\ConstellationCore.cs" />

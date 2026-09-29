@@ -427,7 +427,7 @@ namespace PioneerFramework
                     PerfProbe.AggReused, PerfProbe.RotInvHits, PerfProbe.CompRefHits, PerfProbe.ExplGridQueries,
                     PerfProbe.EmptyWeaponListHits, PerfProbe.RecordLookupsAvoided,
                     PerfProbe.BodyPosHits, PerfProbe.BodyPosMisses,
-                    PerfProbe.BodyLocalHits, PerfProbe.BodyLocalMisses, PerfProbe.StepClockReport()));
+                    PerfProbe.BodyParentCacheHits, PerfProbe.BodyParentCacheMisses, PerfProbe.StepClockReport()));
             }
 
             switch (stage)
@@ -672,8 +672,8 @@ namespace PioneerFramework
                 PerfProbe.EmptyWeaponListHits, PerfProbe.RecordLookupsAvoided, PerfProbe.BodyPosHits, PerfProbe.BodyPosMisses));
             Log.Message(string.Format("[验收] ㉔天体**局部**缓存（第 24 条，服务 A0 引力场）：命中={0} / 未命中={1}"
                 + "（未命中应 ≈ 天体数×步数，命中/未命中应 ≈ 组数−1）｜影子比对={2} 不一致={3}（不一致恒 0 = 缓存没给陈旧值）",
-                PerfProbe.BodyLocalHits, PerfProbe.BodyLocalMisses,
-                PerfProbe.BodyLocalShadowChecked, PerfProbe.BodyLocalShadowMismatch));
+                PerfProbe.BodyParentCacheHits, PerfProbe.BodyParentCacheMisses,
+                PerfProbe.BodyParentCacheShadowChecked, PerfProbe.BodyParentCacheShadowMismatch));
             Log.Message(string.Format("[验收] ㉖每物理步墙钟（第 25 条；比较前后请用同一固定场景，绝对值随机器/场景变）：{0}",
                 PerfProbe.StepClockReport()));
             Log.Message(string.Format("[验收] ② 物理步 scratch 校验={0} 次、接触解算={1} 次（前者 >0 = 每物理步都在校验容器复用；"

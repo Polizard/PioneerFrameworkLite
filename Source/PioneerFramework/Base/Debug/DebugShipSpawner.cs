@@ -210,7 +210,7 @@ namespace PioneerFramework
 
         /// <summary>
         /// 创建无 Map 的纯物理航天器（linkedMapId=-1，单 part），用于船-船碰撞测试。
-        /// 支持指定尺寸 / 姿态（验证旋转感知碰撞盒 GetWorldAabb）/ 初始速度。
+        /// 支持指定尺寸 / 姿态（验证旋转感知碰撞盒 GetAabbSystem）/ 初始速度。
         /// </summary>
         private static SpaceEntityGroup CreateShipNoMap(SpaceGameComp spaceGame, int factionId, DVector3 pos,
             DVector3 size, Quaternion rotation, string name, DVector3? velocity = null)
@@ -249,8 +249,8 @@ namespace PioneerFramework
             {
                 partId = 1,
                 defName = "PF_ShipPart_Cube",
-                localPosition = DVector3.zero,
-                localBoundsSize = size,
+                positionShip = DVector3.zero,
+                boundsSizeShip = size,
                 hp = 100f,
                 isIndestructible = false // 纯物理航天器可被摧毁
             };
@@ -395,8 +395,8 @@ namespace PioneerFramework
             {
                 partId = 1,
                 defName = "PF_ShipPart_TestMissile",
-                localPosition = DVector3.zero,
-                localBoundsSize = new DVector3(2, 2, 8),
+                positionShip = DVector3.zero,
+                boundsSizeShip = new DVector3(2, 2, 8),
                 hp = 200f,
                 isIndestructible = false
             };
@@ -404,7 +404,7 @@ namespace PioneerFramework
             entity.SetParts(new List<SpacePart> { part });
 
             // D15 主推方向型：主推轴 body 局部 -Z
-            entity.mainAxisLocal = new DVector3(0, 0, -1);
+            entity.mainAxisShip = new DVector3(0, 0, -1);
 
             // 主网（液氢，大推力）+ RCS 副网（肼，全矢量小推力；与主网异工质）
             var hydrogen = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Hydrogen");
@@ -455,12 +455,12 @@ namespace PioneerFramework
             if (entity == null || group == null)
                 return;
 
-            // 打印双向映射验证
+            // 打印双向映射验证（`linkedPartId` 已于 2026-09-26 删除：它只写不读，唯一读者就是这行日志）
             if (map != null)
             {
                 var mapComp = map.GetComponent<SpaceMapComp>();
-                Log.Message(string.Format("[StationTest] SpaceMapComp: ownerEntityId={0}, linkedPartId={1}",
-                    mapComp?.ownerEntityId ?? -1, mapComp?.linkedPartId ?? -1));
+                Log.Message(string.Format("[StationTest] SpaceMapComp: ownerEntityId={0}",
+                    mapComp?.ownerEntityId ?? -1));
             }
             foreach (var p in entity.Parts)
                 Log.Message(string.Format("[StationTest] Part {0} linkedMapId={1}", p.partId, p.linkedMapId));
@@ -671,8 +671,8 @@ namespace PioneerFramework
 
             // ── 绕月圆轨：月球某赤道 tile 正上方 1800 km，速度 = 月球绕地平动 + 月球相对圆轨速度（东向）──
             double omegaM = GetSurfaceState.RotationOmega(mgr, MOON_BODY_ID);
-            DVector3 moonPos = mgr.GetBodyLocalPosition(MOON_BODY_ID, physicsTick);   // 月球的父系（= 根系）偏移
-            DVector3 moonVel = mgr.GetBodyLocalVelocity(MOON_BODY_ID, physicsTick);
+            DVector3 moonPos = mgr.GetBodyPositionParent(MOON_BODY_ID, physicsTick);   // 月球的父系（= 系统系）偏移
+            DVector3 moonVel = mgr.GetBodyVelocityParent(MOON_BODY_ID, physicsTick);
             double rM = moon.radius + 1_800_000.0;
             int mTile = PickEquatorialTile(GetSurfaceState.GetLayerForBody(mgr, MOON_BODY_ID));
             DVector3 mUp = GetSurfaceState.TileToEci(mTile, mgr, MOON_BODY_ID, physicsTick).normalized;
@@ -804,9 +804,9 @@ namespace PioneerFramework
             }
 
             double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
-            // 月球相对**其父天体**（= 根行星地球）的位置/速度 → 与群组系（CurrentOrbit 所在系）同系
-            DVector3 moonPos = celestialMgr.GetBodyLocalPosition(MOON_BODY_ID, physicsTick);
-            DVector3 moonVel = celestialMgr.GetBodyLocalVelocity(MOON_BODY_ID, physicsTick);
+            // 月球相对**其父天体**（= 根行星地球）的位置/速度 → 与系统系（CurrentOrbit 所在系）同系
+            DVector3 moonPos = celestialMgr.GetBodyPositionParent(MOON_BODY_ID, physicsTick);
+            DVector3 moonVel = celestialMgr.GetBodyVelocityParent(MOON_BODY_ID, physicsTick);
 
             double r = moon.radius + 1_800_000.0;
             double vCirc = System.Math.Sqrt(moon.gravitationalParameter / r);
@@ -820,7 +820,7 @@ namespace PioneerFramework
                 new DVector3(6f, 6f, 12f), Quaternion.identity, "月球引力测试", vel);
             if (group == null) return;
 
-            // 中心天体 = 月球（引力场按根系解析；坐标仍在系统系 → 无需改 CurrentOrbit）
+            // 中心天体 = 月球（引力场按系统系解析；坐标仍在系统系 → 无需改 CurrentOrbit）
             group.CelestialBodyId = MOON_BODY_ID;
 
             Log.Message(string.Format(
@@ -868,7 +868,7 @@ namespace PioneerFramework
         ///
         /// 圆轨：一律走 `group.EnterCircularOrbit`（解析位置 + 自动轨道保持 + 按中心天体 GM 复核速度）；
         ///     同步轨道半径按 **μ/ω² 开立方**现算（ω 取 `GetSurfaceState.RotationOmega`，不用"24h 假设"的常数）。
-        /// 控制：放置后在世界视图选中该编队 →「机动规划 / 转移到圆轨 / 交会规划」即可消耗 dV。
+        /// 控制：放置后在世界视图选中该编队 →「机动规划 / 转移到圆轨 / 交会（选目标）」即可消耗 dV。
         /// </summary>
         public static void PlaceNoMapOrbitGroup(NoMapOrbitPreset preset)
         {
@@ -913,9 +913,9 @@ namespace PioneerFramework
                         return;
                     }
                     radius = moon.radius + 1_800_000.0;                              // 同 SpawnMoonGravityTest
-                    // 群组系 = 根行星（地球）为原点 ⇒ 月心相对状态要加月球的位置/速度
-                    DVector3 moonPos = mgr.GetBodyLocalPosition(MOON_BODY_ID, physicsTick);
-                    DVector3 moonVel = mgr.GetBodyLocalVelocity(MOON_BODY_ID, physicsTick);
+                    // 系统系 = 根行星（地球）为原点 ⇒ 月心相对状态要加月球的位置/速度
+                    DVector3 moonPos = mgr.GetBodyPositionParent(MOON_BODY_ID, physicsTick);
+                    DVector3 moonVel = mgr.GetBodyVelocityParent(MOON_BODY_ID, physicsTick);
                     // 初始径向 = 背地侧（月心 → 远离地球），落在月球公转面内；切向取该面内的顺行方向
                     DVector3 radial = moonPos.normalized;
                     DVector3 planeNormal = DVector3.Cross(moonPos, moonVel).normalized;
@@ -1007,12 +1007,259 @@ namespace PioneerFramework
                 spaceGame.GetGroupDeltaV(group).remainingDv));
             Messages.Message(string.Format(
                 "已放置 GTO 椭圆目标 G{0}（近地点 {1:F0}km / 远地点 {2:F0}km，e={3:F2}）。" +
-                "再放一个 LEO 编队去「交会」它 —— 这就是 LEO→GTO 的原始工况。",
+                "再放一个 LEO 编队去「交会（选目标）」它 —— 这就是 LEO→GTO 的原始工况。",
                 group.GroupId, rp / 1000.0, ra / 1000.0, e), MessageTypeDefOf.TaskCompletion, false);
         }
 
         /// <summary>放置：绕月轨道圆轨（月面 1800km）。</summary>
         public static void PlaceMoonOrbitNoMapGroup() => PlaceNoMapOrbitGroup(NoMapOrbitPreset.MoonOrbit);
+
+        /// <summary>
+        /// **绕月交会场景**（2026-09-29，用户报障后加："我们也许需要一个月球交会测试场景"）。
+        ///
+        /// 两艘**绕月圆轨**（月面 1800km，与「45 放置」那条同一套几何），目标在追击方**顺行前方**
+        /// <paramref name="phaseDegAheadDeg"/> 度（**负值 = 后方**），并**自动登记交会引导**（登记即生效）。
+        ///
+        /// ## ⏱ 选参数 = 选"要等多久"（同轨起步的硬约束，2026-09-29 定案）
+        /// 同轨（Δa=0）时霍曼**没有窗口** ⇒ 阶梯必落到调相级，而调相只能**抬轨**
+        /// （`PlanPhasingOrbit` 的 `useLow` 要求 `a &lt; aTgt`）⇒ 只能等目标从后面绕上来。
+        /// ⇒ **要补的相位 = 360°−φ（φ&gt;0）或 |φ|（φ&lt;0）**，而调相率约 **0.0043 °/s**
+        /// （判据 = `axisRatio=1.16`、船周期 16,845 s）：
+        ///   · **φ = −10°**（目标在后方）⇒ 补 10° ⇒ **≈2,300 s** ⇒ 整条链 1 分钟内可见 ⇒ **诊断用默认档**
+        ///   · **φ = +30°**（目标在前方）⇒ 补 330° ⇒ **≈77,000 s** ⇒ 需 ≥5 分钟真实时间（硬例，留作回归）
+        /// ⇒ **要快就看 −10°；+30° 是"最坏几何"那一档，慢是几何决定的、不是缺陷。**
+        ///
+        /// ## 为什么必须有这条场景
+        /// "根行星 / 体心系 / 解析圆轨模式 / 天体偏移"这套机器**只在环绕卫星时才被执行**
+        /// （地球/太阳场景里那些项恒为 0）⇒ 这条路径此前**零覆盖**（纯台架是二体的，够不到）。
+        /// 用户实测过一次：规划与第一发点火都对（3300→2844km = 46.5 m/s，实测 46.58、对账 0.00%），
+        /// 之后**无任何点火**却撞月 ⇒ 问题在"非点火"的状态路径上。
+        ///
+        /// ## 判据
+        /// 见 `MoonRendezvousAcceptanceRunner`（三条：两船都活着 / 游戏自己的到达判据 / 阶梯在位）、
+        /// 以及本库新增的探针 `SpaceGameComp.LogNonRootBurnState`（点火前/收工后各一行：圆轨模式 + 两套状态 + 要素）。
+        /// </summary>
+        public static void SpawnMoonRendezvousTest(double phaseDegAheadDeg = 30.0)
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (spaceGame == null || mgr == null) return;
+            var moon = mgr.GetBodyById(MOON_BODY_ID);
+            if (moon == null)
+            {
+                Log.Error("[绕月交会] 月球天体 Def 缺失（bodyId=2）");
+                return;
+            }
+
+            SpaceGameComp.UseNewRendezvousLaw = true;   // 调试场景的职责就是验收阶梯（与既有一族同）
+
+            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
+            double mu = spaceGame.GetBodyGM(MOON_BODY_ID);
+            double radius = moon.radius + 1_800_000.0;
+            double vCirc = System.Math.Sqrt(mu / radius);
+            DVector3 moonPos = mgr.GetBodyPositionParent(MOON_BODY_ID, physicsTick);
+            DVector3 moonVel = mgr.GetBodyVelocityParent(MOON_BODY_ID, physicsTick);
+
+            // 与 MoonOrbit 预设同一套约定：径向取背地侧、切向取月球公转面内的顺行方向
+            DVector3 radial0 = moonPos.normalized;
+            DVector3 planeNormal = DVector3.Cross(moonPos, moonVel).normalized;
+            if (planeNormal.sqrMagnitude < 0.01) planeNormal = DVector3.up;
+            DVector3 tangent0 = DVector3.Cross(planeNormal, radial0).normalized;
+            if (tangent0.sqrMagnitude < 0.01) tangent0 = ProgradeEquatorialTangent(radial0);
+
+            // ⚠ **批5.C 修正（2026-09-29）——参数必须等于真实相位差。**
+            //   旧写法把追击方放在 −φ、目标放在 +φ ⇒ **实际夹角是 2φ**（实测：传 30 ⇒ 真差 60
+            //   ⇒ 阶梯要"绕过来 300°"⇒ 等 3.4 圈；而日志照着参数报 30°）⇒ **读数与几何差一倍**，
+            //   正是本库反复吃过的"读数定名错"。现在：追击方在 radial0、目标在 +φ（顺行方向）。
+            //   φ>0 = 目标在**前方**（阶梯只能抬轨让目标绕过来 ⇒ 需补 360°−φ）；φ<0 = 目标在**后方**
+            //   （只需补 |φ| ⇒ **快档：−10° 只要 ~2300 s，是 30° 那档的 1/30**）。
+            double phi = phaseDegAheadDeg * System.Math.PI / 180.0;
+            DVector3 radialChaser = radial0;
+            DVector3 radialTgt = (radial0 * System.Math.Cos(phi) + tangent0 * System.Math.Sin(phi)).normalized;
+            DVector3 tgtTangent = DVector3.Cross(planeNormal, radialTgt).normalized;
+            DVector3 chaserTangent = DVector3.Cross(planeNormal, radialChaser).normalized;
+            // **实测**相位差（独立于参数、按构造基给出；+ = 目标在前，与 `RendezvousGoal.SignedPhaseDeg` 同号约定）
+            // ⇒ 参数与几何若对不上（旧版差一倍那种），这一行当场露馅。
+            double sepDeg = System.Math.Atan2(
+                DVector3.Dot(planeNormal, DVector3.Cross(radialChaser, radialTgt)),
+                DVector3.Dot(radialChaser, radialTgt)) * 180.0 / System.Math.PI;
+
+            // ⚠ 系统系 = 根行星（地球）为原点 ⇒ 传入的状态要**加回月球的位置/速度**（与 MoonOrbit 预设同）
+            var target = CreateNoMapShipGroup(spaceGame, MOON_BODY_ID,
+                moonPos + radialTgt * radius, moonVel + tgtTangent * vCirc, out _);
+            if (target == null) return;
+            var chaser = CreateNoMapShipGroup(spaceGame, MOON_BODY_ID,
+                moonPos + radialChaser * radius, moonVel + chaserTangent * vCirc, out _);
+            if (chaser == null) return;
+
+            chaser.RegisterRendezvousGuidance(target.GroupId, physicsTick, prograde: true, useNetworks: null);
+            chaser.ArmRendezvousGuidance();     // 无出发段 ⇒ 登记即生效
+
+            // **自动判定**（用户 2026-09-29："我希望自动判定，因为我是人类，跑得可能不及时"）：
+            //   截止给 4 个**月球绕地周期** ⇒ 从月球自己的 Def 取（`orbitPeriod`，**唯一权威**）。
+            //   ⚠ 首版我错用了"绕月**轨道**周期"（=2π√(r³/μ月)≈16,845s）⇒ 4 个只有 0.21 个真周期
+            //     ⇒ 自动判定**提前叫停**并报"未达"（假红旗：那会儿阶梯还在远场走调相/霍曼、
+            //     双方都在、Collision=0）。⇒ 期限必须按"月球绕地"的尺度给。
+            //   ⚠ 二改（2026-09-29）：**进度行与结论行的周期口径改回"船的绕月周期"** —— 期限用
+            //     月球绕地周期是对的（那是"给多久"），但拿它当分母报进度会**把读数缩小 19 倍**
+            //     （实测"0.12 个月球周期"看着像刚开始，其实船已经绕了 2.19 圈）⇒ **判据与读数分开口径**。
+            double moonOrbitPeriod = moon.orbitPeriod > 0.0 ? moon.orbitPeriod : 317900.0;
+            double period = 2.0 * System.Math.PI * System.Math.Sqrt(radius * radius * radius / mu);
+            // 墙钟闸显式写回 600 s：它是**静态字段**，近场档会把它改成 180 s ⇒ 两档之间必须各自声明，
+            //   否则"先点慢档再点快档"会互相串（本库登记过"跨档串状态"这一族）。
+            MoonRendezvousAcceptanceRunner.WallDeadlineSeconds = 600f;
+            MoonRendezvousAcceptanceRunner.Arm(chaser.GroupId, target.GroupId, physicsTick,
+                physicsTick + 4.0 * moonOrbitPeriod, period);
+
+            double dvBudget = spaceGame.GetGroupDeltaV(chaser).remainingDv;
+            // 阶梯在同轨（Δa=0）时拿不到霍曼窗口 ⇒ 必落到调相级，而调相的**方向只能是"抬轨"**
+            // （`PlanPhasingOrbit` 的 `useLow` 要求 `a < aTgt`，同轨时为假）⇒ 只能等目标从后面绕上来。
+            // ⇒ **要补的相位 = 360°−φ（φ>0 前方）或 |φ|（φ<0 后方）** —— 这条几何事实决定要等多久。
+            double phaseToClose = phaseDegAheadDeg >= 0.0 ? 360.0 - phaseDegAheadDeg : -phaseDegAheadDeg;
+            Log.Message(string.Format(
+                "[绕月交会] G{0}(追击) → G{1}(目标)｜中心=月球(ID={2}) r={3:F0}km（月面 {4:F0}km）周期={5:F0}s｜" +
+                "**实测相位差 {6:F0}°**（参数给 {7:F0}°；+ 目标在前）｜μ={8:E2}｜追击预算 {9:F0} m/s｜" +
+                "引导=阶梯（登记即生效）｜**同轨起步 ⇒ 只能抬轨等目标绕过来：要补 {10:F0}° 相位**" +
+                "· 期望：匹配平面 → 变轨/调相 → 画拦截 → 收尾降档 → 到达判据收口；**不许任何一艘撞月**",
+                chaser.GroupId, target.GroupId, MOON_BODY_ID, radius / 1000.0, 1_800_000.0 / 1000.0, period,
+                sepDeg, phaseDegAheadDeg, mu, dvBudget, phaseToClose));
+            Messages.Message(string.Format("绕月交会：G{0} → G{1}（相位差 {2:F0}°，已自动接合）",
+                    chaser.GroupId, target.GroupId, sepDeg),
+                MessageTypeDefOf.TaskCompletion, false);
+        }
+
+        /// <summary>
+        /// **绕月交会 · 异轨档**（2026-09-29 三改）—— 追击方与目标在**不同半径**的圆轨道上，
+        /// 相位**拿阶梯自己的 `MakePlan` 当 oracle 扫出来**（取"直接霍曼且计划完成最早"的那个相位）。
+        ///
+        /// ## 为什么是异轨（用户 2026-09-29）
+        /// "**近距离跑霍曼是非常弱智的行为**" + "**我需要的是异轨交会测试，你他妈怎么这么喜欢同轨**"。
+        /// 同轨（Δa=0）时霍曼**无解** ⇒ 阶梯必落调相级 ⇒ 只能抬轨等目标从后面绕过来 ⇒ 最多等约一个
+        /// 会合周期（≈8.5e4 s ≈ 4.5 分钟真实）—— 那是我先前两个夹具**都做成同轨**才有的病，
+        /// **不是交会本身的病**。异轨是另一回事：Δa≠0 ⇒ 窗口存在，而且能扫到"**等 0.00 圈**"。
+        ///
+        /// 离线读数（台架 `G6_MoonDiffOrbit...`，与本函数同一套构造）：
+        ///   · **升轨**（追击 2900km → 目标 3300km）：φ=+16.25° ⇒ 直接霍曼，**计划用时 7,698 s**，Δv 82.1 m/s
+        ///   · **降轨**（追击 3700km → 目标 3300km）：φ=−16.75° ⇒ 直接霍曼，**计划用时 9,241 s**，Δv 68.4 m/s
+        ///   · 同轨：**扫遍 0..360° 一个都扫不到** ⇒ 那是病理档（用 `SpawnMoonRendezvousTest` 留作对照）
+        ///
+        /// ## 构造（**唯一权威 = 阶梯自己**）
+        /// 扫目标相位 φ ∈ 0..360°，每个 φ 构造两条 `OrbitView` 调 `RendezvousLadder.MakePlan`，
+        /// 只认 `Rung.Hohmann`，取"末节点时刻最早"者。**不写夹角公式** —— 我推过两次夹角都是错的
+        /// （把"补相位"误解成"把相位差收成 0"，见交接 §⑭）⇒ 用被测物当 oracle，夹具就不会自己错。
+        /// ⇒ 本档**不含调相段**，考的是"远场 → 霍曼 → 终端"这条链（用户原报障的几何正在这里）。
+        /// ⚠ 判据与读数仍全部走 `MoonRendezvousAcceptanceRunner`（同三条判据、同一套进度行）。
+        /// </summary>
+        /// <param name="chaserRadiusKm">追击方轨道半径（km）。**2900 = 升轨**（= 用户原报障"压轨到 2844"那一族）、
+        /// **3700 = 降轨**。目标固定 3300km（月面 1800km 档，与其余月球场景同）。</param>
+        public static void SpawnMoonRendezvousDiffOrbitTest(double chaserRadiusKm = 2900.0)
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (spaceGame == null || mgr == null) return;
+            var moon = mgr.GetBodyById(MOON_BODY_ID);
+            if (moon == null)
+            {
+                Log.Error("[绕月交会·异轨] 月球天体 Def 缺失（bodyId=2）");
+                return;
+            }
+
+            SpaceGameComp.UseNewRendezvousLaw = true;
+
+            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
+            double mu = spaceGame.GetBodyGM(MOON_BODY_ID);
+            double rTgt = moon.radius + 1_800_000.0;
+            double rChaser = chaserRadiusKm * 1000.0;
+            double vTgtCirc = System.Math.Sqrt(mu / rTgt);
+            double vChaserCirc = System.Math.Sqrt(mu / rChaser);
+            DVector3 moonPos = mgr.GetBodyPositionParent(MOON_BODY_ID, physicsTick);
+            DVector3 moonVel = mgr.GetBodyVelocityParent(MOON_BODY_ID, physicsTick);
+
+            DVector3 radial0 = moonPos.normalized;
+            DVector3 planeNormal = DVector3.Cross(moonPos, moonVel).normalized;
+            if (planeNormal.sqrMagnitude < 0.01) planeNormal = DVector3.up;
+            DVector3 tangent0 = DVector3.Cross(planeNormal, radial0).normalized;
+            if (tangent0.sqrMagnitude < 0.01) tangent0 = ProgradeEquatorialTangent(radial0);
+
+            // ── 扫相位：**oracle = 阶梯自己的 `MakePlan`**（粗扫 5° + 精扫 0.5°）──
+            //    只认"直接霍曼"；目标函数 = 计划末节点的时刻（= 计划完成用时，now 归零）。
+            var ladderParams = new RendezvousLadder.Params
+            {
+                DesiredDistance = 283.0,
+                MaxClosingSpeed = 100.0,
+                MaxPhasingOrbits = 5.0,
+                // ⚠ `LadderPilot` 那套默认参数是**地球尺度**（MinRadius=5.1e6）⇒ 月球档必须显式给
+                MinRadius = moon.radius + 100_000.0,
+            };
+            double bestPhiDeg = 0.0, bestPlanSpan = double.PositiveInfinity, bestDvSum = 0.0;
+            string bestStatus = "（扫遍 0..360° 没有直接霍曼 ⇒ 本几何是病理档）";
+            int probes = 0;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                double center = pass == 0 ? 0.0 : bestPhiDeg;
+                double half = pass == 0 ? 180.0 : 5.0;
+                double step = pass == 0 ? 5.0 : 0.5;
+                for (double deg = center - half; deg <= center + half; deg += step)
+                {
+                    probes++;
+                    DVector3 rC = radial0 * rChaser;
+                    DVector3 vC = tangent0 * vChaserCirc;
+                    double ph = deg * System.Math.PI / 180.0;
+                    DVector3 radialT = (radial0 * System.Math.Cos(ph) + tangent0 * System.Math.Sin(ph)).normalized;
+                    DVector3 rT = radialT * rTgt;
+                    DVector3 vT = DVector3.Cross(planeNormal, radialT).normalized * vTgtCirc;
+                    var ovC = OrbitView.FromStateVectors(rC, vC, mu, physicsTick, planeNormal, moon.radius);
+                    var ovT = OrbitView.FromStateVectors(rT, vT, mu, physicsTick, planeNormal, moon.radius);
+                    var rung = RendezvousLadder.MakePlan(ovC, ovT, physicsTick, ladderParams,
+                        out List<PlanNode> nodes, out string status);
+                    if (rung != RendezvousLadder.Rung.Hohmann || nodes.Count == 0) continue;
+                    double span = nodes[nodes.Count - 1].ut - physicsTick;
+                    if (!(span > 0.0) || double.IsNaN(span)) continue;
+                    if (span < bestPlanSpan)
+                    {
+                        bestPlanSpan = span; bestPhiDeg = deg; bestStatus = status;
+                        bestDvSum = 0.0;
+                        foreach (var n in nodes) bestDvSum += n.dV.magnitude;
+                    }
+                }
+            }
+
+            double phiBest = bestPhiDeg * System.Math.PI / 180.0;
+            DVector3 radialTgt = (radial0 * System.Math.Cos(phiBest) + tangent0 * System.Math.Sin(phiBest)).normalized;
+            DVector3 tgtTangent = DVector3.Cross(planeNormal, radialTgt).normalized;
+
+            var target = CreateNoMapShipGroup(spaceGame, MOON_BODY_ID,
+                moonPos + radialTgt * rTgt, moonVel + tgtTangent * vTgtCirc, out _);
+            if (target == null) return;
+            var chaser = CreateNoMapShipGroup(spaceGame, MOON_BODY_ID,
+                moonPos + radial0 * rChaser, moonVel + tangent0 * vChaserCirc, out _);
+            if (chaser == null) return;
+
+            chaser.RegisterRendezvousGuidance(target.GroupId, physicsTick, prograde: true, useNetworks: null);
+            chaser.ArmRendezvousGuidance();
+
+            // 期限：本档预期 ~1.5e4 s ⇒ 墙钟给 180 s（实测 300:1 ⇒ 54,000 s）留 3.5× 余量，
+            //   **失败也能在 3 分钟内出结论**（同轨慢档那边显式写回 600 s —— 静态字段，两边都要写，别串档）。
+            MoonRendezvousAcceptanceRunner.WallDeadlineSeconds = 180f;
+            double moonOrbitPeriod = moon.orbitPeriod > 0.0 ? moon.orbitPeriod : 317900.0;
+            double chaserPeriod = 2.0 * System.Math.PI * System.Math.Sqrt(rChaser * rChaser * rChaser / mu);
+            MoonRendezvousAcceptanceRunner.Arm(chaser.GroupId, target.GroupId, physicsTick,
+                physicsTick + 4.0 * moonOrbitPeriod, chaserPeriod);
+
+            double sepDeg = System.Math.Atan2(
+                DVector3.Dot(planeNormal, DVector3.Cross(radial0, radialTgt)),
+                DVector3.Dot(radial0, radialTgt)) * 180.0 / System.Math.PI;
+            Log.Message(string.Format(
+                "[绕月交会·异轨] G{0}(追击 r={1:F0}km) → G{2}(目标 r={3:F0}km)｜**实测相位差 {4:F2}°**" +
+                "（+ 目标在前；{5} 次 `MakePlan` 试探扫出）｜μ={6:E2}｜**阶梯第一次规划 = 直接霍曼，计划用时 {7:F0}s**" +
+                "（Δv {8:F1} m/s）｜{9}｜**本档不含调相段** ⇒ 考「远场 → 霍曼 → 终端」· 墙钟闸 {10:F0}s",
+                chaser.GroupId, rChaser / 1000.0, target.GroupId, rTgt / 1000.0,
+                sepDeg, probes, mu, bestPlanSpan, bestDvSum, bestStatus,
+                MoonRendezvousAcceptanceRunner.WallDeadlineSeconds));
+            Messages.Message(string.Format("绕月交会·异轨：G{0} → G{1}（直接霍曼，计划 {2:F0}s ⇒ 约 1 分钟出结论）",
+                    chaser.GroupId, target.GroupId, bestPlanSpan),
+                MessageTypeDefOf.TaskCompletion, false);
+        }
 
         /// <summary>
         /// **无 Map 船编队的工厂**（放置类场景共用）：注册群组 + 单 part 长条件 + 主网/ RCS 两副推进，
@@ -1057,14 +1304,14 @@ namespace PioneerFramework
             entity.GroupId = groupId;
             entity.SetPositionVelocity(DVector3.zero, DVector3.zero);
             entity.SetRotation(Quaternion.identity);
-            entity.mainAxisLocal = new DVector3(0, 0, -1);   // D15：无 Map 船的主推轴来源
+            entity.mainAxisShip = new DVector3(0, 0, -1);   // D15：无 Map 船的主推轴来源
 
             var part = new SpacePart
             {
                 partId = 1,
                 defName = "PF_ShipPart_Cube",
-                localPosition = DVector3.zero,
-                localBoundsSize = new DVector3(40.0, 20.0, 80.0),   // 长轴 = Z = 主推轴向
+                positionShip = DVector3.zero,
+                boundsSizeShip = new DVector3(40.0, 20.0, 80.0),   // 长轴 = Z = 主推轴向
                 hp = 1000f,
                 isIndestructible = false
             };
@@ -1126,8 +1373,10 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// **新远场律的游戏内验收场景**（2026-09-17）：同轨两船、相位差 120°，追击方用
-        /// <see cref="RendezvousGuidanceLaw"/> 自主收相位（**没有出发段机动** —— 律本身就是整条转移）。
+        /// **旧远场律的游戏内验收场景**（2026-09-17）：同轨两船、相位差 120°，追击方用
+        /// `RendezvousGuidanceLaw` 自主收相位（**没有出发段机动** —— 律本身就是整条转移）。
+        /// ⚠ 批5.B（2026-09-28）：那套律已归档（`Source/已弃置/`）⇒ 本场景现在跑的是**阶梯**，
+        ///   船队与几何仍然有用（它仍是"单弧 Lambert 无便宜解"的经典工况），但上面那句"用律收相位"已过期。
         ///
         /// 为什么选"同轨 120°"：这是"单弧 Lambert 无便宜解"的经典工况（纯测试 §14 实测最小单弧解
         /// ≈3,848 m/s，而相位规划只要几十~几百）⇒ 它同时检验"新律确实在走相位机动而不是硬追"。
@@ -1147,17 +1396,13 @@ namespace PioneerFramework
         /// （≈6 个轨道周期；8 倍速下约 70 真实分钟）。故另给一个 30° 快例（≈9e3 秒/19 分钟）用于快速回归。
         /// 代价遵循相位守恒律 Δv·t = (2/3)·r·Δφ ⇒ 快例与硬例的 Δv **同量级**，只有时间不同。</param>
         /// <param name="phaseDegAhead">目标在追击方顺行**前方**的相位差（度）。</param>
-        /// <param name="legSeconds">远场每段的时间预算（0 = 游戏默认 60000s）。
-        /// ⚠ **时长由它定，不由相位差定**：律的 S 形式目标是"在本段末恰好闭合"
-        /// ⇒ 只要没撞上物理上界（缩轨到大气层边缘给出的 δn 上限），**段多长就等多久**。
-        /// 代价同时由它定：相位守恒律 Δv·t = (2/3)·r·Δφ ⇒ 段短则快且贵。这是"时间当自由变量"的旋钮。</param>
         /// <param name="targetAltKm">目标的高度（km）相对追击方的差值：0 = 同轨（只考相位段）；
         /// >0 = 目标在更高的圆轨（**考形状段**：先变轨、再收相位）。</param>
         /// <param name="targetIncDeg">目标轨道的**倾角**（度）：把目标的半径方向绕**当地切向**转过去实现
         /// —— 同半径 + 异面时速度仍切向（`dot(r′,v′)=0` 且 `|v′|=v_c(R)`）⇒ 仍是圆轨、升交点在目标当前位置。
         /// ⚠ **异面是阶梯「匹配平面」那一级唯一会上场的几何**（同面时那一级永远不会被选中）
         /// ⇒ 不设它，那一级就只能靠台架/纯测试覆盖。</param>
-        public static void SpawnRendezvousLawTest(bool overThrust, double phaseDegAhead, double legSeconds,
+        public static void SpawnRendezvousTest(bool overThrust, double phaseDegAhead,
             double targetAltKm = 0.0, double targetIncDeg = 0.0)
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
@@ -1196,36 +1441,29 @@ namespace PioneerFramework
                 ProgradeEquatorialTangent(radialChaser) * vCirc, out _, overThrust);
             if (chaser == null) return;
 
-            // 登记**新律**交会：无出发段 ⇒ 登记即生效（旧路径要等出发机动点火才 armed，
-            // 而新律本身就是整条转移、不需要出发段）。
+            // 登记精确交会：登记即生效（旧路径要等出发机动点火才 armed；阶梯引导不需要那个出发段）。
             chaser.RegisterRendezvousGuidance(target.GroupId, physicsTick, prograde: true, useNetworks: null);
             chaser.ArmRendezvousGuidance();
-            // 腿长写在登记**之后**（Register 会 ResetRendezvousLawState 把它清零）
-            chaser.rendezvousLawLegSeconds = legSeconds;
-            // 期望估计用**游戏在跑的那条政策**（RendezvousGuidanceLaw.PlanLeg）——不另写一套估计，
-            // 否则"场景说的"和"律做的"又成两份（这正是本轮教训）。
-            bool shapeProbe = false;
-            double legEndProbe = double.NegativeInfinity;   // -∞ ⇒ PlanLeg 必然重排一段，用它要估计值
-            double aMaxEst = spaceGame.EstimateMaxAcceleration(chaser);
-            double legUse = legSeconds > 0.0 ? legSeconds : 60000.0;
-            RendezvousGuidanceLaw.PlanLeg(chaser.localPosition, chaser.localVelocity,
-                target.localPosition, target.localVelocity, mu, aMaxEst, physicsTick, legUse, 0.0,
-                ref shapeProbe, ref legEndProbe, out double legPlan, out double dvShapePlan);
-            double dvPhasePlan = (2.0 / 3.0) * chaser.localPosition.magnitude * System.Math.Abs(phaseRad)
-                                 / System.Math.Max(legPlan, 1.0);
-            double dvTotalEst = dvShapePlan * RendezvousGuidanceLaw.ShapeCostFactor + dvPhasePlan;
+            // 批5.B（2026-09-28）：原先这里写 `rendezvousLawLegSeconds = legSeconds`（旧律的"腿长"旋钮）。
+            // 旧律归档 + 该状态族退役后**它是死的**（阶梯没有腿长旋钮）⇒ 本方法也不再收 `legSeconds`
+            // 形参（那 6 个调试按钮的实参一并删掉）。
+            // ✅ 2026-09-28（用户裁定"删掉这个估计，或让阶梯自己出价目"）：**删掉借用作废律的价目估计**
+            //   （原为 `RendezvousGuidanceLaw.PlanLeg` + `ShapeCostFactor`）。理由两层：
+            //     ① 那套律已被裁定作废（不许接回/当兜底）⇒ 场景不该再有它的活依赖；
+            //     ② 更要紧的是**它会撒谎**：它算的是旧律"形状+相位"两段账，与阶梯真正排的
+            //        （MatchPlanes → Hohmann/Intercept…）不是同一笔 ⇒ 本轮日志实测估计 642 m/s
+            //        vs 实际累计 ≈1207 m/s（1.9×）⇒ **一个可能撒谎的读数不如没有**。
+            //   ⇒ 现在只报**预算**（客观事实）；真实价格由阶梯在运行时给出（日志 `[阶梯] … Δv 合计`）。
             double dvBudget = spaceGame.GetGroupDeltaV(chaser).remainingDv;
             Log.Message(string.Format(
-                "[交会验收] G{0}(追击) → G{1}(目标)｜追击 r={2:F0}km 目标 r={3:F0}km 相位差 {4:F0}° 目标倾角 {12:F1}°｜" +
-                "政策预估：模式={5} 腿长={6:F0}s Δv≈{7:F0} m/s（变轨 {8:F0} + 相位 {9:F0}）×1.5余量 vs 预算 {10:F0} m/s{11}｜" +
-                "新律=开 · 无出发段（律即转移）· 期望：先变轨 → 再收相位 → 5% 半径内交班 CW 终端 → 交会完成",
-                chaser.GroupId, target.GroupId, radius / 1000.0, radiusTgt / 1000.0, phaseDegAhead,
-                shapeProbe ? "形状/变轨" : "相位", legPlan, dvTotalEst, dvShapePlan, dvPhasePlan, dvBudget,
-                dvTotalEst > dvBudget ? " ⚠ 超预算（此场景绕过玩家路径的预算闸门，仍会跑）" : "", targetIncDeg));
+                "[交会验收] G{0}(追击) → G{1}(目标)｜追击 r={2:F0}km 目标 r={3:F0}km 相位差 {4:F0}° 目标倾角 {5:F1}°｜" +
+                "预算 {6:F0} m/s（**不再预估 Δv**：旧估计借已作废律的价目函数、与实际 1.9× 不符；真实价格见运行时 [阶梯] 行）｜" +
+                "引导=阶梯（远场律与 5% CW 终端已于 2026-09-22 作废删除）· 期望：先匹配平面 → 变轨/调相 → 画拦截 → 收尾降档 → 到达判据收口",
+                chaser.GroupId, target.GroupId, radius / 1000.0, radiusTgt / 1000.0, phaseDegAhead, targetIncDeg, dvBudget));
             Messages.Message(string.Format(
-                "交会验收已布置：G{0} 追击 G{1}（相位 {2:F0}°，目标高 {3:F0}km）。政策预估 Δv≈{4:F0} m/s、" +
-                "耗时 ≈{5:F0} 模拟秒；中途读数见日志 [NewLaw]（需先开「详细操舵日志」）。",
-                chaser.GroupId, target.GroupId, phaseDegAhead, targetAltKm, dvTotalEst, legPlan),
+                "交会验收已布置：G{0} 追击 G{1}（相位 {2:F0}°，目标高 {3:F0}km）。预算 {4:F0} m/s；"
+                + "真实 Δv 由阶梯在运行时给出，读数见日志 [阶梯]/[交会·收尾]。",
+                chaser.GroupId, target.GroupId, phaseDegAhead, targetAltKm, dvBudget),
                 MessageTypeDefOf.TaskCompletion, false);
         }
 

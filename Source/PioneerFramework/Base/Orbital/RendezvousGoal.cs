@@ -118,6 +118,12 @@ namespace PioneerFramework
             return Math.Atan2(sin, cos) * 180.0 / Math.PI;
         }
 
+        // 批5.B（2026-09-28，用户："相位让我们的 MJ 接管"）：此处原有从**已作废旧律**逐字搬来的
+        // `PlaneBasis` / `PhaseErrorRadians`（平黄经口径）/ `WrapPi` 三件。面板的相位读数改用
+        // `SignedPhaseDeg`（上面那条 —— 本类型自己的判据权威）之后它们**零调用者** ⇒ 一并退役。
+        // 留个记号：**相位口径只有一份**（`SignedPhaseDeg`）；旧律那份平黄经版随律归档，
+        // 要回看：`Source/已弃置/RendezvousGuidanceLaw.cs`（`PhaseErrorRadians`）。
+
         /// <summary>
         /// 到达判据（**距离 + 相对速度**两参版）。**唯一权威**——执行器与阶梯都调这里，
         /// 不许各自写"距离 < x 且 速度 < y"。

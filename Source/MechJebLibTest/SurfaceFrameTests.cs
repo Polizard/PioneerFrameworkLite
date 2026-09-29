@@ -107,7 +107,7 @@ namespace PioneerFramework.Tests
             Assert.True(vEast.z > 0.0, $"在 +x̂ 处东向应是 +ẑ，实得 {vEast}");
 
             // h = p × v 必须指向 −Ŷ（= −极轴）
-            var h = new MechJebLib.Primitives.V3(
+            var h = new DVector3(
                 p.y * vEast.z - p.z * vEast.y,
                 p.z * vEast.x - p.x * vEast.z,
                 p.x * vEast.y - p.y * vEast.x);

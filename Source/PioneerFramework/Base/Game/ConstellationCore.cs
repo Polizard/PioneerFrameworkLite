@@ -50,16 +50,16 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 地表锚点在**群组坐标系**中的位置 = 天体在该系中的位置 + R_body × dir(tile)。
+        /// 地表锚点在**系统系**中的位置 = 天体在该系中的位置 + R_body × dir(tile)。
         /// bodyFrameOffset 的正确来源 = SpaceEntityGroup.GetCentralBodyOffset 口径（行星 → 零；卫星 → 绕行星偏移），
-        /// 与碰撞 / 圆轨解析 / N 体积分同系——**不是** CelestialBodyManager.GetBodyWorldPosition
+        /// 与碰撞 / 圆轨解析 / N 体积分同系——**不是** CelestialBodyManager.GetBodyPositionAbs
         /// （那是递归到恒星的绝对位置，地球绕日 120,000 km，2026-09-10 初版曾误用）。
-        /// 坐标系约定的**唯一出处**见 `CelestialBodyManager.GetBodyWorldPosition` 的文档块。
+        /// 坐标系约定的**唯一出处**见 `CelestialBodyManager.GetBodyPositionAbs` 的文档块。
         /// dir 用「天体固连系」的 tile 中心方向（不含自转相位）——锚点是静态初始化的编组占位，
         /// 自转带来的漂移见设计文档 §12（未来组网通信需要精确位置时挂解析刷新）。
         /// dir 退化（零向量）时退回天体中心，不产生 NaN。
         /// </summary>
-        public static DVector3 AnchorWorldPosition(DVector3 bodyFrameOffset, DVector3 tileCenterDir, double bodyRadiusMeters)
+        public static DVector3 AnchorPositionSystem(DVector3 bodyFrameOffset, DVector3 tileCenterDir, double bodyRadiusMeters)
         {
             if (tileCenterDir.sqrMagnitude < 1e-18)
                 return bodyFrameOffset;

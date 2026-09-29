@@ -20,8 +20,8 @@ namespace MechJebLibTest.FunctionsTests
         {
             var rng = new Random(seed);
 
-            var r0 = new V3(4 * rng.NextDouble() - 2, 4 * rng.NextDouble() - 2, 4 * rng.NextDouble() - 2);
-            var v0 = new V3(4 * rng.NextDouble() - 2, 4 * rng.NextDouble() - 2, 4 * rng.NextDouble() - 2);
+            var r0 = new V3(4 * rng.NextDouble() - 2, 4 * rng.NextDouble() - 2, -(4 * rng.NextDouble() - 2));
+            var v0 = new V3(4 * rng.NextDouble() - 2, 4 * rng.NextDouble() - 2, -(4 * rng.NextDouble() - 2));
 
             (double _, double ecc, double inc, double lan, double argp, double nu, double l) =
                 Astro.KeplerianFromStateVectors(1.0, r0, v0);
@@ -35,8 +35,8 @@ namespace MechJebLibTest.FunctionsTests
         [Fact]
         public void HyperbolicEquatorialProgradeAtPeriapsis()
         {
-            var r = new V3(1, 0, 0);
-            var v = new V3(0, Sqrt(3), 0);
+            var r = new V3(1, 0, -(0));
+            var v = new V3(0, 0, -(Sqrt(3)));
 
             (double sma, double ecc, double inc, double lan, double argp, double nu, double l) =
                 Astro.KeplerianFromStateVectors(1.0, r, v);
@@ -54,8 +54,8 @@ namespace MechJebLibTest.FunctionsTests
         [Fact]
         public void HyperbolicEquatorialRetrogradeAtPeriapsis()
         {
-            var r = new V3(1, 0, 0);
-            var v = new V3(0, -Sqrt(3), 0);
+            var r = new V3(1, 0, -(0));
+            var v = new V3(0, 0, -(-Sqrt(3)));
 
             (double sma, double ecc, double inc, double lan, double argp, double nu, _) =
                 Astro.KeplerianFromStateVectors(1.0, r, v);
@@ -75,8 +75,8 @@ namespace MechJebLibTest.FunctionsTests
         {
             // r_pe = a(1-e) = 0.5 at direction (cos π/4, sin π/4, 0)
             // v_pe magnitude = √(μ(1+e)/(a(1-e))) = √3, perpendicular and prograde
-            var r = new V3(Sqrt(2) / 4, Sqrt(2) / 4, 0);
-            var v = new V3(-Sqrt(6) / 2, Sqrt(6) / 2, 0);
+            var r = new V3(Sqrt(2) / 4, 0, -(Sqrt(2) / 4));
+            var v = new V3(-Sqrt(6) / 2, 0, -(Sqrt(6) / 2));
 
             (double sma, double ecc, double inc, double lan, double argp, double nu, _) =
                 Astro.KeplerianFromStateVectors(1.0, r, v);
@@ -95,8 +95,8 @@ namespace MechJebLibTest.FunctionsTests
         public void EccentricEquatorialRetrogradeWithArgp()
         {
             // Same periapsis position; velocity reversed in y to make orbit retrograde.
-            var r = new V3(Sqrt(2) / 4, Sqrt(2) / 4, 0);
-            var v = new V3(Sqrt(6) / 2, -Sqrt(6) / 2, 0);
+            var r = new V3(Sqrt(2) / 4, 0, -(Sqrt(2) / 4));
+            var v = new V3(Sqrt(6) / 2, 0, -(-Sqrt(6) / 2));
 
             (double sma, double ecc, double inc, double lan, double argp, double nu, _) =
                 Astro.KeplerianFromStateVectors(1.0, r, v);
@@ -116,8 +116,8 @@ namespace MechJebLibTest.FunctionsTests
         {
             // a=1, e=0.5, r_ap = 1.5 along -x̂.
             // v² = μ(2/r - 1/a) = 2/1.5 - 1 = 1/3 → v = 1/√3, prograde at apoapsis is -ŷ.
-            var r = new V3(-1.5, 0, 0);
-            var v = new V3(0, -1 / Sqrt(3), 0);
+            var r = new V3(-1.5, 0, -(0));
+            var v = new V3(0, 0, -(-1 / Sqrt(3)));
 
             (double sma, double ecc, double inc, double lan, double argp, double nu, _) =
                 Astro.KeplerianFromStateVectors(1.0, r, v);
@@ -140,8 +140,8 @@ namespace MechJebLibTest.FunctionsTests
             // Perifocal velocity at ν=π/2: v_p = √(μ/l) · (-sin ν, e+cos ν) = √(4/3) · (-1, 0.5).
             // Rotated to inertial (Ω=ω=0, i=π/2): (-1)·x̂ + 0.5·ẑ scaled by √(4/3).
             double s = Sqrt(4.0 / 3.0);
-            var r = new V3(0, 0, 0.75);
-            var v = new V3(-s, 0, 0.5 * s);
+            var r = new V3(0, 0.75, -(0));
+            var v = new V3(-s, 0.5 * s, -(0));
 
             (double sma, double ecc, double inc, double lan, double argp, double nu, _) =
                 Astro.KeplerianFromStateVectors(1.0, r, v);

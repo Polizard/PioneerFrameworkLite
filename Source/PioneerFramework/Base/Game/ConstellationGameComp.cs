@@ -506,8 +506,8 @@ namespace PioneerFramework
             };
             group.CurrentOrbit = new OrbitState
             {
-                // 位置需 group.CelestialBodyId 已置位（对象初始化器先于本行完成）→ 见 AnchorWorldPosition
-                position = AnchorWorldPosition(group, bodyId, tile),
+                // 位置需 group.CelestialBodyId 已置位（对象初始化器先于本行完成）→ 见 AnchorPositionSystem
+                position = AnchorPositionSystem(group, bodyId, tile),
                 velocity = DVector3.zero,
                 rotation = Quaternion.identity
             };
@@ -518,21 +518,21 @@ namespace PioneerFramework
                 group.GroupId, settlement.Label, settlement.ID, bodyId, tile.tileId,
                 group.CurrentOrbit.position.x / 1000.0, group.CurrentOrbit.position.y / 1000.0,
                 group.CurrentOrbit.position.z / 1000.0,
-                group.CurrentOrbit.position.magnitude / 1000.0)); // 根行星锚点：|pos| 应等于 R_body（群组系原点在地球）
+                group.CurrentOrbit.position.magnitude / 1000.0)); // 根行星锚点：|pos| 应等于 R_body（系统系原点在地球）
             return group.GroupId;
         }
 
         /// <summary>
-        /// 锚点世界位置（**群组坐标系** = 根行星为原点）：天体在该系中的位置 + R_body × tile 固连方向。
+        /// 锚点世界位置（**系统系** = 根行星为原点）：天体在该系中的位置 + R_body × tile 固连方向。
         /// 天体位置必须走 <see cref="SpaceEntityGroup.GetCentralBodyOffset"/> 的口径（行星 → 零；卫星 → 绕行星偏移），
-        /// 与碰撞检查（SpaceGameComp.GetBodyWorldOffset）、圆轨解析（GetCircularPositionAtTick）、
-        /// N 体积分器（NBodyIntegrator 用 GetBodyLocalPosition）同系。
-        /// ⚠ 不可改用 CelestialBodyManager.GetBodyWorldPosition：那是"递归到恒星"的绝对位置
+        /// 与碰撞检查（SpaceGameComp.GetBodyOffsetSystem）、圆轨解析（GetCircularPositionAtTick）、
+        /// N 体积分器（NBodyIntegrator 用 GetBodyPositionParent）同系。
+        /// ⚠ 不可改用 CelestialBodyManager.GetBodyPositionAbs：那是"递归到恒星"的绝对位置
         /// （坐标系约定的**唯一出处**就在那个方法的文档块里）
-        /// （地球绕日 orbitRadius = 120,000 km），当成群组系坐标会把地球锚点甩到 12 万 km 外，且随公转时变
+        /// （地球绕日 orbitRadius = 120,000 km），当成系统系坐标会把地球锚点甩到 12 万 km 外，且随公转时变
         /// ——2026-09-10 初版即此错，游戏内日志 pos=(116920,3284,-3453)km 暴露。
         /// </summary>
-        private DVector3 AnchorWorldPosition(SpaceEntityGroup group, int bodyId, PlanetTile tile)
+        private DVector3 AnchorPositionSystem(SpaceEntityGroup group, int bodyId, PlanetTile tile)
         {
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             PlanetLayer? layer = null;
@@ -546,7 +546,7 @@ namespace PioneerFramework
             Vector3 tileCenter = layer != null ? layer.GetTileCenter(tile.tileId) : Vector3.up;
             // 调用时 group.CelestialBodyId 必须已置位（GetCentralBodyOffset 据此判定行星/卫星口径）
             DVector3 frameOffset = group.GetCentralBodyOffset(TimeScaleManager.GetPhysicsTickSafe());
-            return ConstellationCore.AnchorWorldPosition(frameOffset, new DVector3(tileCenter.x, tileCenter.y, tileCenter.z), radius);
+            return ConstellationCore.AnchorPositionSystem(frameOffset, new DVector3(tileCenter.x, tileCenter.y, tileCenter.z), radius);
         }
 
         /// <summary>tile 所属天体（按 PlanetLayer 反查；无匹配退回地球）。月球 tile 链见设计 §12（本期不启用）。</summary>

@@ -88,11 +88,11 @@ namespace PioneerFramework
         private static bool coastPending;
         private static int coastGroupId = -1;
         private static double coastStartTick;
-        private static MechJebLib.Primitives.V3 coastR, coastV;
+        private static DVector3 coastR, coastV;
         private static double coastMu;
 
         // 烧前状态（正本系）+ 计划的 Δv/节点 ⇒ 供"模型无关"的不变量判据用
-        private static MechJebLib.Primitives.V3 stagedPreR, stagedPreV, stagedPlanDvVec;
+        private static DVector3 stagedPreR, stagedPreV, stagedPlanDvVec;
         private static double stagedPreTick, stagedNodeUt, stagedMu;
 
         private static int stagedGroupId = -1;
@@ -264,8 +264,8 @@ namespace PioneerFramework
             }
 
             // 纯二体传播（与规划侧同一套 Shepperd）= "该在的地方"
-            (MechJebLib.Primitives.V3 rPred, MechJebLib.Primitives.V3 vPred) = Shepperd.Solve(coastMu, elapsed, coastR, coastV);
-            (MechJebLib.Primitives.V3 rNow, MechJebLib.Primitives.V3 vNow) = ovNow.RightHandedStateVectorsAtUT(tick);
+            (DVector3 rPred, DVector3 vPred) = Shepperd.Solve(coastMu, elapsed, coastR, coastV);
+            (DVector3 rNow, DVector3 vNow) = ovNow.RightHandedStateVectorsAtUT(tick);
 
             double dr = Math.Sqrt((rNow.x - rPred.x) * (rNow.x - rPred.x) + (rNow.y - rPred.y) * (rNow.y - rPred.y) + (rNow.z - rPred.z) * (rNow.z - rPred.z));
             double dv = Math.Sqrt((vNow.x - vPred.x) * (vNow.x - vPred.x) + (vNow.y - vPred.y) * (vNow.y - vPred.y) + (vNow.z - vPred.z) * (vNow.z - vPred.z));
@@ -338,27 +338,27 @@ namespace PioneerFramework
             // 于是"命令的 Δv 在节点瞬间施加"应当给出的 ε 与 h 可以**直接算出来**，与烧后实测比。
             // 它能分清：Δε 偏 ⇒ 幅值；|Δh| 对但 h 方向偏 ⇒ 方向；两者都对而轨道还偏 ⇒ 时机/居中。
             {
-                (MechJebLib.Primitives.V3 rN, MechJebLib.Primitives.V3 vN) =
+                (DVector3 rN, DVector3 vN) =
                     MechJebLib.TwoBody.Shepperd.Solve(stagedMu, stagedNodeUt - stagedPreTick, stagedPreR, stagedPreV);
                 double epsPre = vN.sqrMagnitude / 2.0 - stagedMu / rN.magnitude;
-                MechJebLib.Primitives.V3 hPre = MechJebLib.Primitives.V3.Cross(rN, vN);
+                DVector3 hPre = DVector3.Cross(rN, vN);
 
-                MechJebLib.Primitives.V3 vAfter = vN + stagedPlanDvVec;
+                DVector3 vAfter = vN + stagedPlanDvVec;
                 double epsExp = vAfter.sqrMagnitude / 2.0 - stagedMu / rN.magnitude;
-                MechJebLib.Primitives.V3 hExp = MechJebLib.Primitives.V3.Cross(rN, vAfter);
+                DVector3 hExp = DVector3.Cross(rN, vAfter);
 
-                (MechJebLib.Primitives.V3 rNowA, MechJebLib.Primitives.V3 vNowA) = ov.RightHandedStateVectorsAtUT(tick);
+                (DVector3 rNowA, DVector3 vNowA) = ov.RightHandedStateVectorsAtUT(tick);
                 double epsNow = vNowA.sqrMagnitude / 2.0 - stagedMu / rNowA.magnitude;
-                MechJebLib.Primitives.V3 hNow = MechJebLib.Primitives.V3.Cross(rNowA, vNowA);
+                DVector3 hNow = DVector3.Cross(rNowA, vNowA);
 
                 double dEpsExp = epsExp - epsPre, dEpsNow = epsNow - epsPre;
                 double dHExp = (hExp - hPre).magnitude, dHNow = (hNow - hPre).magnitude;
 
                 // ⚠ 燃烧后还隔了一段时间 ⇒ 要把"烧后"的 ε/h 与"节点+Δv 再传播到现在"比（否则是拿两个时刻比）
-                (MechJebLib.Primitives.V3 rEv, MechJebLib.Primitives.V3 vEv) =
+                (DVector3 rEv, DVector3 vEv) =
                     MechJebLib.TwoBody.Shepperd.Solve(stagedMu, tick - stagedNodeUt, rN, vAfter);
                 double epsEv = vEv.sqrMagnitude / 2.0 - stagedMu / rEv.magnitude;
-                MechJebLib.Primitives.V3 hEv = MechJebLib.Primitives.V3.Cross(rEv, vEv);
+                DVector3 hEv = DVector3.Cross(rEv, vEv);
 
                 sb.Append("\n  ── 不变量判据（模型无关）──");
                 sb.Append("\n  Δε：实测 ").Append((epsNow - epsPre).ToString("E6"))
@@ -374,48 +374,48 @@ namespace PioneerFramework
                 //   哪一个要素错，机制就在那条线上（a/e = 内禀、i/LAN = 平面、argp = 拱线朝向）。
                 {
                     OrbitView ovExp = OrbitView.FromStateVectors(rEv, vEv, stagedMu, tick,
-                        new MechJebLib.Primitives.V3(0, 0, 1), 0.0);
-                    (MechJebLib.Primitives.V3 rNow2, MechJebLib.Primitives.V3 vNow2) = ov.RightHandedStateVectorsAtUT(tick);
+                        new DVector3(0, 0, 1), 0.0);
+                    (DVector3 rNow2, DVector3 vNow2) = ov.RightHandedStateVectorsAtUT(tick);
                     OrbitView ovNow2 = OrbitView.FromStateVectors(rNow2, vNow2, stagedMu, tick,
-                        new MechJebLib.Primitives.V3(0, 0, 1), 0.0);
+                        new DVector3(0, 0, 1), 0.0);
 
                     // ★★ **终端真值：反推实际交付的 Δv**（2026-09-19，本轮唯一新增仪器）
                     //   只用两个**状态**（最终状态开普勒反推回节点、燃烧前节点状态），**不用任何模型/计划**：
                     //     Δv_implied = v(现在 → 反推回节点) − v(燃烧前在节点)
                     //   与计划的 Δv 并排比幅值与 R/T/N ⇒ **任何"幅值/方向/通道/锚点"的偏差都会在这行现形**，
                     //   而逐窗诊断看不到的"指令本身被整体转过一个小角"也在这里现形（它比的是**真实结局**）。
-                    (MechJebLib.Primitives.V3 rBack, MechJebLib.Primitives.V3 vBack) =
+                    (DVector3 rBack, DVector3 vBack) =
                         MechJebLib.TwoBody.Shepperd.Solve(stagedMu, stagedNodeUt - tick, rNow2, vNow2);
-                    MechJebLib.Primitives.V3 dvImplied = vBack - vN;      // vN = 燃烧前节点速度（不变量判据里那条）
-                    MechJebLib.Primitives.V3 rhatN = rN.normalized;
-                    MechJebLib.Primitives.V3 hhatN = MechJebLib.Primitives.V3.Cross(rN, vN).normalized;
-                    MechJebLib.Primitives.V3 thatN = MechJebLib.Primitives.V3.Cross(hhatN, rhatN);
-                    double plR = MechJebLib.Primitives.V3.Dot(stagedPlanDvVec, rhatN);
-                    double plT = MechJebLib.Primitives.V3.Dot(stagedPlanDvVec, thatN);
-                    double plN = MechJebLib.Primitives.V3.Dot(stagedPlanDvVec, hhatN);
+                    DVector3 dvImplied = vBack - vN;      // vN = 燃烧前节点速度（不变量判据里那条）
+                    DVector3 rhatN = rN.normalized;
+                    DVector3 hhatN = DVector3.Cross(rN, vN).normalized;
+                    DVector3 thatN = DVector3.Cross(hhatN, rhatN);
+                    double plR = DVector3.Dot(stagedPlanDvVec, rhatN);
+                    double plT = DVector3.Dot(stagedPlanDvVec, thatN);
+                    double plN = DVector3.Dot(stagedPlanDvVec, hhatN);
                     sb.Append("\n  ── ★ 终端真值：实际交付的 Δv vs 计划（只用状态，无模型）──");
                     sb.Append("\n    |Δv|：实测反推 ").Append(dvImplied.magnitude.ToString("F3"))
                       .Append(" vs 计划 ").Append(stagedPlanDvVec.magnitude.ToString("F3"))
                       .Append("（比值 ").Append((dvImplied.magnitude / Math.Max(stagedPlanDvVec.magnitude, 1e-9)).ToString("F5")).Append("）");
-                    sb.Append("\n    R/T/N 实测反推 ").Append(MechJebLib.Primitives.V3.Dot(dvImplied, rhatN).ToString("F2"))
-                      .Append(" / ").Append(MechJebLib.Primitives.V3.Dot(dvImplied, thatN).ToString("F2"))
-                      .Append(" / ").Append(MechJebLib.Primitives.V3.Dot(dvImplied, hhatN).ToString("F2"))
+                    sb.Append("\n    R/T/N 实测反推 ").Append(DVector3.Dot(dvImplied, rhatN).ToString("F2"))
+                      .Append(" / ").Append(DVector3.Dot(dvImplied, thatN).ToString("F2"))
+                      .Append(" / ").Append(DVector3.Dot(dvImplied, hhatN).ToString("F2"))
                       .Append("　vs 计划 ").Append(plR.ToString("F2")).Append(" / ").Append(plT.ToString("F2"))
                       .Append(" / ").Append(plN.ToString("F2"));
                     // ★ 判据的"燃烧前参考"（排队时抓）vs 执行器的（点火时抓 `burnPreBurnOrbit`）—— 同一节点。
                     //   ⚠ 两边若不是同一个状态，"期望"从根上就偏了 ⇒ 这一行必须为 ~0。
                     if (g.burnHasPreBurnOrbit)
                     {
-                        (MechJebLib.Primitives.V3 rPre2, MechJebLib.Primitives.V3 vPre2) =
+                        (DVector3 rPre2, DVector3 vPre2) =
                             g.burnPreBurnOrbit.RightHandedStateVectorsAtUT(stagedNodeUt);
                         sb.Append("\n    ★ 两个「燃烧前参考」在同一节点：|Δr|=")
                           .Append((rPre2 - rN).magnitude.ToString("E3")).Append(" m｜|Δv|=")
                           .Append((vPre2 - vN).magnitude.ToString("E3")).Append(" m/s（应为 ~0）");
                     }
                     sb.Append("\n    ΔR/ΔT/ΔN = ")
-                      .Append((MechJebLib.Primitives.V3.Dot(dvImplied, rhatN) - plR).ToString("F2")).Append(" / ")
-                      .Append((MechJebLib.Primitives.V3.Dot(dvImplied, thatN) - plT).ToString("F2")).Append(" / ")
-                      .Append((MechJebLib.Primitives.V3.Dot(dvImplied, hhatN) - plN).ToString("F2"))
+                      .Append((DVector3.Dot(dvImplied, rhatN) - plR).ToString("F2")).Append(" / ")
+                      .Append((DVector3.Dot(dvImplied, thatN) - plT).ToString("F2")).Append(" / ")
+                      .Append((DVector3.Dot(dvImplied, hhatN) - plN).ToString("F2"))
                       .Append(" m/s　【通道扫描结论：切向每 +2.8 m/s 对应 Δa +8.5 km】");
                     const double R2D = 180.0 / Math.PI;
                     sb.Append("\n  ── 逐要素：期望 vs 实测（定位用）──");

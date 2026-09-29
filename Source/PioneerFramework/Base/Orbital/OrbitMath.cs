@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using MechJebLib.Functions;        // Astro：要素/传播/周期的移植权威（V1/V2 收敛目标）
-using MechJebLib.Primitives;       // V3（适配层的向量类型）
+using MechJebLib.Primitives;       // `V3` 是别名（批5 U2/U3 起 = PioneerFramework.DVector3）
 using MechJebLib.Utils;            // Statics
 
 namespace PioneerFramework
@@ -22,7 +22,7 @@ namespace PioneerFramework
         /// <summary>
         /// 计算轨道能量 (m²/s²)，负值 = 束缚轨道。
         /// </summary>
-        public static double SpecificEnergy(DVector3 posMeters, DVector3 velMeters, double mu = double.NaN)
+        public static double SpecificEnergy(DVector3 posMeters, DVector3 velMeters, double mu)
         {
             double gm = ResolveGM(mu);
             double v2 = velMeters.sqrMagnitude;
@@ -34,20 +34,20 @@ namespace PioneerFramework
         /// <summary>
         /// 计算半长轴 (m)。正数 = 椭圆，负数 = 双曲线。
         /// </summary>
-        public static double SemiMajorAxis(DVector3 posMeters, DVector3 velMeters, double mu = double.NaN)
+        public static double SemiMajorAxis(DVector3 posMeters, DVector3 velMeters, double mu)
         {
             // 【V2 已收敛 2026-09-18】算式改为移植权威 `Astro.SmaFromStateVectors`（与本式代数逐字相同）。
             // **抛物线守卫保留**：`Astro` 那边分母趋零会给 ±∞，而旧契约是 `double.MaxValue`。
             double gm = ResolveGM(mu);
             double eps = SpecificEnergy(posMeters, velMeters, gm);
             if (Math.Abs(eps) < 1e-10) return double.MaxValue; // 抛物线
-            return Astro.SmaFromStateVectors(gm, OrbitView.ToV3(posMeters), OrbitView.ToV3(velMeters));
+            return Astro.SmaFromStateVectors(gm, posMeters, velMeters);
         }
 
         /// <summary>
         /// 计算离心率向量和大小。
         /// </summary>
-        public static void GetEccentricity(DVector3 posMeters, DVector3 velMeters, out DVector3 eVec, out double e, double mu = double.NaN)
+        public static void GetEccentricity(DVector3 posMeters, DVector3 velMeters, out DVector3 eVec, out double e, double mu)
         {
             // 【V2 已收敛 2026-09-18】改为移植权威 `Astro.EccVecFromStateVectors`
             // （`cross(v/μ, r×v) − r̂`，与本式代数逐字相同）。**`r < 0.001` 守卫保留**。
@@ -55,8 +55,8 @@ namespace PioneerFramework
             double r = posMeters.magnitude;
             if (r < 0.001) { eVec = DVector3.zero; e = 0.0; return; }
 
-            V3 vec = Astro.EccVecFromStateVectors(gm, OrbitView.ToV3(posMeters), OrbitView.ToV3(velMeters));
-            eVec = OrbitView.ToD(vec);
+            V3 vec = Astro.EccVecFromStateVectors(gm, posMeters, velMeters);
+            eVec = vec;
             e = eVec.magnitude;
         }
 
@@ -99,21 +99,6 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 获取近心点位置矢量 (世界空间, m)。
-        /// Pe 方向 = 偏心矢量方向, 距离 = a·(1-e)。
-        /// </summary>
-        public static DVector3 GetPeriapsisPosition(DVector3 posMeters, DVector3 velMeters)
-        {
-            double a, e, p;
-            DVector3 eDir, yDir;
-            if (!GetOrbitFrame(posMeters, velMeters, out a, out e, out p, out eDir, out yDir))
-                return posMeters;
-            double peDist = GetPeriapsisDistance(a, e);
-            if (e < 0.001) return eDir * a; // 圆轨：任意方向
-            return eDir * peDist;
-        }
-
-        /// <summary>
         /// 检查轨道是否安全（不撞击行星表面或大气层）。
         /// 椭圆轨判断近地点 ≥ 安全边界；双曲轨返回 true（逃逸轨道不做撞击检查）。
         /// </summary>
@@ -122,7 +107,7 @@ namespace PioneerFramework
         /// <param name="safeRadiusMeters">安全边界半径</param>
         /// <param name="mu">引力参数 GM (m³/s²)，默认使用 OrbitMath.GM</param>
         /// <returns>安全返回 true，会撞击返回 false</returns>
-        public static bool IsOrbitSafe(DVector3 posMeters, DVector3 velMeters, double safeRadiusMeters, double mu = double.NaN)
+        public static bool IsOrbitSafe(DVector3 posMeters, DVector3 velMeters, double safeRadiusMeters, double mu)
         {
             double gm = double.IsNaN(mu) ? GM : mu;
             // 直接计算 SMA 和 e，避免修改现有方法
@@ -141,21 +126,6 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 获取远心点位置矢量 (世界空间, m)。
-        /// Ap 方向 = -偏心矢量方向, 距离 = a·(1+e)。
-        /// </summary>
-        public static DVector3 GetApoapsisPosition(DVector3 posMeters, DVector3 velMeters)
-        {
-            double a, e, p;
-            DVector3 eDir, yDir;
-            if (!GetOrbitFrame(posMeters, velMeters, out a, out e, out p, out eDir, out yDir))
-                return posMeters;
-            double apDist = GetApoapsisDistance(a, e);
-            if (e < 0.001) return -eDir * a; // 圆轨：与 Pe 相反
-            return -eDir * apDist;
-        }
-
-        /// <summary>
         /// 计算从当前位置到近心点所需时间 (秒)。
         ///
         /// ⚠ **2026-09-18（V1，§14.3『近点角』行）：已收敛到 <see cref="OrbitView.NextPeriapsisTime" />。**
@@ -166,7 +136,7 @@ namespace PioneerFramework
         /// </summary>
         public static double GetTimeToPeriapsis(DVector3 posMeters, DVector3 velMeters)
         {
-            OrbitView ov = OrbitView.FromStateVectors(OrbitView.ToV3(posMeters), OrbitView.ToV3(velMeters), GM, 0.0);
+            OrbitView ov = OrbitView.FromStateVectors(posMeters, velMeters, GM, 0.0);
             if (!(ov.eccentricity < 1.0)) return 0.0; // 旧契约：非椭圆给 0（双曲没有远近心点的椭圆口径）
             return ov.NextPeriapsisTime(0.0);
         }
@@ -178,7 +148,7 @@ namespace PioneerFramework
         /// </summary>
         public static double GetTimeToApoapsis(DVector3 posMeters, DVector3 velMeters)
         {
-            OrbitView ov = OrbitView.FromStateVectors(OrbitView.ToV3(posMeters), OrbitView.ToV3(velMeters), GM, 0.0);
+            OrbitView ov = OrbitView.FromStateVectors(posMeters, velMeters, GM, 0.0);
             if (!(ov.eccentricity < 1.0)) return 0.0;
             return ov.NextApoapsisTime(0.0);
         }
@@ -200,7 +170,7 @@ namespace PioneerFramework
         /// <summary>
         /// 生成轨道路径点 (世界空间，单位：米)。
         /// </summary>
-        public static List<DVector3> GetOrbitPoints(DVector3 posMeters, DVector3 velMeters, int numPoints = 60, double mu = double.NaN)
+        public static List<DVector3> GetOrbitPoints(DVector3 posMeters, DVector3 velMeters, int numPoints, double mu)
         {
             double gm = double.IsNaN(mu) ? GM : mu;
             var points = new List<DVector3>(numPoints);
@@ -251,7 +221,7 @@ namespace PioneerFramework
         /// </summary>
         public static bool GetOrbitFrame(DVector3 posMeters, DVector3 velMeters,
             out double a, out double e, out double p,
-            out DVector3 eDir, out DVector3 yDir, double mu = double.NaN)
+            out DVector3 eDir, out DVector3 yDir, double mu)
         {
             a = SemiMajorAxis(posMeters, velMeters, mu);
             DVector3 eVec;
@@ -301,22 +271,14 @@ namespace PioneerFramework
         /// （换系只服务 `inclination`/`LAN`/`argP`/`ν` 那些**方向**量，传播不读它们）。
         /// `epoch` 取 0 ⇒ 入参 `deltaSeconds` 就是 `Shepperd` 的 `tau`，与原签名语义一致。
         /// </summary>
-        public static DVector3 GetPositionAtTimeDelta(DVector3 posMeters, DVector3 velMeters, double deltaSeconds, double mu = double.NaN)
-        {
-            OrbitView ov = OrbitView.FromStateVectors(
-                OrbitView.ToV3(posMeters), OrbitView.ToV3(velMeters), ResolveGM(mu), 0.0);
-            return OrbitView.ToD(ov.RightHandedStateVectorsAtUT(deltaSeconds).pos);
-        }
+        public static DVector3 GetPositionAtTimeDelta(DVector3 posMeters, DVector3 velMeters, double deltaSeconds, double mu)
+            => OrbitView.Propagate(posMeters, velMeters, ResolveGM(mu), deltaSeconds).pos;
 
         /// <summary>
         /// 获取指定时间 Δt 后的轨道速度。**同上：薄转发到 `Shepperd`**（见 <see cref="GetPositionAtTimeDelta" /> 的说明）。
         /// </summary>
-        public static DVector3 GetVelocityAtTimeDelta(DVector3 posMeters, DVector3 velMeters, double deltaSeconds, double mu = double.NaN)
-        {
-            OrbitView ov = OrbitView.FromStateVectors(
-                OrbitView.ToV3(posMeters), OrbitView.ToV3(velMeters), ResolveGM(mu), 0.0);
-            return OrbitView.ToD(ov.RightHandedStateVectorsAtUT(deltaSeconds).vel);
-        }
+        public static DVector3 GetVelocityAtTimeDelta(DVector3 posMeters, DVector3 velMeters, double deltaSeconds, double mu)
+            => OrbitView.Propagate(posMeters, velMeters, ResolveGM(mu), deltaSeconds).vel;
 
         #endregion
 
@@ -325,7 +287,7 @@ namespace PioneerFramework
         /// <summary>
         /// 分解 dV 到世界空间向量。
         /// </summary>
-        public static DVector3 GetWorldDeltaV(DVector3 posMeters, DVector3 velMeters,
+        public static DVector3 GetDeltaVSystem(DVector3 posMeters, DVector3 velMeters,
             double radialDV, double tangentialDV, double normalDV)
         {
             DVector3 radialDir = posMeters.normalized;
@@ -338,7 +300,7 @@ namespace PioneerFramework
         /// <summary>
         /// 将世界空间 dV 分解为径向、切向、法向分量。
         /// </summary>
-        public static void WorldDeltaVToComponents(DVector3 posMeters, DVector3 velMeters,
+        public static void DeltaVSystemToComponents(DVector3 posMeters, DVector3 velMeters,
             DVector3 dV, out double radialDV, out double tangentialDV, out double normalDV)
         {
             DVector3 radialDir = posMeters.normalized;
@@ -354,7 +316,7 @@ namespace PioneerFramework
         /// 计算机动后的轨道路径点。
         /// </summary>
         public static List<DVector3> GetPostManeuverOrbitPoints(DVector3 nodePosMeters, DVector3 velAtNodeMeters,
-            DVector3 dV, int numPoints = 60, double mu = double.NaN)
+            DVector3 dV, int numPoints, double mu)
         {
             DVector3 newVel = velAtNodeMeters + dV;
             return GetOrbitPoints(nodePosMeters, newVel, numPoints, mu);

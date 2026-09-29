@@ -14,7 +14,7 @@ namespace PioneerFramework.Tests
     /// "执行器 vs 模型"的分歧原来只能靠**游戏内探针**逐轮查（一轮 = 开一次游戏），而且那轮的
     /// "模型预测"曲线本身是坏的（见 Q3）⇒ 白烧了几轮。政策是**确定的、可枚举的**：
     ///   ① 居中点火（`ignition = node − t_b/2`）；② 物理步 = 2 s；③ `a = F/m(t)`（燃耗扣质量，a 自然增大）；
-    ///   ④ 方向 = 计划的 RTN 分量**在当前 RTN 里取**（游戏内 = `OrbitMath.GetWorldDeltaV(pos, vel, rad, tan, nor)`），
+    ///   ④ 方向 = 计划的 RTN 分量**在当前 RTN 里取**（游戏内 = `OrbitMath.GetDeltaVSystem(pos, vel, rad, tan, nor)`），
     ///      **每步**重取（2026-09-19 起；旧版按 2° 节拍刷新 = <see cref="Refresh.Policy"/> 对照组）；⑤ 单步 Δv 被 `remainingBurnDV` 截断
     ///      （截断时工质同比例少扣）。
     /// 另加一条**网络选择**政策：只烧**已对准的主网**（`ve=4000`、`ṁ=140`、`F=560 kN`），
@@ -826,8 +826,7 @@ namespace PioneerFramework.Tests
         //      ⇒ 若 ② 被证伪，正确的组合是"**MJ 的架构**（逐拍活差额）× **我们的靶**（意图圆锥曲线）"。
         // ═══════════════════════════════════════════════════════════════════════════════════════
 
-        private static DVector3 ToD(V3 a) => new DVector3(a.x, a.y, a.z);
-        private static V3 ToV3(DVector3 a) => new V3(a.x, a.y, a.z);
+        // 批5 U4（2026-09-28）：本地那两个恒等转换助手已删（类型统一后移植面类型就是 `DVector3`）。
 
         private readonly struct LiveExec
         {
@@ -863,11 +862,11 @@ namespace PioneerFramework.Tests
             {
                 double nowUt = startUt + i * StepSeconds;
                 (V3 _, V3 vLiveUt) = MechJebLib.TwoBody.Shepperd.Solve(Mu, nodeUt - nowUt, r, v);
-                BurnStep.DeficitToTargetV(ToD(vLiveUt), ToD(vTarget), ToD(prevDir), floor,
+                BurnStep.DeficitToTargetV(vLiveUt, vTarget, prevDir, floor,
                     out DVector3 defDir, out double rem, out bool rev);
                 if (rev) { reversed = true; break; }
                 if (!(rem > 0.0)) break;
-                V3 dir = ToV3(defDir);
+                V3 dir = defDir;
                 if (prevDir.sqrMagnitude > 0.0)
                     minDot = Math.Min(minDot, V3.Dot(dir, prevDir.normalized));
                 double aFull = Thrust / m;
@@ -994,17 +993,17 @@ namespace PioneerFramework.Tests
             bool reversed = false; double minDot = 1.0, remEnd = 0.0;
             for (int i = 0; i < n; i++)
             {
-                DVector3 rD = ToD(r), vD = ToD(v);
-                DVector3 hDir = useVectorPlane ? ToD(hT).normalized : DVector3.Cross(rD, vD).normalized;
+                DVector3 rD = r, vD = v;
+                DVector3 hDir = useVectorPlane ? hT.normalized : DVector3.Cross(rD, vD).normalized;
                 if (!TrimBurn.TryPlan(rD, vD, Mu, aT, hT.magnitude, hDir,
                         out DVector3 def, out _, out _)) break;
                 double rem = def.magnitude;
                 remEnd = rem;
                 // 判据（地板 / 反向收手）与游戏**同一份**：`BurnStep.Deficit`
-                BurnStep.Deficit(def, ToD(prevDir), floor, out DVector3 d2, out double rem2, out bool rev);
+                BurnStep.Deficit(def, prevDir, floor, out DVector3 d2, out double rem2, out bool rev);
                 if (rev) { reversed = true; break; }
                 if (!(rem2 > 0.0)) break;
-                V3 dir = ToV3(d2);
+                V3 dir = d2;
                 if (prevDir.sqrMagnitude > 0.0)
                     minDot = Math.Min(minDot, V3.Dot(dir, prevDir.normalized));
                 double aFull = Thrust / m;
@@ -1071,11 +1070,11 @@ namespace PioneerFramework.Tests
             bool reversed = false; double minDot = 1.0, remEnd = 0.0;
             for (int i = 0; i < n; i++)
             {
-                DVector3 rD = ToD(r), vD = ToD(v);
+                DVector3 rD = r, vD = v;
                 DVector3 def;
                 if (!rescaleOld)
                 {
-                    if (!TrimBurn.TryPlan(rD, vD, Mu, aT, hT.magnitude, ToD(hT).normalized,
+                    if (!TrimBurn.TryPlan(rD, vD, Mu, aT, hT.magnitude, hT.normalized,
                             out def, out _, out _)) break;
                 }
                 else
@@ -1095,14 +1094,14 @@ namespace PioneerFramework.Tests
                     V3 that = V3.Cross(hhat, rhat);
                     double vrO = V3.Dot(v, rhat);
                     double gO = Math.Acos(cgO) * (vrO < 0.0 ? -1.0 : 1.0);
-                    def = ToD((that * Math.Cos(gO) + rhat * Math.Sin(gO)) * vtO - v);
+                    def = (that * Math.Cos(gO) + rhat * Math.Sin(gO)) * vtO - v;
                 }
                 double rem = def.magnitude;
                 remEnd = rem;
-                BurnStep.Deficit(def, ToD(prevDir), floor, out DVector3 d2, out double rem2, out bool rev);
+                BurnStep.Deficit(def, prevDir, floor, out DVector3 d2, out double rem2, out bool rev);
                 if (rev) { reversed = true; break; }
                 if (!(rem2 > 0.0)) break;
-                V3 dir = ToV3(d2);
+                V3 dir = d2;
                 if (prevDir.sqrMagnitude > 0.0)
                     minDot = Math.Min(minDot, V3.Dot(dir, prevDir.normalized));
                 double aFull = Thrust / m;

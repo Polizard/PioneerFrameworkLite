@@ -41,7 +41,19 @@ namespace PioneerFramework
         private int lastUpdateTick = 0;
 
         // PERF-5：物理并行下限——编组数低于此值时顺序执行（线程调度 + 并发容器分配 > 顺序开销）
-        private const int PARALLEL_PHYSICS_MIN_GROUPS = 32;
+        // ⚠ `internal`（批 0-4）：规模验收场景必须断言**同一个**阈值——抄一份 32 就是第二份权威。
+        internal const int PARALLEL_PHYSICS_MIN_GROUPS = 32;
+
+        /// <summary>
+        /// **并行区相位标记**（G1 的第一片，2026-09-26）：`Parallel.For` 前后由**主线程**置位/清位，
+        /// 表达"此刻处于并行区相位"。供共享写路径**当场**断言用（见 `ParallelRegionGuard` / `CelestialBodyManager` 的 R1 守卫）。
+        /// 为什么不用线程身份判：线程 id 在"组件由谁构造"这类问题上不可靠（实测误报，见该守卫注释）。
+        /// 为什么用 `static bool` 而不是 `[ThreadStatic]`：这是**全局相位**，不是"当前线程是不是 worker"——
+        /// 由主线程写、工作线程读；bool 读写原子，且**只用于判据**（不进任何计算）。
+        /// ⚠ **`volatile` 不是装饰**：它是"跨线程标志"的正确声明 —— 没有它，理论上工作线程可以不观察主线程的写
+        ///   （实务上 `Parallel.For` 的派发点有屏障所以能看见，但**判据不许建立在"实务上"之上**）。
+        /// </summary>
+        internal static volatile bool ParallelPhysicsInProgress;
 
         // ── 每物理步 scratch 复用（2026-09-10 性能第 2 条：消除每步固定容器分配）──
         // 仅主线程持有与消费；物理并行区只按索引写 physicsResultsScratch（组数与顺序步内稳定）。
@@ -55,6 +67,15 @@ namespace PioneerFramework
         private readonly GameComponentRef<CombatManager> combatMgrRef = new GameComponentRef<CombatManager>();
         private readonly GameComponentRef<AutonomousVehicleManager> avmRef = new GameComponentRef<AutonomousVehicleManager>();
         private readonly GameComponentRef<CelestialBodyManager> celestialRef = new GameComponentRef<CelestialBodyManager>();
+
+        /// <summary>
+        /// **带缓存的自身自取**（R5，2026-09-26）：`SpaceEntityGroup`（纯数据类，拿不到 `this`）与其它
+        /// 需要"当前 SpaceGameComp"的地方走它 ⇒ 相位里不再做组件表线性扫描（理由同
+        /// <see cref="CelestialBodyManager.GetCached"/>：走**既有的** `GameComponentRef`，不新造机制）。
+        /// </summary>
+        public static SpaceGameComp? GetCached() => selfRef.Get();
+
+        private static readonly GameComponentRef<SpaceGameComp> selfRef = new GameComponentRef<SpaceGameComp>();
 
         /// <summary>
         /// 方向感知推进的默认矢量锥半角余弦（cos 10° ≈ 0.9848）。
@@ -144,7 +165,7 @@ namespace PioneerFramework
         /// ★★ **它必须 = 主推锥窗（`DefaultThrustConeCos`，10°），不能更严**（2026-09-21 用户指出）：
         ///   本库的**主推是带矢量角的**——`SpaceMapComp.GetThrustAlong` 逐引擎判
         ///   `dot(该引擎的轴, 指令方向) ≥ coneCos`，凡落在**指令方向**±10° 锥内的轴**都按指令方向出力**；
-        ///   而冲量是沿 `burnDirection` 累积的（`pendingImpulse += burnDirection * dv`）⇒
+        ///   而冲量是沿 `burnDirectionSystem` 累积的（`pendingImpulse += burnDirectionSystem * dv`）⇒
         ///   **只要还有一根轴在锥内，出力方向就是对的**。这正是"快对准了差一点点时，朝正确方向点火"的机制。
         ///   ⇒ 门外不可能出力（推力恒 0，白等）；门内出力方向本来就对 ⇒ **门 = 锥窗**是唯一自洽的取值。
         ///   ⚠ 历史上取 2°（照抄上游 `AlignedToleranceDegrees = 1`）是**过度严格**：上游是单喷管靠姿态对准，
@@ -189,24 +210,23 @@ namespace PioneerFramework
         /// <summary>接近引导：允许启动的最大相对距离（m，太远建议用精确交会）。</summary>
         public const double ApproachMaxStartDistance = 1000000.0; // 1000 km
 
-        // ── 新远场律（RendezvousGuidanceLaw）接线参数（2026-09-17）──────────────────
-        //   律本身全在纯核心（Base/Orbital/RendezvousGuidanceLaw.cs，与纯测试台架共用）。
-        //   这里只是**调用方的政策**：分腿长度、终端交班、控制周期——与台架 pilot 同口径。
+        // ── 交会引导开关（2026-09-17 立；2026-09-28 更正标签与文档）────────────────────
+        //   ⚠⚠ **命名债**：这个字段与下面两个常数都还叫 "NewLaw"，但**那套自制远场律
+        //   （`RendezvousGuidanceLaw`）已于 2026-09-22 由用户裁定作废**，其远场段 + 5% CW 终端
+        //   已从本文件整段删除（见 `:4159` 附近的记录）。现在驱动计划的是**交会阶梯**
+        //   （`RendezvousLadder`，日志里打 `[阶梯]` 行）。
+        //   字段名暂不改：它被调试页签用**反射字符串**引用（`AddCheckbox(... "UseNewRendezvousLaw")`），
+        //   跨文件改名一旦漏同步就会**静默失效**（复选框点了没反应）。要改就一次性改两处并复测。
         /// <summary>
-        /// 新远场律开关（**默认开**：2026-09-17 起玩家路径只走新律）。
-        /// 关掉它 = 回退旧范式（Lambert 规划 + 出发段 + 巡航修正）；旧代码完整保留，
-        /// 只从调试页签进入，用于对照与回退——等游戏内验收通过后再谈删除。
+        /// 交会引导开关（**默认开**）：开 = 走阶梯引导；关 = 回退旧路径（Lambert 规划 + 出发段 + 巡航修正）。
+        /// 旧路径代码保留，只从调试页签进入，用于对照与回退。
         /// 只影响 <b>精确交会</b>（<c>rendezvousIsApproach=false</c>）；近距离接近保持原引擎
-        /// （它的目标是"追上并停下"、限速更温柔，同时还是本律的降级出口）。
+        /// （它的目标是"追上并停下"、限速更温柔，同时还是本路的降级出口）。
         /// </summary>
         public static bool UseNewRendezvousLaw = true;
-        /// <summary>
-        /// 新律：腿长的**额外下限**（s）。默认路径**不用它**——腿长的硬下限是
-        /// **目标轨道的一个周期**（见 <see cref="RendezvousGuidanceLaw.PlanLeg"/> 的 periodTgt）：
-        /// 交会的自然时间尺度就是一圈，S 形式"段多长就等多久" ⇒ 要一圈交会就得把段设成一圈。
-        /// 这个常数只用于旧路径回退时写的 <c>rendezvousArrivalTick</c> 占位与场景显式传参。
-        /// </summary>
-        private const double NewLawLegSeconds = 60000.0;
+        // 批5.B（2026-09-28）：此处原有 `NewLawLegSeconds`（旧律的默认腿长 60000 s）——
+        // 旧入口撤销后它**零读者**（"腿长的硬下限 = 目标轨道一个周期"这条知识已由阶梯的
+        // `MaxPhasingOrbits` / `RendezvousLadder` 自己承载）。
         /// <summary>新律：控制周期（s）= 远场一次评估要覆盖的时长（Δv = 加速度 × 此值）。
         /// ⚠ 必须与"烧在周期内完成"自洽：律给出的 |Δv| ≤ aMax×dt ⇒ 满推力烧得完（见 RunNewRendezvousLaw）。
         /// ⚠ 也决定**每次点火的冲量大小** `aMax×dt`：取 10s（≈纯台架的 dt=5s 同量级）。
@@ -238,9 +258,10 @@ namespace PioneerFramework
         ///   0.001（= 最大可交付量的 0.1%）⇒ 调试船 0.079 m/s，远低于起步指令；纯台架 T14 两种取值都钉住。
         /// ⚠ 台架原先**不建模死区** ⇒ 这类故障离线测不出来；现已补上（`ActuatorDeadband`）。</summary>
         private const double NewLawDeadbandFraction = 0.001;
-        // 形状/相位段门槛、腿长系数、腿长安全系数：**都定义在纯核心** RendezvousGuidanceLaw
-        // （ShapeGateMps / ShapeExitMps / ShapeLegFactor / LegSafety）——游戏与台架共用同一份政策，
-        // 避免"两份相似的政策"这种最坏的复制：改一处忘一处 = 台架验过的不是游戏在跑的。
+        // 批5.B（2026-09-28）：原先这里写着"形状/相位段门槛、腿长系数、腿长安全系数**都定义在纯核心**
+        // RendezvousGuidanceLaw"——那套律已归档（`Source/已弃置/`）⇒ **这句话现在是错的**：
+        // 那些常数（ShapeGateMps / ShapeExitMps / ShapeLegFactor / LegSafety）随律一起退役，
+        // 活路径（阶梯）的门槛与腿长由 `RendezvousLadder.Params` 出。**别再按旧注释去找那四个常数。**
 
         // ── 地图封存/取档异步操作 ──
         public MapRestoreOperation ActiveRestoreOperation { get; private set; }
@@ -286,7 +307,7 @@ namespace PioneerFramework
             {
                 if (!g.HasRendezvousGuidance) continue;
                 if (!groups.TryGetValue(g.rendezvousTargetId, out var tgt)) continue;   // 目标不在场（已销毁）⇒ 跳过
-                double d = (g.localPosition - tgt.localPosition).magnitude;
+                double d = (g.positionBody - tgt.positionBody).magnitude;
                 if (d < TerminalPrecisionDist) { inTerminal = true; break; }
             }
 
@@ -749,7 +770,7 @@ namespace PioneerFramework
 
             // 语义确认日志：entity 局部偏移应为 zero（实体在 group 原点），AABB 中心 = groupPos
             Log.Message(string.Format(
-                "[创建] 空间站 Entity {0} Group {1} groupPos=({2:F0},{3:F0},{4:F0})km entityLocal=({5:F0},{6:F0},{7:F0})km AABB=({8:F0}x{9:F0}x{10:F0})m",
+                "[创建] 空间站 Entity {0} Group {1} groupPos=({2:F0},{3:F0},{4:F0})km entityShip=({5:F0},{6:F0},{7:F0})km AABB=({8:F0}x{9:F0}x{10:F0})m",
                 entity.EntityId, groupId,
                 initialPosition.x / 1000.0, initialPosition.y / 1000.0, initialPosition.z / 1000.0,
                 entity.Position.x / 1000.0, entity.Position.y / 1000.0, entity.Position.z / 1000.0,
@@ -932,7 +953,7 @@ namespace PioneerFramework
             group.OrbitDirty = false;
 
             // 姿态同步：group 旋转 = 全实体旋转（单 part 化，实体无独立姿态）。
-            // 碰撞 AABB（GetWorldAabb）与射弹/光束命中（局部系变换）都消费 entity.Rotation，
+            // 碰撞 AABB（GetAabbSystem）与射弹/光束命中（局部系变换）都消费 entity.Rotation，
             // 必须跟随 group 姿态，否则船转了碰撞盒/命中判定不转。
             foreach (int eid in group.GetEntityIds())
             {
@@ -1052,6 +1073,7 @@ namespace PioneerFramework
 
             // 调试场景驱动（原 DebugShipSpawner.CompTick：场景自动下令 + 碰撞距离探针）
             DebugShipSpawner.Tick();
+            SwarmScaleAcceptanceRunner.Tick();   // 批 0-4：≥32 组可复现性（空闲时第一行返回，零开销）
         }
 
         private struct GroupPhysicsResult
@@ -1074,12 +1096,28 @@ namespace PioneerFramework
             public bool UseRcsSel;
             public bool AligningMain;      // 主推型且本步未对准（主网等待）
             public bool RcsFallbackSel;    // 主推已对准但主网尽 → RCS 兜底
-            public double MainDot;         // mainAxisWorld·burnDir（已归一；全向=1）
+            public double MainDot;         // mainAxisSystem·burnDir（已归一；全向=1）
             public double AppliedDv;       // 本步实际 ΔV（m/s）
             /// <summary>本次 tick 应消耗的工质总量（kg），主线程按各网络切片流率比例分配扣除。</summary>
             public double PropellantConsumed;
             /// <summary>本次 burn 参与推进的方向切片（并行阶段构建的活动网络快照，含锥内推力/流率）。</summary>
             public List<ThrustSlice> ActiveSlices;
+            /// <summary>
+            /// **R4（2026-09-26）：并行区里不许打日志**（`Verse.Log` 不是线程安全的，它会写自己的静态容器）
+            /// ⇒ 罕见事件的读数由并行体**只写这里**、主线程统一打（与 D15 同形态）。
+            /// ⚠ **惰性分配**：只在真要打时才 `new List&lt;string&gt;` —— 并行区零分配那条纪律仍然成立。
+            /// ⚠ 无陈旧风险：每个 `ComputeGroupPhysics` 都 `new GroupPhysicsResult{…}`（本字段为 null），
+            ///   而主循环只读 `< movableGroups.Count` 那些**本步刚赋值**的槽位。
+            /// </summary>
+            public List<string>? DiagLines;
+
+            /// <summary>把一行诊断挂到本组本步的结果上（由主线程打）。</summary>
+            public void AddDiag(string line)
+            {
+                if (DiagLines == null) DiagLines = new List<string>(2);
+                DiagLines.Add(line);
+            }
+
             public bool HasOrbitKeeping;
             public double OrbitKeepingDvCost;
             public DVector3 SyncBodyPos;
@@ -1093,7 +1131,12 @@ namespace PioneerFramework
         /// </summary>
         private sealed class GravityScratch
         {
-            public readonly List<GravitySource> all = new List<GravitySource>();
+            /// <summary>**本组自己收集**的引力源表（S-a 收尾 2026-09-27）：
+            /// 语义已**收窄** —— 它只在"预取表不可用"时（分子步档 / 未预取）作为收集的落地处；
+            /// 命中预取时**根本不用它**（相位里改成把共享只读表当入参传下去，零拷贝）。
+            /// ⚠ 旧名 `all`（"全量源表"）会让人以为相位里总有一份自己的副本 —— 那是旧设计的说法。</summary>
+            public readonly List<GravitySource> own = new List<GravitySource>();
+            /// <summary>轨道保持用的白名单子集（**每组独占**：每次用前 `Clear` 再填）。</summary>
             public readonly List<GravitySource> kept = new List<GravitySource>();
         }
 
@@ -1134,8 +1177,27 @@ namespace PioneerFramework
         /// 注意：`EnterOrbitKeeping(null)` 会落成**空集**（= 抵消全部扰动、保住计划），
         /// 与旧实现"空集 ⇒ 零引力积分"不同；现有调用点均传 `{自身中心天体}`，不受影响。
         /// </summary>
+        /// <summary>
+        /// **S-a 收尾（2026-09-27）：把"本组本步该读哪张引力源表"解析成一次引用选择** ——
+        /// 命中预取表 ⇒ 直接返回**共享表**（只读，零拷贝）；否则收集到**本组自己的** `scratch.own` 并返回它。
+        /// ⇒ 相位里每群每步只剩"一次字典查 + 一次引用选择"（原来还要把整张表拷一遍 ⇒ 那是随 N 线性的一项）。
+        /// ⚠ 共享表只能读（写者只有 `CollectSystemSources`，而它只会被写进本组自己的 list）。
+        /// ⚠ 子步档 tick 逐子步变 ⇒ 每次都不命中 ⇒ 自动走"收集"（正确，退回计数也能看见）。
+        /// </summary>
+        private List<GravitySource> ResolveSystemSources(CelestialBodyManager mgr, SpaceEntityGroup group,
+            double tick, GravityScratch scratch)
+        {
+            // 计时**放在这里**：这是"每群每步"唯一还剩的取表成本（命中 ⇒ 一次字典查 + 引用选择）。
+            long scClock = PerfProbe.SystemCollectStart();
+            var shared = mgr.TryGetPrefetchedSources(group.CelestialBodyId, tick);
+            if (shared != null) { PerfProbe.SystemCollectEnd(scClock); return shared; }
+            mgr.CollectSystemSources(group.CelestialBodyId, tick, scratch.own);   // 退回：收集到本组自己的表
+            PerfProbe.SystemCollectEnd(scClock);
+            return scratch.own;
+        }
+
         private void ComputeOrbitKeepingCorrection(SpaceEntityGroup group, CelestialBodyManager mgr,
-            GravityScratch scratch, out DVector3 corrAcc, out DVector3 corrJerk)
+            GravityScratch scratch, List<GravitySource> sources, out DVector3 corrAcc, out DVector3 corrJerk)
         {
             corrAcc = DVector3.zero;
             corrJerk = DVector3.zero;
@@ -1145,9 +1207,9 @@ namespace PioneerFramework
 
             // ① 非白名单天体（除计划中心本身）在当前位的全量项
             scratch.kept.Clear();
-            for (int i = 0; i < scratch.all.Count; i++)
+            for (int i = 0; i < sources.Count; i++)
             {
-                var s = scratch.all[i];
+                var s = sources[i];
                 if (s.bodyId == centerBodyId) continue;
                 if (whitelist != null && whitelist.Contains(s.bodyId)) continue;
                 scratch.kept.Add(s);
@@ -1161,6 +1223,18 @@ namespace PioneerFramework
 
             // ② 计划中心的受迫（自由落体）加速度里、由非白名单父天体贡献的那部分：
             //    逐级取「父对子的拉力，评估在子处」——链到系统外的父天体即止（根域为空）。
+            //
+            // ⚠⚠ 批5.C 更正（2026-09-29，**真 bug**，用户报障"绕月交会不正常"+ 巡检读数定性）：
+            //   这里算出的 `a` 是**中心天体自身的自由落体加速度**（如月球绕地）。
+            //   动力学要的是**"中心天体参考系"里的加速度**：`a_ship − a_center` ⇒
+            //   **必须把 `a` 从飞船的加速度里减掉**（`freeFallAcc += a`），而 **①（飞船处的真实引力）必须保留**
+            //   —— 它减掉后剩下的正是**潮汐项**（那才是中心天体系里的正确动力学）。
+            //   旧写法把 ① 也减了（`corrAcc = ① − ②` = **潮汐**），于是：
+            //   **潮汐被抵消、均匀项（月球处的地球引力 0.031 m/s² = 月球本地引力的 6.8%）留在动力学里**
+            //   ⇒ 月心系里凭空多一项指向地球的加速度 ⇒ 远地侧抬远点、近地侧压低近点
+            //   （巡检实测：ApR 3656→5651km、PeR 3303→**335km**、随后坠月 2096 m/s）。
+            //   地球场景看不见它，因为"均匀项"与"潮汐"在那个尺度上差着几个数量级。
+            //   `tidalAcc/tidalJerk` 仍按**旧口径**（① − ②）输出 ⇒ **燃料结算语义不变**（用户裁定"耗料是设计意图"）。
             int childId = centerBodyId;
             for (int guard = 0; guard < 8; guard++)
             {
@@ -1169,11 +1243,11 @@ namespace PioneerFramework
                 int parentId = childBody.ParentBodyId;
                 if (parentId < 0) break;
 
-                if (!NBodyIntegrator.TryFindSource(scratch.all, parentId, out var parentSrc)) break;
+                if (!NBodyIntegrator.TryFindSource(sources, parentId, out var parentSrc)) break;
 
                 if (whitelist == null || !whitelist.Contains(parentId))
                 {
-                    if (NBodyIntegrator.TryFindSource(scratch.all, childId, out var childSrc))
+                    if (NBodyIntegrator.TryFindSource(sources, childId, out var childSrc))
                     {
                         NBodyIntegrator.ComputeBodyAccelJerk(
                             childSrc.position, childSrc.velocity,
@@ -1194,7 +1268,7 @@ namespace PioneerFramework
         /// keepAcc/keepJerk = 本步被轨道保持抵消掉的那部分（其模长即 dV 速率）。
         /// </summary>
         private void ComputeGroupFieldAccelJerk(SpaceEntityGroup group, CelestialBodyManager mgr, double tick,
-            GravityScratch scratch, out DVector3 acc, out DVector3 jerk,
+            GravityScratch scratch, List<GravitySource> sources, out DVector3 acc, out DVector3 jerk,
             out DVector3 keepAcc, out DVector3 keepJerk, bool timeSegment = false)
         {
             acc = DVector3.zero;
@@ -1210,23 +1284,35 @@ namespace PioneerFramework
             bool timing = timeSegment;
             long clock = timing ? PerfProbe.GravityClockStart() : 0L;
 
-            mgr.CollectSystemSources(group.CelestialBodyId, tick, scratch.all);
-            if (scratch.all.Count == 0)
+            // S-a 子段计时（**只量不改**）：回答"建引力源列表"那一段值不值得加 (system,tick) 缓存。
+            // 见 `PerfProbe` 里 S-a 的说明：引力场段占整步可达 28.5%，但其中大头是**对 B 个天体求和**
+            // 本身，S-a 只管建列表那一小段 ⇒ 收益必须实测。同一只 Stopwatch 口径 ⇒ 可直接比。
+            // S-a 收尾：**表已由调用方解析好**（共享只读表 或 本组自己的 list）⇒ 这里零拷贝。
+            // ⚠ 计时**不在这里**：解析（唯一还剩的每群每步成本）在 `ResolveSystemSources` 里计时，
+            //   否则这一格会变成"包着一句空话"的假读数（改 S-a 时实测踩过这个形态）。
+            if (sources.Count == 0)
             {
                 if (timing) PerfProbe.GravityClockEnd(clock);
                 return;
             }
 
             NBodyIntegrator.FieldAccelJerk(group.CurrentOrbit.position, group.CurrentOrbit.velocity,
-                scratch.all, out acc, out jerk);
+                sources, out acc, out jerk);
 
             if (timing) PerfProbe.GravityClockEnd(clock);
 
-            if (PerfProbe.Enabled) ProbeGravityField(group, mgr, scratch, acc);
+            if (PerfProbe.Enabled) ProbeGravityField(group, mgr, scratch, sources, acc, tick);
 
             if (!group.HasOrbitKeeping) return;
 
-            ComputeOrbitKeepingCorrection(group, mgr, scratch, out keepAcc, out keepJerk);
+            // ⚠⚠ 批5.C 回撤记录（2026-09-29 深夜，**我自己的错，已还原**）：
+            //   我曾把这里改成"动力学减自由落体项（②）、燃料仍按 ① − ② 结算"，理由是"该减的是自由落体"。
+            //   **实测+推演证明那是我推错了**：物理在**世界系**积分，而**中心天体的星历本身就是自由落体轨迹**
+            //   ⇒ `acc − (① − ②)` = `月引力@船 + 地球@月`，再减去月球实际加速度（地球@月）⇒ **正好是"月心系两体"** ✓
+            //   ⇒ **原写法本来就是对的**（它做的正是"维持圆轨"）；我的改法把自由落体项**减了两次** ✗
+            //   （绕月实测：轨迹照旧一路坠月 ⇒ 与"减两次"的推断一致）。
+            //   ⇒ **还原原样**。绕月那次坠月的**真正原因仍未定**（下面那支探针继续取证）。
+            ComputeOrbitKeepingCorrection(group, mgr, scratch, sources, out keepAcc, out keepJerk);
             acc -= keepAcc;
             jerk -= keepJerk;
         }
@@ -1238,21 +1324,22 @@ namespace PioneerFramework
         ///  · **子天体域差分**：报告「差分(潮汐)模长 / 局部引力模长」。这是月球系修正是否生效的直接读数——
         ///    ≈0 = 还是旧行为（只算中心天体）、0.1%–2% = 正确潮汐、≈7% = 走了"全量求和"的错路。
         /// </summary>
-        private void ProbeGravityField(SpaceEntityGroup group, CelestialBodyManager mgr, GravityScratch scratch, DVector3 acc)
+        private void ProbeGravityField(SpaceEntityGroup group, CelestialBodyManager mgr, GravityScratch scratch,
+            List<GravitySource> sources, DVector3 acc, double tick)
         {
             bool isSubBodyDomain = mgr.GetReferenceFrameId(group.CelestialBodyId) != group.CelestialBodyId;
 
             // 根域：热路径（地球系群组多）→ 限频；子天体域：群组稀少（月球系）→ 逐次采样，
             // 保证验收阶段一定拿得到证据，且 min/max 区间更密。
-            if (!isSubBodyDomain && !PerfProbe.ShouldProbeGravity()) return;
+            if (!isSubBodyDomain && !PerfProbe.ShouldProbeGravity(group.GroupId, tick)) return;
 
             if (!isSubBodyDomain)
             {
                 // 根域：与「根 + 直接子天体」子集比较
                 scratch.kept.Clear();
-                for (int i = 0; i < scratch.all.Count; i++)
+                for (int i = 0; i < sources.Count; i++)
                 {
-                    var s = scratch.all[i];
+                    var s = sources[i];
                     bool directChild = s.bodyId == group.CelestialBodyId
                         || mgr.GetBodyById(s.bodyId)?.ParentBodyId == group.CelestialBodyId;
                     if (directChild) scratch.kept.Add(s);
@@ -1272,17 +1359,179 @@ namespace PioneerFramework
             // 注意不能写成"场 − 中心天体单独在场"——那是外面天体的**全量**项（实测 6.86%），
             // 不是潮汐（0.3%–0.6%）。2026-09-14 首轮验收正是这样误报的。
             mgr.ComputeFieldMinusPlan(group.CurrentOrbit.position, group.CurrentOrbit.velocity,
-                group.CelestialBodyId, scratch.all, out var diffAcc, out _);
+                group.CelestialBodyId, sources, out var diffAcc, out _);
 
             scratch.kept.Clear();
-            for (int i = 0; i < scratch.all.Count; i++)
+            for (int i = 0; i < sources.Count; i++)
             {
-                if (scratch.all[i].bodyId == group.CelestialBodyId) scratch.kept.Add(scratch.all[i]);
+                if (sources[i].bodyId == group.CelestialBodyId) scratch.kept.Add(sources[i]);
             }
             NBodyIntegrator.FieldAccelJerk(group.CurrentOrbit.position, group.CurrentOrbit.velocity,
                 scratch.kept, out var localAcc, out _);
 
             PerfProbe.GravitySubBodyDomain(diffAcc.magnitude, localAcc.magnitude);
+        }
+
+        /// <summary>
+        /// **燃烧诊断块（R3+R4 修复，2026-09-26）**：原先是 `ComputeGroupPhysics` 里的一段 —— 也就是
+        /// **跑在并行区的工作线程上**，于是有两个病（都在 2026-09-26 规模验收B 里当场看到）：
+        ///   **R3** `BurnDiagNextTick` 是**静态读-改-写**当全局节流 ⇒ 谁先写谁就把它推到 +10 s ⇒
+        ///        **后读的组被静默跳过**。实测（64 组全烧，每个 10 s 窗口应当诊断 64 个组）：
+        ///        **每窗口只有 1 个组**被诊断（赢的是迭代序第一个），其余 63 个一声不响 ⇒
+        ///        这套"用来发现燃烧异常"的仪器**自己丢掉了 98.4% 的样本**，而且丢哪些随调度变。
+        ///   **R4** 块里 8 处 `Log.Message` 在工作线程上跑（`Verse.Log` 不是线程安全的）。
+        /// 搬法：**整块搬到主线程结果应用循环的顶部**（`UpdateAllMovements` 的 `for (ri…)`，
+        /// 与既有的 D15「并行区只写 result、主线程打日志」是同一个既定形态）。
+        /// **采样点不变（可证）**：并行体不写 `CurrentOrbit`/`positionBody`/`velocityBody`
+        /// （它们只在**下一物理步首**的 `ApplyPendingImpulses` 里更新）⇒ 主循环顶部读到的值与
+        /// 并行体当时读到的**逐位相同**。
+        /// ⚠ 调用位置的约束：必须在主循环**自己的写入之前**（`burnThrustDt`/工质消耗那一批），
+        ///   否则读到的 `remainingBurnDV` 已不是并行体看到的那一份。
+        /// </summary>
+        private void RunBurnDiagnostics(SpaceEntityGroup group, CelestialBodyManager celestialMgr, double physicsTick)
+        {
+            // R3 的**直接判据面**：本组被诊断过几次。改前 = 64 个组里 1 个是 1、其余 63 个是 0；
+            // 改后 = 每个燃烧组每轮都该被诊断（进指纹，且单独当判据用）。
+            group.burnDiagRuns++;
+
+            // ★★ 全候选一次测完（环境已证纯二体 ⇒ 可用"引力只推进"把**真正施加的冲量**从状态里扣出来）：
+            //   扣出来的 Δv 一步就判掉四件事：**框架**（方向对不对）、**幅值**、**方向**、**时机**。
+            bool haveOv = OrbitAdapter.TryToOrbitView(group, celestialMgr, physicsTick, out OrbitView ovNow);
+            double elapsedBurn = group.burnActualStartTick >= 0.0 ? physicsTick - group.burnActualStartTick : 0.0;
+
+            string predTxt = "预测=?";
+            string dirTxt = "模型方向=?";
+            if (group.burnArcSeconds > 0.0 && haveOv)
+            {
+                // ⚠ **基准轨道必须是点火前的**：`BurnArc` 自己会把基准推进到点火时刻，
+                //   所以喂"当前（已烧过的）轨道"= 让模型**重烧一遍已经烧掉的那部分** ⇒
+                //   预测随已烧累计 Δv 漂移（2026-09-19 台架：t=100s 差 694 m/s ≈ 已烧 Δv 本身；
+                //   游戏日志同款：实测 5347.3 vs 预测 4652.9）。**这是月牙差 20 倍的真因，不是执行器。**
+                OrbitView arcBase = group.burnHasPreBurnOrbit ? group.burnPreBurnOrbit : ovNow;
+                // ⚠ **同口径**：诊断在本步累加**之前**采样 ⇒ 模型也只积到"上一步末"（elapsed − 一步），
+                //   否则两边的 Δv 恒差一步（实测 14.5 m/s ✓ 量等于 2 s × 7.4671）。这条口径修好之前，
+                //   "预测 vs 实测"这个仪器会系统性骗人 —— 我为此白跑了两轮 ✗。
+                if (BurnArc.TryPredictPartial(arcBase, group.burnArcNodeUt, group.burnArcDvAdapter, group.burnArcSeconds,
+                        elapsedBurn - UPDATE_INTERVAL_TICKS,
+                        group.burnPhaseShift + BurnArc.ExecutionDelaySeconds,
+                        out BurnArc.Result pre, out string preWhy))
+                {
+                    predTxt = string.Format("预测 |r|={0:F0}m |v|={1:F3}m/s", pre.achieved.radius,
+                        pre.achieved.RightHandedOrbitalVelocityAtUT(pre.achieved.epoch).magnitude);
+                    if (pre.finalDir.sqrMagnitude > 0.0)
+                        dirTxt = string.Format("模型方向 vs 执行方向={0:F2}°",
+                            Math.Acos(Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(pre.finalDir,
+                                OrbitView.GameWorldToAdapter(group.burnDirectionSystem))))) * Mathf.Rad2Deg);
+                }
+                else predTxt = "预测不可用(" + preWhy + ")";
+                // ⚠ **本轮起这是"冻结模型"的预测**（活差额律下它与执行器不再是同一件事）⇒ 读数里明说，
+                //   否则下一次读日志的人会拿它当"执行器的预期"用（正是本轮之前那套仪器的口径）。
+                if (group.burnHasTargetV && !group.abFreezeDirection) predTxt = "（冻结模型）" + predTxt;
+            }
+
+            // ② 真正施加的冲量 = 实测状态 − "只用引力推进"的预测（dt = 距上次诊断）
+            string impulseTxt = "实交冲量=?";
+            if (haveOv && group.burnDiagTick > 0.0)
+            {
+                double dt = physicsTick - group.burnDiagTick;
+                if (dt > 0.0)
+                {
+                    // "只用引力推进"的预测：走**已验证精确**的那条路（适配层 Shepperd）。
+                    // 两个状态都换到适配层系里做差 ⇒ 框架一致（游戏系与适配层只差一个旋转）。
+                    // ⚠ 全在**适配层系**里算：存的是适配层状态、推的是适配层系、现在也换成适配层系
+                    //   （上一版把游戏系向量直接喂给 Shepperd ⇒ 少换一次系 ⇒ 两个读数全废 ✗ 第 9 次仪器事故）
+                    (DVector3 rP, DVector3 vP) = MechJebLib.TwoBody.Shepperd.Solve(
+                        ovNow.mu, dt, group.burnDiagR, group.burnDiagV);
+                    (DVector3 rN, DVector3 vN) = ovNow.RightHandedStateVectorsAtUT(physicsTick);
+                    DVector3 dvApplied = vN - vP;
+                    _ = rP; _ = rN;
+                    double dvCmd = Math.Max(0.0, group.burnDiagRemaining - group.remainingBurnDV);
+                    // ⚠ **必须把指令也换到适配层系**再比：`dvApplied` 已是适配层系，
+                    //   而 `group.burnDirectionSystem` 是游戏系 —— 两者差一次 90° 旋转 ⇒ 不换系就恒读 ~88° ✗
+                    //   （同一行里那个"模型方向 vs 执行方向"换过系 ⇒ 读 2° ✓，这就是铁证）
+                    DVector3 cmdInAdapter = OrbitView.GameWorldToAdapter(group.burnDirectionSystem);
+                    double ang = DVector3.Dot(dvApplied.normalized, cmdInAdapter.normalized);
+                    // ★ **冲量的 R/T/N 分解**（2026-09-19 通道扫描的结论）：径向一阶不改 ε/|h|
+                    //   （R±10 m/s 都测不出 ✓），**切向灵敏**（T+5 → Δε −0.73%、Δa +14.8 km）。
+                    //   游戏残差 = T ≈ +2.8 m/s（≡ 方向朝顺行侧转 ~0.7°）⇒ 必须**逐窗**看 T 的实测 vs 指令，
+                    //   才能定位它是"每窗都少一点"还是"某几窗少"。
+                    (DVector3 rImp, DVector3 vImp) = OrbitAdapter.StateAtUT(ovNow, physicsTick);
+                    DVector3 rhatI = rImp.normalized;
+                    DVector3 hhatI = DVector3.Cross(rImp, vImp).normalized;
+                    DVector3 thatI = DVector3.Cross(hhatI, rhatI);
+                    // ⚠ **必须把冲量也换到游戏系**再点乘：`dvApplied` 在**适配层系**，
+                    //   而 `StateAtUT` 给的是**游戏系**（它内部做了 AdapterToGameWorld）。
+                    //   混系的后果 = 恒读 ~87°（正是"实测 R/T/N 几乎全在法向上"那个假象 ——
+                    //   我据此一度以为冲量打到面外去了，而 i/LAN 恰恰是**精确 0** ⇒ 自相矛盾）。
+                    //   第 10 次仪器事故：**同一行里两个向量必须来自同一个系**。
+                    DVector3 dvAppliedG = OrbitView.AdapterToGameWorld(dvApplied);
+                    double impR = DVector3.Dot(dvAppliedG, rhatI);
+                    double impT = DVector3.Dot(dvAppliedG, thatI);
+                    double impN = DVector3.Dot(dvAppliedG, hhatI);
+                    DVector3 cmdDirSystem = group.burnDirectionSystem * dvCmd;
+                    double cmdR = DVector3.Dot(cmdDirSystem, rhatI);
+                    double cmdT = DVector3.Dot(cmdDirSystem, thatI);
+                    double cmdN = DVector3.Dot(cmdDirSystem, hhatI);
+                    impulseTxt = string.Format("实交 |Δv|={0:F3}（指令 {1:F3}，比值 {2:F3}）｜施加方向 vs 指令={3:F1}°"
+                        + "｜R/T/N 实测 {4:F2}/{5:F2}/{6:F2} vs 指令 {7:F2}/{8:F2}/{9:F2}（ΔT={10:F3}）",
+                        dvApplied.magnitude, dvCmd, dvCmd > 1e-9 ? dvApplied.magnitude / dvCmd : double.NaN,
+                        Math.Acos(Math.Max(-1.0, Math.Min(1.0, ang))) * Mathf.Rad2Deg,
+                        impR, impT, impN, cmdR, cmdT, cmdN, impT - cmdT);
+                }
+            }
+
+            // ★ 最后一块拼图：**副本 vs 正本**。探针读 `velocityBody`（每步从 CurrentOrbit 同步的副本），
+            //   而 `e` 来自适配层（读 CurrentOrbit 正本）⇒ 若两者不等，"幅值/方向"测的就是副本 ✗
+            //   （与今天开头"改了 velocityBody 却没人读"是同一个坑的两面）。
+            double vBody = group.velocityBody.magnitude;
+            double vCanon = haveOv ? ovNow.RightHandedOrbitalVelocityAtUT(physicsTick).magnitude : double.NaN;
+            double rGroup = group.positionBody.magnitude;
+            double rCanon = haveOv ? ovNow.RightHandedBCIPositionAtUT(physicsTick).magnitude : double.NaN;
+
+            // ★ 加上"当前质量"：修复（燃耗逐步入账）后它该随工质**下降**；
+            //   若它整段燃烧期不动 ⇒ 燃耗没进到质量里 ⇒ `a` 偏大 ⇒ 白送 Δv（2026-09-19 的结论）。
+            double dbgMNow = GetGroupMass(group, GetGroupPropulsionSource(group));
+            // ★ 本轮起**哪条律在跑**必须自证（否则读日志的人分不清"活差额生效了"与"退路律在跑"）——
+            //   这正是游戏内验收要看的第一件事。
+            string lawTxt = group.abFreezeDirection ? "冻结(对照)"
+                : (group.burnHasTargetV ? "活差额(MJ靶=UT速度)" : "RTN退路");
+            // ⚠ 修（2026-09-26）：`已烧` 原来恒打 0 —— `burnActualStartTick` 只在**机动执行器**点火时记，
+            //   而"直接 `StartBurn`"（调试场景/台架）没有那一步 ⇒ 两者都读成 0s，与"刚点火"无法区分。
+            //   ⇒ 没记点火 tick 时打 `?`，**不许用 0 冒充已知**。
+            string elapsedTxt = group.burnActualStartTick >= 0.0
+                ? elapsedBurn.ToString("F0") + "s"
+                : "?（未记点火 tick：直接 StartBurn）";
+            Log.Message(string.Format(
+                "[燃烧·诊断] G{0} 已烧={1} tick={2:F0} 剩余={3:F1}｜律={4}｜质量={5:F1}kg（点火时 {6:F1}）｜{7}",
+                group.GroupId, elapsedTxt, physicsTick, group.remainingBurnDV, lawTxt,
+                dbgMNow, group.burnStartMass, predTxt));
+            Log.Message(string.Format(
+                "[燃烧·诊断] G{0} 副本 vs 正本：|v| {1:F6} vs {2:F6}（差 {3:E3}）｜|r| {4:F3} vs {5:F3}（差 {6:E3}）",
+                group.GroupId, vBody, vCanon, System.Math.Abs(vBody - vCanon),
+                rGroup, rCanon, System.Math.Abs(rGroup - rCanon)));
+            // ★★ **绝对探针**（2026-09-19）：执行器施加的**世界系**方向 vs **计划的世界系向量**。
+            //   两者都是惯性系 ⇒ **不受"执行器 vs 自己的输入"那种共模抵消** ⇒ 这才是唯一能看见
+            //   "定常面内偏置（≈0.23~0.5°）"的读数（终端真值已从状态侧证实它存在）。
+            string absTxt = "绝对=?";
+            if (group.burnArcDvAdapter.sqrMagnitude > 0.0)
+            {
+                // ⚠ `pm` 不在此作用域 ⇒ 用群里存的 **计划 Δv（适配层系）**，只换系一次（与本文件既有约定一致）
+                DVector3 planSystem = OrbitView.AdapterToGameWorld(group.burnArcDvAdapter);
+                double absAng = Math.Acos(Math.Max(-1.0, Math.Min(1.0,
+                    DVector3.Dot(group.burnDirectionSystem.normalized, planSystem.normalized)))) * Mathf.Rad2Deg;
+                absTxt = string.Format("★绝对：执行方向 vs 计划world向量={0:F3}°", absAng);
+            }
+            // ⚠ **修（2026-09-26）**：这一行原先是 **7 个实参对 5 个占位符** ⇒ `{4:F1}` 拿到的是
+            //   **`group.GroupId`**（第 5 个实参），"主推轴 vs 指令"那一位**一直在印编号**
+            //   （G256 打成 "256.0°"、G384 打成 "384.0°" —— 正因为它等于 id 才被看出来）。
+            //   多出来的实参被 `string.Format` 静默忽略 ⇒ 编译器一声不响。**读数说谎**的典型。
+            Log.Message(string.Format("[燃烧·诊断] G{0} {1}｜{2}｜{3}｜主推轴 vs 指令={4:F1}°",
+                group.GroupId, impulseTxt, dirTxt, absTxt,
+                MainAxisBurnAngleDeg(group, group.burnDirectionSystem)));
+
+            if (haveOv) (group.burnDiagR, group.burnDiagV) = ovNow.RightHandedStateVectorsAtUT(physicsTick);
+            group.burnDiagTick = physicsTick;
+            group.burnDiagRemaining = group.remainingBurnDV;
         }
 
         private GroupPhysicsResult ComputeGroupPhysics(SpaceEntityGroup group, double dtSeconds, double physicsTick, CelestialBodyManager celestialMgr, GravityScratch gravityScratch, int subSteps = 1)
@@ -1299,144 +1548,16 @@ namespace PioneerFramework
                 //   ④ **本轮 = 不再重表达，而是每步重测差额**（解本身随活状态更新）—— 这是 MJ 的做法，
                 //   差的那一项正是"重力在燃烧窗口内的贡献"（= 弧补偿一直在追、追不干净的那笔）。
                 // **只换方向，不动 remainingBurnDV 记账**。
-                if (physicsTick >= BurnDiagNextTick)
-                {
-                    BurnDiagNextTick = physicsTick + 10.0;
-                    // ★★ 全候选一次测完（环境已证纯二体 ⇒ 可用"引力只推进"把**真正施加的冲量**从状态里扣出来）：
-                    //   扣出来的 Δv 一步就判掉四件事：**框架**（方向对不对）、**幅值**、**方向**、**时机**。
-                    bool haveOv = OrbitAdapter.TryToOrbitView(group, celestialMgr, physicsTick, out OrbitView ovNow);
-                    double elapsedBurn = group.burnActualStartTick >= 0.0 ? physicsTick - group.burnActualStartTick : 0.0;
+                // ⚠ **燃烧诊断块已搬到主线程**（R3+R4，2026-09-26）——见 `RunBurnDiagnostics`。
+                //   为什么不能留在这里：那块里的静态节流是读-改-写（并行区里"谁先写谁赢"⇒ 其余组被静默
+                //   跳过，实测每窗口 64 组只诊断到 1 组），块里那 8 处日志还在工作线程上跑。
 
-                    string predTxt = "预测=?";
-                    string dirTxt = "模型方向=?";
-                    if (group.burnArcSeconds > 0.0 && haveOv)
-                    {
-                        // ⚠ **基准轨道必须是点火前的**：`BurnArc` 自己会把基准推进到点火时刻，
-                        //   所以喂"当前（已烧过的）轨道"= 让模型**重烧一遍已经烧掉的那部分** ⇒
-                        //   预测随已烧累计 Δv 漂移（2026-09-19 台架：t=100s 差 694 m/s ≈ 已烧 Δv 本身；
-                        //   游戏日志同款：实测 5347.3 vs 预测 4652.9）。**这是月牙差 20 倍的真因，不是执行器。**
-                        OrbitView arcBase = group.burnHasPreBurnOrbit ? group.burnPreBurnOrbit : ovNow;
-                        // ⚠ **同口径**：诊断在本步累加**之前**采样 ⇒ 模型也只积到"上一步末"（elapsed − 一步），
-                        //   否则两边的 Δv 恒差一步（实测 14.5 m/s ✓ 量等于 2 s × 7.4671）。这条口径修好之前，
-                        //   "预测 vs 实测"这个仪器会系统性骗人 —— 我为此白跑了两轮 ✗。
-                        if (BurnArc.TryPredictPartial(arcBase, group.burnArcNodeUt, group.burnArcDv, group.burnArcSeconds,
-                                elapsedBurn - UPDATE_INTERVAL_TICKS,
-                                group.burnPhaseShift + BurnArc.ExecutionDelaySeconds,
-                                out BurnArc.Result pre, out string preWhy))
-                        {
-                            predTxt = string.Format("预测 |r|={0:F0}m |v|={1:F3}m/s", pre.achieved.radius,
-                                pre.achieved.RightHandedOrbitalVelocityAtUT(pre.achieved.epoch).magnitude);
-                            if (pre.finalDir.sqrMagnitude > 0.0)
-                                dirTxt = string.Format("模型方向 vs 执行方向={0:F2}°",
-                                    Math.Acos(Math.Max(-1.0, Math.Min(1.0, MechJebLib.Primitives.V3.Dot(pre.finalDir,
-                                        OrbitView.GameWorldToAdapter(OrbitView.ToV3(group.burnDirection)))))) * Mathf.Rad2Deg);
-                        }
-                        else predTxt = "预测不可用(" + preWhy + ")";
-                        // ⚠ **本轮起这是"冻结模型"的预测**（活差额律下它与执行器不再是同一件事）⇒ 读数里明说，
-                        //   否则下一次读日志的人会拿它当"执行器的预期"用（正是本轮之前那套仪器的口径）。
-                        if (group.burnHasTargetV && !group.abFreezeDirection) predTxt = "（冻结模型）" + predTxt;
-                    }
-
-                    // ② 真正施加的冲量 = 实测状态 − "只用引力推进"的预测（dt = 距上次诊断）
-                    string impulseTxt = "实交冲量=?";
-                    if (haveOv && group.burnDiagTick > 0.0)
-                    {
-                        double dt = physicsTick - group.burnDiagTick;
-                        if (dt > 0.0)
-                        {
-                            // "只用引力推进"的预测：走**已验证精确**的那条路（适配层 Shepperd）。
-                            // 两个状态都换到适配层系里做差 ⇒ 框架一致（游戏系与适配层只差一个旋转）。
-                            // ⚠ 全在**适配层系**里算：存的是适配层状态、推的是适配层系、现在也换成适配层系
-                            //   （上一版把游戏系向量直接喂给 Shepperd ⇒ 少换一次系 ⇒ 两个读数全废 ✗ 第 9 次仪器事故）
-                            (MechJebLib.Primitives.V3 rP, MechJebLib.Primitives.V3 vP) = MechJebLib.TwoBody.Shepperd.Solve(
-                                ovNow.mu, dt, group.burnDiagR, group.burnDiagV);
-                            (MechJebLib.Primitives.V3 rN, MechJebLib.Primitives.V3 vN) = ovNow.RightHandedStateVectorsAtUT(physicsTick);
-                            DVector3 dvApplied = OrbitAdapter.ToD(vN - vP);
-                            _ = rP; _ = rN;
-                            double dvCmd = Math.Max(0.0, group.burnDiagRemaining - group.remainingBurnDV);
-                            // ⚠ **必须把指令也换到适配层系**再比：`dvApplied` 已是适配层系，
-                            //   而 `group.burnDirection` 是游戏系 —— 两者差一次 90° 旋转 ⇒ 不换系就恒读 ~88° ✗
-                            //   （同一行里那个"模型方向 vs 执行方向"换过系 ⇒ 读 2° ✓，这就是铁证）
-                            DVector3 cmdInAdapter = OrbitAdapter.ToD(OrbitView.GameWorldToAdapter(OrbitView.ToV3(group.burnDirection)));
-                            double ang = DVector3.Dot(dvApplied.normalized, cmdInAdapter.normalized);
-                            // ★ **冲量的 R/T/N 分解**（2026-09-19 通道扫描的结论）：径向一阶不改 ε/|h|
-                            //   （R±10 m/s 都测不出 ✓），**切向灵敏**（T+5 → Δε −0.73%、Δa +14.8 km）。
-                            //   游戏残差 = T ≈ +2.8 m/s（≡ 方向朝顺行侧转 ~0.7°）⇒ 必须**逐窗**看 T 的实测 vs 指令，
-                            //   才能定位它是"每窗都少一点"还是"某几窗少"。
-                            (DVector3 rImp, DVector3 vImp) = OrbitAdapter.StateAtUT(ovNow, physicsTick);
-                            DVector3 rhatI = rImp.normalized;
-                            DVector3 hhatI = DVector3.Cross(rImp, vImp).normalized;
-                            DVector3 thatI = DVector3.Cross(hhatI, rhatI);
-                            // ⚠ **必须把冲量也换到游戏系**再点乘：`dvApplied` 在**适配层系**，
-                            //   而 `StateAtUT` 给的是**游戏系**（它内部做了 AdapterToGameWorld）。
-                            //   混系的后果 = 恒读 ~87°（正是"实测 R/T/N 几乎全在法向上"那个假象 ——
-                            //   我据此一度以为冲量打到面外去了，而 i/LAN 恰恰是**精确 0** ⇒ 自相矛盾）。
-                            //   第 10 次仪器事故：**同一行里两个向量必须来自同一个系**。
-                            DVector3 dvAppliedG = OrbitAdapter.ToD(OrbitView.AdapterToGameWorld(OrbitView.ToV3(dvApplied)));
-                            double impR = DVector3.Dot(dvAppliedG, rhatI);
-                            double impT = DVector3.Dot(dvAppliedG, thatI);
-                            double impN = DVector3.Dot(dvAppliedG, hhatI);
-                            DVector3 cmdWorldI = group.burnDirection * dvCmd;
-                            double cmdR = DVector3.Dot(cmdWorldI, rhatI);
-                            double cmdT = DVector3.Dot(cmdWorldI, thatI);
-                            double cmdN = DVector3.Dot(cmdWorldI, hhatI);
-                            impulseTxt = string.Format("实交 |Δv|={0:F3}（指令 {1:F3}，比值 {2:F3}）｜施加方向 vs 指令={3:F1}°"
-                                + "｜R/T/N 实测 {4:F2}/{5:F2}/{6:F2} vs 指令 {7:F2}/{8:F2}/{9:F2}（ΔT={10:F3}）",
-                                dvApplied.magnitude, dvCmd, dvCmd > 1e-9 ? dvApplied.magnitude / dvCmd : double.NaN,
-                                Math.Acos(Math.Max(-1.0, Math.Min(1.0, ang))) * Mathf.Rad2Deg,
-                                impR, impT, impN, cmdR, cmdT, cmdN, impT - cmdT);
-                        }
-                    }
-
-                    // ★ 最后一块拼图：**副本 vs 正本**。探针读 `localVelocity`（每步从 CurrentOrbit 同步的副本），
-                    //   而 `e` 来自适配层（读 CurrentOrbit 正本）⇒ 若两者不等，"幅值/方向"测的就是副本 ✗
-                    //   （与今天开头"改了 localVelocity 却没人读"是同一个坑的两面）。
-                    double vLocal = group.localVelocity.magnitude;
-                    double vCanon = haveOv ? ovNow.RightHandedOrbitalVelocityAtUT(physicsTick).magnitude : double.NaN;
-                    double rLocal = group.localPosition.magnitude;
-                    double rCanon = haveOv ? ovNow.RightHandedBCIPositionAtUT(physicsTick).magnitude : double.NaN;
-
-                    // ★ 加上"当前质量"：修复（燃耗逐步入账）后它该随工质**下降**；
-                    //   若它整段燃烧期不动 ⇒ 燃耗没进到质量里 ⇒ `a` 偏大 ⇒ 白送 Δv（2026-09-19 的结论）。
-                    double dbgMNow = GetGroupMass(group, GetGroupPropulsionSource(group));
-                    // ★ 本轮起**哪条律在跑**必须自证（否则读日志的人分不清"活差额生效了"与"退路律在跑"）——
-                    //   这正是游戏内验收要看的第一件事。
-                    string lawTxt = group.abFreezeDirection ? "冻结(对照)"
-                        : (group.burnHasTargetV ? "活差额(MJ靶=UT速度)" : "RTN退路");
-                    Log.Message(string.Format(
-                        "[燃烧·诊断] G{0} 已烧={1:F0}s tick={2:F0} 剩余={3:F1}｜律={4}｜质量={5:F1}kg（点火时 {6:F1}）｜{7}",
-                        group.GroupId, elapsedBurn, physicsTick, group.remainingBurnDV, lawTxt,
-                        dbgMNow, group.burnStartMass, predTxt));
-                    Log.Message(string.Format(
-                        "[燃烧·诊断] G{0} 副本 vs 正本：|v| {1:F6} vs {2:F6}（差 {3:E3}）｜|r| {4:F3} vs {5:F3}（差 {6:E3}）",
-                        group.GroupId, vLocal, vCanon, System.Math.Abs(vLocal - vCanon),
-                        rLocal, rCanon, System.Math.Abs(rLocal - rCanon)));
-                    // ★★ **绝对探针**（2026-09-19）：执行器施加的**世界系**方向 vs **计划的世界系向量**。
-                    //   两者都是惯性系 ⇒ **不受"执行器 vs 自己的输入"那种共模抵消** ⇒ 这才是唯一能看见
-                    //   "定常面内偏置（≈0.23~0.5°）"的读数（终端真值已从状态侧证实它存在）。
-                    string absTxt = "绝对=?";
-                    if (group.burnArcDv.sqrMagnitude > 0.0)
-                    {
-                        // ⚠ `pm` 不在此作用域 ⇒ 用群里存的 **计划 Δv（适配层系）**，只换系一次（与本文件既有约定一致）
-                        DVector3 planWorld = OrbitAdapter.ToD(OrbitView.AdapterToGameWorld(group.burnArcDv));
-                        double absAng = Math.Acos(Math.Max(-1.0, Math.Min(1.0,
-                            DVector3.Dot(group.burnDirection.normalized, planWorld.normalized)))) * Mathf.Rad2Deg;
-                        absTxt = string.Format("★绝对：执行方向 vs 计划world向量={0:F3}°", absAng);
-                    }
-                    Log.Message(string.Format("[燃烧·诊断] G{0} {1}｜{2}｜{3}｜主推轴 vs 指令={4:F1}°",
-                        group.GroupId, impulseTxt, dirTxt, absTxt,
-                        group.GroupId, impulseTxt, dirTxt, MainAxisBurnAngleDeg(group, group.burnDirection)));
-
-                    if (haveOv) (group.burnDiagR, group.burnDiagV) = ovNow.RightHandedStateVectorsAtUT(physicsTick);
-                    group.burnDiagTick = physicsTick;
-                    group.burnDiagRemaining = group.remainingBurnDV;
-                }
 
                 // ★ **每步**重取方向（2026-09-19 台架定量：按 2° 节拍刷新的量化 = e 3.76e-3 vs 每步
                 //   7.79e-4，不变量 0.9897 vs 0.9975 —— 游戏实测 0.9897 与之逐位吻合 ⇒ 量化就是残差源）。
                 //   这里只是把**同一个解**在当前 RTN 里重新表达，不是重解 ⇒ 没有理由省。
                 {
-                    // ★★ 2026-09-19 真凶：这里原来用 `localPosition/localVelocity`（**副本**），
+                    // ★★ 2026-09-19 真凶：这里原来用 `positionBody/velocityBody`（**副本**），
                     //   而副本的参考系与"正本 `CurrentOrbit`"**差一个帧速**（实测 14–16 m/s，缓慢变化 ✗）——
                     //   适配层的 `GetCentralBodyOffset/Velocity` 对行星返回 0 ✓，而 `SyncBodyVel` 不是 0 ✗。
                     //   冲量写进的是**正本**（`CurrentOrbit.velocity` ✓）⇒ 用副本的系去解正本系的 Δv = 系统性方向偏差 ✓
@@ -1451,7 +1572,7 @@ namespace PioneerFramework
                     //   ⚠ **旧结论"滞后/时机零效应"要从一台空开关撤回**：台架那个 `applyLagOneStep`
                     //     当时只写在签名里、循环里没人用 ⇒ 它测不出任何东西 ✗（第 11 次仪器事故）。
                     //   ⚠ 台架默认口径**本来就是**"落位那一拍的框架" ⇒ 本修完，模型 ≡ 执行器继续成立。
-                    DVector3 arcPos = group.localPosition, arcVel = group.localVelocity;
+                    DVector3 arcPos = group.positionBody, arcVel = group.velocityBody;
                     bool haveArc = OrbitAdapter.TryToOrbitView(group, celestialMgr, physicsTick, out OrbitView ovArc);
                     if (haveArc)
                         (arcPos, arcVel) = OrbitAdapter.StateAtUT(ovArc, physicsTick + dtSeconds);   // 正本系，落位拍
@@ -1476,7 +1597,7 @@ namespace PioneerFramework
                         {
                             group.remainingBurnDV = 0.0;      // ⇒ 下方 BurnStep 报 exhausted ⇒ EndBurn()
                             group.burnNodeWindowAborts++;
-                            Log.Message(string.Format(
+                            result.AddDiag(string.Format(
                                 "[燃烧·窗口] G{0} 节点窗口已过（tick={1:F0} > 截止 {2:F0}）⇒ **停火**。" +
                                 "原因：这一发已作废（节点 UT={3:F0}、名义燃时={4:F0}s、已烧 {5:F0}s、" +
                                 "已交付 {6:F1} m/s）—— 继续追一个过期靶会无界燃烧（2026-09-21 实测烧掉 4412 m/s / 9080s）",
@@ -1495,7 +1616,7 @@ namespace PioneerFramework
                         (DVector3 rLiveUt, DVector3 vLiveUt) = OrbitAdapter.StateAtUT(ovArc, group.burnArcNodeUt);
                         _ = rLiveUt;
                         // 算式与判据都在纯层（`BurnStep`），台架用**同一份**（唯一算式纪律）
-                        BurnStep.DeficitToTargetV(vLiveUt, group.burnTargetV, group.burnDirection,
+                        BurnStep.DeficitToTargetV(vLiveUt, group.burnTargetV, group.burnDirectionSystem,
                             BurnTargetVFloor, out DVector3 defDir, out double defRem, out bool defRev);
                         // ★★ **差额小到"追它不如停手"⇒ 不发指令**（2026-09-21 定，同日两次更正）
                         //
@@ -1521,7 +1642,7 @@ namespace PioneerFramework
                             group.remainingBurnDV = 0.0;   // 收工（下方 BurnStep 报 exhausted ⇒ EndBurn）
                             group.burnThrottleCap = 0.0;
                             group.burnDeficitIgnoredCount++;
-                            Log.Message(string.Format(
+                            result.AddDiag(string.Format(
                                 "[燃烧·收尾] G{0} 差额只剩 {1:F2} m/s（< {2:F1} m/s 地板）⇒ **不再发指令**"
                                 + "（方向已进入噪声：追它只会导致 180° 掉头）。已交付 {3:F1} m/s；完成判据接管",
                                 group.GroupId, defRem, BurnDeficitIgnoreFloor, group.appliedBurnDV));
@@ -1529,7 +1650,7 @@ namespace PioneerFramework
                         }
                             if (defRem > 0.0)
                             {
-                                group.burnDirection = defDir;
+                                group.burnDirectionSystem = defDir;
                                 group.remainingBurnDV = defRem;   // 剩余量**由活状态重算**，不再逐拍递减
                                 group.burnComponentsInit = true;   // 靶律直接给方向 ⇒ 不需要 RTN 分解
                                 // ★★ **需求推油门**（2026-09-21，读 MJ `ThrustForDv` 之后）：
@@ -1553,22 +1674,22 @@ namespace PioneerFramework
                     // ── 退路（**拿不到意图轨道**的燃烧：微调条目、引导逐帧指令）：旧的 RTN 分量律 ──
                     else
                     {
-                        // ★ 首次刷新：把**计划的解**（= 当前 `burnDirection`，`StartBurn` 设的世界方向）在
+                        // ★ 首次刷新：把**计划的解**（= 当前 `burnDirectionSystem`，`StartBurn` 设的世界方向）在
                         //   这一帧的**正本** RTN 里分解一次。此后整段燃烧只换框架、不换解。
                         //   ⚠ 必须在下面那句**之前**做，且不能在 `StartBurn` 里做 —— 那里拿不到正本
                         //   （副本差一个帧速 ⇒ ~0.13° 方向偏差），而这里若晚一步就会用**上一次燃烧的残留分量**
                         //   去合成方向（= 把刚设好的正确方向覆盖掉）。
                         if (!group.burnComponentsInit)
                         {
-                            OrbitMath.WorldDeltaVToComponents(arcPos, arcVel, group.burnDirection,
+                            OrbitMath.DeltaVSystemToComponents(arcPos, arcVel, group.burnDirectionSystem,
                                 out group.burnRadial, out group.burnTangential, out group.burnNormal);
                             group.burnComponentsInit = true;
                         }
 
-                        DVector3 arcDir = OrbitMath.GetWorldDeltaV(arcPos, arcVel,
+                        DVector3 arcDir = OrbitMath.GetDeltaVSystem(arcPos, arcVel,
                             group.burnRadial, group.burnTangential, group.burnNormal);
                         if (arcDir.sqrMagnitude > 1e-12 && !group.abFreezeDirection)
-                            group.burnDirection = arcDir.normalized;
+                            group.burnDirectionSystem = arcDir.normalized;
                     }
                 }
 
@@ -1580,8 +1701,9 @@ namespace PioneerFramework
                 // 第 3 条：组级 scratch 复用（本组本步独占；下方非 Map 分支是 Add 累加，必须先清空）
                 var activeSlices = group.thrustSliceScratch;
                 activeSlices.Clear();
-                // 探针：校验"每组独占一个 scratch 且身份恒定"（并行区两组共用会互相覆盖）
-                if (PerfProbe.Enabled) PerfProbe.SliceBuffer(group, activeSlices);
+                // ⚠ 探针 `PerfProbe.SliceBuffer` **已搬出并行区**（R2，2026-09-26）——见 `UpdateAllMovements`
+                //   里"切片 scratch 会计（R2）"那一遍（进并行区之前、单线程）。留在这里会在 32+ 组时
+                //   把它的两个静态 Dictionary 用多线程写坏（实测 90 次 AggregateException、**整个物理步被放弃**）。
 
                 if (burnSrc is SpaceMapComp mapComp)
                 {
@@ -1593,9 +1715,9 @@ namespace PioneerFramework
                         if (fTotal <= 0f)
                         {
                             // RCS 工质尽 → 回退主引擎（对准，现状）
-                            mapComp.GetThrustAlong(group.burnDirection, group.CurrentOrbit.rotation, DefaultThrustConeCos,
+                            mapComp.GetThrustAlong(group.burnDirectionSystem, group.CurrentOrbit.rotation, DefaultThrustConeCos,
                                 group.burnEnabledNetworks, activeSlices, out fTotal, out mfTotal);
-                            AlignMainAxis(group, group.burnDirection, dtSeconds);
+                            AlignMainAxis(group, group.burnDirectionSystem, dtSeconds);
                             if (fTotal <= 0f && mapComp.TotalThrust <= 0f)
                                 result.BurnExhausted = true; // 完全没有引擎 → 无法推进，终止
                         }
@@ -1613,12 +1735,12 @@ namespace PioneerFramework
                         else
                         {
                             // ── 主引擎方向感知：矢量锥内轴向出力 + 自动对准兜底 ──
-                            // GetThrustAlong 只取「轴向落在 burnDirection 矢量锥内」的引擎；
+                            // GetThrustAlong 只取「轴向落在 burnDirectionSystem 矢量锥内」的引擎；
                             // 未对准（锥内无推力）→ 本步只旋转对准（Align 控制器），不推力不耗工质。
-                            mapComp.GetThrustAlong(group.burnDirection, group.CurrentOrbit.rotation, DefaultThrustConeCos,
+                            mapComp.GetThrustAlong(group.burnDirectionSystem, group.CurrentOrbit.rotation, DefaultThrustConeCos,
                                 group.burnEnabledNetworks, activeSlices, out fTotal, out mfTotal);
                             // 已对准 → 消旋；未对准 → 转向（顺带零掉残余角速度）
-                            AlignMainAxis(group, group.burnDirection, dtSeconds);
+                            AlignMainAxis(group, group.burnDirectionSystem, dtSeconds);
                             if (fTotal <= 0f && mapComp.TotalThrust <= 0f)
                                 result.BurnExhausted = true; // 完全没有引擎 → 无法推进，终止
                         }
@@ -1627,18 +1749,18 @@ namespace PioneerFramework
                 else
                 {
                     // ── 无 Map 源：主推方向型（D15）+ 可选弱 RCS 副网，或纯全向 ──
-                    // 主网（PropulsionData.isVectoredRcs=false）：主推型沿 mainAxisLocal 锥内出力；
+                    // 主网（PropulsionData.isVectoredRcs=false）：主推型沿 mainAxisShip 锥内出力；
                     // RCS 网（isVectoredRcs=true）：全矢量小推力——主推未对准时仍可出力修正、主网尽时兜底。
-                    DVector3 mainAxisWorld = GetMainThrustWorldAxis(group);
-                    bool isMainThrust = mainAxisWorld.sqrMagnitude > 1e-12;
+                    DVector3 mainAxisSystem = GetMainThrustAxisSystem(group);
+                    bool isMainThrust = mainAxisSystem.sqrMagnitude > 1e-12;
                     double axisDot = 1.0;
                     if (isMainThrust)
                     {
                         // 姿态控制独立于燃料（魔动量轮不限料）：本步开头执行——
                         // 已收心（axis·burn ≥ cos~1.5°）→ 立即消旋，杜绝残余 ω 让弹体在主推燃烧时漂出；
                         // 未收心 → 全速转向（剩余夹角小于一步转角则降速收敛）。
-                        axisDot = DVector3.Dot(mainAxisWorld.normalized, group.burnDirection.normalized);
-                        AlignMainAxis(group, group.burnDirection, dtSeconds);
+                        axisDot = DVector3.Dot(mainAxisSystem.normalized, group.burnDirectionSystem.normalized);
+                        AlignMainAxis(group, group.burnDirectionSystem, dtSeconds);
                     }
                     // ★ 点火门 = **锥角 10°**（`DefaultThrustConeCos` —— 本文件 65 行的**文档口径**就是
                     //   "窗口内可出力、收心到死区才点火"，`DefaultThrustAlignCos`(1.5°) 只用于消旋/精修）。
@@ -1751,7 +1873,7 @@ namespace PioneerFramework
                     if (group.abNodeTick > 0.0 && physicsTick >= group.abNodeTick && group.remainingBurnDV > 0.0)
                     {
                         double dvAll = group.remainingBurnDV;
-                        group.pendingImpulse += group.burnDirection * dvAll;   // 节点处 burnDirection = 计划向量 ✓
+                        group.pendingImpulse += group.burnDirectionSystem * dvAll;   // 节点处 burnDirectionSystem = 计划向量 ✓
                         group.burnLastCmdDv = dvAll;
                         group.remainingBurnDV = 0.0;
                         group.appliedBurnDV += dvAll;
@@ -1759,7 +1881,7 @@ namespace PioneerFramework
                         result.BurnExhausted = true;
                         result.PropellantConsumed = 0.0;   // F 行不记账工质（只判几何/映射）
                         result.AppliedDv = dvAll;
-                        Log.Message(string.Format("[对照·F] G{0} 单脉冲施加 |Δv|={1:F2} m/s @tick={2:F0}（节点 {3:F0}）",
+                        result.AddDiag(string.Format("[对照·F] G{0} 单脉冲施加 |Δv|={1:F2} m/s @tick={2:F0}（节点 {3:F0}）",
                             group.GroupId, dvAll, physicsTick, group.abNodeTick));
                     }
                     else
@@ -1773,6 +1895,10 @@ namespace PioneerFramework
                     if (group.burnStartMass <= 0.0)
                         group.burnStartMass = groupMass; // burn 起始质量（实际 ΔV 评估基准）
                     double accel = fTotal / Math.Max(groupMass, 1.0); // m/s²（全油门）
+                    // 本步燃烧输入的读数快照（逐步指纹把它与 pos/vel 一起哈希 ⇒ 定位到"哪个输入差了"）
+                    group.burnDbgF = fTotal;
+                    group.burnDbgMf = mfTotal;
+                    group.burnDbgMass = groupMass;
                     // ★ **命令恒定加速度**（用户 2026-09-19 裁定）：机动 = Δv + 加速度，油门随时适配质量。
                     //   点火那一步的全油门值 = `F参与 / m₀`（可行域里最紧的恒定加速度）⇒ 整段燃烧按它走，
                     //   于是 Δv **均匀**地摊在居中的窗口里（旧的全油门照"可用上限"烧，上限随料耗上升 ⇒
@@ -1788,7 +1914,7 @@ namespace PioneerFramework
                     if (aCmd > accel)
                     {
                         if (PerfProbe.Enabled || group.burnCommandAccel > accel * 1.02)
-                            Log.Message(string.Format(
+                            result.AddDiag(string.Format(
                                 "[燃烧] G{0} 命令加速度 {1:F3} 超过可用 {2:F3} m/s²（换网？）⇒ 本步按可用烧",
                                 group.GroupId, aCmd, accel));
                         aCmd = accel;
@@ -1799,7 +1925,7 @@ namespace PioneerFramework
                     if (group.burnHeadStepsLogged < 6)
                     {
                         group.burnHeadStepsLogged++;
-                        Log.Message(string.Format(
+                        result.AddDiag(string.Format(
                             "[燃烧·头步] G{0} 第{1}步 t={2:F0}：aCmd={3:F4}｜可用a={4:F4}｜份额={5:F4}｜mass={6:F1}｜fTotal={7:F0}｜网络={8}",
                             group.GroupId, group.burnHeadStepsLogged, physicsTick, aCmd, accel,
                             dvFullSafe(aCmd, accel), groupMass, fTotal, activeSlices.Count));
@@ -1821,12 +1947,13 @@ namespace PioneerFramework
                         result.BurnExhausted = bs.Exhausted;
                         result.PropellantConsumed = bs.Propellant;
                         result.ActiveSlices = activeSlices; // 引用快照，主线程按切片流率比例分配扣除
-                        if (PerfProbe.Enabled) // 探针：快照必须是本组自己的 scratch（否则并行区会被别的组改写）
-                            PerfProbe.SliceAlias(ReferenceEquals(activeSlices, group.thrustSliceScratch), $"G{group.GroupId}");
+                        // ⚠ 探针 `SliceAlias` 也搬出并行区（R2，2026-09-26）：它写静态计数 + 可能 `Mismatch`
+                        //   （→ 错误日志），而判的是"**快照**必须指回本组自己的 scratch"——快照在并行区
+                        //   结束时才存在 ⇒ 判据挪到主线程结果循环（语义不变，见该处注释）。
                         // 冲量累积：并行区只写本 group 独占的累积器，主线程在下一物理步首统一施加
                         // （避免并行区直接改 CurrentOrbit.velocity，消除多冲量顺序依赖）
                         group.burnLastCmdDv = burnDv;   // 逐步对账：本步命令的量
-                        group.pendingImpulse += group.burnDirection * burnDv;
+                        group.pendingImpulse += group.burnDirectionSystem * burnDv;
                         group.remainingBurnDV -= burnDv;
                         group.appliedBurnDV += burnDv; // 累计已施加 dV（诊断/日志）
                         result.AppliedDv = burnDv;
@@ -1856,15 +1983,20 @@ namespace PioneerFramework
             DVector3 fieldAcc = DVector3.zero, fieldJerk = DVector3.zero;
             DVector3 keepAcc = DVector3.zero, keepJerk = DVector3.zero;
 
+            // S-a 收尾：**本步的引力源表在这里解析一次**（共享只读表 或 本组自己的 list）——
+            // 只解析一次的原因：主路径与下面两处 `.Count` 判断、以及子步档都要用同一份来源；
+            // 子步档的 tick 逐子步不同 ⇒ 那时在循环内逐子步重解析（会走"收集"分支，正确）。
+            List<GravitySource>? sources = null;
             if (needField)
             {
-                ComputeGroupFieldAccelJerk(group, celestialMgr, physicsTick, scratch,
+                sources = ResolveSystemSources(celestialMgr, group, physicsTick, scratch);
+                ComputeGroupFieldAccelJerk(group, celestialMgr, physicsTick, scratch, sources,
                     out fieldAcc, out fieldJerk, out keepAcc, out keepJerk, timeSegment: true);
             }
 
             // 轨道保持的 dV 结算：**两条推进路径共用**（圆轨走解析推进，但其"抵消非白名单天体扰动"
             // 的燃料开销与积分路径同源；旧实现同样对圆轨结算，勿因重构而漏掉）
-            if (group.HasOrbitKeeping && scratch.all.Count > 0)
+            if (group.HasOrbitKeeping && sources != null && sources.Count > 0)
             {
                 result.HasOrbitKeeping = true;
                 result.OrbitKeepingDvCost = keepAcc.magnitude * dtSeconds;
@@ -1884,10 +2016,10 @@ namespace PioneerFramework
                     result.NewVelocity = newVel;
                 }
             }
-            else if (scratch.all.Count > 0)
+            else if (sources != null && sources.Count > 0)
             {
                 // ── 引力场（A0）：系统系内**全部天体**全量求和，无"环绕天体"参量 ──
-                // 坐标 = CurrentOrbit.position（群组系 = 根行星中心，与场同系）→ 不再做任何帧转换。
+                // 坐标 = CurrentOrbit.position（系统系 = 根行星中心，与场同系）→ 不再做任何帧转换。
                 // 子天体为中心时（如月球），由场自动带上根天体的贡献（等价于"局部系 + 潮汐项"），
                 // 不再需要旧的"减天体位置 / 加回天体位置"两段式。
                 DVector3 pos = group.CurrentOrbit.position;
@@ -1908,7 +2040,9 @@ namespace PioneerFramework
                     double subDt = dtSeconds / subSteps;
                     for (int i = 0; i < subSteps; i++)
                     {
-                        ComputeGroupFieldAccelJerk(group, celestialMgr, physicsTick + i * subDt, scratch,
+                        // 子步：tick 变了 ⇒ 共享表不适用（`ResolveSystemSources` 会走收集分支）
+                        var subSources = ResolveSystemSources(celestialMgr, group, physicsTick + i * subDt, scratch);
+                        ComputeGroupFieldAccelJerk(group, celestialMgr, physicsTick + i * subDt, scratch, subSources,
                             out var acc, out var jerk, out _, out _, timeSegment: true);
                         NBodyIntegrator.ThirdOrderTaylorStep(pos, vel, acc, jerk, subDt, out pos, out vel);
                     }
@@ -1944,30 +2078,30 @@ namespace PioneerFramework
                 result.NeedsUpdate = true;
             }
 
-            result.SyncBodyPos = GetBodyWorldOffset(group.CelestialBodyId, (int)System.Math.Round(physicsTick));
-            result.SyncBodyVel = GetBodyWorldVelOffset(group.CelestialBodyId, (int)System.Math.Round(physicsTick));
+            result.SyncBodyPos = GetBodyOffsetSystem(group.CelestialBodyId, (int)System.Math.Round(physicsTick));
+            result.SyncBodyVel = GetBodyVelocityOffsetSystem(group.CelestialBodyId, (int)System.Math.Round(physicsTick));
 
             return result;
         }
 
         /// <summary>
         /// 主推轴世界方向（D15）：Map = mapComp.MainThrustAxis 随 rotation 旋转；
-        /// 无 Map 主推方向型 = entity.mainAxisLocal 随 rotation 旋转；全向类（无主推轴）= zero。
+        /// 无 Map 主推方向型 = entity.mainAxisShip 随 rotation 旋转；全向类（无主推轴）= zero。
         /// 并行区只读调用（与 GetGroupPropulsionSource 同纪律）。
         /// 只读公开给表现层（PFView 朝向指示）——**唯一出处**，视图不再复制一份"Map/无 Map"解析分支。
         /// </summary>
-        public DVector3 GetMainThrustWorldAxis(SpaceEntityGroup group)
+        public DVector3 GetMainThrustAxisSystem(SpaceEntityGroup group)
         {
             var mapComp = group.GetLinkedMapComp();
             if (mapComp != null)
-                return group.GetWorldAxis(mapComp.MainThrustAxis);
+                return group.GetThrustAxisSystem(mapComp.MainThrustAxis);
             // 无 Map：任一带主推轴的实体（导弹弹群成员同构同姿态；2026-09-08 思路 A——多实体组推进源
             // 是群级聚合器，不再 as SpaceEntity 取轴，改扫实体；单实体组结果与原来逐字节一致）
             foreach (int eid in group.GetEntityIds())
             {
                 var e = GetEntityById(eid);
                 if (e != null && e.HasMainAxis)
-                    return DVector3.Rotate(e.mainAxisLocal.Value.normalized, group.CurrentOrbit.rotation);
+                    return DVector3.Rotate(e.mainAxisShip.Value.normalized, group.CurrentOrbit.rotation);
             }
             return DVector3.zero;
         }
@@ -1975,14 +2109,14 @@ namespace PioneerFramework
         /// <summary>
         /// 自动对准（SAS 兜底）：把主推进轴转到目标世界方向（收心正中，死区 ~1.5°），向量角速度（动量轮限速）。
         /// 已收心 → 零角速度（消旋）。未收心 → 按剩余夹角比例调速，一步转不完则满速。
-        /// 主推轴来源：Map = mapComp.MainThrustAxis；无 Map 主推型 = entity.mainAxisLocal（D15）；
+        /// 主推轴来源：Map = mapComp.MainThrustAxis；无 Map 主推型 = entity.mainAxisShip（D15）；
         /// 全向类（无主推轴）→ 直接返回（无对准语义）。
         /// 在并行物理区调用（只写本 group 独占的 angularVelocity，与 pendingImpulse 同纪律）。
         /// </summary>
         private void AlignMainAxis(SpaceEntityGroup group, DVector3 targetDir, double dtSeconds)
         {
-            DVector3 mainAxisWorld = GetMainThrustWorldAxis(group);
-            if (mainAxisWorld.sqrMagnitude < 1e-12)
+            DVector3 mainAxisSystem = GetMainThrustAxisSystem(group);
+            if (mainAxisSystem.sqrMagnitude < 1e-12)
                 return; // 无主推轴（全向类）：无姿态对准
             DVector3 targetN = targetDir.normalized;
             if (targetN.sqrMagnitude < 1e-12)
@@ -1990,7 +2124,7 @@ namespace PioneerFramework
                 group.angularVelocity = DVector3.zero;
                 return;
             }
-            double dot = Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(mainAxisWorld, targetN)));
+            double dot = Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(mainAxisSystem, targetN)));
             if (dot >= DefaultThrustAlignCos)
             {
                 group.angularVelocity = DVector3.zero; // 已收心到正中（≤~1.5°）：消旋，防 burn 期间漂移
@@ -1998,9 +2132,9 @@ namespace PioneerFramework
             }
             double error = Math.Acos(dot);
             // 最短旋转轴 = mainAxis × target（右手系）；反平行时叉积退化 → 任取垂直轴
-            DVector3 rotAxis = DVector3.Cross(mainAxisWorld, targetN);
+            DVector3 rotAxis = DVector3.Cross(mainAxisSystem, targetN);
             if (rotAxis.sqrMagnitude < 1e-12)
-                rotAxis = DVector3.Cross(mainAxisWorld, Math.Abs(mainAxisWorld.y) < 0.9 ? DVector3.up : DVector3.forward);
+                rotAxis = DVector3.Cross(mainAxisSystem, Math.Abs(mainAxisSystem.y) < 0.9 ? DVector3.up : DVector3.forward);
             DVector3 axisN = rotAxis.normalized;
             // 剩余夹角小于一步最大转角 → 降速收敛（避免越过目标震荡）
             double rate = Math.Min(group.MaxAngularRate, error / Math.Max(dtSeconds, 1e-9));
@@ -2198,6 +2332,71 @@ namespace PioneerFramework
             // 探针（第 2 条）：容器身份稳定（确在复用）+ 复用数组尾部陈旧槽统计（下方按 Count 上界跳过）
             if (PerfProbe.Enabled) PerfProbe.StepScratch(movableGroups, physicsResults, movableGroups.Count);
 
+            // ── R2 修复（2026-09-26 实测抓到崩溃）：**切片 scratch 的会计搬出并行区** ────────────
+            // 原来这两个探针调用在 `ComputeGroupPhysics` 里（= 工作线程上）：
+            //   · `SliceBuffer` 写**两个静态 Dictionary**（`sliceBufferByGroup` / `sliceGroupByBuffer`）
+            //     ⇒ 多线程并发 `set_Item` ⇒ `Dictionary.TryInsert` 内部状态被破坏。
+            //     **实测（23:50 会话）**：一次 `AggregateException` 裹 14+ 条内层异常
+            //     （`InvalidOperationException` 非并发集合被并发改 + `IndexOutOfRangeException`），栈名确凿：
+            //       `Dictionary.set_Item ← PerfProbe.SliceBuffer ← ComputeGroupPhysics ← Parallel.ForWorker`
+            //   · **后果不是"探针记不准"，是"那一步没算"**：异常穿出 `Parallel.For` 与 `UpdateAllMovements`
+            //     ⇒ **整个物理步被放弃**（RimWorld 打一行 AggregateException 就往下走）。
+            // 修法：这两条判的是"group→buffer 映射"的**不变式**，与并行无关 ⇒ 放到**进并行区之前**、
+            //   单线程扫一遍（失败发生在破坏之前，且不再走多线程）。
+            // ⚠ **放在这里而不是主线程结果循环**：这里有**两分支**（≥32 走 `Parallel.For`、<32 走顺序循环），
+            //   而探针在改前是**两条分支都会调**的 ⇒ 只有放在分支之前，两组组数档的 `SliceBufferChecks`
+            //   增量才都与改前**逐位相同**（否则 <32 档的计数会凭空消失，把"燃烧路径走过的证据"读没了）。
+            // ⚠ 语义等价：探针只比**引用身份**、不看内容 ⇒ 挪到 `activeSlices.Clear()` 之前无差别。
+            if (PerfProbe.Enabled)
+            {
+                for (int pi = 0; pi < movableGroups.Count; pi++)
+                {
+                    var pg = movableGroups[pi];
+                    if (pg.HasActiveBurn) PerfProbe.SliceBuffer(pg, pg.thrustSliceScratch);
+                }
+            }
+
+            // ── R1 修复（批 0-4 的 ≥32 组验收场景当场抓到，2026-09-26）────────────────────
+            // 并行体内会首次触碰 `CelestialBodyManager.systemMembersCache`（空字典）：
+            //   ComputeGroupPhysics → ComputeGroupFieldAccelJerk → CollectSystemSources → GetSystemMembers
+            // ⇒ 32+ 个线程**同时**对同一个普通 `Dictionary` 做 `set_Item` ⇒ `TryInsert` 内部越界
+            //   （桶链被破坏）。实测栈（Player.log 277 次）：
+            //     IndexOutOfRangeException at Dictionary.TryInsert ← GetSystemMembers ← CollectSystemSources
+            //     ← ComputeGroupFieldAccelJerk ← ComputeGroupPhysics ← <UpdateAllMovements>b__0 ← Parallel.ForWorker
+            // **后果不只是抛异常**：那几次迭代的 `physicsResults[i]` 没被赋值 ⇒ 该步结果被丢弃
+            //   ⇒ 那些组的 `CurrentOrbit.position` **少更新一步**（实测表现 = 可复现性验收第 1 轮指纹不同）。
+            // ⇒ 形态 B（预暖）：**进并行区之前、单线程**把成员表算好。这同时把 `EnsureInitialized`
+            //   的惰性初始化也拉到主线程（否则两个线程可能同时初次初始化，那是同一个病的另一种发作）。
+            // ⚠ 这里刻意**不加"已预暖集合"**：缓存由 `EnsureInitialized` 清（读档 PostLoadInit 会走到），
+            //   再维护一个集合就多出一个"它清了、我没清"的失效点 —— 正是本库吃过的那种漏同步。
+            //   代价只是每组一次 O(1) 字典查（缓存命中路径），量级远低于阈值。
+            // （`celestialMgr` 在本方法开头已 `if (celestialMgr == null) return;` 收窄为非空 ⇒
+            //   这里**不要再写一次空判断**：多余的空判断会把编译器对下方既有调用点的流分析搅乱，
+            //   实测多出 3 条 CS8604/CS8602 —— 新增警告必须是 0。）
+            if (movableGroups.Count >= PARALLEL_PHYSICS_MIN_GROUPS)
+            {
+                for (int i = 0; i < movableGroups.Count; i++)
+                {
+                    int prewarmBodyId = movableGroups[i].CelestialBodyId;
+                    if (prewarmBodyId >= 0) celestialMgr.GetSystemMembers(prewarmBodyId);
+                }
+            }
+
+            // ── S-a（2026-09-27）：**引力源表预取**（主线程、进并行区之前）────────────────
+            // 原来 `CollectSystemSources` 每群每步各建一次（N 遍"查成员 + 走父链 + 命中判定 + 构造入列"）；
+            // 实测"建表段"占引力场段 **80%** ⇒ 这里按**系统**只建一次，相位里只拷贝（详见管理器的说明）。
+            // ⚠ N ≥ 2 才划算（N=1 时"预取 + 拷贝"两次字典操作 ≥ 原来一次收集）⇒ 按组数门控。
+            // ⚠ 必须在**相位之外**（`ParallelPhysicsInProgress` 仍为 false）：否则就变成"相位里写共享态"，
+            //   会被 G1 守卫当场判红 —— 那正是它该抓的形态。
+            if (movableGroups.Count >= 2)
+            {
+                for (int i = 0; i < movableGroups.Count; i++)
+                {
+                    int preBodyId = movableGroups[i].CelestialBodyId;
+                    if (preBodyId >= 0) celestialMgr.PrefetchSystemSources(preBodyId, physicsTick);
+                }
+            }
+
             if (movableGroups.Count < PARALLEL_PHYSICS_MIN_GROUPS)
             {
                 for (int i = 0; i < movableGroups.Count; i++)
@@ -2205,10 +2404,18 @@ namespace PioneerFramework
             }
             else
             {
-                Parallel.For(0, movableGroups.Count, i =>
+                ParallelPhysicsInProgress = true;
+                try
                 {
-                    physicsResults[i] = ComputeGroupPhysics(movableGroups[i], dtSeconds, physicsTick, celestialMgr, GetGravityScratch(i), subSteps);
-                });
+                    Parallel.For(0, movableGroups.Count, i =>
+                    {
+                        physicsResults[i] = ComputeGroupPhysics(movableGroups[i], dtSeconds, physicsTick, celestialMgr, GetGravityScratch(i), subSteps);
+                    });
+                }
+                finally
+                {
+                    ParallelPhysicsInProgress = false;   // try/finally：并行体抛异常时也不能把相位留在 true
+                }
             }
 
             var groupsToCheck = groupsToCheckScratch;
@@ -2216,10 +2423,42 @@ namespace PioneerFramework
             groupsToCheck.Clear();
 
             // 只遍历本步有效的前 Count 项：复用数组时尾部仍是上一步的结果，不得参与本步
+            // ── R3（2026-09-26）：**节流判据每步只判一次** ─────────────────────────────
+            // 原判据写在下面的**每组循环里** ⇒ 第一个燃烧组把 `BurnDiagNextTick` 推到 +10 s，
+            // 同一步里后面的组读到新值就**全被跳过**。实测（64 组全烧）：每 10 s 窗口**只有 1 个组**
+            // 被诊断（赢的是迭代序第一个），其余 63 个一声不响 ⇒ 这套"用来发现燃烧异常"的仪器
+            // **自己丢掉了 98.4% 的样本**。
+            // ⚠⚠ **这一条不是竞态、是逻辑错**：光把它挪到主线程**不解决问题**（第一组照样推走它）
+            //   —— 是我先把判据升成"每个燃烧组都被诊断到"才当场发现搬了个空。
+            //   正解 = 把"到点了"这个**决定提到循环之外、每步只算一次**，本步**每个**燃烧组都诊断。
+            bool burnDiagDue = physicsTick >= BurnDiagNextTick;
+            if (burnDiagDue) BurnDiagNextTick = physicsTick + 10.0;
+
             for (int ri = 0; ri < movableGroups.Count; ri++)
             {
                 var result = physicsResults[ri];
                 if (!groups.TryGetValue(result.GroupId, out var group)) continue;
+
+                // R3+R4：诊断块在**主线程**跑（并行体不再碰静态节流与日志）；"到点了"由上面
+                // **每步一次**的决定给出 ⇒ 本步**所有**燃烧组都轮到（不再只轮到第一个）。
+                // ⚠ 用 `group.HasActiveBurn`（不是 `result.HasActiveBurn`）：与并行体当时判的是**同一份字段**，
+                //   而此时主循环还没执行下面的 `EndBurn()` ⇒ 与改前的进入条件逐位一致。
+                if (burnDiagDue && group.HasActiveBurn)
+                    RunBurnDiagnostics(group, celestialMgr, physicsTick);
+
+                // ── R2（同批）：`SliceAlias` 搬到这里判 ──
+                // 判据语义不变：**本步快照必须指回本组自己的 scratch**（否则并行区里被别的组改写过）。
+                // 改前它在并行体内用局部量比（恒真，只能抓"赋值被覆盖"）；现在直接比**快照**与 scratch，
+                // 比改前更能说明问题，且判的是同一件事。只在有快照时判（与改前的 `burnDv > 0` 同门槛）。
+                if (PerfProbe.Enabled && result.ActiveSlices != null)
+                    PerfProbe.SliceAlias(ReferenceEquals(result.ActiveSlices, group.thrustSliceScratch),
+                        "G" + group.GroupId);
+
+                // R4：并行体只把罕见事件读数挂在这里 ⇒ **主线程**统一打（顺序 = 组序，稳定）。
+                if (result.DiagLines != null)
+                {
+                    for (int di = 0; di < result.DiagLines.Count; di++) Log.Message(result.DiagLines[di]);
+                }
 
                 bool burnEndedThisStep = false;
 
@@ -2279,6 +2518,7 @@ namespace PioneerFramework
                             group.burnActualStartTick >= 0.0 ? physicsTick - group.burnActualStartTick : 0.0,
                             group.appliedBurnDV > 1e-9 ? actualDv / group.appliedBurnDV : 0.0, veMerged));
                         group.burnActualEndTick = physicsTick;
+                        LogNonRootBurnState(group, physicsTick, "收工后");   // 批5.B 探针（见方法注释）
                         burnEndedThisStep = true;
                     }
                 }
@@ -2317,11 +2557,11 @@ namespace PioneerFramework
                     bool wasAligning = alignStateByGroup.TryGetValue(group.GroupId, out var prevAlign) && prevAlign;
                     if (aligningNow && !wasAligning)
                     {
-                        DVector3 mainAxisWorld = GetMainThrustWorldAxis(group);
+                        DVector3 mainAxisSystem = GetMainThrustAxisSystem(group);
                         Log.Message(string.Format(
                             "[Align] Group {0} 自动对准开始：burnDir=({1:F2},{2:F2},{3:F2}) 主轴世界=({4:F2},{5:F2},{6:F2})",
-                            group.GroupId, group.burnDirection.x, group.burnDirection.y, group.burnDirection.z,
-                            mainAxisWorld.x, mainAxisWorld.y, mainAxisWorld.z));
+                            group.GroupId, group.burnDirectionSystem.x, group.burnDirectionSystem.y, group.burnDirectionSystem.z,
+                            mainAxisSystem.x, mainAxisSystem.y, mainAxisSystem.z));
                     }
                     else if (!aligningNow && wasAligning)
                     {
@@ -2330,11 +2570,11 @@ namespace PioneerFramework
                     }
                     else if (aligningNow && Find.TickManager.TicksGame >= nextAlignLogTick)
                     {
-                        DVector3 mainAxisWorld = GetMainThrustWorldAxis(group);
-                        double dot = Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(mainAxisWorld, group.burnDirection.normalized)));
+                        DVector3 mainAxisSystem = GetMainThrustAxisSystem(group);
+                        double dot = Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(mainAxisSystem, group.burnDirectionSystem.normalized)));
                         Log.Message(string.Format(
                             "[Align] Group {0} 对准中：主轴=({1:F2},{2:F2},{3:F2}) vs burnDir 夹角 {4:F1}° 角速度={5:F2}°/s",
-                            group.GroupId, mainAxisWorld.x, mainAxisWorld.y, mainAxisWorld.z,
+                            group.GroupId, mainAxisSystem.x, mainAxisSystem.y, mainAxisSystem.z,
                             Mathf.Rad2Deg * Mathf.Acos((float)dot), (float)group.angularVelocity.magnitude * Mathf.Rad2Deg));
                         nextAlignLogTick = Find.TickManager.TicksGame + 30;
                     }
@@ -2421,8 +2661,13 @@ namespace PioneerFramework
                     }
                 }
 
-                group.localPosition = group.CurrentOrbit.position - result.SyncBodyPos;
-                group.localVelocity = group.CurrentOrbit.velocity - result.SyncBodyVel;
+                group.positionBody = group.CurrentOrbit.position - result.SyncBodyPos;
+                group.velocityBody = group.CurrentOrbit.velocity - result.SyncBodyVel;
+
+                LogNonRootRendezvousState(group, physicsTick,
+                    dtSeconds > 0.0 ? result.OrbitKeepingDvCost / dtSeconds : 0.0,
+                    result.SyncBodyPos, result.SyncBodyVel);   // 批5.C 巡检探针（"全打上"版）
+                MoonRendezvousAcceptanceRunner.Tick(physicsTick, this);   // 绕月交会：自动判定（每步查一次）
 
                 groupsToCheck.Add(group.GroupId);
             }
@@ -2537,32 +2782,32 @@ namespace PioneerFramework
                 //   停进 `AlignMainAxis` 的 1.5° 死区，而**点火门要 2.0°** ⇒ 门永远不成立 ⇒
                 //   **船卡在"等对准"里直到时间走完**（实测 `节点 T+19s` → 计数器一路负到 `T--6104s`，
                 //   1.7 小时零动作；且日志自相矛盾：`预对准·诊断 夹角=0.0° |ω|=0` 而 `主轴还差 2.9°`）✗✗。
-                //   ⇒ 本条进入**预点火窗口**后，姿态让给**本条自己的方向**（见下方门前的 `burnDirection` 设置）。
+                //   ⇒ 本条进入**预点火窗口**后，姿态让给**本条自己的方向**（见下方门前的 `burnDirectionSystem` 设置）。
                 //   窗口外仍给下一条预对准（保住"排队就开始转"的原有收益 ✓）。
                 if (group.abNoPreAlign) continue;   // 对照开关：不做预对准
                 bool preAlignCurrent = physicsTick >= pm.executeTick - ManeuverPreBurnLookaheadTicks;
                 // ★★ **预对准必须瞄“节点时刻”的方向**（2026-09-21，按 MJ 的“同一个 `_worldDirection`”）——
                 //   执行器的靶 = 意图轨道在 **UT** 的速度 − 活轨道在 **UT** 的速度
                 //   （点火前两项都固定 ⇒ 方向固定 ✓）。
-                //   而本处原来把 R/T/N 分量用 `GetWorldDeltaV(localPos, localVel, …)`在
+                //   而本处原来把 R/T/N 分量用 `GetDeltaVSystem(localPos, localVel, …)`在
                 //   **当前时刻**重新表达 ✗✗ ⇒ 两者相差 **`ω·(UT − now)`**：
                 //   预对准从“排队就开始转”（可能早一整圈）⇒ 节点在 800 s 外时差 **~49°**、
                 //   更早时差到几十上百度 ⇒ **正是日志里 74° / 93° 的带角度点火** ✗✗。
                 //   （同一个“锚点必须是节点时刻”的教训，与 `SetBurnSolution` 那一条同族 ✓）
                 DVector3 preAlignDv;
-                if (pm.plannedWorldDv.sqrMagnitude > 0.0)
+                if (pm.plannedDvSystem.sqrMagnitude > 0.0)
                 {
-                    preAlignDv = pm.plannedWorldDv;   // 已是惯性/world 向量 ⇒ 无需再分解
+                    preAlignDv = pm.plannedDvSystem;   // 已是惯性/world 向量 ⇒ 无需再分解
                 }
                 else if (celestialMgr != null && OrbitAdapter.TryToOrbitView(group, celestialMgr, pm.executeTick, out OrbitView ovPre))
                 {
                     // 在**节点时刻**的位姿上分解（与 `OrbitAdapter.TryQueuePlan` 同口径 ✓）
                     (DVector3 rPre, DVector3 vPre) = OrbitAdapter.StateAtUT(ovPre, pm.executeTick);
-                    preAlignDv = OrbitMath.GetWorldDeltaV(rPre, vPre, pm.radialDV, pm.tangentialDV, pm.normalDV);
+                    preAlignDv = OrbitMath.GetDeltaVSystem(rPre, vPre, pm.radialDV, pm.tangentialDV, pm.normalDV);
                 }
                 else
                 {
-                    preAlignDv = OrbitMath.GetWorldDeltaV(group.localPosition, group.localVelocity, pm.radialDV, pm.tangentialDV, pm.normalDV);
+                    preAlignDv = OrbitMath.GetDeltaVSystem(group.positionBody, group.velocityBody, pm.radialDV, pm.tangentialDV, pm.normalDV);
                 }
                 bool hadPreAlign = group.pendingAlignDir.sqrMagnitude > 1e-12;
                 if (preAlignCurrent)
@@ -2575,14 +2820,14 @@ namespace PioneerFramework
                     //   实测（`Player.log` 2026-09-21 12:23）：`等对准：主推轴还差 143.0°` +
                     //   `带角度点火：残留 79.5°` + `started gradual burn 夹角=79.5°`。
                     //   ⇒ 这里直接给出**同一个方向**（门的判据 = 姿态目标），门、姿态、`StartBurn` 三者一致 ✓。
-                    DVector3 pmDirNow = pm.plannedWorldDv.sqrMagnitude > 0.0
-                        ? pm.plannedWorldDv
-                        : OrbitMath.GetWorldDeltaV(group.localPosition, group.localVelocity,
+                    DVector3 pmDirNow = pm.plannedDvSystem.sqrMagnitude > 0.0
+                        ? pm.plannedDvSystem
+                        : OrbitMath.GetDeltaVSystem(group.positionBody, group.velocityBody,
                             pm.radialDV, pm.tangentialDV, pm.normalDV);
                     if (pmDirNow.sqrMagnitude > 1e-12)
                     {
-                        group.burnDirection = pmDirNow.normalized;
-                        group.pendingAlignDir = group.burnDirection;
+                        group.burnDirectionSystem = pmDirNow.normalized;
+                        group.pendingAlignDir = group.burnDirectionSystem;
                     }
                 }
                 else
@@ -2683,9 +2928,9 @@ namespace PioneerFramework
                 {
                     group.burnPhaseShift = group.abForcePhaseShift;
                     group.burnPhaseSwept = true;
-                    if (mEst.BurnSeconds > 0f && pm.plannedWorldDv.sqrMagnitude > 0.0
+                    if (mEst.BurnSeconds > 0f && pm.plannedDvSystem.sqrMagnitude > 0.0
                         && OrbitAdapter.TryToOrbitView(group, celestialMgr, physicsTick, out OrbitView ovF)
-                        && BurnArc.TryPredict(ovF, pm.executeTick, OrbitView.GameWorldToAdapter(OrbitView.ToV3(pm.plannedWorldDv)),
+                        && BurnArc.TryPredict(ovF, pm.executeTick, OrbitView.GameWorldToAdapter(pm.plannedDvSystem),
                                mEst.BurnSeconds, group.burnPhaseShift + BurnArc.ExecutionDelaySeconds,
                                out BurnArc.Result fRes, out _))
                         Log.Message(string.Format("[对照·相位] G{0} 强制相位 {1:+0.0;-0.0;0.0}s｜模型预测 e={2:E3}",
@@ -2696,14 +2941,14 @@ namespace PioneerFramework
                 //   （两份权威 ✓ J2）。判据与点火块记 `burnTargetV` 的条件**同一句**
                 //   （`abFreezeDirection` 是对照用的人为冻结 ⇒ 那时走退路律，扫描照旧有意义 ✓）。
                 bool liveDeficitLaw = pm.owner != PlanOwner.Executor && !group.abFreezeDirection;
-                if (!liveDeficitLaw && !group.burnPhaseSwept && mEst.BurnSeconds > 0f && pm.plannedWorldDv.sqrMagnitude > 0.0
+                if (!liveDeficitLaw && !group.burnPhaseSwept && mEst.BurnSeconds > 0f && pm.plannedDvSystem.sqrMagnitude > 0.0
                     && OrbitAdapter.TryToOrbitView(group, celestialMgr, physicsTick, out OrbitView ovSweep))
                 {
                     var shiftSb = new System.Text.StringBuilder();
                     for (double sh = -6.0; sh <= 6.0 + 1e-9; sh += 2.0)
                     {
                         // ⚠ 扫的是**执行器真正交付的窗口** ⇒ 模型要带上执行延迟（见 `ExecutionDelaySeconds`）
-                        if (!BurnArc.TryPredict(ovSweep, pm.executeTick, OrbitView.GameWorldToAdapter(OrbitView.ToV3(pm.plannedWorldDv)),
+                        if (!BurnArc.TryPredict(ovSweep, pm.executeTick, OrbitView.GameWorldToAdapter(pm.plannedDvSystem),
                                 mEst.BurnSeconds, sh + BurnArc.ExecutionDelaySeconds, out BurnArc.Result sw, out _))
                             continue;
                         double e = sw.eccentricity;
@@ -2742,7 +2987,7 @@ namespace PioneerFramework
                 //   ⇒ 127 发、7497 m/s、`Intercept` 129 次 ✗✗。
                 //   ⇒ **等**（不设超时）；晚烧的时序误差由下一次重规划吸收 ✓。
                 //   （防死锁靠另一条：若船根本没有姿态权限，下面的可行性与超时仍会告警）。
-                // ★★ **门拒一次 ⇒ 重算一次方向**（2026-09-21 实测）：门比的是 `group.burnDirection`，
+                // ★★ **门拒一次 ⇒ 重算一次方向**（2026-09-21 实测）：门比的是 `group.burnDirectionSystem`，
                 //   而它是**某一拍取下的快照**；活轨道一直在动 ⇒ 同一个快照与"节点处的真方向"
                 //   会缓慢偏离。船预对准到 `AlignMainAxis` 的**死区**（`DefaultThrustAlignCos`≈1.5°）就停转，
                 //   而门要 2.0° ⇒ **只剩 0.8° 裕度**，方向一漂过去就**永远点不着** ✗
@@ -2751,32 +2996,32 @@ namespace PioneerFramework
                 //   这把"等对准"从"等一个死数"变成"追一个活数"，与 MJ 每帧重取 `_worldDirection` 同构。
                 // ⚠ **门必须严格宽于死区**（`IgnitionAlignGateDeg` > 死区），否则船收心后仍在门外 ⇒ 死锁。
                 //   这句在 `OnStartup` 里用 `Debug.Assert` 钉住（见 `AssertAlignGateWiderThanDeadzone`）。
-                if (MainAxisBurnAngleDeg(group, group.burnDirection) > IgnitionAlignGateDeg)
+                if (MainAxisBurnAngleDeg(group, group.burnDirectionSystem) > IgnitionAlignGateDeg)
                 {
-                    DVector3 pmDirGate = pm.plannedWorldDv.sqrMagnitude > 0.0
-                        ? pm.plannedWorldDv
-                        : OrbitMath.GetWorldDeltaV(group.localPosition, group.localVelocity,
+                    DVector3 pmDirGate = pm.plannedDvSystem.sqrMagnitude > 0.0
+                        ? pm.plannedDvSystem
+                        : OrbitMath.GetDeltaVSystem(group.positionBody, group.velocityBody,
                             pm.radialDV, pm.tangentialDV, pm.normalDV);
                     if (pmDirGate.sqrMagnitude > 1e-12)
                     {
-                        group.burnDirection = pmDirGate.normalized;
-                        group.pendingAlignDir = group.burnDirection;
+                        group.burnDirectionSystem = pmDirGate.normalized;
+                        group.pendingAlignDir = group.burnDirectionSystem;
                     }
                     if (group.burnIgnitionAlignWaitTick < 0.0)
                     {
                         group.burnIgnitionAlignWaitTick = physicsTick;
                         Log.Message(string.Format(
                             "[Maneuver] G{0} 等对准：主推轴还差 {1:F1}°（上游行为：对准才点火，不打偏）",
-                            group.GroupId, MainAxisBurnAngleDeg(group, group.burnDirection)));
+                            group.GroupId, MainAxisBurnAngleDeg(group, group.burnDirectionSystem)));
                     }
                     continue;   // 等到对准为止
                 }
                 // ★★ **点火门与船的姿态必须瞄同一个方向**（2026-09-21 游戏内实测的真 bug）——
-                //   门比的是 `group.burnDirection`，而它要到 `StartBurn`（**门的后面**）才被设 ⇒
+                //   门比的是 `group.burnDirectionSystem`，而它要到 `StartBurn`（**门的后面**）才被设 ⇒
                 //   门前那一刻它还是**上一次燃烧**留下的旧方向 ✗。船则被 `pendingAlignDir` 转到别处
                 //   ⇒ 实测 `预对准·诊断 夹角=0.0°、|ω|=0` 与 `主轴还差 2.9°` 自相矛盾、船卡死 1.7 小时。
                 //   ⚠ **修点在门的【前面】**（见上方 `preAlignCurrent` 那个分支）：那里同时设
-                //   `burnDirection` 与 `pendingAlignDir`。**不能放在这里** —— 门过不去会 `continue`，
+                //   `burnDirectionSystem` 与 `pendingAlignDir`。**不能放在这里** —— 门过不去会 `continue`，
                 //   放这里的块永远执行不到（我第一版就是这么写的，实测 `带角度点火：残留 79.5°` ✗✗）。
 
                 bool hadOrbitKeeping = group.HasOrbitKeeping;
@@ -2792,30 +3037,31 @@ namespace PioneerFramework
                     group.orbitKeepingWhitelist = savedWhitelist;
                 }
 
-                DVector3 relPos2 = group.localPosition;
-                DVector3 relVel2 = group.localVelocity;
+                DVector3 relPos2 = group.positionBody;
+                DVector3 relVel2 = group.velocityBody;
 
                 Log.Message(string.Format("[Maneuver] Group {0} localFrame: |pos|={1:F0}km |vel|={2:F1} m/s bodyId={3}",
                     group.GroupId, relPos2.magnitude / 1000.0, relVel2.magnitude, group.CelestialBodyId));
 
                 // 优先用规划时刻的世界系 dV（惯性方向，避免点火时刻换算的帧旋转误差）；
                 // 旧存档/手动机动未设置时退回点火时刻分量换算
-                DVector3 dV = pm.plannedWorldDv.sqrMagnitude > 0.0
-                    ? pm.plannedWorldDv
-                    : OrbitMath.GetWorldDeltaV(relPos2, relVel2, pm.radialDV, pm.tangentialDV, pm.normalDV);
+                DVector3 dV = pm.plannedDvSystem.sqrMagnitude > 0.0
+                    ? pm.plannedDvSystem
+                    : OrbitMath.GetDeltaVSystem(relPos2, relVel2, pm.radialDV, pm.tangentialDV, pm.normalDV);
 
                 double safeRadius = GetBodySafeRadius(group.CelestialBodyId);
                 double mu = GetBodyGM(group.CelestialBodyId);
-                DVector3 relVelSafe = group.localVelocity + dV;
-                bool safe = OrbitMath.IsOrbitSafe(group.localPosition, relVelSafe, safeRadius, mu);
+                DVector3 relVelSafe = group.velocityBody + dV;
+                bool safe = OrbitMath.IsOrbitSafe(group.positionBody, relVelSafe, safeRadius, mu);
                 if (!safe)
                 {
-                    double sma = OrbitMath.SemiMajorAxis(group.localPosition, relVelSafe);
-                    OrbitMath.GetEccentricity(group.localPosition, relVelSafe, out _, out double ecc);
+                    // ⚠ 2026-09-26（D6）：这两处原先省略 `mu`（静默取默认 GM）。本次显式传上面算好的 `mu`。
+                    double sma = OrbitMath.SemiMajorAxis(group.positionBody, relVelSafe, mu);
+                    OrbitMath.GetEccentricity(group.positionBody, relVelSafe, out _, out double ecc, mu);
                     double pe = sma > 0 ? sma * (1.0 - ecc) : -1.0;
                     Log.Message(string.Format("[Maneuver] BLOCKED: G{0} sma={1:F0} e={2:F4} pe={3:F0}km safeR={4:F0}km |pos|={5:F0} |v|={6:F0} |dv|={7:F0}",
                         group.GroupId, sma, ecc, pe / 1000.0, safeRadius / 1000.0,
-                        group.localPosition.magnitude / 1000.0,
+                        group.positionBody.magnitude / 1000.0,
                         relVelSafe.magnitude, dV.magnitude));
                     Messages.Message(string.Format("Group {0} 机动已跳过（将撞击行星）", group.GroupId), MessageTypeDefOf.RejectInput);
                     group.PopExecutedManeuver();
@@ -2831,8 +3077,8 @@ namespace PioneerFramework
                 group.burnCommandAccel = burnSecForCenter > 0.0
                     ? dV.magnitude / burnSecForCenter
                     : 0.0;
-                // ⚠ 用 `dV` 而**不是** `pm.plannedWorldDv`：手动机动（`QueueManeuver`，含 B2.2-b 的微调
-                //   与手动排的条目）**不带** world 向量，只有分量 ⇒ 用 plannedWorldDv 会读出 0
+                // ⚠ 用 `dV` 而**不是** `pm.plannedDvSystem`：手动机动（`QueueManeuver`，含 B2.2-b 的微调
+                //   与手动排的条目）**不带** world 向量，只有分量 ⇒ 用 plannedDvSystem 会读出 0
                 //   （命令加速度恒 0 ⇒ 悄悄退回全油门，与恒定加速度政策不一致）。`dV` 就是执行器
                 //   真正拿在手里的那一份（见上面那个三元式）⇒ 它才是这里的唯一权威。
                 // ★ 方向锚点用**计划自带的节点帧分量**（不是在这里重新分解 —— 点火帧与节点相差
@@ -2895,9 +3141,9 @@ namespace PioneerFramework
                 //   假设"计划属于节点那一刻的系"。**实测让它从 6.058e-3 变差到 7.921e-3** ✗ ⇒ 假设错。
                 //   ⇒ 保留 `StartBurn` 原有的分解（点火时刻），别再动这里。
 
-                // ⚠ 用 `dV` 而不是 `pm.plannedWorldDv`：手动机动（含 B2.2-b 的微调条目）只带分量、
-                //   world 向量是 0 ⇒ 用 plannedWorldDv 会让模型/目标全部读到零向量（静默失效）。
-                group.burnArcDv = OrbitView.GameWorldToAdapter(OrbitView.ToV3(dV));
+                // ⚠ 用 `dV` 而不是 `pm.plannedDvSystem`：手动机动（含 B2.2-b 的微调条目）只带分量、
+                //   world 向量是 0 ⇒ 用 plannedDvSystem 会让模型/目标全部读到零向量（静默失效）。
+                group.burnArcDvAdapter = OrbitView.GameWorldToAdapter(dV);
                 group.burnArcNodeUt = pm.executeTick;
                 group.burnArcSeconds = burnSecForCenter;
                 // 种子：点火那一刻的状态 ⇒ 第一次诊断（+10s）就能量出"这 10 秒真正施加了多少 Δv"
@@ -2919,7 +3165,7 @@ namespace PioneerFramework
                     //   口径：点火前轨道推进到节点 + 计划 Δv 一次施加（**不是**模型预测的有限燃烧结果：
                     //   意图 = "计划想做的那件事"，模型猜的是"我会做成什么"，两者不是一回事）。
                     //   ⚠ 两个向量都必须先换到**同一个系**：`burnPreBurnOrbit`/`StateAtUT` 给的是游戏系，
-                    //     而 `burnArcDv` 是适配层系（缓存时换过）⇒ 不换系相加 = 又一次混系事故。
+                    //     而 `burnArcDvAdapter` 是适配层系（缓存时换过）⇒ 不换系相加 = 又一次混系事故。
                     //   ⚠ **微调条目本身不再记目标**（否则微调的燃烧结束时又会判定"还有残差" ⇒ 蚊子机动无限套娃）。
                     //     微调是执行器的收口动作，不是一次新意图。
                     // ★★ **MJ 的靶**（"暂时全盘照抄 MJ"，2026-09-20 用户裁定）：**节点处的目标速度**。
@@ -2928,7 +3174,7 @@ namespace PioneerFramework
                     //   ⚠ 我们一度把靶换成"意图轨道 (a,h向量) + 出范围政策"（台架 e 好两个数量级），
                     //     但**真实几何上出范围支是自证式的**：游戏实测 430.01 m/s 只交付 164.9 ✗
                     //     ⇒ 换回 MJ 的形式（无几何分支、良态）；精度交给收口微调（`trimTarget*`）✓。
-                    if (group.burnArcDv.sqrMagnitude > 0.0 && pm.owner != PlanOwner.Executor)
+                    if (group.burnArcDvAdapter.sqrMagnitude > 0.0 && pm.owner != PlanOwner.Executor)
                     {
                         // ★★ **靶的参考轨道：优先用计划自带的**（2026-09-21，两冲量转移的第二发）。
                         //   上游的节点自带宽义"Δv 是在哪条轨道上算的"（`node.patch` / `nextPatch`），
@@ -2939,7 +3185,7 @@ namespace PioneerFramework
                         (DVector3 trimRN, DVector3 trimVN) = pm.hasResolvedRefOrbit
                             ? OrbitAdapter.StateAtUT(pm.resolvedRefOrbit, group.burnArcNodeUt)
                             : OrbitAdapter.StateAtUT(group.burnPreBurnOrbit, group.burnArcNodeUt);
-                        DVector3 trimVAfter = trimVN + OrbitAdapter.ToD(OrbitView.AdapterToGameWorld(group.burnArcDv));
+                        DVector3 trimVAfter = trimVN + OrbitView.AdapterToGameWorld(group.burnArcDvAdapter);
                         DVector3 hVec = DVector3.Cross(trimRN, trimVAfter);
                         group.trimTargetA = OrbitMath.SemiMajorAxis(trimRN, trimVAfter, ovSeed.mu);
                         group.trimTargetH = hVec.magnitude;
@@ -2959,7 +3205,7 @@ namespace PioneerFramework
                     burnSecForCenter / 2.0, burnSecForCenter));
 
                 // 点火残留角明显非零 ⇒ 明说"对准时间不够"（而不是只给一个裸角度让人猜）
-                double ignAngle = MainAxisBurnAngleDeg(group, group.burnDirection);
+                double ignAngle = MainAxisBurnAngleDeg(group, group.burnDirectionSystem);
                 if (ignAngle > 5.0)
                 {
                     double usable = AlignFeasibility.UsableAlignSeconds(ManeuverPreBurnLookaheadTicks, mEst.BurnSeconds);
@@ -2970,8 +3216,9 @@ namespace PioneerFramework
                         usable * group.MaxAngularRate * Mathf.Rad2Deg));
                 }
                 Log.Message(string.Format("[Maneuver] Group {0} started gradual burn! dv={1:F1} m/s remaining={2} 主推轴与燃烧方向夹角={3:F1}° 预计燃烧={4:F0}s {5}",
-                    group.GroupId, dV.magnitude, remaining, MainAxisBurnAngleDeg(group, group.burnDirection),
+                    group.GroupId, dV.magnitude, remaining, MainAxisBurnAngleDeg(group, group.burnDirectionSystem),
                     mEst.BurnSeconds, longBurn));
+                LogNonRootBurnState(group, physicsTick, "点火前");   // 批5.B 探针（见方法注释）
             }
 
             // ── 交会/接近引导（精确交会：固定到达时刻；近距离接近：动态到达时刻）──
@@ -3020,7 +3267,7 @@ namespace PioneerFramework
             {
                 // 无解时给一条"相位优先"的量化建议（S3）：Δv 与圈数成反比，比硬追便宜一个量级
                 double phaseErr = PhaseErrorRadians(group, target, gm);
-                var ph = RendezvousCore.PlanPhasing(group.localPosition, group.localVelocity, gm, phaseErr);
+                var ph = RendezvousCore.PlanPhasing(group.positionBody, group.velocityBody, gm, phaseErr);
                 Log.Message(string.Format(
                     "[Guidance] Group {0} 重规划无解（预算 {1:F0} m/s，原修正量 {2:F0} m/s）｜相位差 {3:F1}°，相位规划建议：{4}",
                     group.GroupId, budget, causeDv, phaseErr * Mathf.Rad2Deg,
@@ -3029,10 +3276,10 @@ namespace PioneerFramework
                 return false;
             }
 
-            // 排队新出发段：分量与惯性方向都要填（点火时 dvMag 走分量、实际烧走 plannedWorldDv）
+            // 排队新出发段：分量与惯性方向都要填（点火时 dvMag 走分量、实际烧走 plannedDvSystem）
             DVector3 rDep = OrbitMath.GetPositionAtTimeDelta(r1Rel, v1Rel, plan.WaitSeconds, gm);
             DVector3 vDep = OrbitMath.GetVelocityAtTimeDelta(r1Rel, v1Rel, plan.WaitSeconds, gm);
-            OrbitMath.WorldDeltaVToComponents(rDep, vDep, plan.DepartureDv, out double rad, out double tan, out double norm);
+            OrbitMath.DeltaVSystemToComponents(rDep, vDep, plan.DepartureDv, out double rad, out double tan, out double norm);
             double arrivalTick = physicsTick + plan.WaitSeconds + plan.TransferSeconds;
             QueueGroupManeuver(group.GroupId, new SpaceEntityGroup.PlannedManeuver
             {
@@ -3040,7 +3287,7 @@ namespace PioneerFramework
                 tangentialDV = (float)tan,
                 normalDV = (float)norm,
                 executeTick = (int)Math.Round(physicsTick + plan.WaitSeconds),
-                plannedWorldDv = plan.DepartureDv,
+                plannedDvSystem = plan.DepartureDv,
                 active = true,
                 armRendezvousGuidance = true,   // 点火后重新挂上引导（新到达时刻）
             });
@@ -3069,7 +3316,7 @@ namespace PioneerFramework
             DVector3 r2Aim = r2Rel + aimOffset;
             TransferGeometry geom = group.rendezvousPrograde ? TransferGeometry.ShortWay : TransferGeometry.LongWay;
 
-            DVector3 r1Rel = group.localPosition, v1Rel = group.localVelocity;
+            DVector3 r1Rel = group.positionBody, v1Rel = group.velocityBody;
             double[] candidates = { OrbitMath.GetTimeToPeriapsis(r1Rel, v1Rel), OrbitMath.GetTimeToApoapsis(r1Rel, v1Rel) };
             for (int i = 0; i < candidates.Length; i++)
             {
@@ -3087,14 +3334,14 @@ namespace PioneerFramework
                 if (dvA.magnitude >= dvNow.magnitude) continue;
                 if (!OrbitMath.IsOrbitSafe(rA, vA + dvA, safeRadius, gm)) continue;
 
-                OrbitMath.WorldDeltaVToComponents(rA, vA, dvA, out double rad, out double tan, out double norm);
+                OrbitMath.DeltaVSystemToComponents(rA, vA, dvA, out double rad, out double tan, out double norm);
                 QueueGroupManeuver(group.GroupId, new SpaceEntityGroup.PlannedManeuver
                 {
                     radialDV = (float)rad,
                     tangentialDV = (float)tan,
                     normalDV = (float)norm,
                     executeTick = (int)Math.Round(physicsTick + dt),
-                    plannedWorldDv = dvA,
+                    plannedDvSystem = dvA,
                     active = true,
                     armRendezvousGuidance = true,
                 });
@@ -3120,7 +3367,7 @@ namespace PioneerFramework
             if (group == null || target == null) return;
             if (group.rendezvousIsApproach)
             {
-                double distNow = (target.localPosition + aimOffset - group.localPosition).magnitude;
+                double distNow = (target.positionBody + aimOffset - group.positionBody).magnitude;
                 Log.Warning(string.Format(
                     "[Guidance] Group {0} 交会中止：已在滚动接近模式且仍不可行（{1}）· 距离 {2:F0}km",
                     group.GroupId, cause, distNow / 1000.0));
@@ -3131,7 +3378,7 @@ namespace PioneerFramework
                 return;
             }
             group.RegisterApproachGuidance(target.GroupId, group.rendezvousUseNetworks, aimOffset);
-            double distM = (target.localPosition + aimOffset - group.localPosition).magnitude;
+            double distM = (target.positionBody + aimOffset - group.positionBody).magnitude;
             double etaH = distM / ApproachMaxClosingSpeed / 3600.0;
             Log.Message(string.Format(
                 "[Guidance] Group {0} 精确交会 → 滚动接近（原因：{1}）：动态 tof=距离/{2:F0}m/s 修正量有界；" +
@@ -3145,8 +3392,8 @@ namespace PioneerFramework
         private double PhaseErrorRadians(SpaceEntityGroup group, SpaceEntityGroup target, double gm)
         {
             if (group == null || target == null) return 0.0;
-            DVector3 rA = group.localPosition, rB = target.localPosition;
-            DVector3 nA = DVector3.Cross(rA, group.localVelocity);
+            DVector3 rA = group.positionBody, rB = target.positionBody;
+            DVector3 nA = DVector3.Cross(rA, group.velocityBody);
             if (nA.sqrMagnitude < 1e-12) return 0.0;
             DVector3 n = nA.normalized;
             // 目标在本船轨道面上的分量角
@@ -3162,7 +3409,7 @@ namespace PioneerFramework
         /// <summary>主推轴与目标方向的夹角（度）。无主推轴（全向类）返回 0。</summary>
         private double MainAxisBurnAngleDeg(SpaceEntityGroup group, DVector3 targetDir)
         {
-            DVector3 axis = GetMainThrustWorldAxis(group);
+            DVector3 axis = GetMainThrustAxisSystem(group);
             if (axis.sqrMagnitude < 1e-12 || targetDir.sqrMagnitude < 1e-12) return 0.0;
             double dot = Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(axis.normalized, targetDir.normalized)));
             return Math.Acos(dot) * Mathf.Rad2Deg;
@@ -3172,9 +3419,9 @@ namespace PioneerFramework
         /// 预对准开始日志：给出"当前夹角 / 按动量轮限速需要多久 / 距节点还有多久"三个数，
         /// 让"对准有没有留够时间"当场可判（预对准不耗料，故不涉及工质）。
         /// </summary>
-        /// <summary>适配层系 → 游戏系（只用于把状态喂给游戏系口径的工具函数，如 `WorldDeltaVToComponents`）。</summary>
-        private static DVector3 AdapterToGameD(MechJebLib.Primitives.V3 v) =>
-            OrbitAdapter.ToD(OrbitView.AdapterToGameWorld(v));
+        /// <summary>适配层系 → 游戏系（只用于把状态喂给游戏系口径的工具函数，如 `DeltaVSystemToComponents`）。</summary>
+        private static DVector3 AdapterToGameD(DVector3 v) =>
+            OrbitView.AdapterToGameWorld(v);
 
         private void LogPreAlignStarted(SpaceEntityGroup group, int executeTick, double physicsTick)
         {
@@ -3232,8 +3479,8 @@ namespace PioneerFramework
                 // 零偏移 = 瞄准 group 中心（原行为）。
                 DVector3 aimOffset = ResolveTargetAimOffset(group, target);
 
-                DVector3 r1Rel = group.localPosition;
-                DVector3 v1Rel = group.localVelocity;
+                DVector3 r1Rel = group.positionBody;
+                DVector3 v1Rel = group.velocityBody;
 
                 // ── 新远场律（2026-09-17 接线）──────────────────────────────────────
                 //   与纯测试台架**共用同一个入口** `RendezvousGuidanceLaw.Compose`（律只写一次）。
@@ -3275,7 +3522,7 @@ namespace PioneerFramework
                 {
                     if (TryPredictTargetAtTick(target, group.rendezvousArrivalTick, out _, out var vTargetHold))
                     {
-                        DVector3 killDir = (vTargetHold - group.localVelocity).normalized;
+                        DVector3 killDir = (vTargetHold - group.velocityBody).normalized;
                         if (killDir.sqrMagnitude > 1e-9)
                             group.pendingAlignDir = killDir;
                     }
@@ -3287,8 +3534,8 @@ namespace PioneerFramework
                 {
                     // 接近模式：动态到达时刻 = now + dist / 限速（修正量有界、轨道扰动小）；
                     // 贴近且相对速度归零 → 接近完成
-                    double distNow = (target.localPosition + aimOffset - r1Rel).magnitude;
-                    double relvelNow = (target.localVelocity - v1Rel).magnitude;
+                    double distNow = (target.positionBody + aimOffset - r1Rel).magnitude;
+                    double relvelNow = (target.velocityBody - v1Rel).magnitude;
                     if (distNow < ApproachCompletionDistance && relvelNow < ApproachCompletionRelVel)
                     {
                         Log.Message(string.Format("[Guidance] Group {0} approach complete: dist={1:F0}m relvel={2:F1} m/s",
@@ -3307,7 +3554,7 @@ namespace PioneerFramework
                     DVector3 rhatA = r1Rel.normalized;
                     DVector3 hhatA = DVector3.Cross(r1Rel, v1Rel).normalized;
                     DVector3 thatA = DVector3.Cross(hhatA, rhatA);
-                    DVector3 relA = target.localPosition + aimOffset - r1Rel;      // 本船 → 目标
+                    DVector3 relA = target.positionBody + aimOffset - r1Rel;      // 本船 → 目标
                     tof = Math.Max(RendezvousGuidanceCore.ApproachTimeSeconds(
                         DVector3.Dot(relA, rhatA), DVector3.Dot(relA, thatA), DVector3.Dot(relA, hhatA),
                         aApp, ApproachMaxClosingSpeed), 1.0);
@@ -3333,7 +3580,7 @@ namespace PioneerFramework
                 if (!inTerminal && aMain > 0.01
                     && TryPredictTargetAtTick(target, arrivalTick, out _, out var vTermRel0))
                 {
-                    DVector3 drEst = target.localPosition + aimOffset - r1Rel;
+                    DVector3 drEst = target.positionBody + aimOffset - r1Rel;
                     double distEst = drEst.magnitude;
                     double relVel = (vTermRel0 - v1Rel).magnitude;
                     // 终端 = 第二次主推（主引擎全力消速）：在"刹车距离"处入场——
@@ -3376,7 +3623,7 @@ namespace PioneerFramework
                     // 速度接近匹配但距离仍大时补位置收敛（轨迹整形），避免"停在远处"。
                     if (!TryPredictTargetAtTick(target, arrivalTick, out _, out var vTargetRel))
                         continue;
-                    DVector3 drClose = target.localPosition + aimOffset - r1Rel;
+                    DVector3 drClose = target.positionBody + aimOffset - r1Rel;
                     double distClose = drClose.magnitude;
                     dv = vTargetRel - v1Rel;
                     double relVel = dv.magnitude;
@@ -3433,7 +3680,7 @@ namespace PioneerFramework
         {
             if (group == null) return;
             double distKm = target != null
-                ? (target.localPosition + aimOffset - group.localPosition).magnitude / 1000.0
+                ? (target.positionBody + aimOffset - group.positionBody).magnitude / 1000.0
                 : double.NaN;
             Log.Warning(string.Format("[Guidance] Group {0} 交会中止：{1}（距离 {2:F0}km）",
                 group.GroupId, cause, distKm));
@@ -3498,7 +3745,7 @@ namespace PioneerFramework
             // 避免修正过期：烧中重新评估，若轨迹变化导致修正方向偏离，立即换新解。
             if (group.HasActiveBurn)
             {
-                double curDot = DVector3.Dot(group.burnDirection.normalized, dv.normalized);
+                double curDot = DVector3.Dot(group.burnDirectionSystem.normalized, dv.normalized);
                 if (curDot >= Math.Cos(30f * Mathf.Deg2Rad))
                     return; // 方向没大变 → 继续当前烧（不重复对准/浪费）
                 InterruptCorrectionBurn(group);
@@ -3622,17 +3869,20 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// **新远场律的游戏侧接线**：取状态 → 定预算 → 选终端 → 调纯核心 → 交给共用落地段。
+        /// **交会引导的游戏侧入口**（"NewLaw" 这个措辞是命名债，见 <see cref="UseNewRendezvousLaw"/> 的说明）。
         ///
-        /// 与纯测试台架（<c>InPlaneRendezvousPilot</c>）的关系：**律的合一是同一个函数**
-        /// （<see cref="RendezvousGuidanceLaw.Compose"/>）；此处的差异全部是"执行器口径"：
+        /// ⚠ 2026-09-28 更正：本文原写"与纯测试台架共用 `RendezvousGuidanceLaw.Compose`"——**已过期**。
+        ///   那套自制远场律（含 5% CW 终端）已于 2026-09-22 由用户裁定作废并整段删除；
+        ///   现在驱动计划的是**交会阶梯**（`RendezvousLadder`，日志打 `[阶梯]` 行）。
+        ///   本函数现在的职责是：**完成判据 + 收尾捷径 + 与旧路径共用的落地段**。
+        ///
+        /// 执行器口径（与台架/阶梯的差异都在这里）：
         ///   · 台架是每物理步节流执行（Δv 按步分批）；游戏侧 <c>StartBurn</c> 是**原子脉冲**
         ///     （满推力烧完为止）⇒ 本函数在烧的期间**不再发新烧**，避免重复交付；
-        ///   · 台架 dt = 物理步；游戏侧 dt = 控制周期 <see cref="NewLawControlDt"/>，
-        ///     且律给出的 |Δv| ≤ aMax×dt ⇒ 满推力能在一个周期内烧完（自洽，见下）。
+        ///   · dt = 控制周期 <see cref="NewLawControlDt"/>，给出的 |Δv| ≤ aMax×dt ⇒ 满推力能在一个周期内烧完。
         ///
-        /// 完成判据用 <see cref="RendezvousGuidanceCore.HasRendezvoused"/>（距离 + 相对速度两项），
-        /// 取代旧路径"到达点已过即完成"的静默假成功（旧口径不看距离，见审查 D4）。
+        /// 完成判据走 <see cref="SpaceEntityGroup.IsRendezvousGoalMet"/>（**目的**口径：距离 + 相对速度两项，
+        /// 见 `EffectiveRendezvousGoal`），取代旧路径"到达点已过即完成"的静默假成功（旧口径不看距离，见审查 D4）。
         /// </summary>
         private void RunNewRendezvousLaw(
             SpaceEntityGroup group, SpaceEntityGroup target, DVector3 aimOffset,
@@ -3662,10 +3912,34 @@ namespace PioneerFramework
             //   ⚠ 走统一口而不是直接 `IsMet`：相位目的要算有符号相位差与半长轴差，
             //     那些量在这里拼一次、在那里又拼一次就会两套口径（本会话的老毛病）。
             bool goalMet = group.IsRendezvousGoalMet(target, gm, out double phaseErrDeg);
-            if (goalMet)
+
+            // ★★ 2026-09-28 **修死代码**（用户："收尾捷径这次没触发，再检查"）：
+            //   下面那段「收尾捷径」原先排在完成分支**之后**，而它自己又要求 `goalMet` 为真
+            //   ⇒ 到达判据一成立就被完成分支 `return` 掉 ⇒ 走到捷径时 `goalMet` **必为 false**
+            //   ⇒ **这条机制从未触发过**（日志里连它那两条提示都从没出现过 ✓ 本次交会也是）。
+            //   ⚠ 我上一轮把"没触发"解释成"判据还没成立、没轮到它"——**那是错的**，它根本不可能成立。
+            //   ⇒ 把关口提到完成分支**之前**：判据仍是"到位（`goalMet`）"，只多问一句
+            //   "残余相对速度能不能被**一个物理步**抹平"：能就走捷径（严格共速、省掉整条控制链），
+            //   不能就走普通完成分支 —— 两者都是"完成"，交会语义不变。
+            double shortcutStepDv = group.HasActiveBurn
+                ? 0.0
+                : EstimateMaxAcceleration(group) * UPDATE_INTERVAL_TICKS;
+            bool shortcutApplies = goalMet && shortcutStepDv > 0.0 && relSpeed <= shortcutStepDv;
+
+            if (goalMet && !shortcutApplies)
             {
+                // ⚠ "已到位但引擎吃不掉残余"必须说出来（原在捷径段落里，2026-09-22 立、2026-09-28 折到这里，
+                //   因为捷径一旦走到这里就必然不适用）：低推力档实测 `dist=246 m / relVel=2.5 m/s`
+                //   而一步只能给 2.27 m/s ⇒ 否则看日志的人只能猜"为什么没走捷径"。
+                //   语义上这**不是失败**：到达判据才是完成判据，捷径只是快速路径。
+                if (shortcutStepDv <= 0.0 || relSpeed > shortcutStepDv)
+                    Log.Message(string.Format(
+                        "[Guidance] Group {0} 已到位（dist={1:F0} m）但残余相对速度 {2:F3} m/s 超过一步可给 {3:F3} m/s"
+                        + "（a_full×dt，含 RCS）⇒ 捷径不适用，走普通完成路径",
+                        group.GroupId, relDist, relSpeed, shortcutStepDv));
+
                 Log.Message(string.Format(
-                    "[Guidance] Group {0} rendezvous complete (new law): dist={1:F0}m relVel={2:F2} m/s"
+                    "[Guidance] Group {0} rendezvous complete（阶梯引导）: dist={1:F0}m relVel={2:F2} m/s"
                     + "｜目的={3}｜相位差={4}",
                     group.GroupId, relDist, relSpeed, group.EffectiveRendezvousGoal,
                     double.IsNaN(phaseErrDeg) ? "—" : string.Format("{0:+0.0;-0.0;0}°", phaseErrDeg)));
@@ -3703,11 +3977,10 @@ namespace PioneerFramework
             //   ⚠⚠ **条件① 不能省**（第一版漏了它，实测代价：在 dist=6972 m、容差 100 m 时就抹平了
             //     ⇒ **提前 7 km 结束交会** ✗）。条件①的真正作用是"**确认已经到位**"——
             //     没有它，捷径就变成"只要相对速度够小就停"，与交会目的无关。
-            if (!group.HasActiveBurn)
+            if (shortcutApplies)
             {
-                double aMainStep0 = EstimateMaxAcceleration(group) * UPDATE_INTERVAL_TICKS;
-                double aMainStep = aMainStep0;
-                if (aMainStep > 0.0 && relSpeed <= aMainStep && goalMet)
+                double aMainStep = shortcutStepDv;
+                if (aMainStep > 0.0)
                 {
                     DVector3 vBefore = group.CurrentOrbit.velocity;
                     group.CurrentOrbit.velocity = vBefore + (v2Rel - v1Rel);   // 抹平：本船 → 目标速度
@@ -3724,19 +3997,6 @@ namespace PioneerFramework
                         group.GroupId, relSpeed), MessageTypeDefOf.TaskCompletion);
                     group.ClearRendezvousGuidance();
                     return;
-                }
-                // ⚠ **"到位了但引擎吃不掉"必须说出来**（2026-09-22）：低推力档实测
-                //   `dist=246 m / relVel=2.5 m/s` 而一步只能给 2.27 m/s ⇒ 捷径**沉默地不触发**，
-                //   看日志的人只能猜"为什么没走捷径"。这里明说，并把两个数都摆出来。
-                //   （语义上这**不是失败**：到达判据才是完成判据，捷径只是快速路径；够不着就继续磨。）
-                else if (goalMet)
-                {
-                    Log.Message(string.Format(
-                        "[Guidance·捷径] G{0} 已到位（dist={1:F0} m）但**引擎吃不掉残余**："
-                        + "残余相对速度 {2:F3} m/s > 一步可给 {3:F3} m/s（a_full={4:F3}×dt={5:F0}s）"
-                        + "⇒ 捷径不适用（这不是失败：到达判据才是完成判据，捷径只是快速路径）",
-                        group.GroupId, relDist, relSpeed, aMainStep0,
-                        aMainStep0 / Math.Max(UPDATE_INTERVAL_TICKS, 1e-9), UPDATE_INTERVAL_TICKS));
                 }
             }
 
@@ -3775,7 +4035,7 @@ namespace PioneerFramework
             {
                 if (TryPredictTargetAtTick(target, physicsTick, out var rNear, out var vNear))
                 {
-                    double distNow = (group.localPosition - (rNear + ResolveTargetAimOffset(group, target))).magnitude;
+                    double distNow = (group.positionBody - (rNear + ResolveTargetAimOffset(group, target))).magnitude;
                     double nextUt = group.plannedManeuvers[0].executeTick;
                     // ⚠ 用**停下尺度**（上游的 100 m），不是完成容差 2 km ——
                     //   用 2 km 会在 2 km 就清队列（提前“就地匹配”）⇒ 又跟接近级打架 ✗
@@ -3800,15 +4060,13 @@ namespace PioneerFramework
                 && OrbitAdapter.TryToOrbitView(group, ladderMgr, physicsTick, out OrbitView ovLadSelf)
                 && OrbitAdapter.TryToOrbitView(target, ladderMgr, physicsTick, out OrbitView ovLadTgt))
             {
-                double dPhiLad = RendezvousLadder.PhaseDifferenceDeg(ovLadSelf, ovLadTgt, physicsTick) * Mathf.Deg2Rad;
-                // ⚠ 面外**必须进价目**（2026-09-20，B2.6）：否则"异面 + 低推力"会被低估 ⇒ 错分到准脉冲区，
-                //   而那里的脉冲平面改变低推力船执行不了 ✗（设计稿 §10.5-N1）。
-                double dIncLad = ovLadSelf.RelativeInclination(ovLadTgt);
-                double dvScaleLad = RendezvousGuidanceCore.CostEstimate(
-                    ovLadSelf.semiMajorAxis, ovLadTgt.semiMajorAxis, dPhiLad, dIncLad, gm);
-                double vcLad = Math.Sqrt(gm / Math.Max(rMag, 1.0));
-                double gLad = gm / Math.Max(rMag * rMag, 1.0);
-                ManeuverRegime.Classify(dvScaleLad, vcLad, gLad, aMax, out double thetaLad, out _);
+                // ★★ **价目改由阶梯自己出**（2026-09-28，用户裁定"交会旧律完全不要，只要我们的新 MJ"）：
+                //   原先这里借旧律的 `RendezvousGuidanceCore.CostEstimate(sma…, Δφ, Δi)` 当"这次机动多大"的
+                //   量级 ⇒ 那是旧律"形状+相位"两段账，与阶梯真正排的不是同一笔。
+                //   现在**先让阶梯排计划、用它自己的 `TotalDv` 当量级**（同一份权威、零借用）。
+                //   （B2.6 那条"面外必须进价目"由构造满足：平面改变本来就在阶梯的计划里。）
+                //   ⚠ 顺序安全：`useLadder` 本就是"默认先试"、不依赖这个分类；分类结果只喂日志（`Θ=`）
+                //     ⇒ 搬到规划之后**不改变任何分派行为**。
                 // **迟滞**（防在阈值上翻）：进阶梯用 0.2，退出要 > 0.3。
                 //   实测这批场景 Θ 压在 0.187~0.200（正好在阈上）⇒ 无迟滞就会反复换机制。
                 // ★★ **优先级翻转（用户 2026-09-21："先按 MJ 的走"）**：阶梯**默认先试**。
@@ -3818,6 +4076,9 @@ namespace PioneerFramework
                 //   1321 发微冲量、总 Δv 473 m/s、**交会未完成** ✗✗（而高推那轮走阶梯只花 719 m/s ✓）。
                 //   ⇒ **阶梯先走**；只有它明确给不出节点、且这一档确实超出准脉冲区（Θ > 阈值）
                 //     时，才把它当**逃生口**（那是 MJ 没有对应机制的低推力区 ✓）。
+                // 本拍的量纲读数（`Θ`）：**只有阶梯跑过才有意义**（价目 = 它自己排的计划 ⇒ 必须先规划）
+                // ⇒ 在下面分支外声明，供"没给节点"与"未走阶梯"两处日志共用。
+                double thetaLad = 0.0;
                 bool useLadder = true;
                 if (useLadder)
                 {
@@ -3842,6 +4103,12 @@ namespace PioneerFramework
                     var ladSw = System.Diagnostics.Stopwatch.StartNew();
                     var ladRung = RendezvousLadder.MakePlan(ovLadSelf, ovLadTgt, physicsTick, ladPars,
                         out List<PlanNode> ladNodes, out string ladStatus);
+                    // ★ **阶梯自己出价**：这次机动的量级 = 它刚排出来的计划总 Δv
+                    //   （面外改变在计划里 ⇒ B2.6"面外必须进价目"由构造满足）。
+                    double dvScaleLad = RendezvousLadder.TotalDv(ladNodes);
+                    double vcLad = Math.Sqrt(gm / Math.Max(rMag, 1.0));
+                    double gLad = gm / Math.Max(rMag * rMag, 1.0);
+                    ManeuverRegime.Classify(dvScaleLad, vcLad, gLad, aMax, out thetaLad, out _);
                     // ★ 按选中的级决定“本机动允不允许微调”：只有“立轨道”那几级（平面/霍曼/调相/圆化）该用微调；
                     //   到达族（Intercept / MatchVelocitiesNow / MatchAtClosestApproach）**不允许**
                     //   （实测：不禁的话微调每轮打一发径向烧、跟拦截闭合对抗 ✗）。
@@ -3871,18 +4138,18 @@ namespace PioneerFramework
                         foreach (var node in ladNodes)
                         {
                             // 节点是**适配层系**的世界向量 ⇒ 换到游戏系、按**那一刻的** RTN 分解成分量
-                            DVector3 dvWorld = AdapterToGameD(node.dV);
+                            DVector3 dvSystem = AdapterToGameD(node.dV);
                             // ★★ **分解的参考系 = 节点自带的参考轨道**（2026-09-21）：两冲量转移的第二发
                             //   要在**转移轨道**上分解（那一刻船在那条轨道上），不能用"点火前轨道" ✗。
                             //   没带参考轨道的节点（既有全体）⇒ 退回原口径，行为逐位不变。
                             (DVector3 rAt, DVector3 vAt) = node.hasRefOrbit
                                 ? OrbitAdapter.StateAtUT(node.refOrbit, node.ut)
                                 : OrbitAdapter.StateAtUT(ovLadSelf, node.ut);
-                            OrbitMath.WorldDeltaVToComponents(rAt, vAt, dvWorld,
+                            OrbitMath.DeltaVSystemToComponents(rAt, vAt, dvSystem,
                                 out double ladRad, out double ladTan, out double ladNor);
                             int lead = (int)Math.Max(2.0, node.ut - physicsTick);
                             group.QueueManeuver((float)ladRad, (float)ladTan, (float)ladNor, lead,
-                                PlanOwner.Guidance, dvWorld, node.hasRefOrbit, node.refOrbit);
+                                PlanOwner.Guidance, dvSystem, node.hasRefOrbit, node.refOrbit);
                         }
                         Log.Message(string.Format(
                             "[阶梯] G{0} 区制=准脉冲（Θ={1:F3} rad）⇒ {2}｜{3}｜排入 {4} 发（Δv 合计 {5:F1} m/s）",
@@ -3904,7 +4171,7 @@ namespace PioneerFramework
                         Log.Message(string.Format("[阶梯] G{0} 未给节点（{1}：{2}）（Θ={3:F3}）：{4}",
                             group.GroupId, ladRung, ladStatus, thetaLad,
                             thetaLad > ManeuverRegime.ThetaThreshold
-                                ? "→ 超出准脉冲区 ⇒ 交给连续律（逃生口）"
+                                ? "→ 超出准脉冲区（逃生口标注；⚠ 连续律已切除 ⇒ 本拍同样什么都不做，与上游 `Drive()` 同）"
                                 : "⇒ 本拍不做事（等下一次重规划）"));
 
                     // ★★ **不许向下落到连续律/CW 终端**（2026-09-21 实测追到的结构漏洞）：
@@ -3921,8 +4188,11 @@ namespace PioneerFramework
                 }
                 else if (group.ladderOwnsFarField)
                 {
-                    Log.Message(string.Format("[阶梯] G{0} Θ={1:F3} > 退出阈值 {2:F2} ⇒ 交还连续律",
-                        group.GroupId, thetaLad, LadderExitTheta));
+                    // ⚠ 本拍**没走阶梯**（`useLadder=false`；当前实现里该分支不出现）⇒ 这一拍没有 Θ 可报，
+                    //   所以不再打一个会骗人的数字。
+                    Log.Message(string.Format(
+                        "[阶梯] G{0} 本拍未走阶梯 ⇒ 交还归属（⚠ 连续律已切除 ⇒ 实际什么都不做，等下一次重规划）",
+                        group.GroupId));
                     group.ladderOwnsFarField = false;
                 }
             }
@@ -3941,34 +4211,24 @@ namespace PioneerFramework
         //   必须按“**先照 MJ**”的规矩重新接（不许另起一套 ✗）。
         }
 
-        #region 新律的玩家入口（2026-09-17：玩家路径不再走旧范式）
+        #region 交会几何读数（世界视图面板用）
 
-        /// <summary>交会的**时间/燃料档**：同一个旋钮的两端（相位守恒律 Δv·t = (2/3)·r·Δφ）。</summary>
-        public struct RendezvousLawOption
-        {
-            /// <summary>给玩家看的按钮文字（含预计耗时与 Δv 量级）。</summary>
-            public string Label;
-            /// <summary>每段（腿）的时间预算（秒）。</summary>
-            public double LegSeconds;
-            /// <summary>预计总耗时（秒）。</summary>
-            public double Seconds;
-            /// <summary>预计 Δv 量级（m/s）= 变轨（形状）+ 相位租金。</summary>
-            public double DvEstimate;
-            /// <summary>其中变轨那一笔（m/s，螺旋价 × <see cref="RendezvousGuidanceLaw.ShapeCostFactor"/>）。</summary>
-            public double DvShape;
-            /// <summary>预计 Δv 超过本编队剩余预算 ⇒ 菜单会标出，且 <see cref="BeginRendezvousLaw"/> 会拒绝。</summary>
-            public bool OverBudget;
-        }
+        // 批5.B（2026-09-28）：本 region 原有 `RendezvousLawOption`（旧律的"时间/燃料档"结构）+
+        // `BuildRendezvousLawOptions` / `AddOption` / `BeginRendezvousLaw` —— 全部随旧律**撤销**
+        // （旧律已作废：用户 2026-09-22 裁定"那个东西不能用了"；入口 2026-09-28 由 `Window_Rendezvous` 替代）。
+        // 留下的是**读数**：它与交会入口无关，世界视图面板一直在用。
 
         /// <summary>
-        /// 交会几何读数（UI 与选项估计共用）。返回 false = 读不到（目标不在同中心天体 / 状态不可预测）。
-        /// ⚠ 相位差用 <see cref="RendezvousGuidanceLaw.PhaseErrorRadians"/>——**与律同一个函数**，
-        /// UI 另算一份会出现"界面说 120°、律按别的数在烧"的静默错配。
+        /// 交会几何读数（**世界视图面板用**）。返回 false = 读不到（目标不在同中心天体 / 状态不可预测）。
+        /// ⚠ 相位差用 <see cref="RendezvousGoal.SignedPhaseDeg"/>（**有符号，单位度**，+ = 目标在前）——
+        ///   它是本库对"相位"的**判据权威**（`RendezvousGoal` 文档原话："做判据必须用有符号的这一个"）。
+        ///   批5.B（2026-09-28，用户："相位让我们的 MJ 接管"）：原先这里调的是**已作废旧律**搬来的
+        ///   平黄经版（`PhaseErrorRadians`）⇒ 那份函数随旧律一起退役，相位口径改由阶梯/判据这一侧提供。
         /// </summary>
         public bool TryGetRendezvousReadout(SpaceEntityGroup group, SpaceEntityGroup target,
-            out double phaseRad, out double distM, out double relVelMps)
+            out double phaseDeg, out double distM, out double relVelMps)
         {
-            phaseRad = 0.0; distM = double.NaN; relVelMps = double.NaN;
+            phaseDeg = 0.0; distM = double.NaN; relVelMps = double.NaN;
             if (group == null || target == null) return false;
             // 同中心天体是硬前提：跨天体要参考系拼接（未实现），此时两个状态不同系，算了就是错的
             if (group.CelestialBodyId != target.CelestialBodyId) return false;
@@ -3976,208 +4236,131 @@ namespace PioneerFramework
             if (!TryPredictTargetAtTick(target, now, out var r2, out var v2)) return false;
 
             DVector3 rTgt = r2 + ResolveTargetAimOffset(group, target);
-            DVector3 r1 = group.localPosition, v1 = group.localVelocity;
+            DVector3 r1 = group.positionBody, v1 = group.velocityBody;
             double mu = GetBodyGM(group.CelestialBodyId);
             if (!(mu > 0.0) || !(r1.magnitude > 1.0)) return false;
 
             DVector3 relPos = r1 - rTgt, relVel = v1 - v2;
             distM = relPos.magnitude;
             relVelMps = relVel.magnitude;
-            phaseRad = RendezvousGuidanceLaw.PhaseErrorRadians(r1, v1, rTgt, v2,
-                DVector3.Cross(rTgt, v2), mu);
+            phaseDeg = RendezvousGoal.SignedPhaseDeg(r1, v1, rTgt);
             return true;
         }
 
-        /// <summary>
-        /// 交会的**可选档位**（玩家路径）：返回"快速"与"省燃料"两个选项（两者接近时只给一个）。
-        /// 空列表 = 该目标不可交会（不同中心天体 / 无推进 / 状态不可预测）。
-        ///
-        /// ⚠ **账单必须含变轨那一笔**（2026-09-17 教训）：交会总 Δv = **形状（变轨）** + **相位（收相位）**。
-        /// 只报相位租金（(2/3)rΔφ/T）会在 LEO→GEO 上给出 128 m/s 的假数字，而真实账单是
-        /// ~3275 m/s（螺旋价 |v_c1−v_c2|，纯台架 T2 实测）——玩家按 128 去点，烧掉的是一整罐料。
-        ///
-        /// 数字怎么来的（都不"估"）：
-        ///  · **变轨账单** = |v_c(a_self) − v_c(a_tgt)|（螺旋价；T2 实测 ≈ 该值、≤1.15×霍曼）；
-        ///  · **物理下限** = |Δφ| / δn_max，δn_max 由"缩轨不能缩进大气层"定：
-        ///    探针方向按 Δφ 符号选（落后 ⇒ 缩轨/逆行烧；超前 ⇒ 抬轨/顺行烧，无上界）；
-        ///  · **腿长** = max(物理下限、MinLegSeconds×1.5)；**快速**取 1.05×下限，**省燃料**取默认腿长；
-        ///  · **相位租金** = (2/3)·r·|Δφ|/T。律按 S 形式摊平到段末闭合 ⇒ **段多长就等多久**。
-        /// </summary>
-        public List<RendezvousLawOption> BuildRendezvousLawOptions(SpaceEntityGroup group, SpaceEntityGroup target)
-        {
-            var list = new List<RendezvousLawOption>();
-            if (!TryGetRendezvousReadout(group, target, out double phi, out _, out _)) return list;
-
-            DVector3 r1 = group.localPosition, v1 = group.localVelocity;
-            double rMag = r1.magnitude;
-            double mu = GetBodyGM(group.CelestialBodyId);
-            double aMax = EstimateMaxAcceleration(group);
-            if (!(aMax > 0.0)) return list;                    // 没有可用推进 ⇒ 交会无从谈起
-            double budgetDv = GetGroupDeltaV(group).remainingDv;
-
-            // 变轨那一笔（螺旋价）：目标半长轴由当前状态定
-            double now = TimeScaleManager.GetPhysicsTickSafe();
-            double dvShape = 0.0;
-            double aTgtHere = rMag;
-            // 目标轨道周期：**与 aTgtHere 用同一份状态、同一条权威**（§14.3『周期』行，收敛到 OrbitView.period）。
-            // 声明提到循环外是因为 rT/vT 只在预测成功时才有值（predict 失败时 aTgtHere 退回 rMag ⇒ periodTgt 保持 0）。
-            double periodTgt = 0.0;
-            if (TryPredictTargetAtTick(target, now, out var rT, out var vT))
-            {
-                DVector3 rAim = rT + ResolveTargetAimOffset(group, target);
-                aTgtHere = OrbitMath.SemiMajorAxis(rAim, vT, mu);
-                double vcTgtHere = aTgtHere > 1.0 ? Math.Sqrt(mu / aTgtHere) : Math.Sqrt(mu / rMag);
-                dvShape = Math.Abs(Math.Sqrt(mu / rMag) - vcTgtHere);
-
-                if (aTgtHere > 1.0) // 保留原守卫（退化轨道给 0，而不是 NaN 传进下游的 Math.Max）
-                {
-                    OrbitView ovTgt = OrbitView.FromStateVectors(OrbitAdapter.ToV3(rAim), OrbitAdapter.ToV3(vT), mu, now);
-                    double pTgt = ovTgt.period;
-                    if (!double.IsNaN(pTgt) && pTgt > 0.0) periodTgt = pTgt;
-                }
-            }
-
-            // ── 形状主导（半径差得需要一次真变轨）：时间由**螺旋**定，不是相位租金 ──
-            //   与律的运行口径一致（RunNewRendezvousLaw 按模式定腿长）：这里也按螺旋时间给选项，
-            //   否则菜单会拿"相位租金的 128 m/s"去描述一次真实的 3275 m/s 变轨。
-            if (dvShape > RendezvousGuidanceLaw.ShapeGateMps)
-            {
-                double aLimTgt = aTgtHere > 1.0 ? 0.05 * mu / (aTgtHere * aTgtHere) : 0.05 * mu / (rMag * rMag);
-                double shapeSec = dvShape / Math.Max(Math.Min(aMax, aLimTgt), 1e-9);
-                double leg = Math.Max(RendezvousGuidanceLaw.ShapeLegFactor * shapeSec, 60.0);
-                AddOption(list, leg, leg, rMag, phi, dvShape, "变轨 + 交会", budgetDv);
-                return list;
-            }
-
-            double uNow = 3.0 * aMax / rMag;
-            double needLeg = RendezvousGuidanceCore.MinLegSeconds(phi, uNow) * RendezvousGuidanceLaw.LegSafety;
-
-            // 物理下限探针：δn_max 由"能改多少半长轴"定
-            DVector3 nrm = DVector3.Cross(r1, v1).normalized;
-            DVector3 tangent = DVector3.Cross(nrm, r1.normalized).normalized;
-            DVector3 probeDir = tangent * (phi < 0.0 ? -1.0 : 1.0);   // 落后⇒缩轨(逆行)；超前⇒抬轨(顺行)
-            const double probeDv = 2000.0;
-            double kSafe = RendezvousCore.MaxSafeDvScale(r1, v1, probeDir * probeDv,
-                GetBodySafeRadius(group.CelestialBodyId), mu);
-            double vNew = (v1 + probeDir * (probeDv * kSafe)).magnitude;
-            double aPh = 1.0 / Math.Max(2.0 / rMag - vNew * vNew / mu, 1e-15);
-            double dnMax = Math.Abs(PhasingRate(aPh, mu) - PhasingRate(rMag, mu));
-            double floorSeconds = dnMax > 1e-12 ? Math.Abs(phi) / dnMax : needLeg;
-
-            // ── 时间尺度：**一圈**是目标，物理上限由"缩轨不能缩进大气层"定 ──
-            //   LEO 一圈能收 ≈20°（δn_max≈6.3e-5 rad/s）；更大的相位差要么多等几圈（廉价路径），
-            //   要么大幅加 Δv 走高轨（未实现）。这里如实报出来（E2b：给玩家"所需最短时间"）。
-            double physicsFloor = Math.Max(floorSeconds, 60.0);      // 缩轨到大气层边缘所需的最短时间
-            bool oneOrbitOk = periodTgt > 0.0 && physicsFloor <= periodTgt * 1.05;
-            double fastLeg = oneOrbitOk
-                ? Math.Max(periodTgt, Math.Max(needLeg, 60.0))
-                : physicsFloor;                                      // 一圈做不到 ⇒ 就只能这么快
-            double cheapLeg = Math.Max(fastLeg * 2.5, periodTgt * 2.5);
-            AddOption(list, fastLeg, fastLeg, rMag, phi, dvShape,
-                oneOrbitOk ? "一圈交会" : string.Format("最快交会（受大气层限制，约 {0:F1} 圈）",
-                    periodTgt > 0.0 ? physicsFloor / periodTgt : 0.0), budgetDv);
-            if (cheapLeg > fastLeg * 1.15)
-                AddOption(list, cheapLeg, cheapLeg, rMag, phi, dvShape, "省燃料交会", budgetDv);
-            return list;
-        }
-
-        private static double PhasingRate(double a, double mu) => Math.Sqrt(mu / (a * a * a));
-
-        /// <summary>
-        /// **终端预算的实测系数**：终端在交班时要杀掉的相对速度 ≈ `r·|Δφ|/T`（远场 δn 的峰值量级），
-        /// 而滚动执行的 CW 终端账单 ≈ 2.5× 那个速度。依据两处实测：
-        ///   · T12（LEO 同轨 15°、一圈）：r·φ/P = 251 m/s ⇒ 终端实测 597（2.4×）· 总 697（估计 796，偏保守 ✓）
-        ///   · T11（LEO→GEO、T=2.95e5s）：估计 146 ⇒ 总估计 5057 vs 实测 4928 ✓
-        /// 用途只是**账单估计与预算闸门**，不参与控制。宁可偏保守：低估会让玩家启动一次跑不完的交会。
-        /// </summary>
-        private const double TerminalCostFactor = 2.5;
-
-        private static void AddOption(List<RendezvousLawOption> list, double leg, double seconds,
-            double rMag, double phi, double dvShape, string name, double budgetDv)
-        {
-            double dvPhase = (2.0 / 3.0) * rMag * Math.Abs(phi) / Math.Max(seconds, 1.0);
-            double dvTerminal = TerminalCostFactor * rMag * Math.Abs(phi) / Math.Max(seconds, 1.0);
-            double dvTransfer = dvShape * RendezvousGuidanceLaw.ShapeCostFactor;   // 含 e 清理的实测倍率
-            double dvTotal = dvTransfer + dvPhase + dvTerminal;
-            bool over = budgetDv > 0.0 && dvTotal > budgetDv * 0.98;
-            string head = dvShape > 1.0
-                ? string.Format("{0}：约 {1:F1} 小时 · Δv 量级 {2:F0} m/s（含变轨 {3:F0}）",
-                    name, seconds / 3600.0, dvTotal, dvTransfer)
-                : string.Format("{0}：约 {1:F1} 小时 · Δv 量级 {2:F0} m/s",
-                    name, seconds / 3600.0, dvTotal);
-            list.Add(new RendezvousLawOption
-            {
-                LegSeconds = leg,
-                Seconds = seconds,
-                DvEstimate = dvTotal,
-                DvShape = dvTransfer,
-                OverBudget = over,
-                Label = over
-                    ? string.Format("{0} ⚠ 超出剩余 dV（{1:F0} m/s）", head, budgetDv)
-                    : head,
-            });
-        }
-
-        /// <summary>
-        /// **玩家路径：启动新律交会**（无出发段——律本身就是整条转移）。
-        ///
-        /// 与旧路径的差别（这是玩家能感到的那部分）：
-        ///  · 旧：「交会规划」用 Lambert 算一条转移轨道 + 排一次出发段大机动，引导只在出发之后做修正；
-        ///  · 新：什么都不排，登记即接管——时间/燃料由 <paramref name="legSeconds"/> 一个数决定。
-        ///
-        /// ⚠ `rendezvousArrivalTick` 仍写一个值（= 现在 + 腿长）：新律**不用**它，但万一有人把
-        /// <see cref="UseNewRendezvousLaw"/> 关掉回退旧引擎，有它旧引擎才是"在飞"而不是立刻
-        /// "到达点已过"（那个静默假成功是审查 D4）。
-        /// </summary>
-        public bool BeginRendezvousLaw(SpaceEntityGroup group, SpaceEntityGroup target,
-            double legSeconds, out string reason)
-        {
-            reason = null;
-            if (group == null || target == null) { reason = "编队不存在"; return false; }
-            if (group.GroupId == target.GroupId) { reason = "不能与自身交会"; return false; }
-            // 不可机动 / 不活跃的编队挂了引导也永远不会被处理（UpdateRendezvousGuidance 的守卫会跳过）
-            // ⇒ 在这里挡住并说清楚原因，而不是"点了没反应"
-            if (!group.IsActive || !target.IsActive) { reason = "其一已不活跃"; return false; }
-            if (!group.IsMovable) { reason = "该编队不可机动（没有引擎 / 已被固定）"; return false; }
-            if (group.CelestialBodyId != target.CelestialBodyId)
-            {
-                reason = "两者中心天体不同（跨天体交会需要参考系拼接，未实现）";
-                return false;
-            }
-            if (EstimateMaxAcceleration(group) <= 0.0) { reason = "该编队没有可用推进"; return false; }
-
-            // 账单先算清楚再点火：**超出剩余 dV 就不启动**。
-            //   理由不是"省着点用"：这种交会会一路烧到工质尽，然后走 GiveUpRendezvous 中止
-            //   （2026-09-17 实测 5814 kg / 1549 m/s 白烧后才中止）。宁可一开始就说清楚，
-            //   并给出可执行的下一步（先补给 / 先用「转移到圆轨」把轨道差做小）。
-            var options = BuildRendezvousLawOptions(group, target);
-            if (options.Count == 0) { reason = "无法规划（目标状态不可预测）"; return false; }
-            var pick = options[0];
-            if (pick.OverBudget)
-            {
-                reason = string.Format("预计需 {0:F0} m/s，本编队剩 {1:F0} m/s ⇒ 先补给，或先用「转移到圆轨」把轨道差做小",
-                    pick.DvEstimate, GetGroupDeltaV(group).remainingDv);
-                return false;
-            }
-
-            double now = TimeScaleManager.GetPhysicsTickSafe();
-            double leg = legSeconds > 0.0 ? legSeconds : NewLawLegSeconds;
-            var nets = group.currentNetwork != null
-                ? new HashSet<PropellantDef> { group.currentNetwork } : null;
-            group.RegisterRendezvousGuidance(target.GroupId, now + leg, prograde: true, useNetworks: nets);
-            group.ArmRendezvousGuidance();       // 无出发段 ⇒ 登记即生效
-            group.rendezvousLawLegSeconds = leg; // 必须在登记**之后**写（登记会清空律状态）
-            if (group.CelestialBodyId >= 0)
-            {
-                group.EnterOrbitKeeping(new HashSet<int> { group.CelestialBodyId });
-            }
-            Log.Message(string.Format(
-                "[Rendezvous] Group {0} → {1} 新律交会已启动：腿长 {2:F0}s（预计 ≈{3:F1} 小时）· 无出发段 · 轨道保持=开",
-                group.GroupId, target.GroupId, leg, leg / 3600.0));
-            return true;
-        }
-
+        // 批5.B（2026-09-28）：此处原有 `BuildRendezvousLawOptions`（旧律的"快速/省燃料"两档价目）与
+        // 它的三个私有助手（`PhasingRate` / `TerminalCostFactor` / `AddOption`），以及 `BeginRendezvousLaw`
+        // （旧律的启动入口）。全部随旧律一并**撤销**——阶梯**没有"腿长"这个旋钮**，"这次机动多大"
+        // 由阶梯自己的 `TotalDv` 出（批4 已改成"先 MakePlan"）。
+        // 要回看：git 历史 / `_backups/20260928-2315-pre-legacy-rendezvous-removal-459f7e2b1fc681fa/`。
         #endregion
+
+        /// <summary>
+        /// **批5.C 巡检探针（2026-09-29）**：**非根天体 + 已挂交会引导**的编队，每 300 物理秒打一行状态对账。
+        ///
+        /// 为什么还要它（第一版探针只打"点火前/收工后"，已证明**点火是干净的**）：绕月那次实测里，
+        /// 收工后状态正确（PeR=2870km ✓），但下一次规划时编队已经是 `|pos|=4089km |vel|=670` ⇒ 近月点 814km（月面以下）
+        /// —— **状态在一次"没有任何点火记录"的窗口里被换掉了**。而全库唯一能"不响铃地整体换掉状态"的机制是
+        /// **圆轨模式**（`SpaceGameComp:1986-1998`：圆轨下每步用 `GetCircularPositionAtTick/VelocityAtTick`
+        /// **覆盖**物理状态，批4 的"烧了不动"就是它）⇒ 本巡检把「圆轨模式 / 轨道保持 / 在烧 / 剩余」四个标志
+        /// 与两套状态、绕月要素一起打出来 ⇒ **一跳就能看见是哪一刻、什么标志在位**。
+        /// ⚠ 只在**非根行星**且**有交会引导**时打印（对地球场景零影响）· 每群每 300 模拟秒一行。
+        /// </summary>
+        private static readonly Dictionary<int, double> NonRootProbeNextTick = new Dictionary<int, double>();
+        private static readonly Dictionary<int, (double tick, DVector3 vel)> NonRootEphCache =
+            new Dictionary<int, (double, DVector3)>();
+
+        /// <summary>两质点引力加速度的**模**（探测用；不作生产算式）。</summary>
+        private static double PullMag(DVector3 at, DVector3 src, double mu)
+        {
+            double d2 = (at - src).sqrMagnitude;
+            return d2 > 0.0 ? mu / d2 : 0.0;
+        }
+
+        private static void LogNonRootRendezvousState(SpaceEntityGroup group, double physicsTick, double keepingAccMps2,
+            DVector3 syncPos, DVector3 syncVel)
+        {
+            var cm = Current.Game?.GetComponent<CelestialBodyManager>();
+            var cd = cm?.GetBodyById(group.CelestialBodyId);
+            if (cm == null || cd == null || cd.bodyType == CelestialBodyType.Planet) return;
+            if (!group.HasRendezvousGuidance) return;
+            if (NonRootProbeNextTick.TryGetValue(group.GroupId, out double next) && physicsTick < next) return;
+            NonRootProbeNextTick[group.GroupId] = physicsTick + 300.0;
+            if (!OrbitAdapter.TryToOrbitView(group, cm, physicsTick, out OrbitView ov)) return;
+
+            // ── ① 星历一致性（"月球给的轨迹是不是它自己那条开普勒轨道"）──
+            //    a_eph = 星历速度的有限差（Δv/Δt，300s 间隔 ⟹ 分辨到 ~1e-4 量级 ✓）
+            //    a_父@子 = 父天体（地球）在中心天体（月球）处的引力 ⇒ 两者**必须相等**（星历=自由落体）。
+            int tickI = (int)physicsTick;
+            DVector3 bodyPos = cm.GetBodyPositionParent(group.CelestialBodyId, tickI);
+            DVector3 bodyVel = cm.GetBodyVelocityParent(group.CelestialBodyId, tickI);
+            var parentDef = cd.ParentBodyId >= 0 ? cm.GetBodyById(cd.ParentBodyId) : null;
+            double aEph = double.NaN, aParentAtBody = double.NaN, parentMu = 0.0;
+            DVector3 parentPos = DVector3.zero;
+            if (parentDef != null)
+            {
+                parentMu = parentDef.gravitationalParameter;
+                parentPos = cm.GetBodyPositionParent(parentDef.bodyId, tickI);
+                aParentAtBody = PullMag(bodyPos, parentPos, parentMu);
+            }
+            if (NonRootEphCache.TryGetValue(group.CelestialBodyId, out var prev) && physicsTick > prev.tick + 1.0)
+                aEph = (bodyVel - prev.vel).magnitude / (physicsTick - prev.tick);
+            NonRootEphCache[group.CelestialBodyId] = (physicsTick, bodyVel);
+
+            // ── ② 场对照（飞船实际受的力；都从"飞船世界系位置"算，与物理同系）──
+            double aMoonAtShip = PullMag(group.CurrentOrbit.position, bodyPos, cd.gravitationalParameter);
+            double aParentAtShip = parentDef != null ? PullMag(group.CurrentOrbit.position, parentPos, parentMu) : 0.0;
+
+            // ── ④ 偏移一致性：本步用来把世界系状态转成体心系的偏移，必须等于该天体在这一 tick 的星历状态 ──
+            //    （若偏移取错 tick / 取错天体，体心系状态会整体错位 ⇒ 阶梯按错状态排计划 ⇒ 又一次"参考系混用"）
+            double syncPosErr = (syncPos - bodyPos).magnitude;
+            double syncVelErr = (syncVel - bodyVel).magnitude;
+
+            // ── ③ 要素 ──
+            Log.Message(string.Format(
+                "[非根天体·巡检] G{0} t={1:F0} 圆轨模式={2} 保持={3} 在烧={4} 余={5:F2}｜体心系 r={6:F0}km v={7:F1}｜" +
+                "世界系 r={8:F0}km v={9:F1}｜要素 a={10:F0}km e={11:F5} PeR={12:F0}km ApR={13:F0}km\n" +
+                "    ├ 星历：|v天体|={14:F1}｜a_eph(Δv/Δt)={15:E3}｜a_父@天体={16:E3}（**两者应相等**；差={17:E3}）\n" +
+                "    ├ 场@船：a_中心@船={18:E3}｜a_父@船={19:E3}｜保持修正(①−②)={20:E3}（①=a_父@船(+其他非白名单)，②=a_父@天体）\n" +
+                "    ├ 偏移一致：|Δ偏移位置|={24:E3} m｜|Δ偏移速度|={25:E3} m/s（**都应为 0**）\n" +
+                "    └ 该天体本地引力={21:E3}（修正/本地={22:F4}）· 父引力/本地={23:F4}",
+                group.GroupId, physicsTick, group.IsCircularOrbit, group.HasOrbitKeeping,
+                group.HasActiveBurn, group.remainingBurnDV,
+                group.positionBody.magnitude / 1000.0, group.velocityBody.magnitude,
+                group.CurrentOrbit.position.magnitude / 1000.0, group.CurrentOrbit.velocity.magnitude,
+                ov.semiMajorAxis / 1000.0, ov.eccentricity, ov.PeR / 1000.0, ov.ApR / 1000.0,
+                bodyVel.magnitude, aEph, aParentAtBody, aEph - aParentAtBody,
+                aMoonAtShip, aParentAtShip, keepingAccMps2,
+                aMoonAtShip, aMoonAtShip > 0.0 ? keepingAccMps2 / aMoonAtShip : 0.0,
+                aMoonAtShip > 0.0 ? aParentAtShip / aMoonAtShip : 0.0,
+                syncPosErr, syncVelErr));
+        }
+
+        /// <summary>
+        /// **批5.B 探针（2026-09-28）：中心天体非根行星时的"点火前后状态对账"**。
+        ///
+        /// 起因（用户 2026-09-28 报"绕月的交会好像不是特别正常"）：日志里看到一次**绕月**交会——
+        /// 阶梯的规划与第一次点火都**对**（压近点 3300→2844 km 正好要 46.5 m/s，实测 46.52、对账 0.00%），
+        /// 但飞船随后**撞上月面**（落地相对速度 2075.9 m/s），而撞击前**没有任何其它点火**。
+        /// 静态读码已排除：规划/执行器的参考系链自洽（同一体心系）、物理引力按世界系位置算（对）。
+        /// ⇒ 剩下的两个嫌疑需要**读数**才能二分：①点火方向/作用点是否落在体心系；
+        ///   ②**圆轨模式**（`ExitCircularOrbit` 会用解析圆轨的状态**覆盖**物理状态 ⇒ 点火被抹掉）。
+        /// 本探针把两套状态 + 绕中心天体的要素 + 圆轨模式标志一起打出来 ⇒ 下一轮日志即可定案。
+        /// ⚠ 它只在**非根行星**时打印（绕月球等卫星）⇒ 对地球/太阳场景零影响。
+        /// </summary>
+        private static void LogNonRootBurnState(SpaceEntityGroup group, double physicsTick, string tag)
+        {
+            var cm = Current.Game?.GetComponent<CelestialBodyManager>();
+            var cd = cm?.GetBodyById(group.CelestialBodyId);
+            if (cm == null || cd == null || cd.bodyType == CelestialBodyType.Planet) return;
+            if (!OrbitAdapter.TryToOrbitView(group, cm, physicsTick, out OrbitView ov)) return;
+            Log.Message(string.Format(
+                "[非根天体·{0}] G{1} body={2} 圆轨模式={3}｜体心系 r={4:F0}km v={5:F1} m/s｜世界系 r={6:F0}km v={7:F1}｜" +
+                "要素 a={8:F0}km e={9:F5} PeR={10:F0}km ApR={11:F0}km（μ={12:E2}）",
+                tag, group.GroupId, group.CelestialBodyId, group.IsCircularOrbit,
+                group.positionBody.magnitude / 1000.0, group.velocityBody.magnitude,
+                group.CurrentOrbit.position.magnitude / 1000.0, group.CurrentOrbit.velocity.magnitude,
+                ov.semiMajorAxis / 1000.0, ov.eccentricity, ov.PeR / 1000.0, ov.ApR / 1000.0, ov.mu));
+        }
 
         /// <summary>
         /// 该船当前最大可用加速度（m/s²）= 全网络推力（含 RCS）/ 当前质量。
@@ -4326,6 +4509,7 @@ namespace PioneerFramework
             // 月心系群组的渲染插值会用到混系加速度——A0 一并修正）。
             double physicsTickSample = TimeScaleManager.GetPhysicsTickSafe();
             ComputeGroupFieldAccelJerk(group, celestialMgr, physicsTickSample, gravityScratchMain,
+                ResolveSystemSources(celestialMgr, group, physicsTickSample, gravityScratchMain),
                 out var acc, out var jerk, out _, out _);
 
             group.CombatCache = new SpaceEntityGroup.PhysicsStateCache
@@ -4381,18 +4565,18 @@ namespace PioneerFramework
 
             int realTick = Find.TickManager.TicksGame;
             if (!TryComputeCircularState(bodyId, group.CurrentOrbit.position, group.CurrentOrbit.velocity, realTick,
-                out DVector3 vCircWorld, out double r))
+                out DVector3 vCircSystem, out double r))
             {
                 Messages.Message(string.Format("Group {0} 无法计算天体 {1} 的圆轨状态。", group.GroupId, bodyId), MessageTypeDefOf.RejectInput, false);
                 return false;
             }
 
-            DVector3 dvVec = vCircWorld - group.CurrentOrbit.velocity;
+            DVector3 dvVec = vCircSystem - group.CurrentOrbit.velocity;
             double nodeDV = dvVec.magnitude;
             if (nodeDV < 0.5)
             {
                 // 已接近圆轨（<0.5 m/s）：免 burn，直接走第二段结算
-                return TryCompleteCircularize(group, bodyId, vCircWorld);
+                return TryCompleteCircularize(group, bodyId, vCircSystem);
             }
 
             // ── 工质检查：所需 + 阈值（两段机动最坏消耗 = 机动所需 + 残差阈值）──
@@ -4487,21 +4671,21 @@ namespace PioneerFramework
         /// 计算某天体在当前状态下的圆轨速度向量（世界系）与轨道半径。
         /// 数学与 EnterCircularOrbit 一致（含月球等非行星天体的坐标换算）。
         /// </summary>
-        private bool TryComputeCircularState(int bodyId, DVector3 worldPos, DVector3 worldVel, int realTick,
-            out DVector3 vCircWorld, out double radiusMeters)
+        private bool TryComputeCircularState(int bodyId, DVector3 posSystem, DVector3 velSystem, int realTick,
+            out DVector3 vCircSystem, out double radiusMeters)
         {
-            vCircWorld = DVector3.zero;
+            vCircSystem = DVector3.zero;
             radiusMeters = 0.0;
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (mgr == null) return false;
             var body = mgr.GetBodyById(bodyId);
             if (body == null) return false;
 
-            DVector3 relPos = worldPos, relVel = worldVel;
+            DVector3 relPos = posSystem, relVel = velSystem;
             if (body.bodyType != CelestialBodyType.Planet)
             {
-                relPos -= mgr.GetBodyLocalPosition(bodyId, realTick);
-                relVel -= mgr.GetBodyLocalVelocity(bodyId, realTick);
+                relPos -= mgr.GetBodyPositionParent(bodyId, realTick);
+                relVel -= mgr.GetBodyVelocityParent(bodyId, realTick);
             }
             radiusMeters = relPos.magnitude;
             if (radiusMeters < 0.01) return false;
@@ -4520,9 +4704,9 @@ namespace PioneerFramework
                 DVector3 refVec = System.Math.Abs(radialDir.y) < 0.9 ? DVector3.up : DVector3.forward;
                 tangentDir = DVector3.Cross(refVec, radialDir).normalized;
             }
-            vCircWorld = tangentDir * vTan;
+            vCircSystem = tangentDir * vTan;
             if (body.bodyType != CelestialBodyType.Planet)
-                vCircWorld += mgr.GetBodyLocalVelocity(bodyId, realTick);
+                vCircSystem += mgr.GetBodyVelocityParent(bodyId, realTick);
             return true;
         }
 
@@ -4556,13 +4740,13 @@ namespace PioneerFramework
             //   口径与 `TryCompleteCircularize` 逐字相同（"最后一步 burn 冲量尚未施加：并入当前速度"）。
             vNow += group.pendingImpulse;
             if (!TrimBurn.TryPlan(rNow, vNow, ovNow.mu, group.trimTargetA, group.trimTargetH,
-                    out DVector3 dvWorld, out string why, out double aUsed))
+                    out DVector3 dvSystem, out string why, out double aUsed))
             {
                 Log.Message(string.Format("[燃烧·微调] G{0} 不微调：{1}", group.GroupId, why));
                 return;
             }
 
-            double dvMag = dvWorld.magnitude;
+            double dvMag = dvSystem.magnitude;
             if (dvMag < TrimDvMin || dvMag > TrimDvMax)
             {
                 Log.Message(string.Format(
@@ -4572,7 +4756,7 @@ namespace PioneerFramework
             }
 
             // 分量按**当前** RTN 分解（执行器整段燃烧只换框架、不换解）
-            OrbitMath.WorldDeltaVToComponents(rNow, vNow, dvWorld, out double rad, out double tan, out double nor);
+            OrbitMath.DeltaVSystemToComponents(rNow, vNow, dvSystem, out double rad, out double tan, out double nor);
             group.trimLastDv = dvMag;
             group.QueueManeuver((float)rad, (float)tan, (float)nor, TrimLeadTicks, PlanOwner.Executor);
             Log.Message(string.Format(
@@ -4693,28 +4877,31 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 天体在**群组系（= 根行星系）**里的偏移：根行星（Planet）返零、卫星给"绕父天体"的偏移。
+        /// 天体在**系统系（= 根行星系）**里的偏移：根行星（Planet）返零、卫星给"绕父天体"的偏移。
         /// `internal`（2026-09-24）：`LandingAcceptanceRunner` 要按**同一个约定**把船的
         /// `CurrentOrbit.position` 折成天体相对位置（换系只准有一处，不许复制一份）。
         /// </summary>
-        internal DVector3 GetBodyWorldOffset(int celestialBodyId, int tick)
+        internal DVector3 GetBodyOffsetSystem(int celestialBodyId, int tick)
         {
-            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            // R5（2026-09-26）：改用**已有的** `celestialRef`（组件引用缓存）⇒ 相位里零组件表扫描。
+            // 原来这里 `Current.Game?.GetComponent<CelestialBodyManager>()`，而本方法只被
+            // `ComputeGroupPhysics` 在相位里调用（每组每步一次）。
+            var mgr = celestialRef.Get();
             if (mgr == null) return DVector3.zero;
             var body = mgr.GetBodyById(celestialBodyId);
             if (body == null || body.bodyType == CelestialBodyType.Planet)
                 return DVector3.zero;
-            return mgr.GetBodyLocalPosition(celestialBodyId, tick);
+            return mgr.GetBodyPositionParent(celestialBodyId, tick);
         }
 
-        private DVector3 GetBodyWorldVelOffset(int celestialBodyId, int tick)
+        private DVector3 GetBodyVelocityOffsetSystem(int celestialBodyId, int tick)
         {
-            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            var mgr = celestialRef.Get();
             if (mgr == null) return DVector3.zero;
             var body = mgr.GetBodyById(celestialBodyId);
             if (body == null || body.bodyType == CelestialBodyType.Planet)
                 return DVector3.zero;
-            return mgr.GetBodyLocalVelocity(celestialBodyId, tick);
+            return mgr.GetBodyVelocityParent(celestialBodyId, tick);
         }
 
         /// <summary>天体**表面**半径（不含大气）。撞击判定用这个，不用 <see cref="GetBodySafeRadius"/>。</summary>
@@ -4745,11 +4932,11 @@ namespace PioneerFramework
         /// **天体经纬度**（落点是事件树要用的输入）。
         ///
         /// ## 三处口径（2026-09-22 全部更正 —— 旧写法三条都错）
-        /// ① **速度取天体相对**（`group.localVelocity`）而不是 `CurrentOrbit.velocity`（根系/惯性）：
+        /// ① **速度取天体相对**（`group.velocityBody`）而不是 `CurrentOrbit.velocity`（系统系/惯性）：
         ///    后者对**月球**会把月球自身 ~2 km/s 的公转算进"撞击速度" ⇒ 任何月球着陆都判坠毁；
         /// ② **再扣地表共转**（<see cref="SurfaceFrame.GroundSpeed"/>）：地球赤道地表共转
         ///    ω·R = 523.6 m/s，不扣的话"跟着地面一起垂直下降"也读 524 ⇒ 阈值取多少都不可能达成"着陆"；
-        /// ③ **时刻用 `physicsTick`**（与 `group.localPosition` 同一个时钟）。旧写法用
+        /// ③ **时刻用 `physicsTick`**（与 `group.positionBody` 同一个时钟）。旧写法用
         ///    `Find.TickManager.TicksGame`（真实 tick）⇒ 战斗 1/60× 流速下两者差着量级，
         ///    有平动的天体（月球）会把偏移量算在错误的相位上。
         ///
@@ -4765,9 +4952,9 @@ namespace PioneerFramework
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             double surfaceRadius = GetBodySurfaceRadius(group.CelestialBodyId);
 
-            // 天体相对的位置/速度：本物理步**刚算好**（`localPosition/localVelocity`），不再另算一份
-            DVector3 relPos = group.localPosition;
-            DVector3 relVel = group.localVelocity;
+            // 天体相对的位置/速度：本物理步**刚算好**（`positionBody/velocityBody`），不再另算一份
+            DVector3 relPos = group.positionBody;
+            DVector3 relVel = group.velocityBody;
             if (relPos.sqrMagnitude > surfaceRadius * surfaceRadius) return;
 
             // ⚠ 管理器为 null 时 `RotationOmega` 是**显式容忍**的（内部 `mgr?.GetBodyById` ⇒ 取不到天体则用默认一天）
@@ -4855,9 +5042,9 @@ namespace PioneerFramework
             double tick = TimeScaleManager.GetPhysicsTickSafe();
             int tickI = (int)Math.Round(tick);
             double omega = Launch.GetSurfaceState.RotationOmega(mgr, targetBodyId);
-            // ⚠ 参考系硬约定（见 LandingQuote 类注释）：船用 **CurrentOrbit**（根系）、天体用 GetBody*Offset
-            DVector3 offPos = GetBodyWorldOffset(targetBodyId, tickI);
-            DVector3 offVel = GetBodyWorldVelOffset(targetBodyId, tickI);
+            // ⚠ 参考系硬约定（见 LandingQuote 类注释）：船用 **CurrentOrbit**（系统系）、天体用 GetBody*Offset
+            DVector3 offPos = GetBodyOffsetSystem(targetBodyId, tickI);
+            DVector3 offVel = GetBodyVelocityOffsetSystem(targetBodyId, tickI);
             DVector3 tileFixed = Launch.GetSurfaceState.TileToFixedPosition(layer, tile, body.radius);
 
             quote = LandingQuote.Evaluate(group.CurrentOrbit.position, group.CurrentOrbit.velocity,
@@ -4928,12 +5115,15 @@ namespace PioneerFramework
         /// 从 group 的推进源工质池扣除工质。返回实际扣除量（kg，受存量截断）。
         /// 实际扣除 < 需求表示工质已耗尽（或无推进源）。
         /// </summary>
+        /// <summary>扣工质。**返回 float 是边界 cast**：内部累加器（`IPropulsionSource`）已是 double
+        /// （见 `PropulsionData.mass` 的说明）；请求量 `kg` 的 float 量化 ~1e-8 kg 量级，
+        /// 比"累加器 float 分辨率 7.8 g"低 5 个数量级 ⇒ 不影响那个已被钉死的缺陷。</summary>
         private float ConsumeGroupPropellant(SpaceEntityGroup group, PropellantDef def, float kg)
         {
             if (def == null || kg <= 0f) return 0f;
             var src = GetGroupPropulsionSource(group);
             if (src == null) return 0f; // 无推进源 → 扣 0
-            return src.TryConsumePropellant(def, kg);
+            return (float)src.TryConsumePropellant(def, kg);
         }
 
         /// <summary>无 Map 主推型双罐燃料摘要（主网 vs RCS 网，同 def 去重后合计）供 [Thrust] 日志。</summary>
@@ -5075,11 +5265,12 @@ namespace PioneerFramework
         /// group 级 dV 显示数据（剩余/最大/工质），供信息面板展示。
         /// 与实体 RemainingDeltaV 同口径：ve·ln(wet/dry)。
         /// </summary>
-        public (float remainingDv, float maxDv, float propellantMass, float propellantCapacity) GetGroupDeltaV(SpaceEntityGroup group)
+        /// <summary>群组 dV/工质读数。**工质两项是 double**（与累加器同精度：面板/验收读数不该比物理更粗）。</summary>
+        public (float remainingDv, float maxDv, double propellantMass, double propellantCapacity) GetGroupDeltaV(SpaceEntityGroup group)
         {
             if (group == null) return (0f, 0f, 0f, 0f);
             var src = GetGroupPropulsionSource(group);
-            if (src == null) return (0f, 0f, 0f, 0f);
+            if (src == null) return (0f, 0f, 0.0, 0.0);
             if (src.EffectiveVe <= 0f)
                 return (0f, 0f, src.TotalPropellantMass, src.TotalPropellantCapacity);
             double dry = GetGroupMass(group, null);

@@ -362,8 +362,8 @@ namespace PioneerFramework
             {
                 partId = 1, // 空间站只有一个 Part，固定 ID
                 defName = "PF_ShipPart_Cube",
-                localPosition = DVector3.zero,
-                localBoundsSize = new DVector3(mapWidth, 50.0, mapHeight),
+                positionShip = DVector3.zero,
+                boundsSizeShip = new DVector3(mapWidth, 50.0, mapHeight),
                 hp = 100f,
                 // 空间站是地图载体：无 Part 血条，存亡由 Map 内建筑决定（射弹命中不扣 Part HP）
                 isIndestructible = true,
@@ -402,7 +402,6 @@ namespace PioneerFramework
                 {
                     if (!part.isDestroyed)
                     {
-                        mapComp.linkedPartId = part.partId;
                         part.linkedMapId = map.uniqueID;
                         break;
                     }
@@ -478,7 +477,6 @@ namespace PioneerFramework
             if (mapComp != null)
             {
                 mapComp.ownerEntityId = entity.EntityId;
-                mapComp.linkedPartId = part.partId;
             }
             part.linkedMapId = map.uniqueID;
 

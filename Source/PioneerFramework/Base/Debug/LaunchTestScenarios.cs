@@ -114,8 +114,8 @@ namespace PioneerFramework
             {
                 partId = 1,
                 defName = "PF_ShipPart_TestRocket",
-                localPosition = DVector3.zero,
-                localBoundsSize = new DVector3(30, 30, 30),
+                positionShip = DVector3.zero,
+                boundsSizeShip = new DVector3(30, 30, 30),
                 hp = 500f,
                 isIndestructible = false
             };

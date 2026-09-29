@@ -39,7 +39,7 @@ namespace PioneerFramework
         protected override List<PlanNode>? MakeNodesImpl(OrbitView o, double universalTime, ITargetView target)
         {
             double ut = TimeSelector.ComputeManeuverTime(o, universalTime, target);
-            MechJebLib.Primitives.V3 deltaV = OrbitalManeuverCalculator.DeltaVToChangeEccentricity(o, ut, NewEcc);
+            DVector3 deltaV = OrbitalManeuverCalculator.DeltaVToChangeEccentricity(o, ut, NewEcc);
 
             return new List<PlanNode> { new PlanNode(deltaV, ut) };
         }

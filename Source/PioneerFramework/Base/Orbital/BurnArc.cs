@@ -43,7 +43,7 @@ namespace PioneerFramework
             public readonly double eccentricity;
             public readonly double sma;
 
-            /// <summary>**最后一步所用的推力方向**（适配层参考系）。用于与执行器的 `burnDirection` 对照
+            /// <summary>**最后一步所用的推力方向**（适配层参考系）。用于与执行器的 `burnDirectionSystem` 对照
             /// ——"船跟着指令走"不等于"指令本身对"，这个夹角才是那个判据。</summary>
             public readonly V3 finalDir;
 

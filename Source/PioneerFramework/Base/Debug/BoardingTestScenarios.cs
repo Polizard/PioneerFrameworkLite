@@ -235,7 +235,7 @@ namespace PioneerFramework
                 tries++;
                 IntVec3 c = map.Center + new IntVec3(Rand.Range(-22, 23), 0, Rand.Range(-22, 23));
                 if (!c.InBounds(map) || !c.Walkable(map)) continue;
-                var off = (DVector3)MapCoordMapper.MapCellToLocal3D(map, c);
+                var off = (DVector3)MapCoordMapper.MapCellToShip(map, c);
                 if (result.Any(o => (o - off).sqrMagnitude < 25.0)) continue; // 至少 5m 间距
                 result.Add(off);
             }

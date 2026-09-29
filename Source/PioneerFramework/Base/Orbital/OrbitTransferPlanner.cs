@@ -44,8 +44,8 @@ namespace PioneerFramework
         private double tanDV2, normDV2;
         private int departureTick;
         private int arrivalTick;
-        private DVector3 departurePosWorld;  // 世界坐标
-        private DVector3 departureVelWorld;
+        private DVector3 departurePosSystem;  // 世界坐标
+        private DVector3 departureVelSystem;
 
         private const float ButtonHeight = 30f;
         private const float LabelHeight = 22f;
@@ -216,7 +216,7 @@ namespace PioneerFramework
             var body = mgr.GetBodyById(bodyId);
             if (body == null || body.bodyType == CelestialBodyType.Planet)
                 return (DVector3.zero, DVector3.zero);
-            return (mgr.GetBodyLocalPosition(bodyId, tick), mgr.GetBodyLocalVelocity(bodyId, tick));
+            return (mgr.GetBodyPositionParent(bodyId, tick), mgr.GetBodyVelocityParent(bodyId, tick));
         }
 
         /// <summary>
@@ -230,10 +230,10 @@ namespace PioneerFramework
             double mu = spaceGame.GetBodyGM(selfGroup.CelestialBodyId);
 
             // 获取世界坐标状态，然后转换到中心天体坐标系
-            var (r1World, v1World) = GetCurrentWorldState();
+            var (r1System, v1System) = GetCurrentWorldState();
             var (bodyOff, bodyVel) = GetCentralBodyOffsetAndVel((int)Math.Round(TimeScaleManager.GetPhysicsTickSafe()));
-            DVector3 r1 = r1World - bodyOff;   // 中心天体相对坐标
-            DVector3 v1 = v1World - bodyVel;
+            DVector3 r1 = r1System - bodyOff;   // 中心天体相对坐标
+            DVector3 v1 = v1System - bodyVel;
 
             double r1Mag = r1.magnitude;
             double r2Mag = targetRadiusMeters;
@@ -286,8 +286,8 @@ namespace PioneerFramework
             // 转移时间
             transferTimeSeconds = System.Math.PI * System.Math.Sqrt(a * a * a / mu);
 
-            departurePosWorld = r1World;      // 世界坐标（供预览）
-            departureVelWorld = v1World;
+            departurePosSystem = r1System;      // 世界坐标（供预览）
+            departureVelSystem = v1System;
             double physicsTickNow = TimeScaleManager.GetPhysicsTickSafe();
             departureTick = (int)Math.Round(physicsTickNow);
             arrivalTick = departureTick + UnityEngine.Mathf.RoundToInt((float)transferTimeSeconds);
@@ -318,7 +318,7 @@ namespace PioneerFramework
                 normalDV = 0f,
                 executeTick = departureTick,
                 active = true,
-                previewNodePosition = departurePosWorld
+                previewNodePosition = departurePosSystem
             };
             spaceGame.QueueGroupManeuver(selfGroup.GroupId, departureManeuver);
 

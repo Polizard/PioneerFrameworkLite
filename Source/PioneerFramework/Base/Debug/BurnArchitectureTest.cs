@@ -148,7 +148,7 @@ namespace PioneerFramework
                             Pass("burn 冲量已正确施加 |Δv_vec|=" + dvVec.ToString("F2"));
 
                         // 储罐差值同步（burn 消耗路径）：本地储罐应追平向量
-                        float vec = mapComp.GetPropellantMass(thruster.PropellantDef);
+                        double vec = mapComp.GetPropellantMass(thruster.PropellantDef);
                         float local = tank.StoredMass;
                         if (System.Math.Abs(local - vec) > 0.5f)
                             Fail(string.Format("burn 后储罐差值同步不一致: 本地 {0:F1} vs 向量 {1:F1}", local, vec));
@@ -156,7 +156,7 @@ namespace PioneerFramework
                             Pass(string.Format("burn 后储罐差值同步一致: 本地 {0:F1} ≈ 向量 {1:F1}", local, vec));
 
                         // 直接扣向量 100kg（模拟无 burn 的外部消耗），验证差值同步独立路径
-                        float drained = mapComp.TryConsumePropellant(thruster.PropellantDef, 100f);
+                        double drained = mapComp.TryConsumePropellant(thruster.PropellantDef, 100.0);
                         Log.Message("[ArchTest] 直接扣向量 " + drained.ToString("F1") + " kg，等待储罐追回...");
                         phase = Phase.DrainSync;
                         phaseStartTick = now;
@@ -166,7 +166,7 @@ namespace PioneerFramework
                 case Phase.DrainSync:
                     if (now - phaseStartTick >= 10)
                     {
-                        float vec = mapComp.GetPropellantMass(thruster.PropellantDef);
+                        double vec = mapComp.GetPropellantMass(thruster.PropellantDef);
                         float local = tank.StoredMass;
                         if (System.Math.Abs(local - vec) > 0.5f)
                             Fail(string.Format("外部扣减后差值同步未追回: 本地 {0:F1} vs 向量 {1:F1}", local, vec));

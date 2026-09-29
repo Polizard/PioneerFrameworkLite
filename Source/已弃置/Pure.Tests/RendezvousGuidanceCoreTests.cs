@@ -1,3 +1,11 @@
+// ⚠ **已归档（批5.B，2026-09-28）** —— 本文件**不参与编译**（整文件退役，不是用例级手术）。
+// 原因：T1–T16 全部**由旧律驱动**（`InPlaneRendezvousPilot{ShapeFirstLadder=true}` → `RendezvousGuidanceLaw.Compose`）
+//       ⇒ 旧律一归档它们连编译都过不了。而"先有替代再搬"这条规矩要的**替代品已经就位**：
+//       `MechJebLibTest/LadderEndToEndTests.cs` 用**活路径**（阶梯 + `LadderPilot` + 同一执行器）
+//       重跑了同一批几何（一圈交会 / LEO→GEO / GTO 异轨 / 死区不憋死；四条全绿、口径 300 m / 2 m/s）。
+//       **T0（RK4 保能量自检）也搬过去了**（那个守卫测的是台架本身、与律无关）⇒ 见该文件的 `G0`。
+// 取回代价：搬回 `Source/PioneerFramework.Pure.Tests/`（它不靠 csproj 链接，靠目录通配）。
+
 ﻿using System;
 using PioneerFramework;
 using Xunit;

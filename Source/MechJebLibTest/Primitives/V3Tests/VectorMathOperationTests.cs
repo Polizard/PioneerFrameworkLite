@@ -439,9 +439,9 @@ namespace MechJebLibTest.Primitives.V3Tests
         [Fact]
         private void CrossProductRightHandedRule()
         {
-            V3.Cross(V3.forward, V3.right).ShouldEqual(V3.down);
-            V3.Cross(V3.right, V3.down).ShouldEqual(V3.forward);
-            V3.Cross(V3.down, V3.forward).ShouldEqual(V3.right);
+            V3.Cross(V3.bodyForward, V3.bodyRight).ShouldEqual(V3.bodyDown);
+            V3.Cross(V3.bodyRight, V3.bodyDown).ShouldEqual(V3.bodyForward);
+            V3.Cross(V3.bodyDown, V3.bodyForward).ShouldEqual(V3.bodyRight);
         }
 
         [Fact]

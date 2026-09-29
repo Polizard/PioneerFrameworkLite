@@ -461,7 +461,7 @@ namespace PioneerFramework
                     return g;
             }
 
-            return GetBodyWorldPos(currentSystemBodyId, tick);
+            return GetBodyPosAbs(currentSystemBodyId, tick);
         }
 
         /// <summary>获取选中编队的世界坐标（tick 时刻），无选中返回 zero</summary>
@@ -474,7 +474,7 @@ namespace PioneerFramework
             var g = spaceGame.GetGroupById(selectedGroupId);
             if (g == null) { selectedGroupId = -1; return DVector3.zero; }
 
-            return GetGroupAbsoluteWorldPos(g, tick);
+            return GetGroupPosAbs(g, tick);
         }
 
         /// <summary>相机在 view space 中的位置（相对于原点）</summary>
@@ -491,40 +491,35 @@ namespace PioneerFramework
         /// 将编队的天体-相对坐标转换为绝对世界坐标。
         /// GetCircularPositionAtTick / CurrentOrbit.position 返回天体-相对坐标
         /// （对 Planet：相对于 Planet 中心；对 Moon：相对于 Planet 中心）。
-        /// 天体绝对位置通过 GetBodyWorldPosition 递归获取。
+        /// 天体绝对位置通过 GetBodyPositionAbs 递归获取。
         /// </summary>
 
-        private DVector3 GetGroupAbsoluteWorldPos(SpaceEntityGroup g, double tick)
+        private DVector3 GetGroupPosAbs(SpaceEntityGroup g, double tick)
         {
-            DVector3 localPos = g.IsCircularOrbit
+            DVector3 posSystem = g.IsCircularOrbit
                 ? g.GetCircularPositionAtTick(tick)
                 : g.CurrentOrbit.position;
 
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            if (mgr == null) return localPos;
+            if (mgr == null) return posSystem;
 
             // 找到编队所属的顶层行星
-            var body = mgr.GetBodyById(g.CelestialBodyId);
-            int planetBodyId = -1;
-            if (body != null)
-            {
-                if (body.bodyType == CelestialBodyType.Planet)
-                    planetBodyId = body.bodyId;
-                else if (body.bodyType == CelestialBodyType.Moon && body.ParentBodyId >= 0)
-                    planetBodyId = body.ParentBodyId;
-            }
+            // ⚠ 2026-09-26（D8）：原先这里手搓"行星→自身 / 卫星→父体"。那正是
+            //   `CelestialBodyManager.GetRootPlanetId` 的规则（"沿父链遇到的第一个行星"）⇒ 收敛到它，
+            //   不再留第二份（当前天体集下逐值相同；对更深的父链还更正确）。
+            int planetBodyId = mgr.GetRootPlanetId(g.CelestialBodyId);
 
-            DVector3 planetWorld = planetBodyId >= 0 ? mgr.GetBodyWorldPosition(planetBodyId, tick) : DVector3.zero;
-            DVector3 worldPos = localPos + planetWorld;
+            DVector3 planetPosAbs = planetBodyId >= 0 ? mgr.GetBodyPositionAbs(planetBodyId, tick) : DVector3.zero;
+            DVector3 posAbs = posSystem + planetPosAbs;
 
-            return worldPos;
+            return posAbs;
         }
 
         /// <summary>获取天体世界坐标</summary>
-        private static DVector3 GetBodyWorldPos(int bodyId, double tick)
+        private static DVector3 GetBodyPosAbs(int bodyId, double tick)
         {
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            return mgr != null ? mgr.GetBodyWorldPosition(bodyId, tick) : DVector3.zero;
+            return mgr != null ? mgr.GetBodyPositionAbs(bodyId, tick) : DVector3.zero;
         }
 
         /// <summary>重置相机：无编队时退到天体 2 倍半径处，有编队时退到 500m 处</summary>
@@ -547,7 +542,7 @@ namespace PioneerFramework
                 camDistance = (float)(body.radius * MetersToView) * 2f;
         }
 
-        private static Vector3 WorldToView(DVector3 worldMeters, DVector3 originMeters)
+        private static Vector3 AbsToView(DVector3 worldMeters, DVector3 originMeters)
         {
             return (Vector3)((worldMeters - originMeters) * MetersToView);
         }
@@ -632,25 +627,19 @@ namespace PioneerFramework
 
             // 找到飞船所在的行星（不是飞船本身的位置！）
             int shipBodyId = selectedGroupId >= 0 ? GetSelectedGroupBodyId() : currentSystemBodyId;
-            var shipBody = mgr.GetBodyById(shipBodyId);
-            CelestialBodyDef planetBody = null;
-            if (shipBody != null)
-            {
-                if (shipBody.bodyType == CelestialBodyType.Planet)
-                    planetBody = shipBody;
-                else if (shipBody.ParentBodyId >= 0)
-                    planetBody = mgr.GetBodyById(shipBody.ParentBodyId);
-            }
+            // ⚠ 2026-09-26（D8）：同上，收敛到 `GetRootPlanetId`（不再手搓"父体即行星"）。
+            int shipRootPlanetId = mgr.GetRootPlanetId(shipBodyId);
+            CelestialBodyDef planetBody = shipRootPlanetId >= 0 ? mgr.GetBodyById(shipRootPlanetId) : null;
             if (planetBody == null) return;
 
             // 行星世界坐标 = 从恒星指向行星的矢量（恒星在(0,0,0)）
-            DVector3 planetWorldPos = mgr.GetBodyWorldPosition(planetBody.bodyId, tick);
+            DVector3 planetPosAbs = mgr.GetBodyPositionAbs(planetBody.bodyId, tick);
 
             // 方向光从恒星照向行星：forward = 恒星→行星方向
             Vector3 lightDir = new Vector3(
-                (float)planetWorldPos.x,
-                (float)planetWorldPos.y,
-                (float)planetWorldPos.z).normalized;
+                (float)planetPosAbs.x,
+                (float)planetPosAbs.y,
+                (float)planetPosAbs.z).normalized;
 
             if (lightDir.sqrMagnitude > 0.001f)
                 sunLight.transform.forward = lightDir;
@@ -700,21 +689,15 @@ namespace PioneerFramework
 
             if (shipBody != null)
             {
-                if (shipBody.bodyType == CelestialBodyType.Planet)
+                // ⚠ 2026-09-26（D8）：两个分支其实是同一件事——"显示**根行星** + 它的全部卫星"。
+                //   原先写成"行星→自身 / 卫星→父体"两路手搓 ⇒ 收敛到 `GetRootPlanetId` 一条。
+                int rootPlanetId = mgr.GetRootPlanetId(shipBody.bodyId);
+                var rootPlanet = rootPlanetId >= 0 ? mgr.GetBodyById(rootPlanetId) : null;
+                if (rootPlanet != null)
                 {
-                    // 飞船绕行星 → 显示该行星 + 其卫星
-                    ids.Add(shipBody.bodyId);
-                    foreach (var moon in shipBody.moonBodies)
+                    ids.Add(rootPlanetId);
+                    foreach (var moon in rootPlanet.moonBodies)
                         ids.Add(moon.bodyId);
-                }
-                else if (shipBody.bodyType == CelestialBodyType.Moon && shipBody.ParentBodyId >= 0)
-                {
-                    // 飞船绕卫星 → 显示父行星 + 该行星所有卫星
-                    ids.Add(shipBody.ParentBodyId);
-                    var parentPlanet = mgr.GetBodyById(shipBody.ParentBodyId);
-                    if (parentPlanet != null)
-                        foreach (var moon in parentPlanet.moonBodies)
-                            ids.Add(moon.bodyId);
                 }
             }
 
@@ -756,8 +739,8 @@ namespace PioneerFramework
                 if (!relevantIds.Contains(body.bodyId)) continue;
 
                 bool isStar = body.bodyType == CelestialBodyType.Star;
-                DVector3 wp = mgr.GetBodyWorldPosition(body.bodyId, tick);
-                Vector3 vp = WorldToView(wp, origin);
+                DVector3 wp = mgr.GetBodyPositionAbs(body.bodyId, tick);
+                Vector3 vp = AbsToView(wp, origin);
 
                 // ═══ 恒星：等效替代，方向对即可 ═══
                 if (isStar)
@@ -883,13 +866,13 @@ namespace PioneerFramework
                 if (!g.IsActive) continue;
                 if (!sysIds.Contains(g.CelestialBodyId)) continue;
 
-                DVector3 gWorldMeters = GetGroupAbsoluteWorldPos(g, tick);
-                Vector3 vp = WorldToView(gWorldMeters, origin);
+                DVector3 gPosAbs = GetGroupPosAbs(g, tick);
+                Vector3 vp = AbsToView(gPosAbs, origin);
                 float dist = vp.magnitude;
 
                 if (dist < PartRenderDist)
                 {
-                    DrawGroupParts(g, gWorldMeters, origin, spaceGame);
+                    DrawGroupParts(g, gPosAbs, origin, spaceGame);
                     continue;
                 }
 
@@ -908,7 +891,7 @@ namespace PioneerFramework
 
         }
 
-        private void DrawGroupParts(SpaceEntityGroup group, DVector3 groupWorldMeters, DVector3 origin, SpaceGameComp spaceGame)
+        private void DrawGroupParts(SpaceEntityGroup group, DVector3 groupPosAbs, DVector3 origin, SpaceGameComp spaceGame)
         {
             // 姿态 = 编队真实姿态（CurrentOrbit.rotation）。
             // 旧实现用**速度方向**做 LookRotation（船头永远朝轨道切线）：那是轨道运动的切线，不是船的
@@ -922,8 +905,8 @@ namespace PioneerFramework
                 var entity = spaceGame.GetEntityById(eid);
                 if (entity == null) continue;
 
-                DVector3 eWorld = groupWorldMeters + entity.Position;
-                Vector3 eVp = WorldToView(eWorld, origin);
+                DVector3 eAbs = groupPosAbs + entity.Position;
+                Vector3 eVp = AbsToView(eAbs, origin);
 
                 if (!SphereInFrustum(eVp, 10f * scale)) continue;
 
@@ -940,13 +923,13 @@ namespace PioneerFramework
                 var e = spaceGame.GetEntityById(eid);
                 if (e != null) hull = Mathf.Max(hull, (float)e.BoundsSize.magnitude);
             }
-            DrawHeadingBar(group, spaceGame, WorldToView(groupWorldMeters, origin),
+            DrawHeadingBar(group, spaceGame, AbsToView(groupPosAbs, origin),
                 Mathf.Max(hull * MetersToView * 0.7f, 3f) * scale);
         }
 
         /// <summary>
         /// 朝向指示棒：从编队中心沿**主推轴**画一根细棒。
-        /// 主推轴 = 点火会把本编队推向哪边，取自 `SpaceGameComp.GetMainThrustWorldAxis`（与 burn / SAS
+        /// 主推轴 = 点火会把本编队推向哪边，取自 `SpaceGameComp.GetMainThrustAxisSystem`（与 burn / SAS
         /// 自动对准 / 主推方向同一出处），所以画出来的方向就是物理会执行的方向。
         /// 无引擎（无推力）/ 全向类（无主推轴）时不画 —— 不摆一根物理上不存在的箭头。
         /// </summary>
@@ -954,11 +937,11 @@ namespace PioneerFramework
         {
             if (spaceGame == null || barLen <= 0.01f) return;
 
-            DVector3 axisWorld = spaceGame.GetMainThrustWorldAxis(group);
-            if (axisWorld.sqrMagnitude < 1e-12) return;
+            DVector3 axisSystem = spaceGame.GetMainThrustAxisSystem(group);
+            if (axisSystem.sqrMagnitude < 1e-12) return;
 
-            // WorldToView 只有平移 + 正等比缩放 ⇒ 方向在视图系与世界系同向，直接当视图方向用
-            Vector3 dir = (Vector3)axisWorld.normalized;
+            // AbsToView 只有平移 + 正等比缩放 ⇒ 方向在视图系与世界系同向，直接当视图方向用
+            Vector3 dir = (Vector3)axisSystem.normalized;
             if (dir.sqrMagnitude < 0.5f) return;
 
             float width = Mathf.Max(barLen * 0.08f, 0.05f);
@@ -981,8 +964,8 @@ namespace PioneerFramework
 
                 var mesh = cubeMesh;
 
-                Vector3 pv = (Vector3)part.localPosition * MetersToView * scale;
-                Vector3 sv = (Vector3)part.localBoundsSize * MetersToView * scale;
+                Vector3 pv = (Vector3)part.positionShip * MetersToView * scale;
+                Vector3 sv = (Vector3)part.boundsSizeShip * MetersToView * scale;
                 if (sv.x < 0.1f) sv.x = 0.1f;
                 if (sv.y < 0.1f) sv.y = 0.1f;
                 if (sv.z < 0.1f) sv.z = 0.1f;
@@ -1019,8 +1002,8 @@ namespace PioneerFramework
                     : proj.spawnPosition + proj.velocity * (physicsNowT - proj.spawnPhysicsTick);
 
                 // 射弹位置是行星系相对坐标，渲染需转绝对（加所属行星世界偏移）
-                DVector3 bodyOff = GetBodyWorldPos(proj.systemBodyId, tick);
-                Vector3 vp = WorldToView(renderPos + bodyOff, origin);
+                DVector3 bodyOff = GetBodyPosAbs(proj.systemBodyId, tick);
+                Vector3 vp = AbsToView(renderPos + bodyOff, origin);
                 float dist = Vector3.Distance(vp, camView);
 
                 // 按相机距离自适应放大：射弹在行星系尺度下极小，固定尺寸不可见
@@ -1053,8 +1036,8 @@ namespace PioneerFramework
                 // 尾迹：沿 velocity 反方向固定延伸 1 个物理步（长度恒定、端点连续）。
                 // 原实现连接 proj.prevPosition（物理上一步，每 2 tick 跳 167m），尾迹长度
                 // 每物理步从满长缩到 0 再跳回 → 伸缩抖动，视觉上呈"折线"。弹头本就平滑。
-                DVector3 trailEndWorld = renderPos - proj.velocity * (2.0 / 60.0);
-                Vector3 tv = WorldToView(trailEndWorld + bodyOff, origin);
+                DVector3 trailEndAbs = renderPos - proj.velocity * (2.0 / 60.0);
+                Vector3 tv = AbsToView(trailEndAbs + bodyOff, origin);
                 float len = Vector3.Distance(vp, tv);
                 if (len > 0.01f)
                 {
@@ -1068,9 +1051,9 @@ namespace PioneerFramework
 
             foreach (var beam in cm.ActiveLaserBeams)
             {
-                DVector3 bodyOff = GetBodyWorldPos(beam.systemBodyId, tick);
-                Vector3 sv = WorldToView(beam.startPos + bodyOff, origin);
-                Vector3 ev = WorldToView(beam.endPos + bodyOff, origin);
+                DVector3 bodyOff = GetBodyPosAbs(beam.systemBodyId, tick);
+                Vector3 sv = AbsToView(beam.startPos + bodyOff, origin);
+                Vector3 ev = AbsToView(beam.endPos + bodyOff, origin);
                 Vector3 mid = (sv + ev) * 0.5f;
                 float len = Vector3.Distance(sv, ev);
                 if (len < 0.01f) continue;
@@ -1084,8 +1067,8 @@ namespace PioneerFramework
             foreach (var exp in cm.ActiveExplosions)
             {
                 float t = 1f - (float)exp.remainingTicks / exp.totalTicks; // 0→1
-                DVector3 bodyOff = GetBodyWorldPos(exp.systemBodyId, tick);
-                Vector3 vp = WorldToView(exp.position + bodyOff, origin);
+                DVector3 bodyOff = GetBodyPosAbs(exp.systemBodyId, tick);
+                Vector3 vp = AbsToView(exp.position + bodyOff, origin);
                 float radius = (float)(exp.maxRadius * MetersToView) * (0.2f + 0.8f * t);
                 if (radius < 0.01f) continue;
                 float alpha = 1f - t;
@@ -1140,11 +1123,11 @@ namespace PioneerFramework
                 for (int i = 0; i < pts.Count; i++)
                 {
                     int j = (i + 1) % pts.Count;
-                    Vector3 a = WorldToView(new DVector3(
+                    Vector3 a = AbsToView(new DVector3(
                         pts[i].x * SpaceConstants.MetersPerUnit,
                         pts[i].y * SpaceConstants.MetersPerUnit,
                         pts[i].z * SpaceConstants.MetersPerUnit), origin);
-                    Vector3 b = WorldToView(new DVector3(
+                    Vector3 b = AbsToView(new DVector3(
                         pts[j].x * SpaceConstants.MetersPerUnit,
                         pts[j].y * SpaceConstants.MetersPerUnit,
                         pts[j].z * SpaceConstants.MetersPerUnit), origin);
@@ -1197,8 +1180,8 @@ namespace PioneerFramework
             {
                 if (!g.IsActive || !sysIds.Contains(g.CelestialBodyId)) continue;
 
-                DVector3 gWorld = GetGroupAbsoluteWorldPos(g, tick);
-                Vector3 vp = WorldToView(gWorld, origin);
+                DVector3 gAbs = GetGroupPosAbs(g, tick);
+                Vector3 vp = AbsToView(gAbs, origin);
                 Vector3 sp = renderCamera.WorldToScreenPoint(vp);
                 if (sp.z < 0) continue;
 
@@ -1283,8 +1266,8 @@ namespace PioneerFramework
                 // 锚定天体时不显示自身指示器
                 if (selectedGroupId < 0 && body.bodyId == currentSystemBodyId) continue;
 
-                DVector3 wp = mgr.GetBodyWorldPosition(body.bodyId, tick);
-                Vector3 vp = WorldToView(wp, origin);
+                DVector3 wp = mgr.GetBodyPositionAbs(body.bodyId, tick);
+                Vector3 vp = AbsToView(wp, origin);
                 Vector3 sp = renderCamera.WorldToScreenPoint(vp);
                 if (sp.z <= 0f) continue; // 相机后方
 
@@ -1426,7 +1409,7 @@ namespace PioneerFramework
             y += RowTitle;
 
             // ── 朝向读数（与 3D 指示棒同一份数据：姿态来自 group.CurrentOrbit.rotation，
-            //    主推轴来自 SpaceGameComp.GetMainThrustWorldAxis）──
+            //    主推轴来自 SpaceGameComp.GetMainThrustAxisSystem）──
             var font = Text.Font;
             Text.Font = GameFont.Tiny;
             Vector3 euler = g.CurrentOrbit.rotation.eulerAngles;
@@ -1435,7 +1418,7 @@ namespace PioneerFramework
                 euler.y, euler.x, euler.z, g.angularVelocity.magnitude * Mathf.Rad2Deg));
             y += RowAtt;
 
-            DVector3 thrustAxis = spaceGame.GetMainThrustWorldAxis(g);
+            DVector3 thrustAxis = spaceGame.GetMainThrustAxisSystem(g);
             if (thrustAxis.sqrMagnitude > 1e-12)
             {
                 DVector3 vel = g.CurrentOrbit.velocity;
@@ -1547,7 +1530,7 @@ namespace PioneerFramework
 
         /// <summary>方向 → "方位 x° / 仰角 y°"（方位 = 绕 +Y 从 +Z 起算，仰角 = 相对 XZ 平面）。
         /// 用方向读数而不是"前/后/左/右"这类船体局部轴向名：局部轴的命名在本库里本身有歧义
-        /// （`ThrustAxis` 的逐项注释说 +Z 是船头，`RotateByRot4` 的注释与导弹默认 `mainAxisLocal=-Z`
+        /// （`ThrustAxis` 的逐项注释说 +Z 是船头，`RotateByRot4` 的注释与导弹默认 `mainAxisShip=-Z`
         /// 都指向 -Z 是船头），表现层不替它选边；方位/仰角与画面上那根黄棒一一对应。</summary>
         private static string DirectionLabel(DVector3 dir)
         {
@@ -1692,8 +1675,8 @@ namespace PioneerFramework
                 {
                     partId = 1,
                     defName = "PF_TestShip",
-                    localPosition = DVector3.zero,
-                    localBoundsSize = new DVector3(100.0, 40.0, 100.0)
+                    positionShip = DVector3.zero,
+                    boundsSizeShip = new DVector3(100.0, 40.0, 100.0)
                 }
             });
             spaceGame.RegisterEntity(entity);

@@ -51,10 +51,10 @@ namespace PioneerFramework
         /// <summary>
         /// 旋转后的世界轴对齐包围盒（相对 entity 原点，OBB→AABB 投影并集）。
         /// 世界系用途（船-船碰撞 / 半径 / 战斗格子占用）用它——旋转后 part 会超出未旋转盒。
-        /// 注意：射弹命中检测在 shipLocal 系用 AabbHalfSize（part 局部正盒），不要改成这个。
+        /// 注意：射弹命中检测在船体系用 AabbHalfSize（part 局部正盒），不要改成这个。
         /// 每 tick 懒缓存：同一 tick 内被碰撞检测多次调用（球快筛/扫掠盒/分离量）只算一次。
         /// </summary>
-        public void GetWorldAabb(out DVector3 min, out DVector3 max)
+        public void GetAabbSystem(out DVector3 min, out DVector3 max)
         {
             int tick = Find.TickManager?.TicksGame ?? -1;
             if (tick == cachedAabbTick)
@@ -82,8 +82,8 @@ namespace PioneerFramework
                 max = new DVector3(double.MinValue, double.MinValue, double.MinValue);
                 foreach (var part in Parts)
                 {
-                    DVector3 c = DVector3.Rotate(part.localPosition, Rotation);   // 旋转后中心
-                    DVector3 h = part.localBoundsSize * 0.5;
+                    DVector3 c = DVector3.Rotate(part.positionShip, Rotation);   // 旋转后中心
+                    DVector3 h = part.boundsSizeShip * 0.5;
                     // OBB→AABB 投影：旋转后轴对齐半尺寸
                     DVector3 rh = new DVector3(
                         System.Math.Abs(r00) * h.x + System.Math.Abs(r01) * h.y + System.Math.Abs(r02) * h.z,
@@ -100,14 +100,14 @@ namespace PioneerFramework
             cachedAabbMax = max;
         }
 
-        private int cachedAabbTick = -1;        // GetWorldAabb 每 tick 懒缓存（旋转/部件未变时同 tick 复用）
+        private int cachedAabbTick = -1;        // GetAabbSystem 每 tick 懒缓存（旋转/部件未变时同 tick 复用）
         private DVector3 cachedAabbMin, cachedAabbMax;
 
         private int cachedRotInvTick = -1;      // RotationInverse 每 tick 懒缓存（同款模式）
         private DQuaternion cachedRotInv;
 
         /// <summary>
-        /// 姿态逆四元数（per-tick 懒缓存，与 GetWorldAabb 同款；SetRotation 失效）。
+        /// 姿态逆四元数（per-tick 懒缓存，与 GetAabbSystem 同款；SetRotation 失效）。
         /// 命中几何对「每射弹/每光束 × 每候选实体」各算一次 Inverse(FromQuaternion(Rotation))，
         /// 而姿态在步内不变（物理区只算，主线程统一施加）——缓存把每弹每实体的开销压成每实体每 tick。
         /// </summary>
@@ -269,14 +269,14 @@ namespace PioneerFramework
         // 有 Map 实体忽略此字段（主推轴 = mapComp.MainThrustAxis）。
         // null = 全向（穿梭机/EVA/无人机等默认，任意方向推力、无姿态对准）；
         // 有值 = 主推方向型（导弹/火箭：只沿该 body 局部轴锥角内出力，需魔动量轮对准）。
-        public DVector3? mainAxisLocal;
-        public bool HasMainAxis => mainAxisLocal.HasValue && mainAxisLocal.Value.sqrMagnitude > 1e-12;
+        public DVector3? mainAxisShip;
+        public bool HasMainAxis => mainAxisShip.HasValue && mainAxisShip.Value.sqrMagnitude > 1e-12;
 
         // 运行时缓存（并行物理线程只读；propulsion 变更时重建）
         private List<PropellantNetwork> cachedPropulsionNetworks = new List<PropellantNetwork>();
         private bool propulsionDirty = true;
-        private float totalPropulsionMass;
-        private float totalPropulsionCapacity;
+        private double totalPropulsionMass;      // ⚠ double：见 PropulsionData.mass 的说明（累加量不许用 float）
+        private double totalPropulsionCapacity;
 
         /// <summary>推进数据版本：InvalidatePropulsion 自增（不序列化）。
         /// 群级推进源（GroupPropulsionAggregator）缓存以它判陈旧——与 Networks 缓存同一失效入口。</summary>
@@ -308,47 +308,47 @@ namespace PioneerFramework
             }
         }
 
-        /// <summary>某工质自带存量（kg）。</summary>
-        public float GetPropellantMass(PropellantDef def)
+        /// <summary>某工质自带存量（kg）。**double**：见 <see cref="PropulsionData.mass"/>。</summary>
+        public double GetPropellantMass(PropellantDef def)
         {
-            if (def == null) return 0f;
+            if (def == null) return 0.0;
             for (int i = 0; i < propulsion.Count; i++)
             {
                 var d = propulsion[i];
                 if (d.propellant == def) return d.mass;
             }
-            return 0f;
+            return 0.0;
         }
 
-        /// <summary>消耗自带工质（kg），返回实际扣除量（受存量截断）。</summary>
-        public float TryConsumePropellant(PropellantDef def, float kg)
+        /// <summary>消耗自带工质（kg），返回实际扣除量（受存量截断）。**double**：见 <see cref="PropulsionData.mass"/>。</summary>
+        public double TryConsumePropellant(PropellantDef def, double kg)
         {
-            if (def == null || kg <= 0f) return 0f;
+            if (def == null || kg <= 0.0) return 0.0;
             // ⚠ 原来这里是"**扣第一个匹配的条目就 return**" ✗ —— 同一工质有多个条目（多罐同种料）时
             //   只烧得到第一罐，余量被**静默丢弃**（调用方会把剩余传给下一个**实体**，永不回头）⇒
             //   燃耗记不满、群质量掉不到位 ⇒ 燃烧按偏大的质量算 `a` ⇒ **多给 Δv**（2026-09-19 实测：
             //   `Σ(a·dt)=808` 而工质只够 749.6 ⇒ 白送 58 m/s）。
             // ⇒ 跨**全部**同工质条目扣足本次请求的量。
-            float consumed = 0f;
+            double consumed = 0.0;
             for (int i = 0; i < propulsion.Count && consumed < kg; i++)
             {
                 var d = propulsion[i];
                 if (d.propellant != def) continue;
-                float take = Mathf.Min(kg - consumed, d.mass);
-                if (take <= 0f) continue;
+                double take = System.Math.Min(kg - consumed, d.mass);
+                if (take <= 0.0) continue;
                 d.mass -= take;
                 consumed += take;
             }
-            if (consumed > 0f)
-                totalPropulsionMass = Mathf.Max(0f, totalPropulsionMass - consumed);
+            if (consumed > 0.0)
+                totalPropulsionMass = System.Math.Max(0.0, totalPropulsionMass - consumed);
             return consumed;
         }
 
-        /// <summary>自带工质总质量（kg）。</summary>
-        public float TotalPropellantMass => totalPropulsionMass;
+        /// <summary>自带工质总质量（kg）。**double**：它是"每步扣一点"的累加量，float 会在 72 t 处只剩 7.8 g 分辨率。</summary>
+        public double TotalPropellantMass => totalPropulsionMass;
 
-        /// <summary>自带燃料总容量（kg，MaxDeltaV 用）。</summary>
-        public float TotalPropellantCapacity => totalPropulsionCapacity;
+        /// <summary>自带燃料总容量（kg，MaxDeltaV 用）。**double**（同 <see cref="TotalPropellantMass"/>）。</summary>
+        public double TotalPropellantCapacity => totalPropulsionCapacity;
 
         /// <summary>等效排气速度 ve = Σ(ve·ṁ)/Σṁ（m/s，全网络并行烧的加权平均）。</summary>
         public float EffectiveVe
@@ -441,7 +441,7 @@ namespace PioneerFramework
         public void SetRotation(Quaternion rot)
         {
             rotation = rot;
-            cachedAabbTick = -1; // 旋转参与 GetWorldAabb → 失效缓存
+            cachedAabbTick = -1; // 旋转参与 GetAabbSystem → 失效缓存
             cachedRotInvTick = -1; // 同上：姿态逆四元数随之失效
         }
 
@@ -453,7 +453,7 @@ namespace PioneerFramework
         public void SetParts(List<SpacePart> newParts, bool recalculateBounds = true)
         {
             parts = newParts ?? new List<SpacePart>();
-            cachedAabbTick = -1; // 部件参与 GetWorldAabb → 失效缓存
+            cachedAabbTick = -1; // 部件参与 GetAabbSystem → 失效缓存
             InvalidateStats();
             if (recalculateBounds && parts.Count > 0)
                 RecalculateBoundsFromParts();
@@ -472,8 +472,8 @@ namespace PioneerFramework
             foreach (var part in parts)
             {
                 if (part.isDestroyed) continue;
-                DVector3 half = part.localBoundsSize * 0.5;
-                double px = part.localPosition.x, py = part.localPosition.y, pz = part.localPosition.z;
+                DVector3 half = part.boundsSizeShip * 0.5;
+                double px = part.positionShip.x, py = part.positionShip.y, pz = part.positionShip.z;
                 if (px - half.x < minX) minX = px - half.x;
                 if (px + half.x > maxX) maxX = px + half.x;
                 if (py - half.y < minY) minY = py - half.y;
@@ -531,7 +531,7 @@ namespace PioneerFramework
                 InvalidatePropulsion();
 
             // D15 主推轴（null = 全向；旧存档无此节点 → 保持全向，向后兼容）
-            DVector3.ScribeNullable("mainAxisLocal", ref mainAxisLocal);
+            DVector3.ScribeNullable("mainAxisShip", ref mainAxisShip);
 
             // 部件列表序列化
             Scribe_Collections.Look(ref parts, "parts", LookMode.Deep);
@@ -566,16 +566,21 @@ namespace PioneerFramework
         /// <summary>质量流率 ṁ（kg/s），推力 F = ve·ṁ。</summary>
         public float massFlow;
 
-        /// <summary>燃料存量（kg）。</summary>
-        public float mass;
+        /// <summary>燃料存量（kg）。
+        /// ⚠ **必须 double**（2026-09-27 用户裁定）：原 float 在 72 t 处 1 ULP = **0.0078 kg**，
+        /// 而消耗是 `mass -= take` 的**累加** ⇒ 一步的舍入差就是 **2 ULP = 0.0156 kg**，
+        /// 再被 `accel = F/m` 放大成 **3.4e-6 m/s** 的 Δv 差、末端 **7e-5 m** 的位置差
+        /// （由逐步指纹的输入列实测钉死：`burnDbgMass Δ=0.015625 kg`）。
+        /// 这是**精度缺陷**、不是竞态 —— 工质质量是物理量，不该只有 7.8 g 分辨率。</summary>
+        public double mass;
 
-        /// <summary>燃料容量（kg，MaxDeltaV / 补给上限用）。</summary>
-        public float capacity;
+        /// <summary>燃料容量（kg，MaxDeltaV / 补给上限用）。见 <see cref="mass"/>（同批改 double）。</summary>
+        public double capacity;
 
         /// <summary>
         /// 是否弱 RCS 副网（D15/D13 同构，仅无 Map 实体使用）：
         /// true = 全矢量小推力修正（主推未对准时仍可出力、主网尽时兜底），不参与主推轴向约束；
-        /// false = 主引擎（无 Map 主推方向型沿 entity.mainAxisLocal 锥内出力；全向型无约束）。
+        /// false = 主引擎（无 Map 主推方向型沿 entity.mainAxisShip 锥内出力；全向型无约束）。
         /// 约束：同一实体内主网与 RCS 网须用不同 PropellantDef（同工质无法区分消耗）。
         /// </summary>
         public bool isVectoredRcs;
@@ -585,8 +590,11 @@ namespace PioneerFramework
             Scribe_Defs.Look(ref propellant, "propellant");
             Scribe_Values.Look(ref ve, "ve", 0f);
             Scribe_Values.Look(ref massFlow, "massFlow", 0f);
-            Scribe_Values.Look(ref mass, "mass", 0f);
-            Scribe_Values.Look(ref capacity, "capacity", 0f);
+            // ⚠ 这两个的默认值写 `0.0`（它们已是 double）：留 `0f` 能隐式转换、编译过，
+            //    但读起来像"字段还是 float" ⇒ 下一个人会误判（同批改 double，见 `mass` 的说明）。
+            //    **旧档读不出来是有意的**（开发期不考虑旧档兼容：不为旧表示写迁移）。
+            Scribe_Values.Look(ref mass, "mass", 0.0);
+            Scribe_Values.Look(ref capacity, "capacity", 0.0);
             Scribe_Values.Look(ref isVectoredRcs, "isVectoredRcs", false);
         }
     }

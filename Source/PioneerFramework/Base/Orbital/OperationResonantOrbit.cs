@@ -45,7 +45,7 @@ namespace PioneerFramework
                 throw new OperationException("共振比的分母不能为 0。");
 
             double f = (double)ResonanceNumerator.Val / ResonanceDenominator.Val;
-            MechJebLib.Primitives.V3 dV = OrbitalManeuverCalculator.DeltaVToResonantOrbit(o, ut, f);
+            DVector3 dV = OrbitalManeuverCalculator.DeltaVToResonantOrbit(o, ut, f);
 
             // ⚠ **零脉冲 = 不可行**（2026-09-20）：计算器在几何不可行时返回 `V3.zero`（上游同款），
             //   若不在这里拦下，就会**静默给出一个 |dV|=0 的节点**（界面上看着"计划好了"、其实什么都不会发生 ✗）。

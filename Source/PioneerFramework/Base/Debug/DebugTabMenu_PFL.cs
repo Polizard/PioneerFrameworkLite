@@ -38,6 +38,41 @@ namespace PioneerFramework
             // S1（2026-09-23）：统一判定框架的首两个用例 —— 把"只打印数字"的探针变成有判据的用例
             // （阵营解析 [V12] · 可见性四字段 [P1]；"今天验不了"的显式登记为 UNCHECKED 子项）
             AddAction("测试框架自检（统一判定：阵营解析 + 可见性四字段）", "00 验收", 30, FrameworkSelfTest.Run, null);
+            // 批 0-4：≥32 组的可复现性（判 R1–R5 那批**只在 ≥32 组暴露**的并行竞态，靠它；
+            //   同时也是批 2 的开工前提：不先建这个场景，改完也没有判据能证明改对了）
+            AddAction("规模验收A（≥32 组 · 解析圆轨 · 不燃烧：连跑 3 次 · 指纹逐位相同）", "00 验收", 33,
+                SwarmScaleAcceptanceRunner.Run,
+                () => SwarmScaleAcceptanceRunner.Running
+                    ? "规模验收（运行中…）"
+                    : "规模验收A（≥32 组 · 解析圆轨 · 不燃烧）");
+            // 变体 B（批 2）：非圆轨（三阶泰勒真积分）+ 全群同时点火 ⇒ 两样变体 A 给不了的：
+            //   ① 位置/速度**依赖积分结果** ⇒ 丢掉一步 = 永久位置差（判据从"偶尔"变"必然"）；
+            //   ② `HasActiveBurn` 每步为真 ⇒ R3 的静态节流 / R4 的 8 处日志 / R7 的引力探针真的被走到。
+            AddAction("规模验收B（≥32 组 · 积分+全群燃烧：R3/R4 判据面）", "00 验收", 32,
+                SwarmScaleAcceptanceRunner.RunIntegratedBurn,
+                () => SwarmScaleAcceptanceRunner.Running
+                    ? "规模验收（运行中…）"
+                    : "规模验收B（≥32 组 · 积分+全群燃烧）");
+            // N 扫描（2026-09-27 用户提议）：不同组数下的"每群每步"代价 ⇒ **斜率**才是"N 未知"要的答案。
+            // 跨过 32（顺序/并行分界）⇒ 顺带量出并行区实际收益；用常驻步钟 ⇒ 不用勾探针开关。
+            AddAction("规模验收·N 扫描（8/16/32/64/128 组：每群每步耗时与引力段）", "00 验收", 29,
+                SwarmScaleAcceptanceRunner.RunScaleSweep,
+                () => SwarmScaleAcceptanceRunner.Running
+                    ? "规模验收（运行中…）"
+                    : "规模验收·N 扫描");
+            AddAction("规模验收B · 猎捕（连跑到抓到红为止，上限 10 次 ≈30 轮）", "00 验收", 30,
+                SwarmScaleAcceptanceRunner.RunIntegratedBurnHunt,
+                () => SwarmScaleAcceptanceRunner.Running
+                    ? "规模验收（运行中…）"
+                    : "规模验收B · 猎捕");
+            // 连跑 4 次：专门抓那个**间歇**的指纹分歧（单次只有 3 轮 ⇒ 常常看不到）
+            AddAction("规模验收B ×4 连跑（抓间歇指纹分歧：逐步定位报第几个物理时刻变化点）", "00 验收", 31,
+                SwarmScaleAcceptanceRunner.RunIntegratedBurnX4,
+                () => SwarmScaleAcceptanceRunner.Running
+                    ? "规模验收（运行中…）"
+                    : "规模验收B ×4 连跑");
+            AddAction("G1 守卫自检（正负对照同场：相位内必报 / 相位外必不报）", "00 验收", 31,
+                ParallelRegionGuard.SelfTest, null);
             AddAction("一键验收", "00 验收", 100, PerfAcceptanceRunner.Run,
                 () => PerfAcceptanceRunner.Running
                     ? "一键验收（运行中…）"
@@ -119,18 +154,34 @@ namespace PioneerFramework
             AddAction("放置：近地轨道圆轨（地表 500km，顺行）", "45 放置 · 无Map编队", 100, DebugShipSpawner.PlaceLeoNoMapGroup, null);
             AddAction("放置：同步轨道圆轨（周期 = 天体自转周期）", "45 放置 · 无Map编队", 90, DebugShipSpawner.PlaceGeoSyncNoMapGroup, null);
             AddAction("放置：绕月轨道圆轨（月面 1800km）", "45 放置 · 无Map编队", 80, DebugShipSpawner.PlaceMoonOrbitNoMapGroup, null);
+            // 绕月交会（2026-09-29 用户报障后加）：非根天体路径此前零覆盖（体心系 + 解析圆轨模式 + 天体偏移）
+            // ⏱ **异轨是主档**（用户 2026-09-29："我需要的是异轨交会测试，你他妈怎么这么喜欢同轨"）：
+            //   追击方与目标不同半径 ⇒ 霍曼有窗口、能扫到"等 0.00 圈" ⇒ 阶梯第一次规划就是直接霍曼，
+            //   计划用时 7.7e3（升）/ 9.2e3（降）模拟秒 ⇒ 约 1 分钟真实出结论（离线读数见台架 G6）。
+            //   同轨是**病理档**（Δa=0 ⇒ 霍曼无解 ⇒ 只能抬轨等一个会合周期）—— 留作对照，别拿它看结果。
+            AddAction("绕月交会·【异轨·升】追击 2900km → 目标 3300km（直接霍曼 ≈1 分钟）", "45 放置 · 无Map编队", 46,
+                () => DebugShipSpawner.SpawnMoonRendezvousDiffOrbitTest(2900.0), null);
+            AddAction("绕月交会·【异轨·降】追击 3700km → 目标 3300km（直接霍曼 ≈1 分钟）", "45 放置 · 无Map编队", 45,
+                () => DebugShipSpawner.SpawnMoonRendezvousDiffOrbitTest(3700.0), null);
+            AddAction("绕月交会·判定（三条判据：都活着 / 到达判据 / 阶梯在位）", "45 放置 · 无Map编队", 41,
+                MoonRendezvousAcceptanceRunner.Run, null);
+            AddAction("绕月交会·【同轨·病理对照】3300↔3300（最多等一个会合周期 ≈4.5 分钟）", "45 放置 · 无Map编队", 40,
+                () => DebugShipSpawner.SpawnMoonRendezvousTest(30.0), null);
             AddAction("放置：GTO 椭圆轨道目标（近地点 LEO／远地点同步）", "45 放置 · 无Map编队", 75, DebugShipSpawner.PlaceGtoNoMapGroup, null);
-            AddAction("交会验收·快例（新律 30°，腿 9e3s ⇒ 8× 约 19 分钟）", "45 放置 · 无Map编队", 70,
-                () => DebugShipSpawner.SpawnRendezvousLawTest(overThrust: false, phaseDegAhead: 30.0, legSeconds: 9000.0), null);
-            AddAction("交会验收·硬例（新律 120°，腿 6e4s ⇒ 8× 约 70 分钟）", "45 放置 · 无Map编队", 65,
-                () => DebugShipSpawner.SpawnRendezvousLawTest(overThrust: false, phaseDegAhead: 120.0, legSeconds: 60000.0), null);
-            AddAction("交会验收·高推船（新律 120°，160kN 执行者）", "45 放置 · 无Map编队", 60,
-                () => DebugShipSpawner.SpawnRendezvousLawTest(overThrust: true, phaseDegAhead: 120.0, legSeconds: 60000.0), null);
+            // ⚠ 时间标注口径（2026-09-29 实测更正）：旧标"8× 约 N 分钟"用的是"8 倍速"，而实测
+            //   **模拟:真实 ≈ 300:1**（36868 模拟秒 / 120 真实秒）⇒ 旧标注把时间**放大了 ~37 倍**。
+            //   现在按同一套"要补的相位"规则给**粗估**（推导与实测见 `DebugShipSpawner.SpawnMoonRendezvousTest` 的文档）。
+            AddAction("交会验收·相位 30°（同轨 ⇒ 要补 330° ⇒ 粗估 ~4 圈 ≈ 1.5 分钟真实）", "45 放置 · 无Map编队", 70,
+                () => DebugShipSpawner.SpawnRendezvousTest(overThrust: false, phaseDegAhead: 30.0), null);
+            AddAction("交会验收·相位 120°（同轨 ⇒ 要补 240° ⇒ 粗估 ~3 圈 ≈ 1 分钟真实）", "45 放置 · 无Map编队", 65,
+                () => DebugShipSpawner.SpawnRendezvousTest(overThrust: false, phaseDegAhead: 120.0), null);
+            AddAction("交会验收·高推船（相位 120°，160kN 执行者）", "45 放置 · 无Map编队", 60,
+                () => DebugShipSpawner.SpawnRendezvousTest(overThrust: true, phaseDegAhead: 120.0), null);
             // 异轨（考**形状段**）：LEO → +1500km，Δv≈800 m/s 在预算内 ⇒ 能真的跑完"先变轨、再收相位、再终端"。
             // ⚠ LEO→同步轨道（+21322km）会被玩家路径的预算闸门正确拒掉（需 4911 vs 4385 m/s），
             //   要跑那个工况得先给船加料或用这个"缩小版"。
-            AddAction("交会验收·变轨段（新律 LEO → +1500km，考形状段）", "45 放置 · 无Map编队", 55,
-                () => DebugShipSpawner.SpawnRendezvousLawTest(overThrust: false, phaseDegAhead: 30.0, legSeconds: 60000.0, targetAltKm: 1500.0), null);
+            AddAction("交会验收·变轨段（LEO → +1500km，考形状/霍曼段）", "45 放置 · 无Map编队", 55,
+                () => DebugShipSpawner.SpawnRendezvousTest(overThrust: false, phaseDegAhead: 30.0, targetAltKm: 1500.0), null);
             // ⚠ 耗时很长（实测 2026-09-21）：45° 相位差 + 3° 异面 + 800 km 抬升
             //   三件叠在一起 ⇒ 阶梯会走 `匹配平面 → 调相轨道`，而调相就是“建轨道 + 等一圈”
             //   （本例轨道 ~6168 km ⇒ 一圈 **6800 模拟秒 ≈ 113 分钟**；8× 下约 **14 分钟真实时间**）。
@@ -142,11 +193,11 @@ namespace PioneerFramework
             //   ~700 s（Θ≈0.77）⇒ 被分派正确地送去**连续律**，阶梯还是不会被选中 ✗（实测：上一轮
             //   `[NewLaw]` 两段 + 阶梯 0 行）。高推下 Θ≈0.03 ⇒ 才真的考到「匹配平面 + 霍曼/相位」。
             AddAction("交会验收·异面异轨（高推船 +800km 且倾角 3°，考匹配平面+转移）", "45 放置 · 无Map编队", 50,
-                () => DebugShipSpawner.SpawnRendezvousLawTest(overThrust: true, phaseDegAhead: 45.0, legSeconds: 60000.0,
+                () => DebugShipSpawner.SpawnRendezvousTest(overThrust: true, phaseDegAhead: 45.0,
                     targetAltKm: 800.0, targetIncDeg: 3.0), null);
             // 同一几何、**标准推力**（走连续区）—— 不是把上面那条改软，而是把**同一几何的另一区制**也纳入覆盖 ✓
-            AddAction("交会验收·异面异轨（标准推力 +800km 且倾角 3°，走连续区）", "45 放置 · 无Map编队", 45,
-                () => DebugShipSpawner.SpawnRendezvousLawTest(overThrust: false, phaseDegAhead: 45.0, legSeconds: 60000.0,
+            AddAction("交会验收·异面异轨（标准推力 +800km 且倾角 3°，同样走阶梯）", "45 放置 · 无Map编队", 45,
+                () => DebugShipSpawner.SpawnRendezvousTest(overThrust: false, phaseDegAhead: 45.0,
                     targetAltKm: 800.0, targetIncDeg: 3.0), null);
 
             // ═══ 场景 · 导弹（自主武器平台）═══
@@ -225,17 +276,9 @@ namespace PioneerFramework
                     Log.Message(sb.ToString());
                 }, null);
             AddCheckbox("详细星座日志（入编/收尸/锚点）", "80 调试日志", 60, typeof(ConstellationGameComp), "DebugDetailedConstellation");
-            AddCheckbox("交会用新远场律（RendezvousGuidanceLaw；**默认开**，关=回退旧范式）", "80 调试日志", 58, typeof(SpaceGameComp), "UseNewRendezvousLaw");
-            AddAction("旧范式交会规划器（Lambert + 出发段；仅供对照/回退）", "80 调试日志", 57,
-                () =>
-                {
-                    var sg = Current.Game?.GetComponent<SpaceGameComp>();
-                    var g = sg?.GetGroupById(SpaceGroupVisualManager.GetSelectedGroupId());
-                    if (sg == null || g == null)
-                        Messages.Message("先在世界上选中一个编队再打开旧规划器", MessageTypeDefOf.RejectInput);
-                    else
-                        Find.WindowStack.Add(new RendezvousPlanner(g, sg));
-                }, null);
+            // ⚠ 标签 2026-09-28 更正：原写"交会用新远场律（RendezvousGuidanceLaw）"——那套律已作废、
+            //   远场段与 5% CW 终端已删除。字段名沿用（跨文件反射引用，改名要一次改两处）。
+            AddCheckbox("交会引导=阶梯（默认开；关=回退旧巡航 Lambert 路径）", "80 调试日志", 58, typeof(SpaceGameComp), "UseNewRendezvousLaw");
             AddAction("射弹飞行探针（30 tick / 关）", "80 调试日志", 65, ToggleProjectileProbe,
                 () => CombatManager.DebugProjectileProbeInterval > 0
                     ? "射弹飞行探针：开（" + CombatManager.DebugProjectileProbeInterval + "t）"

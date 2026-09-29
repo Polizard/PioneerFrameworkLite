@@ -72,7 +72,7 @@ namespace PioneerFramework.Combat
         private readonly Dictionary<int, DVector3> shipPrevPositions = new Dictionary<int, DVector3>();
 
         // #2 性能优化：CheckShipCollisions 本 tick 组级缓存（位置/半径/当前盒/上一步盒每组只算一次，
-        // 消除每对重复的 GetWorldAabb 旋转计算——原先每对最多 6 次）
+        // 消除每对重复的 GetAabbSystem 旋转计算——原先每对最多 6 次）
         private readonly Dictionary<int, GroupCollisionCache> groupCollisionCache = new Dictionary<int, GroupCollisionCache>();
 
         /// <summary>船对碰撞检测的组级缓存条目（每 tick 重建）。</summary>
@@ -561,8 +561,8 @@ namespace PioneerFramework.Combat
                 : group.CurrentOrbit.position - group.CurrentOrbit.velocity * dtPhysics;
             DVector3 startPos = proj.prevPosition - groupPosPrev;
             DVector3 endPos = proj.position - groupPos;
-            DVector3 worldDir = endPos - startPos;
-            double segmentLength = worldDir.magnitude;
+            DVector3 dirSystem = endPos - startPos;
+            double segmentLength = dirSystem.magnitude;
 
             // 防御：相对参考系中无有效位移（射弹生成与首次检测同 tick、或与目标相对静止）时，
             // 零方向线段会让 slab 检测恒命中（tEntry=-Inf tExit=Inf）→ 射弹误判命中任意 group。
@@ -596,22 +596,22 @@ namespace PioneerFramework.Combat
                 var entity = spaceGame.GetEntityById(entityId);
                 if (entity == null || !entity.IsCollidable) continue;
 
-                DVector3 entityLocal = entity.Position;   // 目标参考系中实体局部位置（不随时间变）
+                DVector3 entityShip = entity.Position;   // 目标参考系中实体局部位置（不随时间变）
                 DVector3 halfSize = entity.AabbHalfSize;
 
                 // 射弹线段 → 船体局部系（含旋转）：part 局部 = 固定轴对齐盒（地图 1:1 基准）。
                 // entity.Rotation 参与命中几何——倾斜/翻滚的船，命中点反映真实姿态。
                 // 第 16 条：逆四元数走实体 per-tick 缓存（每弹每实体的旋转开销 → 每实体每 tick 一次）
                 DQuaternion rotInv = entity.RotationInverse();
-                DVector3 localStart = DVector3.Rotate(startPos - entityLocal, rotInv);
-                DVector3 localEnd = DVector3.Rotate(endPos - entityLocal, rotInv);
+                DVector3 startShip = DVector3.Rotate(startPos - entityShip, rotInv);
+                DVector3 endShip = DVector3.Rotate(endPos - entityShip, rotInv);
 
                 // 粗检测（shipLocal 系，盒中心 = 实体原点）：相对坐标系中目标静止，
                 // slab 线段检测是连续几何检测（与线段长度无关），射弹无论多快，
                 // 只要相对路径穿过 AABB 就会被捕捉，无需子段化。
                 DVector3 min = -halfSize;
                 DVector3 max = halfSize;
-                if (!CombatGrid.RaySlabIntersection(localStart, localEnd, min, max,
+                if (!CombatGrid.RaySlabIntersection(startShip, endShip, min, max,
                         out double tEntry, out double tExit, out _))
                 {
 #if DEBUG
@@ -658,32 +658,32 @@ namespace PioneerFramework.Combat
                 // 而不是从射弹线段起点扫（起点在盒外时永远 miss）。
                 if (entity.Parts.Count > 0 && segmentLength > 0.001)
                 {
-                    DVector3 localDir = (localEnd - localStart) / segmentLength; // 归一化（旋转保持长度）
-                    DVector3 entryPoint = localStart + localDir * (tEntry * segmentLength);
-                    double localMaxDist = (tExit - tEntry) * segmentLength;
+                    DVector3 dirShip = (endShip - startShip) / segmentLength; // 归一化（旋转保持长度）
+                    DVector3 entryPoint = startShip + dirShip * (tEntry * segmentLength);
+                    double maxDistShip = (tExit - tEntry) * segmentLength;
 
                     var hitPart = entity.Parts[0];
-                    DVector3 partMin = hitPart.localPosition - hitPart.localBoundsSize * 0.5;
-                    DVector3 partMax = hitPart.localPosition + hitPart.localBoundsSize * 0.5;
-                    bool partHit = CombatGrid.RaySlabIntersection(entryPoint, entryPoint + localDir * localMaxDist,
+                    DVector3 partMin = hitPart.positionShip - hitPart.boundsSizeShip * 0.5;
+                    DVector3 partMax = hitPart.positionShip + hitPart.boundsSizeShip * 0.5;
+                    bool partHit = CombatGrid.RaySlabIntersection(entryPoint, entryPoint + dirShip * maxDistShip,
                         partMin, partMax, out double partTEntry, out double partTExit, out _);
                     // partTEntry 可为微负：盒入口恰在 part 盒表面时浮点抖动（±1e-7 级）或起点已在盒内。
                     // 命中参数取 max(0, ·)——否则"起点在盒内"被误判 miss，直射 AABB 表面时交替命中/未命中。
                     // RaySlabIntersection 已保证 tFar>=0 且区间与 [0,1] 有交集，去掉 >=0 检查安全。
-                    partHit = partHit && partTEntry <= localMaxDist;
+                    partHit = partHit && partTEntry <= maxDistShip;
                     double partEnterT = partTEntry < 0 ? 0 : partTEntry;
 #if DEBUG
                     if (verboseHit)
                         Log.Message(string.Format(
                             "[命中调试] PartSlab origin=({0:F0},{1:F0},{2:F0}) dir=({3:F3},{4:F3},{5:F3}) maxDist={6:F0} partHit={7} t={8:F3}",
                             entryPoint.x, entryPoint.y, entryPoint.z,
-                            localDir.x, localDir.y, localDir.z, localMaxDist, partHit, partTEntry));
+                            dirShip.x, dirShip.y, dirShip.z, maxDistShip, partHit, partTEntry));
 #endif
                     if (partHit)
                     {
                         var firstHitPartIndex = 0;
                         var firstHitT = partEnterT;
-                        DVector3 entityWorldPos = groupPos + entity.Position;
+                        DVector3 entityPosSystem = groupPos + entity.Position;
                         lastHitPosition = proj.position;
                         lastHitGroupId = group.GroupId;
                         lastHitTick = Find.TickManager.TicksGame;
@@ -693,13 +693,13 @@ namespace PioneerFramework.Combat
                             Log.Message(string.Format(
                                 "[命中Part!] Tick={8} 射弹{0}→Group{1} Entity{2} Part[{3}]\"{4}\" " +
                                 "hitT={5:F3} PartHP={6:F0}→{7:F0} 飞行秒={18:F2} " +
-                                "EntityPos=({9:F0},{10:F0},{11:F0}) PartLocalPos=({12:F0},{13:F0},{14:F0}) PartSize=({15:F0},{16:F0},{17:F0})",
+                                "EntityPos=({9:F0},{10:F0},{11:F0}) PartPosShip=({12:F0},{13:F0},{14:F0}) PartSize=({15:F0},{16:F0},{17:F0})",
                                 proj.id, group.GroupId, entityId, firstHitPartIndex, hitPart.defName,
                                 firstHitT, hitPart.hp, hitPart.hp - proj.damage,
                                 lastHitTick,
-                                entityWorldPos.x, entityWorldPos.y, entityWorldPos.z,
-                                hitPart.localPosition.x, hitPart.localPosition.y, hitPart.localPosition.z,
-                                hitPart.localBoundsSize.x, hitPart.localBoundsSize.y, hitPart.localBoundsSize.z,
+                                entityPosSystem.x, entityPosSystem.y, entityPosSystem.z,
+                                hitPart.positionShip.x, hitPart.positionShip.y, hitPart.positionShip.z,
+                                hitPart.boundsSizeShip.x, hitPart.boundsSizeShip.y, hitPart.boundsSizeShip.z,
                                 proj.totalFlightSeconds));
                         }
                         // 应用伤害（走组件回调：OnDamaged / OnDestroyed）
@@ -716,34 +716,34 @@ namespace PioneerFramework.Combat
 
                         // F3 命中 → Map 落点瞬爆：命中点已在船体局部系（含旋转），
                         // part 局部 = 地图 1:1，直接映射即可。
-                        DVector3 worldHitPoint = proj.position; // 兜底：步末点
+                        DVector3 hitPointSystem = proj.position; // 兜底：步末点
                         if (entity.MapId >= 0)
                         {
                             Map targetMap = SpaceMapGenerator.FindPocketMap(entity.MapId);
                             if (targetMap != null)
                             {
-                                DVector3 hitLocal = entryPoint + localDir * (partEnterT * localMaxDist);
+                                DVector3 hitShip = entryPoint + dirShip * (partEnterT * maxDistShip);
                                 if (DebugDetailedCombat)
                                 {
-                                    DVector3 penDir = hitLocal - entryPoint;
+                                    DVector3 penDir = hitShip - entryPoint;
                                     Log.Message(string.Format(
                                         "[命中详情] proj={0}→G{1} Entity{2} partT={3:F3} 船壳入口局部=({4:F1},{5:F1},{6:F1}) 命中局部=({7:F1},{8:F1},{9:F1})m 贯穿长度={10:F1}m 贯穿方向=({11:F3},{12:F3},{13:F3})",
                                         proj.id, group.GroupId, entityId, partTEntry,
                                         entryPoint.x, entryPoint.y, entryPoint.z,
-                                        hitLocal.x, hitLocal.y, hitLocal.z,
+                                        hitShip.x, hitShip.y, hitShip.z,
                                         penDir.magnitude,
                                         penDir.x / Math.Max(penDir.magnitude, 0.001),
                                         penDir.y / Math.Max(penDir.magnitude, 0.001),
                                         penDir.z / Math.Max(penDir.magnitude, 0.001)));
                                 }
-                                SpawnPenetrationMote(entity, targetMap, hitLocal);
+                                SpawnPenetrationMote(entity, targetMap, hitShip);
                                 // 弹头 Map 范围爆炸（§10 收尾，2026-09-07）：以命中映射格为心在目标地图上
                                 // 做范围爆炸（条件：命中处地板不是"太空"，SpawnMapWarheadBlast 内部判定）——
                                 // 3D AoE（HandleWarheadImpact）的 Map 对应物；太空 Pocket Map GenExplosion NRE → 自实现。
                                 if (proj.isWarhead)
-                                    SpawnMapWarheadBlast(targetMap, hitLocal, proj.mapBlastRadiusCells, proj.blastCenterDamage);
-                                // 世界命中点（爆炸中心用）：船体局部 hitLocal → 世界（含目标姿态/群位置）
-                                worldHitPoint = groupPos + entity.Position + DVector3.Rotate(hitLocal, entity.Rotation);
+                                    SpawnMapWarheadBlast(targetMap, hitShip, proj.mapBlastRadiusCells, proj.blastCenterDamage);
+                                // 世界命中点（爆炸中心用）：船体局部 hitShip → 世界（含目标姿态/群位置）
+                                hitPointSystem = groupPos + entity.Position + DVector3.Rotate(hitShip, entity.Rotation);
                             }
                         }
 
@@ -752,7 +752,7 @@ namespace PioneerFramework.Combat
                         // 原用 proj.position（步末点）作爆炸中心——高速弹头一步穿 ~3.4km，
                         // 偏深超出 AoE 半径导致 damaged=0）。（命中即移除，外层处理。）
                         if (proj.isWarhead)
-                            HandleWarheadImpact(proj, group, worldHitPoint);
+                            HandleWarheadImpact(proj, group, hitPointSystem);
                         return true;
                     }
                 }
@@ -817,6 +817,9 @@ namespace PioneerFramework.Combat
             {
                 if (!a.IsActive || !b.IsActive || !a.IsCollidable || !b.IsCollidable) continue;
                 if (a.GroupId == b.GroupId) continue;
+
+                // P49 读数（只量不改）：到这里才算"候选对"（前面两个 continue 是枚举器层面的粗筛）
+                if (PerfProbe.Enabled) PerfProbe.PairCandidates++;
 
                 // 枚举对诊断：确认 G1/G2/G3 是否被枚举到（限频）
                 if (DebugDetailedCollision && Find.TickManager.TicksGame >= detailPairNextTick)
@@ -893,6 +896,8 @@ namespace PioneerFramework.Combat
                     if (PerfProbe.Enabled) PerfProbe.NoteRecordLookupsAvoided(2);
                     continue;
                 }
+                // P49 读数：过扫掠盒 = 真的要往下走的那一串判定（"同 volley 排除"就在后面）
+                if (PerfProbe.Enabled) PerfProbe.PairSweptHit++;
 
                 // 导弹对判定（导弹分支复用；GetRecord 字典 O(1)）。放在早退之后：见第 10 条。
                 var recA = missileMgr?.GetRecord(a.GroupId);
@@ -909,6 +914,8 @@ namespace PioneerFramework.Combat
                 if (missileMgr != null && pairHasMissile)
                 {
                     bool sameVolley = recA != null && recB != null && recA.volleyId == recB.volleyId;
+                    // P49 读数：同 volley 兄弟对 = **必然被排除、纯白跑**的那部分（占比决定改法）
+                    if (sameVolley && PerfProbe.Enabled) PerfProbe.PairSameVolley++;
                     if (!sameVolley)
                     {
                         // 逐实体接触解析（唯一路径，2026-09-08 双路径统一）：导弹对一律走 ResolveEntityContacts
@@ -994,7 +1001,7 @@ namespace PioneerFramework.Combat
 
             DVector3 pos = GetGroupPos(group);
             double radius = GetGroupRadius(group);
-            GetGroupWorldAabb(group, pos, spaceGame, out var curMin, out var curMax);
+            GetGroupAabbSystem(group, pos, spaceGame, out var curMin, out var curMax);
             var cache = new GroupCollisionCache
             {
                 pos = pos,
@@ -1006,7 +1013,7 @@ namespace PioneerFramework.Combat
             {
                 cache.hasPrev = true;
                 cache.prevPos = prevPos;
-                GetGroupWorldAabb(group, prevPos, spaceGame, out var pMin, out var pMax);
+                GetGroupAabbSystem(group, prevPos, spaceGame, out var pMin, out var pMax);
                 cache.prevMin = pMin;
                 cache.prevMax = pMax;
             }
@@ -1145,14 +1152,14 @@ namespace PioneerFramework.Combat
                 var entity = spaceGame.GetEntityById(eid);
                 if (entity == null) continue;
                 // 旋转后包围盒的球半径（覆盖倾斜姿态下的最远角点）
-                entity.GetWorldAabb(out var eMin, out var eMax);
+                entity.GetAabbSystem(out var eMin, out var eMax);
                 double er = (eMax - eMin).magnitude * 0.5;
                 if (er > r) r = er;
             }
             return r;
         }
 
-        private void GetGroupWorldAabb(SpaceEntityGroup group, DVector3 groupPos, SpaceGameComp spaceGame,
+        private void GetGroupAabbSystem(SpaceEntityGroup group, DVector3 groupPos, SpaceGameComp spaceGame,
             out DVector3 min, out DVector3 max)
         {
             min = groupPos;
@@ -1163,7 +1170,7 @@ namespace PioneerFramework.Combat
                 var entity = spaceGame.GetEntityById(eid);
                 if (entity == null || !entity.IsCollidable) continue;
                 // 旋转后的世界轴对齐包围盒（覆盖倾斜姿态）
-                entity.GetWorldAabb(out var relMin, out var relMax);
+                entity.GetAabbSystem(out var relMin, out var relMax);
                 DVector3 eMin = groupPos + entity.Position + relMin;
                 DVector3 eMax = groupPos + entity.Position + relMax;
                 if (!has) { min = eMin; max = eMax; has = true; }
@@ -1353,7 +1360,7 @@ namespace PioneerFramework.Combat
                     foreach (var part in entity.Parts)
                     {
                         if (part.isDestroyed) continue;
-                        DVector3 pw = gpos + entity.Position + part.localPosition;
+                        DVector3 pw = gpos + entity.Position + part.positionShip;
                         double dist = (pw - center).magnitude;
                         if (dist > R) continue;
                         double dmg = D0 * (1.0 - dist / R);
@@ -1432,7 +1439,7 @@ namespace PioneerFramework.Combat
                     foreach (var part in entity.Parts)
                     {
                         if (part.isDestroyed) continue;
-                        if ((gpos + entity.Position + part.localPosition - center).magnitude <= R) { partInRange = true; break; }
+                        if ((gpos + entity.Position + part.positionShip - center).magnitude <= R) { partInRange = true; break; }
                     }
                     if (partInRange) break;
                 }
@@ -1458,7 +1465,7 @@ namespace PioneerFramework.Combat
             double sqRtE = Math.Sqrt(E);
 
             // 第 15 条：同 ApplyExplosionDamage 走细网格。组位置必在注册 AABB 内
-            // （GetGroupWorldBounds 以 groupPos 为初值做并集），故 cube(R) 仍是本判定的保守超集。
+            // （GetGroupBoundsSystem 以 groupPos 为初值做并集），故 cube(R) 仍是本判定的保守超集。
             var candidates = explosionCandidateResults;
             combatGrid.CollectShipsInCube(frameId, center, R, candidates);
 
@@ -1659,9 +1666,9 @@ namespace PioneerFramework.Combat
         /// <param name="targetGroupId">目标 group id（导弹默认 Mission=Attack 用；null = 导弹出生即 Standby）。射弹/射线忽略。</param>
         /// <param name="missileFollowMode">导弹出生 Mission = Following（发射器建筑释放：目标跟随发射器、
         /// 不立即进终末，2026-09-06）。false = 出生即 Attack（fire-and-forget）。射弹/射线忽略。</param>
-        /// <param name="aimOffsetLocal">导弹弹着偏置（目标局部米，y=0，§10 精确打击；零 = 瞄目标质心）。射弹/射线忽略。</param>
+        /// <param name="aimOffsetShip">导弹弹着偏置（目标局部米，y=0，§10 精确打击；零 = 瞄目标质心）。射弹/射线忽略。</param>
         /// <param name="volleyCount">导弹齐射枚数（弹群实体数；null = 武器 Def.missileCount）。射弹/射线忽略。</param>
-        public void FireWeapon(int groupId, WeaponInstance weapon, DVector3 targetPosition, DVector3? spawnPosition = null, DVector3? targetVelocity = null, int? targetGroupId = null, bool missileFollowMode = false, DVector3 aimOffsetLocal = default, int? volleyCount = null)
+        public void FireWeapon(int groupId, WeaponInstance weapon, DVector3 targetPosition, DVector3? spawnPosition = null, DVector3? targetVelocity = null, int? targetGroupId = null, bool missileFollowMode = false, DVector3 aimOffsetShip = default, int? volleyCount = null)
         {
             if (weapon == null)
             {
@@ -1731,7 +1738,7 @@ namespace PioneerFramework.Combat
             // 不切 Combat 档（分支内无 SetCombatModeImmediate）、不做弹道提前量（上方 aimPos 已排除）。
             if (weapon.def.weaponType == WeaponType.Missile)
             {
-                FireMissileWeapon(group, spaceGame, groupId, weapon, spawnPos, direction, groupVelocity, targetGroupId, missileFollowMode, aimOffsetLocal, volleyCount);
+                FireMissileWeapon(group, spaceGame, groupId, weapon, spawnPos, direction, groupVelocity, targetGroupId, missileFollowMode, aimOffsetShip, volleyCount);
                 return;
             }
 
@@ -1790,7 +1797,7 @@ namespace PioneerFramework.Combat
                 {
                     var cd = mgr.GetBodyById(group.circularCentralBodyId);
                     if (cd != null && cd.bodyType != CelestialBodyType.Planet)
-                        centralVel = mgr.GetBodyLocalVelocity(group.circularCentralBodyId, physicsTickNow);
+                        centralVel = mgr.GetBodyVelocityParent(group.circularCentralBodyId, physicsTickNow);
                 }
             }
             double vRelMag = targetVelocity.HasValue ? (targetVelocity.Value - groupVelocity).magnitude : 0.0;
@@ -1828,10 +1835,10 @@ namespace PioneerFramework.Combat
         /// Map 炮塔开火入口（M4-F2 桥接）。复用 FireWeapon 全链路（提前量 / 卡膛检查 / 射弹生成 / 入格）。
         /// spawnPos 为炮塔在世界系的炮口位置（由 MapCoordMapper 换算），targetVelocity 供提前量解算。
         /// </summary>
-        public void FireFromMapBuilding(int groupId, WeaponInstance weapon, DVector3 spawnPos, DVector3 targetPos, DVector3? targetVelocity = null, int? targetGroupId = null, DVector3 aimOffsetLocal = default, int? volleyCount = null)
+        public void FireFromMapBuilding(int groupId, WeaponInstance weapon, DVector3 spawnPos, DVector3 targetPos, DVector3? targetVelocity = null, int? targetGroupId = null, DVector3 aimOffsetShip = default, int? volleyCount = null)
         {
             // 建筑释放的导弹 = Following：目标跟随发射器（定位机换目标自动同步），不立即进终末
-            FireWeapon(groupId, weapon, targetPos, spawnPos, targetVelocity, targetGroupId, missileFollowMode: true, aimOffsetLocal: aimOffsetLocal, volleyCount: volleyCount);
+            FireWeapon(groupId, weapon, targetPos, spawnPos, targetVelocity, targetGroupId, missileFollowMode: true, aimOffsetShip: aimOffsetShip, volleyCount: volleyCount);
         }
 
         // ════════════════════════════════════════════
@@ -1844,11 +1851,11 @@ namespace PioneerFramework.Combat
         /// 默认 Mission = Attack(目标 group) 或 Standby（targetGroupId 为空），注册 AutonomousVehicleManager。
         /// 成本 = 扣 WeaponInstance.ammo：公共路径 weapon.Fire() 已扣 1，齐射 N 在此补扣至 N（K3）。
         /// 弹体/推进/D15 主推/弹头参数全部来自 MissileDef（K2/K10）。
-        /// aimOffsetLocal = 弹着偏置（§10 精确打击：目标局部米 y=0，随记录进制导瞄准）。
+        /// aimOffsetShip = 弹着偏置（§10 精确打击：目标局部米 y=0，随记录进制导瞄准）。
         /// volleyCount = 齐射枚数（null = 武器 Def.missileCount）。
         /// </summary>
         private void FireMissileWeapon(SpaceEntityGroup launcherGroup, SpaceGameComp spaceGame, int launcherGroupId,
-            WeaponInstance weapon, DVector3 spawnPos, DVector3 direction, DVector3 groupVelocity, int? targetGroupId, bool followMode = false, DVector3 aimOffsetLocal = default, int? volleyCount = null)
+            WeaponInstance weapon, DVector3 spawnPos, DVector3 direction, DVector3 groupVelocity, int? targetGroupId, bool followMode = false, DVector3 aimOffsetShip = default, int? volleyCount = null)
         {
             var wdef = weapon.def;
             var missileDef = DefDatabase<MissileDef>.GetNamedSilentFail(wdef.missileDefName);
@@ -1928,7 +1935,7 @@ namespace PioneerFramework.Combat
                     ? AutonomousVehicleManager.MissionType.Following
                     : AutonomousVehicleManager.MissionType.Attack;
             manager.RegisterMissileLeader(missileGroupId, missileEntityId, volleyId, launcherGroupId,
-                logicalCount, missileDef.defName, wdef.defName, mission, targetGroupId ?? -1, aimOffsetLocal);
+                logicalCount, missileDef.defName, wdef.defName, mission, targetGroupId ?? -1, aimOffsetShip);
 
             // ── 发射摘要（无条件，一次齐射一条）：出生点 / 速度继承分解 / Mission ──
             Log.Message(string.Format(
@@ -2024,8 +2031,8 @@ namespace PioneerFramework.Combat
             {
                 partId = 1,
                 defName = "PF_ShipPart_Missile",
-                localPosition = DVector3.zero,
-                localBoundsSize = new DVector3(missileDef.bodySize.x, missileDef.bodySize.y, missileDef.bodySize.z),
+                positionShip = DVector3.zero,
+                boundsSizeShip = new DVector3(missileDef.bodySize.x, missileDef.bodySize.y, missileDef.bodySize.z),
                 hp = missileDef.hp,
                 isIndestructible = false
             };
@@ -2033,8 +2040,8 @@ namespace PioneerFramework.Combat
             entity.SetParts(new List<SpacePart> { part });
 
             // D15 主推方向型：主推轴 body 局部（K11）
-            if (missileDef.mainThrustDirectional && missileDef.mainAxisLocal.sqrMagnitude > 1e-9f)
-                entity.mainAxisLocal = new DVector3(missileDef.mainAxisLocal.x, missileDef.mainAxisLocal.y, missileDef.mainAxisLocal.z);
+            if (missileDef.mainThrustDirectional && missileDef.mainAxisShip.sqrMagnitude > 1e-9f)
+                entity.mainAxisShip = new DVector3(missileDef.mainAxisShip.x, missileDef.mainAxisShip.y, missileDef.mainAxisShip.z);
 
             // 主网（满罐注入 = 作战半径）+ 弱 RCS 副网（与主网异工质，K11）
             var mainProp = missileDef.Propellant;
@@ -2164,7 +2171,7 @@ namespace PioneerFramework.Combat
         private DVector3 ExtrapolateOutsideMothership(DVector3 spawnPos, DVector3 direction, MissileDef missileDef,
             SpaceEntityGroup launcherGroup, SpaceGameComp spaceGame)
         {
-            GetGroupWorldAabb(launcherGroup, GetGroupPos(launcherGroup), spaceGame, out DVector3 gMin, out DVector3 gMax);
+            GetGroupAabbSystem(launcherGroup, GetGroupPos(launcherGroup), spaceGame, out DVector3 gMin, out DVector3 gMax);
             if (gMax.x < gMin.x)
                 return spawnPos; // group 无碰撞实体 → 无需外推
 
@@ -2231,23 +2238,23 @@ namespace PioneerFramework.Combat
         /// 导弹接触时间对齐复核（防扫掠假阳性）：把导弹本步运动段（missilePrev→missileCur）转到
         /// 目标随动参考系（prev 时刻减 prev 中心、当前减 cur 中心——与 CheckSegmentGroupHit 同构，
         /// 相对运动时间对齐），与目标当前盒做 slab。
-        /// 通过 = 真实接触（out contactWorld = 参考系首接触点转回世界系，作为弹头出生点）；
+        /// 通过 = 真实接触（out contactSystem = 参考系首接触点转回世界系，作为弹头出生点）；
         /// 不过 = 假阳性（扫掠并集的"上一步位置带"与刚出生/伴飞导弹时间不重合）。
         /// </summary>
         private static bool MissileSegmentHitsTarget(DVector3 missilePrev, DVector3 missileCur,
             DVector3 targetPrevCenter, DVector3 targetCurMin, DVector3 targetCurMax,
-            out DVector3 contactWorld)
+            out DVector3 contactSystem)
         {
             DVector3 curCenter = (targetCurMin + targetCurMax) * 0.5;
             DVector3 half = (targetCurMax - targetCurMin) * 0.5;
             DVector3 start = missilePrev - targetPrevCenter;
             DVector3 end = missileCur - curCenter;
-            contactWorld = missileCur;
+            contactSystem = missileCur;
             if (!CombatGrid.RaySlabIntersection(start, end, -half, half, out double tEntry, out _, out _))
                 return false;
             // 首接触点（目标系）→ 世界系：目标系点 + 目标当前中心
             double t = Math.Max(0.0, Math.Min(1.0, tEntry));
-            contactWorld = start + (end - start) * t + curCenter;
+            contactSystem = start + (end - start) * t + curCenter;
             return true;
         }
 
@@ -2301,7 +2308,7 @@ namespace PioneerFramework.Combat
                 {
                     var ey = spaceGame.GetEntityById(eyId);
                     if (ey == null || !ey.IsCollidable) continue;
-                    ey.GetWorldAabb(out var relMin, out var relMax);
+                    ey.GetAabbSystem(out var relMin, out var relMax);
                     DVector3 prevCenter = (cy.hasPrev ? cy.prevPos : cy.pos) + ey.Position + (relMin + relMax) * 0.5;
                     DVector3 curMin = cy.pos + ey.Position + relMin;
                     DVector3 curMax = cy.pos + ey.Position + relMax;
@@ -2417,9 +2424,9 @@ namespace PioneerFramework.Combat
 
         /// <summary>
         /// 弹头命中结算（§10）：part 大额直扣与 F3 Map 落点已由命中现链完成，
-        /// 此处补 3D AoE（伤害线性衰减 + 径向冲量 + 扩散视觉），以精确命中点 worldHitPoint 为心。
+        /// 此处补 3D AoE（伤害线性衰减 + 径向冲量 + 扩散视觉），以精确命中点 hitPointSystem 为心。
         /// </summary>
-        private void HandleWarheadImpact(ProjectileInstance proj, SpaceEntityGroup target, DVector3 worldHitPoint)
+        private void HandleWarheadImpact(ProjectileInstance proj, SpaceEntityGroup target, DVector3 hitPointSystem)
         {
             // B：弹头源自某弹群成员（sourceGroupId=来源组）——其死亡爆炸豁免自家残组；
             // C：AoE 击毁的导弹成员当场脱队，变空的组当场销毁（射弹路径不在 pair 迭代中，安全）
@@ -2427,9 +2434,9 @@ namespace PioneerFramework.Combat
             var avmHi = GetAvm();
             var emptiedGroups = new HashSet<int>();
             // 帧号用射弹自带的 systemBodyId：它与网格注册同源（射弹碰撞链一直以它查网格）
-            int damaged = ApplyExplosionDamage(proj.systemBodyId, worldHitPoint, proj.blastRadius, proj.blastCenterDamage,
+            int damaged = ApplyExplosionDamage(proj.systemBodyId, hitPointSystem, proj.blastRadius, proj.blastCenterDamage,
                 proj.sourceGroupId, emptiedGroups);
-            ApplyExplosionImpulse(proj.systemBodyId, worldHitPoint, proj.blastRadius, proj.blastImpulseEnergy, proj.sourceGroupId);
+            ApplyExplosionImpulse(proj.systemBodyId, hitPointSystem, proj.blastRadius, proj.blastImpulseEnergy, proj.sourceGroupId);
             foreach (int gid in emptiedGroups)
             {
                 avmHi?.UnregisterGroup(gid);
@@ -2437,7 +2444,7 @@ namespace PioneerFramework.Combat
             }
             activeExplosions.Add(new ExplosionInstance
             {
-                position = worldHitPoint,
+                position = hitPointSystem,
                 maxRadius = proj.blastRadius,
                 remainingTicks = 60,
                 totalTicks = 60,
@@ -2446,7 +2453,7 @@ namespace PioneerFramework.Combat
             Log.Message(string.Format(
                 "[弹头命中] proj={0}→G{1} 爆炸中心=({2:F0},{3:F0},{4:F0})m 直扣={5:F0} AoE R={6:F0}m D0={7:F0} damaged={8}",
                 proj.id, target.GroupId,
-                worldHitPoint.x, worldHitPoint.y, worldHitPoint.z,
+                hitPointSystem.x, hitPointSystem.y, hitPointSystem.z,
                 proj.damage, proj.blastRadius, proj.blastCenterDamage, damaged));
         }
 
@@ -2467,12 +2474,12 @@ namespace PioneerFramework.Combat
             {
                 var e = spaceGame.GetEntityById(eid);
                 if (e == null) continue;
-                ExplodeAtWorldPoint(missileGroup, rec, spaceGame, gpos + e.Position,
+                ExplodeAtPointSystem(missileGroup, rec, spaceGame, gpos + e.Position,
                     n == 0 ? "[导弹引爆]" : "[导弹群自毁]", missileGroup.GroupId);
                 n++;
             }
             if (n == 0)
-                ExplodeAtWorldPoint(missileGroup, rec, spaceGame, gpos, "[导弹引爆]", missileGroup.GroupId);
+                ExplodeAtPointSystem(missileGroup, rec, spaceGame, gpos, "[导弹引爆]", missileGroup.GroupId);
 
             var avm = GetAvm();
             avm?.UnregisterGroup(missileGroup.GroupId);
@@ -2487,12 +2494,12 @@ namespace PioneerFramework.Combat
             AutonomousVehicleManager.VehicleRecord rec, DVector3 center, SpaceGameComp spaceGame,
             int excludeGroupId = -1)
         {
-            ExplodeAtWorldPoint(missileGroup, rec, spaceGame, center, "[导弹单枚引爆]", excludeGroupId);
+            ExplodeAtPointSystem(missileGroup, rec, spaceGame, center, "[导弹单枚引爆]", excludeGroupId);
         }
 
         /// <summary>弹头 AoE 核心（伤害/冲量/视觉/日志）。excludeGroupId：豁免自家残组（B）；
         /// AoE 击毁变空的导弹组当场销毁（C）——调用点均在射弹路径/UI 事件，不在 pair 迭代中。</summary>
-        private void ExplodeAtWorldPoint(SpaceEntityGroup missileGroup,
+        private void ExplodeAtPointSystem(SpaceEntityGroup missileGroup,
             AutonomousVehicleManager.VehicleRecord rec, SpaceGameComp spaceGame,
             DVector3 center, string tag, int excludeGroupId = -1)
         {
@@ -2533,19 +2540,19 @@ namespace PioneerFramework.Combat
 
         /// <summary>
         /// 3D 命中 → Map 落点视觉弹。
-        /// hitLocalMeters 为**船体局部系**命中点（CheckSegmentGroupHit / FireRayWeapon 已含 entity.Rotation 逆旋转），
+        /// hitShipMeters 为**船体局部系**命中点（CheckSegmentGroupHit / FireRayWeapon 已含 entity.Rotation 逆旋转），
         /// part 局部 = 地图 1:1，直接映射到地图（落点反映"击中倾斜船体的真实部位"）。
-        /// entryLocalMeters 为可选贯通入口（船体局部系）：传入时从入口贯穿到落点（1~2 tick 极速，
+        /// entryShipMeters 为可选贯通入口（船体局部系）：传入时从入口贯穿到落点（1~2 tick 极速，
         /// 定向能"光束切进船体"）；不传时瞬爆（F3 射弹命中，现状不动）。
         /// </summary>
-        private void SpawnPenetrationMote(SpaceEntity entity, Map map, DVector3 hitLocalMeters, DVector3? entryLocalMeters = null)
+        private void SpawnPenetrationMote(SpaceEntity entity, Map map, DVector3 hitShipMeters, DVector3? entryShipMeters = null)
         {
             if (entity == null || map == null) return;
             var def = DefDatabase<ThingDef>.GetNamedSilentFail("PF_Projectile_Shell");
             if (def == null) return;
 
-            Vector3 pos = MapCoordMapper.ShipLocalToMapWorld(map,
-                new Vector3((float)hitLocalMeters.x, (float)hitLocalMeters.y, (float)hitLocalMeters.z));
+            Vector3 pos = MapCoordMapper.ShipToMap(map,
+                new Vector3((float)hitShipMeters.x, (float)hitShipMeters.y, (float)hitShipMeters.z));
             pos.y = 0f; // 落点恒在地面（爆炸层）
             pos.x = Mathf.Clamp(pos.x, 0f, map.Size.x - 1f);
             pos.z = Mathf.Clamp(pos.z, 0f, map.Size.z - 1f);
@@ -2557,10 +2564,10 @@ namespace PioneerFramework.Combat
 
             // 定向能贯通：入口 = 命中点沿入射方向反方向延长到船体 AABB 六面（Map 边缘），
             // 从入口贯穿到落点（1~2 tick 极速，视觉是"一条光束切进船体"）。
-            if (entryLocalMeters.HasValue)
+            if (entryShipMeters.HasValue)
             {
-                Vector3 entry = MapCoordMapper.ShipLocalToMapWorld(map,
-                    new Vector3((float)entryLocalMeters.Value.x, (float)entryLocalMeters.Value.y, (float)entryLocalMeters.Value.z));
+                Vector3 entry = MapCoordMapper.ShipToMap(map,
+                    new Vector3((float)entryShipMeters.Value.x, (float)entryShipMeters.Value.y, (float)entryShipMeters.Value.z));
                 entry.y = Mathf.Max(entry.y, 0f); // 入口在地图下层时夹到地面（与出膛弹同规则）
                 entry.x = Mathf.Clamp(entry.x, 0f, map.Size.x - 1f);
                 entry.z = Mathf.Clamp(entry.z, 0f, map.Size.z - 1f);
@@ -2575,8 +2582,8 @@ namespace PioneerFramework.Combat
                     Log.Message(string.Format(
                         "[贯穿生成] Entity{0} 入口局部=({1:F1},{2:F1},{3:F1})m 命中局部=({4:F1},{5:F1},{6:F1})m → Map场景 入口=({7:F1},{8:F1},{9:F1}) 落点=({10:F1},{11:F1},{12:F1}) → 落点格=({13},{14}) 地图中心=({15},{16}) 地图尺寸={17}×{18}",
                         entity.EntityId,
-                        entryLocalMeters.Value.x, entryLocalMeters.Value.y, entryLocalMeters.Value.z,
-                        hitLocalMeters.x, hitLocalMeters.y, hitLocalMeters.z,
+                        entryShipMeters.Value.x, entryShipMeters.Value.y, entryShipMeters.Value.z,
+                        hitShipMeters.x, hitShipMeters.y, hitShipMeters.z,
                         entry.x, entry.y, entry.z,
                         pos.x, pos.y, pos.z,
                         cell.x, cell.z, c0.x, c0.z, map.Size.x, map.Size.z));
@@ -2596,7 +2603,7 @@ namespace PioneerFramework.Combat
                 Log.Message(string.Format(
                     "[贯穿生成] Entity{0} 命中局部=({1:F1},{2:F1},{3:F1})m → Map场景=({4:F1},{5:F1},{6:F1}) → 落点格=({7},{8}) 地图中心=({9},{10}) 地图尺寸={11}×{12}",
                     entity.EntityId,
-                    hitLocalMeters.x, hitLocalMeters.y, hitLocalMeters.z,
+                    hitShipMeters.x, hitShipMeters.y, hitShipMeters.z,
                     pos.x, pos.y, pos.z,
                     cell.x, cell.z, c0.x, c0.z, map.Size.x, map.Size.z));
             }
@@ -2621,11 +2628,11 @@ namespace PioneerFramework.Combat
         /// （真空暴露、无实心甲板）；中心是太空 = 命中点无结构可炸 → 整个 Map 爆炸跳过；
         /// 半径内太空格同样跳过（不伤害不视觉）。
         /// </summary>
-        private void SpawnMapWarheadBlast(Map map, DVector3 hitLocalMeters, float blastRadiusCells, float blastCenterDamage)
+        private void SpawnMapWarheadBlast(Map map, DVector3 hitShipMeters, float blastRadiusCells, float blastCenterDamage)
         {
             if (map == null || blastRadiusCells <= 0f || blastCenterDamage <= 0f) return;
-            IntVec3 center = MapCoordMapper.LocalToMapCell(map,
-                new Vector3((float)hitLocalMeters.x, 0f, (float)hitLocalMeters.z));
+            IntVec3 center = MapCoordMapper.ShipToMapCell(map,
+                new Vector3((float)hitShipMeters.x, 0f, (float)hitShipMeters.z));
             if (!center.InBounds(map)) return;
 
             TerrainDef ground = map.terrainGrid.TerrainAt(center);
@@ -2815,8 +2822,8 @@ namespace PioneerFramework.Combat
             SpaceEntity hitEntity = null;
             SpaceEntityGroup hitGroup = null;
             int hitPartIndex = -1;
-            DVector3 hitLocal = DVector3.zero;     // 命中点（船体局部系，含旋转）
-            DVector3 entryLocal = DVector3.zero;   // 船壳入口（船体局部系，贯通视觉弹入口）
+            DVector3 hitShip = DVector3.zero;     // 命中点（船体局部系，含旋转）
+            DVector3 entryShip = DVector3.zero;   // 船壳入口（船体局部系，贯通视觉弹入口）
 
             foreach (var targetGroup in rayCandidateResults)
             {
@@ -2830,7 +2837,7 @@ namespace PioneerFramework.Combat
                     var entity = spaceGame.GetEntityById(entityId);
                     if (entity == null || !entity.IsCollidable) continue;
 
-                    DVector3 entityWorldPos = targetGroupPos + entity.Position;
+                    DVector3 entityPosSystem = targetGroupPos + entity.Position;
                     DVector3 halfSize = entity.AabbHalfSize;
 
                     // 旋转正确版：世界线段 → 船体局部系（含逆旋转）→ 局部轴对齐盒 slab。
@@ -2838,12 +2845,12 @@ namespace PioneerFramework.Combat
                     // 旋转时失效；且旧版起点漏乘 maxRange，part 检测从炮口扫 0~1 米必然错位。
                     // 照 CheckSegmentGroupHit 的完整旋转处理写（第 16 条：逆四元数同走实体 per-tick 缓存）。
                     DQuaternion rotInv = entity.RotationInverse();
-                    DVector3 localStart = DVector3.Rotate(startPos - entityWorldPos, rotInv);
-                    DVector3 localEnd = DVector3.Rotate(endPos - entityWorldPos, rotInv);
+                    DVector3 startShip = DVector3.Rotate(startPos - entityPosSystem, rotInv);
+                    DVector3 endShip = DVector3.Rotate(endPos - entityPosSystem, rotInv);
 
                     DVector3 min = -halfSize;
                     DVector3 max = halfSize;
-                    bool slabHit = CombatGrid.RaySlabIntersection(localStart, localEnd, min, max,
+                    bool slabHit = CombatGrid.RaySlabIntersection(startShip, endShip, min, max,
                         out double tEntry, out double tExit, out _);
                     // slab 详情（详细日志）：局部系线段 + 盒半长 + tEntry/tExit，逐候选逐实体打印
                     // （命中距离 = tEntry × beamLength，验证"局部系 t = 世界系 t"的旋转保持长度前提）
@@ -2851,8 +2858,8 @@ namespace PioneerFramework.Combat
                     {
                         Log.Message(string.Format("[激光slab] G{0}→G{1} E{2} 局部线段=({3:F0},{4:F0},{5:F0})→({6:F0},{7:F0},{8:F0}) 盒半长=({9:F0},{10:F0},{11:F0}) {12} tEntry={13:F3} tExit={14:F3} 命中距离={15:F1}km",
                             groupId, targetGroup.GroupId, entityId,
-                            localStart.x, localStart.y, localStart.z,
-                            localEnd.x, localEnd.y, localEnd.z,
+                            startShip.x, startShip.y, startShip.z,
+                            endShip.x, endShip.y, endShip.z,
                             halfSize.x, halfSize.y, halfSize.z,
                             slabHit ? "HIT" : "MISS", tEntry, tExit,
                             slabHit ? (tEntry * beamLength) / 1000.0 : 0.0));
@@ -2873,29 +2880,29 @@ namespace PioneerFramework.Combat
                         // 旋转保持长度，局部系 t 与世界系 t 一致 → 距离 = t × beamLength。
                         if (entity.Parts.Count > 0)
                         {
-                            DVector3 localDir = (localEnd - localStart).normalized;
-                            DVector3 boxEntry = localStart + localDir * (tEntry * beamLength);
-                            double localMaxDist = (tExit - tEntry) * beamLength;
+                            DVector3 dirShip = (endShip - startShip).normalized;
+                            DVector3 boxEntry = startShip + dirShip * (tEntry * beamLength);
+                            double maxDistShip = (tExit - tEntry) * beamLength;
                             var hitPart = entity.Parts[0];
-                            DVector3 partMin = hitPart.localPosition - hitPart.localBoundsSize * 0.5;
-                            DVector3 partMax = hitPart.localPosition + hitPart.localBoundsSize * 0.5;
-                            bool partHit = CombatGrid.RaySlabIntersection(boxEntry, boxEntry + localDir * localMaxDist,
+                            DVector3 partMin = hitPart.positionShip - hitPart.boundsSizeShip * 0.5;
+                            DVector3 partMax = hitPart.positionShip + hitPart.boundsSizeShip * 0.5;
+                            bool partHit = CombatGrid.RaySlabIntersection(boxEntry, boxEntry + dirShip * maxDistShip,
                                 partMin, partMax, out double partTEntry, out _, out _);
                             // partTEntry 可为微负（盒入口恰在 part 盒表面时浮点抖动/起点已在盒内）：
                             // 命中参数取 max(0, ·)，否则"起点在盒内"被误判 miss（直射 AABB 表面时交替命中/未命中）。
                             // RaySlabIntersection 已保证 tFar>=0 且区间与 [0,1] 有交集，去掉 >=0 检查安全。
-                            partHit = partHit && partTEntry <= localMaxDist;
+                            partHit = partHit && partTEntry <= maxDistShip;
                             if (partHit)
                             {
                                 double partEnterT = partTEntry < 0 ? 0 : partTEntry;
                                 hitPartIndex = 0;
-                                // 注意：partTEntry 是归一化参数（0..1 对应 part 线段），命中距离 = partEnterT × localMaxDist
-                                hitLocal = boxEntry + localDir * (partEnterT * localMaxDist);
+                                // 注意：partTEntry 是归一化参数（0..1 对应 part 线段），命中距离 = partEnterT × maxDistShip
+                                hitShip = boxEntry + dirShip * (partEnterT * maxDistShip);
                                 // 船壳入口（贯通视觉弹）：命中点沿入射方向反方向延长到 AABB 六面
                                 // （RayExitAabb 反向复用，与出膛点几何对称；命中点必在盒内 → 恒出射）
-                                entryLocal = (DVector3)MapCoordMapper.RayExitAabb(
-                                    new Vector3((float)hitLocal.x, (float)hitLocal.y, (float)hitLocal.z),
-                                    new Vector3((float)(-localDir.x), (float)(-localDir.y), (float)(-localDir.z)),
+                                entryShip = (DVector3)MapCoordMapper.RayExitAabb(
+                                    new Vector3((float)hitShip.x, (float)hitShip.y, (float)hitShip.z),
+                                    new Vector3((float)(-dirShip.x), (float)(-dirShip.y), (float)(-dirShip.z)),
                                     (Vector3)(-halfSize), (Vector3)halfSize, out _);
                                 // part 详情（详细日志）：盒入口 / part 命中参数 / 命中局部点 / 船壳入口
                                 if (DebugDetailedCombat)
@@ -2904,9 +2911,9 @@ namespace PioneerFramework.Combat
                                         groupId, targetGroup.GroupId, entityId,
                                         boxEntry.x, boxEntry.y, boxEntry.z,
                                         partTEntry,
-                                        hitLocal.x, hitLocal.y, hitLocal.z,
-                                        entryLocal.x, entryLocal.y, entryLocal.z,
-                                        localDir.x, localDir.y, localDir.z));
+                                        hitShip.x, hitShip.y, hitShip.z,
+                                        entryShip.x, entryShip.y, entryShip.z,
+                                        dirShip.x, dirShip.y, dirShip.z));
                                 }
                             }
                         }
@@ -2950,7 +2957,7 @@ namespace PioneerFramework.Combat
                     {
                         Map targetMap = SpaceMapGenerator.FindPocketMap(hitEntity.MapId);
                         if (targetMap != null)
-                            SpawnPenetrationMote(hitEntity, targetMap, hitLocal, entryLocal);
+                            SpawnPenetrationMote(hitEntity, targetMap, hitShip, entryShip);
                     }
                 }
                 else

@@ -75,4 +75,27 @@
     </Reference>
   </ItemGroup>
 
+
+  <!--
+    ══ D5（2026-09-26）：把"游戏里从不执行"的 16 个文件从**交付物**里摘掉 ══
+    它们不是垃圾，是**验收层的数值参照**（`ODE/`，见 `ThirdParty/MechJebLib/README.md`）或纯测试用件，
+    但**不该装进玩家手里的 DLL**。仓库**保留**它们，且两个测试工程各自用
+    `<Compile Include="..\PioneerFramework\ThirdParty\MechJebLib\**\*.cs" />` **独立重编整份 MJ**
+    ⇒ 移植面的 6201 条验收**照跑**。
+
+    依据（已实测，不是估）：把移植面排除后，这些类型在**宿主侧零引用**
+    （词尾边界的 \bType\b + 分隔符无关的过滤；移植面内唯一命中是 `BrentRoot.cs:173` 的一句注释）。
+    ⚠ **名单若变动，必须重跑同一条核查并重建提交的 DLL**（`tools/rebuild-dll.ps1` + `tools/check-committed-dll.ps1`）。
+  -->
+  <ItemGroup>
+    <Compile Remove="ThirdParty\MechJebLib\ODE\**\*.cs" />
+    <Compile Remove="ThirdParty\MechJebLib\Interpolants\**\*.cs" />
+    <Compile Remove="ThirdParty\MechJebLib\TwoBody\Farnocchia.cs" />
+    <Compile Remove="ThirdParty\MechJebLib\Rootfinding\Bisection.cs" />
+    <Compile Remove="ThirdParty\MechJebLib\Rootfinding\Newton.cs" />
+    <Compile Remove="ThirdParty\MechJebLib\Primitives\Vec.cs" />
+    <Compile Remove="ThirdParty\MechJebLib\Primitives\VecOps.cs" />
+    <Compile Remove="ThirdParty\MechJebLib\Utils\ObjectPool.cs" />
+  </ItemGroup>
+
 </Project>

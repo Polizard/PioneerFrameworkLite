@@ -11,7 +11,7 @@ namespace PioneerFramework
     /// 导弹与无人机物理同源（无 Map SpaceEntity + group），只按行为 profile 分层。
     ///
     /// 进度（2026-09-06/07）：登记/身份数据/失效清理/序列化 ✓；Attack 自动段 = 巡航惯性 +
-    /// 终末收敛制导撞击 ✓（TickAttack——横向速度匹配 + 接近巡航冲刺，解离/甩锁/aimOffsetLocal 后置；
+    /// 终末收敛制导撞击 ✓（TickAttack——横向速度匹配 + 接近巡航冲刺，解离/甩锁/aimOffsetShip 后置；
     /// 巡航段的远距交会/变轨由玩家与引导引擎旧功能管辖）。Loiter/Drone profile 后置。
     ///
     /// 职责边界：不做实体/group 创建（归发射链 FireWeapon Missile 分支 / 未来 Drone 工厂）、
@@ -61,7 +61,7 @@ namespace PioneerFramework
             /// <summary>目标局部系弹着偏置（米，y=0；零 = 瞄准目标质心）。有 Map 目标精确打击（§10，2026-09-07）：
             /// 发射器点选目标地图一格 → 格偏移随导弹携带；终末制导每步随目标实体旋转换算世界瞄准点，
             /// 撞击/弹头 Map 爆炸落于该格。换目标/改派新目标时清零（旧目标局部系对新目标无意义）。</summary>
-            public DVector3 aimOffsetLocal;
+            public DVector3 aimOffsetShip;
             /// <summary>巡航日志上次打印 tick（瞬态，不序列化：每车各自 600 tick 限频，避免多车共享窗口互相吞日志）。</summary>
             public int lastCruiseLogTick;
             /// <summary>燃尽已上报（瞬态：一次后不再重复刷屏；导弹无补油路径，无需复位）。</summary>
@@ -104,7 +104,7 @@ namespace PioneerFramework
                 Scribe_Values.Look(ref weaponDefName, "weaponDefName");
                 Scribe_Values.Look(ref mission, "mission", MissionType.Standby);
                 Scribe_Values.Look(ref targetGroupId, "targetGroupId", -1);
-                DVector3.Scribe("aimOffsetLocal", ref aimOffsetLocal);
+                DVector3.Scribe("aimOffsetShip", ref aimOffsetShip);
             }
 
             public override string ToString()
@@ -150,11 +150,11 @@ namespace PioneerFramework
         /// <summary>
         /// 发射链注册领弹弹群（FireWeapon Missile 分支调用）。
         /// volleyId 由发射侧经 AllocVolleyId 取号（一次齐射共号）；同齐射的后续记录沿用。
-        /// aimOffsetLocal：发射时携带的弹着偏置（发射器精确打击点，目标局部米，y=0）；零 = 瞄目标质心。
+        /// aimOffsetShip：发射时携带的弹着偏置（发射器精确打击点，目标局部米，y=0）；零 = 瞄目标质心。
         /// </summary>
         public VehicleRecord RegisterMissileLeader(int groupId, int entityId, int volleyId,
             int launcherGroupId, int logicalCount, string missileDefName, string weaponDefName,
-            MissionType mission, int targetGroupId, DVector3 aimOffsetLocal = default)
+            MissionType mission, int targetGroupId, DVector3 aimOffsetShip = default)
         {
             var rec = new VehicleRecord
             {
@@ -169,7 +169,7 @@ namespace PioneerFramework
                 mission = mission,
                 // Attack/Following 携带目标（Following = 跟随发射器当前目标）；Standby/Loiter 无目标
                 targetGroupId = mission == MissionType.Attack || mission == MissionType.Following ? targetGroupId : -1,
-                aimOffsetLocal = aimOffsetLocal
+                aimOffsetShip = aimOffsetShip
             };
             vehicles.Add(rec);
             byGroupId[groupId] = rec;
@@ -288,12 +288,12 @@ namespace PioneerFramework
                     rec.holdFireUntilTick = 0;     // 玩家重新下令 = 立即权威（清错峰时隙）
                     // 弹着偏置：显式携带 → 写入；未携带且目标没换 → 保留（不丢精确点）；换了 → 清零
                     if (aimOffset.HasValue)
-                        rec.aimOffsetLocal = aimOffset.Value;
+                        rec.aimOffsetShip = aimOffset.Value;
                     else if (oldTarget != targetGroupId)
-                        rec.aimOffsetLocal = DVector3.zero;
+                        rec.aimOffsetShip = DVector3.zero;
                     terminalLogged.Remove(rec.groupId);
                     Log.Message(string.Format("[导弹指令] V{0} G{1} Attack→G{2}（终末撞击命令）{3}", rec.vehicleId, rec.groupId, targetGroupId,
-                        rec.aimOffsetLocal != DVector3.zero ? string.Format(" 弹着偏置=({0:F1},{1:F1})m", rec.aimOffsetLocal.x, rec.aimOffsetLocal.z) : ""));
+                        rec.aimOffsetShip != DVector3.zero ? string.Format(" 弹着偏置=({0:F1},{1:F1})m", rec.aimOffsetShip.x, rec.aimOffsetShip.z) : ""));
                     return true;
 
                 case MissionType.Standby:
@@ -434,7 +434,7 @@ namespace PioneerFramework
                 if (rec.launcherGroupId != launcherGroupId) continue;
                 if (rec.targetGroupId == targetGroupId) continue;
                 rec.targetGroupId = targetGroupId;
-                rec.aimOffsetLocal = DVector3.zero; // 跟随目标更换：旧目标局部系弹着偏置作废（新目标重新指定/发射）
+                rec.aimOffsetShip = DVector3.zero; // 跟随目标更换：旧目标局部系弹着偏置作废（新目标重新指定/发射）
                 n++;
             }
             if (n > 0)
@@ -504,11 +504,11 @@ namespace PioneerFramework
             // y=0）时，瞄准点 = 目标锚点（群中心 + 目标本体实体局部偏移）+ 旋转后的偏置——随目标
             // 运动/姿态保持贴在该格；无偏置 / 目标无实体 → 目标质心（零偏置路径，无行为回归）。
             DVector3 aimPoint = tPos;
-            if (rec.aimOffsetLocal != DVector3.zero)
+            if (rec.aimOffsetShip != DVector3.zero)
             {
                 var aimEntity = GetAimEntity(target, spaceGame);
                 if (aimEntity != null)
-                    aimPoint = tPos + aimEntity.Position + DVector3.Rotate(rec.aimOffsetLocal, aimEntity.Rotation);
+                    aimPoint = tPos + aimEntity.Position + DVector3.Rotate(rec.aimOffsetShip, aimEntity.Rotation);
             }
             else if (CountAliveEntities(target, spaceGame) > 1)
             {
@@ -615,7 +615,7 @@ namespace PioneerFramework
                 {
                     Log.Message(string.Format(
                         "[导弹制导] V{0} G{1} 弹着偏置启用：瞄准目标局部({2:F1},0,{3:F1})m → 世界点=({4:F0},{5:F0},{6:F0})m（撞击与弹头 Map 爆炸落于所选格）",
-                        rec.vehicleId, rec.groupId, rec.aimOffsetLocal.x, rec.aimOffsetLocal.z,
+                        rec.vehicleId, rec.groupId, rec.aimOffsetShip.x, rec.aimOffsetShip.z,
                         aimPoint.x, aimPoint.y, aimPoint.z));
                 }
             }
@@ -851,7 +851,7 @@ namespace PioneerFramework
                     celestialMgr.RegisterEntityToBody(eid, ng.CelestialBodyId);
 
                 var clone = RegisterMissileLeader(gid, eid, rec.volleyId, rec.launcherGroupId, 1,
-                    rec.missileDefName, rec.weaponDefName, rec.mission, rec.targetGroupId, rec.aimOffsetLocal);
+                    rec.missileDefName, rec.weaponDefName, rec.mission, rec.targetGroupId, rec.aimOffsetShip);
                 if (clone != null)
                 {
                     clone.volleySplit = true; // 单枚记录不再拆
@@ -876,7 +876,7 @@ namespace PioneerFramework
             Log.Message(string.Format(
                 "[弹群解离] G{0}（N={1}）→ 领弹留组（组内实体 {2}）+ 拆出 {3} 枚独立导弹（volley={4} 目标G{5} 偏置=({6:F1},0,{7:F1})m）",
                 group.GroupId, alive, CountAliveEntities(group, spaceGame), created, rec.volleyId, rec.targetGroupId,
-                rec.aimOffsetLocal.x, rec.aimOffsetLocal.z));
+                rec.aimOffsetShip.x, rec.aimOffsetShip.z));
         }
 
         /// <summary>与 CombatManager.GetGroupPos 同基准：圆轨解析位置 / 非圆轨 CurrentOrbit.position（physicsTick 基准）。</summary>
@@ -920,7 +920,7 @@ namespace PioneerFramework
             {
                 var e = spaceGame.GetEntityById(eid);
                 if (e == null) continue;
-                e.GetWorldAabb(out var mn, out var mx);
+                e.GetAabbSystem(out var mn, out var mx);
                 double er = (mx - mn).magnitude * 0.5;
                 if (er > r) r = er;
             }

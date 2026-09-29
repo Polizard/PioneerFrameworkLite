@@ -79,8 +79,8 @@ namespace PioneerFramework
                 return false;
             }
 
-            (MechJebLib.Primitives.V3 r1, MechJebLib.Primitives.V3 _) = dep.RightHandedStateVectorsAtUT(ut);
-            (MechJebLib.Primitives.V3 r2, MechJebLib.Primitives.V3 _) = tgt.RightHandedStateVectorsAtUT(ut);
+            (DVector3 r1, DVector3 _) = dep.RightHandedStateVectorsAtUT(ut);
+            (DVector3 r2, DVector3 _) = tgt.RightHandedStateVectorsAtUT(ut);
             (double _, double _, double tt, double _) = MechJebLib.Functions.Astro.HohmannTransferParameters(dep.mu, r1, r2);
             tof = Math.Abs(tt);
 

@@ -31,7 +31,7 @@ namespace MechJebLib.Functions
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static V3 HunitFromKeplerian(double inc, double lan) => new V3(Sin(lan) * Sin(inc), -Cos(lan) * Sin(inc), Cos(inc));
+        public static V3 HunitFromKeplerian(double inc, double lan) => new V3(Sin(lan) * Sin(inc), Cos(inc), Cos(lan) * Sin(inc));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static V3 HvecFromKeplerian(double mu, double sma, double ecc, double inc, double lan) =>
@@ -47,8 +47,8 @@ namespace MechJebLib.Functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static V3 EvecFromKeplerian(double ecc, double inc, double lan, double argP) =>
             new V3(Cos(argP) * Cos(lan) - Cos(inc) * Sin(argP) * Sin(lan),
-                Cos(argP) * Sin(lan) + Cos(inc) * Cos(lan) * Sin(argP),
-                Sin(argP) * Sin(inc)) * ecc;
+                Sin(argP) * Sin(inc),
+                -(Cos(argP) * Sin(lan) + Cos(inc) * Cos(lan) * Sin(argP))) * ecc;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static double SmaFromApsides(double peR, double apR) => (peR + apR) / 2;
@@ -200,7 +200,7 @@ namespace MechJebLib.Functions
         public static double IncFromStateVectors(V3 r, V3 v)
         {
             V3 hhat = V3.Cross(r, v).normalized;
-            return Acos(hhat[2]);
+            return Acos(hhat[1]);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -262,7 +262,7 @@ namespace MechJebLib.Functions
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static V3 RhatFromLatLng(double lat, double lng) => new V3(Cos(lat) * Cos(lng), Cos(lat) * Sin(lng), Sin(lat));
+        public static V3 RhatFromLatLng(double lat, double lng) => new V3(Cos(lat) * Cos(lng), Sin(lat), -Cos(lat) * Sin(lng));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static double PitchAngle(V3 v, V3 up) => PI * 0.5 - V3.Angle(v, up);
@@ -282,10 +282,14 @@ namespace MechJebLib.Functions
             double clat = Cos(lat);
             double clng = Cos(lng);
 
+            // §13 极轴 +Y 的 ENU 基：Ê=(−sinλ, 0, −cosλ) · N̂=(−sinφcosλ, cosφ, sinφsinλ) · Û=r̂。
+            // 本函数取该基的**转置**（行 = 三个基向量的 x/y/z 分量）⇒ 名实相符的 ENU→ECI。
+            // ⚠ 它与 `ECIToENU` 里那份互为转置，P1 换极轴时两者被写反了槽位：往返 M·Mᵀ = I 所以
+            //    不会炸（这就解释了为什么游戏里没暴雷），只有中间 ENU 读数全错 —— 由 7 条移植测试同时变红暴露。
             var m = new M3(
                 -slng, -slat * clng, clat * clng,
-                clng, -slat * slng, clat * slng,
-                0, clat, slat
+                0, clat, slat,
+                -clng, slat * slng, -clat * slng
             );
 
             return m * vec;
@@ -349,10 +353,11 @@ namespace MechJebLib.Functions
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static double LatitudeFromBCI(V3 r) => SafeAsin(r.z / r.magnitude);
+        public static double LatitudeFromBCI(V3 r) => SafeAsin(r.y / r.magnitude);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static double LongitudeFromBCI(V3 r) => Atan2(r.y, r.x);
+        /// <summary>B3（§13 极轴统一）：方位基准随极轴从 `+ŷ` 变成 `−ẑ`（**不是换一个分量**，是换基准方向）。</summary>
+        public static double LongitudeFromBCI(V3 r) => Atan2(-r.z, r.x);
 
         // r is the ECI reference point, v is the vector in ENU to be converted to ECI
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -366,10 +371,12 @@ namespace MechJebLib.Functions
             double clat = Cos(lat);
             double clng = Cos(lng);
 
+            // §13 极轴 +Y：行 = (Ê, N̂, Û) ⇒ 名实相符的 ECI→ENU（与 `ENUToECI` 里那份互为转置）。
+            // 判据自证：把 Û 行与 r̂ 比 —— Û=(cosφcosλ, sinφ, −cosφsinλ) = RhatFromLatLng ✓。
             var m = new M3(
-                -slng, clng, 0.0,
-                -slat * clng, -slat * slng, clat,
-                clat * clng, clat * slng, slat
+                -slng, 0, -clng,
+                -slat * clng, clat, slat * slng,
+                clat * clng, slat, -clat * slng
             );
 
             return m * v;
@@ -662,8 +669,29 @@ namespace MechJebLib.Functions
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Q3 PerifocalToECIMatrix(double inc, double argp, double lan) =>
-            Q3.AngleAxis(lan, V3.zaxis) * Q3.AngleAxis(inc, V3.xaxis) * Q3.AngleAxis(argp, V3.zaxis);
+        /// <summary>**B2（§13 极轴统一 P3，2026-09-28）**：本函数返回"近焦点基 → 目标系"的旋转，
+        /// 其**列就是 `(P,Q,W)` 在新框架（+Y 极轴）里的分量** —— 这是本函数的**定义**，所以直接**按基矢构造**，
+        /// 不写任何"乘积 + 修正因子"（那种写法在换极轴后**差一个符号**：实测把文档的"新轴 3-1-3 再右乘 `M⁻¹`"
+        /// 打进去，第一列恰好取负 ⇒ 已弃用该形态，改由几何构造）。
+        /// 构造法（纯几何，不猜符号）：① 把 `ẑ` 转到 `ĥ`（`FromToRotation`，绕轴自由度任意）；
+        /// ② 再把此刻的 `x̂` 绕 `ĥ` 旋到 `ê` ⇒ 于是 `ẑ→ĥ`、`x̂→ê` ⇒ `ŷ` 自动落到 `q̂ = ĥ × ê` ✓。
+        /// 判据 = `PoleFlipDiscriminatorTests.PerifocalMatrix_ColumnsMatchHandDerivedBasis`
+        /// （用初等几何手推 `ĥ/ê/q̂` 再比三列；**不碰本文件任何公式**）+ 那 501 条要素往返。</summary>
+        public static Q3 PerifocalToECIMatrix(double inc, double argp, double lan)
+        {
+            V3 hhat = HunitFromKeplerian(inc, lan);                       // 已按 P1 换元 ⇒ 新框架里的轨道法线
+            V3 node = new V3(Cos(lan), 0.0, -Sin(lan));                   // 节点线方向（赤道面 = x–z）
+            V3 ehat = RotateAboutAxis(node, hhat, argp);                  // 近地点方向（argp=0 时即节点线）
+            Q3 r1 = Q3.FromToRotation(V3.zaxis, hhat);
+            V3 xNow = r1 * V3.xaxis;
+            double signed = Atan2(V3.Dot(V3.Cross(xNow, ehat), hhat), V3.Dot(xNow, ehat));
+            return Q3.AngleAxis(signed, hhat) * r1;
+        }
+
+        /// <summary>`v` 绕单位轴 `k` 转 `θ`（Rodrigues）—— B2 构造用；纯几何、无约定假设。</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static V3 RotateAboutAxis(V3 v, V3 k, double theta) =>
+            v * Cos(theta) + V3.Cross(k, v) * Sin(theta) + k * (V3.Dot(k, v) * (1.0 - Cos(theta)));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (V3 p, V3 q, Q3 rot) PerifocalFromStateVectors(double mu, V3 r, V3 v)
@@ -704,6 +732,14 @@ namespace MechJebLib.Functions
             return (rot * p, rot * q);
         }
 
+        /// <summary>
+        /// **B1（§13 极轴统一 P2，2026-09-28）**：本函数里的"春分点块"是极轴翻转**最危险的一处**——
+        /// 裸把 `[2]→[1]` **能编译、数看着也对、实际错**（文档给的判别例：`Ω=0, i=30°` 会给出 `lan=π` 而不是 `0`）。
+        /// 正确改法 = ①`i`/`d` 的极轴分量 2→1；②`q` **变号且换分量**（`-hhat[1] → +hhat[2]`）；
+        /// ③`fhat`/`ghat` 按 `(F0,F1,F2)→(F0,F2,−F1)` 重排（与向量换元 `(x,y,z)→(x,z,−y)` 同构）。
+        /// 判据：`KeplerianFromStateVectorsTests` 里**手算期望值**的那几个 `[Fact]`（不是那 501 条往返——
+        /// 往返对"配对错误"是盲的，实测 P1 后它照样绿）。
+        /// </summary>
         public static (double sma, double ecc, double inc, double lan, double argp, double nu, double l) KeplerianFromStateVectors(double mu, V3 r, V3 v)
         {
             double rmag = r.magnitude;
@@ -717,27 +753,27 @@ namespace MechJebLib.Functions
             double sma = 1.0 / (2.0 / rmag - vmag * vmag / mu);
             double l = hv.sqrMagnitude / mu;
 
-            int i = hhat[2] >= 0.0 ? +1 : -1;
+            int i = hhat[1] >= 0.0 ? +1 : -1;
 
-            double d = 1.0 + i * hhat[2];
+            double d = 1.0 + i * hhat[1];
             if (d == 0.0)
                 throw new ArgumentException("[MechJebLib] KeplerianFromStateVectors(): orbit is at the retrograde singularity somehow");
 
             double p = hhat[0] / d;
-            double q = -hhat[1] / d;
+            double q = hhat[2] / d;
 
             double a = 1.0 / (1.0 + p * p + q * q);
 
             var fhat = new V3(
                 a * (1.0 - p * p + q * q),
-                a * 2.0 * p * q,
-                -a * 2.0 * i * p
+                -a * 2.0 * i * p,
+                -a * 2.0 * p * q
             );
 
             var ghat = new V3(
                 a * 2.0 * i * p * q,
-                a * i * (1.0 + p * p - q * q),
-                a * 2.0 * q
+                a * 2.0 * q,
+                -a * i * (1.0 + p * p - q * q)
             );
 
             double h = V3.Dot(eccvec, ghat);

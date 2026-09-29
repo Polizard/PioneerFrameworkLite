@@ -94,8 +94,12 @@ namespace PioneerFramework
             }
             catch (Exception e)
             {
+                // ⚠ 求解器层会**刻意**抛 `ArgumentException`（例：`ChangeOrbitalElement` 的"目标不可达"，
+                //   其文件头写明"一维求根失败的含义比'求解器崩了'更具体"）⇒ 在**这一处**统一转成可读的
+                //   用户级消息，别让 UI 只显示"创建节点时发生错误"（2026-09-28 实测：玩家输入 ECC=10
+                //   时界面上只有一句"创建节点时发生错误" + 日志里一条原始异常栈）。
                 Logger.Print($"[PFL/Operation] {GetName()} 抛出了非 OperationException 的异常：{e}");
-                ErrorMessage = "创建节点时发生错误";
+                ErrorMessage = $"{GetName()}：{e.Message}";
                 return null;
             }
         }
