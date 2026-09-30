@@ -221,8 +221,8 @@ namespace PioneerFramework
                     continue;
                 }
 
-                DVector3 pos = g.CurrentOrbit.position;
-                DVector3 vel = g.CurrentOrbit.velocity;
+                DVector3 pos = g.CurrentOrbit.positionSystem.v;
+                DVector3 vel = g.CurrentOrbit.velocitySystem.v;
                 double r = pos.magnitude;
                 double gm = spaceGame.GetBodyGM(g.CelestialBodyId);
                 double v = vel.magnitude;

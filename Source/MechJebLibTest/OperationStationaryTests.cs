@@ -75,10 +75,10 @@ namespace PioneerFramework.Tests
             // "同向"的判据**从天体自己的共转速度推**，不用我猜符号：
             // 本 mod 里顺行是 h ∥ −Y（批4 P4 极轴统一为 +Y：适配层与游戏世界同系，
             // 不再有"适配层是 −z"那一层），与"游戏 +Y 极轴"的直觉相反（踩过一次）。
-            DVector3 gPosForRot = OrbitView.AdapterToGameWorld(r2);
             // ⚠ 共转速度是**切向**的，而 `h` 是**转轴** ⇒ 两者本来垂直（点乘 0）。
             // 转轴要从"位置 × 共转速度"推：`轴 ∝ r × v_共转`。
-            V3 coRotVel = OrbitView.GameWorldToAdapter(SurfaceFrame.SurfaceVelocity(gPosForRot, Omega));
+            // 两系同轴（批4 P4）⇒ 进出都不需要转换（批6 S2：跨系只经 OrbitView 的进/出两个口）
+            V3 coRotVel = SurfaceFrame.SurfaceVelocity(r2, Omega);
             V3 coRotAxis = V3.Cross(r2, coRotVel).normalized;
             Assert.True(V3.Dot(h.normalized, coRotAxis) > 0.99,
                 $"必须与天体共转：ĥ·共转轴={V3.Dot(h.normalized, coRotAxis):F6}（<0 就是反向同步，不是静止）");
@@ -90,8 +90,8 @@ namespace PioneerFramework.Tests
                 $"周期必须是自转周期：{final.period:F6} vs {period:F6} s");
 
             // ④ 落点在目标经线正上方（**上游这条不成立**：它差一个转移期间的自转量）
-            DVector3 g = OrbitView.AdapterToGameWorld(r2);
-            double lon = Wrap360(SurfaceFrame.EciToLongLat(g, Omega, n2.ut).lonRad * 180.0 / Math.PI);
+            // 两系同轴（批4 P4）⇒ 不经转换（批6 S2：跨系只经 OrbitView 的进/出两个口）
+            double lon = Wrap360(SurfaceFrame.EciToLongLat(r2, Omega, n2.ut).lonRad * 180.0 / Math.PI);
             Assert.True(AngDiff(lon, wantLon) < 1e-2,
                 $"落点经度：{lon:F6}° vs 请求 {wantLon}°（差 {AngDiff(lon, wantLon):E3}°）");
         }

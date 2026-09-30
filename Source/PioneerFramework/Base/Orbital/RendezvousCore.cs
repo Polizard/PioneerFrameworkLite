@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using MechJebLib.Lambert;
 
 namespace PioneerFramework
@@ -160,6 +161,22 @@ namespace PioneerFramework
 
             TransferGeometry geom = prograde ? TransferGeometry.ShortWay : TransferGeometry.LongWay;
 
+            // ══ 批7 #5（2026-09-30）：360 格**并行** —— 但把"会写共享态"的部分留在串行 ══
+            //   ① 串行：按原来的 `break`/`continue` 规则**枚举格子**，并把三样东西**先算好**：
+            //      `wait`/`tof`、出发点状态、**目标状态**（`predictTargetAt` 是调用方的委托；生产侧它走
+            //      `TryPredictTargetAtTick → GetCircularPositionAtTick`，而**后者会写组上的惰性缓存**
+            //      `cachedPosTick/cachedPos` ⇒ 多线程调同一个目标就是竞争 ✗）⇒ 委托**只在串行相位调**。
+            //   ② 并行：每格 = 1 次 `Gooding`（三个计数器已原子化，见 §17.3/R6）+ 预算/安全判据，
+            //      各写自己的槽位（**NaN = 该格无候选**）。
+            //   ③ 串行：`ParallelOps.MinIndex` 归约 —— 跳过 NaN、**并列取小下标**，与原来
+            //      `if (!best.Valid || total < best.TotalDv)`（严格 `<`、按 (wi,ti) 先到先得）**同语义**。
+            var cWait = new List<double>();
+            var cTof = new List<double>();
+            var cRDep = new List<DVector3>();
+            var cVDep = new List<DVector3>();
+            var cR2 = new List<DVector3>();
+            var cV2 = new List<DVector3>();
+
             for (int wi = 0; wi <= waitFine + waitCoarse * (int)Math.Max(1.0, waitMaxPeriods - 1.0); wi++)
             {
                 double wait = wi <= waitFine
@@ -176,36 +193,63 @@ namespace PioneerFramework
                 for (int ti = 0; ti <= 14; ti++)
                 {
                     double tof = tofH * (0.6 + 0.15 * ti);          // 0.6 … 2.7 倍霍曼时长
-                    var (r2, v2) = predictTargetAt(nowTick + wait + tof);
+                    var (r2, v2) = predictTargetAt(nowTick + wait + tof);   // ⚠ 只在此串行相位调（见上）
                     if (r2.sqrMagnitude < 1.0) continue;
 
-                    DVector3 vi, vf;
-                    try
-                    {
-                        (vi, vf) = Gooding.Solve(gm, rDep, r2, tof, geom);
-                    }
-                    catch (Exception)
-                    {
-                        continue;                                    // 本次无解（几何退化）→ 下一格
-                    }
-
-                    DVector3 dv1 = vi - vDep;
-                    double dv1Mag = dv1.magnitude;
-                    if (!(dv1Mag > 0.0) || dv1Mag > maxDepartureDv) continue;
-                    if (!OrbitMath.IsOrbitSafe(rDep, vDep + dv1, safeRadius, gm)) continue;
-
-                    double dv2Mag = (v2 - vf).magnitude;
-                    double total = dv1Mag + dv2Mag;
-                    if (!best.Valid || total < best.TotalDv)
-                    {
-                        best.Valid = true;
-                        best.WaitSeconds = wait;
-                        best.TransferSeconds = tof;
-                        best.DepartureDv = dv1;
-                        best.ArrivalDv = dv2Mag;
-                        best.TotalDv = total;
-                    }
+                    cWait.Add(wait); cTof.Add(tof);
+                    cRDep.Add(rDep); cVDep.Add(vDep);
+                    cR2.Add(r2); cV2.Add(v2);
                 }
+            }
+
+            int nCells = cWait.Count;
+            if (nCells == 0) return best;
+
+            var rDepArr = cRDep.ToArray();
+            var vDepArr = cVDep.ToArray();
+            var r2Arr = cR2.ToArray();
+            var v2Arr = cV2.ToArray();
+            var tofArr = cTof.ToArray();
+            var totals = new double[nCells];
+            var dv1s = new DVector3[nCells];
+            var dv2Mags = new double[nCells];
+
+            // 单项成本量级：**本机实测**约 1.8 µs/格（`[批7 #5 对照]` 串行 0.657 ms / 360 格；真实几何里半径差更大、更贵）
+            ParallelOps.For(nCells, 2e-6, k =>
+            {
+                totals[k] = double.NaN;   // 默认"该格无候选"
+                DVector3 vi, vf;
+                try
+                {
+                    // ⚠ try/catch **留在工作体内**（抛到 `Parallel.For` 外会变 `AggregateException` ⇒ 改控制流）
+                    (vi, vf) = Gooding.Solve(gm, rDepArr[k], r2Arr[k], tofArr[k], geom);
+                }
+                catch (Exception)
+                {
+                    return;                                   // 本次无解（几何退化）→ 该格无候选
+                }
+
+                DVector3 dv1 = vi - vDepArr[k];
+                double dv1Mag = dv1.magnitude;
+                if (!(dv1Mag > 0.0) || dv1Mag > maxDepartureDv) return;
+                if (!OrbitMath.IsOrbitSafe(rDepArr[k], vDepArr[k] + dv1, safeRadius, gm)) return;
+
+                double dv2Mag = (v2Arr[k] - vf).magnitude;
+                dv1s[k] = dv1;
+                dv2Mags[k] = dv2Mag;
+                totals[k] = dv1Mag + dv2Mag;
+            });
+
+            // ── 串行归约（下标 = (wi,ti) 枚举序 ⇒ 并列时选的正是原来那个"先到"的） ──
+            int bestCell = ParallelOps.MinIndex(totals);
+            if (bestCell >= 0)
+            {
+                best.Valid = true;
+                best.WaitSeconds = cWait[bestCell];
+                best.TransferSeconds = cTof[bestCell];
+                best.DepartureDv = dv1s[bestCell];
+                best.ArrivalDv = dv2Mags[bestCell];
+                best.TotalDv = totals[bestCell];
             }
             return best;
         }

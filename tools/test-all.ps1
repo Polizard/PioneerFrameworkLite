@@ -211,6 +211,20 @@ Step "Def/Patch XML free of retired names (tools/check-def-fields.ps1)" {
     return "ok"
 }
 
+# -- 4c. Frame-carrying types (batch 6 stage S3) -------------------------------
+# S3-3c turned the host frames into types, so the *compiler* now enforces same-frame arithmetic
+# inside the typed part. What the compiler cannot see: hand-written crossings
+# (`CurrentOrbit.position - GetCentralBodyOffset(t)` -- how the historical mixing accidents
+# happened) and carriers drifting back to untyped. This step is that judge; it is allow-list
+# based (every known legitimate occurrence carries a written reason), so only NEW drift fails.
+Step "Frame-crossing auditor (tools/check-frame-crossing.ps1)" {
+    $r = Invoke-Native "powershell" @("-ExecutionPolicy", "Bypass", "-File", "tools/check-frame-crossing.ps1")
+    if ($r.ExitCode -ne 0) {
+        throw "check-frame-crossing.ps1 failed (exit $($r.ExitCode))`n$(($r.Output | Select-Object -Last 20) -join "`n")"
+    }
+    return "ok"
+}
+
 # -- 5. Committed runtime assets ----------------------------------------------
 Step "Committed runtime assets present" {
     $required = @(

@@ -4,6 +4,7 @@ using MechJebLib.Minimization;
 using MechJebLib.Primitives;
 using MechJebLib.Rootfinding;
 using MechJebLib.Utils;
+using PioneerFramework;   // 批7（2026-09-30）：统一调度原语 `ParallelOps`（θ 粗扫并行 + 唯一归约器）
 
 namespace MechJebLib.Maneuvers
 {
@@ -167,19 +168,21 @@ namespace MechJebLib.Maneuvers
             };
 
             // ── 外层：θ 扫描（粗）→ BrentMin（细）──
-            int bestIndex = -1;
-            double bestR = double.PositiveInfinity;
-
-            for (int i = 0; i < THETA_STEPS; i++)
+            // 批7 #4（2026-09-30）：180 个方向**彼此独立** ⇒ 并行。独立性有据（逐行读过）：
+            //   · `Probe` 是 **struct** 且 `SolveRadiusAlong(V3, Probe)` **按值收** ⇒ 里面那句
+            //     `probe.Dir = dir` 改的是**副本**；`Residual` 同样按值收；`BrentRoot` **零静态可变状态**。
+            //   · 归约走 `ParallelOps.MinIndex`（跳过 NaN、**并列取小下标**）——与原来串行那句
+            //     `if (!NaN(rr) && rr < bestR)`（严格 `<` ⇒ 保留先到的）**同语义、逐位相同**。
+            // ⚠ 其后的 `BrentMin` 细化**必须顺序**（它喂粗扫的 argmin；计划稿 §17.4 #4 的告警）。
+            var radii = new double[THETA_STEPS];
+            ParallelOps.For(THETA_STEPS, 5e-6, i =>
             {
                 double theta = 2.0 * Math.PI * i / THETA_STEPS;
-                double rr = SolveRadiusAlong(new V3(Math.Cos(theta), Math.Sin(theta), 0.0), probe);
-                if (!double.IsNaN(rr) && rr < bestR)
-                {
-                    bestR = rr;
-                    bestIndex = i;
-                }
-            }
+                radii[i] = SolveRadiusAlong(new V3(Math.Cos(theta), Math.Sin(theta), 0.0), probe);
+            });
+
+            int bestIndex = ParallelOps.MinIndex(radii);
+            double bestR = bestIndex >= 0 ? radii[bestIndex] : double.PositiveInfinity;
 
             if (bestIndex < 0)
                 throw new ArgumentException(
@@ -236,6 +239,8 @@ namespace MechJebLib.Maneuvers
         }
 
         // ── 与上游同名的五个入口（签名逐字保持） ──────────────────────────────────
+        // ⚠ 批6 S3-3b 判定：`optguard` **不许**改成必需 —— 它是**上游签名**里的自检开关（不是值哨兵：
+        //   漏传只是不跑自检，不会静默换一个值）；改必需 = 偏离上游签名。生产路径一直用默认 false，只有测试显式打开。
 
         public static V3 ChangePeriapsis(double mu, V3 r, V3 v, double peR, bool optguard = false)
         {

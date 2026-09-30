@@ -655,8 +655,8 @@ namespace PioneerFramework
         /// <summary>组 → 字段数组。**必须与 <see cref="FieldNames"/> 一一对应且同序**（哈希与定位共用）。</summary>
         private static double[] FieldsOf(SpaceEntityGroup g) => new double[]
         {
-            g.CurrentOrbit.position.x, g.CurrentOrbit.position.y, g.CurrentOrbit.position.z,
-            g.CurrentOrbit.velocity.x, g.CurrentOrbit.velocity.y, g.CurrentOrbit.velocity.z,
+            g.CurrentOrbit.positionSystem.x, g.CurrentOrbit.positionSystem.y, g.CurrentOrbit.positionSystem.z,
+            g.CurrentOrbit.velocitySystem.x, g.CurrentOrbit.velocitySystem.y, g.CurrentOrbit.velocitySystem.z,
             g.CurrentOrbit.rotation.x, g.CurrentOrbit.rotation.y, g.CurrentOrbit.rotation.z, g.CurrentOrbit.rotation.w,
             g.circularRadius, g.circularStartAngle, g.circularAngularVelocity,
             g.remainingBurnDV,

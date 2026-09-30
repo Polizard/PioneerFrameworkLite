@@ -136,7 +136,9 @@ namespace PioneerFramework
                 {
                     var body = mgr.GetBodyById(bodyId);
                     if (body != null && body.bodyType != CelestialBodyType.Planet)
-                        plannedCentralOffset = group.GetCentralBodyOffset(Find.TickManager.TicksGame);
+                        plannedCentralOffset = group.GetCentralBodyOffset(Find.TickManager.TicksGame).v;   // 批6 S3-3c：带系标签 ⇒ 取 .v
+                    // ⚠ 本行的时钟基准（`TicksGame` ≠ physicsTick）是**已登记的 U-12 缺陷**（§14.1）——
+                    //   批6 不动它（那是另一个机制：时钟基准），别顺手改。
                 }
             }
 
@@ -372,8 +374,8 @@ namespace PioneerFramework
             }
             else
             {
-                pos = group.CurrentOrbit.position;
-                vel = group.CurrentOrbit.velocity;
+                pos = group.CurrentOrbit.positionSystem.v;
+                vel = group.CurrentOrbit.velocitySystem.v;
             }
 
             // 如果预测时间在机动之前，直接沿当前轨道传播
@@ -526,8 +528,8 @@ namespace PioneerFramework
             }
             else
             {
-                pos = group.CurrentOrbit.position;
-                vel = group.CurrentOrbit.velocity;
+                pos = group.CurrentOrbit.positionSystem.v;
+                vel = group.CurrentOrbit.velocitySystem.v;
             }
 
             // 获取中心天体的 GM 和世界坐标偏移（用于正确绘制轨道预览）
@@ -644,8 +646,8 @@ namespace PioneerFramework
             }
             else
             {
-                pos = group.CurrentOrbit.position;
-                vel = group.CurrentOrbit.velocity;
+                pos = group.CurrentOrbit.positionSystem.v;
+                vel = group.CurrentOrbit.velocitySystem.v;
             }
 
             // 保存 OrbitKeeping 状态（ExitCircularOrbit 会清空白名单），确保执行时仍保持

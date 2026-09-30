@@ -15,6 +15,10 @@ namespace PioneerFramework
         /// <summary>引力参数 GM (m³/s²)，读取 SpaceConstants 中由 CelestialBodyManager 同步的主天体参数。</summary>
         public static double GM => SpaceConstants.PrimaryGravitationalParameter;
 
+        /// <summary>`mu` 的**上游语义**：显式传 `NaN` ⇒ 用默认 GM（地球）。
+        ///
+        /// ⚠ 批6 S3-3b 判定：这**不是**要清除的 A5 哨兵 —— ① `mu` 参数现已**全部必需**（D6 让编译器列漏传点），
+        /// ② 本语义有 `PropagationEquivalenceTests` 的**负向对照**钉住（"薄化不该把它丢掉"）⇒ 动它才是违规。</summary>
         private static double ResolveGM(double mu) => double.IsNaN(mu) ? GM : mu;
 
         #region 轨道要素计算

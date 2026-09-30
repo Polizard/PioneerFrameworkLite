@@ -40,9 +40,11 @@ namespace PioneerFramework.Tests
         /// <summary>升交点经度（度，`[0,360)`）。本用例天体不自转 ⇒ 惯性/固连口径相同。</summary>
         private static double LanDeg(OrbitView o, double ut)
         {
-            V3 an = o.AscendingNodePositionEquatorial(ut);
-            DVector3 g = OrbitView.AdapterToGameWorld(an);
-            double deg = SurfaceFrame.EciToLongLat(g, 0.0, ut).lonRad * 180.0 / Math.PI;
+            // 批6 S3-3a：交点位置走 `Try*`；本用例的轨道有交点 ⇒ 失败即用例前提被破坏，应当红
+            Assert.True(o.TryAscendingNodePositionEquatorial(ut, out V3 an),
+                "本用例的轨道必须有赤道升交点（否则 LAN 的判据无从谈起）");
+            // 两系同轴（批4 P4）⇒ 不经转换（批6 S2：跨系只经 OrbitView 的进/出两个口）
+            double deg = SurfaceFrame.EciToLongLat(an, 0.0, ut).lonRad * 180.0 / Math.PI;
             double m = deg % 360.0;
             return m < 0.0 ? m + 360.0 : m;
         }

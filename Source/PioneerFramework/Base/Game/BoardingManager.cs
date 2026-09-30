@@ -643,19 +643,19 @@ namespace PioneerFramework
             return BoardingMath.AimPointSystem(groupPos, targetEntity.Position, targetEntity.Rotation, unit.landingOffsetShip);
         }
 
-        /// <summary>与 CombatManager.GetGroupPos 同基准：圆轨解析位置 / 非圆轨 CurrentOrbit.position。</summary>
+        /// <summary>与 CombatManager.GetGroupPos 同基准：圆轨解析位置 / 非圆轨 CurrentOrbit.positionSystem。</summary>
         private static DVector3 GetGroupPos(SpaceEntityGroup group)
         {
             if (group.IsCircularOrbit)
                 return group.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe());
-            return group.CurrentOrbit.position;
+            return group.CurrentOrbit.positionSystem.v;
         }
 
         private static DVector3 GetGroupVelocity(SpaceEntityGroup group)
         {
             if (group.IsCircularOrbit)
                 return group.GetCircularVelocityAtTick(TimeScaleManager.GetPhysicsTickSafe());
-            return group.CurrentOrbit.velocity;
+            return group.CurrentOrbit.velocitySystem.v;
         }
 
         /// <summary>
@@ -681,7 +681,7 @@ namespace PioneerFramework
                 IsCollidable = true,
                 CelestialBodyId = celestialBodyId
             };
-            group.CurrentOrbit = new OrbitState { position = pos, velocity = vel, rotation = Quaternion.identity };
+            group.CurrentOrbit = new OrbitState { positionSystem = (SystemVec3)pos, velocitySystem = (SystemVec3)vel, rotation = Quaternion.identity };
             spaceGame.RegisterGroup(group);
 
             var entity = new SpaceEntity(entityId, factionId)

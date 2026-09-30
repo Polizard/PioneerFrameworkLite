@@ -137,8 +137,8 @@ namespace PioneerFramework.Launch
             };
             group.CurrentOrbit = new OrbitState
             {
-                position = pos,
-                velocity = birthVel,
+                positionSystem = (SystemVec3)pos,
+                velocitySystem = (SystemVec3)birthVel,
                 rotation = UnityEngine.Quaternion.identity
             };
             spaceGame.RegisterGroup(group);

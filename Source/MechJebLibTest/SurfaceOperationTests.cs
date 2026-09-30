@@ -39,9 +39,11 @@ namespace PioneerFramework.Tests
         /// <summary>轨道的**升交点惯性系经度（度）**——与 `DeltaVToShiftLAN` 的目标同口径。</summary>
         private static double LanDeg(OrbitView o, double ut, double omega = 0.0)
         {
-            V3 an = o.AscendingNodePositionEquatorial(ut);
-            DVector3 g = OrbitView.AdapterToGameWorld(an);
-            double lonFixed = SurfaceFrame.EciToLongLat(g, omega, ut).lonRad;
+            // 批6 S3-3a：交点位置走 `Try*`（本用例的轨道有交点 ⇒ 失败即前提被破坏，应当红）
+            Assert.True(o.TryAscendingNodePositionEquatorial(ut, out V3 an),
+                "本用例的轨道必须有赤道升交点（否则经度判据无从谈起）");
+            // 两系同轴（批4 P4）⇒ 不经转换（批6 S2：跨系只经 OrbitView 的进/出两个口）
+            double lonFixed = SurfaceFrame.EciToLongLat(an, omega, ut).lonRad;
             double deg = (lonFixed + omega * ut) * 180.0 / System.Math.PI;
             double m = deg % 360.0;
             return m < 0.0 ? m + 360.0 : m;
@@ -137,7 +139,8 @@ namespace PioneerFramework.Tests
             const double d2r = System.Math.PI / 180.0;
             (V3 r, V3 v) = o.RightHandedStateVectorsAtUT(ut);
 
-            var latLon = SurfaceFrame.EciToLongLat(OrbitView.AdapterToGameWorld(r), o.angularVelocity, ut);
+            // 两系同轴（批4 P4）⇒ 不经转换（批6 S2：跨系只经 OrbitView 的进/出两个口）
+            var latLon = SurfaceFrame.EciToLongLat(r, o.angularVelocity, ut);
             double burnLat = latLon.latRad / d2r;
             double burnLon = (latLon.lonRad + o.angularVelocity * ut) / d2r; // 惯性系经度 = 上游的 `+ rotationAngle`
 
@@ -331,8 +334,8 @@ namespace PioneerFramework.Tests
         /// <summary>`pos`（**惯性**矢量）在 `t` 时刻**正下方**那条经线的经度（度）。</summary>
         private static double FixedLonDeg(V3 pos, double t)
         {
-            DVector3 g = OrbitView.AdapterToGameWorld(pos);
-            double deg = SurfaceFrame.EciToLongLat(g, Omega, t).lonRad * 180.0 / System.Math.PI;
+            // 两系同轴（批4 P4）⇒ 不经转换（批6 S2：跨系只经 OrbitView 的进/出两个口）
+            double deg = SurfaceFrame.EciToLongLat(pos, Omega, t).lonRad * 180.0 / System.Math.PI;
             double m = deg % 360.0;
             return m < 0.0 ? m + 360.0 : m;
         }

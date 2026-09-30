@@ -522,7 +522,8 @@ namespace PioneerFramework
         private static DVector3 BodyRelativePos(SpaceGameComp sg, SpaceEntityGroup g, int bodyId, double tick)
         {
             int tickI = (int)Math.Round(tick);
-            return g.CurrentOrbit.position - sg.GetBodyOffsetSystem(bodyId, tickI);
+            // 批6 S3-3c：唯一换算 `FrameConvert`（与 `TryQuoteLanding` 同一个口径，不是第二份换系）
+            return FrameConvert.SystemToBody(g.CurrentOrbit.positionSystem, sg.GetBodyOffsetSystem(bodyId, tickI)).v;
         }
 
         /// <summary>离星下点**最远**的 tile（与 `EciToTile` 同法：只把 argmax 换成 argmin）。

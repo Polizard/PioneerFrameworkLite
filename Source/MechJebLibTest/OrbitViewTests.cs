@@ -228,6 +228,43 @@ namespace PioneerFramework.Tests
         }
 
         /// <summary>
+        /// **A6（批6 S3-3a）**：交点位置改 `Try*` 之后 —— **有交点**那支：倾角 30° 的圆轨，
+        /// 升交点必须**落在赤道面内**且**仍在轨道上**（两条都是与被测算式独立的几何事实）。
+        /// </summary>
+        [Fact]
+        public void TryAscendingNodePositionEquatorial_OnInclinedOrbit_LandsOnEquatorAndOrbit()
+        {
+            const double inc = 30.0 * System.Math.PI / 180.0;
+            double vc = System.Math.Sqrt(Mu / R0);
+            // r = +x（在赤道面内），速度按倾角倾斜 ⇒ h 落在 y–z 平面 ⇒ 交点线 ∥ ±x
+            var o = OrbitView.FromStateVectors(new V3(R0, 0, 0),
+                new V3(0, vc * System.Math.Sin(inc), -vc * System.Math.Cos(inc)), Mu, 0.0, Pole);
+
+            Assert.True(o.TryAscendingNodePositionEquatorial(0.0, out V3 an), "倾角 30° 的圆轨必须有赤道升交点");
+            Assert.True(System.Math.Abs(an.y) < 1e-6 * an.magnitude,
+                $"交点必须落在赤道面内：y/|r|={an.y / an.magnitude:E3}");
+            Assert.True(System.Math.Abs(an.magnitude - R0) < 1e-6 * R0,
+                $"交点必须仍在轨道上（圆轨 ⇒ |r|=R0）：|r|={an.magnitude:F3} vs {R0:F3}");
+        }
+
+        /// <summary>
+        /// **A6（批6 S3-3a）**：**没有交点**那支 —— 赤道轨（轨道面与赤道面重合）上交点**没有定义**
+        /// （见 `EquatorialNodeIsDefined` 的说明：漏了这条会拿一个编出来的 ν=0 交点去算计划）。
+        /// 判据：`false` **且 `out` 置零**（不许留残留 —— 这正是"零矢量当哨兵"要治的病）。
+        /// </summary>
+        [Fact]
+        public void TryAscendingNodePositionEquatorial_OnEquatorialOrbit_ReturnsFalseAndZero()
+        {
+            var o = Circular(R0, new V3(R0, 0, 0)); // h ∥ 极轴 ⇒ 赤道轨、交点未定义
+            Assert.False(o.AscendingNodeEquatorialExists(), "赤道轨上交点没有定义（前提）");
+
+            Assert.False(o.TryAscendingNodePositionEquatorial(0.0, out V3 an));
+            Assert.Equal(0.0, an.sqrMagnitude);
+            Assert.False(o.TryDescendingNodePositionEquatorial(0.0, out V3 dn));
+            Assert.Equal(0.0, dn.sqrMagnitude);
+        }
+
+        /// <summary>
         /// **倾斜轨道在赤道交点处**：朝北极的切向同样应当 ≈ 极轴
         /// （因为那一点就在赤道上，"往北"就是沿极轴方向）✓ 与倾角无关 —— 这条同时说明
         /// `North` 与轨道形状无关、只与"你在地球上的哪一点"有关。

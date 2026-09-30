@@ -795,15 +795,15 @@ namespace PioneerFramework
                 leaderId = ids[0];
             rec.entityId = leaderId;
             var orbit = group.CurrentOrbit;
-            DVector3 oldPos = orbit.position;
-            DVector3 oldVel = orbit.velocity;
+            DVector3 oldPos = orbit.positionSystem.v;
+            DVector3 oldVel = orbit.velocitySystem.v;
             var leader = spaceGame.GetEntityById(leaderId);
             if (leader != null)
             {
                 group.CurrentOrbit = new OrbitState
                 {
-                    position = oldPos + leader.Position,
-                    velocity = oldVel,
+                    positionSystem = (SystemVec3)(oldPos + leader.Position),
+                    velocitySystem = (SystemVec3)oldVel,
                     rotation = orbit.rotation
                 };
                 leader.SetPositionVelocity(DVector3.zero, DVector3.zero);
@@ -835,8 +835,8 @@ namespace PioneerFramework
                 };
                 ng.CurrentOrbit = new OrbitState
                 {
-                    position = oldPos + e.Position,
-                    velocity = oldVel + e.Velocity,
+                    positionSystem = (SystemVec3)(oldPos + e.Position),
+                    velocitySystem = (SystemVec3)(oldVel + e.Velocity),
                     rotation = e.Rotation
                 };
                 ng.maxAngularRate = group.maxAngularRate;
@@ -862,9 +862,8 @@ namespace PioneerFramework
                     var missileDefClone = DefDatabase<MissileDef>.GetNamedSilentFail(rec.missileDefName);
                     double cruise = missileDefClone != null && missileDefClone.terminalSpeed > 1f
                         ? missileDefClone.terminalSpeed : 450.0;
-                    // 深度 = 拆出组世界位（ng.CurrentOrbit.position，SetPositionVelocity 清零前已存）
-                    // 到本组原点（已移到领弹世界位）的距离——队列共线，即距领弹的队列深度
-                    double depth = (ng.CurrentOrbit.position - group.CurrentOrbit.position).magnitude;
+                    // 深度 = 拆出组世界位（ng.CurrentOrbit.positionSystem）到本组原点的距离——队列共线，即距领弹的队列深度
+                    double depth = (ng.CurrentOrbit.positionSystem - group.CurrentOrbit.positionSystem).magnitude;
                     double delayGameSec = depth / cruise;
                     var tsm = Current.Game?.GetComponent<TimeScaleManager>();
                     float mult = tsm != null ? tsm.PhysicsSpeedMultiplier : 1f;
@@ -884,7 +883,7 @@ namespace PioneerFramework
         {
             if (g.IsCircularOrbit)
                 return g.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe());
-            return g.CurrentOrbit.position;
+            return g.CurrentOrbit.positionSystem.v;
         }
 
         /// <summary>与 CombatManager.GetGroupVelocity 同基准：圆轨解析切向速度 / 非圆轨 CurrentOrbit.velocity。</summary>
@@ -892,7 +891,7 @@ namespace PioneerFramework
         {
             if (g.IsCircularOrbit)
                 return g.GetCircularVelocityAtTick(TimeScaleManager.GetPhysicsTickSafe());
-            return g.CurrentOrbit.velocity;
+            return g.CurrentOrbit.velocitySystem.v;
         }
 
         /// <summary>目标瞄准本体实体：首个带 Map 实体（空间站/带图船——弹着偏置只对 Map 目标有意义）；

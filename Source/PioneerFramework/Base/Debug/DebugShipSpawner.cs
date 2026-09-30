@@ -131,20 +131,20 @@ namespace PioneerFramework
                 dB, relB.x, dC, relC.x));
         }
 
-        /// <summary>与 CombatManager.GetGroupPos 相同的基准：圆轨解析位置 / 非圆轨 CurrentOrbit.position。</summary>
+        /// <summary>与 CombatManager.GetGroupPos 相同的基准：圆轨解析位置 / 非圆轨 CurrentOrbit.positionSystem。</summary>
         private static DVector3 GetGroupPosDebug(SpaceEntityGroup g)
         {
             if (g.IsCircularOrbit)
                 return g.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe());
-            return g.CurrentOrbit.position;
+            return g.CurrentOrbit.positionSystem.v;
         }
 
-        /// <summary>与 CombatManager.GetGroupVelocity 相同的基准：圆轨解析切向速度 / 非圆轨 CurrentOrbit.velocity。</summary>
+        /// <summary>与 CombatManager.GetGroupVelocity 相同的基准：圆轨解析切向速度 / 非圆轨 CurrentOrbit.velocitySystem。</summary>
         private static DVector3 GetGroupVelDebug(SpaceEntityGroup g)
         {
             if (g.IsCircularOrbit)
                 return g.GetCircularVelocityAtTick(TimeScaleManager.GetPhysicsTickSafe());
-            return g.CurrentOrbit.velocity;
+            return g.CurrentOrbit.velocitySystem.v;
         }
 
         /// <summary>
@@ -226,8 +226,8 @@ namespace PioneerFramework
             };
             group.CurrentOrbit = new OrbitState
             {
-                position = pos,
-                velocity = velocity ?? DVector3.zero,
+                positionSystem = (SystemVec3)pos,
+                velocitySystem = (SystemVec3)(velocity ?? DVector3.zero),
                 rotation = Quaternion.identity
             };
             spaceGame.RegisterGroup(group);
@@ -265,7 +265,7 @@ namespace PioneerFramework
                 entityId, groupId, size.x, size.y, size.z, name,
                 rotation.eulerAngles.x, rotation.eulerAngles.y, rotation.eulerAngles.z,
                 pos.x / 1000.0, pos.y / 1000.0, pos.z / 1000.0,
-                group.CurrentOrbit.velocity.x, group.CurrentOrbit.velocity.y, group.CurrentOrbit.velocity.z));
+                group.CurrentOrbit.velocitySystem.x, group.CurrentOrbit.velocitySystem.y, group.CurrentOrbit.velocitySystem.z));
             return group;
         }
 
@@ -297,12 +297,12 @@ namespace PioneerFramework
             groupA.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
 
             // B：敌 faction，旋转 45°，A 旁 200m，30m/s 朝 A 靠近（相对 A 的轨道速度）
-            DVector3 velB = groupA.CurrentOrbit.velocity - new DVector3(30, 0, 0);
+            DVector3 velB = groupA.CurrentOrbit.velocitySystem.v - new DVector3(30, 0, 0);
             var groupB = CreateShipNoMap(spaceGame, playerFaction + 1, basePos + new DVector3(200, 0, 0),
                 new DVector3(40, 30, 40), Quaternion.Euler(0f, 0f, 45f), "斜向船B(旋转45°)", velB);
 
             // C：敌 faction，旋转 30°，另一方向 25m/s 靠近
-            DVector3 velC = groupA.CurrentOrbit.velocity + new DVector3(25, 0, -25);
+            DVector3 velC = groupA.CurrentOrbit.velocitySystem.v + new DVector3(25, 0, -25);
             var groupC = CreateShipNoMap(spaceGame, playerFaction + 1, basePos + new DVector3(-200, 0, 150),
                 new DVector3(20, 20, 20), Quaternion.Euler(0f, 30f, 0f), "侧向船C(旋转30°)", velC);
 
@@ -371,8 +371,8 @@ namespace PioneerFramework
             };
             group.CurrentOrbit = new OrbitState
             {
-                position = pos,
-                velocity = DVector3.zero,
+                positionSystem = (SystemVec3)pos,
+                velocitySystem = SystemVec3.zero,
                 rotation = Quaternion.identity
             };
             spaceGame.RegisterGroup(group);
@@ -1289,7 +1289,7 @@ namespace PioneerFramework
                 IsCollidable = true,
                 CelestialBodyId = bodyId
             };
-            group.CurrentOrbit = new OrbitState { position = pos, velocity = vel, rotation = Quaternion.identity };
+            group.CurrentOrbit = new OrbitState { positionSystem = (SystemVec3)pos, velocitySystem = (SystemVec3)vel, rotation = Quaternion.identity };
             spaceGame.RegisterGroup(group);
 
             var entity = new SpaceEntity(entityId, factionId)
@@ -1661,7 +1661,7 @@ namespace PioneerFramework
             if (spaceGame == null) return;
             DVector3 playerPos = playerGroup.IsCircularOrbit
                 ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
-                : playerGroup.CurrentOrbit.position;
+                : playerGroup.CurrentOrbit.positionSystem.v;
 
 
             DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
@@ -1734,7 +1734,7 @@ namespace PioneerFramework
             if (spaceGame == null) return;
             DVector3 playerPos = playerGroup.IsCircularOrbit
                 ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
-                : playerGroup.CurrentOrbit.position;
+                : playerGroup.CurrentOrbit.positionSystem.v;
             // 异轨靶（2026-09-07：同轨正后方追尾=纯切向，任何推进都抬轨逃逸，物理打不中；
             // 真实交战目标异轨，视线含径向分量，推力直扑可打——19:53 异轨轮次命中实证）。
             // 位置 = 沿母站轨道切向 20km + 径向抬轨 30km → 入轨后不同半径不同周期 = 轨道不同步
@@ -1798,7 +1798,7 @@ namespace PioneerFramework
             if (spaceGame == null) return;
             DVector3 playerPos = playerGroup.IsCircularOrbit
                 ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
-                : playerGroup.CurrentOrbit.position;
+                : playerGroup.CurrentOrbit.positionSystem.v;
             // 同轨靶（严格同半径共轨，相对静止）：沿母站轨道切向偏移——世界系偏移在任意轨道相位
             // 会引入径向分量导致异轨（半径差 km 级），靶漂移+瞄准错乱（22:43 会话实证）
             DVector3 enemyPos = SameOrbitPointOffset(playerPos, GetGroupVelDebug(playerGroup), 1500);
@@ -2294,7 +2294,7 @@ namespace PioneerFramework
 
             DVector3 playerPos = playerGroup.IsCircularOrbit
                 ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
-                : playerGroup.CurrentOrbit.position;
+                : playerGroup.CurrentOrbit.positionSystem.v;
 
             // 六方位敌站（20km）→ 期望出膛面（0x- 1x+ 2y- 3y+ 4z- 5z+）
             var directions = new (string name, DVector3 offset, int expectFace)[]
@@ -2408,7 +2408,7 @@ namespace PioneerFramework
 
             DVector3 playerPos = playerGroup.IsCircularOrbit
                 ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
-                : playerGroup.CurrentOrbit.position;
+                : playerGroup.CurrentOrbit.positionSystem.v;
 
             // 敌舰：玩家船正下方（世界 -y）20km → 船体局部 -y → 出膛面 y-（面2）
             DVector3 enemyPos = playerPos + new DVector3(0, -20000, 0);
@@ -2491,7 +2491,7 @@ namespace PioneerFramework
             if (spaceGame == null) return;
             DVector3 playerPos = playerGroup.IsCircularOrbit
                 ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
-                : playerGroup.CurrentOrbit.position;
+                : playerGroup.CurrentOrbit.positionSystem.v;
             DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
             int enemyGroupId = spaceGame.AllocGroupId();
             int enemyEntityId = spaceGame.AllocEntityId();
@@ -2531,7 +2531,7 @@ namespace PioneerFramework
             if (spaceGame == null) return;
             DVector3 playerPos = playerGroup.IsCircularOrbit
                 ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
-                : playerGroup.CurrentOrbit.position;
+                : playerGroup.CurrentOrbit.positionSystem.v;
             int enemyFactionId = FactionResolver.HostileFactionIdForPlayer();
 
             // 1. 近敌站（挡路）：玩家 +x 10km
@@ -2609,7 +2609,7 @@ namespace PioneerFramework
             if (spaceGame == null) return;
             DVector3 playerPos = playerGroup.IsCircularOrbit
                 ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
-                : playerGroup.CurrentOrbit.position;
+                : playerGroup.CurrentOrbit.positionSystem.v;
 
 
             DVector3 enemyPos = playerPos + new DVector3(20000, 0, 0);
@@ -2658,7 +2658,7 @@ namespace PioneerFramework
             if (spaceGame == null) return;
             DVector3 playerPos = playerGroup.IsCircularOrbit
                 ? playerGroup.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe())
-                : playerGroup.CurrentOrbit.position;
+                : playerGroup.CurrentOrbit.positionSystem.v;
 
             // 1. 四方位敌站（20km 赤道面，共轨 vRel≈0）
             var directions = new (string name, DVector3 offset)[]

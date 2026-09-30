@@ -271,7 +271,7 @@ namespace PioneerFramework.Combat
         {
             if (group.IsCircularOrbit)
                 return group.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe());
-            return group.CurrentOrbit.position;
+            return group.CurrentOrbit.positionSystem.v;   // 批6 S3-3c：读带系字段
         }
 
         private void SyncAllShipsToGrid()
@@ -388,7 +388,7 @@ namespace PioneerFramework.Combat
                             proj.totalFlightSeconds, ProjectileGravitySegmentSeconds, expired);
                         // 定量值判据：与"生成时的直线"相比的实际弯曲量 vs ½·|a|·t²
                         PerfProbe.NoteFreeFlightBend(proj.id, proj.isWarhead, proj.totalFlightSeconds,
-                            proj.spawnPosition, proj.spawnVelocity, proj.position,
+                            proj.spawnPosition.v, proj.spawnVelocity.v, proj.position.v,
                             proj.gravitySegment.acc.magnitude);
                     }
                 }
@@ -424,7 +424,7 @@ namespace PioneerFramework.Combat
 
                 if (combatGrid != null)
                 {
-                    combatGrid.UpdateProjectileCell(proj, proj.prevPosition, proj.position);
+                    combatGrid.UpdateProjectileCell(proj, proj.prevPosition.v, proj.position.v);
                 }
 
                 CheckProjectileCollision(proj, spaceGame);
@@ -446,14 +446,14 @@ namespace PioneerFramework.Combat
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (mgr == null)
             {
-                proj.gravitySegment.Rebuild(proj.position, proj.velocity,
+                proj.gravitySegment.Rebuild(proj.position.v, proj.velocity.v,
                     DVector3.zero, DVector3.zero, physicsTick, ProjectileGravitySegmentSeconds);
                 return;
             }
 
             // systemBodyId = 参考帧天体（根行星/恒星）= 系统标识 → 取该系全部天体
             mgr.CollectSystemSources(proj.systemBodyId, physicsTick, projectileGravityScratch);
-            NBodyIntegrator.FieldAccelJerk(proj.position, proj.velocity, projectileGravityScratch,
+            NBodyIntegrator.FieldAccelJerk(proj.position.v, proj.velocity.v, projectileGravityScratch,
                 out var acc, out var jerk);
 
             if (PerfProbe.Enabled && acc.magnitude > 1e-9)
@@ -464,13 +464,13 @@ namespace PioneerFramework.Combat
                 for (int i = 0; i < projectileGravityScratch.Count; i++)
                 {
                     var s = projectileGravityScratch[i];
-                    double dSq = (s.position - proj.position).sqrMagnitude;
+                    double dSq = (s.position - proj.position.v).sqrMagnitude;
                     if (dSq < 0.01) continue;
                     double term = s.mu / dSq;
                     if (term > dominant) dominant = term;
                 }
 
-                DVector3 toCenter = -proj.position;
+                DVector3 toCenter = -proj.position.v;
                 double cos = toCenter.magnitude > 1.0
                     ? DVector3.Dot(acc.normalized, toCenter.normalized)
                     : 0.0;
@@ -479,7 +479,7 @@ namespace PioneerFramework.Combat
                 PerfProbe.NoteWarheadSegment(acc.magnitude, cos, ratio);
             }
 
-            proj.gravitySegment.Rebuild(proj.position, proj.velocity, acc, jerk,
+            proj.gravitySegment.Rebuild(proj.position.v, proj.velocity.v, acc, jerk,
                 physicsTick, ProjectileGravitySegmentSeconds);
         }
 
@@ -488,8 +488,8 @@ namespace PioneerFramework.Combat
             var combatGrid = GetCombatGrid();
             if (combatGrid == null) return;
 
-            DVector3 startPos = proj.prevPosition;
-            DVector3 endPos = proj.position;
+            DVector3 startPos = proj.prevPosition.v;
+            DVector3 endPos = proj.position.v;
 
             // 起点格必须用 prev 位置（射弹移动前的格），不能用 proj.fineCx——
             // 它已被 UpdateProjectileCell 更新为新格，会导致旧格（含目标船）漏检。
@@ -506,7 +506,7 @@ namespace PioneerFramework.Combat
                 if (!hitDiagnosticLogged.Contains(proj.id))
                 {
                     DVector3 gPos = GetGroupPos(group);
-                    double dist = (gPos - proj.position).magnitude;
+                    double dist = (gPos - proj.position.v).magnitude;
                     if (dist < 800.0)
                     {
                         hitDiagnosticLogged.Add(proj.id);
@@ -558,9 +558,9 @@ namespace PioneerFramework.Combat
             double dtPhysics = physicsTick - proj.prevUpdatePhysicsTick;
             DVector3 groupPosPrev = group.IsCircularOrbit
                 ? group.GetCircularPositionAtTick(physicsTick - dtPhysics)
-                : group.CurrentOrbit.position - group.CurrentOrbit.velocity * dtPhysics;
-            DVector3 startPos = proj.prevPosition - groupPosPrev;
-            DVector3 endPos = proj.position - groupPos;
+                : group.CurrentOrbit.positionSystem.v - group.CurrentOrbit.velocitySystem.v * dtPhysics;
+            DVector3 startPos = proj.prevPosition.v - groupPosPrev;
+            DVector3 endPos = proj.position.v - groupPos;
             DVector3 dirSystem = endPos - startPos;
             double segmentLength = dirSystem.magnitude;
 
@@ -684,7 +684,7 @@ namespace PioneerFramework.Combat
                         var firstHitPartIndex = 0;
                         var firstHitT = partEnterT;
                         DVector3 entityPosSystem = groupPos + entity.Position;
-                        lastHitPosition = proj.position;
+                        lastHitPosition = proj.position.v;
                         lastHitGroupId = group.GroupId;
                         lastHitTick = Find.TickManager.TicksGame;
                         lastHitWeaponType = proj.weaponDef?.weaponType ?? WeaponType.Projectile;
@@ -716,7 +716,7 @@ namespace PioneerFramework.Combat
 
                         // F3 命中 → Map 落点瞬爆：命中点已在船体局部系（含旋转），
                         // part 局部 = 地图 1:1，直接映射即可。
-                        DVector3 hitPointSystem = proj.position; // 兜底：步末点
+                        DVector3 hitPointSystem = proj.position.v; // 兜底：步末点
                         if (entity.MapId >= 0)
                         {
                             Map targetMap = SpaceMapGenerator.FindPocketMap(entity.MapId);
@@ -759,7 +759,7 @@ namespace PioneerFramework.Combat
                 else
                 {
                     // 无 Part 数据，回退为 Entity AABB 命中即算
-                    lastHitPosition = proj.position;
+                    lastHitPosition = proj.position.v;
                     lastHitGroupId = group.GroupId;
                     lastHitTick = Find.TickManager.TicksGame;
                     lastHitWeaponType = proj.weaponDef?.weaponType ?? WeaponType.Projectile;
@@ -769,7 +769,7 @@ namespace PioneerFramework.Combat
                             entityId, group.GroupId, groupPos.x, groupPos.y, groupPos.z));
                     }
                     if (proj.isWarhead)
-                        HandleWarheadImpact(proj, group, proj.position);
+                        HandleWarheadImpact(proj, group, proj.position.v);
                     return true;
                 }
             }
@@ -1073,7 +1073,7 @@ namespace PioneerFramework.Combat
             // 必须退出圆轨后停位才能生效（否则 tunneling 对圆轨目标无效，快速船照样穿过）
             if (b.IsCircularOrbit)
                 b.ExitCircularOrbit();
-            b.CurrentOrbit.position = stopPos;
+            b.CurrentOrbit.positionSystem = (SystemVec3)stopPos;
             b.OrbitDirty = true;
             shipPrevPositions[b.GroupId] = stopPos;
             shipLastPositions[b.GroupId] = stopPos;
@@ -1192,7 +1192,7 @@ namespace PioneerFramework.Combat
                 double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
                 return group.GetCircularVelocityAtTick(physicsTick);
             }
-            return group.CurrentOrbit.velocity;
+            return group.CurrentOrbit.velocitySystem.v;   // 批6 S3-3c：读带系字段
         }
 
         private double GetGroupMass(SpaceEntityGroup group)
@@ -1220,7 +1220,7 @@ namespace PioneerFramework.Combat
         {
             if (group.IsCircularOrbit)
                 group.ExitCircularOrbit();
-            DVector3 delta = newVel - group.CurrentOrbit.velocity;
+            DVector3 delta = newVel - group.CurrentOrbit.velocitySystem.v;
             if (delta.sqrMagnitude <= 0.0) return;
             group.pendingImpulse += delta;
         }
@@ -1236,8 +1236,9 @@ namespace PioneerFramework.Combat
             if (b.IsCircularOrbit) b.ExitCircularOrbit();
 
             DVector3 push = new DVector3(ox * 0.5, oy * 0.5, oz * 0.5);
-            a.CurrentOrbit.position -= push;
-            b.CurrentOrbit.position += push;
+            // 同系冲量（系统系）：带系字段与裸三分量之间显式跨界
+            a.CurrentOrbit.positionSystem = a.CurrentOrbit.positionSystem - (SystemVec3)push;
+            b.CurrentOrbit.positionSystem = b.CurrentOrbit.positionSystem + (SystemVec3)push;
 
             a.OrbitDirty = true;
             b.OrbitDirty = true;
@@ -1245,10 +1246,10 @@ namespace PioneerFramework.Combat
             // 分离后立即刷新扫掠基准：否则下拍并集含"分离前位置"，会误报重叠并反复分离。
             // 必须同时更新 shipLastPositions，否则下个 SyncAllShipsToGrid 会用分离前的旧值
             // 覆盖 shipPrevPositions（扫掠并集又含分离前位置）。
-            shipPrevPositions[a.GroupId] = a.CurrentOrbit.position;
-            shipPrevPositions[b.GroupId] = b.CurrentOrbit.position;
-            shipLastPositions[a.GroupId] = a.CurrentOrbit.position;
-            shipLastPositions[b.GroupId] = b.CurrentOrbit.position;
+            shipPrevPositions[a.GroupId] = a.CurrentOrbit.positionSystem.v;
+            shipPrevPositions[b.GroupId] = b.CurrentOrbit.positionSystem.v;
+            shipLastPositions[a.GroupId] = a.CurrentOrbit.positionSystem.v;
+            shipLastPositions[b.GroupId] = b.CurrentOrbit.positionSystem.v;
         }
 
         /// <summary>低速撞击等效：e=0 完全非弹性动量交换 + 位置分离，无损伤。</summary>
@@ -1749,15 +1750,16 @@ namespace PioneerFramework.Combat
                 sourceGroupId = groupId,
                 factionId = group.FactionId,
                 weaponDef = weapon.def,
-                position = spawnPos,
-                velocity = groupVelocity + muzzleVelocity,
+                // 批6 S3-3c：射弹的"出生点/出生速度"来自未标类型的算式 ⇒ 在此**显式跨界**（系统系）
+                position = (SystemVec3)spawnPos,
+                velocity = (SystemVec3)(groupVelocity + muzzleVelocity),
                 remainingLife = weapon.def.projectileLifetime / 60f,
                 damage = weapon.def.damagePerShot,
                 armorPenetration = weapon.def.armorPenetration,
                 affectedByGravity = weapon.def.affectedByGravity,
-                prevPosition = spawnPos,
-                spawnPosition = spawnPos,
-                spawnVelocity = groupVelocity + muzzleVelocity,
+                prevPosition = (SystemVec3)spawnPos,
+                spawnPosition = (SystemVec3)spawnPos,
+                spawnVelocity = (SystemVec3)(groupVelocity + muzzleVelocity),
                 spawnPhysicsTick = TimeScaleManager.GetPhysicsTickSafe(),
                 lastUpdateRealTick = Find.TickManager.TicksGame,
                 prevUpdateRealTick = Find.TickManager.TicksGame,
@@ -1990,8 +1992,8 @@ namespace PioneerFramework.Combat
                 new Vector3((float)birthDir.x, (float)birthDir.y, (float)birthDir.z));
             group.CurrentOrbit = new OrbitState
             {
-                position = birthPos,
-                velocity = birthVel,
+                positionSystem = (SystemVec3)birthPos,
+                velocitySystem = (SystemVec3)birthVel,
                 rotation = birthRotation
             };
             spaceGame.RegisterGroup(group);
@@ -2126,8 +2128,8 @@ namespace PioneerFramework.Combat
             float mid = (count - 1) * 0.5f * spacing;
             group.CurrentOrbit = new OrbitState
             {
-                position = birthPos + axisDepth * mid,
-                velocity = birthVel,
+                positionSystem = (SystemVec3)(birthPos + axisDepth * mid),
+                velocitySystem = (SystemVec3)birthVel,
                 rotation = birthRotation
             };
             spaceGame.RegisterGroup(group);
@@ -2157,7 +2159,7 @@ namespace PioneerFramework.Combat
                 "[导弹弹群] G{0} N={1} 深度队列 间距={2:F0}m 队长={3:F0}m 领弹E{4}（最前） 深度轴=({5:F3},{6:F3},{7:F3}) 群原点=({8:F0},{9:F0},{10:F0})m｜间距依据：弹头爆炸半径={11:F0}m 下限={12:F0}m 超长上限={13}",
                 group.GroupId, count, spacing, (count - 1) * spacing, leaderEntityId,
                 axisDepth.x, axisDepth.y, axisDepth.z,
-                group.CurrentOrbit.position.x, group.CurrentOrbit.position.y, group.CurrentOrbit.position.z,
+                group.CurrentOrbit.positionSystem.x, group.CurrentOrbit.positionSystem.y, group.CurrentOrbit.positionSystem.z,
                 missileDef.blastRadius, minSpacing, squeezed ? "是（间距被爆炸半径下限抬高）" : "否"));
 
             return group;
@@ -2394,17 +2396,18 @@ namespace PioneerFramework.Combat
                 sourceGroupId = sourceGroupId,
                 factionId = factionId,
                 weaponDef = weaponDefName == null ? null : DefDatabase<WeaponDef>.GetNamedSilentFail(weaponDefName),
-                position = pos,
-                velocity = vel,
+                // 批6 S3-3c：弹头的出生状态来自未标类型的算式 ⇒ 在此**显式跨界**（系统系）
+                position = (SystemVec3)pos,
+                velocity = (SystemVec3)vel,
                 remainingLife = missileDef.warheadLifetimeSeconds,
                 damage = missileDef.warheadDamage,
                 armorPenetration = 0f,
                 affectedByGravity = true, // 轨道环境：弹头随引力弯曲，脱靶自然衰减为轨道垃圾
                 flybyDistance = 0f,
                 trailEffect = false,
-                prevPosition = pos,
-                spawnPosition = pos,
-                spawnVelocity = vel,
+                prevPosition = (SystemVec3)pos,
+                spawnPosition = (SystemVec3)pos,
+                spawnVelocity = (SystemVec3)vel,
                 spawnPhysicsTick = TimeScaleManager.GetPhysicsTickSafe(),
                 lastUpdateRealTick = Find.TickManager.TicksGame,
                 prevUpdateRealTick = Find.TickManager.TicksGame,

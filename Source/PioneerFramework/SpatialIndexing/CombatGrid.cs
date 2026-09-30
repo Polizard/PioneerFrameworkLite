@@ -351,7 +351,7 @@ namespace PioneerFramework.Combat
 
         public void AddProjectile(ProjectileInstance proj)
         {
-            var cell = WorldToFineCell(proj.position);
+            var cell = WorldToFineCell(proj.position.v);   // 批6 S3-3c：索引吃裸三分量 ⇒ 显式跨界
             var grid = GetOrCreateSystem(proj.systemBodyId);
 
             if (!grid.cells.TryGetValue(cell, out var fCell))
@@ -682,7 +682,7 @@ namespace PioneerFramework.Combat
         {
             if (group.IsCircularOrbit)
                 return group.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe());
-            return group.CurrentOrbit.position;
+            return group.CurrentOrbit.positionSystem.v;   // 批6 S3-3c：读带系字段（旧名是过渡桥）
         }
 
         public override void ExposeData()

@@ -139,7 +139,7 @@ namespace PioneerFramework
             foreach ((string name, SpaceEntityGroup g, double incDeg, double ecc) in groups)
             {
                 double lpMag = g.positionBody.magnitude;
-                DVector3 cur = g.CurrentOrbit.position - g.GetCentralBodyOffset((int)Math.Round(tick));
+                DVector3 cur = g.GetBodyPosition(tick).v;   // 现算（唯一换算 `FrameConvert`，见 `GetBodyPosition` 的说明）
                 Info($"{name}：positionBody 与 CurrentOrbit 派生值的模长",
                     $"|positionBody|={lpMag / 1000.0:F1}km  |CurrentOrbit 派生|={cur.magnitude / 1000.0:F1}km"
                     + (lpMag < 1.0 ? "  ⚠ positionBody 未同步（新铺组的已知行为，正是构造点不用它的理由）" : ""));
@@ -154,9 +154,9 @@ namespace PioneerFramework
                 CelestialBodyDef? def = celestialMgr.GetBodyById(g.CelestialBodyId);
                 if (def == null) continue;
 
-                int tk = (int)Math.Round(tick);
-                DVector3 gp = g.CurrentOrbit.position - g.GetCentralBodyOffset(tk);
-                DVector3 gv = g.CurrentOrbit.velocity - g.GetCentralBodyVelocity(tk);
+                (BodyVec3 gBodyPos, BodyVec3 gBodyVel) = g.GetBodyState(tick);
+                DVector3 gp = gBodyPos.v;
+                DVector3 gv = gBodyVel.v;
                 DVector3 hGame = DVector3.Cross(gp, gv);
                 if (hGame.sqrMagnitude <= 0.0) continue;
 
@@ -167,15 +167,15 @@ namespace PioneerFramework
 
                 if (!OrbitAdapter.TryToOrbitView(g, celestialMgr, tick, out OrbitView ov)) { f1Fail++; continue; }
 
-                // ① 往返恒等（适配层 → 游戏系）
-                DVector3 backR = OrbitView.AdapterToGameWorld(ov.r);
-                DVector3 backV = OrbitView.AdapterToGameWorld(ov.v);
+                // ① **往返恒等**（批6 S2 起走两个口：进 = `TryToOrbitView` → `FromGameStateVectors`；
+                //    出 = `GameFrameStateAtUT`。`ut` 取构造时刻 ⇒ `Shepperd` 的 Δt=0 逐位返回原状态）
+                (DVector3 backR, DVector3 backV) = ov.GameFrameStateAtUT(tick);
                 double rtErr = Math.Max((backR - gp).magnitude / Math.Max(gp.magnitude, 1.0),
                     (backV - gv).magnitude / Math.Max(gv.magnitude, 1.0));
                 // ② 倾角一致（游戏系独立算）
                 double incDiff = Math.Abs(ov.inclination - incGame);
-                // ③ 法向一致（适配层法向换回游戏系 vs 直接叉乘）
-                DVector3 nBack = OrbitView.AdapterToGameWorld(ov.OrbitNormal());
+                // ③ 法向一致：两系同轴（批4 P4）⇒ 不经转换；保留此比较是为了抓"构造过程引入旋转"这类回归
+                DVector3 nBack = ov.OrbitNormal();
                 double nErr = (nBack - hHat).magnitude;
 
                 if (rtErr >= 1e-12 || incDiff >= 1e-9 || nErr >= 1e-9)

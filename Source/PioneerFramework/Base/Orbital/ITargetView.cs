@@ -108,6 +108,11 @@ namespace PioneerFramework
     {
         private readonly OrbitView _orbit;
 
+        /// <summary>调试/台架用的固定目标。
+        /// ⚠ 批6 S3-3b 判定：`identityGroupId = -1` / `apparentRadius = 0.0` 是**语义值**（"不是某个 group 的接触"/
+        /// "不知道视在半径"），与 `ITargetView` 的 `-1` 约定一致 ⇒ 不是 A5 哨兵。
+        /// 另：`ApparentRadius`（以及 `IdentityGroupId`）**目前只有测试消费者** —— 它们是 EW/瞄准层等着用的
+        /// **契约成员**，不是死代码（连写点也在测试里）；接上之后不要加"筛掉假目标"那种过滤。</summary>
         public FixedTargetView(OrbitView orbit, int identityGroupId = -1, double apparentRadius = 0.0)
         {
             _orbit = orbit;

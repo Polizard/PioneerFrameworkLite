@@ -123,13 +123,22 @@
     <!-- B5：政策件（`RendezvousGuidanceCore.SelectActuator` 转发到它 ⇒ 本工程也要链） -->
     <Compile Include="..\PioneerFramework\Base\Orbital\BurnExecutorPolicy.cs" Link="Sim\BurnExecutorPolicy.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousCore.cs" Link="Sim\RendezvousCore.cs" />
+    <!-- 2026-10-01：近场终端律（位置+速度联合）—— 纯层、无 Verse；本工程要链它才能跑离线判据 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\TerminalRendezvousLaw.cs" Link="Sim\TerminalRendezvousLaw.cs" />
     <!-- 批5.B（2026-09-28）：`RendezvousGuidanceLaw.cs` 与 `CwRendezvousCore.cs` 已归档（`Source/已弃置/`）
          ⇒ 这两行 `<Compile Include>` 一并删除。要取回：把文件搬回原路径 + 恢复这两行。 -->
+    <!-- 2026-10-01：**临时**把归档的 `CwRendezvousCore.cs` 链回**本测试工程**（文件仍在 `已弃置/`、**生产工程不编译**）
+         —— 用途 = 近距解法对照台架 `Temp_CwVsLambertCloseRange.cs`（Lambert vs CW，在**两体真值**下量落点误差）。
+         若将来裁定"近距改用 CW"，再按上面的取回说明：搬回原路径 + 恢复生产工程那两行。 -->
+    <Compile Include="..\已弃置\CwRendezvousCore.cs" Link="Sim\CwRendezvousCore.cs" />
     <!-- P1：alglib 的替换品。**它不在 ThirdParty/ 里**（要偏离上游就破坏"diff 为空"这条唯一不变式），
          所以是我们的文件、但保留上游类名与命名空间。见该文件头的说明。 -->
     <Compile Include="..\PioneerFramework\Base\Orbital\ChangeOrbitalElement.cs" Link="Adapter\ChangeOrbitalElement.cs" />
     <!-- P1-7：alglib `minbleic` 的替代品（模式搜索），同上：我们的文件、保留上游类名与命名空间。 -->
     <Compile Include="..\PioneerFramework\Base\Orbital\TwoImpulseTransfer.cs" Link="Adapter\TwoImpulseTransfer.cs" />
+    <!-- 批7（2026-09-30）：`TwoImpulseTransfer` 的多起点现在走**统一调度原语**（并行地板 + 唯一归约器）
+         ⇒ 本工程必须一并链（纯文件、无 Verse）。 -->
+    <Compile Include="..\PioneerFramework\ThreadSafety\ParallelOps.cs" Link="Adapter\ParallelOps.cs" />
   </ItemGroup>
 
 </Project>

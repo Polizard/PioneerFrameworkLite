@@ -129,8 +129,8 @@ namespace PioneerFramework
                     // （坐标系约定的唯一出处：CelestialBodyManager.GetBodyPositionAbs 的文档块）
                     // 初版检查与实现同错（两边都用"递归到恒星"的 GetBodyPositionAbs）→ 12 万 km 的
                     // 帧错误被判成 PASS；换成独立口径后这类错误必 FAIL。
-                    DVector3 frameOffset = anchor.GetCentralBodyOffset(TimeScaleManager.GetPhysicsTickSafe());
-                    double distMeters = (anchor.CurrentOrbit.position - frameOffset).magnitude;
+                    SystemVec3 frameOffset = anchor.GetCentralBodyOffset(TimeScaleManager.GetPhysicsTickSafe());
+                    double distMeters = FrameConvert.SystemToBody(anchor.CurrentOrbit.positionSystem, frameOffset).magnitude;
                     Check(System.Math.Abs(distMeters - body.radius) < 1.0,
                         string.Format("锚点在系统系：距中心天体 {0:F0} km == R_body（{1:F0} km）",
                             distMeters / 1000.0, body.radius / 1000.0));
@@ -138,9 +138,9 @@ namespace PioneerFramework
                     // 根行星（地球）在系统系就是原点 → |pos| 必须等于 R_body，与天体绝对位置无关的硬校验
                     if (celestialMgr != null && celestialMgr.GetRootPlanetId(anchor.CelestialBodyId) == anchor.CelestialBodyId)
                     {
-                        Check(System.Math.Abs(anchor.CurrentOrbit.position.magnitude - body.radius) < 1.0,
+                        Check(System.Math.Abs(anchor.CurrentOrbit.positionSystem.magnitude - body.radius) < 1.0,
                             string.Format("根行星锚点在系原点：|pos|={0:F0} km == R_body（未串入天体公转偏移）",
-                                anchor.CurrentOrbit.position.magnitude / 1000.0));
+                                anchor.CurrentOrbit.positionSystem.magnitude / 1000.0));
                     }
                 }
                 else
@@ -150,7 +150,7 @@ namespace PioneerFramework
 
                 if (anchor != null)
                 {
-                    var nearby = sg.GetGroupsInRange(anchor.CurrentOrbit.position, 1_000_000.0, -1, g => g.GroupId == anchorId);
+                    var nearby = sg.GetGroupsInRange(anchor.CurrentOrbit.positionSystem.v, 1_000_000.0, -1, g => g.GroupId == anchorId);
                     Check(!nearby.Any(), "空间索引隔离：粗网格范围查询取不到锚点");
                 }
 
@@ -207,8 +207,8 @@ namespace PioneerFramework
             double radius = earth.radius + 500_000.0;
             group.CurrentOrbit = new OrbitState
             {
-                position = new DVector3(radius, 0.0, 0.0),
-                velocity = DVector3.zero,
+                positionSystem = new SystemVec3(new DVector3(radius, 0.0, 0.0)),
+                velocitySystem = SystemVec3.zero,
                 rotation = Quaternion.identity
             };
             sg.RegisterGroup(group);

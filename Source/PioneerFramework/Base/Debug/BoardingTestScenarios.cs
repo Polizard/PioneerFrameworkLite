@@ -258,7 +258,7 @@ namespace PioneerFramework
             if (g == null) return DVector3.zero;
             if (g.IsCircularOrbit)
                 return g.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe());
-            return g.CurrentOrbit.position;
+            return g.CurrentOrbit.positionSystem.v;
         }
 
         private static DVector3 GetGroupVelocitySafe(SpaceEntityGroup g)
@@ -266,7 +266,7 @@ namespace PioneerFramework
             if (g == null) return DVector3.zero;
             if (g.IsCircularOrbit)
                 return g.GetCircularVelocityAtTick(TimeScaleManager.GetPhysicsTickSafe());
-            return g.CurrentOrbit.velocity;
+            return g.CurrentOrbit.velocitySystem.v;
         }
 
         /// <summary>场景收尾：打开 3D 视角 + 跳转目标站 Map + 开启详细日志与探针。</summary>

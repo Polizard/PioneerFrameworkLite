@@ -157,16 +157,16 @@ namespace PioneerFramework
                 return new LaunchProbe { groupId = st.groupId, r = double.NaN, deltaR = double.NaN, vMag = double.NaN, dvMag = double.NaN, fuelKg = double.NaN };
 
             var prms = st.ToParams();
-            double r = g.CurrentOrbit.position.magnitude;
-            var step = LaunchGuidanceCore.ComputeStep(g.CurrentOrbit.position, g.CurrentOrbit.velocity, sg.GetBodyGM(st.bodyId), prms);
+            double r = g.CurrentOrbit.positionSystem.magnitude;
+            var step = LaunchGuidanceCore.ComputeStep(g.CurrentOrbit.positionSystem.v, g.CurrentOrbit.velocitySystem.v, sg.GetBodyGM(st.bodyId), prms);
             var src = sg.GetGroupPropulsionSource(g);
             return new LaunchProbe
             {
                 groupId = st.groupId,
                 r = r,
                 deltaR = prms.rTarget - r,
-                vMag = g.CurrentOrbit.velocity.magnitude,
-                vRad = DVector3.Dot(g.CurrentOrbit.velocity, g.CurrentOrbit.position.normalized),
+                vMag = g.CurrentOrbit.velocitySystem.magnitude,
+                vRad = DVector3.Dot(g.CurrentOrbit.velocitySystem.v, g.CurrentOrbit.positionSystem.normalized.v),
                 dvMag = step.dv.magnitude,
                 fuelKg = src != null ? src.TotalPropellantMass : 0.0,
                 burning = g.HasActiveBurn,
@@ -237,18 +237,18 @@ namespace PioneerFramework
                 // 火箭全程非圆轨：直接读 CurrentOrbit（物理步开始前 pendingImpulse 已施加）
                 LaunchGuidanceParams prms = st.ToParams();
                 var step = LaunchGuidanceCore.ComputeStep(
-                    group.CurrentOrbit.position, group.CurrentOrbit.velocity,
+                    group.CurrentOrbit.positionSystem.v, group.CurrentOrbit.velocitySystem.v,
                     spaceGame.GetBodyGM(st.bodyId), prms);
 
                 if (DebugDetailedLaunch)
                 {
-                    var p = group.CurrentOrbit.position;
+                    var p = group.CurrentOrbit.positionSystem.v;
                     double alt = p.magnitude - prms.planetRadius;
-                    double vRad = DVector3.Dot(group.CurrentOrbit.velocity, p.normalized);
+                    double vRad = DVector3.Dot(group.CurrentOrbit.velocitySystem.v, p.normalized);
                     Log.Message(string.Format(
                         "[RocketLaunch] group={0} t={1} alt={2:F0}km r={3:F0}km v={4:F1}m/s vRad={5:F1} |dv|={6:F1} arrived={7}",
                         group.GroupId, Find.TickManager.TicksGame, alt / 1000.0, p.magnitude / 1000.0,
-                        group.CurrentOrbit.velocity.magnitude, vRad, step.dv.magnitude, step.arrived));
+                        group.CurrentOrbit.velocitySystem.magnitude, vRad, step.dv.magnitude, step.arrived));
                 }
 
                 if (step.arrived)
@@ -259,7 +259,7 @@ namespace PioneerFramework
                     if (spaceGame.BeginCircularize(group, st.bodyId))
                     {
                         AddLog(Find.TickManager.TicksGame, st.groupId, "Orbited",
-                            string.Format("爬升完成 r={0:F0}km → 进入圆轨化", group.CurrentOrbit.position.magnitude / 1000.0));
+                            string.Format("爬升完成 r={0:F0}km → 进入圆轨化", group.CurrentOrbit.positionSystem.magnitude / 1000.0));
                         Log.Message(string.Format("[RocketLaunch] group={0} 爬升完成，进入圆轨化机动", group.GroupId));
                     }
                     else

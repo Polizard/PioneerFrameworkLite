@@ -92,7 +92,7 @@ namespace PioneerFramework
                         else
                             Pass("burn 开始时推进器 IsBurning=true");
                         // 记录 burn 前速度向量（burn 冲量在下一物理步首应用，此刻还未叠加）
-                        startVelVec = group.CurrentOrbit.velocity;
+                        startVelVec = group.CurrentOrbit.velocitySystem.v;
                         phase = Phase.WaitBurnEnd;
                         phaseStartTick = now;
                     }
@@ -131,7 +131,7 @@ namespace PioneerFramework
 
                         // 速度对账：burn 冲量已应用，速度向量变化 |Δv_vec| ≈ 实际 ΔV（质量口径 ve·ln(m0/m1)）。
                         // 径向 burn 改变速度方向/轨道形状而非模长，故用向量差而非模长差。
-                        DVector3 endVelVec = group.CurrentOrbit.velocity;
+                        DVector3 endVelVec = group.CurrentOrbit.velocitySystem.v;
                         double dvVec = (endVelVec - startVelVec).magnitude;
                         double dvMass = 0.0;
                         if (group.burnStartMass > 0.0 && group.burnConsumedPropellant > 0.0)

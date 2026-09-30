@@ -95,7 +95,7 @@ namespace PioneerFramework
                 IsCollidable = true,
                 CelestialBodyId = EARTH_BODY_ID
             };
-            group.CurrentOrbit = new OrbitState { position = pos, velocity = vel, rotation = Quaternion.identity };
+            group.CurrentOrbit = new OrbitState { positionSystem = (SystemVec3)pos, velocitySystem = (SystemVec3)vel, rotation = Quaternion.identity };
             spaceGame.RegisterGroup(group);
 
             var entity = new SpaceEntity(entityId, factionId)

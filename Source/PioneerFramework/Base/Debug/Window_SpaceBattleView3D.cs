@@ -297,7 +297,7 @@ namespace PioneerFramework
             }
             else
             {
-                vel = group.CurrentOrbit.velocity;
+                vel = group.CurrentOrbit.velocitySystem.v;
             }
 
             if (vel.sqrMagnitude < 0.01) return Vector3.forward;
@@ -409,7 +409,7 @@ namespace PioneerFramework
 
             float toUnity = (float)SpaceConstants.UnitsPerMeter;
             for (int i = 0; i < projectiles.Count; i++)
-                projectileObjects[i].transform.position = (Vector3)(projectiles[i].position * toUnity);
+                projectileObjects[i].transform.position = (Vector3)((projectiles[i].position * toUnity).v);
         }
 
         private void ClearProjectileObjects()

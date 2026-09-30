@@ -11,14 +11,22 @@ namespace PioneerFramework
     /// </summary>
     public struct OrbitState : IExposable
     {
-        public DVector3 position;
-        public DVector3 velocity;
+        /// <summary>**系统系**位置（批6 S3-3c 第三片：类型承载系）—— 这是**权威字段**。
+        /// ⚠ 读它要进裸三分量的地方（老的物理/渲染工具）写 `.v`：那是**显式跨界**，看得见、可 grep。</summary>
+        public SystemVec3 positionSystem;
+        /// <summary>**系统系**速度。语义同 <see cref="positionSystem" />。</summary>
+        public SystemVec3 velocitySystem;
         public Quaternion rotation;
+
+        // 批6 S3-3c 第三片收尾：**过渡桥已删除**（同名 `position`/`velocity` 两个 DVector3 属性）。
+        // 桥的出口条件是"未迁移读点 = 0"，2026-09-30 达成（109 → 0，逐片迁移 + 棘轮判据看着它降）；
+        // 由 `tools/check-frame-crossing.ps1`（闸门第 11 步）的棘轮守着 —— 它现在只认**带系字段**。
+        // 要取回那座桥：见 `_backups/20260930-1918-post-S3-orbitstate-bridge-310248792982ABA4/`。
 
         public void ExposeData()
         {
-            DVector3.Scribe("position", ref position);
-            DVector3.Scribe("velocity", ref velocity);
+            SystemVec3.Scribe("position", ref positionSystem);
+            SystemVec3.Scribe("velocity", ref velocitySystem);
             Scribe_Values.Look(ref rotation, "rotation");
         }
     }
@@ -210,10 +218,12 @@ namespace PioneerFramework
         int ISpatialEntity.EntityId => GroupId;
         int ISpatialEntity.GroupId => GroupId;
         int ISpatialEntity.FactionId => FactionId;
+        /// <summary>⚠ `ISpatialEntity.Position` 是**未标类型的接口**（A3 的标本：本类实现的是**系统系**，
+        /// 而 `SpaceEntity` 实现的是**船体局部**）⇒ 这里**显式跨界**。</summary>
         public DVector3 Position
         {
-            get => CurrentOrbit.position;
-            set => CurrentOrbit.position = value;
+            get => CurrentOrbit.positionSystem.v;
+            set => CurrentOrbit.positionSystem = (SystemVec3)value;
         }
         public (int cx, int cy, int cz) LastCellCoord { get; set; }
         public bool IsSpatialDirty { get; set; }
@@ -239,10 +249,19 @@ namespace PioneerFramework
         /// <summary>锚点对应的原版世界物体 ID（Settlement.ID）；非锚点 = -1。据点被摧毁时据此惰性回收。</summary>
         public int anchorWorldObjectId = -1;
 
-        /// <summary>中心天体相对位置（中心天体参考系），用于 R/T/N 基向量计算。</summary>
-        public DVector3 positionBody;
-        /// <summary>中心天体相对速度（中心天体参考系），用于 R/T/N 基向量计算。</summary>
-        public DVector3 velocityBody;
+        /// <summary>
+        /// 中心天体相对**位置**（**天体局部系**）：`CurrentOrbit.positionSystem − 中心天体系统系偏移`。
+        ///
+        /// ⚠⚠ **批6 S3-3d（2026-09-30）：从"步末写一次的滞后副本"改成"现算"** —— 原先这两个字段在
+        /// `SpaceGameComp` 的物理步末写一次，而 `CurrentOrbit` 在步内会变（圆轨组按当前 tick 解析求值）
+        /// ⇒ 读到的值可能**滞后一步**（实测：月球档 ≈1.8 km / 0.03 m/s，**与交会门同阶**）✗。
+        /// 现在读到的值**与 `CurrentOrbit` 同刻**；唯一换算仍是 <see cref="FrameConvert.SystemToBody" />。
+        /// 要取回那份副本：`_backups/20260930-1938-post-S3-migration-complete-119F88ADF53D0614/`。
+        /// </summary>
+        public DVector3 positionBody => GetBodyPosition(TimeScaleManager.GetPhysicsTickSafe()).v;
+
+        /// <summary>中心天体相对**速度**（**天体局部系**）。语义同 <see cref="positionBody" />。</summary>
+        public DVector3 velocityBody => GetBodyVelocity(TimeScaleManager.GetPhysicsTickSafe()).v;
 
         // ── 轨道保持 (OrbitKeeping) ──
         /// <summary>是否启用轨道保持模式（选择性抵消非白名单天体的引力，消耗 dV）。</summary>
@@ -325,7 +344,7 @@ namespace PioneerFramework
                     return renderedPosition;
                 if (IsCircularOrbit)
                     return GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe());
-                return CurrentOrbit.position;
+                return CurrentOrbit.positionSystem.v;
             }
         }
 
@@ -767,8 +786,8 @@ namespace PioneerFramework
         ///  其余 63 个静默跳过 ⇒ 这个计数在改前是"1 个组=1、63 个组=0"）。</summary>
         public int burnDiagRuns;
 
-        /// <summary>燃烧弧预测的输入（**适配层系**——写入点即 `OrbitView.GameWorldToAdapter(dV)`；
-        /// 点火时暂存，供"预测 vs 实测"并排读数用；运行期，不序列化）。</summary>
+        /// <summary>燃烧弧预测的输入（**两系同轴 ⇒ 就是系统系**；批6 S2 起写入点直传 `dV`，
+        /// 跨系只经 `OrbitView` 的进/出两个口；点火时暂存，供"预测 vs 实测"并排读数用；运行期，不序列化）。</summary>
         public DVector3 burnArcDvAdapter;
         public double burnArcNodeUt = -1.0;
         public double burnArcSeconds;
@@ -794,7 +813,7 @@ namespace PioneerFramework
         /// （我们一度换用过"意图轨道 (a,h向量) + 出范围政策"当靶：台架 e 好两个数量级，但**真实几何上
         ///   出范围支是自证式的**，游戏实测 430.01 m/s 只交付 164.9 ✗ —— 用户裁定"暂时全盘照抄 MJ"
         ///   ⇒ 换回本靶；精度由收口微调负责，见 `trimTarget*` 那组字段。）
-        /// = `StateAtUT(点火前轨道, 节点UT).v + 计划 Δv`。
+        /// = `GameFrameStateAtUT(点火前轨道, 节点UT).v + 计划 Δv`。
         /// ⚠ 未设（微调条目、无计划向量的燃烧）⇒ 退回 RTN 分量律（见 `burnRadial` 字段）。
         /// </summary>
         public DVector3 burnTargetV;
@@ -1082,7 +1101,15 @@ namespace PioneerFramework
         /// ⇒ **判据不该严到"只有高推力船才够得着"**。要更严/更松请用 <see cref="rendezvousGoal" /> 的各预设：
         ///   要贴近用 `Precise(100, 1)`、要更松用 `Loose(10000)`、战斗用 `Combat()`。
         /// </summary>
-        public double rendezvousArriveDist = 1000.0;
+        public double rendezvousArriveDist = 2_000.0;   // 2026-10-01 用户裁定：**2 km**
+        // ⚠ 与速度侧**成对**看（见下面 `rendezvousArriveRelVel` 的注释：只放距离不放速度 ⇒ 船还在动就"到"了 ✗）。
+        // ★ **"这条线是不是太低"的实测账（2026-10-01）**：
+        //   · **月球档**做到过 **972.9 m / 5.7 m/s** ⇒ 满足 (2 km, 10 m/s) ⇒ 这一档这条线**可达** ✓；
+        //   · **地球·低推力档**：逐发成对读数里"速度配平"的那几发落在 **5.5 / 6.7 / 15.6 / 21.5 km** ✗
+        //     ⇒ 该档**同时**满足 (≤2 km 且 ≤10 m/s) 的最近记录 ≈ **5.5–6.7 km** ⇒ **2 km 对这一档偏低**。
+        //     但**不是物理极限**：那是末端"位置+速度联合"没做完的**能力缺口** ⇒ 修终端能抬上去。
+        //   ⇒ 要按档放松就用**既有预设** `Loose(10000)`（10 km / 10 m/s，成对 ✓）/ `Combat()` / `Precise(100,1)`；
+        //     ⚠ **别改这里的全局默认** —— 那会连带改月球档与跳帮那些的验收 ✗。
         /// <summary>★ **"停下/收口"的距离尺度**（m）——**与完成容差分开**是纪律（哪怕它们取同一个数）。
         /// 上游 MJ 只有一个 `desiredDistance = 100` 同时当两者用，之所以不矛盾是**因为它足够小**：
         /// 接近级按 `dist/100`（≤ `maxClosingSpeed` 100 m/s）闭合 ⇒ 一次闭合就能把 20 km 收到 ~100 m
@@ -1192,6 +1219,16 @@ namespace PioneerFramework
         /// <summary>上次引导修正烧开始的 physicsTick（冷却用，不序列化）。</summary>
         public double rendezvousLastBurnTick = double.NegativeInfinity;
 
+        /// <summary>
+        /// **近场终端律开关**（2026-10-01）：开 = 相对状态进入粗门（`TerminalRendezvousLaw.GateMet`）后
+        /// **由终端律接管**（位置+速度联合；抢占阶梯、粘滞、带迟滞）；关 = 回退到阶梯（A/B 对照用）。
+        /// </summary>
+        public bool terminalLawEnabled = true;
+        /// <summary>终端律**是否已接管**（运行期、**粘滞**；进入/退出都在引导里判定并打日志）。</summary>
+        public bool terminalMode = false;
+        /// <summary>终端律的下一次重算式 physicsTick —— 终端要的是**密**闭环，不受 `ladderMinReplanSeconds` 节流。</summary>
+        public double terminalNextTick = double.NegativeInfinity;
+
         // 批5.B（2026-09-28，用户："相位让我们的 MJ 接管"）：此处原有**旧律的 8 个跨周期状态字段**
         // （`rendezvousEccRelay` / `rendezvousLaw*` / `rendezvousBestDistM` / `rendezvousNextLogTick`）
         // 与它们的 `ResetRendezvousLawState()`。旧入口撤掉后**外部用户全为 0**（只剩每次登记时把它们
@@ -1233,6 +1270,8 @@ namespace PioneerFramework
             rendezvousPrograde = true;
             rendezvousUseNetworks = null;
             rendezvousTargetOffset = DVector3.zero;
+            terminalMode = false;                                        // 2026-10-01：换目标/引导结束 ⇒ 终端接管失效
+            terminalNextTick = double.NegativeInfinity;
         }
 
         #endregion
@@ -1280,40 +1319,67 @@ namespace PioneerFramework
         #endregion
 
         /// <summary>
-        /// 获取中心天体在系统系中的位置偏移。
-        /// 如果中心天体是行星（地球自身），返回零向量。
+        /// 获取中心天体在**系统系**中的位置偏移（批6 S3-3c：返回类型改成 <see cref="SystemVec3" />，
+        /// 于是"拿它去和天体局部量做运算"这种混系会**编译不过**）。
+        /// 如果中心天体是行星（地球自身，即系统系原点），返回零向量。
         /// </summary>
-        public DVector3 GetCentralBodyOffset(int currentTick)
+        public SystemVec3 GetCentralBodyOffset(int currentTick)
         {
             return GetCentralBodyOffset((double)currentTick);
         }
 
-        public DVector3 GetCentralBodyOffset(double currentTick)
+        public SystemVec3 GetCentralBodyOffset(double currentTick)
         {
-            if (CelestialBodyId < 0) return DVector3.zero;
+            if (CelestialBodyId < 0) return SystemVec3.zero;
             // R5（2026-09-26）：缓存引用（本方法由 `OrbitAdapter.TryToOrbitView` 每组每步调用）。
             var celestialMgr = CelestialBodyManager.GetCached();
-            if (celestialMgr == null) return DVector3.zero;
+            if (celestialMgr == null) return SystemVec3.zero;
             var centralDef = celestialMgr.GetBodyById(CelestialBodyId);
             if (centralDef == null || centralDef.bodyType == CelestialBodyType.Planet)
-                return DVector3.zero;
-            return celestialMgr.GetBodyPositionParent(CelestialBodyId, currentTick);
+                return SystemVec3.zero;
+            return new SystemVec3(celestialMgr.GetBodyPositionParent(CelestialBodyId, currentTick));
         }
 
         /// <summary>
-        /// 获取中心天体在系统系中的速度。
+        /// 获取中心天体在**系统系**中的速度（类型同 <see cref="GetCentralBodyOffset(int)" />）。
         /// 如果中心天体是行星（地球自身），返回零向量。
         /// </summary>
-        public DVector3 GetCentralBodyVelocity(int currentTick)
+        public SystemVec3 GetCentralBodyVelocity(int currentTick)
         {
-            if (CelestialBodyId < 0) return DVector3.zero;
+            if (CelestialBodyId < 0) return SystemVec3.zero;
             // R5（2026-09-26）：缓存引用（同 `GetCentralBodyOffset`）。
             var celestialMgr = CelestialBodyManager.GetCached();
-            if (celestialMgr == null) return DVector3.zero;
+            if (celestialMgr == null) return SystemVec3.zero;
             var centralDef = celestialMgr.GetBodyById(CelestialBodyId);
             if (centralDef == null || centralDef.bodyType == CelestialBodyType.Planet)
-                return DVector3.zero;
-            return celestialMgr.GetBodyVelocityParent(CelestialBodyId, currentTick);
+                return SystemVec3.zero;
+            return new SystemVec3(celestialMgr.GetBodyVelocityParent(CelestialBodyId, currentTick));
+        }
+
+        /// <summary>
+        /// **本群组在"天体局部系"的位置**（批6 S3-3c）：`CurrentOrbit.position − 中心天体系统系偏移`，
+        /// **唯一换算**是 <see cref="FrameConvert.SystemToBody" />（别再在调用点手写这个减法）。
+        ///
+        /// ⚠ 与 `positionBody` 字段的区别：那个是**步末写一次的滞后副本**（实测滞后 ≤ 一步、月球档 ≈1.8 km，
+        /// **与交会门同阶**）；本方法是**现算**，与 `CurrentOrbit` 同刻。新代码一律用本方法
+        /// （R5 的处方："构造点只从 `CurrentOrbit` 取真值"）。
+        /// </summary>
+        public BodyVec3 GetBodyPosition(double tick) =>
+            FrameConvert.SystemToBody(CurrentOrbit.positionSystem, GetCentralBodyOffset(tick));
+
+        /// <summary>**本群组在"天体局部系"的速度**。语义与 <see cref="GetBodyPosition" /> 相同。</summary>
+        public BodyVec3 GetBodyVelocity(double tick) =>
+            FrameConvert.SystemToBodyVelocity(CurrentOrbit.velocitySystem, GetCentralBodyVelocity((int)System.Math.Round(tick)));
+
+        /// <summary>
+        /// **本群组的系统系状态 → 天体局部系状态**（同一 tick 取两次 ⇒ 一定同一时刻；
+        /// 需要同时要位置与速度时用这个，别分别调两次以免取到不同刻）。
+        /// </summary>
+        public (BodyVec3 pos, BodyVec3 vel) GetBodyState(double tick)
+        {
+            int t = (int)System.Math.Round(tick);
+            return (FrameConvert.SystemToBody(CurrentOrbit.positionSystem, GetCentralBodyOffset(t)),
+                    FrameConvert.SystemToBodyVelocity(CurrentOrbit.velocitySystem, GetCentralBodyVelocity(t)));
         }
 
         /// <summary>
@@ -1336,8 +1402,8 @@ namespace PioneerFramework
         /// <param name="centralBodyId">环绕的中心天体 ID</param>
         public void EnterCircularOrbit(int realTick, double physicsTick, int centralBodyId)
         {
-            DVector3 pos = CurrentOrbit.position;
-            DVector3 vel = CurrentOrbit.velocity;
+            DVector3 pos = CurrentOrbit.positionSystem.v;
+            DVector3 vel = CurrentOrbit.velocitySystem.v;
 
             // 如果中心天体不是行星（如月球），将 pos/vel 转为相对中心天体
             // 采样用 physicsTick：CurrentOrbit 是 physicsTick 时间轴上的状态，
@@ -1409,9 +1475,7 @@ namespace PioneerFramework
             }
             DVector3 circularVel = tangentDir * v_tan;
 
-            // 更新中心天体相对坐标（用于 R/T/N 基向量）
-            positionBody = pos;        // 进入圆轨时已转为相对坐标
-            velocityBody = circularVel; // 纯切向速度，不含中心天体轨道速度
+            // 批6 S3-3d：`positionBody`/`velocityBody` 现在是**现算属性**（见其文档）⇒ 不再在这里写副本
             Log.Message(string.Format("[Orbit] Group {0} EnterCircularOrbit: body={1} r={2:F0}km |localPos|={3:F0}km |localVel|={4:F1} m/s",
                 GroupId, centralBodyId, r / 1000.0, positionBody.magnitude / 1000.0, velocityBody.magnitude));
 
@@ -1424,7 +1488,7 @@ namespace PioneerFramework
                     circularVel += celestialMgr.GetBodyVelocityParent(centralBodyId, physicsTick);
                 }
             }
-            CurrentOrbit.velocity = circularVel;
+            CurrentOrbit.velocitySystem = (SystemVec3)circularVel;
             CelestialBodyId = centralBodyId;
 
             // 自动开启轨道保持：白名单只保留中心天体，抵消其他摄动
@@ -1443,7 +1507,8 @@ namespace PioneerFramework
             double physicsTick = timeScaleManager != null ? timeScaleManager.GetPhysicsTick() : (double)Find.TickManager.TicksGame;
 
             DVector3 pos = GetCircularPositionAtTick(physicsTick);
-            DVector3 radialDir = (pos - GetCentralBodyOffset(physicsTick)).normalized;
+            // 系统系 → 天体局部系：**唯一换算** `FrameConvert`（只要方向 ⇒ 取 `.v` 再归一化）
+            DVector3 radialDir = FrameConvert.SystemToBody(pos, GetCentralBodyOffset(physicsTick)).normalized.v;
 
             // 切向方向：在轨道平面内垂直于径向
             DVector3 tangentDir;
@@ -1459,11 +1524,9 @@ namespace PioneerFramework
 
             DVector3 newVel = tangentDir * (circularAngularVelocity * circularRadius);
 
-            // 更新中心天体相对坐标（用于 R/T/N 基向量）
-            positionBody = pos - GetCentralBodyOffset(physicsTick);
-            velocityBody = newVel;
+            // 批6 S3-3d：`positionBody`/`velocityBody` 现在是**现算属性** ⇒ 不再写副本（原两行删除）
 
-            CurrentOrbit.velocity = newVel;
+            CurrentOrbit.velocitySystem = (SystemVec3)newVel;
 
             // 如果中心天体不是行星，速度要加回中心天体的轨道速度
             if (circularCentralBodyId >= 0)
@@ -1474,12 +1537,14 @@ namespace PioneerFramework
                     var centralDef = celestialMgr.GetBodyById(circularCentralBodyId);
                     if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
                     {
-                        CurrentOrbit.velocity += celestialMgr.GetBodyVelocityParent(circularCentralBodyId, physicsTick);
+                        // 同系相加（中心天体的轨道速度也是系统系）⇒ 显式跨界，不再手写裸名
+                        CurrentOrbit.velocitySystem = CurrentOrbit.velocitySystem
+                            + new SystemVec3(celestialMgr.GetBodyVelocityParent(circularCentralBodyId, physicsTick));
                     }
                 }
             }
 
-            CurrentOrbit.position = pos;
+            CurrentOrbit.positionSystem = (SystemVec3)pos;
 
             IsCircularOrbit = false;
             circularCentralBodyId = -1;
@@ -1549,7 +1614,8 @@ namespace PioneerFramework
             // 注意：使用 currentTick（physicsTick），与发动机积分器保持一致
             if (circularCentralBodyId >= 0)
             {
-                localPos += GetCentralBodyOffset(currentTick);
+                // 天体局部系 → 系统系：**唯一换算** `FrameConvert.BodyToSystem`
+                localPos = FrameConvert.BodyToSystem(new BodyVec3(localPos), GetCentralBodyOffset(currentTick));
             }
 
             cachedPosTick = currentTick;
@@ -1578,7 +1644,7 @@ namespace PioneerFramework
 #endif
 
             DVector3 pos = GetCircularPositionAtTick(currentTick); // 命中位置缓存，不重复解析
-            DVector3 radialDir = (pos - GetCentralBodyOffset(currentTick)).normalized;
+            DVector3 radialDir = FrameConvert.SystemToBody(pos, GetCentralBodyOffset(currentTick)).normalized.v;
             DVector3 tangentDir;
             if (circularOrbitNormal.sqrMagnitude > 0.001)
                 tangentDir = DVector3.Cross(circularOrbitNormal, radialDir).normalized;

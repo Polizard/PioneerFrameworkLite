@@ -30,8 +30,18 @@ namespace PioneerFramework
     /// </summary>
     public static class BurnArc
     {
-        /// <summary>RK4 步数（够到 `1e-6` 相对量级；纯计算，无分配）。</summary>
-        private const int Steps = 400;
+        /// <summary>RK4 步数。**判据 = `BurnArcPhaseChoiceTests`（2026-09-30 末）**：这个数决定的是
+        /// "相位扫描选哪一档会不会变"，所以判据立成"7 档 argmin 与高分辨率参考解一致 + 7 档 e 的误差 ≤ 判别余量/100"，
+        /// 跨"几何 × 燃烧时长（×0.25…×16）"共 20 格扫过。
+        ///
+        /// ⚠ **决定精度的是 `dt/T`**（步大小 ÷ 轨道周期），不是步数本身（燃烧更长 ⇒ 同步数下 dt 更大 ⇒ 误差更大）。
+        /// 实测（Release；参考解 6400 步；判定尺度 = 7 档"第一名−第二名"之差，即判别余量）：
+        /// · **原值 400 严重过度解析**：Δe ≈ 1e-14，余量 1.7e-5 ~ 2.9e-4 ⇒ 差 **9–10 个数量级**；
+        /// · 100 步：Δe 仍 ~1e-14（16× 长燃烧下 2.5e-10 = 余量的 1/2e5）⇒ 判据 20 格全绿（最差 比 ≈ 1e-9）；
+        /// · 成本 **1/3.7**（单次预测 180.5 → 49.4 µs）⇒ 7 档扫描 1.07 → ~0.29 ms。
+        /// ⇒ 2026-09-30 取 **100**。
+        /// ⚠ `internal`（而不是 `private`）**只为可测**：判据要读它，免得测试里再抄一份常数（抄了必然走岔）。</summary>
+        internal const int Steps = 100;
 
         /// <summary>一条燃烧弧的预测结果。</summary>
         public readonly struct Result
@@ -44,7 +54,10 @@ namespace PioneerFramework
             public readonly double sma;
 
             /// <summary>**最后一步所用的推力方向**（适配层参考系）。用于与执行器的 `burnDirectionSystem` 对照
-            /// ——"船跟着指令走"不等于"指令本身对"，这个夹角才是那个判据。</summary>
+            /// ——"船跟着指令走"不等于"指令本身对"，这个夹角才是那个判据。
+            ///
+            /// ⚠ 省略（`default` = 零矢量）表示"未提供方向"，消费者按 `sqrMagnitude > 0` 判（见 `SpaceGameComp` 的 `dirTxt`）。
+            /// 批6 S3-3b 判定：这是**有意哨兵、两端都带判据** ⇒ 不改成必需（改了只是 8 处噪声，隐患不消）。</summary>
             public readonly V3 finalDir;
 
             public Result(OrbitView achieved, double startUt, double endUt, double burnSeconds, V3 finalDir = default)

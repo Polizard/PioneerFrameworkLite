@@ -52,7 +52,9 @@ namespace PioneerFramework
         /// </summary>
         public double absoluteTick = -1.0;
 
-        /// <summary>从一条已配置好的操作里**捕获**意图（规划器界面就是这么做的）。</summary>
+        /// <summary>从一条已配置好的操作里**捕获**意图（规划器界面就是这么做的）。
+        /// ⚠ 批6 S3-3b 判定：`targetGroupId = -1` / `absoluteTick = -1.0` 是**语义值**（"没有目标"/"没有绝对时刻"），
+        /// 消费者一律按 `>= 0` 判（`OrbitAdapter:246` · `PlanIntent:130`）⇒ 不是 A5 漏传哨兵，保持可选。</summary>
         public static PlanIntent Capture(Operation op, int targetGroupId = -1, double absoluteTick = -1.0)
         {
             IReadOnlyList<PlanParam> ps = op.GetParams();

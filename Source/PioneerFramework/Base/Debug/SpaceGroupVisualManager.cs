@@ -146,6 +146,50 @@ namespace PioneerFramework
         private static long _frameClocks, _frameTicksTotal, _frameTicksMax;
         private const long FrameAutoLogEvery = 1200;
 
+        /// <summary>
+        /// **draw call 计数**（2026-09-30，批7 旁路·③ 的仪器；**2026-10-01 补全为"尖峰归因"版**）。
+        ///
+        /// ## 上一版的两个错（读码核过 ⇒ 连我都被它骗过一次，故留档）
+        /// ① 计数器**只在 `DrawOrbitPath` 里加**，而全文件另有 5 处 `Graphics.DrawMesh`（天体球面 / 群体图标 /
+        ///    发射点 / 机动标记 / 预览标记）**完全没被数** ⇒ 它对"非轨道绘制"是**瞎的**；
+        /// ② 打印标签写 `本帧 {N}`，但 `N` 是**窗口（1200 帧）累计**（清零也只在窗口末）⇒
+        ///    实际每帧 ≈ N/1200（实测 14–60 次/帧，与"轨道线只画被选中的那一组"一致）；
+        ///    而 `峰值` 字段**全文件从未赋值** ⇒ 恒印 0（死字段）。
+        ///
+        /// ## 这一版做什么
+        /// · **按类别计数**（球 / 图标 / 轨道点 / 标记 / 发射点）—— 每帧一份 + 窗口一份；
+        /// · **真记"每帧最大"**（修掉死字段）；
+        /// · **尖峰归因**：本帧墙钟超 `SpikeThresholdUs` 时**立刻**打一行
+        ///   （该帧类别计数 + GC 三代增量 + 活跃组数），每窗口至多 `SpikeMaxLinesPerWindow` 行；
+        /// · 标签改成真话：`窗口累计 N（每帧均 …，最大 …）`。
+        ///
+        /// ⚠ 现状（读码核过）：轨道线**只画被选中的那一组**（`selectedGroupId`）＋机动预览段
+        /// ⇒ 每帧 ≈ 1 条轨道 + 若干标记，与组数 N **无关**。所以"多轨道同屏"是**功能决策**，不是现存性能问题。
+        /// </summary>
+        private static long _frameDrawCalls, _frameDrawCallsMax;   // 窗口累计 + **每帧最大**（后者此前是死字段）
+        private static long _frameOrbitPaths;                       // 窗口累计：画了几条轨道线
+        private static long _frameOrbitPathsThisFrame;              // 本帧：画了几条轨道线
+
+        private const int DcSphere = 0, DcIcon = 1, DcOrbitPoint = 2, DcMarker = 3, DcLaunch = 4, DcCats = 5;
+        private static readonly long[] _dcWindow = new long[DcCats];   // 窗口累计（按类别）
+        private static readonly long[] _dcFrame = new long[DcCats];    // 本帧（按类别）
+        private static long _dcFrameTotal;                             // 本帧合计
+        private static long _gc0, _gc1, _gc2;                          // 本帧 GC 增量（三代）
+        private static int _gc0Last, _gc1Last, _gc2Last;
+        private static int _spikeLinesThisWindow;
+        private const double SpikeThresholdUs = 2000.0;                // 本帧墙钟超它 ⇒ 打一行归因
+        private const int SpikeMaxLinesPerWindow = 8;
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        private static void CountDraw(int cat)
+        {
+            _dcWindow[cat]++;
+            _dcFrame[cat]++;
+            _dcFrameTotal++;
+            _frameDrawCalls++;
+        }
+
+
         public static void WorldRenderer_DrawWorldLayers_Postfix()
         {
             long frameClock = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -159,17 +203,54 @@ namespace PioneerFramework
                 _frameClocks++;
                 _frameTicksTotal += dt;
                 if (dt > _frameTicksMax) _frameTicksMax = dt;
+
+                double toUsNow = 1e6 / System.Diagnostics.Stopwatch.Frequency;   // µs
+                double frameUs = dt * toUsNow;
+
+                // GC 三代**本帧增量**（尖峰归因的关键一项：窗口级读数分不清"这一帧是不是被 GC 打断的"）
+                int g0 = GC.CollectionCount(0), g1 = GC.CollectionCount(1), g2 = GC.CollectionCount(2);
+                _gc0 = g0 - _gc0Last; _gc1 = g1 - _gc1Last; _gc2 = g2 - _gc2Last;
+                _gc0Last = g0; _gc1Last = g1; _gc2Last = g2;
+
+                // **每帧最大 draw call**（修掉原来那个恒 0 的死字段）
+                if (_dcFrameTotal > _frameDrawCallsMax) _frameDrawCallsMax = _dcFrameTotal;
+
+                // **尖峰归因**（2026-10-01）：本帧超阈值 ⇒ 立刻打一行，把"这一帧在画什么 + 有没有 GC"钉下来。
+                //   为什么要它：窗口级的 `最慢=` 只能说明"有这么一帧"，而**归因**要靠该帧自己的计数
+                //   （先前的读数就吃过这个亏：点数与帧耗时对不上，因为打的是窗口累计而不是尖峰那一帧）。
+                if (Prefs.DevMode && frameUs > SpikeThresholdUs && _spikeLinesThisWindow < SpikeMaxLinesPerWindow)
+                {
+                    _spikeLinesThisWindow++;
+                    Log.Message(string.Format(
+                        "[帧耗时·尖峰] 本帧={0:F0}µs｜draw call={1}（球{2}/图标{3}/轨道点{4}/标记{5}/发射点{6}）｜GC 本帧={7}/{8}/{9}｜轨道线={10} 条",
+                        frameUs, _dcFrameTotal, _dcFrame[DcSphere], _dcFrame[DcIcon], _dcFrame[DcOrbitPoint],
+                        _dcFrame[DcMarker], _dcFrame[DcLaunch], _gc0, _gc1, _gc2, _frameOrbitPathsThisFrame));
+                }
+
+                _dcFrameTotal = 0;
+                for (int i = 0; i < DcCats; i++) _dcFrame[i] = 0;
+                _frameOrbitPathsThisFrame = 0;
+
                 if (_frameClocks >= FrameAutoLogEvery)
                 {
                     if (Prefs.DevMode)
                     {
-                        double toUs = 1e6 / System.Diagnostics.Stopwatch.Frequency;   // µs
                         // ⚠ 2026-09-23 口径改 **µs**：原来 F2 的 ms 在本机量级下恒印 `0.00`（GUI 段实测平均 ~0.003 ms）
                         //   ⇒ "探针看不懂的读数"；与 `[步耗时]` 统一到 µs（那边是 F1 µs）。
-                        Log.Message(string.Format("[帧耗时] 帧数={0} 平均={1:F1}µs/帧 最慢={2:F1}µs",
-                            _frameClocks, _frameTicksTotal * toUs / _frameClocks, _frameTicksMax * toUs));
+                        // ⚠ 2026-10-01 修标签：`{3}` 是**窗口累计**不是"本帧"（老标签把 69006 说成每帧 ⇒ 我读错过一次），
+                        //   真正的"每帧最大"是 `{4}`（老代码里它恒 0）。分类别计数让"谁在画"一眼可判。
+                        Log.Message(string.Format(
+                            "[帧耗时] 帧数={0} 平均={1:F1}µs/帧 最慢={2:F1}µs｜draw call **窗口累计** {3}（每帧均 {11:F1}，**每帧最大 {4}**）"
+                            + "｜分类：球 {5}/图标 {6}/轨道点 {7}/标记 {8}/发射点 {9}｜轨道线 {10} 条",
+                            _frameClocks, _frameTicksTotal * toUsNow / _frameClocks, _frameTicksMax * toUsNow,
+                            _frameDrawCalls, _frameDrawCallsMax,
+                            _dcWindow[DcSphere], _dcWindow[DcIcon], _dcWindow[DcOrbitPoint], _dcWindow[DcMarker], _dcWindow[DcLaunch],
+                            _frameOrbitPaths, (double)_frameDrawCalls / _frameClocks));
                     }
                     _frameClocks = 0; _frameTicksTotal = 0; _frameTicksMax = 0;
+                    _frameDrawCalls = 0; _frameDrawCallsMax = 0; _frameOrbitPaths = 0;
+                    for (int i = 0; i < DcCats; i++) _dcWindow[i] = 0;
+                    _spikeLinesThisWindow = 0;
                 }
             }
         }
@@ -230,6 +311,7 @@ namespace PioneerFramework
                     float scale = ViewFrame.RadiusToSphereScale((float)body.radius, sphereMesh);
                     if (scale < 2f) scale = 2f;   // 远距离最小可见尺寸（缩放值口径）
                     Matrix4x4 sphereMatrix = Matrix4x4.TRS(viewPos, Quaternion.identity, Vector3.one * scale);
+                    CountDraw(DcSphere);
                     Graphics.DrawMesh(sphereMesh, sphereMatrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer);
                 }
             }
@@ -254,8 +336,8 @@ namespace PioneerFramework
                         // 非圆轨模式：从 CurrentOrbit 位置/速度生成轨道点
                         // 第 11 条：按「组 id + pos + vel」记忆化——路径是这两者的纯函数，滑行期不变，
                         // 此前每帧都跑 60 点积分 + 两次列表分配。圆轨那条不缓存（采样数随相机高度变）。
-                        DVector3 pos = selected.CurrentOrbit.position;
-                        DVector3 vel = selected.CurrentOrbit.velocity;
+                        DVector3 pos = selected.CurrentOrbit.positionSystem.v;
+                        DVector3 vel = selected.CurrentOrbit.velocitySystem.v;
                         if (orbitPathCacheGroupId != selected.GroupId
                             || !orbitPathCachePos.Equals(pos) || !orbitPathCacheVel.Equals(vel))
                         {
@@ -267,12 +349,16 @@ namespace PioneerFramework
                             //   ⇒ 算出一条**穿过地球的假轨道**，点全在视野外 ⇒ **什么都看不到**（用户报的就是它）。
                             //   正确做法：**在中心天体的体心系里算轨道，再把点搬回世界系**（渲染用世界系）。
                             double tickNow = TimeScaleManager.GetPhysicsTickSafe();
-                            DVector3 bodyOff = selected.GetCentralBodyOffset((int)tickNow);
-                            DVector3 bodyOffV = selected.GetCentralBodyVelocity((int)tickNow);
-                            var dPoints = OrbitMath.GetOrbitPoints(pos - bodyOff, vel - bodyOffV, 60,
+                            SystemVec3 bodyOff = selected.GetCentralBodyOffset((int)tickNow);
+                            SystemVec3 bodyOffV = selected.GetCentralBodyVelocity((int)tickNow);
+                            // 系统系 → 天体局部系（`FrameConvert` 是唯一换算）……
+                            var dPoints = OrbitMath.GetOrbitPoints(
+                                FrameConvert.SystemToBody(pos, bodyOff).v,
+                                FrameConvert.SystemToBodyVelocity(vel, bodyOffV).v, 60,
                                 spaceGame.GetBodyGM(selected.CelestialBodyId));
+                            // ……再搬回系统系（渲染用系统系）
                             orbitPathCachePoints = dPoints != null && dPoints.Count > 0
-                                ? dPoints.ConvertAll(p => (Vector3)((p + bodyOff) * SpaceConstants.UnitsPerMeter))
+                                ? dPoints.ConvertAll(p => (Vector3)(FrameConvert.BodyToSystem(new BodyVec3(p), bodyOff) * SpaceConstants.UnitsPerMeter))
                                 : null;
                             orbitPathCacheGroupId = selected.GroupId;
                             orbitPathCachePos = pos;
@@ -547,7 +633,7 @@ namespace PioneerFramework
             double physicsTick = PhysicsTickNow();
             DVector3 posSystemFrame = group.IsCircularOrbit
                 ? group.GetCircularPositionAtTick(physicsTick)
-                : group.CurrentOrbit.position;
+                : group.CurrentOrbit.positionSystem.v;
             return ViewFrame.ToViewUnity(posSystemFrame, physicsTick);
         }
 
@@ -584,6 +670,7 @@ namespace PioneerFramework
 
             Vector3 drawPos = viewPos + toCam.normalized * 1.5f; // 避免深度冲突
             Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, new Vector3(size, 1f, size));
+            CountDraw(DcIcon);
             Graphics.DrawMesh(MeshPool.plane10, matrix, iconMaterial, WorldCameraManager.WorldLayer);
         }
 
@@ -706,6 +793,7 @@ namespace PioneerFramework
             Quaternion rot = Quaternion.FromToRotation(Vector3.up, radialView);
             Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, Vector3.one * (12f * pulse));
             orbitMarkerPropertyBlock.SetColor("_Color", new Color(1f, 0.15f, 0.1f, 0.95f));
+            CountDraw(DcLaunch);
             Graphics.DrawMesh(cubeMesh, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
         }
 
@@ -735,6 +823,7 @@ namespace PioneerFramework
         /// </summary>
         private static void DrawOrbitPath(List<Vector3> pointsUnity, Color color, float size, Camera cam)
         {
+            _frameOrbitPaths++; _frameOrbitPathsThisFrame++;   // 轨道线计数（现状应恒为 ≤1 + 机动预览段）
             for (int i = 0; i < pointsUnity.Count; i++)
             {
                 Vector3 viewPos = ToView(pointsUnity[i]);
@@ -747,6 +836,7 @@ namespace PioneerFramework
                 Vector3 drawPos = viewPos + toCam.normalized * 0.5f;
                 Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, new Vector3(size, 1f, size));
                 orbitMarkerPropertyBlock.SetColor("_Color", color);
+                CountDraw(DcOrbitPoint);   // ★ 每个可见轨道点一次 `Graphics.DrawMesh`
                 Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
             }
         }
@@ -771,6 +861,7 @@ namespace PioneerFramework
             Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, new Vector3(nodeSize, 1f, nodeSize));
             Color c = color ?? new Color(1f, 0.9f, 0.2f, 0.9f);
             orbitMarkerPropertyBlock.SetColor("_Color", c);
+            CountDraw(DcMarker);
             Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
         }
 
@@ -801,8 +892,8 @@ namespace PioneerFramework
             }
             else
             {
-                posMetersD = group.CurrentOrbit.position;
-                velMetersD = group.CurrentOrbit.velocity;
+                posMetersD = group.CurrentOrbit.positionSystem.v;
+                velMetersD = group.CurrentOrbit.velocitySystem.v;
             }
 
             OrbitMath.GetOrbitFrame(posMetersD, velMetersD, out double a, out double e, out double _, out DVector3 eDir, out DVector3 _, muBody);
@@ -831,11 +922,11 @@ namespace PioneerFramework
                 OrbitView ovDbg = OrbitView.FromGameStateVectors(posMetersD, velMetersD,
                     defDbg.gravitationalParameter, TimeScaleManager.GetPhysicsTickSafe(), DVector3.up, defDbg.radius);
                 // ⚠ 这两个位置来自 `*Equatorial*` 族 ⇒ 是**适配层系**的；下面 `ToView` 的读者按**游戏系**理解。
-                //   批4 P4 之后换系恒等（两系同轴 +Y）⇒ 今天是空操作；**批6 S2（封边界）要把它显式化**。
-                //   （批5 U4 之前这里套着 `OrbitView.ToD`，那只是"不换系"的搬运，已随类型统一删除。）
-                DVector3 anPos = ovDbg.AscendingNodePositionEquatorial(0.0);
-                DVector3 dnPos = ovDbg.DescendingNodePositionEquatorial(0.0);
-                if (anPos.sqrMagnitude > 0.001)
+                //   批4 P4 之后两系同轴（换系恒等），批6 S2 起跨系只经 `OrbitView` 的进/出两个口 ⇒ 这里直传。
+                // 批6 S3-3a：交点位置改走 `Try*` —— 旧写法只判了 AN 的非零性、却**无条件**画 DN
+                //（DN 在双曲开口里时会把标记画到原点 ⇒ 那是 A6"忘了判就拿零矢量继续算"的原样标本）。
+                if (ovDbg.TryAscendingNodePositionEquatorial(0.0, out DVector3 anPos)
+                    && ovDbg.TryDescendingNodePositionEquatorial(0.0, out DVector3 dnPos))
                 {
                     DrawOrbitMarker(ToView((Vector3)(anPos * toUnity)), MarkerColorAn, 1.6f, cam, "AN");
                     DrawOrbitMarker(ToView((Vector3)(dnPos * toUnity)), MarkerColorDn, 1.6f, cam, "DN");
@@ -861,6 +952,7 @@ namespace PioneerFramework
             Vector3 drawPos = viewPos + toCam.normalized * 0.6f;
             Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, new Vector3(markerSize, 1f, markerSize));
             orbitMarkerPropertyBlock.SetColor("_Color", color);
+            CountDraw(DcMarker);
             Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
         }
 
@@ -1058,11 +1150,11 @@ namespace PioneerFramework
                 centerInfo += "深空";
             }
 
-            DVector3 pos = group.CurrentOrbit.position;
+            DVector3 pos = group.CurrentOrbit.positionSystem.v;
             double radiusKm = pos.magnitude / 1000.0;
             double speed = group.IsCircularOrbit
                 ? group.GetCircularVelocityAtTick(TimeScaleManager.GetPhysicsTickSafe()).magnitude
-                : group.CurrentOrbit.velocity.magnitude;
+                : group.CurrentOrbit.velocitySystem.magnitude;
             var (remainingDv, maxDv, propMass, propCap) = spaceGame.GetGroupDeltaV(group);
 
             float rowH = 21f;

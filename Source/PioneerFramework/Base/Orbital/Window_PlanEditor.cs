@@ -265,7 +265,7 @@ namespace PioneerFramework
                             if (mainAxis.sqrMagnitude > 1e-12)
                             {
                                 double angDeg = Math.Acos(Math.Max(-1.0, Math.Min(1.0,
-                                    DVector3.Dot(mainAxis.normalized, OrbitView.AdapterToGameWorld(nodes[0].dV).normalized))))
+                                    DVector3.Dot(mainAxis.normalized, nodes[0].dV.normalized))))   // 两系同轴（P4）⇒ 直传
                                     * 180.0 / Math.PI;
                                 double leadSeconds = nodes[0].ut - tick;
                                 if (!AlignFeasibility.IsFeasible(angDeg, group.MaxAngularRate * 180.0 / Math.PI,

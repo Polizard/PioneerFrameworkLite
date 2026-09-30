@@ -498,7 +498,7 @@ namespace PioneerFramework
         {
             DVector3 posSystem = g.IsCircularOrbit
                 ? g.GetCircularPositionAtTick(tick)
-                : g.CurrentOrbit.position;
+                : g.CurrentOrbit.positionSystem.v;
 
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (mgr == null) return posSystem;
@@ -998,8 +998,8 @@ namespace PioneerFramework
                 // 低帧率时渲染点与物理点重合会离散跳动呈折线）。重力射弹回退为物理点+外推插值。
                 double physicsNowT = tick;
                 DVector3 renderPos = proj.affectedByGravity
-                    ? proj.position + proj.velocity * Math.Max(0, physicsNowT - proj.prevPhysicsTick)
-                    : proj.spawnPosition + proj.velocity * (physicsNowT - proj.spawnPhysicsTick);
+                    ? (proj.position + proj.velocity * Math.Max(0, physicsNowT - proj.prevPhysicsTick)).v
+                    : (proj.spawnPosition + proj.velocity * (physicsNowT - proj.spawnPhysicsTick)).v;
 
                 // 射弹位置是行星系相对坐标，渲染需转绝对（加所属行星世界偏移）
                 DVector3 bodyOff = GetBodyPosAbs(proj.systemBodyId, tick);
@@ -1036,7 +1036,7 @@ namespace PioneerFramework
                 // 尾迹：沿 velocity 反方向固定延伸 1 个物理步（长度恒定、端点连续）。
                 // 原实现连接 proj.prevPosition（物理上一步，每 2 tick 跳 167m），尾迹长度
                 // 每物理步从满长缩到 0 再跳回 → 伸缩抖动，视觉上呈"折线"。弹头本就平滑。
-                DVector3 trailEndAbs = renderPos - proj.velocity * (2.0 / 60.0);
+                DVector3 trailEndAbs = renderPos - proj.velocity.v * (2.0 / 60.0);   // 批6 S3-3c：显式跨界
                 Vector3 tv = AbsToView(trailEndAbs + bodyOff, origin);
                 float len = Vector3.Distance(vp, tv);
                 if (len > 0.01f)
@@ -1421,7 +1421,7 @@ namespace PioneerFramework
             DVector3 thrustAxis = spaceGame.GetMainThrustAxisSystem(g);
             if (thrustAxis.sqrMagnitude > 1e-12)
             {
-                DVector3 vel = g.CurrentOrbit.velocity;
+                DVector3 vel = g.CurrentOrbit.velocitySystem.v;
                 string align = vel.sqrMagnitude > 1e-6
                     ? string.Format("　与速度夹角 {0:F0}°", Mathf.Acos(Mathf.Clamp((float)DVector3.Dot(thrustAxis.normalized, vel.normalized), -1f, 1f)) * Mathf.Rad2Deg)
                     : "";
@@ -1545,7 +1545,7 @@ namespace PioneerFramework
         private DVector3 GetGroupRelPos(SpaceEntityGroup g)
         {
             double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
-            return g.IsCircularOrbit ? g.GetCircularPositionAtTick(physicsTick) : g.CurrentOrbit.position;
+            return g.IsCircularOrbit ? g.GetCircularPositionAtTick(physicsTick) : g.CurrentOrbit.positionSystem.v;
         }
 
         private void FireAtTarget(WeaponInstance weapon)
@@ -1567,12 +1567,12 @@ namespace PioneerFramework
             if (shooter == null || target == null) return;
 
             DVector3 shooterPos = GetGroupRelPos(shooter);
-            DVector3 shooterVel = shooter.CurrentOrbit.velocity;
+            DVector3 shooterVel = shooter.CurrentOrbit.velocitySystem.v;
             if (shooter.IsCircularOrbit)
             {
                 double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
                 DVector3 pos = shooter.GetCircularPositionAtTick(physicsTick);
-                DVector3 radial = (pos - shooter.GetCentralBodyOffset(physicsTick)).normalized;
+                DVector3 radial = FrameConvert.SystemToBody(pos, shooter.GetCentralBodyOffset(physicsTick)).normalized.v;
                 DVector3 tan = shooter.circularOrbitNormal.sqrMagnitude > 0.001
                     ? DVector3.Cross(shooter.circularOrbitNormal, radial).normalized
                     : new DVector3(-radial.z, 0, radial.x).normalized;
@@ -1582,8 +1582,8 @@ namespace PioneerFramework
             if (target.IsCircularOrbit)
                 target.ExitCircularOrbit();
             DVector3 dir = shooterVel.sqrMagnitude > 1e-6 ? shooterVel.normalized : new DVector3(1, 0, 0);
-            target.CurrentOrbit.position = shooterPos + dir * 1000.0;
-            target.CurrentOrbit.velocity = shooterVel;
+            target.CurrentOrbit.positionSystem = (SystemVec3)(shooterPos + dir * 1000.0);
+            target.CurrentOrbit.velocitySystem = (SystemVec3)shooterVel;
             target.OrbitDirty = true;
 
             Log.Message(string.Format(
@@ -1591,8 +1591,8 @@ namespace PioneerFramework
                 target.GroupId, shooter.GroupId,
                 shooter.IsCircularOrbit, shooterPos.x, shooterPos.y, shooterPos.z,
                 shooterVel.x, shooterVel.y, shooterVel.z,
-                target.IsCircularOrbit, target.CurrentOrbit.position.x, target.CurrentOrbit.position.y, target.CurrentOrbit.position.z,
-                target.CurrentOrbit.velocity.x, target.CurrentOrbit.velocity.y, target.CurrentOrbit.velocity.z));
+                target.IsCircularOrbit, target.CurrentOrbit.positionSystem.x, target.CurrentOrbit.positionSystem.y, target.CurrentOrbit.positionSystem.z,
+                target.CurrentOrbit.velocitySystem.x, target.CurrentOrbit.velocitySystem.y, target.CurrentOrbit.velocitySystem.z));
         }
 
         private void AdjustTargetSpeed(double dv)
@@ -1656,7 +1656,7 @@ namespace PioneerFramework
                 IsCollidable = true,
                 CelestialBodyId = bodyId
             };
-            group.CurrentOrbit = new OrbitState { position = pos, velocity = vel, rotation = Quaternion.identity };
+            group.CurrentOrbit = new OrbitState { positionSystem = (SystemVec3)pos, velocitySystem = (SystemVec3)vel, rotation = Quaternion.identity };
             spaceGame.RegisterGroup(group);
             group.EnterCircularOrbit(Find.TickManager.TicksGame, bodyId);
 

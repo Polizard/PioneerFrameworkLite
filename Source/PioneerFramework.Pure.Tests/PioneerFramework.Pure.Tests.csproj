@@ -37,6 +37,12 @@
 
   <ItemGroup>
     <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Pure\DVector3.cs" />
+    <!-- 批6 S3-3c（2026-09-30）：**系载体**（`SystemVec3` / `BodyVec3` / `FrameConvert`）——纯类型（无引擎依赖）
+         ⇒ 链进来用纯测试钉住"薄"（算子逐位等于 `DVector3`）与"跨系换算逐位可逆"。 -->
+    <Compile Include="..\PioneerFramework\Base\Core\FrameVec3.cs" Link="Pure\FrameVec3.cs" />
+    <!-- 批7（2026-09-30）：**统一调度原语**（并行地板 / 并行区标记 / 唯一归约器）。纯文件（无 Verse）⇒ 链进来
+         用纯测试钉住"并行路与串行路逐位相同 + 归约顺序确定"。 -->
+    <Compile Include="..\PioneerFramework\ThreadSafety\ParallelOps.cs" Link="Pure\ParallelOps.cs" />
     <!-- 批5 U4（2026-09-28）：`DVector3Extensions.cs` 已退役 ⇒ 这行连同删除（成员已并入 `DVector3`，零调用者）。 -->
     <Compile Include="..\PioneerFramework\Base\Core\SlabMath.cs" Link="Pure\SlabMath.cs" />
     <Compile Include="..\PioneerFramework\Base\Core\SpaceConstants.cs" Link="Pure\SpaceConstants.cs" />

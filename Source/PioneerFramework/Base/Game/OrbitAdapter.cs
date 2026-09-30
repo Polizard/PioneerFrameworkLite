@@ -18,11 +18,12 @@ namespace PioneerFramework
     ///    那两个字段是**天体参考系**的（`CurrentOrbit.position` 是**系统系 = 根行星中心**，
     ///    见 `SpaceGameComp:1329` 的注释；`positionBody = CurrentOrbit.position − SyncBodyPos`）。
     ///    **禁止改用 `GetCircularPositionAtTick` 那类圆轨解析函数**——那会引入"第三种状态"。
-    /// ② **换系已不存在（批4 P4，2026-09-28）**：适配层与游戏世界同轴 +Y ⇒
-    ///    `OrbitView.GameWorldToAdapter` / `AdapterToGameWorld` 已退化为**恒等**。
-    ///    游戏侧代码仍然一律走 `OrbitView.FromGameStateVectors`（向量类型统一后那里只剩"组装状态"，
-    ///    不再有类型转换；历史上那对恒等转换函数已随批5 U4 删除），
-    ///    **不要在别处自己拼参考系状态**。⚠ 但 `OperationInclination` 的 `180° − i` 仍然必须保留 ——
+    /// ② **跨系只剩两个口（批6 S2，2026-09-30）**：批4 P4 极轴统一后适配层与游戏世界同轴 +Y
+    ///    ⇒ `OrbitView.GameWorldToAdapter` / `AdapterToGameWorld` 已退化为**恒等**，并**降为 `OrbitView` 私有**。
+    ///    宿主侧跨系只准走两个口：**进** `OrbitView.FromGameStateVectors`（游戏系状态 → `OrbitView`）、
+    ///    **出** `ov.GameFrameStateAtUT(ut)`（`OrbitView` → 游戏系状态）。
+    ///    Δv / 方向这类**非状态**的向量两系同轴 ⇒ 直接传值，**不要在调用点上自己拼变换**。
+    ///    ⚠ 但 `OperationInclination` 的 `180° − i` 仍然必须保留 ——
     ///    它换的是**天体自转方向**（游戏侧 `Ry(−ωt)`），不是极轴，见 `OrbitView.FromGameStateVectors` 的说明。
     /// ③ **单位**：`physicsTick` 就是**秒**（物理积分器把 `UPDATE_INTERVAL_TICKS` 当 `dtSeconds` 喂进去，
     ///    1 tick = 1 秒），所以 `epoch` / `PlanNode.ut` / `PlannedManeuver.executeTick` 三者同单位、
@@ -52,7 +53,7 @@ namespace PioneerFramework
             // ⚠ 我们**没有**模型的轴倾角：本 mod 的天体轨道都在世界 XZ 平面内，
             //    所以"赤道轴"取世界的极轴 `DVector3.up`（= +Y；批4 P4 起适配层也是 +Y ⇒ 不再有换系）。
             //    这一点有实测支撑：自检里 15/17 个编队的游戏系倾角正好是 0（见 OrbitViewProbe 的输出）。
-            V3 pole = OrbitView.GameWorldToAdapter(DVector3.up); // 恒等；保留调用是为"唯一咽喉"的形状
+            V3 pole = DVector3.up; // 两系同轴（批4 P4）⇒ 直传；跨系只剩 `OrbitView` 的进/出两个口（批6 S2）
 
             // 自转：1 tick = 1 秒 ⇒ 角速度 = 2π / dayLengthTicks（算式只有一份：AngularVelocity）
             double angularVelocity = AngularVelocity(def);
@@ -127,9 +128,10 @@ namespace PioneerFramework
             if (def == null)
                 return false;
 
-            int tick = (int)Math.Round(physicsTick);
-            DVector3 r = g.CurrentOrbit.position - g.GetCentralBodyOffset(tick);
-            DVector3 v = g.CurrentOrbit.velocity - g.GetCentralBodyVelocity(tick);
+            // 系统系 → 天体局部系：**唯一换算**（`GetBodyState` 内部走 `FrameConvert`，且**同一 tick 取两次** ⇒ 位置/速度一定同刻）
+            (BodyVec3 bodyPos, BodyVec3 bodyVel) = g.GetBodyState(physicsTick);
+            DVector3 r = bodyPos.v;
+            DVector3 v = bodyVel.v;
 
             ov = OrbitView.FromGameStateVectors(
                 r, v, def.gravitationalParameter, physicsTick, DVector3.up, def.radius, SoiRadiusApprox(def, mgr),
@@ -137,24 +139,16 @@ namespace PioneerFramework
             return true;
         }
 
-        /// <summary>`ut` 时刻的游戏系状态（天体参考系）。走**适配层的 `Shepperd`** 传播。
-        ///
-        /// ⚠ 2026-09-26 更正：这里原先写"不走 `OrbitMath.GetPositionAtTimeDelta`，后者在近圆与双曲上已知有问题"
-        /// —— **那句已经过期**：`OrbitMath` 的传播族自 2026-09-18（V1）起就是 `Shepperd` 的**薄转发**
-        /// （见 `OrbitMath.cs` 的 `GetPositionAtTimeDelta` 注释），所以两条路是同一个实现。
-        /// 保留本方法的价值只是"换系在适配层收口"，与传播内核无关。</summary>
-        public static (DVector3 r, DVector3 v) StateAtUT(OrbitView ov, double ut)
-        {
-            (V3 r, V3 v) = ov.RightHandedStateVectorsAtUT(ut);
-            return (OrbitView.AdapterToGameWorld(r), OrbitView.AdapterToGameWorld(v));
-        }
+        // 批6 S2（2026-09-30）：原先这里的 `StateAtUT(ov, ut)` 已删除 —— 它是出边换系的**第二个名字**
+        // （与 `OrbitView.GameFrameStateAtUT` 同一个概念、同一份实现）⇒ 按"一个概念一个权威"收口，
+        // 调用方一律改走 `ov.GameFrameStateAtUT(ut)`。
 
         // ── 把计划送进队列 ──────────────────────────────────────────────────────
 
         /// <summary>
         /// 把 `Operation.MakeNodes` 产出的计划**逐条**送进编队的机动队列。
         ///
-        /// 每条的换算：适配层 Δv →（`AdapterToGameWorld`）→ 游戏世界系 Δv，
+        /// 每条的换算：**两条系同轴 ⇒ Δv 直传**（批6 S2：跨系只经 `OrbitView` 的进/出两个口），
         /// 再按上游约定同时填**分量**（`OrbitMath.DeltaVSystemToComponents`）与 `plannedDvSystem`
         /// （`PlannedManeuver` 的注释：点火时 dvMag 走分量、实际烧走 plannedDvSystem）。
         ///
@@ -190,7 +184,7 @@ namespace PioneerFramework
                     return false;
                 }
 
-                DVector3 dvSystem = OrbitView.AdapterToGameWorld(node.dV);
+                DVector3 dvSystem = node.dV; // 两系同轴（批4 P4）⇒ 不经转换；跨系只剩 OrbitView 的进/出两个口
                 if (double.IsNaN(dvSystem.x) || double.IsNaN(dvSystem.y) || double.IsNaN(dvSystem.z))
                 {
                     reason = "节点 Δv 是 NaN";
@@ -198,7 +192,7 @@ namespace PioneerFramework
                 }
 
                 // 分量：用**节点时刻**的状态（同样走适配层的传播，不用 OrbitMath 的传播）
-                (DVector3 rAt, DVector3 vAt) = StateAtUT(ov, node.ut);
+                (DVector3 rAt, DVector3 vAt) = ov.GameFrameStateAtUT(node.ut);
                 OrbitMath.DeltaVSystemToComponents(rAt, vAt, dvSystem, out double rad, out double tan, out double norm);
 
                 prepared.Add(new SpaceEntityGroup.PlannedManeuver
@@ -271,8 +265,8 @@ namespace PioneerFramework
             }
 
             PlanNode node = nodes[0];
-            DVector3 dvSystem = OrbitView.AdapterToGameWorld(node.dV);
-            (DVector3 rAt, DVector3 vAt) = StateAtUT(ov, node.ut);
+            DVector3 dvSystem = node.dV; // 两系同轴（批4 P4）⇒ 不经转换
+            (DVector3 rAt, DVector3 vAt) = ov.GameFrameStateAtUT(node.ut);
             OrbitMath.DeltaVSystemToComponents(rAt, vAt, dvSystem, out double rad, out double tan, out double norm);
 
             resolved.radialDV = (float)rad;

@@ -698,7 +698,16 @@ namespace PioneerFramework
         public static long StepClockStart() => System.Diagnostics.Stopwatch.GetTimestamp();
 
         /// <summary>整步计时结束（start = StepClockStart 的返回值）。记录最慢步**及其步序号/真实 tick**
-        /// ——光知道"最慢 10 ms"没用，得知道它是场景部署那一步还是稳态里的某一步。</summary>
+        /// ——光知道"最慢 10 ms"没用，得知道它是场景部署那一步还是稳态里的某一步。
+        ///
+        /// ★ **2026-10-01：加"步尖峰归因"** —— 光知道"第 N 步慢了 168 ms"还是没法修：
+        ///   实测（`20260930-2359` 那轮日志）有两处**一次性**异常批：部署时一步 **17.8 ms**、
+        ///   绕月途中一步 **168 ms**，而稳态只有 40–70 µs/步（最慢 120–470 µs）。
+        ///   ⇒ 本函数在本步超 <see cref="StepSpikeThresholdUs" /> 时**立刻**打一行归因：
+        ///   本步墙钟 · 三个已计时子段的**本步增量**（引力场 / 解析源表 / 预取建表）· **GC 三代本步增量** ·
+        ///   以及**残差**（本步 − 已计时子段之和）—— 残差大 ⇒ 那块活在别处（引导/战斗/分配），不是引力数学。
+        ///   ⚠ 与帧那边同一套思路（`[帧耗时·尖峰]`）：**归因必须在尖峰那一帧/那一步自己身上取**，
+        ///     窗口级的平均/最慢只能说明"有这么一帧"，说明不了"它是什么"。</summary>
         public static void StepClockEnd(long start)
         {
             long dt = System.Diagnostics.Stopwatch.GetTimestamp() - start;
@@ -710,7 +719,74 @@ namespace PioneerFramework
                 StepTicksMaxAtStep = StepClocks;
                 StepTicksMaxAtTick = Find.TickManager?.TicksGame ?? 0;
             }
+
+            // ── 步尖峰归因（DevMode 才打；每读数窗口至多 StepSpikeMaxLines 行）──
+            double us = ToMicros(dt);
+            if (Prefs.DevMode && us > StepSpikeThresholdUs && _stepSpikeLines < StepSpikeMaxLines)
+            {
+                _stepSpikeLines++;
+                long grav = GravityTicksTotal - _spikeLastGrav;
+                long seg = systemCollectTicks - _spikeLastSeg;
+                long pf = prefetchBuildTicks - _spikeLastPf;
+                long segs = GravitySegments - _spikeLastGravSegs;
+                int g0 = GC.CollectionCount(0), g1 = GC.CollectionCount(1), g2 = GC.CollectionCount(2);
+                // ⚠ 上一版这里印的是 **StepTicksMaxAtTick / 窗口累计采样数** ⇒ 那是"窗口最慢那一帧"的值、
+                //   不是**本步**的值（同一个"本步"行里混窗口值 = 我自己刚批评过的口径错，已修）：
+                //   `t` 取**当前** tick，`采样` 取**本步增量**。
+                int tickNow = Find.TickManager?.TicksGame ?? 0;
+                Log.Message(string.Format(
+                    "[步耗时·尖峰] 本步={0:F0}µs（第{1}步 / t={2}）｜**阶段**：操舵={3:F0} 冲量={4:F0} 组物理={5:F0} 主循环应用={6:F0} 引导={7:F0}"
+                    + "｜子段：引力场={8:F0}µs 采样{9}｜解析源表={10:F1}｜预取建表={11:F1}"
+                    + "｜**残差={12:F0}µs**｜GC 本步={13}/{14}/{15}｜步均={16:F1}µs",
+                    us, StepClocks, tickNow,
+                    ToMicros(PhaseDelta(PhaseSteer)), ToMicros(PhaseDelta(PhaseImpulse)), ToMicros(PhaseDelta(PhaseGroupPhysics)),
+                    ToMicros(PhaseDelta(PhaseApply)), ToMicros(PhaseDelta(PhaseGuidance)),
+                    ToMicros(grav), segs, ToMicros(seg), ToMicros(pf),
+                    us - ToMicros(grav) - ToMicros(seg) - ToMicros(pf),
+                    g0 - _spikeLastGc0, g1 - _spikeLastGc1, g2 - _spikeLastGc2,
+                    StepClocks > 0 ? ToMicros(StepTicksTotal) / StepClocks : 0.0));
+                _spikeLastGc0 = g0; _spikeLastGc1 = g1; _spikeLastGc2 = g2;
+            }
+
+            // 基线与阶段快照每步滚动 ⇒ "本步增量"永远是**本步**的（不是"最近一次尖峰以来"的）
+            _spikeLastGrav = GravityTicksTotal; _spikeLastSeg = systemCollectTicks; _spikeLastPf = prefetchBuildTicks;
+            _spikeLastGravSegs = GravitySegments;
+            for (int i = 0; i < PhaseCount; i++) _spikeLastPhase[i] = _phaseTicks[i];
         }
+
+        /// <summary>本步某阶段的耗时（tick）：= 累计 − 上一步快照。</summary>
+        private static long PhaseDelta(int slot) => _phaseTicks[slot] - _spikeLastPhase[slot];
+
+        /// <summary>步尖峰阈值（µs）：稳态 40–70 µs/步、常态最慢 120–470 µs ⇒ 2 ms 就是"一次性大块"。
+        /// 默认 2000；测试/诊断可改（与 `ParallelOps.ForceSerial` 同族的诊断开关）。</summary>
+        internal static double StepSpikeThresholdUs = 2000.0;
+        private const int StepSpikeMaxLines = 8;
+
+        // ── 步内**阶段**计时（2026-10-01）：上一版的尖峰行只给了"残差"（= 本步 − 已计时子段）⇒ 残差≈整步时
+        //   只知道"不在引力/预取那几段里"，还不知道在哪一段。这里把 `UpdateAllMovements` 的五个阶段各自圈起来，
+        //   尖峰行就能直接指认。**只在主线程**（阶段边界都在主线程；并行体内部的计时另有 GravityClock）。
+        public const int PhaseSteer = 0, PhaseImpulse = 1, PhaseGroupPhysics = 2, PhaseApply = 3, PhaseGuidance = 4, PhaseCount = 5;
+        private static readonly long[] _phaseTicks = new long[PhaseCount];
+        private static readonly string[] _phaseNames = { "操舵", "冲量", "组物理", "主循环应用", "引导" };
+
+        /// <summary>阶段计时开始（与 `StepClockStart` 同族；常驻、纳秒级）。</summary>
+        public static long PhaseClockStart() => System.Diagnostics.Stopwatch.GetTimestamp();
+
+        /// <summary>阶段计时结束（原子累加：组物理段虽然由主线程圈，但内部是并行的 ⇒ 用 Interlocked 与既有写法一致）。</summary>
+        public static void PhaseClockEnd(int slot, long start)
+            => System.Threading.Interlocked.Add(ref _phaseTicks[slot], System.Diagnostics.Stopwatch.GetTimestamp() - start);
+
+        /// <summary>直接累加一段（给"已经有自己的 Stopwatch"的地方用，例如既有的引导计时块）。</summary>
+        public static void PhaseClockAdd(int slot, long stopwatchTicks)
+            => System.Threading.Interlocked.Add(ref _phaseTicks[slot], stopwatchTicks);
+
+        /// <summary>阶段名（尖峰行用）。</summary>
+        public static string PhaseName(int slot) => _phaseNames[slot];
+        private static int _stepSpikeLines;
+        private static long _spikeLastGrav, _spikeLastSeg, _spikeLastPf;
+        private static long _spikeLastGravSegs;
+        private static readonly long[] _spikeLastPhase = new long[PhaseCount];
+        private static int _spikeLastGc0, _spikeLastGc1, _spikeLastGc2;
 
         /// <summary>引力场段计时开始（**只在 Enabled 时调用**）。</summary>
         public static long GravityClockStart() => System.Diagnostics.Stopwatch.GetTimestamp();
@@ -744,8 +820,7 @@ namespace PioneerFramework
         {
             StepClocks = 0; StepTicksTotal = 0; StepTicksMax = 0;
             StepTicksMaxAtStep = 0; StepTicksMaxAtTick = 0;
-            GravityTicksTotal = 0; GravitySegments = 0;
-            // S-a 子段也要跟着清零 —— 否则"打印并清零"之后它会**跨读数累积**，
+            GravityTicksTotal = 0; GravitySegments = 0;            // S-a 子段也要跟着清零 —— 否则"打印并清零"之后它会**跨读数累积**，
             // 于是 `建表段/引力段` 这个比值会随会话越跑越低（假象）。**两处清零点必须成对**。
             SystemCollectSegments = 0; Interlocked.Exchange(ref systemCollectTicks, 0L);
             PrefetchBuildSegments = 0; Interlocked.Exchange(ref prefetchBuildTicks, 0L);
@@ -755,6 +830,11 @@ namespace PioneerFramework
             CelestialBodyManager.DebugSourcesPrefetched = 0;
             CelestialBodyManager.DebugSourcesHits = 0;
             CelestialBodyManager.DebugSourcesFallback = 0;
+            // 步尖峰归因的基线与计数也跟着清零（否则全局计数归零后差值会变负 = 读数自相矛盾）
+            _stepSpikeLines = 0;
+            _spikeLastGrav = 0; _spikeLastSeg = 0; _spikeLastPf = 0; _spikeLastGravSegs = 0;
+            for (int i = 0; i < PhaseCount; i++) { _phaseTicks[i] = 0; _spikeLastPhase[i] = 0; }
+            _spikeLastGc0 = GC.CollectionCount(0); _spikeLastGc1 = GC.CollectionCount(1); _spikeLastGc2 = GC.CollectionCount(2);
         }
 
         /// <summary>Stopwatch tick → µs（报告侧换算）。</summary>

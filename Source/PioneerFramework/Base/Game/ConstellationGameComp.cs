@@ -507,8 +507,8 @@ namespace PioneerFramework
             group.CurrentOrbit = new OrbitState
             {
                 // 位置需 group.CelestialBodyId 已置位（对象初始化器先于本行完成）→ 见 AnchorPositionSystem
-                position = AnchorPositionSystem(group, bodyId, tile),
-                velocity = DVector3.zero,
+                positionSystem = new SystemVec3(AnchorPositionSystem(group, bodyId, tile)),
+                velocitySystem = SystemVec3.zero,
                 rotation = Quaternion.identity
             };
             sg.RegisterGroup(group);
@@ -516,9 +516,9 @@ namespace PioneerFramework
 
             Log.Message(string.Format("[星座] 创建锚点 G{0}：据点「{1}」(wo{2}) body={3} tile={4} pos=({5:F0},{6:F0},{7:F0})km |pos|={8:F0}km",
                 group.GroupId, settlement.Label, settlement.ID, bodyId, tile.tileId,
-                group.CurrentOrbit.position.x / 1000.0, group.CurrentOrbit.position.y / 1000.0,
-                group.CurrentOrbit.position.z / 1000.0,
-                group.CurrentOrbit.position.magnitude / 1000.0)); // 根行星锚点：|pos| 应等于 R_body（系统系原点在地球）
+                group.CurrentOrbit.positionSystem.x / 1000.0, group.CurrentOrbit.positionSystem.y / 1000.0,
+                group.CurrentOrbit.positionSystem.z / 1000.0,
+                group.CurrentOrbit.positionSystem.magnitude / 1000.0)); // 根行星锚点：|pos| 应等于 R_body（系统系原点在地球）
             return group.GroupId;
         }
 
@@ -545,7 +545,8 @@ namespace PioneerFramework
             layer ??= tile.Layer ?? Find.WorldGrid?.Surface;
             Vector3 tileCenter = layer != null ? layer.GetTileCenter(tile.tileId) : Vector3.up;
             // 调用时 group.CelestialBodyId 必须已置位（GetCentralBodyOffset 据此判定行星/卫星口径）
-            DVector3 frameOffset = group.GetCentralBodyOffset(TimeScaleManager.GetPhysicsTickSafe());
+            // 批6 S3-3c：偏移现在带系标签（`SystemVec3`）；纯核心 `ConstellationCore` 收裸三分量 ⇒ 取 `.v`
+            DVector3 frameOffset = group.GetCentralBodyOffset(TimeScaleManager.GetPhysicsTickSafe()).v;
             return ConstellationCore.AnchorPositionSystem(frameOffset, new DVector3(tileCenter.x, tileCenter.y, tileCenter.z), radius);
         }
 

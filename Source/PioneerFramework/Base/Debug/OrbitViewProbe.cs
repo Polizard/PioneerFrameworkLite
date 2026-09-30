@@ -11,8 +11,10 @@ namespace PioneerFramework
     ///
     /// ## ⚠ 先说变化（否则会把这几个读数看错）
     /// 本探针原先验的是"适配层 +z 极轴 ↔ 游戏世界 +Y 极轴**之间那一次换系**写没写错"。
-    /// **批4 已把适配层统一到 +Y、与游戏世界同系**（`GameWorldToAdapter` 退化为恒等）
-    /// ⇒ **"换系"这个被测量不存在了**：判据①（往返恒等）现在**恒真**，保留它只是 smoke；
+    /// **批4 已把适配层统一到 +Y、与游戏世界同系**（`GameWorldToAdapter`/`AdapterToGameWorld` 退化为恒等，
+    /// 批6 S2 起**降为 `OrbitView` 私有**，跨系只经两个口：进 `FromGameStateVectors` / 出 `GameFrameStateAtUT`）
+    /// ⇒ **"换系"这个被测量不存在了**：判据①（往返恒等）现在走**两个口**（`ut` 取构造时刻 ⇒ Δt=0 逐位返回），
+    /// 是 smoke 兼"口没写错"的守卫；
     /// 判据②③仍然是真的（它比的是"游戏系里独立叉乘的倾角/法向"与"适配层要素反解出来的值"，
     /// 两者走的仍是完全不同的代码路径，对不上就说明要素提取那条路坏了）。
     ///
@@ -21,9 +23,9 @@ namespace PioneerFramework
     /// 单元测试证明不了游戏侧传进来的确实是 +Y 系，所以只能喂真状态来验。
     ///
     /// ## 判据仍是"公式无关"的
-    ///   ① 往返恒等：`AdapterToGameWorld(ov.r) == g.positionBody`（逐位；**P4 后恒真**）
+    ///   ① 往返恒等：**进** `FromGameStateVectors` → **出** `GameFrameStateAtUT(构造时刻)`，与原始 (r,v) 逐位比
     ///   ② 倾角：游戏系里 `acos(ĥ·up)`（`up = DVector3.up`、`ĥ = normalize(r×v)`）必须等于 `ov.inclination`
-    ///   ③ 轨道法向：把 `ov.OrbitNormal()` 换回游戏系，必须等于游戏系里直接 `cross(r,v)` 的单位化
+    ///   ③ 轨道法向：`ov.OrbitNormal()` 必须等于游戏系里直接 `cross(r,v)` 的单位化（两系同轴 ⇒ 不经转换）
     ///
     /// 【边界】只读 + 只打日志，不修改任何状态。
     /// </summary>
@@ -60,13 +62,12 @@ namespace PioneerFramework
             int equatorialIsZeroInc = 0;
             int checks = 0;
             int uncheckedSamples = 0;
-            // ⚠ **S1 部分 oracle 用独立计数器**（2026-09-29 实测教训）：把它计进共享的 `failures` 会让收尾那句
-            //   "结论：**F1 换系 FAIL** —— 先查 GameWorldToAdapter" **归错因** ✗（月球组实测：F1 三条全 PASS，
-            //   但 oracle 红 ⇒ 那句话把"滞后副本"说成了"换系坏了"）。**判据要判，归因要分。**
-            int s1OracleChecks = 0, s1OracleFailures = 0;
-            double worstPosBodyDiff = 0.0; // S1 部分 oracle：positionBody vs CurrentOrbit 派生值
-            double worstVelBodyDiff = 0.0; // S1 部分 oracle：velocityBody vs CurrentOrbit 派生值
-            // ⚠ 判据**不是**死等号（旧版写 `1e-12`，那是错的：见下面每组的量纲化上界）。
+            // ⚠⚠ 批6 S3-3d（2026-09-30）：**"S1 部分 oracle" 已退役，判据随被测量一起消失**。
+            //   它原本考的是"`positionBody`/`velocityBody` 这两个**滞后副本**是否等于现推的定义式"。
+            //   那两个字段现在**就是现算属性**（`SpaceEntityGroup.positionBody` 的文档）⇒ 两边同一个算式
+            //   ⇒ 这条等式**恒真**。按本库纪律（§13.4 P5）**不许留一个恒真的假判据**，故整块删除。
+            //   **它的替代是机械的**：`tools/check-frame-crossing.ps1`（闸门第 11 步）—— 副本读不回来，
+            //   类型 + 棘轮会当场拦住；而"滞后 ≤ 一步"这个量级（月球档 ≈1.8 km，与交会门同阶）**已随副本一起消失**。
 
             foreach (SpaceEntityGroup g in spaceGame.GetAllGroups())
             {
@@ -94,64 +95,28 @@ namespace PioneerFramework
                 // —— 经过适配层 ——
                 OrbitView ov = OrbitView.FromGameStateVectors(gp, gv, def.gravitationalParameter, tick, DVector3.up, def.radius);
 
-                // ① 往返恒等
-                DVector3 backR = OrbitView.AdapterToGameWorld(ov.r);
-                DVector3 backV = OrbitView.AdapterToGameWorld(ov.v);
+                // ① **往返恒等**（批6 S2 起走两个口：进 = 上面的 `FromGameStateVectors`；出 = `GameFrameStateAtUT`。
+                //    `ut` 取构造时刻 ⇒ `Shepperd` 的 Δt=0 逐位返回原状态）
+                (DVector3 backR, DVector3 backV) = ov.GameFrameStateAtUT(tick);
                 double roundTripErr = Math.Max((backR - gp).magnitude / Math.Max(gp.magnitude, 1.0),
                     (backV - gv).magnitude / Math.Max(gv.magnitude, 1.0));
 
                 // ② 倾角一致
                 double incDiff = Math.Abs(ov.inclination - incGame);
 
-                // ③ 法向一致（把适配层法向换回游戏系，与直接叉乘比）
-                DVector3 nBack = OrbitView.AdapterToGameWorld(ov.OrbitNormal());
+                // ③ 法向一致：两系同轴（批4 P4）⇒ 不经转换；保留此比较是为了抓"构造过程引入旋转"这类回归
+                DVector3 nBack = ov.OrbitNormal();
                 double normalErr = (nBack - hHat).magnitude;
 
                 bool ok = roundTripErr < 1e-12 && incDiff < 1e-9 && normalErr < 1e-9;
                 if (!ok) failures++;
                 if (incGame < 1e-6) equatorialIsZeroInc++;
 
-                // ⚠ **R5 的实测**（不是换系判据，所以**不计进** `failures`）：
-                // `OrbitView` 是从 `g.positionBody` 构造的，而 P-1 §6 R5 要求"构造点只从 `CurrentOrbit` 取真值"。
-                // `positionBody` 按称是 `CurrentOrbit.position − 中心天体偏移`（两者都在天体参考系），
-                // 但它只在少数几个点被写入 ⇒ **它们会不会不一致，只有测了才知道**。
-                // 若这一项明显非零 ⇒ `positionBody` 是滞后的派生副本 ⇒ 构造点要改从 `CurrentOrbit` 推。
-                DVector3 fromCurrent = g.CurrentOrbit.position
-                                       - g.GetCentralBodyOffset((int)Math.Round(tick));
-                double localPosDiff = (fromCurrent - gp).magnitude / Math.Max(gp.magnitude, 1.0);
-                if (localPosDiff > worstPosBodyDiff) worstPosBodyDiff = localPosDiff;
-
-                // ⭐ **S1 的"部分 oracle"（2026-09-29）——把"名字声称的系"交给等式去证**：
-                //   这两个字段的**写入点就是定义式**（`SpaceGameComp:2664`：
-                //   `group.positionBody = group.CurrentOrbit.position − result.SyncBodyPos`，同 tick；
-                //   `velocityBody` 同理）⇒ 在步边界上它们必须与"现推的定义式"**一致**。
-                //   · 一致 ⇒ 名字（天体局部系）与实现**互为佐证** ✓（这是"改的名字对不对"唯一的机器证据）
-                //   · 不一致 ⇒ 是滞后副本 ⇒ 构造点该改从 `CurrentOrbit` 推（P-1 §6 R5）
-                //   ⚠ 此前这一项**只打读数、不计进 failures** ⇒ 判据形同不存在；现在**计入**。
-                DVector3 velFromCurrent = g.CurrentOrbit.velocity
-                                          - g.GetCentralBodyVelocity((int)Math.Round(tick));
-                double localVelDiff = (velFromCurrent - gv).magnitude / Math.Max(gv.magnitude, 1.0);
-                if (localVelDiff > worstVelBodyDiff) worstVelBodyDiff = localVelDiff;
-
-                // ⚠ **判据从"死等号"改成"量纲化上界"**（2026-09-29 实测定案）：`CurrentOrbit` 是**连续**读出来的
-                //   （圆轨组的解析式按**当前** tick 求值），而 `positionBody/velocityBody` **只在物理步末尾写**
-                //   （`SpaceGameComp:2664`）⇒ 步与步之间两者**必然**差"最多一步的漂移"。
-                //   月球组实测：位置差 1.8 km ÷ 月球轨道速度 1581 m/s ≈ 1.1 s、速度差 0.031 m/s ÷ 月球引力 0.0313 m/s² ≈ 1.0 s
-                //   ⇒ **两个数都正好是一步**（Normal 档 dt = 1 s）⇒ 这是**步量化的后果**，不是缺陷。
-                //   ⇒ 判据 = **滞后是否超过一步**：超过 ⇒ 真滞后（构造点该改从 CurrentOrbit 推，P-1 §6 R5）。
-                // dt 的**唯一权威**是 `TimeScaleManager` 的实例属性（Combat 1/60 · Normal 1 · Fast 8）；
-                // 取不到组件时回落到 Normal 档 1.0 并在读数里注明。
-                var tsm = Current.Game?.GetComponent<TimeScaleManager>();
-                double dtStep = Math.Max(1e-6, tsm != null ? tsm.CalendarSpeedMultiplier : 1.0);
-                double vOffMag = g.GetCentralBodyVelocity((int)Math.Round(tick)).magnitude;
-                double boundPos = (gv.magnitude + vOffMag) * dtStep;   // 一步内两者位置差最多能变化这么多
-                double aLocal = def.gravitationalParameter / Math.Max(gp.sqrMagnitude, 1.0);
-                double boundVel = aLocal * dtStep;                     // 速度差同理（中心天体速度变化更小，忽略并注明）
-                double absPosDiff = (fromCurrent - gp).magnitude;
-                double absVelDiff = (velFromCurrent - gv).magnitude;
-                double impliedSecPos = gv.magnitude > 1e-9 ? absPosDiff / gv.magnitude : 0.0;
-                s1OracleChecks++;
-                if (absPosDiff > boundPos || absVelDiff > boundVel) s1OracleFailures++;
+                // ⚠ 批6 S3-3d（2026-09-30）：原来这里有一整块"R5 / S1 部分 oracle"判据
+                //   （`positionBody`/`velocityBody` 这两个**滞后副本** vs 现推的定义式，判"滞后是否超过一步"）。
+                //   **那两个字段现在是现算属性** ⇒ 等式两边同一个算式、恒真 ⇒ 按纪律整块删除
+                //   （"不许留一个恒真的假判据"，§13.4 P5）。它的替代 = `tools/check-frame-crossing.ps1`
+                //   的类型 + 棘轮：副本读不回来。`gp`/`gv` 仍在上面用于构造适配层视图，本身照旧。
 
                 sb.Append("\n  G").Append(g.GroupId)
                   .Append(g.IsCircularOrbit ? " 圆轨模式" : " 自由飞行")
@@ -167,29 +132,18 @@ namespace PioneerFramework
                   .Append("  ②倾角差 ").Append((incDiff * 180.0 / Math.PI).ToString("E2")).Append("°")
                   .Append("（游戏系独立算 ").Append((incGame * 180.0 / Math.PI).ToString("F4")).Append("°）")
                   .Append("  ③法向差 ").Append(normalErr.ToString("E1"))
-                  .Append(ok ? "   ⇒ PASS" : "   ⇒ **FAIL**")
-                  .Append("  R5差 ").Append(localPosDiff.ToString("E1"));
+                  .Append(ok ? "   ⇒ PASS" : "   ⇒ **FAIL**");
             }
 
             sb.Append("\n  合计 ").Append(checkedGroups).Append(" 组；失败 ").Append(failures)
               .Append(" 组；其中游戏系倾角为 0 的 ").Append(equatorialIsZeroInc).Append(" 组（赤道轨道）");
 
-            sb.Append("\n  **S1 部分 oracle（独立计数）**：`positionBody`/`velocityBody` vs "
-                      + "`CurrentOrbit.… − 中心天体偏移/速度` 的最大**相对**差 = ")
-              .Append(worstPosBodyDiff.ToString("E2")).Append(" / ").Append(worstVelBodyDiff.ToString("E2"))
-              .Append("\n    判据 = **绝对差是否超过「一步」的最大可能变化**（位置 `(|v船|+|v天体|)·dt`、速度 `a_本地·dt`）。")
-              .Append("\n    ⇒ 本项判定：**")
-              .Append(s1OracleChecks == 0 ? "UNCHECKED（0 样本）"
-                      : (s1OracleFailures == 0 ? "PASS（滞后 ≤ 一步，属步量化副本的约定后果）" : "**FAIL（滞后 > 一步）**"))
-              .Append("**（样本 ").Append(s1OracleChecks).Append(" 组 / 超界 ").Append(s1OracleFailures).Append(" 组）")
-              .Append("\n    ⚠ **本项与「换系」无关**：F1 三条考适配层，本项考「派生副本相对权威量的时延」"
-                      + " ⇒ 两者可以同时一个 PASS 一个 FAIL（月球组实测正是如此）；")
-              .Append("\n      实测形态（月球组）：相对差 5.4E-004 / 2.5E-005 ⇒ 位置 ≈1.8 km、速度 ≈0.031 m/s，"
-                      + "**正好各是一步的漂移**（÷v ≈1.1 s、÷a ≈1.0 s，Normal 档 dt=1 s）⇒ 判 PASS、但**量级与交会门同阶**（1 km）值得记着。");
+            // ⚠ 批6 S3-3d：**"S1 部分 oracle" 整条已退役**（被测量 = 滞后副本，已删；见上面的注释）。
+            //   这里只留下一句说明，免得读日志的人以为它坏了。
             if (checkedGroups == 0)
             {
                 uncheckedSamples++;
-                sb.Append("\n  ⚠ 本场景**一个活动编队都没有** ⇒ 上面这条判据**没有样本、未验**（0 样本不折算成 PASS）");
+                sb.Append("\n  ⚠ 本场景**一个活动编队都没有** ⇒ 上面的 F1 判据**没有样本、未验**（0 样本不折算成 PASS）");
             }
             // ═══════════════════════════════════════════════════════════════════
             // ② 地表几何的**口径**自检（P-1 §1.3/§6-R2 登记的那条待办）
@@ -243,13 +197,13 @@ namespace PioneerFramework
                         if (!gg.IsActive || gg.CelestialBodyId != EARTH_BODY_ID) continue;
 
                         int tkSurf = (int)Math.Round(tick);
-                        DVector3 rGame = gg.CurrentOrbit.position - gg.GetCentralBodyOffset(tkSurf);
+                        DVector3 rGame = gg.GetBodyPosition(tkSurf).v;   // 批6 S3-3c：现算（唯一换算）
                         if (rGame.sqrMagnitude < 1.0) continue;
 
                         surfSamples++;
                         double latHost = GetSurfaceState.EciToLongLat(rGame, omega, tick).latRad;
-                        V3 rAdapter = OrbitView.GameWorldToAdapter(new V3(rGame.x, rGame.y, rGame.z));
-                        double latAdapter = Math.Asin(Math.Max(-1.0, Math.Min(1.0, rAdapter.normalized.y)));
+                        // 适配层纬度 = 位置本身的 y 分量（两系同轴 ⇒ 无换系；批6 S2 起跨系只经 OrbitView 的进/出两个口）
+                        double latAdapter = Math.Asin(Math.Max(-1.0, Math.Min(1.0, rGame.normalized.y)));
                         double dLat = Math.Abs(latHost - latAdapter) * 180.0 / Math.PI;
                         if (dLat > worstLatDiff) worstLatDiff = dLat;
                     }
@@ -268,11 +222,10 @@ namespace PioneerFramework
                     //   ⚠ 这与 KSP/MJ 的直觉**相反**（那边 0° 就是顺行）。⇒ 没有这条，将来谁看到 180° 会以为坏了。
                     //   做法是**合成的**（不依赖场景里恰好有什么）：同一点、同半径，速度分别取"东向"与"西向"。
                     {
-                        // 这几处调 `GameWorldToAdapter`（批4 P4 起恒等）只为保持"唯一咽喉"的形状；值就是游戏系本身。
-                        V3 poleDir = OrbitView.GameWorldToAdapter(new V3(DVector3.up.x, DVector3.up.y, DVector3.up.z));
-                        V3 rAt = OrbitView.GameWorldToAdapter(new V3(bodyR, 0, 0));
-                        V3 eastDir = OrbitView.GameWorldToAdapter(
-                            new V3(-0.0, 0.0, 1.0)).normalized; // p=+x̂ 处的东向（见上面推导）= +ẑ
+                        // 两系同轴（批4 P4）⇒ 值直传；跨系只经 `OrbitView` 的进/出两个口（批6 S2）。
+                        V3 poleDir = DVector3.up;
+                        V3 rAt = new V3(bodyR, 0, 0);
+                        V3 eastDir = new V3(0.0, 0.0, 1.0).normalized; // p=+x̂ 处的东向（见上面推导）= +ẑ
                         double vCirc = Math.Sqrt(SpaceConstants.PrimaryGravitationalParameter / bodyR);
 
                         OrbitView ovPro = OrbitView.FromStateVectors(rAt, eastDir * vCirc, SpaceConstants.PrimaryGravitationalParameter, tick, poleDir, bodyR);
@@ -312,7 +265,8 @@ namespace PioneerFramework
             else if (failures == 0)
                 sb.Append("\n  结论：F1 换系 PASS —— 适配层与游戏世界在倾角/法向上逐点一致。");
             else
-                sb.Append("\n  结论：**F1 换系 FAIL** —— 不要往下接，先查 GameWorldToAdapter。");
+                sb.Append("\n  结论：**F1 换系 FAIL** —— 不要往下接，先查 `OrbitView` 的进/出两个口"
+                          + "（`FromGameStateVectors` / `GameFrameStateAtUT`）。");
 
             Log.Message(sb.ToString());
         }

@@ -200,7 +200,7 @@ namespace PioneerFramework
                 return (pos, selfGroup.GetCircularVelocityAtTick(nowTick));
             }
 
-            return (selfGroup.CurrentOrbit.position, selfGroup.CurrentOrbit.velocity);
+            return (selfGroup.CurrentOrbit.positionSystem.v, selfGroup.CurrentOrbit.velocitySystem.v);
         }
 
         /// <summary>

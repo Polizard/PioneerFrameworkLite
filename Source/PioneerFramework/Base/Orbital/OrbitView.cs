@@ -189,26 +189,44 @@ namespace PioneerFramework
             double angularVelocity = 0.0)
         {
             return FromStateVectors(
-                new V3(r.x, r.y, r.z),
-                new V3(v.x, v.y, v.z),
+                GameWorldToAdapter(r),
+                GameWorldToAdapter(v),
                 mu,
                 epoch,
-                new V3(equatorialAxis.x, equatorialAxis.y, equatorialAxis.z),
+                GameWorldToAdapter(equatorialAxis),
                 bodyRadius,
                 soiRadiusApprox,
                 angularVelocity);
         }
 
         /// <summary>
-        /// ⚠ **已退化为恒等**（批4 P4，2026-09-28）：适配层与游戏世界同轴 +Y ⇒ 不再有换系。
-        /// 保留这两个名字只为让"`DVector3`→`V3` 的咽喉只在一处"这个形状在调用点上看得到
-        /// （宿主侧仍有 20+ 处按"换系"的语义读它）。**待 [V1] 收敛（`git grep` 归零）后删除这一对，
-        /// 并把调用点直接写成分量搬运。** 在那之前**不要**往里加任何实质变换。
+        /// **出边唯一口**：`ut` 时刻的**游戏世界系（系统系）**状态（P-1 §11.3 S2，批6，2026-09-30）。
+        ///
+        /// ⚠ 批4 P4（2026-09-28）极轴统一后适配层与游戏世界同轴 +Y ⇒ 本次跨越是**恒等**。
+        /// 与 <see cref="FromGameStateVectors" />（进边）一起构成本类型**唯二的两个跨系口**；
+        /// 宿主侧要"游戏系状态"一律走这里，**不要再在别处自己拼参考系状态**。
         /// </summary>
-        public static V3 GameWorldToAdapter(V3 game) => game;
+        public (DVector3 pos, DVector3 vel) GameFrameStateAtUT(double ut)
+        {
+            (V3 r, V3 v) = RightHandedStateVectorsAtUT(ut);
+            return (AdapterToGameWorld(r), AdapterToGameWorld(v));
+        }
+
+        /// <summary>
+        /// ⚠ **已退化为恒等**（批4 P4，2026-09-28）：适配层与游戏世界同轴 +Y ⇒ 不再有换系。
+        ///
+        /// 批6 S2（2026-09-30）起**降为 `private`**：本类型之外再无调用点 —— **状态**的跨系只经两个口
+        /// （**进** <see cref="FromGameStateVectors" /> / **出** <see cref="GameFrameStateAtUT" />），
+        /// 将来两系若再分离，**状态**只改这两个口即可。
+        ///
+        /// ⚠⚠ **这两句只保证"状态"**：Δv / 方向 / 位置这类**非状态**向量在 S2 之后是**直传**的
+        /// （各调用点有就地注释）。若两系将来真的分离，**那些点必须重新引入转换** ——
+        /// 这一步的机械护栏"**类型承载系**"归 S3（§11.3 Stage 3）：在那之前，两系分离会让 Δv 静默偏掉。
+        /// </summary>
+        private static V3 GameWorldToAdapter(V3 game) => game;
 
         /// <summary>恒等；见 <see cref="GameWorldToAdapter" /> 的说明。</summary>
-        public static V3 AdapterToGameWorld(V3 adapter) => adapter;
+        private static V3 AdapterToGameWorld(V3 adapter) => adapter;
 
         // 批5 U4（2026-09-28）：`DVector3` 与移植面三矢量之间的**两个恒等转换函数已删除**
         // （类型统一 U2/U3 之后移植面那个类型就是 `DVector3` ⇒ 它们退化成原样搬运三个分量）。
@@ -446,29 +464,45 @@ namespace PioneerFramework
         public double TimeOfDescendingNodeEquatorial(double ut) => TimeOfTrueAnomaly(DescendingNodeEquatorialTrueAnomaly(), ut);
 
         /// <summary>
-        /// **赤道升交点的位置**（该点处的参考系位置矢量）。
-        /// 返回 <c>default</c>（零矢量）表示该交点不存在（双曲且交点在双曲线的开口里）——
-        /// 调用方必须用 <see cref="AscendingNodeEquatorialExists" /> 或对零矢量判长来区分。
+        /// **赤道升交点的位置**（该点处的参考系位置矢量）。返回 `false` 表示**该交点不存在**
+        /// （双曲轨且交点在双曲线的开口里；或轨道面与赤道面重合 ⇒ 交点没有定义）。
         ///
-        /// 【为什么加这两个】V2 收敛（2026-09-18）：`OrbitMath.GetNodePositions` 是同一能力的第二份实现
+        /// ⚠ **批6 S3-3a（2026-09-30）：从"返回零矢量 + 调用方自己判长"改成 `Try*`** —— 零矢量当
+        /// "不存在"是 A6 类歧义（忘了判就拿零矢量继续算，且零矢量也可能是合法值）。
+        /// 判据取自 <see cref="AscendingNodeEquatorialExists" />（它含"赤道轨上交点未定义"那条退化判据）。
+        /// `false` 时 <paramref name="pos" /> **保证置零**（不留上一次的残留）。
+        ///
+        /// 【为什么加这一族】V2 收敛（2026-09-18）：`OrbitMath.GetNodePositions` 是同一能力的第二份实现
         /// （而它与我们的 `inclination`/`LAN` 口径还差一个参考系：它默认 +Y、适配层是 +z）。
         /// `OrbitView` 原先只有交点**时刻**、没有交点**位置** —— 这是真缺口，补在这里之后
         /// 那两份就可以删掉，交点族只剩一个权威。
         /// </summary>
-        public V3 AscendingNodePositionEquatorial(double ut) =>
-            AscendingNodeEquatorialExists() ? RightHandedBCIPositionAtUT(TimeOfAscendingNodeEquatorial(ut)) : default;
+        public bool TryAscendingNodePositionEquatorial(double ut, out V3 pos)
+        {
+            if (!AscendingNodeEquatorialExists())
+            {
+                pos = default;
+                return false;
+            }
+            pos = RightHandedBCIPositionAtUT(TimeOfAscendingNodeEquatorial(ut));
+            return true;
+        }
 
-        /// <summary>**赤道降交点的位置**。语义同 <see cref="AscendingNodePositionEquatorial" />。</summary>
-        public V3 DescendingNodePositionEquatorial(double ut) =>
-            DescendingNodeEquatorialExists() ? RightHandedBCIPositionAtUT(TimeOfDescendingNodeEquatorial(ut)) : default;
+        /// <summary>**赤道降交点的位置**。语义同 <see cref="TryAscendingNodePositionEquatorial" />。</summary>
+        public bool TryDescendingNodePositionEquatorial(double ut, out V3 pos)
+        {
+            if (!DescendingNodeEquatorialExists())
+            {
+                pos = default;
+                return false;
+            }
+            pos = RightHandedBCIPositionAtUT(TimeOfDescendingNodeEquatorial(ut));
+            return true;
+        }
 
-        /// <summary>**相对 <paramref name="other" /> 的升交点位置**。语义同上。</summary>
-        public V3 AscendingNodePosition(OrbitView other, double ut) =>
-            AscendingNodeExists(other) ? RightHandedBCIPositionAtUT(TimeOfAscendingNode(other, ut)) : default;
-
-        /// <summary>**相对 <paramref name="other" /> 的降交点位置**。语义同上。</summary>
-        public V3 DescendingNodePosition(OrbitView other, double ut) =>
-            DescendingNodeExists(other) ? RightHandedBCIPositionAtUT(TimeOfDescendingNode(other, ut)) : default;
+        // 批6 S3-3a（2026-09-30）：`AscendingNodePosition(OrbitView other, ut)` / `DescendingNodePosition(other, ut)`
+        // **已删除** —— 两者都是"相对另一条轨道"的交点位置，全库**零调用者**（U-8：零调用者归零）。
+        // 要取回：它们各自是上面 Try 形态的"相对另一条轨道"版（判据换成 `AscendingNodeExists(other)`）。
 
         /// <summary>
         /// 把方向矢量投影到轨道面后、相对**近心点方向**的真近点角（0..2π）。

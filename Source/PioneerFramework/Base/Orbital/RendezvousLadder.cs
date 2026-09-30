@@ -49,6 +49,9 @@ namespace PioneerFramework
         public enum Rung
         {
             Done, MatchVelocitiesNow, MatchAtClosestApproach, Intercept, Hohmann, PhasingOrbit, Circularize, MatchPlanes,
+            /// ★ 2026-10-01：**近场终端律**（`TerminalRendezvousLaw`，位置+速度联合）自己排的单节点计划。
+            /// 它不是阶梯选出来的级，而是"终端律接管"这个事实的标签（日志里 `⇒ Terminal` 一眼可辨）。
+            Terminal,
         }
 
         /// <summary>参数（默认值取**上游的默认值**：`desiredDistance=100` / `maxPhasingOrbits=5` / `maxClosingSpeed=100`）。</summary>
@@ -273,13 +276,26 @@ namespace PioneerFramework
                     //   从来没验过"这条弧真的能到达"。这里用**另一种方法**（现成的一步两体推进器
                     //   `Shepperd`，与 Gooding 完全不同的算法）从同一个初值积分到同一时刻再量一次。
                     //   ⇒ 两个数应当一致；**不一致 ⇒ 计划本身是坏的**（而不是执行坏），这条能把两者分开。
+                    //
+                    // ⚠⚠ **2026-10-01：这条仪器此前是坏的（"km 级假红"）** —— 原先按 `round(closingTime/5)` 步
+                    //   走 5 s 定步长 ⇒ 传播总时长与 `closingTime` 差最多 **2.5 s**；而目标在轨速度 ~5.6 km/s
+                    //   ⇒ **1 s 的差就是 5.6 km**。实测对得上：`781 s 后到达` ⇒ 156 步 = 780 s（差 1 s）⇒
+                    //   本读数报 **4744 m** —— 而那与计划好坏无关（**两个解算器实测都在 1e-8 m 级**，
+                    //   见 `InterceptSolverComparisonTests`）。⇒ 修法：**5 s 步走整段 + 余数一步**（总时长严格 = `closingTime`）。
+                    //   教训：我曾拿这台读数当"计划是坏的"的证据（据此还试过一次换解算器、已撤）⇒ **红字先怀疑仪器**。
                     {
                         V3 rr = rTakeoff, vv = vTakeoff + dv1;
                         const double dtProbe = 5.0;
-                        int steps = (int)Math.Round(closingTime / dtProbe);
+                        int steps = (int)Math.Floor(closingTime / dtProbe);
                         for (int si = 0; si < steps; si++)
                         {
                             var (rn, vn) = MechJebLib.TwoBody.Shepperd.Solve(self.mu, dtProbe, rr, vv);
+                            rr = rn; vv = vn;
+                        }
+                        double tail = closingTime - steps * dtProbe;   // 余数（< 5 s）：一步补齐 ⇒ 总时长恰为 closingTime
+                        if (tail > 0.0)
+                        {
+                            var (rn, vn) = MechJebLib.TwoBody.Shepperd.Solve(self.mu, tail, rr, vv);
                             rr = rn; vv = vn;
                         }
                         arrivalMissIndep = (rr - rTgtAtArrival).magnitude;

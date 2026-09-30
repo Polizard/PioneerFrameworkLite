@@ -5,6 +5,7 @@ using MechJebLib.Maths;
 using MechJebLib.Primitives;
 using MechJebLib.TwoBody;
 using MechJebLib.Utils;
+using PioneerFramework;   // 批7（2026-09-30）：统一调度原语 `ParallelOps`（多起点并行 + 唯一归约器）
 using static System.Math;
 using static MechJebLib.Utils.Statics;
 
@@ -251,25 +252,30 @@ namespace MechJebLib.Maneuvers
             //   ⇒ "多起点"退化成单起点，反而更容易卡在局部极小 ✗
             double[] dtSeeds = { dtguess, dtguess + 0.25 * synodicCapped, dtguess + 0.5 * synodicCapped, dtguess + 0.75 * synodicCapped };
 
-            double[] best = { 0, 0, 0 };
-            double bestF = double.PositiveInfinity;
-
-            foreach (double ttSeed in ttSeeds)
-            foreach (double dtSeed in dtSeeds)
+            // ── 批7 #1（2026-09-30）：12 个起点**各自独立**（只共享只读的 `args`/`objective` 输入）⇒ 并行 ──
+            //   归约走 `ParallelOps.MinIndex`（**按下标严格取最小、并列取小下标**）——与原先"先到先得"
+            //   （串行 foreach + 严格 `<`）在并列时**选同一个** ⇒ 结果与串行路**逐位相同**（`ParallelOpsTests` 钉住这条）。
+            //   工作量：12 × 60 sweeps × ≤6 次 Lambert ⇒ 实测 5.4–8.3 ms（全库最大的纯 CPU 块）⇒ 值得并行。
+            int nTtSeeds = ttSeeds.Length, nDtSeeds = dtSeeds.Length, nSeeds = nTtSeeds * nDtSeeds;
+            var seedX = new double[nSeeds][];
+            var seedF = new double[nSeeds];
+            ParallelOps.For(nSeeds, 5e-4, k =>
             {
-                double[] seed = { dtSeed, ttSeed, offsetGuess };
-                double[] x = CompassSearch(objective, seed, lo, hi, step, tol[1], 60, out double fx);
+                // 下标映射与串行**同序**（外层 ttSeed、内层 dtSeed）——并列时选谁就靠这个顺序
+                double[] seed = { dtSeeds[k % nDtSeeds], ttSeeds[k / nDtSeeds], offsetGuess };
+                // ⚠ `CompassSearch` 内部的 try/catch **留在工作体内**：抛到 `Parallel.For` 外会变成
+                //    `AggregateException`（改控制流），见 §17.4 #1 的告警
+                seedX[k] = CompassSearch(objective, seed, lo, hi, step, tol[1], 60, out double fx);
+                seedF[k] = fx;
+            });
 
-                if (fx < bestF)
-                {
-                    bestF = fx;
-                    best = x;
-                }
-            }
-
-            if (!(bestF < INFEASIBLE))
+            int bestIdx = ParallelOps.MinIndex(seedF);
+            if (bestIdx < 0 || !(seedF[bestIdx] < INFEASIBLE))
                 throw new Exception(
                     $"TwoImpulseTransfer.Maneuver({mu}, {r1}, {v1}, {r2}, {v2}): 所有起点都不可行（无解）");
+
+            double bestF = seedF[bestIdx];
+            double[] best = seedX[bestIdx];
 
             (V3 dv1f, V3 dv2f) = LambertFunction(best[0], best[1], best[2], args);
 
@@ -324,6 +330,25 @@ namespace MechJebLib.Maneuvers
         public static (V3 dv1, double dt1, V3 dv2, double dt2) NextManeuver(double mu, V3 r1, V3 v1, V3 r2, V3 v2, int maxiter = 50,
             double lagTime = double.NaN, bool coplanar = true, bool rendezvous = true, bool capture = true,
             bool fixedTime = false, bool optguard = false)
+            => NextManeuverCore(mu, r1, v1, r2, v2, 0.0, maxiter, lagTime, coplanar, rendezvous, capture, fixedTime, optguard);
+
+        /// <summary>
+        /// **批7 ② 的实验入口**（2026-09-30）：与 <see cref="NextManeuver" /> **同一条路**，但**首猜可给**
+        /// （warm start：把上一次成功解出来的转移时长当首猜，省掉"从 0 摸"的那几轮重试）。
+        ///
+        /// ⚠ 为什么另开一个名字而**不往 `NextManeuver` 上加参数**：那条签名**必须保持上游原样**（J1）；
+        ///   两者共用同一个 <see cref="NextManeuverCore" />（**一份实现**，J2）。
+        /// ⚠ 它**会改结果**（换了首猜 ⇒ 搜索走另一个邻域 ⇒ 可能找到另一个局部极小）⇒
+        ///   接进生产前必须先用蒙特卡洛台架量"更快了多少、质量掉了没有"。
+        /// </summary>
+        internal static (V3 dv1, double dt1, V3 dv2, double dt2) NextManeuverWarmStart(double mu, V3 r1, V3 v1, V3 r2, V3 v2,
+            double warmDtGuess, int maxiter = 50, bool coplanar = true, bool rendezvous = true, bool capture = true,
+            bool optguard = false)
+            => NextManeuverCore(mu, r1, v1, r2, v2, warmDtGuess, maxiter, double.NaN, coplanar, rendezvous, capture, false, optguard);
+
+        /// <summary>`NextManeuver` / `NextManeuverWarmStart` 的**唯一实现**（首猜参数化）。</summary>
+        private static (V3 dv1, double dt1, V3 dv2, double dt2) NextManeuverCore(double mu, V3 r1, V3 v1, V3 r2, V3 v2,
+            double initialDtGuess, int maxiter, double lagTime, bool coplanar, bool rendezvous, bool capture, bool fixedTime, bool optguard)
         {
             double synodicPeriod = Astro.SynodicPeriod(mu, r1, v1, r2, v2);
 
@@ -331,15 +356,46 @@ namespace MechJebLib.Maneuvers
                 return ManeuverInternal(mu, r1, v1, r2, v2, 0, coplanar: coplanar, rendezvous: rendezvous, capture: capture, optguard: optguard,
                     lagTime: lagTime, fixedtime: true);
 
-            double dtguess = 0;
-            for (int iter = 0; iter < maxiter; iter++)
+            // ══ 批7 #1b（2026-09-30）：把并行**提到外层重试**，用**倍增批**（1 → 2 → 4 → 8）══
+            //   · 实测外层平均真跑 ≈4.4 轮，且占单次调用成本的大头（`fixedTime` 一跳过它，成本从 ~2.2 ms 掉到 ~0.5 ms）；
+            //   · 每个候选**只依赖自己的 `dtguess`** ⇒ 彼此独立；
+            //   · `dtguess` 用**与串行同一套累加**（`+= synodic*0.1`）算 —— 写成 `k*synodic*0.1`
+            //     在浮点上不一定逐位相同；
+            //   · 取用时**按 iter 升序找第一个 `dt1 > 0`** ⇒ 与串行**同序、逐位相同**；
+            //   · ⚠ **批大小必须倍增**（第一版写死 8 ⇒ 实测在"第 0 轮就成功"的几何上退步 7×：
+            //     它把 7 个串行时根本不会算的候选也算了）。1→2→4→8 的代价是"最多算到所需轮数的 ~2 倍"，
+            //     而**第 0 轮成功时与旧形状逐位同路、零浪费**（那是常见情形）。
+            const int RetryBatchMax = 8;
+            var cand = new (V3 dv1, double dt1, V3 dv2, double dt2)[RetryBatchMax];
+            int batchSize = 1;
+            double dtguess = initialDtGuess;   // ← 首猜（生产默认 0；warm start 传上一次成功的转移时长）
+            for (int iter = 0; iter < maxiter; )
             {
-                (V3 dv1, double dt1, V3 dv2, double dt2) = ManeuverInternal(mu, r1, v1, r2, v2, dtguess, coplanar: coplanar, rendezvous: rendezvous,
-                    capture: capture, optguard: optguard, lagTime: lagTime);
+                int batch = Min(batchSize, maxiter - iter);
+                var guesses = new double[batch];
+                double g = dtguess;
+                for (int k = 0; k < batch; k++) { guesses[k] = g; g += synodicPeriod * 0.10; }
 
-                if (dt1 > 0)
-                    return (dv1, dt1, dv2, dt2);
-                dtguess += synodicPeriod * 0.10;
+                if (batch == 1)
+                {
+                    cand[0] = ManeuverInternal(mu, r1, v1, r2, v2, guesses[0], coplanar: coplanar, rendezvous: rendezvous,
+                        capture: capture, optguard: optguard, lagTime: lagTime);
+                }
+                else
+                {
+                    // 单项 ≈ 一次 12 种子搜索（实测 ~0.5 ms / 轮）⇒ 5e-4 是量级估计
+                    ParallelOps.For(batch, 5e-4, k =>
+                        cand[k] = ManeuverInternal(mu, r1, v1, r2, v2, guesses[k], coplanar: coplanar, rendezvous: rendezvous,
+                            capture: capture, optguard: optguard, lagTime: lagTime));
+                }
+
+                for (int k = 0; k < batch; k++)
+                    if (cand[k].dt1 > 0)
+                        return cand[k];
+
+                dtguess = g;                                   // 与串行的累加序列一致
+                iter += batch;
+                batchSize = Min(batchSize * 2, RetryBatchMax);  // 失败 ⇒ 下一批翻倍（有界）
             }
 
             throw new MechJebLibException("[MechJebLib] Maneuvers.NextManeuver.TwoImpulseTransfer(): too many iterations");

@@ -2,6 +2,7 @@ using System;
 using MechJebLib.Functions;
 using MechJebLib.Lambert;
 using MechJebLib.Maneuvers;
+
 using MechJebLib.Primitives;
 using MechJebLib.Utils;
 
@@ -163,7 +164,8 @@ namespace PioneerFramework
         //     是"惯性经度 → 地表经度"的换算，而我们的 `SurfaceFrame.EciToLongLat` **内部已经做了**
         //     `Ry(+ωt)` 逆变换 ⇒ **不要再加**（加了就是重复计一次自转）。
         //   · 上游的 `GetLatitude/GetLongitude` 给**度**，`EciToLongLat` 给**弧度** ⇒ 这里转度。
-        //   · 经纬度函数吃的是**游戏系**位置 ⇒ 调用前把适配层状态换回游戏系（`AdapterToGameWorld`）。
+        //   · 经纬度函数吃的是**游戏系**位置 ⇒ 批4 P4 起适配层位置**就是**游戏系位置（两系同轴），
+        //     直接喂入即可；跨系只剩 `OrbitView` 的进/出两个口（批6 S2）。
         // ═══════════════════════════════════════════════════════════════════════
 
         private static double Clamp360(double deg)
@@ -211,19 +213,22 @@ namespace PioneerFramework
             return new V3(Math.Sin(lam), 0.0, -Math.Cos(lam));
         }
 
-        /// <summary>适配层位置 ⇒ **固连系经度（度）**（"此刻这一点正下方是哪条经线"）。</summary>
-        private static double FixedLongitudeDeg(V3 adapterPos, OrbitView o, double ut)
+        /// <summary>位置（**游戏系**）⇒ **固连系经度（度）**（"此刻这一点正下方是哪条经线"）。
+        ///
+        /// ⚠ 批4 P4（2026-09-28）起适配层与游戏世界同轴 +Y ⇒ 适配层算出来的位置**本身就在游戏系**，
+        /// 这里直接喂给 `SurfaceFrame`；原先那次 `AdapterToGameWorld` 是恒等且已收进 `OrbitView` 私有（批6 S2）。
+        /// </summary>
+        private static double FixedLongitudeDeg(V3 posGame, OrbitView o, double ut)
         {
-            DVector3 g = OrbitView.AdapterToGameWorld(adapterPos);
-            var latLon = SurfaceFrame.EciToLongLat(g, o.angularVelocity, ut);
+            var latLon = SurfaceFrame.EciToLongLat(posGame, o.angularVelocity, ut);
             return latLon.lonRad * 180.0 / Math.PI;
         }
 
-        /// <summary>适配层位置 ⇒ **惯性系经度（度）**。与 <see cref="EquatorialDirection" /> 同口径。</summary>
-        private static double InertialLongitudeDeg(V3 adapterPos, OrbitView o, double ut)
+        /// <summary>**惯性系经度（度）**（入参同 <see cref="FixedLongitudeDeg" />，游戏系）。与 `EquatorialDirection` 同口径。</summary>
+        private static double InertialLongitudeDeg(V3 posGame, OrbitView o, double ut)
         {
             // `EciToLongLat` 给的是**固连系**经度 ⇒ 加回 `ω·ut` 才是惯性系（= 上游的 `+ rotationAngle`）
-            return FixedLongitudeDeg(adapterPos, o, ut) + o.angularVelocity * ut * (180.0 / Math.PI);
+            return FixedLongitudeDeg(posGame, o, ut) + o.angularVelocity * ut * (180.0 / Math.PI);
         }
 
         /// <summary>
@@ -319,8 +324,9 @@ namespace PioneerFramework
             if (n.magnitude <= 1e-9 * r.magnitude)
             {
                 // 例外：如果升交点**已经**在请求的经度上，那这个请求本来就已满足 ⇒ 无需燃烧
-                V3 anNow = o.AscendingNodePositionEquatorial(ut);
-                if (anNow.sqrMagnitude > 0.0 && LongitudeDiffDeg(InertialLongitudeDeg(anNow, o, ut), newLANDegrees) <= 1e-6)
+                // 批6 S3-3a：交点位置改走 `Try*`（"不存在"不再用零矢量表示，故不再需要判长）
+                if (o.TryAscendingNodePositionEquatorial(ut, out V3 anNow)
+                    && LongitudeDiffDeg(InertialLongitudeDeg(anNow, o, ut), newLANDegrees) <= 1e-6)
                     return V3.zero;
                 throw new OperationException(
                     "点火时刻恰好落在节点线上，且目标经度在对面：需要绕烧点轴翻面，本计划不做。" +
@@ -455,7 +461,19 @@ namespace PioneerFramework
 
         /// <summary>上游 `:181`：解"<c>t0 + dt</c> 时刻到达目标位置"的两冲量（Lambert 走移植的 `Gooding`）。
         /// <paramref name="offsetDistance"/> ≠ 0 ⇒ 把到达点从目标**中心**沿视线前移该距离再解一次
-        /// （上游语义：停在目标前方而不是撞上去）。⚠ <paramref name="dt"/> 必须为正。</summary>
+        /// （上游语义：停在目标前方而不是撞上去）。⚠ <paramref name="dt"/> 必须为正。
+        ///
+        /// ★★ **2026-10-01：试过把解算器 `Gooding` 换成 `Izzo`，当场撤了**（记下来，免得再试一次）。
+        /// 起因：地球那条（5500→6300 km）**反复重规划到烧干**，而阶梯自己的 `独立积分到达偏差` 报 1–12 km。
+        /// 台架（`InterceptSolverMissTests` / `CwVsLambertCloseRangeTests`）在同轨沿迹带上量到
+        /// **`Izzo` 落点 1e-8 m 级、`Gooding` 偏 0.9–320 km（≈5.6× 距离）** ⇒ 当时判"换解算器"。
+        /// **游戏内实跑（MVID `49f2d34e…`）否掉了它**：`独立积分到达偏差` 的分布**没变**（仍 67 条 ≥1 km），
+        /// 规划量还更差（计划 Δv 累计 12827 → **20027 m/s**、`BLOCKED` 124 次）⇒ **撤**。
+        /// ⇒ **推论（重要）**：那个 km 级读数**不是解算器精度造成的**（换成精确解算器读数不变）
+        ///   ⇒ 要么**那条"独立复算"自身口径有问题**（纪元/系/参考轨道），要么病灶在别处。
+        ///   ⇒ 在把那条仪器**验明**之前，不许再拿它当"计划是坏的"的证据（仪器必须被验证）。
+        /// ⚠ 两件事分开记：① **`Gooding` 在该带确实偏 5.6× 距离**（台架实测，是真的；未接生产）；
+        ///   ② **游戏内那条 km 读数另有来源**（待查）——别把①当成②的解释。</summary>
         public static (V3 v1, V3 v2) DeltaVToInterceptAtTime(OrbitView o, double t0, OrbitView target, double dt,
             double offsetDistance = 0.0, bool prograde = true)
         {

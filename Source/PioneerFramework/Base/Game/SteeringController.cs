@@ -91,9 +91,9 @@ namespace PioneerFramework
             switch (SasKind)
             {
                 case SasTargetKind.Prograde:
-                    return g.CurrentOrbit.velocity.normalized;
+                    return g.CurrentOrbit.velocitySystem.normalized.v;   // 批6 S3-3c：读带系字段（旧名是过渡桥）
                 case SasTargetKind.Retrograde:
-                    return -g.CurrentOrbit.velocity.normalized;
+                    return (-g.CurrentOrbit.velocitySystem.normalized).v;
                 case SasTargetKind.Normal:
                 case SasTargetKind.Antinormal:
                 {
