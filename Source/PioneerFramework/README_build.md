@@ -2,7 +2,8 @@
 
 ## 环境要求
 
-- .NET SDK 8.0.100 或更高（仓库 `global.json` 固定 8.0.100）
+- .NET SDK **8.0.100（精确版本）** —— 仓库 `global.json` 为 `rollForward: disable`，装别的版本会直接报错
+  （交付件 DLL 的字节由编译器版本决定，CI 也钉 8.0.100）
 - RimWorld 1.6 依赖 DLL 已放在 `Libs/` 中
 
 ## 构建

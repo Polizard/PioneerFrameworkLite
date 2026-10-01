@@ -31,7 +31,15 @@ tools/                 构建 / 校验 / CI 辅助脚本
 
 环境要求：
 
-- .NET SDK 8.0.100 或更高（仓库 `global.json` 固定 8.0.100，`rollForward` 允许更高版本）
+- .NET SDK **8.0.100（精确版本）** —— 仓库 `global.json` 是 `"rollForward": "disable"`，装别的版本会**直接报错**。
+  这是刻意的：交付件 `1.6/Assemblies/PioneerFrameworkLite.dll` 走**逐字节**判据，而字节由**编译器版本**决定
+  （CI 也钉 8.0.100）。要换 SDK 版本，必须 `global.json` 与 `.github/workflows/ci.yml` **一起**改，并重建交付件。
+  安装（管理员，装进标准 dotnet 根、与已装版本并存）：
+  ```powershell
+  Invoke-WebRequest https://dot.net/v1/dotnet-install.ps1 -OutFile "$env:TEMP\dotnet-install.ps1"
+  & "$env:TEMP\dotnet-install.ps1" -Version 8.0.100 -InstallDir "C:\Program Files\dotnet"
+  ```
+  装完 `dotnet --list-sdks` 应同时列出 `8.0.100`；在仓库里 `dotnet --version` 必须回 `8.0.100`。
 - RimWorld 1.6 依赖 DLL 已放入 `Source/PioneerFramework/Libs/`
 
 ```powershell

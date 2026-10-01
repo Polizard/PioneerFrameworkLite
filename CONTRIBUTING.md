@@ -5,7 +5,7 @@
 ## 开发环境
 
 - Windows（RimWorld 1.6 目标为 .NET Framework 4.8）
-- .NET SDK 8.0.100 或更高
+- .NET SDK **8.0.100（精确版本 —— `global.json` 为 `rollForward: disable`，装别的版本会直接报错）**
 - 推荐 Visual Studio 2022 或 VS Code + C# Dev Kit
 
 ## 常用命令
