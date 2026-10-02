@@ -75,8 +75,6 @@ namespace PioneerFramework
                 latRad = longLat.y * Mathf.Deg2Rad;
                 lonRad0 = longLat.x * Mathf.Deg2Rad;
                 launchSrcDesc = string.Format("当前Map(uid{0}, tile {1})", map.uniqueID, map.Tile);
-                // 世界视图发射点标记（红色正方体）钉在这个 tile 上
-                SpaceGroupVisualManager.SetLaunchSiteTile(map.Tile);
             }
             var surface = GetSurfaceState.SurfaceState(radius, latRad, lonRad0, omega, physicsTick);
             var birth = GetSurfaceState.SurfaceStateAbove(surface, TestLaunchAltitude);

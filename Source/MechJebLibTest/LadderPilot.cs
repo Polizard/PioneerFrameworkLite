@@ -55,6 +55,19 @@ namespace PioneerFramework.Tests
         public bool Done { get; private set; }
         public int PlanCount;
         public readonly List<string> Rungs = new List<string>();
+
+        /// <summary>一次重规划的**指纹**（A.2「计划何时该变」的度量面，2026-10-01 加）。
+        /// ⚠ **只增读数、不改行为**：在现有的重规划点原样抄一份（级 + 逐发 `(ut, dV)`）。</summary>
+        public sealed class ReplanRecord
+        {
+            public double T;
+            public RendezvousLadder.Rung Rung;
+            public readonly List<(double Ut, DVector3 Dv)> Nodes = new List<(double, DVector3)>();
+        }
+
+        /// <summary>逐次重规划的指纹（与 <see cref="Rungs" /> 同序、同长度）。</summary>
+        public readonly List<ReplanRecord> ReplanLog = new List<ReplanRecord>();
+
         /// <summary>被"地板/反向"挡下的节点数（诊断：0 = 地板从未起作用 ⇒ 该用例没考到政策）。</summary>
         public int SkippedByPolicy;
         /// <summary>**料尽**：主网 + RCS 都没推力了（此后任何节点都交付不了）。诊断 + 让台架能干净收尾
@@ -95,6 +108,9 @@ namespace PioneerFramework.Tests
                 var rung = RendezvousLadder.MakePlan(selfOv, tgtOv, t, Params, out List<PlanNode> nodes, out string status);
                 PlanCount++;
                 Rungs.Add(string.Format("T+{0:F0}s {1}：{2}", t, rung, status));
+                var rec = new ReplanRecord { T = t, Rung = rung };
+                foreach (PlanNode n in nodes) rec.Nodes.Add((n.ut, n.dV));
+                ReplanLog.Add(rec);
                 _queue.Clear();
                 _queue.AddRange(nodes);
                 _cur = 0;

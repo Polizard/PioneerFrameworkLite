@@ -43,8 +43,10 @@ namespace PioneerFramework
         public DVector3 position;
         /// <summary>速度（世界系，m/s）。**必须带**——制导核心直接吃它做提前量。（设计稿字段 2）</summary>
         public DVector3 velocity;
-        /// <summary>最后更新时刻（物理 tick）：过期判定与记忆窗口的基准。（设计稿字段 3）</summary>
-        public int lastUpdateTick;
+        /// <summary>最后更新时刻（**physicsTick 轴 = 模拟秒**；2026-10-01 用户裁定）：过期判定与记忆窗口的基准。
+        /// ⚠ **单位必须是模拟秒**：1 个游戏 tick = 多少模拟秒**随倍数档变**（Normal 1:1 / Fast ×8 = 8 s /
+        /// Combat 1/60 = 1/60 s）⇒ 记 tick 计数会在高倍档下把"10 秒记忆"压成 1.25 秒（U-12 同族的双钟病）。</summary>
+        public double lastUpdatePhysics;
         /// <summary>位置不确定度（m）：压制干扰的作用对象；制导精度直接吃它。（设计稿字段 4）</summary>
         public double positionSigma;
         /// <summary>来源（自舰 / 共享 / 被动侦听 / 公开）。（设计稿字段 5）</summary>
@@ -65,8 +67,95 @@ namespace PioneerFramework
         /// <summary>本接触是否为假接触（按身份字段判断，不读 `isDecoy`——后者是"观测者是否识破"）。</summary>
         public bool IsForged => decoyId >= 0;
 
-        /// <summary>过期判定：距最后更新超过 <paramref name="memoryTicks"/> 即失效（记忆的本质是信息缺失）。</summary>
-        public bool IsStaleAt(int nowTick, int memoryTicks) => nowTick - lastUpdateTick > memoryTicks;
+        /// <summary>过期判定：距最后更新超过 <paramref name="memorySeconds"/> **模拟秒**即失效（记忆的本质是信息缺失）。
+        /// 时间量一律走 `physicsTick` 轴（见 <see cref="lastUpdatePhysics"/>）。
+        /// 窗口由调用方给（**显式**口径）；带默认兜底的三态判据见 <see cref="ContactMemory.PhaseOf" />——
+        /// 两者共用同一条"现在 − 最后更新"的龄口径（<see cref="ContactMemory.AgeSeconds" />）。</summary>
+        public bool IsStaleAt(double nowPhysics, double memorySeconds)
+            => ContactMemory.AgeSeconds(nowPhysics, lastUpdatePhysics) > memorySeconds;
+    }
+
+    /// <summary>
+    /// 点亮/接触的**生命期相位**（2026-10-02 用户裁定"识破就贴一根有时间限制的标签"的形态；
+    /// 设计稿 §5.1 的"记忆"）。**三态，而不是布尔**：
+    /// · **Live（新鲜）**：本步判据成立、刚刷新过 ⇒ 位置/速度按实测更新；
+    /// · **Shadow（影子）**：判据不再成立、但记忆窗口未满 ⇒ 用最后已知状态外推（σ 随时间涨），
+    ///   **仍是可打击/可制导的目标**（"影子可被打击"是裁定的正文，也是压制式干扰的作用对象）；
+    /// · **Lost（失联）**：连记忆也过期 ⇒ 从视图里消失（假目标/影子不再可用）。
+    /// 三态都只由 `(现在, 最后更新, 窗口)` 决定 ⇒ **读时算、零扫描**（[M4]），且天然确定性。
+    /// </summary>
+    public enum TrackPhase : byte
+    {
+        /// <summary>本步刚刷新（判据成立）。</summary>
+        Live = 0,
+        /// <summary>判据已断、记忆未过期（影子期）。</summary>
+        Shadow = 1,
+        /// <summary>记忆也过期 ⇒ 失联。</summary>
+        Lost = 2,
+    }
+
+    /// <summary>
+    /// **记忆窗口（T）与影子期 σ 的纯核心**。唯一算式：状态与 σ 都只由 `(现在, 最后更新, T)` 决定。
+    ///
+    /// ⚠ **窗口的产权 = 观测者**（2026-10-02 用户裁定 ②）：取值来自 `SensorTech.memorySeconds`
+    /// （部件组件 / 建筑 Def → 投影链）。用户将来把"信息处理速度"改成非无穷时，改的就是那一格——
+    /// **别在感知代码里另写 T 的常数**；未设（≤0 / NaN）时用 <see cref="DetectionCore.DefaultMemorySeconds" />。
+    /// </summary>
+    public static class ContactMemory
+    {
+        /// <summary>影子期位置不确定度的增长速率（m/s）。**待定标**（与 `ContactFusion.SigmaRefMeters` 同族）。</summary>
+        public const double SigmaGrowthMetersPerSecond = 100.0;
+
+        /// <summary>σ 上限（m）：防止影子期退化成"完全随机"。**待定标**。</summary>
+        public const double SigmaCapMeters = 5.0e5;
+
+        /// <summary>接触龄（物理秒）：**唯一的**"现在 − 最后更新"口径。</summary>
+        public static double AgeSeconds(double nowPhysics, double lastUpdatePhysics)
+            => nowPhysics - lastUpdatePhysics;
+
+        /// <summary>记忆窗口（带默认兜底）。</summary>
+        public static double EffectiveMemorySeconds(double memorySeconds)
+            => memorySeconds > 0.0 && !double.IsNaN(memorySeconds) ? memorySeconds : DetectionCore.DefaultMemorySeconds;
+
+        /// <summary>
+        /// 三态。**快进慢出**（用户裁定的去抖机制）：本步刷新 ⇒ 立即 Live；丢掉刷新后**留满整个 T** 才 Lost。
+        /// 边界口径：`now == lastUpdate`（同刻）判 Live；**恰好等于窗口**（`age == T`）判 Shadow，超出才 Lost（严格大于）。
+        /// </summary>
+        public static TrackPhase PhaseOf(double nowPhysics, double lastUpdatePhysics, double memorySeconds)
+        {
+            double age = AgeSeconds(nowPhysics, lastUpdatePhysics);
+            if (!(age > 0.0)) return TrackPhase.Live;                      // 本步刚刷新（含防御性的"未来时刻"）
+            return age > EffectiveMemorySeconds(memorySeconds) ? TrackPhase.Lost : TrackPhase.Shadow;
+        }
+
+        /// <summary>
+        /// 影子期 σ：`σ(t) = min(σ_cap, σ_刷新时 + g·Δt)`（刷新当刻取刷新值）。
+        /// 既是物理正确的（预测误差随时间增长），也是"记忆不免费、干扰有持久价值"的来源——
+        /// 拿一条旧接触去制导，精度按时间劣化。
+        /// </summary>
+        public static double SigmaAt(double nowPhysics, double lastUpdatePhysics, double sigmaAtRefresh)
+        {
+            double s0 = sigmaAtRefresh > 0.0 && !double.IsNaN(sigmaAtRefresh) ? sigmaAtRefresh : 0.0;
+            double age = AgeSeconds(nowPhysics, lastUpdatePhysics);
+            if (!(age > 0.0)) return s0;
+            double s = s0 + SigmaGrowthMetersPerSecond * age;
+            return s < SigmaCapMeters ? s : SigmaCapMeters;
+        }
+
+        /// <summary>还能不能拿它做事（**影子算能**、失联算不能）——索敌/制导的准入判据。</summary>
+        public static bool IsUsable(TrackPhase phase) => phase != TrackPhase.Lost;
+
+        /// <summary>
+        /// 影子期的**外推位置**：`p + v·Δt`（Δt = 龄）——给**制导/瞄准**用（它要的是"目标大概在哪"）。
+        /// ⚠ **不要在接触上就地外推**：画面上的接触点必须停在**最后已知位置**（配上涨大的 σ），
+        /// 两者分开。物理含义 = "假定它没机动"；真机动了就打偏 —— 这正是 σ 增长要表达的不确定性。
+        /// </summary>
+        public static DVector3 CoastedPosition(in Contact c, double nowPhysics)
+        {
+            double age = AgeSeconds(nowPhysics, c.lastUpdatePhysics);
+            if (!(age > 0.0)) return c.position;
+            return c.position + c.velocity * age;
+        }
     }
 
     /// <summary>
@@ -109,7 +198,7 @@ namespace PioneerFramework
 
         /// <summary>
         /// 是否用新接触替换既有接触。**严格大于**才替换——相等不替换，避免两份等保真度报告
-        /// 反复互相覆盖（抖动），也避免"共享来的接触每次都刷新 `lastUpdateTick`"把记忆变成永久全知。
+        /// 反复互相覆盖（抖动），也避免"共享来的接触每次都刷新 `lastUpdatePhysics`"把记忆变成永久全知。
         /// </summary>
         public static bool ShouldReplace(in Contact existing, in Contact incoming)
             => Fidelity(incoming) > Fidelity(existing);

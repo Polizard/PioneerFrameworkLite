@@ -1,11 +1,14 @@
 using UnityEngine;
 
-namespace PioneerFramework.GroundAssembly
+namespace PioneerFramework.UiKit
 {
     /// <summary>
     /// 航天器管理界面调色板。
     /// PFL 航天主题，与 RimWorld 原版暗色窗口基调和谐。
     /// 三风格混合：瑞士国际主义基底 + 磁带盒未来主义暖调近黑 + 复古未来主义饱和强调色。
+    /// ⚠ 2026-10-02（V-0）：迁入 UiKit 供共用；**本色板保持彩色**——PFView 走独立的灰度
+    ///   `PFViewPalette`（用户裁定③"灰度只 PFView 用"）。命名空间不用 `UI`：那会让
+    ///   `PioneerFramework` 树里的 `UI.screenWidth`（Verse.UI）被同名的子命名空间截胡。
     /// </summary>
     internal static class SpacecraftUIPalette
     {

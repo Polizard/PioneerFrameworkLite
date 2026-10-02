@@ -143,6 +143,9 @@ if ($untypedNow -gt $untypedBaseline) {
 $absFrameAllowed = @(
     "CelestialBodyManager.cs",        # the definition + its recursion
     "MainTabWindow_PFView.cs",        # PFView renderer
+    "MainTabWindow_PFView.Render.cs", # PFView renderer (2026-10-02 V-0: split into partials -- same
+    "MainTabWindow_PFView.Scene.cs",  #   display-only decision, same call sites, new file names)
+    "MainTabWindow_PFView.GUI.cs",    #   (ibid)
     "Window_SpaceBattleView3D.cs",    # 3D battle view
     "ViewFrame.cs",                   # view-frame helper (abs - abs)
     "GetSurfaceState.cs"              # tile->abs ECI helper (currently only used by a zero-caller API)

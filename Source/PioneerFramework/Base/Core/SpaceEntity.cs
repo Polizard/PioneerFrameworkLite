@@ -242,6 +242,9 @@ namespace PioneerFramework
                 shipStats.cargoCapacity += ps.cargoCapacity;
                 // [N2] 抗压制 / 抗欺骗：与其余字段同为求和。**新增 ShipStats 字段必须在此加一行**，
                 // 否则组件贡献进不了实体级聚合——本方法是唯一的"必须同步点"。
+                // [V3]（2026-10-02 裁定 ②）记忆时长同走此路：部件组件 → 本行 → 群级 `SensorTech.memorySeconds`。
+                shipStats.memorySeconds += ps.memorySeconds;
+                shipStats.jamStrength += ps.jamStrength;   // [E3] 干扰效力（同上：新增槽必须在此加一行）
                 shipStats.ecmResist += ps.ecmResist;
                 shipStats.eccmResist += ps.eccmResist;
             }

@@ -136,9 +136,11 @@ namespace PioneerFramework
                 {
                     var body = mgr.GetBodyById(bodyId);
                     if (body != null && body.bodyType != CelestialBodyType.Planet)
-                        plannedCentralOffset = group.GetCentralBodyOffset(Find.TickManager.TicksGame).v;   // 批6 S3-3c：带系标签 ⇒ 取 .v
-                    // ⚠ 本行的时钟基准（`TicksGame` ≠ physicsTick）是**已登记的 U-12 缺陷**（§14.1）——
-                    //   批6 不动它（那是另一个机制：时钟基准），别顺手改。
+                        // ⚠ **时钟基准（U-12，2026-10-01 修）**：天体位置是 **physicsTick** 的函数（同文件 `:367/:416/:459` 三处的同一条教训），
+                        //   这里原写 `Find.TickManager.TicksGame` —— 两者相差一个**随切档/暂停而变的常量偏移**
+                        //   ⇒ 冻结预览参考系会取到**错误时刻**的天体偏移（× 天体速度 = 该帧的位移）。
+                        //   单独一笔修（不是"顺手改"）：改用 physicsTick 时间轴，与其余三处同基准。
+                        plannedCentralOffset = group.GetCentralBodyOffset(TimeScaleManager.GetPhysicsTickSafe()).v;
                 }
             }
 

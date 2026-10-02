@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+
+  <!-- [V7]/[E2] 主动雷达建筑（2026-10-01）
+       开机（组级 `ActivePingEnabled`，W1 枢纽）⇒ 看得更远（增益加成）**且**自身信号升高（辐射增量）。
+       波束几何（半锥角 / 距离上限）供 [V7] 三模式（跟踪 / 手选方位 / 扫掠）共用。
+       贡献随毁损而掉（投影侧按 HitPoints/MaxHitPoints 折算）。 -->
+  <ThingDef>
+    <defName>PF_Building_ActiveRadar</defName>
+    <label>主动雷达</label>
+    <description>大型主动相控阵雷达。开机时探测距离显著提高，但自身信号也随之升高——被更早发现的代价（W1）。波束可跟踪目标、指定方位或自动扫掠。</description>
+    <category>Building</category>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/Production/FermentingBarrel</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <size>(3,3)</size>
+    <passability>Standable</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>500</MaxHitPoints>
+      <Flammability>0.02</Flammability>
+      <Mass>900</Mass>
+      <Beauty>-8</Beauty>
+      <WorkToBuild>1100</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>300</Steel>
+    </costList>
+    <designationCategory>Power</designationCategory>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_ActiveRadar">
+        <activeGainBonus>2</activeGainBonus>
+        <activeRadiation>4</activeRadiation>
+        <beamHalfAngleDeg>15</beamHalfAngleDeg>
+        <beamRangeMeters>20000000</beamRangeMeters>
+        <scanRateDegPerSec>6</scanRateDegPerSec>
+      </li>
+    </comps>
+  </ThingDef>
+
+</Defs>

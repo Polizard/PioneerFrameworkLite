@@ -35,6 +35,9 @@ namespace PioneerFramework
             // S2 首片（2026-09-23）：单一入口「一键测试（全覆盖）」—— 跑得完的全收进统一判定框架，
             // 跑不完/还没判据的**逐条显式登记**（不许用沉默冒充全覆盖）
             AddAction("一键测试（全覆盖：框架自检 + 引力电池 + 降落/撞击判据 + 未覆盖项登记）", "00 验收", 35, FullTestRunner.Run, null);
+            // [V7]（2026-10-01）：自跑站 + 站内传感器阵列建筑，验"投影非零 → 打伤减半 → 摧毁归零"，并打印存档前读数
+            AddAction("传感器/雷达投影验收（[V7]：站 + 两座建筑 → 投影 / W1 开机 / 打伤 / 摧毁 / 往返）", "00 验收", 34,
+                SensorProjectionAcceptanceRunner.Run, null);
             // S1（2026-09-23）：统一判定框架的首两个用例 —— 把"只打印数字"的探针变成有判据的用例
             // （阵营解析 [V12] · 可见性四字段 [P1]；"今天验不了"的显式登记为 UNCHECKED 子项）
             AddAction("测试框架自检（统一判定：阵营解析 + 可见性四字段）", "00 验收", 30, FrameworkSelfTest.Run, null);
@@ -54,6 +57,50 @@ namespace PioneerFramework
                     ? "规模验收（运行中…）"
                     : "规模验收B（≥32 组 · 积分+全群燃烧）");
             // N 扫描（2026-09-27 用户提议）：不同组数下的"每群每步"代价 ⇒ **斜率**才是"N 未知"要的答案。
+            // [E3] 干扰机建筑（2026-10-02）：往站内放一座，并开关本站的干扰（看敌方观测方被按住）
+            AddAction("来袭演示·我方干扰机开机 ⇄ 关机（[E3] 建筑级：抬高敌方阈值）", "00 验收", 15,
+                SensorAmbushDemo.ToggleStationJammer, null);
+            // 🎯 电子战**一键全测**（2026-10-02 用户要求）：五段依次跑完 + 合并结论
+            AddAction("★ 电子战系统·一键全测（投影/能力面 → 认知层 → 视野对账 → 干扰与揭示 → 假目标）", "00 验收", 35,
+                EwSystemAcceptanceRunner.Run,
+                () => EwSystemAcceptanceRunner.Running ? "电子战全测（运行中…）" : "★ 电子战系统·一键全测");
+            // [V7]+[V3] 来袭演示（2026-10-02，用户要的"看得见的场景"）：一键铺好"看不见的敌人"，
+            //   再一键开机/点火让它当场现身（W1 枢纽的可视化）
+            AddAction("来袭演示·布置（我方船/我方弹/敌船/敌弹×3：两枚远弹看不见）", "00 验收", 23,
+                SensorAmbushDemo.Deploy,
+                () => SensorAmbushDemo.Deployed ? "来袭演示（已布置）" : "来袭演示·布置");
+            AddAction("来袭演示·敌远弹 B 开机 ⇄ 关机（看它现身/消失）", "00 验收", 22, SensorAmbushDemo.TogglePing, null);
+            AddAction("来袭演示·敌远弹 C 点火 ⇄ 熄火（看它现身/消失）", "00 验收", 21, SensorAmbushDemo.ToggleBurn, null);
+            AddAction("来袭演示·敌方干扰机 开机 ⇄ 关机（看近弹也被按住；公开组不受影响）", "00 验收", 20, SensorAmbushDemo.ToggleJam, null);
+            AddAction("来袭演示·敌方投诱饵（[E5] 假接触：图上多一枚敌弹，它没有真值）", "00 验收", 19, SensorAmbushDemo.InjectDecoyDemo, null);
+            AddAction("来袭演示·清诱饵", "00 验收", 18, SensorAmbushDemo.ClearDecoys, null);
+            AddAction("诱饵验收（[E5]：依赖对方开机 / 识破 = 深层提示 / 生命期）", "00 验收", 17,
+                SensorCognitionAcceptanceRunner.CheckDecoys, null);
+            AddAction("来袭演示·打印花名册（谁可见、为什么）", "00 验收", 16, SensorAmbushDemo.PrintRoster, null);
+            AddAction("来袭演示·清场", "00 验收", 19, SensorAmbushDemo.Cleanup, null);
+            // [V3] 认知层验收（2026-10-02 S2）：观测者 + 匿踪目标，验 点亮/影子/失联 + 两个读入口 + 公开投影
+            AddAction("认知层验收（[V3]：点亮 → 影子 → 失联 → 恢复 + 点查询不刷新 + 公开投影）", "00 验收", 28,
+                SensorCognitionAcceptanceRunner.Run,
+                () => SensorCognitionAcceptanceRunner.Running ? "认知层验收（运行中…）" : "认知层验收（[V3]）");
+            AddAction("认知层验收·中止并清场", "00 验收", 27, SensorCognitionAcceptanceRunner.Abort, null);
+            AddAction("EW 验收（干扰抬高阈值 → 按住目标 → 拉近烧穿 + 开火揭示 + 干扰机自暴露）", "00 验收", 27,
+                SensorCognitionAcceptanceRunner.CheckJammingAndReveal, null);
+            AddAction("视野对账（绘制/点击准入 = 认知层可见集；dev 真值开关开着时必红）", "00 验收", 26,
+                SensorCognitionAcceptanceRunner.CheckViewReconciliation, null);
+            AddAction("认知快照（接触/相位，存档往返用：点→存→读→再点，两行应一致）", "80 调试日志", 40,
+                SensorCognitionAcceptanceRunner.PrintSnapshot, null);
+            // 来袭性能场景（2026-10-02）：导弹群 + 舰队来袭的**整步**成本（基线 → 铺场 → 计量 → 自动清场）。
+            // 想定 = 用户给的"每侧 1000 导弹 + 20 飞船"。⚠ 全程 Normal 档跑，别切快进（口径）。
+            AddAction("来袭性能·小（2×(5 舰 + 100 弹) = 210 组）", "00 验收", 27,
+                SwarmAttackPerfRunner.RunSmall,
+                () => SwarmAttackPerfRunner.Running ? "来袭性能（运行中…）" : "来袭性能·小（210 组）");
+            AddAction("来袭性能·中（2×(20 舰 + 500 弹) = 1040 组）", "00 验收", 26,
+                SwarmAttackPerfRunner.RunMedium,
+                () => SwarmAttackPerfRunner.Running ? "来袭性能（运行中…）" : "来袭性能·中（1040 组）");
+            AddAction("来袭性能·全（2×(20 舰 + 1000 弹) = 2040 组 · 用户想定）", "00 验收", 25,
+                SwarmAttackPerfRunner.RunFull,
+                () => SwarmAttackPerfRunner.Running ? "来袭性能（运行中…）" : "来袭性能·全（2040 组）");
+            AddAction("来袭性能·中止并清场", "00 验收", 24, SwarmAttackPerfRunner.Abort, null);
             // 跨过 32（顺序/并行分界）⇒ 顺带量出并行区实际收益；用常驻步钟 ⇒ 不用勾探针开关。
             AddAction("规模验收·N 扫描（8/16/32/64/128 组：每群每步耗时与引力段）", "00 验收", 29,
                 SwarmScaleAcceptanceRunner.RunScaleSweep,
@@ -223,6 +270,8 @@ namespace PioneerFramework
             AddCheckbox("详细战斗日志（含射弹探针 30t）", "80 调试日志", 100, typeof(CombatManager), "DebugDetailedCombat",
                 afterToggle: () => CombatManager.DebugProjectileProbeInterval = CombatManager.DebugDetailedCombat ? 30 : 0);
             AddCheckbox("详细碰撞日志（扫掠盒/枚举）", "80 调试日志", 95, typeof(CombatManager), "DebugDetailedCollision");
+            // [V3]（2026-10-02 用户要求）：开启后绘制/点击**绕过认知层**，直接看真实棋子（调试/对比用）
+            AddCheckbox("显示真实棋子（绕过认知层 · dev）", "80 调试日志", 92, typeof(SensorManager), "DebugShowGroundTruth");
             AddCheckbox("详细操舵日志（[Steer]/[Align]）", "80 调试日志", 90, typeof(SpaceGameComp), "DebugDetailedSteering");
             AddCheckbox("详细推进日志（无Map主推/RCS [Thrust]）", "80 调试日志", 85, typeof(SpaceGameComp), "DebugDetailedThrust");
             AddCheckbox("详细导弹制导日志", "80 调试日志", 80, typeof(AutonomousVehicleManager), "DebugDetailedGuidance");

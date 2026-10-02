@@ -1,17 +1,22 @@
 // PioneerFramework Toon Shader (Cel Shading / 三渲二)
-// Target: Unity 2019.4 LTS Built-in Render Pipeline
-// 将此文件放入 Unity 2019.4 项目中，构建到 AssetBundle 后放入 mod 的 AssetBundles/ 目录
+// Target: Unity 2022.3.35f1 Built-in Render Pipeline（工具链钉的版本；旧注释写的 2019.4 已过时）
+// 将此文件放入 Unity 项目中，由 tools/PFViewShaderBundle/Build-PFViewToonBundles.ps1
+// 构建到 AssetBundle 后放入 mod 的 AssetBundles/ 目录（散装 .shader 运行时不可达）。
+//
+// V-1.4（2026-10-02，用户："要渐变色、但渐变像阶梯一样分明"）：明暗从"二分"改为
+// **N 级阶梯量化**（默认 4 级）——级内纯色、级间微分软化抗锯齿；`_ShadowSteps` 可调。
 
 Shader "PioneerFramework/Toon"
 {
     Properties
     {
         _Color ("Color", Color) = (1, 1, 1, 1)
-        _ShadowThreshold ("Shadow Threshold", Range(0, 1)) = 0.4
-        _ShadowSmoothness ("Shadow Smoothness", Range(0, 0.3)) = 0.02
+        _ShadowThreshold ("Shadow Threshold", Range(0, 1)) = 0.05
+        _ShadowSmoothness ("Shadow Smoothness", Range(0, 0.3)) = 0.06
+        _ShadowSteps ("Shadow Steps", Range(2, 8)) = 4
         _ShadowColor ("Shadow Color", Color) = (0.15, 0.15, 0.2, 1)
         _OutlineColor ("Outline Color", Color) = (0, 0, 0, 1)
-        _OutlineWidth ("Outline Width", Range(0, 0.08)) = 0.02
+        _OutlineWidth ("Outline Width", Range(0, 0.08)) = 0.03
     }
 
     SubShader
@@ -64,7 +69,7 @@ Shader "PioneerFramework/Toon"
         }
 
         // ── Main Toon Pass ──
-        // 离散二分阴影：半兰伯特 → smoothstep → 亮面/暗面二值化
+        // N 级阶梯渐变：半兰伯特 → 重映射 → 量化到 _ShadowSteps 级（级内纯色、级间软化抗锯齿）
         Pass
         {
             Name "TOON"
@@ -83,6 +88,7 @@ Shader "PioneerFramework/Toon"
             float4 _ShadowColor;
             float _ShadowThreshold;
             float _ShadowSmoothness;
+            float _ShadowSteps;
 
             struct appdata
             {
@@ -116,18 +122,24 @@ Shader "PioneerFramework/Toon"
                 // 半兰伯特 [0, 1]
                 float halfLambert = dot(normal, lightDir) * 0.5 + 0.5;
 
-                // 离散二分阴影：smoothstep 创造出近乎硬边的明暗过渡
-                float toon = smoothstep(
-                    _ShadowThreshold - _ShadowSmoothness,
-                    _ShadowThreshold + _ShadowSmoothness,
-                    halfLambert
-                );
+                // V-1.4：先重映射到 [_ShadowThreshold, 1] → [0, 1]，再**量化成 N 级阶梯**。
+                // 级内纯色（赛璐璐上色），级间用 _ShadowSmoothness 轻微软化抗锯齿——
+                // "能看到渐变，但一级一级分明"。
+                float span = max(1e-4, 1.0 - _ShadowThreshold);
+                float t = saturate((halfLambert - _ShadowThreshold) / span);
+
+                float levels = max(2.0, _ShadowSteps);
+                float scaled = t * (levels - 1.0);
+                float bandIndex = floor(scaled);
+                float bandFrac = scaled - bandIndex;
+                float bandBlend = smoothstep(0.5 - _ShadowSmoothness, 0.5 + _ShadowSmoothness, bandFrac);
+                float toon = (bandIndex + bandBlend) / (levels - 1.0);
 
                 // 阴影衰减（接收 Unity 阴影贴图）
                 UNITY_LIGHT_ATTENUATION(atten, i, i.worldPos);
                 toon *= atten;
 
-                // 亮面 / 暗面混合
+                // 暗面 → 亮面：阶梯式渐变
                 float3 col = lerp(_ShadowColor.rgb, _Color.rgb, toon);
 
                 // 微弱环境光，避免暗面全黑

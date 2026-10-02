@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using MechJebLib.Primitives;
 using PioneerFramework.Pure.Tests;
 using Xunit;
@@ -57,6 +58,8 @@ namespace PioneerFramework.Tests
             public double T, Dist, Rel, MinRadius = double.PositiveInfinity, Dv, MainDv, RcsDv, MainFuel, RcsFuel, Mass;
             public int PlanCount, Skipped;
             public readonly List<string> Rungs = new List<string>();
+            /// <summary>A.2 度量（2026-10-01 加）：逐次重规划的指纹（只增读数，不改行为）。</summary>
+            public readonly List<LadderPilot.ReplanRecord> Replans = new List<LadderPilot.ReplanRecord>();
             public readonly List<string> Trace = new List<string>();
             public readonly List<string> BurnLog = new List<string>();
         }
@@ -112,6 +115,7 @@ namespace PioneerFramework.Tests
             res.PlanCount = pilot.PlanCount;
             res.Skipped = pilot.SkippedByPolicy;
             res.Rungs.AddRange(pilot.Rungs);
+            res.Replans.AddRange(pilot.ReplanLog);
             res.BurnLog.AddRange(pilot.BurnLog);
             return res;
         }
@@ -133,6 +137,40 @@ namespace PioneerFramework.Tests
             int n = Math.Min(r.BurnLog.Count, 10);
             for (int i = r.BurnLog.Count - n; i < r.BurnLog.Count; i++)
                 _out.WriteLine("       " + r.BurnLog[i]);
+        }
+
+        /// <summary>
+        /// **A.2 度量（只增读数，2026-10-01）**：把一次跑的逐次重规划指纹按 A.2 **口径**统计：
+        /// 真变化 / **白问**（计划与上一份在"动作意义"下同 ⇒ 那一拍白问）/ 各触发档的**漏报·多余**。
+        /// 口径的**唯一权威**在 `LadderReplanPolicyTests.PlanDiffReason`（本方法只统计与打印）。
+        /// ⚠ 与"规划 N 次"的关系：`PlanCount` = 现状"队列空 + ≥30 s"节拍实际发生的重规划次数；
+        ///   本方法回答的是"其中多少次其实没变"（= 事件触发能省的上限）。
+        /// </summary>
+        private void ReportReplans(string tag, Run r)
+        {
+            var log = r.Replans;
+            if (log.Count < 2) { _out.WriteLine($"       [A.2] {tag}：重规划仅 {log.Count} 次 ⇒ 无节拍可量"); return; }
+
+            var changed = new List<int>();
+            for (int i = 1; i < log.Count; i++)
+                if (LadderReplanPolicyTests.PlanDiffReason(log[i - 1], log[i]) != null) changed.Add(i);
+
+            int white = log.Count - 1 - changed.Count;
+            var sb = new StringBuilder();
+            sb.AppendLine($"       [A.2] {tag}：重规划 {log.Count} 次 ⇒ **真变化 {changed.Count}、白问 {white}**" +
+                          $"（{100.0 * white / (log.Count - 1):F0}%）");
+            double[] taus = { 60.0, 300.0, 900.0 };
+            foreach (double tau in taus)
+            {
+                var fired = new bool[log.Count];
+                int fire = 0, missed = 0;
+                for (int i = 1; i < log.Count; i++)
+                    if (log[i].Nodes.Count > 0 && log[i].Nodes[0].Ut - log[i].T <= tau) { fired[i] = true; fire++; }
+                foreach (int c in changed) if (!fired[c]) missed++;
+                sb.AppendLine($"       [A.2] {tag}：触发「下一发 ≤ {tau,4:F0}s」会问 {fire} 次（现状 {log.Count - 1} 次）" +
+                              $"｜漏报 {missed}｜多余 {fire - (changed.Count - missed)}");
+            }
+            _out.WriteLine(sb.ToString().TrimEnd());
         }
 
         // ── 几何⓪：**台架自检**（原 T0，随旧律用例一起搬家时**保留**）────────────────
@@ -179,6 +217,7 @@ namespace PioneerFramework.Tests
                            $"｜最低点 {r.MinRadius / 1000.0:F0} km｜余料 主 {r.MainFuel:F0} / RCS {r.RcsFuel:F0} kg" +
                            $"｜规划 {r.PlanCount} 次｜政策挡下 {r.Skipped} 发");
             PrintRungs("G1", r);
+            ReportReplans("G1", r);
 
             Assert.False(r.Crashed, $"侵地：最低点 {r.MinRadius / 1000.0:F0} km（安全半径 {SafeRadius / 1000.0:F0} km）");
             Assert.True(r.Reached,
@@ -221,6 +260,7 @@ namespace PioneerFramework.Tests
                            $"（严格 300 m/2 m/s：{(r.Dist <= Desired && r.Rel <= RelTol ? "✓" : "✗")}）｜" +
                            $"最低点 {r.MinRadius / 1000.0:F0} km｜余料 主 {r.MainFuel:F0} / RCS {r.RcsFuel:F0} kg｜规划 {r.PlanCount} 次｜政策挡下 {r.Skipped} 发");
             PrintRungs("G2", r);
+            ReportReplans("G2", r);
             if (!r.Reached || r.FuelOut) PrintTrace("G2", r);
 
             Assert.False(r.Crashed, $"侵地：最低点 {r.MinRadius / 1000.0:F0} km（安全半径 {SafeRadius / 1000.0:F0} km）");
@@ -250,6 +290,7 @@ namespace PioneerFramework.Tests
                            $"（严格 300 m/2 m/s：{(r.Dist <= Desired && r.Rel <= RelTol ? "✓" : "✗")}）｜" +
                            $"最低点 {r.MinRadius / 1000.0:F0} km｜余料 主 {r.MainFuel:F0} / RCS {r.RcsFuel:F0} kg｜规划 {r.PlanCount} 次｜政策挡下 {r.Skipped} 发");
             PrintRungs("G3", r);
+            ReportReplans("G3", r);
             if (!r.Reached || r.FuelOut) PrintTrace("G3", r);
 
             Assert.False(r.Crashed, $"侵地：最低点 {r.MinRadius / 1000.0:F0} km（安全半径 {SafeRadius / 1000.0:F0} km）");
@@ -280,6 +321,7 @@ namespace PioneerFramework.Tests
                            $"最低点 {r.MinRadius / 1000.0:F0} km｜余料 主 {r.MainFuel:F0} / RCS {r.RcsFuel:F0} kg｜" +
                            $"规划 {r.PlanCount} 次｜政策挡下 {r.Skipped} 发");
             PrintRungs("G4", r);
+            ReportReplans("G4", r);
             if (!r.Reached || r.FuelOut) PrintTrace("G4", r);
 
             Assert.False(r.Crashed, $"侵地：最低点 {r.MinRadius / 1000.0:F0} km（安全半径 {SafeRadius / 1000.0:F0} km）");

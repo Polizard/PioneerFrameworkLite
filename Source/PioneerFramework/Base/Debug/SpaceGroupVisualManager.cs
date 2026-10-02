@@ -15,6 +15,10 @@ namespace PioneerFramework
     {
         public static bool EnableVisualization = true;
 
+        // ── 组件引用缓存（[M1]/[O4]：每帧路径不许裸 `GetComponent`——那是组件表线性扫描）──
+        // 与 `GameComponentRef` 的既有用法一致：按 Game 缓存、换局/读档自动失效、未命中不写缓存。
+        private static readonly GameComponentRef<SensorManager> sensorMgrRef = new GameComponentRef<SensorManager>();
+
         /// <summary>现有 RimWorld 世界对应的天体（地球）ID</summary>
         private const int EARTH_BODY_ID = 1;
 
@@ -67,17 +71,11 @@ namespace PioneerFramework
         /// <summary>普通按钮的统一灰色（未特别着色按钮）。</summary>
         private static readonly Color GrayButton = new Color(0.46f, 0.49f, 0.53f, 1f);
 
-        /// <summary>预创建的球体网格，用于天体球体渲染。</summary>
+        /// <summary>赤道经度标记 90°E 的颜色（0° 那枚复用 `CyanColor`）。</summary>
+        private static readonly Color EquatorLon90Color = new Color(1f, 0.6f, 0.15f, 0.9f);
+
+        /// <summary>预创建的球体网格，用于天体球体渲染（赤道经度标记也用它）。</summary>
         private static Mesh sphereMesh;
-
-        /// <summary>预创建的立方体网格，用于发射点标记。</summary>
-        private static Mesh cubeMesh;
-
-        /// <summary>发射点 tile（发射时由 LaunchService/LaunchTestScenarios 登记）。-1 = 尚未发射。</summary>
-        private static int launchSiteTile = -1;
-
-        /// <summary>登记发射点 tile（发射链调用），世界视图据此钉红色正方体。</summary>
-        public static void SetLaunchSiteTile(int tile) => launchSiteTile = tile;
 
         public static int GetSelectedGroupId() => selectedGroupId;
         static SpaceGroupVisualManager()
@@ -95,17 +93,12 @@ namespace PioneerFramework
             sphereMesh = UnityEngine.Object.Instantiate(sphereGO.GetComponent<MeshFilter>().sharedMesh);
             UnityEngine.Object.DestroyImmediate(sphereGO);
 
-            // 创建立方体网格（用于发射点标记）
-            var cubeGO = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            cubeMesh = UnityEngine.Object.Instantiate(cubeGO.GetComponent<MeshFilter>().sharedMesh);
-            UnityEngine.Object.DestroyImmediate(cubeGO);
-
             // 应用 Harmony 补丁。
             // B2：整段包 try/catch —— 补丁失败（如 RW 升级后 IL 改名）原本会让**静态构造抛异常**，
             // 后果有两层且都不是"整个 mod 加载失败"（框架 `StaticConstructorOnStartupUtility.CallAll`
             // 对每个类型独立 try/catch 只 Log.Error）：① 其后未执行的补丁**静默缺失**；
             // ② 类型被 CLR 标记为不可用，之后任何静态访问都抛 TypeInitializationException
-            //    （`LaunchService` 会调本类的 `SetLaunchSiteTile` → **发射流程连带炸**）。
+            //    （发射等宿主路径会碰本类的静态成员 → **连带炸**）。
             // 现在改为逐段可失败：报错并继续，让 mod 主功能与发射流程不受牵连。
             var harmony = new Harmony("PioneerFramework.SpaceGroupVisualManager");
             try
@@ -264,7 +257,7 @@ namespace PioneerFramework
             if (camera == null) return;
 
             // 发射点标记（红色正方体，固连系）：不依赖 group 存在，未发射也可作天地对照锚点
-            DrawLaunchSiteMarker(camera);
+            DrawEquatorLonMarkers(camera);
 
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return;
@@ -288,9 +281,30 @@ namespace PioneerFramework
                 }
             }
 
+            // [V3] 认知层过滤（S3，2026-10-02）：只画"玩家真的看得见"的棋子。
+            // dev 真值开关（`SensorManager.DebugShowGroundTruth`）开启 ⇒ 绕过认知层，直接看真实棋子。
+            // 认知层缺位（组件没加载）⇒ 放行（= 旧行为，别让缺组件变成"世界空了"）。
+            var sensor = sensorMgrRef.Get();
+            int playerFid = Faction.OfPlayer?.loadID ?? -1;
             foreach (var group in groups)
                 if (group.IsActive && !group.IsSurfaceAnchor && earthSystemBodyIds.Contains(group.CelestialBodyId))
-                    DrawGroupIcon(group, camera);
+                {
+                    if (sensor != null && !SensorManager.DebugShowGroundTruth && !sensor.PlayerCanSee(group)) continue;
+
+                    // [V-2] 影子接触：判据已断、记忆未过期 ⇒ **画在最后已知位置**（不是真值位置），
+                    // 配 σ 圈表达不确定度（口径见 ContactCore.CoastedPosition 注释：画面不外推）。
+                    Vector3? posOverride = null;
+                    if (sensor != null && !SensorManager.DebugShowGroundTruth && playerFid >= 0
+                        && sensor.ContactPhaseOf(playerFid, group.GroupId) == TrackPhase.Shadow
+                        && sensor.TryGetContact(playerFid, group.GroupId, out Contact memContact))
+                    {
+                        posOverride = ViewFrame.ToViewUnity(memContact.position, PhysicsTickNow());
+                    }
+                    DrawGroupIcon(group, camera, posOverride);
+                }
+
+            // ── [V-2] 认知层图层：影子 σ 圈 / 假接触 / 波束锥（同一准入：dev 真值开关下跳过）──
+            DrawCognitionOverlay(camera, spaceGame, sensor);
 
             // ── 天体渲染（2026-09-23：**除"被查看的那颗"以外**的全部，含地球与太阳）──
             //   被查看的那颗由 RimWorld 的 PlanetLayer 画（球心 = 视图系原点）；其余天体按**系统系位置**摆
@@ -654,9 +668,9 @@ namespace PioneerFramework
             return perpDist > planetRadius + occlusionMargin;
         }
 
-        private static void DrawGroupIcon(SpaceEntityGroup group, Camera cam)
+        private static void DrawGroupIcon(SpaceEntityGroup group, Camera cam, Vector3? viewPosOverride = null)
         {
-            Vector3 viewPos = GetGroupWorldPositionUnity(group);
+            Vector3 viewPos = viewPosOverride ?? GetGroupWorldPositionUnity(group);
             if (!IsViewPosVisible(viewPos, 2f)) return;
 
             Vector3 toCam = cam.transform.position - viewPos;
@@ -737,64 +751,38 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 世界视图发射点标记：红色正方体钉在**被查看天体**地表的发射 tile 上。
-        /// 2026-09-23 改：原来写死 `Find.WorldGrid.Surface`（地球层）+ 地球半径 ⇒ 切到月球后标记会飞；
-        /// 现在按被查看天体的 layer 取 tile 真值，经 `SurfaceFrame.FixedToEci` 折进系统系，再走唯一换系口。
+        /// 世界视图**赤道经度标记**（2026-10-01，用户裁定：把原来的"红色正方体钉在据点/发射点"**换成这个**）：
+        /// 在被查看天体的**赤道上**画两枚小标记 —— **0°（青）/ 90°E（橙）**，不脉动。
+        ///
+        /// 经纬度 → ECI 走 `SurfaceFrame.SurfaceState`（**单权威**：`p = R·(cosφ·sinλ, sinφ, −cosφ·cosλ)`，
+        /// λ 就是 `EciToLongLat` 的反函数 ⇒ 两处同一套口径），再走唯一换系口 `ViewFrame.ToViewUnity`。
+        /// ⚠ 时刻用 `PhysicsTickNow()`（**physicsTick 轴** —— 天体位置是它的函数；见 `ManeuverPlanner` 的 U-12 同族教训）。
         /// </summary>
-        private static void DrawLaunchSiteMarker(Camera cam)
+        private static void DrawEquatorLonMarkers(Camera cam)
         {
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             int viewed = ViewFrame.ViewedBodyId;
-            var viewLayer = Launch.GetSurfaceState.GetLayerForBody(mgr, viewed);
             var viewBody = mgr?.GetBodyById(viewed);
-            if (viewLayer == null || viewBody == null) return;
-
-            // tile 来源：优先"发射点"（在地球上 ⇒ 只有看地球时才画），否则玩家据点的 tile（自带 layer）
-            int tile = -1;
-            if (launchSiteTile >= 0 && viewed == ViewFrame.RootPlanetId(mgr))
-                tile = launchSiteTile;
-            else
-            {
-                // ⚠ P52（2026-09-27）：`Find.WorldObjects.Settlements` 是**线性扫**，而本方法是**每帧**调的
-                //   ⇒ 玩家据点多了就是每帧扫一遍。据点极少变 ⇒ 缓存结果、10 s 或换层才重扫
-                //   （标记晚 10 s 更新在视觉上不可见；换被查看天体层立刻重扫，不会串层）。
-                int nowTick = Find.TickManager.TicksGame;
-                string? layerName = viewLayer.Def?.defName;
-                if (cachedSiteMarkerTick < 0 || nowTick < cachedSiteMarkerTick
-                    || nowTick - cachedSiteMarkerTick >= 600 || cachedSiteMarkerLayer != layerName)
-                {
-                    cachedSiteMarkerTick = nowTick;
-                    cachedSiteMarkerLayer = layerName;
-                    cachedSiteMarkerTile = -1;
-                    foreach (var s in Find.WorldObjects.Settlements)
-                    {
-                        if (s == null || s.Faction != Faction.OfPlayer || !s.Tile.Valid) continue;
-                        if (s.Tile.LayerDef?.defName != layerName) continue;
-                        cachedSiteMarkerTile = s.Tile.tileId;
-                        break;
-                    }
-                }
-                tile = cachedSiteMarkerTile;
-            }
-            if (tile < 0 || tile >= viewLayer.TilesCount) return;
+            if (viewBody == null) return;
 
             double tick = PhysicsTickNow();
             double omega = Launch.GetSurfaceState.RotationOmega(mgr, viewed);
-            DVector3 systemPos = SurfaceFrame.FixedToEci(
-                Launch.GetSurfaceState.TileToFixedPosition(viewLayer, tile, viewBody.radius), omega, tick);
-            Vector3 onSurface = ViewFrame.ToViewUnity(systemPos, tick);
-            Vector3 radialView = onSurface.sqrMagnitude > 1e-6f ? onSurface.normalized : Vector3.up;
-            Vector3 drawPos = onSurface + radialView * 4f;   // 贴表面略抬（云层 +0.2，辉光 +16）
+            for (int i = 0; i < 2; i++)
+            {
+                double lonRad = i == 0 ? 0.0 : Math.PI / 2.0;      // 固连系经度：0° / 90°E
+                (DVector3 pEci, _) = SurfaceFrame.SurfaceState(viewBody.radius, 0.0, lonRad, omega, tick);
+                Vector3 onSurface = ViewFrame.ToViewUnity(pEci, tick);
+                Vector3 radialView = onSurface.sqrMagnitude > 1e-6f ? onSurface.normalized : Vector3.up;
+                Vector3 drawPos = onSurface + radialView * 4f;    // 贴表面略抬（同原来那档）
 
-            if (!IsViewPosVisible(drawPos, 0.5f)) return;
+                if (!IsViewPosVisible(drawPos, 0.5f)) continue;
 
-            // 立方体 Y 轴对齐地表法线"立"在地面，轻微脉动便于远距离辨认
-            float pulse = 1f + 0.12f * Mathf.Sin(Time.realtimeSinceStartup * 3f);
-            Quaternion rot = Quaternion.FromToRotation(Vector3.up, radialView);
-            Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, Vector3.one * (12f * pulse));
-            orbitMarkerPropertyBlock.SetColor("_Color", new Color(1f, 0.15f, 0.1f, 0.95f));
-            CountDraw(DcLaunch);
-            Graphics.DrawMesh(cubeMesh, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
+                Quaternion rot = Quaternion.FromToRotation(Vector3.up, radialView);
+                Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, Vector3.one * 8f);
+                orbitMarkerPropertyBlock.SetColor("_Color", i == 0 ? CyanColor : EquatorLon90Color);
+                CountDraw(DcMarker);
+                Graphics.DrawMesh(sphereMesh, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
+            }
         }
 
         // ── P52（2026-09-27）：渲染路径上的每帧分配，改成"建一次/复用" ──
@@ -803,10 +791,6 @@ namespace PioneerFramework
         private static HashSet<int>? earthSystemBodyIds;              // 地球系天体 id 集（建一次）
         private static CelestialBodyManager? earthSystemBodyIdsMgr;   // 建它时的管理器（换局 ⇒ 重建）
         private static readonly List<Vector3> previewPtsScratch = new List<Vector3>();  // 预览轨道点（复用）
-        // P52：玩家据点标记的 tile（每帧扫据点 ⇒ 改成缓存；见 `DrawLaunchSiteMarker`）
-        private static int cachedSiteMarkerTile = -1;
-        private static string? cachedSiteMarkerLayer;
-        private static int cachedSiteMarkerTick = -1;   // <0 = 还没扫过
 
         /// <summary>`src` 逐点乘 `scale` 填进 `dst`（替代 `ConvertAll`：**不分配**，`dst` 复用）。
         /// 只在渲染路径用 ⇒ `dst` 一定是本帧刚清空/刚填满的。</summary>
@@ -958,6 +942,157 @@ namespace PioneerFramework
 
         #endregion
 
+        #region [V-2] 认知层可视化（影子 / 假接触 / 波束锥）
+
+        private static readonly List<Contact> cognitionContactBuf = new List<Contact>();
+        private static readonly List<Vector3> cognitionPointBuf = new List<Vector3>();
+        private static readonly DVector3[] coneRimScratch = new DVector3[24];
+
+        private static readonly Color ShadowColor = new Color(0.78f, 0.78f, 0.82f, 0.85f);      // 影子：灰白
+        private static readonly Color DecoyColor = new Color(0.95f, 0.55f, 0.35f, 0.9f);        // 假接触（未识破）
+        private static readonly Color DecoySpottedColor = new Color(0.6f, 0.32f, 0.32f, 0.9f);  // 已识破
+        private static readonly Color BeamColor = new Color(0.35f, 0.9f, 1f, 0.45f);            // 波束锥
+
+        /// <summary>
+        /// [V-2] 认知层可视化：影子接触（σ 圈）/ 假接触（识破换标记）/ 雷达波束锥。
+        /// 数据一律走认知层读入口（`AppendVisible` / `ContactPhaseOf`），**不读真值**；
+        /// dev 真值开关打开时整体跳过（那时要看的本来就是真值）。
+        /// </summary>
+        private static void DrawCognitionOverlay(Camera cam, SpaceGameComp spaceGame, SensorManager? sensor)
+        {
+            if (sensor == null || SensorManager.DebugShowGroundTruth) return;
+            var player = Faction.OfPlayer;
+            if (player == null) return;
+
+            double now = PhysicsTickNow();
+            int fid = player.loadID;
+
+            // ── 影子接触（Live 已由棋子图标表达）+ 假接触 ──
+            cognitionContactBuf.Clear();
+            sensor.AppendVisible(fid, cognitionContactBuf);
+            for (int i = 0; i < cognitionContactBuf.Count; i++)
+            {
+                var c = cognitionContactBuf[i];
+                if (c.IsForged)
+                {
+                    // 假接触**没有真值对应物**：画在"我测到的"位置上；识破（isDecoy）⇒ 换标记
+                    Vector3 dvp = ViewFrame.ToViewUnity(c.position, now);
+                    DrawCognitionDot(dvp, cam, c.isDecoy ? DecoySpottedColor : DecoyColor, c.isDecoy ? 1.2f : 1.7f);
+                    continue;
+                }
+                if (sensor.ContactPhaseOf(fid, c.targetGroupId) != TrackPhase.Shadow) continue;
+                Vector3 svp = ViewFrame.ToViewUnity(c.position, now);
+                DrawCognitionDot(svp, cam, ShadowColor, 1.3f);
+                DrawSigmaRing(svp, c.positionSigma, cam);
+            }
+
+            // ── 波束锥：开机（ActivePingEnabled）且"选中 或 我方"的编队 ──
+            var groups = spaceGame.GetAllGroups();
+            foreach (var g in groups)
+            {
+                if (g == null || !g.IsActive || !g.ActivePingEnabled) continue;
+                if (g.GroupId != selectedGroupId && g.FactionId != fid) continue;
+                DrawBeamCone(g, cam, now);
+            }
+        }
+
+        private static void DrawCognitionDot(Vector3 viewPos, Camera cam, Color color, float size)
+        {
+            if (!IsViewPosVisible(viewPos, 1f)) return;
+            Vector3 toCam = cam.transform.position - viewPos;
+            if (toCam.sqrMagnitude < 0.01f) return;
+
+            Quaternion rot = Quaternion.LookRotation(cam.transform.up, toCam.normalized);
+            Matrix4x4 matrix = Matrix4x4.TRS(viewPos + toCam.normalized * 0.5f, rot, new Vector3(size, 1f, size));
+            orbitMarkerPropertyBlock.SetColor("_Color", color);
+            CountDraw(DcMarker);
+            Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
+        }
+
+        /// <summary>点阵画笔：输入**视图系**点列（与 `DrawOrbitPath` 的区别：不做 ToView、单独计数）。</summary>
+        private static void DrawMarkerPoints(List<Vector3> viewPoints, Color color, float size, Camera cam)
+        {
+            for (int i = 0; i < viewPoints.Count; i++)
+            {
+                Vector3 viewPos = viewPoints[i];
+                if (!IsViewPosVisible(viewPos, 1f)) continue;
+                Vector3 toCam = cam.transform.position - viewPos;
+                if (toCam.sqrMagnitude < 0.01f) continue;
+                Quaternion rot = Quaternion.LookRotation(cam.transform.up, toCam.normalized);
+                Matrix4x4 matrix = Matrix4x4.TRS(viewPos + toCam.normalized * 0.5f, rot, new Vector3(size, 1f, size));
+                orbitMarkerPropertyBlock.SetColor("_Color", color);
+                CountDraw(DcMarker);
+                Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
+            }
+        }
+
+        /// <summary>σ 不确定圈：绕最后已知点、在垂直于视线的平面上画圆（半径 = σ）。</summary>
+        private static void DrawSigmaRing(Vector3 viewPos, double sigmaMeters, Camera cam)
+        {
+            if (sigmaMeters <= 0.5) return;
+            float radiusUnity = (float)(sigmaMeters * SpaceConstants.UnitsPerMeter);
+            if (radiusUnity < 0.05f) return;
+
+            Vector3 toCam = (cam.transform.position - viewPos).normalized;
+            Vector3 u = Vector3.Cross(toCam, Mathf.Abs(toCam.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
+            Vector3 v = Vector3.Cross(toCam, u).normalized;
+
+            cognitionPointBuf.Clear();
+            const int n = 24;
+            for (int i = 0; i < n; i++)
+            {
+                float a = Mathf.PI * 2f * i / n;
+                cognitionPointBuf.Add(viewPos + (u * Mathf.Cos(a) + v * Mathf.Sin(a)) * radiusUnity);
+            }
+            DrawMarkerPoints(cognitionPointBuf, ShadowColor, 1.0f, cam);
+        }
+
+        /// <summary>雷达波束锥：顶点 = 编队位置，半锥角/距离取群级 `RadarCap`，轴向 = `RadarBoresight`。</summary>
+        private static void DrawBeamCone(SpaceEntityGroup g, Camera cam, double now)
+        {
+            var rc = g.RadarCap;
+            if (rc.beamRangeMeters <= 0f || rc.beamHalfAngleDeg <= 0f) return;
+
+            DVector3 dir = g.RadarBoresight(now);
+            if (dir.sqrMagnitude < 1e-9) return;
+            dir = dir.normalized;
+
+            DVector3 apex = g.IsCircularOrbit ? g.GetCircularPositionAtTick(now) : g.CurrentOrbit.positionSystem.v;
+            DVector3 axisRef = Math.Abs(dir.y) < 0.9 ? new DVector3(0, 1, 0) : new DVector3(1, 0, 0);
+            DVector3 u = DVector3.Cross(dir, axisRef).normalized;
+            DVector3 v = DVector3.Cross(dir, u).normalized;
+
+            float halfAngleRad = rc.beamHalfAngleDeg * Mathf.Deg2Rad;
+            float sinHalf = Mathf.Sin(halfAngleRad);
+            double range = rc.beamRangeMeters;
+            DVector3 rimDir = dir * Math.Cos(halfAngleRad);
+
+            const int ring = 20;
+            for (int i = 0; i < ring; i++)
+            {
+                float a = Mathf.PI * 2f * i / ring;
+                coneRimScratch[i] = apex + (rimDir + (u * (Math.Cos(a) * sinHalf) + v * (Math.Sin(a) * sinHalf))) * range;
+            }
+
+            cognitionPointBuf.Clear();
+            // 端面圆环
+            for (int i = 0; i < ring; i++)
+                cognitionPointBuf.Add(ViewFrame.ToViewUnity(coneRimScratch[i], now));
+            // 母线（8 条，各 8 点 ⇒ 点阵锥面）
+            for (int k = 0; k < 8; k++)
+            {
+                DVector3 rimPt = coneRimScratch[k * (ring / 8)];
+                for (int s = 1; s <= 8; s++)
+                {
+                    double t = s / 8.0;
+                    cognitionPointBuf.Add(ViewFrame.ToViewUnity(apex + (rimPt - apex) * t, now));
+                }
+            }
+            DrawMarkerPoints(cognitionPointBuf, BeamColor, 1.1f, cam);
+        }
+
+        #endregion
+
         #region GUI 交互
 
         private static void HandleInput(SpaceGameComp spaceGame)
@@ -969,9 +1104,11 @@ namespace PioneerFramework
             Vector2 mousePos = Event.current.mousePosition;
             SpaceEntityGroup clickedGroup = null;
             float minDist = 20f;
+            var sensor = sensorMgrRef.Get();          // 点击与绘制**同一准入判据**（否则会点到看不见的棋子）
             foreach (var group in spaceGame.GetAllGroups())
             {
                 if (!group.IsActive) continue;
+                if (sensor != null && !SensorManager.DebugShowGroundTruth && !sensor.PlayerCanSee(group)) continue;
                 Vector3 viewPos = GetGroupWorldPositionUnity(group);
                 if (!IsViewPosVisible(viewPos, 2f)) continue;
                 Vector2 screenPos = GenWorldUI.WorldToUIPosition(viewPos);
@@ -1130,6 +1267,53 @@ namespace PioneerFramework
             GUI.color = Color.white;
             Text.Font = GameFont.Small;
             y += 54f;
+
+            // [V-2/裁定⑥] 认知与 EW 读数：相位 / σ / 受扰强度（"我知道什么、我被压到什么程度"）
+            string? cog = CognitionLine(group);
+            if (cog != null)
+            {
+                Text.Font = GameFont.Tiny;
+                GUI.color = DimColor;
+                Widgets.Label(new Rect(panel.x + 12f, y - 8f, panel.width - 24f, 18f), cog);
+                GUI.color = Color.white;
+                Text.Font = GameFont.Small;
+                y += 14f;
+            }
+        }
+
+        /// <summary>[V-2] 一条认知/EW 读数：相位（自有/公开/实况/影子/无接触）+ σ + 受扰。</summary>
+        private static string? CognitionLine(SpaceEntityGroup group)
+        {
+            var sensor = sensorMgrRef.Get();
+            var player = Faction.OfPlayer;
+            if (sensor == null || player == null) return null;
+            int fid = player.loadID;
+
+            string phase;
+            string sigma = "";
+            if (group.FactionId == fid)
+            {
+                phase = "自有遥测";
+            }
+            else if (!group.IsStealth)
+            {
+                phase = "公开应答";
+            }
+            else
+            {
+                var ph = sensor.ContactPhaseOf(fid, group.GroupId);
+                phase = ph == TrackPhase.Live ? "实况" : ph == TrackPhase.Shadow ? "影子" : "无接触";
+                if (sensor.TryGetContact(fid, group.GroupId, out Contact c) && c.positionSigma > 0.5)
+                    sigma = string.Format(" σ={0:F1}km", c.positionSigma / 1000.0);
+            }
+
+            string jam = "";
+            if (sensor.TryGetJamInfo(group.GroupId, out SensorManager.JamInfo ji) && ji.jam > 0.0)
+            {
+                double ratio = ji.factorNoJam > 0.0 ? ji.factorWithJam / ji.factorNoJam : 1.0;
+                jam = string.Format(" · 受扰 J={0:F2} 灵敏度{1:P0}", ji.jam, ratio);
+            }
+            return string.Format("认知: {0}{1}{2}", phase, sigma, jam);
         }
 
         private static void DrawPanelInfo(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)

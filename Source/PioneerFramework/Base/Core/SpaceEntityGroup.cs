@@ -108,6 +108,191 @@ namespace PioneerFramework
             }
         }
 
+        // ── [E3]/S4 干扰与开火揭示（2026-10-02）──
+        private bool jamming;
+        /// <summary>**干扰开机**（[E3]，S4）：与 `ActivePingEnabled` 同款属性（翻转即让派生信号失效）。
+        /// 语义：干扰机必须辐射才能干扰 ⇒ 开机后自己也会变响（`SignalModel.JamMultiplier`）。</summary>
+        public bool JammingEnabled
+        {
+            get => jamming;
+            set
+            {
+                if (jamming == value) return;
+                jamming = value;
+                derivedDirty = true;
+            }
+        }
+
+        /// <summary>**开火揭示窗口的截止时刻**（物理秒轴；`[N6]`/S4）。⚠ 它的翻转为**时间流逝**而非 setter
+        /// ⇒ 不能只靠失效钩子：`SignalStrength` 每次读时检查窗口是否已过（[V8] 登记的 C3 教训，就在这里用上）。</summary>
+        private double revealUntilPhysics = double.NegativeInfinity;
+        /// <summary>此刻是否处于开火揭示窗口内（时间的函数）。
+        /// ⚠ **只在窗口被激活过之后才读时钟**：`TimeScaleManager.GetPhysicsTickSafe()` 会进
+        /// `Verse.Find.TickManager`，而那个 getter **无 Game 时直接 NRE**（与 `GetAabbSystem` 同一族）
+        /// ⇒ 无条件读钟会让"离线读 `SignalStrength`/`DetectTech`"整条路炸掉（本轮集成测试实测）。
+        /// 短路还顺手省掉常态下的时钟调用（绝大多数群从未开过火）。</summary>
+        public bool RevealedByFire
+            => revealUntilPhysics > 0.0 && TimeScaleManager.GetPhysicsTickSafe() < revealUntilPhysics;
+        /// <summary>**开火揭示**（[N6]）：**非导弹**开火时由 `CombatManager.FireWeapon` 调用（导弹发射器开火不计暴露）。</summary>
+        public void NotifyWeaponFire(double nowPhysics)
+        {
+            revealUntilPhysics = nowPhysics + SignalModel.RevealWindowSeconds;
+            derivedDirty = true;
+        }
+
+        /// <summary>**建筑级干扰贡献**（[E3]，与 `BuildingTechBonus` 同一条投影链）：每物理步从地图投影写入，
+        /// 已按毁损折算。与部件级相加。**变了才置脏**（投影每步都写）、**不落盘**（派生量）。</summary>
+        private float buildingJamBonus;
+        public float BuildingJamBonus
+        {
+            get => buildingJamBonus;
+            set
+            {
+                if (value == buildingJamBonus) return;
+                buildingJamBonus = value;
+                derivedDirty = true;
+            }
+        }
+
+        /// <summary>干扰效力（无量纲）：各实体部件聚合（`JammerComponentData`）之和 **+ 建筑级投影**。走失效钩子缓存。</summary>
+        private float cachedJamStrength;
+        public float JamStrength
+        {
+            get
+            {
+                if (derivedDirty) RecomputeDerived();
+                return cachedJamStrength;
+            }
+        }
+
+        // ── 建筑级侦测贡献（[V7]/[N7] 投影写入口，2026-10-01）──
+        private SensorTech buildingTechBonus;
+
+        /// <summary>
+        /// **建筑级侦测贡献**（[V7]，[N7] 投影链）：由 `SpaceGameComp` **每物理步**从本组所属地图的
+        /// `SpaceMapComp` 投影写入（= 传感器阵列建筑的合计，已按毁损折算；归属 = 地图所属的这条 group）。
+        /// 与 <see cref="DetectTech"/> 的**部件级聚合**相加 —— 即下文那句"投影写入形态（[N7]）留给 EW 建筑"的落地。
+        ///
+        /// ⚠ 写入方**每物理步都写**（哪怕值没变）⇒ setter 必须"**变了才置脏**"，否则每步都让派生缓存失效。
+        /// ⚠ 不落盘：派生量只由"部件聚合 + 本投影"两处决定，存下去只会带出陈旧副本（同 `DetectTech` 的理由）。
+        /// </summary>
+        public SensorTech BuildingTechBonus
+        {
+            get => buildingTechBonus;
+            set
+            {
+                if (value.sensitivityMeters == buildingTechBonus.sensitivityMeters
+                    && value.memorySeconds == buildingTechBonus.memorySeconds
+                    && value.ecmResist == buildingTechBonus.ecmResist
+                    && value.eccmResist == buildingTechBonus.eccmResist)
+                    return;
+                buildingTechBonus = value;
+                derivedDirty = true;   // 与 ActivePingEnabled 同一条失效路（SignalStrength/DetectTech 共用缓存）
+            }
+        }
+
+        // ── 主动雷达能力（[V7]/[E2] 投影写入口，2026-10-01）──
+        private RadarCapability radarCap;
+
+        /// <summary>
+        /// **主动雷达能力**（[V7]/[E2]）：由 `SpaceGameComp` **每物理步**从本组所属地图的 `SpaceMapComp`
+        /// 投影写入（= 主动雷达建筑的合计，已按毁损折算）。语义见 <see cref="RadarCapability" />：
+        /// 增益/辐射可加、波束几何取最大；**开机开关是 <see cref="ActivePingEnabled" />**（W1 枢纽，不在本结构里）。
+        ///
+        /// ⚠ 与 `BuildingTechBonus` 同一纪律：**变了才置脏**（投影每步都写）；**不落盘**（派生量）。
+        /// ⚠ **波束的指向**（三模式：跟踪 / 手选方位 / 扫掠）是**组级状态**，留给 [E2]/[V3]（本步只做能力面）。
+        /// </summary>
+        public RadarCapability RadarCap
+        {
+            get => radarCap;
+            set
+            {
+                if (value.activeGainBonus == radarCap.activeGainBonus
+                    && value.activeRadiation == radarCap.activeRadiation
+                    && value.beamHalfAngleDeg == radarCap.beamHalfAngleDeg
+                    && value.beamRangeMeters == radarCap.beamRangeMeters)
+                    return;
+                radarCap = value;
+                derivedDirty = true;   // 与 BuildingTechBonus 同一条失效路
+            }
+        }
+
+        // ── [V7] 波束指向（三模式，2026-10-01 用户裁定"三者我都要"）──
+        /// <summary>[V7] 波束指向模式（三模式共用同一套波束几何，只有"指向从哪来"不同）。</summary>
+        public enum RadarAim
+        {
+            /// <summary>扫掠（搜索）：相位 = `physicsTick × 扫掠速率`（**时间的纯函数 ⇒ 不落盘、天然确定性**）。</summary>
+            Scan = 0,
+            /// <summary>跟踪：指向 <see cref="RadarTrackGroupId" /> 那条组的当前位置（拿不到 ⇒ 退化为扫掠）。</summary>
+            Track = 1,
+            /// <summary>手选方位：指向 <see cref="RadarManualDir" />（**惯性系 = 系统系**单位向量）。</summary>
+            Manual = 2,
+        }
+
+        private RadarAim radarAim = RadarAim.Scan;
+        private DVector3 radarManualDir = new DVector3(1, 0, 0);
+        private int radarTrackGroupId = -1;
+
+        /// <summary>波束指向模式（默认**扫掠**；AI 一旦指定交战对象由 [V10] 转跟踪 —— 与"选择"管道同拍）。</summary>
+        public RadarAim RadarAimMode { get => radarAim; set => radarAim = value; }
+        /// <summary>手选方位（**惯性系 = 系统系**单位向量；设置时自动归一）。</summary>
+        public DVector3 RadarManualDir { get => radarManualDir; set => radarManualDir = value.normalized; }
+        /// <summary>跟踪对象（组 id；-1 = 无 ⇒ 退化为扫掠）。⚠ 接触层 [V3] 落地后改指**接触身份**。</summary>
+        public int RadarTrackGroupId { get => radarTrackGroupId; set => radarTrackGroupId = value; }
+
+        /// <summary>
+        /// **当前波束指向**（惯性系 = 系统系单位向量）。三模式共用一个口：
+        /// 扫掠 = 赤道面（pole +Y）内按相位转圈；跟踪 = 指向目标组当前位置；手选 = 存的那个方向。
+        /// ⚠ 跟踪拿不到目标（无组 / 已毁 / 零距离）时**退化为扫掠** —— 绝不返回零向量（零向量在消费侧是无声的坑）。
+        /// </summary>
+        public DVector3 RadarBoresight(double physicsTick)
+        {
+            if (radarAim == RadarAim.Manual && radarManualDir.sqrMagnitude > 1e-12)
+                return radarManualDir.normalized;
+            if (radarAim == RadarAim.Track && radarTrackGroupId >= 0)
+            {
+                var sg = Current.Game?.GetComponent<SpaceGameComp>();
+                var tgt = sg?.GetGroupById(radarTrackGroupId);
+                DVector3 self = CurrentOrbit.positionSystem.v;     // OrbitState 是 struct ⇒ 不判空（零值由下面的 ≥1e-12 兜住）
+                if (tgt != null)
+                {
+                    DVector3 d = tgt.CurrentOrbit.positionSystem.v - self;
+                    if (d.sqrMagnitude > 1e-12) return d.normalized;
+                }
+            }
+            return EquatorialDir(ScanPhaseRad(physicsTick));   // 扫掠 = 默认，也是跟踪失败时的退化
+        }
+
+        /// <summary>**扫掠相位**（rad）= `physicsTick × 扫掠速率` 取模 2π —— 时间的**纯函数**
+        ///（所以相位不用落盘、天然确定性；"信息处理速度"以后就改速率那一格）。</summary>
+        public double ScanPhaseRad(double physicsTick)
+        {
+            double rateDeg = radarCap.scanRateDegPerSec > 0f ? radarCap.scanRateDegPerSec : 6f;
+            double p = physicsTick * rateDeg * (System.Math.PI / 180.0) % (2.0 * System.Math.PI);
+            return p < 0.0 ? p + 2.0 * System.Math.PI : p;
+        }
+
+        /// <summary>赤道面（pole +Y）内的单位方向：相位从 +X 起、绕 +Y 顺行。</summary>
+        private static DVector3 EquatorialDir(double phaseRad)
+            => new DVector3(System.Math.Cos(phaseRad), 0.0, System.Math.Sin(phaseRad));
+
+        /// <summary>
+        /// **波束判据**（[V7]，消费者 = [V3] 认知层）：目标（系统系位置）是否落在**本组波束内**
+        /// = 距离 ≤ `beamRangeMeters` **且** 与指向的夹角 ≤ `beamHalfAngleDeg`。
+        /// ⚠ 纯几何谓词：**不判"发现"**（归 [V3]），也**不做距离粗筛**（那是 [V3] 的 broad-phase）。
+        /// ⚠ 没装雷达 ⇒ `beamRangeMeters == 0` ⇒ 恒 false（"没雷达照不到"由构造保证，不用特判）。
+        /// </summary>
+        public bool RadarBeamContains(DVector3 targetPosSystem, double physicsTick, out double distMeters)
+        {
+            DVector3 self = CurrentOrbit.positionSystem.v;   // OrbitState 是 struct ⇒ 不判空
+            DVector3 d = targetPosSystem - self;
+            distMeters = d.magnitude;
+            if (distMeters > radarCap.beamRangeMeters || distMeters < 1e-6) return false;
+            double halfRad = radarCap.beamHalfAngleDeg * (System.Math.PI / 180.0);
+            double cosAng = DVector3.Dot(d / distMeters, RadarBoresight(physicsTick));
+            return cosAng >= System.Math.Cos(halfRad);
+        }
+
         // ── 信号强度（[V8]；W1 枢纽的量）──
         // 形态：**带失效钩子的缓存值**。之所以不做"静态项缓存 + 开关项按步读"的拆分
         // （§1.8 [F] 的简化）：[L](b)(c)+[O1] 之后**没有任何东西每步读它**——探测只在
@@ -130,6 +315,13 @@ namespace PioneerFramework
             get
             {
                 if (derivedDirty) RecomputeDerived();
+                else if (revealUntilPhysics > 0.0 && TimeScaleManager.GetPhysicsTickSafe() >= revealUntilPhysics)
+                {
+                    // 开火揭示窗口**靠时间流逝结束**（不是 setter ⇒ 没有可挂的失效钩子）⇒ 读时检查一次并重算。
+                    // 代价 = 一次比较（绝大多数群从未开过火，第一个条件就是 false）。
+                    revealUntilPhysics = double.NegativeInfinity;
+                    RecomputeDerived();
+                }
                 return cachedSignal;
             }
         }
@@ -146,8 +338,10 @@ namespace PioneerFramework
             {
                 burning = HasActiveBurn,
                 activePing = ActivePingEnabled,
-                // sharingIntel（[E8] 情报转发）/ revealedByFire（[N6] 开火揭示）尚未落地，
-                // 各自会带一个窗口字段；落地时在此读它们。
+                jamming = jamming,                  // [E3]/S4：干扰开机（W1 第二个开关项）
+                revealedByFire = RevealedByFire,    // [N6]/S4：读时算（窗口靠时间流逝结束）
+                // sharingIntel（[E8] 情报转发）**尚未落地**：本版没有"转发节点"这个概念
+                //（阵营内共享在 S2 里是隐式的）⇒ 它的暴露成本待 [E8] 与"转发节点"一起定。
             };
 
             var dt = new SensorTech();   // 编队级 = 各实体聚合的**求和**（与实体级聚合同口径）
@@ -158,20 +352,38 @@ namespace PioneerFramework
                 {
                     var e = sg.GetEntityById(eid);
                     if (e == null) continue;
-                    // 尺寸口径**复用既有约定**（AABB 半对角线：AVM:924 / CombatManager:1138），不新发明一份
-                    e.GetAabbSystem(out var mn, out var mx);
-                    double r = (mx - mn).magnitude * 0.5;
+                    // 尺寸口径 = **船体系包围盒半对角线**（`AabbHalfSize` = `BoundsSize × 0.5`，部件局部系）。
+                    // ⚠ 2026-10-02 用户裁定「**RCS 暂时与姿态无关**」：原先取 `GetAabbSystem` 的半对角线，而那是
+                    //   **旋转后**的世界轴对齐投影 ⇒ 姿态一变尺寸就变，而本缓存**没有姿态失效钩子**
+                    //   ⇒ S 会静默停在旧值上（`InvalidateSignal` 的三个驱动点里没有"旋转"）。
+                    //   改用船体系值（对该船是常数）⇒ 天然姿态无关、不必新开销失效点。
+                    //   世界系 AABB 的口径仍归**碰撞**（`CombatManager`/`AVM` 那两处），两边别混。
+                    double r = e.AabbHalfSize.magnitude;
                     if (r > x.rcsRadiusMeters) x.rcsRadiusMeters = r;
                     // 热/电项今天恒为 0（无组件写那两个槽），组件就位后自动生效（§3.2 的空槽）
                     var st = e.AggregatedStats;
                     x.heatWatts += st.heatProduction + st.heatDissipation;
                     x.powerWatts += st.powerGen + st.powerDraw;
+                    x.activeRadiation += st.activeRadiation;   // [V7]/[E2] 部件级那一份（建筑级在循环之后加）
                     // [V7]：侦测技术（传感器组件 / 未来的 EW 建筑投影都进这里）
                     dt.sensitivityMeters += st.sensorRange;
+                    dt.memorySeconds += st.memorySeconds;   // 记忆时长（[V3] 的 T；部件级那一份）
+                    cachedJamStrength += st.jamStrength;    // [E3] 干扰效力（部件级聚合）
+                    // （建筑级那一份在循环之后加，见下面 buildingJamBonus）
                     dt.ecmResist += st.ecmResist;
                     dt.eccmResist += st.eccmResist;
                 }
             }
+
+            // [V7]/[N7] **建筑级投影**（每物理步由 `SpaceGameComp` 写入；已按毁损折算）——与部件级**相加**。
+            // 归属口径（用户 2026-10-01 裁定）：建筑所在地图所属的那条 group；空间站自己就是一条 group。
+            cachedJamStrength += buildingJamBonus;                 // [E3] 建筑级那一份（已按毁损折算）
+            dt.sensitivityMeters += buildingTechBonus.sensitivityMeters;
+            dt.memorySeconds += buildingTechBonus.memorySeconds;   // 建筑级那一份
+            dt.ecmResist += buildingTechBonus.ecmResist;
+            dt.eccmResist += buildingTechBonus.eccmResist;
+            // [V7]/[E2] 主动辐射的**建筑级**那一份：只在开机时才进 S（判定在 `SignalModel.Total` 的 `activePing`）
+            x.activeRadiation += radarCap.activeRadiation;
 
             cachedSignal = SignalModel.Total(x);
             cachedDetect = dt;
@@ -1680,6 +1892,11 @@ namespace PioneerFramework
             Scribe_Values.Look(ref IsStealth, "isStealth", false);
             // 主动探测开关（[V1]）：旧存档无节点 → false（被动）
             Scribe_Values.Look(ref activePing, "activePing", false);
+            // [V7] 波束指向三模式的状态（2026-10-01）：模式 / 手选方位 / 跟踪对象**落盘**；
+            //   扫掠相位**不落盘**——它是 `physicsTick` 的纯函数（见 `ScanPhaseRad`）。
+            Scribe_Values.Look(ref radarAim, "radarAim", RadarAim.Scan);
+            DVector3.Scribe("radarManualDir", ref radarManualDir);
+            Scribe_Values.Look(ref radarTrackGroupId, "radarTrackGroupId", -1);
             Scribe_Deep.Look(ref CurrentOrbit, "currentOrbit");
             DVector3.Scribe("angularVelocity", ref angularVelocity);
             Scribe_Values.Look(ref maxAngularRate, "maxAngularRate", -1f); // -1 = 默认常量（旧存档兼容）

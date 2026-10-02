@@ -6,7 +6,6 @@ using PioneerFramework.Combat;
 
 namespace PioneerFramework
 {
-    public enum MapDesignatorMode { Manual, Auto }
 
     public class CompProperties_MapDesignator : CompProperties
     {
@@ -16,7 +15,6 @@ namespace PioneerFramework
         /// <summary>索敌扫描间隔（tick）。</summary>
         public int scanIntervalTicks = 32;
 
-        public MapDesignatorMode defaultMode = MapDesignatorMode.Auto;
 
         public CompProperties_MapDesignator()
         {
@@ -44,8 +42,8 @@ namespace PioneerFramework
     public class CompMapDesignator : ThingComp
     {
         private List<TurretBinding> boundMounts = new List<TurretBinding>();
-        private MapDesignatorMode mode;
         private int manualTargetGroupId = -1;
+        private readonly GameComponentRef<SensorManager> sensorMgrRef = new GameComponentRef<SensorManager>();   // [V3] 认知层
         private int cooldownTicks;
         private bool autoFire = true;
         private int nextScanTick;
@@ -57,7 +55,6 @@ namespace PioneerFramework
         private Mote preciseStrikeMarker;
 
         public CompProperties_MapDesignator Props => (CompProperties_MapDesignator)props;
-        public MapDesignatorMode Mode => mode;
         public bool AutoFire => autoFire;
         public IReadOnlyList<TurretBinding> BoundMounts => boundMounts;
         public bool HasPreciseStrike => preciseStrikeGroupId >= 0 && preciseStrikeCell.IsValid;
@@ -67,8 +64,6 @@ namespace PioneerFramework
         public override void PostSpawnSetup(bool respawningAfterLoad)
         {
             base.PostSpawnSetup(respawningAfterLoad);
-            if (!respawningAfterLoad)
-                mode = Props.defaultMode;
 
             // 一体式建筑（导弹发射器等自带炮塔）：定位机与同建筑炮塔自动绑定，免去玩家手动绑定
             var ownTurret = parent?.TryGetComp<CompMapTurret>();
@@ -119,41 +114,27 @@ namespace PioneerFramework
 
         // ── 索敌 ──
 
+        /// <summary>
+        /// 目标来源 = **被指定**（[N]：删掉"没分配我打谁那我打谁"的自动分配，2026-10-02 S3b）。
+        /// 没有指定 ⇒ 返回 null ⇒ **不开火**；并**开火前过认知层**（`CanEngage`，与视图同一条判据）。
+        /// </summary>
         private SpaceEntityGroup AcquireTarget()
         {
-            if (mode == MapDesignatorMode.Manual)
-            {
-                var sg = Current.Game?.GetComponent<SpaceGameComp>();
-                var t = sg?.GetGroupById(manualTargetGroupId);
-                if (t != null && t.IsActive && IsHostile(t) && IsInRange(t)) return t;
-                return null;
-            }
-            return AcquireAutoTarget();
+            var sg = Current.Game?.GetComponent<SpaceGameComp>();
+            var t = sg?.GetGroupById(manualTargetGroupId);
+            if (t == null || !t.IsActive || !IsHostile(t) || !IsInRange(t)) return null;
+            return CanEngage(t) ? t : null;
         }
 
-        private SpaceEntityGroup AcquireAutoTarget()
+        /// <summary>
+        /// **[V3] 认知层准入**（与视图同一条判据）：玩家此刻**看得见**才能打。
+        /// 影子也算（允许打"最后已知位置"）；dev 真值开关**不**在此放行（它只改画/点）。
+        /// 认知层缺位 ⇒ 放行（= 旧行为）。
+        /// </summary>
+        private bool CanEngage(SpaceEntityGroup g)
         {
-            var sg = Current.Game?.GetComponent<SpaceGameComp>();
-            var myGroup = GetMyGroup();
-            if (sg == null || myGroup == null) return null;
-
-            var cm = GetCombatManager();
-            if (cm == null) return null;
-            DVector3 myPos = cm.GetGroupPos(myGroup);
-            float engageRange = GetEffectiveRange();
-
-            SpaceEntityGroup best = null;
-            double bestDist = double.MaxValue;
-            foreach (var g in sg.GetAllGroups())
-            {
-                if (!g.IsActive || !g.IsCollidable) continue;
-                if (g.GroupId == myGroup.GroupId || !IsHostile(g)) continue;
-                DVector3 tPos = cm.GetGroupPos(g);
-                double d = (tPos - myPos).magnitude;
-                if (d > engageRange) continue;
-                if (d < bestDist) { bestDist = d; best = g; }
-            }
-            return best;
+            var sensor = sensorMgrRef.Get();
+            return sensor == null || sensor.PlayerCanSee(g);
         }
 
         private bool IsHostile(SpaceEntityGroup g)
@@ -291,6 +272,7 @@ namespace PioneerFramework
             var entity = GetMyEntity();
             var myGroup = GetMyGroup();
             if (cm == null || entity == null || myGroup == null) return;
+            if (!CanEngage(target)) return;      // [V3] 开火前过认知层（唯一漏斗；`AcquireTarget` 之外还有炮击/手动路径）
 
             DVector3 myPos = cm.GetGroupPos(myGroup);
             DVector3 targetPos = GetAimTargetPosition(target);
@@ -504,24 +486,14 @@ namespace PioneerFramework
             foreach (Gizmo g in base.CompGetGizmosExtra()) yield return g;
             if (parent.Faction != Faction.OfPlayer) yield break;
 
+            // 目标来源只剩"指定"（[N]）⇒ 不再有"索敌模式"开关
             yield return new Command_Action
             {
-                defaultLabel = "模式: " + (mode == MapDesignatorMode.Manual ? "手动" : "自动"),
-                defaultDesc = "切换索敌模式：自动 = 最近敌对目标；手动 = 指定目标。",
+                defaultLabel = "指定目标",
+                defaultDesc = "选择一个敌对轨道实体作为打击目标。**出厂不自动交战**：没有指定目标就不开火。",
                 icon = TexButton.Rename,
-                action = () => { mode = mode == MapDesignatorMode.Manual ? MapDesignatorMode.Auto : MapDesignatorMode.Manual; }
+                action = ShowTargetPicker
             };
-
-            if (mode == MapDesignatorMode.Manual)
-            {
-                yield return new Command_Action
-                {
-                    defaultLabel = "指定目标",
-                    defaultDesc = "选择一个敌对轨道实体作为手动目标。",
-                    icon = TexButton.Rename,
-                    action = ShowTargetPicker
-                };
-            }
 
             // 精确炮击：瞄准敌舰 Map 指定格（偏移船心）
             yield return new Command_Action
@@ -593,7 +565,6 @@ namespace PioneerFramework
                 options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）", g.GroupId, d / 1000.0), () =>
                 {
                     manualTargetGroupId = captured.GroupId;
-                    mode = MapDesignatorMode.Manual;
                 }));
             }
             if (options.Count == 0)
@@ -611,7 +582,7 @@ namespace PioneerFramework
             if (sg == null || myGroup == null) return;
 
             SpaceEntityGroup target = null;
-            if (mode == MapDesignatorMode.Manual && manualTargetGroupId >= 0)
+            if (manualTargetGroupId >= 0)
                 target = sg.GetGroupById(manualTargetGroupId);
             if (target == null) target = currentTarget;
             if (target == null)
@@ -659,7 +630,6 @@ namespace PioneerFramework
             if (targetMap == null) return;
 
             manualTargetGroupId = target.GroupId;
-            mode = MapDesignatorMode.Manual;
 
             CameraJumper.TryJump(targetMap.Center, targetMap);
             var tp = new TargetingParameters
@@ -688,7 +658,6 @@ namespace PioneerFramework
         {
             preciseStrikeGroupId = groupId;
             preciseStrikeCell = cell;
-            mode = MapDesignatorMode.Manual;
             manualTargetGroupId = groupId;
         }
 
@@ -704,14 +673,12 @@ namespace PioneerFramework
         public void DebugSetManualTarget(int groupId)
         {
             manualTargetGroupId = groupId;
-            mode = MapDesignatorMode.Manual;
         }
 
         public override void PostExposeData()
         {
             base.PostExposeData();
             Scribe_Collections.Look(ref boundMounts, "boundMounts", LookMode.Deep);
-            Scribe_Values.Look(ref mode, "mode");
             Scribe_Values.Look(ref manualTargetGroupId, "manualTargetGroupId", -1);
             Scribe_Values.Look(ref cooldownTicks, "cooldownTicks");
             Scribe_Values.Look(ref autoFire, "autoFire", true);

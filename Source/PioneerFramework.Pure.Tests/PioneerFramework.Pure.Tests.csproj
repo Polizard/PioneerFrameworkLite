@@ -75,6 +75,9 @@
          先行在纯测试里钉住形状（秒级回路），避免形状定错导致两边返工。 -->
     <Compile Include="..\PioneerFramework\Base\Game\SensorCore.cs" Link="Pure\SensorCore.cs" />
     <Compile Include="..\PioneerFramework\Base\Game\ContactCore.cs" Link="Pure\ContactCore.cs" />
+    <!-- PFView 地图浮雕（V-7，2026-10-02）：逐格分类 → 矩形盒体的纯逻辑（合并/降采样/确定性）——
+         无 Verse/Unity 依赖，链进来用纯测试钉住"不重叠不漏格 + 超限降采样只增不减"。 -->
+    <Compile Include="..\PioneerFramework\Base\MapComp\MapReliefPlan.cs" Link="Pure\MapReliefPlan.cs" />
   </ItemGroup>
 
   <ItemGroup>

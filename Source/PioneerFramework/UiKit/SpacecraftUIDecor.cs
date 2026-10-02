@@ -2,12 +2,15 @@ using RimWorld;
 using UnityEngine;
 using Verse;
 
-namespace PioneerFramework.GroundAssembly
+namespace PioneerFramework.UiKit
 {
     /// <summary>
     /// 航天器管理界面装饰元素绘制工具。
     /// 全部使用 IMGUI 程序化绘制，不依赖外部 Texture2D 资源。
     /// 风格：磁带盒未来主义（L 形角标、SpecBar、网格线）+ 复古未来主义（网点纹理）。
+    /// ⚠ 2026-10-02（V-0）：迁入 UiKit 供 PFView 共用；颜色相关的三个方法（Divider /
+    ///   CardBackground / WindowBackground）加了"显式颜色"重载——旧签名行为不变（走彩色调色板），
+    ///   PFView 用显式颜色重载传自己的灰度值。
     /// </summary>
     internal static class SpacecraftUIDecor
     {
@@ -143,34 +146,52 @@ namespace PioneerFramework.GroundAssembly
         }
 
         /// <summary>
-        /// 绘制卡片背景：填充底色 + 上下边框线。
+        /// 绘制卡片背景：填充底色 + 上下边框线（边框走彩色调色板）。
         /// </summary>
         internal static void DrawCardBackground(Rect r, Color bg)
         {
+            DrawCardBackground(r, bg, SpacecraftUIPalette.ColBorder);
+        }
+
+        /// <summary>绘制卡片背景（显式边框色版）。</summary>
+        internal static void DrawCardBackground(Rect r, Color bg, Color border)
+        {
             Widgets.DrawBoxSolid(r, bg);
-            GUI.color = SpacecraftUIPalette.ColBorder;
-            Widgets.DrawBoxSolid(new Rect(r.x, r.y, r.width, 1f), SpacecraftUIPalette.ColBorder);
-            Widgets.DrawBoxSolid(new Rect(r.x, r.yMax - 1f, r.width, 1f), SpacecraftUIPalette.ColBorder);
+            GUI.color = border;
+            Widgets.DrawBoxSolid(new Rect(r.x, r.y, r.width, 1f), border);
+            Widgets.DrawBoxSolid(new Rect(r.x, r.yMax - 1f, r.width, 1f), border);
             GUI.color = Color.white;
         }
 
         /// <summary>
-        /// 绘制分割线（1px 实色横线）。
+        /// 绘制分割线（1px 实色横线）。颜色走彩色调色板。
         /// </summary>
         internal static void DrawDivider(Rect r, float y, float width)
         {
+            DrawDivider(r, y, width, SpacecraftUIPalette.SpecDivider);
+        }
+
+        /// <summary>绘制分割线（显式颜色版；PFView 灰度等非调色板调用方用）。</summary>
+        internal static void DrawDivider(Rect r, float y, float width, Color color)
+        {
             Color oldColor = GUI.color;
-            GUI.color = SpacecraftUIPalette.SpecDivider;
+            GUI.color = color;
             GUI.DrawTexture(new Rect(r.x, y, width, 1f), BaseContent.WhiteTex);
             GUI.color = oldColor;
         }
 
         /// <summary>
-        /// 绘制窗口主背景：暖调近黑 CRT 屏底。
+        /// 绘制窗口主背景：暖调近黑 CRT 屏底（彩色调色板）。
         /// </summary>
         internal static void DrawWindowBackground(Rect r)
         {
-            Widgets.DrawBoxSolid(r, SpacecraftUIPalette.ColWindowBg);
+            DrawWindowBackground(r, SpacecraftUIPalette.ColWindowBg);
+        }
+
+        /// <summary>绘制窗口主背景（显式颜色版；PFView 灰度屏底用）。</summary>
+        internal static void DrawWindowBackground(Rect r, Color bg)
+        {
+            Widgets.DrawBoxSolid(r, bg);
         }
 
         // ── 7.1 按钮（主要 / 次要 / 警告 / 调试） ──

@@ -101,10 +101,12 @@ namespace PioneerFramework.Pure.Tests
         [Fact]
         public void Contact_StalesAfterMemoryWindow()
         {
-            var c = new Contact { lastUpdateTick = 1000 };
-            Assert.False(c.IsStaleAt(1000 + 599, 600));
-            Assert.False(c.IsStaleAt(1000 + 600, 600));
-            Assert.True(c.IsStaleAt(1000 + 601, 600));
+            // 2026-10-01 用户裁定：时间量走 **physicsTick 轴 = 模拟秒**（`Contact.lastUpdatePhysics` 的注释）
+            // —— 判据结构与窗口宽度一个没动，只把单位从"tick 计数"换成"模拟秒"。
+            var c = new Contact { lastUpdatePhysics = 12000.0 };
+            Assert.False(c.IsStaleAt(12000.0 + 599.0, 600.0));
+            Assert.False(c.IsStaleAt(12000.0 + 600.0, 600.0));
+            Assert.True(c.IsStaleAt(12000.0 + 601.0, 600.0));
         }
 
     }

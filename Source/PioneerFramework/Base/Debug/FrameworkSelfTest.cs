@@ -123,7 +123,9 @@ namespace PioneerFramework
                 "主动开关已还原（自造状态必须还回去）");
 
             // [V7] 侦测技术三分量（2026-09-24 起**可判**：它有写入者了）。
-            // 判据 = **派生量与实体级聚合一致**（编队级 ≡ 各实体 `AggregatedStats` 求和，同一口径）；
+            // 判据 = **派生量与"两段来源之和"一致**：**部件级**（各实体 `AggregatedStats` 求和）
+            //      + **建筑级**（`BuildingTechBonus`，[N7] 每物理步投影写入；2026-10-01 加）——
+            //      这两段合起来才是 `RecomputeDerived` 的全部输入；
             //      + 若该编队**确实装了**传感器部件，则派生灵敏度必须 > 0（"给量纲"的正向验收）。
             // ⚠ 期望值从**部件事实**推出，不从"样本应该有什么"推 —— 样本是"场上第一个活动编队"，
             //   可能是导弹（按设计**不装**传感器），写死"必须有传感器"会假红。
@@ -152,13 +154,17 @@ namespace PioneerFramework
                     }
                 }
                 var dt = sample.DetectTech;
-                bool consistent = System.Math.Abs(dt.sensitivityMeters - sumRange) <= System.Math.Max(1f, sumRange * 1e-4f)
-                                  && System.Math.Abs(dt.ecmResist - sumEcm) <= 1e-3f
-                                  && System.Math.Abs(dt.eccmResist - sumEccm) <= 1e-3f;
+                var bonus = sample.BuildingTechBonus;   // [V7]/[N7] 建筑级投影；没有建筑的编队恒为 0
+                bool consistent =
+                    System.Math.Abs(dt.sensitivityMeters - (sumRange + bonus.sensitivityMeters)) <= System.Math.Max(1f, sumRange * 1e-4f)
+                    && System.Math.Abs(dt.ecmResist - (sumEcm + bonus.ecmResist)) <= 1e-3f
+                    && System.Math.Abs(dt.eccmResist - (sumEccm + bonus.eccmResist)) <= 1e-3f;
                 PflTestKit.Check(PflTestKit.Kind.Invariant, consistent,
-                    "DetectTech = 各实体 AggregatedStats 之和（编队级派生量不许与实体级脱节）",
-                    string.Format("编队 灵{0:F0}m/抗压{1:F2}/抗骗{2:F2}｜实体求和 灵{3:F0}m/抗压{4:F2}/抗骗{5:F2}（{6} 个实体）",
-                        dt.sensitivityMeters, dt.ecmResist, dt.eccmResist, sumRange, sumEcm, sumEccm, entities));
+                    "DetectTech = 各实体 AggregatedStats 之和 + 建筑级投影（部件级 + 建筑级两段，别只看实体）",
+                    string.Format("编队 灵{0:F0}m/抗压{1:F2}/抗骗{2:F2}｜实体求和 灵{3:F0}m/抗压{4:F2}/抗骗{5:F2}" +
+                                  "｜建筑投影 灵{6:F0}m/抗压{7:F2}/抗骗{8:F2}（{9} 个实体）",
+                        dt.sensitivityMeters, dt.ecmResist, dt.eccmResist, sumRange, sumEcm, sumEccm,
+                        bonus.sensitivityMeters, bonus.ecmResist, bonus.eccmResist, entities));
                 if (sawSensorPart)
                 {
                     PflTestKit.Check(PflTestKit.Kind.Value, dt.sensitivityMeters > 0f,

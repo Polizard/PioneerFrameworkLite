@@ -189,14 +189,17 @@ namespace PioneerFramework
 
             var sb = new StringBuilder();
             int bad = 0;
-            var reads = new StringBuilder();   // 通过判据的读数（最多 3 条）——"读数必须无条件"：
+            var reads = new StringBuilder();   // 通过判据的读数——"读数必须无条件"：
                                                // 只打失败明细的后果就是"PASS 了但一个数都没留下"，无从跨版本对照。
+                                               // 预算按**字符**不按条数：旧值 240 撞上长标签时会把后半读数整段挤掉
+                                               // （2026-10-01 [V7] 指向验收：9 条读数只打出前 4 条）。1200 约容 10–15 条。
+            const int readsBudget = 1200;
             for (int i = 0; i < c.checks.Count; i++)
             {
                 var ch = c.checks[i];
                 if (ch.ok)
                 {
-                    if (reads.Length < 240 && !string.IsNullOrEmpty(ch.detail))
+                    if (reads.Length < readsBudget && !string.IsNullOrEmpty(ch.detail))
                         reads.Append(reads.Length == 0 ? "" : "｜").Append(ch.label).Append('=').Append(ch.detail);
                     continue;
                 }

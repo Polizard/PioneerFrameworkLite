@@ -694,8 +694,134 @@ namespace PioneerFramework
         public static long GravityTicksTotal;     // 引力场段总和（Stopwatch tick）
         public static long GravitySegments;       // 引力场段采样次数（= Σ 每组每子步一次）
 
-        /// <summary>整步计时开始。**只在 PerfProbe.Enabled 时调用**（关闭时调用点直接跳过）。</summary>
-        public static long StepClockStart() => System.Diagnostics.Stopwatch.GetTimestamp();
+        // ── 整个 `GameComponentTick` 的钟（2026-10-02，来袭规模场景逼出来的）──
+        // 与"物理步"（StepClock，只圈 `UpdateAllMovements`）分开：**本钟圈整个 tick 方法体**
+        //（地图封存 / 网格回收 / 储罐同步 / 各验收段 / 调试场景驱动都在里面）。
+        // 用途：来袭场景里"整步周期 700 ms"必须能分辨"是 PFL 自己的 tick 贵"还是"tick 之外"（UI / 渲染 / 别的 comp）
+        // —— 实测教训：2040 组那轮物理步只占 72 ms，其余 ~630 ms 在物理步之外，而当时日志里**没有**能指认它的读数。
+        private static long _tickTicksTotal, _tickTicksMax, _tickClocks;
+        /// <summary>整 tick 计时开始。</summary>
+        public static long TickClockStart() => System.Diagnostics.Stopwatch.GetTimestamp();
+        public static void TickClockEnd(long start)
+        {
+            long dt = System.Diagnostics.Stopwatch.GetTimestamp() - start;
+            _tickClocks++;
+            _tickTicksTotal += dt;
+            if (dt > _tickTicksMax) _tickTicksMax = dt;
+        }
+        /// <summary>清零（与步钟同族："打印并清零" ⇒ 每次读数 = 上一份读数以来的这段时间）。</summary>
+        public static void ResetTickClock() { _tickClocks = 0; _tickTicksTotal = 0; _tickTicksMax = 0; }
+        /// <summary>整 tick 读数。</summary>
+        public static string TickClockReport()
+            => _tickClocks <= 0
+                ? "未采样"
+                : string.Format("tick 数={0} 平均={1:F1}µs/tick 最慢={2:F1}µs",
+                    _tickClocks, ToMicros(_tickTicksTotal) / (double)_tickClocks, ToMicros(_tickTicksMax));
+
+        // ── 命名分段钟（2026-10-02 第二轮）：把"整 tick"再切成"物理步块 / 碰撞·战斗 / AVM"──
+        // 逼出它的读数：2040 组时整 tick = 192.8 ms，而物理步只有几 ms ⇒ 必须能把钱花在哪一块指认出来，
+        // 否则只能靠猜（本库纪律：不许用沉默冒充"没问题"，也不许用猜代替读数）。
+        public const int ExtraClockBlock = 0;    // 每 2 tick 的物理步块（含全部每物理步消费者）
+        public const int ExtraClockCombat = 1;   // `CombatManager.OnPhysicsStepCompleted`（碰撞/AoE）
+        public const int ExtraClockAvm = 2;      // `AutonomousVehicleManager.OnPhysicsStepCompleted`（导弹制导）
+        public const int ExtraClockSensor = 3;   // [V3] 认知层 `SensorManager.OnPhysicsStepCompleted`（感知段）
+        private static readonly long[] _extraTicks = new long[4];
+        private static readonly long[] _extraCounts = new long[4];
+        private static readonly long[] _extraMax = new long[4];
+        private static readonly string[] _extraNames = { "整步块", "碰撞·战斗", "AVM", "认知层" };
+        /// <summary>分段计时开始（与 <see cref="TickClockStart" /> 同族；纳秒级）。</summary>
+        public static long ExtraClockStart() => System.Diagnostics.Stopwatch.GetTimestamp();
+        public static void ExtraClockEnd(int slot, long start)
+        {
+            long dt = System.Diagnostics.Stopwatch.GetTimestamp() - start;
+            _extraTicks[slot] += dt;
+            _extraCounts[slot]++;
+            if (dt > _extraMax[slot]) _extraMax[slot] = dt;
+        }
+        /// <summary>清零（"打印并清零"同族）。</summary>
+        public static void ResetExtraClocks()
+        {
+            for (int i = 0; i < _extraTicks.Length; i++) { _extraTicks[i] = 0; _extraCounts[i] = 0; _extraMax[i] = 0; }
+        }
+        /// <summary>分段读数（合并成一行）。</summary>
+        public static string ExtraClockReport()
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < _extraTicks.Length; i++)
+            {
+                if (_extraCounts[i] <= 0) continue;
+                if (sb.Length > 0) sb.Append("｜");
+                sb.Append(string.Format("{0}：{1} 次 平均={2:F1}µs 最慢={3:F1}µs",
+                    _extraNames[i], _extraCounts[i],
+                    ToMicros(_extraTicks[i]) / (double)_extraCounts[i], ToMicros(_extraMax[i])));
+            }
+            return sb.Length > 0 ? sb.ToString() : "未采样";
+        }
+
+        /// <summary>整步计时开始。**只在 PerfProbe.Enabled 时调用**（关闭时调用点直接跳过）。
+        /// ★ 2026-10-01 第二轮：同时采一次**本线程 CPU**（仅 DevMode）——步钟是**墙钟**，
+        ///   它把"线程没在跑"的时间（JIT / 首次资产加载 / 日志写盘 / 锁等待 / OS 抢占）也计进去
+        ///   ⇒ 光看墙钟分不清"我们算了 108 ms"和"我们被停了 108 ms"。尖峰行加 CPU 栏后：
+        ///   墙钟 108 ms 而 CPU 只涨几十 µs ⇒ **是等不是算**。</summary>
+        public static long StepClockStart()
+        {
+            if (Prefs.DevMode) StepCpuBegin();
+            return System.Diagnostics.Stopwatch.GetTimestamp();
+        }
+
+        // ── 本线程 CPU（2026-10-01 **第三版**：换 `QueryThreadCycleTime`）──
+        // ⚠ 第二版用 `GetThreadTimes` 是**废的**：它的粒度 = Windows 时钟节拍 **15.625 ms**
+        //   ⇒ 实测读数全是 `0` 或 `15625` 的整数倍（还出现两条**负的**"墙钟−CPU"）
+        //   —— "CPU=0" 只意味着"这一步烧的 CPU < 15.6 ms"，对 5–7 ms 的尖峰**零分辨力**。
+        // `QueryThreadCycleTime`（Vista+，单次 syscall）给的是**本线程的周期数**，粒度 = CPU 周期；
+        //   换算成 µs 用**静态构造里的一次标定**（忙等 ~10 ms 数周期；静态构造在第一个测量步
+        //   **取起始时间戳之前**跑 ⇒ 那 10 ms 不落在任何被测量的区间里）。
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool QueryThreadCycleTime(IntPtr hThread, out ulong cycles);
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        private static extern IntPtr GetCurrentThread();
+
+        private static double _cyclesPerUs;              // 标定结果（0 = 标定失败 ⇒ CPU 栏报"不可用"）
+        private static double _calibSink;                // 防标定忙等被优化掉
+        private static long _stepCpuCyclesStart;
+
+        static PerfProbe() { CalibrateCycles(); }
+
+        private static void CalibrateCycles()
+        {
+            try
+            {
+                if (!QueryThreadCycleTime(GetCurrentThread(), out ulong c0)) return;
+                long f = System.Diagnostics.Stopwatch.Frequency;
+                long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                double acc = 1.0;
+                while (System.Diagnostics.Stopwatch.GetTimestamp() - t0 < f / 100)   // ≈10 ms 忙等
+                    acc += Math.Sqrt(acc + 1.000001) * 1e-9;
+                long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
+                if (!QueryThreadCycleTime(GetCurrentThread(), out ulong c1)) return;
+                double secs = (t1 - t0) / (double)f;
+                if (secs > 0.0 && c1 > c0) _cyclesPerUs = (c1 - c0) / (secs * 1e6);
+                _calibSink = acc;
+            }
+            catch { /* 标定失败 ⇒ 读数为"不可用"，不许抛 */ }
+        }
+
+        private static ulong ThreadCyclesNow()
+            => QueryThreadCycleTime(GetCurrentThread(), out ulong c) ? c : 0UL;
+
+        private static void StepCpuBegin() => _stepCpuCyclesStart = (long)ThreadCyclesNow();
+
+        /// <summary>本步 CPU 增量（µs）。取不到/标定失败时 valid=false（读数印 -1，不许抛）。
+        /// ⚠ 已知局限：`QueryThreadCycleTime` 按**线程周期**计，跨处理器迁移/多插座机器上可能失真
+        /// （主流单插座桌面成立；真要严格对账时与"墙钟−CPU"两项一起读）。</summary>
+        private static void StepCpuDelta(out double cpuUs, out bool valid)
+        {
+            ulong now = ThreadCyclesNow();
+            if (now == 0UL || _stepCpuCyclesStart <= 0L || _cyclesPerUs <= 0.0 || now < (ulong)_stepCpuCyclesStart)
+            { cpuUs = 0.0; valid = false; return; }
+            cpuUs = (now - (ulong)_stepCpuCyclesStart) / _cyclesPerUs;
+            valid = true;
+        }
 
         /// <summary>整步计时结束（start = StepClockStart 的返回值）。记录最慢步**及其步序号/真实 tick**
         /// ——光知道"最慢 10 ms"没用，得知道它是场景部署那一步还是稳态里的某一步。
@@ -722,6 +848,9 @@ namespace PioneerFramework
 
             // ── 步尖峰归因（DevMode 才打；每读数窗口至多 StepSpikeMaxLines 行）──
             double us = ToMicros(dt);
+            // ★ 尖峰**普查**（不受打印上限影响）：每窗口 > 阈值的步数与合计 —— 打印有 8 行/窗口的
+            //   上限，只看打印行会**低估**尖峰的真实次数/占比（截尾样本）。这两项随窗口行打出。
+            if (us > StepSpikeThresholdUs) { _spikeStepsWindow++; _spikeUsWindow += us; }
             if (Prefs.DevMode && us > StepSpikeThresholdUs && _stepSpikeLines < StepSpikeMaxLines)
             {
                 _stepSpikeLines++;
@@ -734,17 +863,34 @@ namespace PioneerFramework
                 //   不是**本步**的值（同一个"本步"行里混窗口值 = 我自己刚批评过的口径错，已修）：
                 //   `t` 取**当前** tick，`采样` 取**本步增量**。
                 int tickNow = Find.TickManager?.TicksGame ?? 0;
+                // ★ 2026-10-01 第二/三轮：**本步 CPU 增量**（墙钟 − CPU = "被停/在等"的那部分）
+                StepCpuDelta(out double cpuUs, out bool cpuOk);
+                long apBurnUs = ApplySubDelta(ApplySubBurn);
+                long apColUs = ApplySubDelta(ApplySubCollision);
+                long apTsUs = ApplySubDelta(ApplySubTimeScale);
+                long apManUs = ApplySubDelta(ApplySubManeuver);
                 Log.Message(string.Format(
                     "[步耗时·尖峰] 本步={0:F0}µs（第{1}步 / t={2}）｜**阶段**：操舵={3:F0} 冲量={4:F0} 组物理={5:F0} 主循环应用={6:F0} 引导={7:F0}"
                     + "｜子段：引力场={8:F0}µs 采样{9}｜解析源表={10:F1}｜预取建表={11:F1}"
-                    + "｜**残差={12:F0}µs**｜GC 本步={13}/{14}/{15}｜步均={16:F1}µs",
+                    + "｜**残差={12:F0}µs**｜GC 本步={13}/{14}/{15}｜步均={16:F1}µs"
+                    + "｜**本步CPU={17:F0}µs**｜**墙钟−CPU={18:F0}µs**{19}"
+                    + "｜**apply细分**：燃烧/工质={20:F0} 碰撞={21:F0} 时标={22:F0} 机动={23:F0} **余={24:F0}**"
+                    + "｜**块①细分**：诊断日志={25:F0} 工质账={26:F0} 探针/验收={27:F0} **余={28:F0}**",
                     us, StepClocks, tickNow,
                     ToMicros(PhaseDelta(PhaseSteer)), ToMicros(PhaseDelta(PhaseImpulse)), ToMicros(PhaseDelta(PhaseGroupPhysics)),
                     ToMicros(PhaseDelta(PhaseApply)), ToMicros(PhaseDelta(PhaseGuidance)),
                     ToMicros(grav), segs, ToMicros(seg), ToMicros(pf),
                     us - ToMicros(grav) - ToMicros(seg) - ToMicros(pf),
                     g0 - _spikeLastGc0, g1 - _spikeLastGc1, g2 - _spikeLastGc2,
-                    StepClocks > 0 ? ToMicros(StepTicksTotal) / StepClocks : 0.0));
+                    StepClocks > 0 ? ToMicros(StepTicksTotal) / StepClocks : 0.0,
+                    cpuOk ? cpuUs : -1.0, cpuOk ? us - cpuUs : -1.0,
+                    cpuOk ? "" : "（CPU 栏不可用）",
+                    ToMicros(apBurnUs), ToMicros(apColUs), ToMicros(apTsUs), ToMicros(apManUs),
+                    ToMicros(PhaseDelta(PhaseApply) - apBurnUs - apColUs - apTsUs - apManUs),
+                    ToMicros(ApplySubDelta(ApplySubBurnDiag)), ToMicros(ApplySubDelta(ApplySubBurnFuel)),
+                    ToMicros(ApplySubDelta(ApplySubBurnProbe)),
+                    ToMicros(apBurnUs - ApplySubDelta(ApplySubBurnDiag) - ApplySubDelta(ApplySubBurnFuel)
+                             - ApplySubDelta(ApplySubBurnProbe))));
                 _spikeLastGc0 = g0; _spikeLastGc1 = g1; _spikeLastGc2 = g2;
             }
 
@@ -752,6 +898,7 @@ namespace PioneerFramework
             _spikeLastGrav = GravityTicksTotal; _spikeLastSeg = systemCollectTicks; _spikeLastPf = prefetchBuildTicks;
             _spikeLastGravSegs = GravitySegments;
             for (int i = 0; i < PhaseCount; i++) _spikeLastPhase[i] = _phaseTicks[i];
+            for (int i = 0; i < ApplySubCount; i++) _applySubLast[i] = _applySubTicks[i];
         }
 
         /// <summary>本步某阶段的耗时（tick）：= 累计 − 上一步快照。</summary>
@@ -761,6 +908,8 @@ namespace PioneerFramework
         /// 默认 2000；测试/诊断可改（与 `ParallelOps.ForceSerial` 同族的诊断开关）。</summary>
         internal static double StepSpikeThresholdUs = 2000.0;
         private const int StepSpikeMaxLines = 8;
+        private static long _spikeStepsWindow;      // 本窗口 > 阈值的**步数**（普查；打印有上限，计数没有）
+        private static double _spikeUsWindow;       // 本窗口那些步的**墙钟合计**（µs）
 
         // ── 步内**阶段**计时（2026-10-01）：上一版的尖峰行只给了"残差"（= 本步 − 已计时子段）⇒ 残差≈整步时
         //   只知道"不在引力/预取那几段里"，还不知道在哪一段。这里把 `UpdateAllMovements` 的五个阶段各自圈起来，
@@ -768,6 +917,32 @@ namespace PioneerFramework
         public const int PhaseSteer = 0, PhaseImpulse = 1, PhaseGroupPhysics = 2, PhaseApply = 3, PhaseGuidance = 4, PhaseCount = 5;
         private static readonly long[] _phaseTicks = new long[PhaseCount];
         private static readonly string[] _phaseNames = { "操舵", "冲量", "组物理", "主循环应用", "引导" };
+
+        // ── apply 段**内部**细分（2026-10-01 第二轮）：apply 是五阶段里最大的一个（~830 行）──
+        // 背景：本轮实测 apply 有 **~490 tick 周期**的 5–7 ms 尖峰、一次 **108 ms**（GC=0、
+        //   组物理/引导都只有几十 µs ⇒ 与引力数学、与并行无关）。这一层把它切成四个**代码上
+        //   可切开**的块 —— 下一次游戏内重跑就能指认是哪一块（不用再猜）。
+        public const int ApplySubBurn = 0;        // 第一个循环：燃烧诊断/日志 + 工质账 + EndBurn + 巡检探针
+        public const int ApplySubCollision = 1;   // 碰撞检查循环（CheckPlanetCollision）
+        public const int ApplySubTimeScale = 2;   // 240 真实 tick 块：时标/降档/收尾强制
+        public const int ApplySubManeuver = 3;    // 机动/节点处理循环（意图重解 / 预对准 / 点火）
+        // 块①**再切三刀**（2026-10-01 第三轮）：上一轮实测 5–7 ms 的尖峰**全部**落在块①，
+        //   而块①里有三种性质完全不同的活 ⇒ 分开计时，下一轮直接指认是哪一种。
+        public const int ApplySubBurnDiag = 4;    // ①a：燃烧诊断（`RunBurnDiagnostics`）+ DiagLines 日志
+        public const int ApplySubBurnFuel = 5;    // ①b：工质账 + EndBurn + 收工结算
+        public const int ApplySubBurnProbe = 6;   // ①c：调试日志 + 轨道保持 + 巡检探针 + 验收 Tick
+        public const int ApplySubCount = 7;
+        private static readonly long[] _applySubTicks = new long[ApplySubCount];
+        private static readonly long[] _applySubLast = new long[ApplySubCount];
+
+        /// <summary>apply 内部细分的计时（与 <see cref="PhaseClockStart" /> 同族；常驻、纳秒级）。</summary>
+        public static long ApplySubClockStart() => System.Diagnostics.Stopwatch.GetTimestamp();
+
+        public static void ApplySubClockEnd(int slot, long start)
+            => System.Threading.Interlocked.Add(ref _applySubTicks[slot], System.Diagnostics.Stopwatch.GetTimestamp() - start);
+
+        /// <summary>本步某细分块的耗时（tick）：= 累计 − 上一步快照（与 <see cref="PhaseDelta" /> 同族）。</summary>
+        private static long ApplySubDelta(int slot) => _applySubTicks[slot] - _applySubLast[slot];
 
         /// <summary>阶段计时开始（与 `StepClockStart` 同族；常驻、纳秒级）。</summary>
         public static long PhaseClockStart() => System.Diagnostics.Stopwatch.GetTimestamp();
@@ -833,7 +1008,9 @@ namespace PioneerFramework
             // 步尖峰归因的基线与计数也跟着清零（否则全局计数归零后差值会变负 = 读数自相矛盾）
             _stepSpikeLines = 0;
             _spikeLastGrav = 0; _spikeLastSeg = 0; _spikeLastPf = 0; _spikeLastGravSegs = 0;
+            _spikeStepsWindow = 0; _spikeUsWindow = 0.0;   // 尖峰普查：与窗口同一生命周期
             for (int i = 0; i < PhaseCount; i++) { _phaseTicks[i] = 0; _spikeLastPhase[i] = 0; }
+            for (int i = 0; i < ApplySubCount; i++) { _applySubTicks[i] = 0; _applySubLast[i] = 0; }   // apply 细分与阶段同族：清零必须成对
             _spikeLastGc0 = GC.CollectionCount(0); _spikeLastGc1 = GC.CollectionCount(1); _spikeLastGc2 = GC.CollectionCount(2);
         }
 
@@ -858,12 +1035,13 @@ namespace PioneerFramework
             // S-a 拆两格：预取建表（主线程）/ 相位填充（相位里每群每步）
             double pfPerStep = ToMicros(PrefetchBuildTicksTotal) / StepClocks;
             return string.Format(
-                "步数={0} 平均={1:F1}µs/步 最慢={2:F1}µs（第{3}步 / t={4}）｜引力场段={5:F1}µs/步 占整步={6:P1}（采样 {7:F1} 段/步）｜**解析源表**={8:F2}µs/步（每群每步；占整步={9:P1}）｜**预取建表**={10:F2}µs/步（{11} 段）｜S-a 预取 {12} 张 / **用上 {13} 次** / 退回 {14} 次",
+                "步数={0} 平均={1:F1}µs/步 最慢={2:F1}µs（第{3}步 / t={4}）｜引力场段={5:F1}µs/步 占整步={6:P1}（采样 {7:F1} 段/步）｜**解析源表**={8:F2}µs/步（每群每步；占整步={9:P1}）｜**预取建表**={10:F2}µs/步（{11} 段）｜S-a 预取 {12} 张 / **用上 {13} 次** / 退回 {14} 次｜**尖峰(>{15:F0}µs)**：{16} 步 / 合计 {17:F0}µs",
                 StepClocks, avg, max, StepTicksMaxAtStep, StepTicksMaxAtTick, gravPerStep, share, segPerStep,
                 scPerStep, scShare,
                 pfPerStep, PrefetchBuildSegments,
                 CelestialBodyManager.DebugSourcesPrefetched, CelestialBodyManager.DebugSourcesHits,
-                CelestialBodyManager.DebugSourcesFallback);
+                CelestialBodyManager.DebugSourcesFallback,
+                StepSpikeThresholdUs, _spikeStepsWindow, _spikeUsWindow);
         }
 
         /// <summary>打印步钟读数并清零（供调试菜单按钮用；不依赖 `Enabled`）。</summary>

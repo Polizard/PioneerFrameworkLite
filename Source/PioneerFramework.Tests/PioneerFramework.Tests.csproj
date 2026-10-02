@@ -70,6 +70,10 @@
     <None Include="..\PioneerFramework\WorldGenStep\WorldGenStep_MoonTiles.cs" Link="Source\PioneerFramework\WorldGenStep\WorldGenStep_MoonTiles.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\MapGeneration\MoonSurfaceMapGeneration.cs" Link="Source\PioneerFramework\MapGeneration\MoonSurfaceMapGeneration.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewToonShader.cs" Link="Source\PioneerFramework\PFView\PFViewToonShader.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Render.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Render.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Scene.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Scene.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.GUI.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.GUI.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\ToonOutline\PFViewOutlineContracts.cs" Link="Source\PioneerFramework\PFView\ToonOutline\PFViewOutlineContracts.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\ToonOutline\PFViewOutlineAssetBundleProvider.cs" Link="Source\PioneerFramework\PFView\ToonOutline\PFViewOutlineAssetBundleProvider.cs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

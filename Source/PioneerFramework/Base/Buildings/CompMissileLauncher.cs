@@ -53,7 +53,9 @@ namespace PioneerFramework
         /// <summary>仅用于读 C# 默认值（Def 缺失时的 UI 兜底）；不注册进 DefDatabase，不参与玩法。</summary>
         private static readonly MissileDef FallbackMissileDef = new MissileDef();
         private SpaceEntityGroup target;
-        private bool manualMode; // false = Auto（索敌模式：最近敌对）；true = 手动指定目标
+        // ⚠ [N]（用户裁定"删分配、留执行"，2026-10-02 S3b 落地）：**"自动索敌取最近敌对"已删除**。
+        //   目标来源只剩"被指定"（`manualTargetGroupId`，序列化的**意图**）；没有指定 ⇒ **不开火**。
+        //   开火时机（`autoFire`）是**执行**，保留：指定了目标之后要不要立刻打，是玩家的战术开关。
         private bool autoFire = true; // 发射档位：true = 自动发射（目标有效+冷却就绪即打）；false = 手动发射（仅手动开火/面板/全体命令触发）
         private int manualTargetGroupId = -1;
         /// <summary>弹群齐射枚数（0 = 跟随武器 Def.missileCount；1..CombatManager.MaxVolleyCount = 发射器覆盖，2026-09-08 §5）。</summary>
@@ -62,6 +64,7 @@ namespace PioneerFramework
 
         // 性能第 14 条：CompTick 每建筑每 tick 都要取 SpaceGameComp，按 Game 缓存
         private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new GameComponentRef<SpaceGameComp>();
+        private readonly GameComponentRef<SensorManager> sensorMgrRef = new GameComponentRef<SensorManager>();   // [V3] 认知层
 
         // ── 精确打击点（§10 弹着偏置，2026-09-07）：瞄准目标地图指定格，本发射器释放的导弹终末撞该格 ──
         private int preciseStrikeGroupId = -1;
@@ -73,7 +76,6 @@ namespace PioneerFramework
 
         public WeaponInstance Weapon => weapon;
         public SpaceEntityGroup CurrentTarget => target;
-        public bool ManualMode => manualMode;
         public bool HasPreciseStrike => preciseStrikeGroupId >= 0 && preciseStrikeCell.IsValid;
         public DVector3 PreciseAimOffsetShip => preciseAimOffsetShip;
 
@@ -105,7 +107,6 @@ namespace PioneerFramework
             if (Scribe.mode == LoadSaveMode.LoadingVars)
                 BuildWeapon(); // 武器状态机冷启动（冷却重置可接受；弹药默认无限），同炮塔口径
             // 手动目标/模式 + 精确打击点（2026-09-07 补：此前发射器运行状态不存盘，读档后回 Auto 重扫）
-            Scribe_Values.Look(ref manualMode, "manualMode", false);
             Scribe_Values.Look(ref autoFire, "autoFire", true);
             Scribe_Values.Look(ref volleyCount, "volleyCount", 0);
             Scribe_Values.Look(ref manualTargetGroupId, "manualTargetGroupId", -1);
@@ -148,7 +149,7 @@ namespace PioneerFramework
             if (target != null && (sg.GetGroupById(target.GroupId) == null || !target.IsActive))
             {
                 target = null;
-                if (manualMode) manualTargetGroupId = -1;
+                manualTargetGroupId = -1;          // 目标没了 ⇒ 意图也清掉（等玩家重新指定；[N]）
             }
 
             // 索敌 + 目标变化 → 同步在飞导弹的跟随目标
@@ -185,27 +186,27 @@ namespace PioneerFramework
             }
             float range = weapon.def.orbitalEngageRange;
 
-            if (manualMode && manualTargetGroupId >= 0)
-            {
-                var g = sg.GetGroupById(manualTargetGroupId);
-                if (g == null || !g.IsActive || !IsHostile(g, myGroup)) return null;
-                if ((cm.GetGroupPos(g) - myPos).magnitude > range) return null;
-                return g;
-            }
-            if (manualMode) return null; // 手动模式未指定目标：不开火
+            // 唯一来源 = **被指定**（[N]：删掉"没分配我打谁那我打谁"的自动分配）
+            if (manualTargetGroupId < 0) return null;
+            var g = sg.GetGroupById(manualTargetGroupId);
+            if (g == null || !g.IsActive || !IsHostile(g, myGroup)) return null;
+            if ((cm.GetGroupPos(g) - myPos).magnitude > range) return null;
+            // [V3]（S3b）：**开火前过认知层** —— 看不见就不许开火（"分配是意图、捕获是认知"）。
+            //   与视图用**同一条**准入判据（`SensorManager.PlayerCanSee`）⇒ 能看到才打得到，不会出现
+            //   "列表里没有、却能开火"这种自相矛盾。接触丢而复得 ⇒ 自动继续（与 K6"目标失活即中止"同构）。
+            return CanEngage(g) ? g : null;
+        }
 
-            // Auto：最近敌对
-            SpaceEntityGroup best = null;
-            double bestDist = double.MaxValue;
-            foreach (var g in sg.GetAllGroups())
-            {
-                if (!g.IsActive || !g.IsCollidable) continue;
-                if (g.GroupId == myGroup.GroupId || !IsHostile(g, myGroup)) continue;
-                double d = (cm.GetGroupPos(g) - myPos).magnitude;
-                if (d > range) continue;
-                if (d < bestDist) { bestDist = d; best = g; }
-            }
-            return best;
+        /// <summary>
+        /// **[V3] 认知层准入**（与视图同一条判据）：玩家此刻**看得见**才能打（"分配是意图、捕获是认知"）。
+        /// 影子也算看得见（`PlayerCanSee` 对 Shadow 返回 true）⇒ 允许对"最后已知位置"下令撞击（打影子是玩法）。
+        /// ⚠ `SensorManager.DebugShowGroundTruth`（dev 真值开关）**不**在这里放行 —— 它只改画/点，不改战斗。
+        /// 认知层缺位（组件没加载）⇒ 放行（= 旧行为），别让"缺组件"变成"全都不许打"。
+        /// </summary>
+        private bool CanEngage(SpaceEntityGroup g)
+        {
+            var sensor = sensorMgrRef.Get();
+            return sensor == null || sensor.PlayerCanSee(g);
         }
 
         private static bool IsHostile(SpaceEntityGroup g, SpaceEntityGroup myGroup)
@@ -286,7 +287,6 @@ namespace PioneerFramework
                 Log.Warning(string.Format("[导弹发射器] 手动目标 G{0} 无效（不存在/失活/非敌对）", groupId));
                 return false;
             }
-            manualMode = true;
             manualTargetGroupId = groupId;
             target = g;
             SyncFollowerTargets(groupId);
@@ -304,6 +304,7 @@ namespace PioneerFramework
             var entity = GetMyEntity();
             var myGroup = GetMyGroup();
             if (cm == null || entity == null || myGroup == null) return;
+            if (!CanEngage(tgt)) return;          // [V3] 开火前过认知层（此处是**唯一漏斗**，`AcquireTarget` 之外还有手动/命令路径）
 
             DVector3 myPos = cm.GetGroupPos(myGroup);
             DVector3 targetPos = cm.GetGroupPos(tgt);
@@ -341,7 +342,7 @@ namespace PioneerFramework
             if (sg == null || myGroup == null) return;
 
             SpaceEntityGroup t = null;
-            if (manualMode && manualTargetGroupId >= 0)
+            if (manualTargetGroupId >= 0)
                 t = sg.GetGroupById(manualTargetGroupId);
             if (t == null) t = target;
             if (t == null)
@@ -365,6 +366,7 @@ namespace PioneerFramework
             foreach (var g in sg.GetAllGroups())
             {
                 if (!g.IsActive || g.GroupId == myGroup.GroupId || !IsHostile(g, myGroup)) continue;
+                if (!CanEngage(g)) continue;           // [V3] 列表只列"看得见"的（与视图同一判据）
                 if (GetMapEntity(g) == null) continue; // 只需有 Map 的目标（空间站/带图船）
                 double d = (cm.GetGroupPos(g) - myPos).magnitude;
                 var captured = g;
@@ -472,24 +474,14 @@ namespace PioneerFramework
             // 无 faction（调试/测试场景放置的建筑）与玩家阵营显示 Gizmo；外族/敌对阵营建筑不显示
             if (parent.Faction != null && parent.Faction != Faction.OfPlayer) yield break;
 
+            // 目标来源只剩"指定"（[N]）⇒ 不再有"索敌模式"开关，只剩"指定目标"这一个入口
             yield return new Command_Action
             {
-                defaultLabel = "索敌: " + (manualMode ? "手动" : "自动"),
-                defaultDesc = "切换索敌模式：自动 = 最近敌对目标；手动 = 指定目标。释放的导弹跟随本发射器目标，不立即进入终末（可在导弹控制面板下令撞击）。",
+                defaultLabel = "指定目标",
+                defaultDesc = "选择一个敌对轨道实体作为打击目标（导弹释放后自动跟随，直到你下令撞击或改目标）。**出厂不自动交战**：没有指定目标就不开火。",
                 icon = TexButton.Rename,
-                action = () => { manualMode = !manualMode; }
+                action = ShowTargetPicker
             };
-
-            if (manualMode)
-            {
-                yield return new Command_Action
-                {
-                    defaultLabel = "指定目标",
-                    defaultDesc = "选择一个敌对轨道实体作为打击目标（导弹释放后自动跟随，直到你下令撞击或改目标）。",
-                    icon = TexButton.Rename,
-                    action = ShowTargetPicker
-                };
-            }
 
             // 发射档位：自动（冷却好就发射）/ 手动（不自动打，手动开火单发或面板/全体命令指挥已释放导弹）
             yield return new Command_Toggle

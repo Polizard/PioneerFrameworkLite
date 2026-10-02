@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 方格连通性实验室：脱离游戏的独立小程序（跑法见同目录 README.md）。
+       不参与 mod 编译：mod 只编译 Source/PioneerFramework 自己的 csproj。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>TopologyLab</AssemblyName>
+    <RootNamespace>TopologyLab</RootNamespace>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+</Project>

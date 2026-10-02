@@ -81,7 +81,7 @@
 | # | 优先级 | 任务 | 说明 | Phase | 状态 |
 |---|--------|------|------|-------|------|
 | M5-1 | P1 | Defs 精简复核 | M2 已删 ShipPartDefs/装配 ThingDef/Nozzle/Mars；复核无残留 full 版 Def | P3-5（发布包） | ⬜ 待办 |
-| M5-2 | P1 | Toon Shader 资产管线确认 | `PF_Toon.shader` 是否打入 AssetBundle？归档 MasterPlan 标记 `Shader.Find` 恒失败，需核查 PFL 是否修复 | P3-4 | ⬜ 待办 |
+| M5-2 | P1 | Toon Shader 资产管线确认 | **✅ 2026-10-02 全链完成**：定性 = RimWorld 不加载散装 `Shaders/`（必须 AssetBundle；`Shader.Find` 恒失败属实、非 PFL 缺陷）。落地三件——① 打包工具链 `tools/PFViewShaderBundle/Build-PFViewToonBundles.ps1`（独立于 outline 那套；`-PrepareOnly` 可离线验）② 运行时加载器 `PFView/PFViewToonShader.cs`（双通道取包，取不到回退 Standard）③ **三个平台包已生成并入库/部署**：`pfview_toon_{win,linux,mac}`（win `7425675C…` / linux `e87B1531…` / mac `100B5921…`）。⚠ 打包用的是中国版编辑器 `2022.3.35f1c1_dcf06934cc2b`（本机只有这个；工具链已放行同 patch）——**若游戏内加载失败，第一嫌疑就是它** | P3-4 | ✅ 完成 |
 | M5-3 | P2 | 发布包结构 | 按 [Lite规划 §6.1](./Lite规划-20260808.md) 目录结构打包（About/1.6/Assemblies/Source/Defs） | P3-5 | ⬜ 待办 |
 | M5-4 | P2 | 存档前缀独立性确认 | `About.xml` 已声明独立 `packageId`，需确认存档不与 master 冲突 | P3-3（存档验证） | ⬜ 待办 |
 | M5-5 | P1 | **DMS:NF 接入点文档（9 类）交付** | 输出「发射/着陆/资源组件/炮塔建筑 Def/对接转移/火箭分级钩子/载荷接口/燃料映射/轨道实体查询/敌对事件钩子」共 9 类接入文档，作为发布包的 DesignNotes 附录 | P3-1 | ⬜ 待办 |

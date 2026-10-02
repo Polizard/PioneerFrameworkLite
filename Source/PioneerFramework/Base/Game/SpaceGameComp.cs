@@ -64,6 +64,7 @@ namespace PioneerFramework
 
         // ── 组件引用缓存（2026-09-10 性能第 5 条）：GameComponentTick / 每物理步都要查的组件 ──
         private readonly GameComponentRef<TimeScaleManager> timeScaleRef = new GameComponentRef<TimeScaleManager>();
+        private readonly GameComponentRef<SensorManager> sensorMgrRef = new GameComponentRef<SensorManager>();   // [V3] 认知层
         private readonly GameComponentRef<CombatManager> combatMgrRef = new GameComponentRef<CombatManager>();
         private readonly GameComponentRef<AutonomousVehicleManager> avmRef = new GameComponentRef<AutonomousVehicleManager>();
         private readonly GameComponentRef<CelestialBodyManager> celestialRef = new GameComponentRef<CelestialBodyManager>();
@@ -764,6 +765,12 @@ namespace PioneerFramework
             // 生成地图并用双向链接绑定
             var map = SpaceMapGenerator.GeneratePocketMap(mapWidth, mapHeight, "TestStation_" + entityId);
             SpaceMapGenerator.LinkEntityToMap(entity, map);
+            // [V7] 试验品：站内放一座传感器阵列建筑（每物理步投影进本站 group 的侦测技术）
+            SpawnSensorArrayForTest(map);
+            // [V7]/[E2] 试验品：再放一座主动雷达建筑（开机 ⇒ 本站更响 = W1 的代价侧）
+            SpawnActiveRadarForTest(map);
+            // [E3] 试验品：干扰机建筑（群级开关 `JammingEnabled` 默认关 ⇒ 不影响别的读数）
+            SpawnJammerForTest(map);
 
             RegisterEntity(entity);
             group.AddEntity(entityId);
@@ -910,6 +917,69 @@ namespace PioneerFramework
 
         public SpaceEntity GetEntityById(int id) => entities.TryGetValue(id, out var e) ? e : null;
         public SpaceEntityGroup GetGroupById(int id) => groups.TryGetValue(id, out var g) ? g : null;
+
+        /// <summary>
+        /// **[V7]/[N7] 建筑级投影**（每物理步一次）：把各地图（=船/站）的 EW 建筑贡献写进其所属 group。
+        /// · 归属口径（用户 2026-10-01 裁定）：**地图所属的那条 group**（空间站自己就是一条 group）；
+        /// · 贡献已按建筑**毁损**折算（`SpaceMapComp.SensorArrayTech` 逐座乘 HP 比例）；
+        /// · 只在**物理步**里调（`UpdateAllMovements` 之后，与其它每物理步消费者同拍）⇒ 读的是当前态。
+        /// ⚠ 写成"变了才置脏"的属性（`SpaceEntityGroup.BuildingTechBonus`）⇒ 值没变不会白刷派生缓存。
+        /// </summary>
+        private void ProjectBuildingDetectTech()
+        {
+            if (mapComponents.Count == 0) return;
+            foreach (var kv in mapComponents)
+            {
+                if (!(kv.Value is SpaceMapComp mc) || mc.ownerEntityId < 0) continue;
+                var entity = GetEntityById(mc.ownerEntityId);
+                if (entity == null) continue;
+                var group = GetGroupById(entity.GroupId);
+                if (group == null) continue;
+                group.BuildingTechBonus = mc.SensorArrayTech();
+                group.RadarCap = mc.RadarCapability();   // [V7]/[E2] 主动雷达能力（同一投影节拍）
+                group.BuildingJamBonus = mc.JammerStrength();   // [E3] 干扰机建筑（同一投影节拍，按毁损折算）
+            }
+        }
+
+        /// <summary>
+        /// **[V7] 试验用**：往站内地图放一座传感器阵列建筑（Def 缺失时静默跳过）。
+        /// 验收三件：① 站 group 的 `DetectTech` 叠加出非零贡献；② 打掉它 ⇒ 贡献掉；③ 存档往返读数不变。
+        /// </summary>
+        private static void SpawnSensorArrayForTest(Map map)
+        {
+            var def = DefDatabase<ThingDef>.GetNamedSilentFail("PF_Building_SensorArray");
+            if (def == null || map == null) return;
+            IntVec3 cell = CellFinder.RandomClosewalkCellNear(map.Center, map, 8);
+            if (!cell.IsValid || !cell.InBounds(map)) cell = map.Center;
+            var t = GenSpawn.Spawn(ThingMaker.MakeThing(def), cell, map);
+            Log.Message(string.Format("[V7] 站内传感器阵列建筑已放置：{0} @ {1}", def.defName, cell));
+        }
+
+        /// <summary>[E3] 试验用：往站内地图放一座干扰机建筑（Def 缺失时静默跳过；群级开关默认关）。</summary>
+        private static void SpawnJammerForTest(Map map)
+        {
+            var def = DefDatabase<ThingDef>.GetNamedSilentFail("PF_Building_Jammer");
+            if (def == null || map == null) return;
+            IntVec3 cell = CellFinder.RandomClosewalkCellNear(map.Center, map, 16);
+            if (!cell.IsValid || !cell.InBounds(map) || !cell.Standable(map))
+                cell = CellFinder.RandomClosewalkCellNear(map.Center, map, 22);
+            if (!cell.IsValid || !cell.InBounds(map)) cell = map.Center;
+            GenSpawn.Spawn(ThingMaker.MakeThing(def), cell, map);
+            Log.Message(string.Format("[E3] 站内干扰机建筑已放置：{0} @ {1}", def.defName, cell));
+        }
+
+        /// <summary>[V7]/[E2] 试验用：往站内地图放一座主动雷达建筑（Def 缺失时静默跳过）。</summary>
+        private static void SpawnActiveRadarForTest(Map map)
+        {
+            var def = DefDatabase<ThingDef>.GetNamedSilentFail("PF_Building_ActiveRadar");
+            if (def == null || map == null) return;
+            IntVec3 cell = CellFinder.RandomClosewalkCellNear(map.Center, map, 12);
+            if (!cell.IsValid || !cell.InBounds(map) || !cell.Standable(map))
+                cell = CellFinder.RandomClosewalkCellNear(map.Center, map, 18);   // 别和传感器阵列叠在一格
+            if (!cell.IsValid || !cell.InBounds(map)) cell = map.Center;
+            GenSpawn.Spawn(ThingMaker.MakeThing(def), cell, map);
+            Log.Message(string.Format("[V7] 站内主动雷达建筑已放置：{0} @ {1}", def.defName, cell));
+        }
         public IEnumerable<SpaceEntity> GetAllEntities() => entities.Values;
         public IEnumerable<SpaceEntityGroup> GetAllGroups() => groups.Values;
 
@@ -990,6 +1060,9 @@ namespace PioneerFramework
 
         public override void GameComponentTick()
         {
+            // ★ 2026-10-02：**整 tick 钟**（与"物理步"分开）——来袭场景里"整步周期 700 ms"
+            //   必须能分辨"是本组件的 tick 贵"还是"tick 之外"（UI / 渲染 / 其它 comp）。
+            long tickClock = PerfProbe.TickClockStart();
             base.GameComponentTick();
 
             // ── 地图封存/取档异步处理（每次 tick 推进一批）──
@@ -1007,6 +1080,7 @@ namespace PioneerFramework
             
             if (currentTick - lastUpdateTick >= UPDATE_INTERVAL_TICKS)
             {
+                long blockClock = PerfProbe.ExtraClockStart();   // ★ 2026-10-02：整步块钟（含全部每物理步消费者）
                 lastUpdateTick = currentTick;
                 // 第 25 条墙钟：整步 = 一次 UpdateAllMovements（操舵 + 冲量 + 群组物理 + 耗散 + **交会引导**）。
                 // ★ 2026-09-20 改为**常驻测量**（原先只在优化探针开着时测）：成本 = 两次 Stopwatch 读（纳秒级），
@@ -1027,8 +1101,35 @@ namespace PioneerFramework
                 // 全名字母序（AutonomousVehicleManager → 本组件 → CombatManager），若制导/碰撞各自
                 // %2 tick 会有一方读到推进前的旧位置 → 同 tick 位置错位 2s ≈ 5km（导弹制导报 0.7km
                 // 命中、碰撞实测 2.6km 的日志实证）。此处推进完毕 = 所有消费者同 tick 同位。
+                // ★ 2026-10-02：**顺序固定为 物理 → 能力面 → 认知 → 决策**（[V3] 认知层夹在中间）。
+                // [V7]/[N7] 建筑级投影（2026-10-01）：EW 建筑住在 pocket map，comp 不可靠地 Tick
+                // ⇒ 由**物理步**把它们的贡献投影进所属 group（设计稿 §5.4 的脊柱：建筑只登记、不自己改 Group）。
+                // ⚠ 同日由"消费者之后"提到**之前**：认知层要读它（`DetectTech` / `RadarCap`）；
+                //   今天 combat/AVM 都还不读那两个字段 ⇒ 这一步移动对它们是**行为中性**的。
+                ProjectBuildingDetectTech();
+                // [V3] 认知层（S2）：每物理步无条件刷新 + 状态门控（2026-10-02 裁定 ③）
+                long sensorClock = PerfProbe.ExtraClockStart();
+                sensorMgrRef.Get()?.OnPhysicsStepCompleted();
+                PerfProbe.ExtraClockEnd(PerfProbe.ExtraClockSensor, sensorClock);
+                // 决策类消费者（读认知层；S3 才接线，今天仍读真值）
+                // ★ 两个消费者各自圈时（来袭场景里"整 tick 192.8 ms"必须能拆开）
+                long combatClock = PerfProbe.ExtraClockStart();
                 combatMgrRef.Get()?.OnPhysicsStepCompleted();
+                PerfProbe.ExtraClockEnd(PerfProbe.ExtraClockCombat, combatClock);
+                long avmClock = PerfProbe.ExtraClockStart();
                 avmRef.Get()?.OnPhysicsStepCompleted();
+                PerfProbe.ExtraClockEnd(PerfProbe.ExtraClockAvm, avmClock);
+                // [V7] 验收状态机放在投影**之后**：它读的就是本步刚投影进去的值（不然会差一拍）。
+                SensorProjectionAcceptanceRunner.Tick();
+                // 来袭性能场景（2026-10-02）：空闲时第一行返回（静态 stage 判据）⇒ 零成本
+                SwarmAttackPerfRunner.Tick();
+                // [V3] 认知层验收（2026-10-02 S2）：必须在 `SensorManager` **之后**（读它本步刚写的视图）
+                SensorCognitionAcceptanceRunner.Tick();
+                // 电子战总控（2026-10-02）：按段推进已跑完的验收（空闲时零开销）
+                EwSystemAcceptanceRunner.Tick();
+                // ⚠ 总控要在**各段自己的 Tick 之后**：它靠"上一段跑完"来起下一段。
+                //   （放在本块末尾即可——它自己只做读取与派发。）
+                PerfProbe.ExtraClockEnd(PerfProbe.ExtraClockBlock, blockClock);   // 整步块钟闭合
             }
             
             if (timeScaleManager != null && timeScaleManager.IsCombatMode)
@@ -1074,6 +1175,7 @@ namespace PioneerFramework
             // 调试场景驱动（原 DebugShipSpawner.CompTick：场景自动下令 + 碰撞距离探针）
             DebugShipSpawner.Tick();
             SwarmScaleAcceptanceRunner.Tick();   // 批 0-4：≥32 组可复现性（空闲时第一行返回，零开销）
+            PerfProbe.TickClockEnd(tickClock);   // 整 tick 钟（2026-10-02）：与上面的物理步钟配对读数
         }
 
         private struct GroupPhysicsResult
@@ -2290,8 +2392,15 @@ namespace PioneerFramework
         /// 物理步首：把各 group 累积的合冲量施加到速度并清零。
         /// 圆轨 group 先退出圆轨（解析位置/速度会被覆盖）；施加后标记轨道脏。
         /// </summary>
+        // DevMode 逐笔对账的**每步行数上限**（2026-10-02：大批量燃烧组会把这一步刷爆 ⇒ 审计自己成了被测负载）。
+        private const int BurnAuditMaxLinesPerStep = 40;
+        private int burnAuditLinesThisStep;
+        private bool burnAuditTruncatedThisStep;
+
         private void ApplyPendingImpulses()
         {
+            burnAuditLinesThisStep = 0;             // 审计限流（2026-10-02）：每步重置
+            burnAuditTruncatedThisStep = false;
             foreach (var group in groups.Values)
             {
                 if (!group.IsMovable) continue;
@@ -2301,17 +2410,33 @@ namespace PioneerFramework
                 // ★ **逐步对账**（2026-09-19）：命令说这一步该给 aCmd·dt，这一行是**状态实际吃到的量**。
                 //   悬案：交付端逐项验证精确（每步命令 / 工质 / 方向），但有效能量系统性少 0.34%
                 //   （Δa = +8.46 km，而台架同政策全族只有 +0.9~+1.9 km）⇒ 这一步必须逐笔对。
-                //   只在开发者模式打，每轮燃烧最多 60 行。
-                if (Prefs.DevMode && group.burnStepAuditCount < 60)
+                // ⚠ **2026-10-02 修两处仪器污染**（实测：2040 组来袭场景里这一步被刷到 54–62 ms/步，
+                //   而该步真物理只有 ~7 ms ⇒ 量到的是"审计日志自己"；2000 枚弹 × 每枚 60 行 = 12 万行）：
+                //   ① **只审与燃烧有关的冲量** —— 轨道保持/平移的微冲量（实测 2e-5 m/s）不进来；
+                //      保留 `burnLastCmdDv > 0` 这一支 ⇒ 燃烧收尾那一步（`EndBurn` 已清 `HasActiveBurn`）仍在对账范围内。
+                //   ② **每步全局行数上限** —— 否则一个 2040 枚弹的齐射正处在燃烧段时，逐组一行会再次把这一步刷爆。
+                if (Prefs.DevMode && group.burnStepAuditCount < 60
+                    && (group.HasActiveBurn || group.burnLastCmdDv > 0.0))
                 {
                     group.burnStepAuditCount++;
                     double got = group.pendingImpulse.magnitude;
                     group.appliedDvAudit += got;   // ⚠ 先累加**再**打印（上一版打的是"加本笔之前"的值 ⇒ 我据此误判过一次 ✗）
-                    Log.Message(string.Format(
-                        "[燃烧·对账] G{0} 第{1}笔：命令={2:F5}｜实收={3:F5}｜差={4:F2}%｜**含本笔**累计实收={5:F3} m/s",
-                        group.GroupId, group.burnStepAuditCount, group.burnLastCmdDv, got,
-                        group.burnLastCmdDv > 1e-9 ? (got - group.burnLastCmdDv) / group.burnLastCmdDv * 100.0 : 0.0,
-                        group.appliedDvAudit));
+                    if (burnAuditLinesThisStep < BurnAuditMaxLinesPerStep)
+                    {
+                        burnAuditLinesThisStep++;
+                        Log.Message(string.Format(
+                            "[燃烧·对账] G{0} 第{1}笔：命令={2:F5}｜实收={3:F5}｜差={4:F2}%｜**含本笔**累计实收={5:F3} m/s",
+                            group.GroupId, group.burnStepAuditCount, group.burnLastCmdDv, got,
+                            group.burnLastCmdDv > 1e-9 ? (got - group.burnLastCmdDv) / group.burnLastCmdDv * 100.0 : 0.0,
+                            group.appliedDvAudit));
+                    }
+                    else if (!burnAuditTruncatedThisStep)
+                    {
+                        burnAuditTruncatedThisStep = true;
+                        Log.Message(string.Format(
+                            "[燃烧·对账] 本步对账行已达上限 {0} 行 ⇒ 其余省略（**记账不受影响**：`appliedDvAudit` 照常累加）",
+                            BurnAuditMaxLinesPerStep));
+                    }
                 }
                 group.CurrentOrbit.velocitySystem = group.CurrentOrbit.velocitySystem + (SystemVec3)group.pendingImpulse;
                 group.pendingImpulse = DVector3.zero;
@@ -2321,6 +2446,10 @@ namespace PioneerFramework
 
         protected virtual void UpdateAllMovements(TimeScaleManager timeScaleManager)
         {
+            // ★ 2026-10-01 第三轮：**从函数第一行起**计时（此前只圈 `ApplySteering` 之后 ⇒
+            //   `dt/physicsTick` 与 `celestialRef.Get()` 这段"未计时头"不在任何阶段里 —— 实测有一条
+            //   3.16 ms 的步（t=27782，燃烧中）五段合计只有 78 µs，时间就落在这类缝里）。
+            long phSteer = PerfProbe.PhaseClockStart();
             double dtSeconds = UPDATE_INTERVAL_TICKS;
             int subSteps = 1;
             double physicsTick = Find.TickManager.TicksGame;
@@ -2338,7 +2467,6 @@ namespace PioneerFramework
 
             // ── 手动操舵（每物理步）：平移/旋转/SAS 输入应用 + 输入打断清队列（D10）──
             // ★ 2026-10-01：五个阶段各自圈时（`PerfProbe.PhaseClock*`）⇒ 步尖峰那行能直接指认"是哪一段贵"
-            long phSteer = PerfProbe.PhaseClockStart();
             ApplySteering(dtSeconds);
             PerfProbe.PhaseClockEnd(PerfProbe.PhaseSteer, phSteer);
 
@@ -2477,6 +2605,7 @@ namespace PioneerFramework
             bool burnDiagDue = physicsTick >= BurnDiagNextTick;
             if (burnDiagDue) BurnDiagNextTick = physicsTick + 10.0;
 
+            long apBurn = PerfProbe.ApplySubClockStart();   // apply 细分①：燃烧/工质/诊断日志（2026-10-01 第二轮）
             for (int ri = 0; ri < movableGroups.Count; ri++)
             {
                 var result = physicsResults[ri];
@@ -2486,6 +2615,7 @@ namespace PioneerFramework
                 // **每步一次**的决定给出 ⇒ 本步**所有**燃烧组都轮到（不再只轮到第一个）。
                 // ⚠ 用 `group.HasActiveBurn`（不是 `result.HasActiveBurn`）：与并行体当时判的是**同一份字段**，
                 //   而此时主循环还没执行下面的 `EndBurn()` ⇒ 与改前的进入条件逐位一致。
+                long apBd = PerfProbe.ApplySubClockStart();   // 块①a：燃烧诊断 + DiagLines 日志
                 if (burnDiagDue && group.HasActiveBurn)
                     RunBurnDiagnostics(group, celestialMgr, physicsTick);
 
@@ -2502,7 +2632,9 @@ namespace PioneerFramework
                 {
                     for (int di = 0; di < result.DiagLines.Count; di++) Log.Message(result.DiagLines[di]);
                 }
+                PerfProbe.ApplySubClockEnd(PerfProbe.ApplySubBurnDiag, apBd);
 
+                long apBf = PerfProbe.ApplySubClockStart();   // 块①b：工质账 + EndBurn + 收工结算
                 bool burnEndedThisStep = false;
 
                 if (result.HasActiveBurn)
@@ -2576,7 +2708,9 @@ namespace PioneerFramework
                     LogRendezvousTrack(group, "烧完", group.appliedBurnDV);   // 交会轨迹读数：烧完那一刻
                     burnEndedThisStep = true;
                 }
+                PerfProbe.ApplySubClockEnd(PerfProbe.ApplySubBurnFuel, apBf);
 
+                long apBp = PerfProbe.ApplySubClockStart();   // 块①c：调试日志 + 轨道保持 + 巡检探针 + 验收 Tick
                 // ── 无 Map 主推/RCS 机动详细日志（DebugDetailedThrust，D15 改动验证）──
                 // 每物理步：选网（主/RCS/兜底）、主推轴-目标夹角、Δv/余 dv、双罐燃料、燃尽抑制、转向角速度。
                 if (DebugDetailedThrust && result.NoMapThrust)
@@ -2714,20 +2848,25 @@ namespace PioneerFramework
                     dtSeconds > 0.0 ? result.OrbitKeepingDvCost / dtSeconds : 0.0,
                     result.SyncBodyPos, result.SyncBodyVel);   // 批5.C 巡检探针（"全打上"版）
                 MoonRendezvousAcceptanceRunner.Tick(physicsTick, this);   // 绕月交会：自动判定（每步查一次）
+                PerfProbe.ApplySubClockEnd(PerfProbe.ApplySubBurnProbe, apBp);
 
                 groupsToCheck.Add(group.GroupId);
             }
+            PerfProbe.ApplySubClockEnd(PerfProbe.ApplySubBurn, apBurn);
 
             if (PerfProbe.Enabled) PerfProbe.GroupsToCheckConsume(groupsToCheck.Count, movableGroups.Count);
+            long apCollision = PerfProbe.ApplySubClockStart();   // apply 细分②：碰撞检查
             foreach (int groupId in groupsToCheck)
             {
                 if (!groups.TryGetValue(groupId, out var group)) continue;
                 CheckPlanetCollision(group, physicsTick);   // ⚠ 传物理时钟：撞击判据与经纬度都用它
             }
+            PerfProbe.ApplySubClockEnd(PerfProbe.ApplySubCollision, apCollision);
 
             // ── 每 240 真实 tick（4秒）检查一次流速：有机动→Normal，无机动→恢复设置 ──
             // 注意：必须用真实 tick 而非 physicsTick——Combat 模式下 physicsTick 以 1/60 慢速推进，
             // 若以其为基准，射弹消失后要等 16×60=960 真实 tick 才恢复，产生"锁死 1/60x"的错觉。
+            long apTimeScale = PerfProbe.ApplySubClockStart();   // apply 细分③：240 真实 tick 块（时标/降档/收尾强制）
             if (timeScaleManager != null && Find.TickManager.TicksGame - lastManeuverCheckRealTick >= 240)
             {
                 lastManeuverCheckRealTick = Find.TickManager.TicksGame;
@@ -2771,8 +2910,10 @@ namespace PioneerFramework
                         timeScaleManager.QueueCommand(TimeScaleCommand.ToNormal()); // 默认 Normal 流速：缺此分支会锁死 Combat 档
                 }
             }
+            PerfProbe.ApplySubClockEnd(PerfProbe.ApplySubTimeScale, apTimeScale);
 
             // ── 执行到期机动 ──
+            long apManeuver = PerfProbe.ApplySubClockStart();   // apply 细分④：机动/节点处理（意图重解・预对准・点火）
             foreach (var group in groups.Values)
             {
                 // （2026-09-19 的"[机动循环·诊断]"已撤：它服务的是"108° 对准"那个案子，
@@ -2886,7 +3027,10 @@ namespace PioneerFramework
                 // ── 预对准诊断（2026-09-19）：177.4° 起点、窗口 58s、5°/s（只需 35s），
                 //    点火时却仍 107.4° ⇒ 真因未知。这里按周期打出"夹角 + 角速率 + 本步是否在转"，
                 //    让下一次运行直接给出"是没转 / 转错方向 / 目标漂了"三选一。
-                if (group.pendingAlignDir.sqrMagnitude > 1e-12 && physicsTick >= PreAlignDiagNextTick)
+                // ⚠ 2026-10-01：**挂到 `DebugDetailedSteering` 开关上** —— 它是长滑行段每 10 s 一行的
+                //    无条件打点（本轮一轮 4,570 行、占日志 38%，把"唯一的人读取证通道"埋了），
+                //    与邻居（`[Thrust]`/`[Align]`/`[燃烧·诊断]`）同一待遇；要看时把它打开即可。
+                if (DebugDetailedSteering && group.pendingAlignDir.sqrMagnitude > 1e-12 && physicsTick >= PreAlignDiagNextTick)
                 {
                     PreAlignDiagNextTick = physicsTick + 10.0;
                     Log.Message(string.Format(
@@ -3286,6 +3430,7 @@ namespace PioneerFramework
                     mEst.BurnSeconds, longBurn));
                 LogNonRootBurnState(group, physicsTick, "点火前");   // 批5.B 探针（见方法注释）
             }
+            PerfProbe.ApplySubClockEnd(PerfProbe.ApplySubManeuver, apManeuver);
 
             // ── 交会/接近引导（精确交会：固定到达时刻；近距离接近：动态到达时刻）──
             // ★ 分段计时（2026-09-20）：实测尖峰 19.2 ms（均值 0.19 ms 的约 100 倍）来源未知
@@ -4092,18 +4237,13 @@ namespace PioneerFramework
             return p;
         }
 
-        /// <summary>终端律的闭环节拍（physicsTick 秒）：**比阶梯的 30 s 密得多**（终端要的是密闭环；
-        /// 每拍那一发是小修正 ⇒ 走既有"修正 burn/RCS"那条路）。</summary>
-        private const double TerminalControlDt = 60.0;
-
-        /// <summary>终端律的最小可发 Δv（m/s）：低于它不发（避免在噪声里抖；完成判据另在 `Settled`）。</summary>
-        private const double TerminalMinDv = 0.05;
-
         /// <summary>
-        /// **终端律合成单节点计划**（2026-10-01 接线）：把 `TerminalRendezvousLaw` 的 Δv 折成**一条 `PlanNode`**，
-        /// 返回后由 `RunNewRendezvousLaw` 里**既有的 `ladNodes` 入队口径**消费（撤回旧节点/分解参考轨道/执行器…全复用）。
+        /// **终端律合成单节点计划**（2026-10-01 接线）：把 `TerminalRendezvousLaw` 的 Δv 交给**既有的修正烧通道**
+        /// （`ApplyGuidanceCorrection`，调用点见 `RunNewRendezvousLaw` 的 `terminalActive` 分支 ——
+        /// 小量走 RCS / 死区 / 圆轨退出**全在那里面**）。
         ///
-        /// 返回 `null` = **本拍不发**（未到 `TerminalControlDt` 节拍，或 Δv 低于 `TerminalMinDv`）。
+        /// 返回 `null` = **本拍不发**（未到 `GuidanceTerminalCheckInterval` 节拍）；
+        /// "Δv 太小也不发"那道检查在**调用点**（`dvT.magnitude &lt; GuidanceBurnDeadband` ⇒ 直接 return）。
         /// ⚠ 系：相对状态（`relPos/relVel`）与目标的 `r2Rel/v2Rel` 都在**同一个局部系**（调用方已保证同中心天体）；
         ///   批4 P4"两系同轴 ⇒ 换系恒等"⇒ 算出来的 Δv 直接就是适配层系的向量 ✓
         /// </summary>
@@ -4617,16 +4757,23 @@ namespace PioneerFramework
             //    a_eph = 星历速度的有限差（Δv/Δt，300s 间隔 ⟹ 分辨到 ~1e-4 量级 ✓）
             //    a_父@子 = 父天体（地球）在中心天体（月球）处的引力 ⇒ 两者**必须相等**（星历=自由落体）。
             int tickI = (int)physicsTick;
-            DVector3 bodyPos = cm.GetBodyPositionParent(group.CelestialBodyId, tickI);
+            DVector3 bodyPos = cm.GetBodyPositionParent(group.CelestialBodyId, tickI);   // 体相对**父**
             DVector3 bodyVel = cm.GetBodyVelocityParent(group.CelestialBodyId, tickI);
             var parentDef = cd.ParentBodyId >= 0 ? cm.GetBodyById(cd.ParentBodyId) : null;
             double aEph = double.NaN, aParentAtBody = double.NaN, parentMu = 0.0;
-            DVector3 parentPos = DVector3.zero;
+            DVector3 parentSys = DVector3.zero;
             if (parentDef != null)
             {
                 parentMu = parentDef.gravitationalParameter;
-                parentPos = cm.GetBodyPositionParent(parentDef.bodyId, tickI);
-                aParentAtBody = PullMag(bodyPos, parentPos, parentMu);
+                // ⚠⚠ **参考系必须同系（2026-10-01 修）**：原来这里拿 `GetBodyPositionParent(父)` =
+                //    "父相对**祖父**"，而 `bodyPos` 是"体相对**父**" ⇒ 两个位置**不同系相减**、距离不是真距离
+                //    （实测 a_父@天体 反推 1.335e8 m ≠ 真距离 8.0e7 ⇒ "差=2.0e-2" 全是这个假象）。
+                //    现在父天体的位置从**物理同源**的 `CollectSystemSources`（系统系、根在原点）里取 ⇒ 同系相减。
+                var srcs = new List<GravitySource>();
+                cm.CollectSystemSources(group.CelestialBodyId, tickI, srcs);
+                if (NBodyIntegrator.TryFindSource(srcs, parentDef.bodyId, out var ps)) parentSys = ps.position;
+                // 体在系统系里的位置 = 父在系统系里的位置 + （体相对父）：两块位置同系，距离才是真距离
+                aParentAtBody = PullMag(parentSys + bodyPos, parentSys, parentMu);
             }
             if (NonRootEphCache.TryGetValue(group.CelestialBodyId, out var prev) && physicsTick > prev.tick + 1.0)
                 aEph = (bodyVel - prev.vel).magnitude / (physicsTick - prev.tick);
@@ -4634,7 +4781,7 @@ namespace PioneerFramework
 
             // ── ② 场对照（飞船实际受的力；都从"飞船世界系位置"算，与物理同系）──
             double aMoonAtShip = PullMag(group.CurrentOrbit.positionSystem.v, bodyPos, cd.gravitationalParameter);
-            double aParentAtShip = parentDef != null ? PullMag(group.CurrentOrbit.positionSystem.v, parentPos, parentMu) : 0.0;
+            double aParentAtShip = parentDef != null ? PullMag(group.CurrentOrbit.positionSystem.v, parentSys, parentMu) : 0.0;
 
             // ── ④ 偏移一致性：本步用来把世界系状态转成体心系的偏移，必须等于该天体在这一 tick 的星历状态 ──
             //    （若偏移取错 tick / 取错天体，体心系状态会整体错位 ⇒ 阶梯按错状态排计划 ⇒ 又一次"参考系混用"）

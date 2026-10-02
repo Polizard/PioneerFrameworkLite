@@ -160,9 +160,11 @@ namespace PioneerFramework
                 Text.Font = GameFont.Small;
                 float ty = y;
                 var groups = new List<SpaceEntityGroup>();
+                var sensor = Current.Game?.GetComponent<SensorManager>();   // [V3]：只列"看得见"的
                 foreach (var g in spaceGame.GetAllGroups())
                 {
                     if (!g.IsActive) continue; // 地表锚点（星座成员载体）不是可打目标
+                    if (sensor != null && !sensor.PlayerCanSee(g)) continue;
                     groups.Add(g);
                 }
                 float tH = Mathf.Min(190f, groups.Count * 24f + 4f);

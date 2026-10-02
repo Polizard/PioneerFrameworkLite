@@ -20,6 +20,13 @@ namespace PioneerFramework
         /// <summary>抗欺骗（无量纲，≥0）：> 欺骗强度则**该观测者**识破假接触（"深层提示"的唯一来源）。
         /// 注意粒度是观测者而非阵营——否则会得到"全星系一台好雷达免疫所有欺骗"（设计稿 §7.2 推论一）。</summary>
         public float eccmResist;
+
+        /// <summary>**记忆时长**（s，物理秒轴；[V3] 的记忆窗口 T；2026-10-02 用户裁定 ②）。
+        /// ⚠ 它不是"第四个对抗分量"（W2 的三分量仍是灵敏度/抗压制/抗欺骗那一对关系），
+        /// 而是**观测者的处理/记忆属性** —— 与三分量同住一个结构只是因为它们**同源**（都从观测者的
+        /// 传感器/EW 部件聚合而来、同一批失效点）；用户的"信息处理速度以后改为非无穷"就长在这一格。
+        /// 0 = 未设 ⇒ 用 `DetectionCore.DefaultMemorySeconds`。</summary>
+        public float memorySeconds;
     }
 
     /// <summary>
@@ -44,10 +51,16 @@ namespace PioneerFramework
         public bool burning;
         /// <summary>本组是否主动探测开机（[E2]）。开机看得远但要付暴露代价。</summary>
         public bool activePing;
+        /// <summary>**主动辐射增量**（[V7]/[E2]，2026-10-01）：开机的暴露量**由设备定**——
+        /// 部件级（`ShipStats.activeRadiation`）+ 建筑级（`Group.RadarCap.radiation` 投影）之和。
+        /// `SignalModel.Total` 把它加在 `ActivePingMultiplier` **基准之上**（没装设备也能开机 = 只剩基准）。</summary>
+        public double activeRadiation;
         /// <summary>本组是否正在向外转发情报（[E8] 通信 EW 最小版：共享节点要辐射才能转发）。</summary>
         public bool sharingIntel;
         /// <summary>本组是否处于开火揭示窗口内（[N6]；导弹发射器开火不计，见 A4）。</summary>
         public bool revealedByFire;
+        /// <summary>本组是否正在干扰（[E3] 压制式干扰开机）：干扰机必须辐射才能干扰（W1 的第二个开关项）。</summary>
+        public bool jamming;
     }
 
     /// <summary>
@@ -78,6 +91,10 @@ namespace PioneerFramework
         public const double ShareMultiplier = 0.5;
         /// <summary>开火揭示（[N6]）：一次开火让自身信号抬升的幅度与时长由调用方给窗口。</summary>
         public const double RevealMultiplier = 5.0;
+        /// <summary>干扰开机（[E3]）：干扰机必须辐射才能干扰 ⇒ 它自己也变响（W1 的第二个开关项）。</summary>
+        public const double JamMultiplier = 8.0;
+        /// <summary>开火揭示的窗口时长（物理秒；**待定标**）："打一枪就亮一会儿"。</summary>
+        public const double RevealWindowSeconds = 10.0;
 
         /// <summary>尺寸项（唯一项）：半径相对基准的平方（球体 RCS 口径）。</summary>
         public static double RcsTerm(double radiusMeters)
@@ -98,11 +115,33 @@ namespace PioneerFramework
                      + HeatTerm(x.heatWatts)
                      + PowerTerm(x.powerWatts);
             if (x.burning) s += BurnMultiplier;
-            if (x.activePing) s += ActivePingMultiplier;
+            if (x.activePing) s += ActivePingMultiplier + x.activeRadiation;   // [V7] 设备增量叠在基准之上（W1）
             if (x.sharingIntel) s += ShareMultiplier;
             if (x.revealedByFire) s += RevealMultiplier;
+            if (x.jamming) s += JamMultiplier;
             return s;
         }
+    }
+
+    /// <summary>
+    /// **[V7] 主动雷达能力**（部件/建筑投影出来的那一份；消费者 = [V3] 认知层与探针）。
+    /// 口径（2026-10-01 用户裁定 + 设计稿 §11.2）：
+    /// · **增益与辐射是"加成/增量"，可加**（与 `ShipStats` 同语义）；
+    /// · **波束几何（半锥角 / 距离上限）取最大**——多台雷达共用一个"外沿"，最强的那个说了算（v1 的单波束模型）。
+    /// </summary>
+    public struct RadarCapability
+    {
+        /// <summary>主动增益加成：有效探测距离倍率 = `1 + 本值`（0 = 无增益）。</summary>
+        public float activeGainBonus;
+        /// <summary>主动开机时的信号增量（S_REF 倍数，加在基准之上）。</summary>
+        public float activeRadiation;
+        /// <summary>波束半锥角（度）。</summary>
+        public float beamHalfAngleDeg;
+        /// <summary>波束距离上限（m）。</summary>
+        public float beamRangeMeters;
+        /// <summary>扫掠角速度（deg/s，**physicsTick 轴**）——扫掠相位 = `physicsTick × 本值`，是**时间的纯函数**
+        ///（所以相位不落盘、天然确定性；用户的"信息处理速度"以后就改这一格）。多台取最大。</summary>
+        public float scanRateDegPerSec;
     }
 
     /// <summary>
@@ -129,6 +168,11 @@ namespace PioneerFramework
         /// <summary>退化输入下限：低于此值的距离/灵敏度按"判不可见"处理，避免除零与放大噪声。</summary>
         private const double Eps = 1e-9;
 
+        /// <summary>**记忆时长默认值**（s，物理秒轴）：观测者的 `SensorTech.memorySeconds` 为 0/未设时用它
+        ///（[V3] 的记忆窗口 T 的唯一兜底处；**待定标**——与 `SigmaRefMeters` / 干扰参考距离同族）。
+        /// 语义 = "最后一次刷新之后还能活多久"：短了目标一闪就丢，长了静默/关机没意义。</summary>
+        public const double DefaultMemorySeconds = 30.0;
+
         /// <summary>
         /// 单台干扰机对某观测方的效力（平方反比衰减）。
         /// 干扰机的距离是**它到观测方的距离**，不是目标到观测方的距离——两者不同是物理事实，
@@ -151,29 +195,56 @@ namespace PioneerFramework
             return signal / denom;
         }
 
-        /// <summary>有效探测距离（m）：目标在此距离内被发现。**这就是烧穿距离。**</summary>
-        public static double EffectiveDetectRange(double signal, in SensorTech observer, double jamEffort)
+        /// <summary>
+        /// **观测者因子**（唯一算式的左半边，[V3] 热路径用）：`A_obs = sens² / (1 + J/(1+ecm))`。
+        /// 只含**观测者侧**的量（灵敏度 / 抗压制 / 干扰效力）——目标侧只剩 `SignalModel.Total` 的 `S`（B_tgt）。
+        /// 于是"可见"退化成一次乘法加一次比较（**无 sqrt、无除法**）：
+        /// <code>d² ≤ A_obs · B_tgt</code>
+        /// 这正是实施计划 §1.8 [L](a)/[S] 定下的形态：`EffectiveDetectRange = √(A·S)` 只是**派生视图**（给人看）。
+        /// </summary>
+        public static double ObserverFactor(in SensorTech observer, double jamEffort)
         {
             double sens = observer.sensitivityMeters;
             if (!(sens > 0.0)) return 0.0;
-            double sEff = EffectiveSignal(signal, jamEffort, observer.ecmResist);
-            if (!(sEff > 0.0)) return 0.0;
-            return sens * Math.Sqrt(sEff);
+            double denom = 1.0 + (jamEffort > 0.0 ? jamEffort / (1.0 + Math.Max(0.0, observer.ecmResist)) : 0.0);
+            return sens * sens / denom;
         }
 
-        /// <summary>可见性：目标距离是否落在有效探测距离内。`d_target = 0`（重合）视为可见（若信号 &gt; 0）。</summary>
+        /// <summary>
+        /// **可见 ⟺ `d² ≤ A_obs · S`**（[V3] 的唯一规范算式；热路径直接用这条，不经过开根）。
+        /// 退化语义与 <see cref="IsVisible" /> **逐条一致**（信号 ≤ 0 / NaN 距离 / 负距离 / 零灵敏度 ⇒ 不可见），
+        /// 由 `SensorCoreTests` 的等价性网格钉住。
+        /// </summary>
+        public static bool IsVisibleByProduct(double signal, double distanceSquaredMeters, in SensorTech observer, double jamEffort)
+        {
+            if (!(signal > 0.0)) return false;
+            if (double.IsNaN(distanceSquaredMeters) || distanceSquaredMeters < 0.0) return false;
+            double a = ObserverFactor(observer, jamEffort);
+            if (!(a > 0.0)) return false;                       // 零灵敏度：看不见（与 IsVisible 的 `r > 0` 前置一致）
+            return distanceSquaredMeters <= a * signal;
+        }
+
+        /// <summary>
+        /// **派生视图**：有效探测距离 = `√(A_obs · S)`（**唯一一处开根**，给 UI/验收/读数用）。
+        /// **判据本体不走这里**（[S] 五级反思：判据的原语是"阈值比较"，距离是被人为具象化的中间量）。
+        /// 这就是烧穿距离 —— 二者是同一个函数，故不另设 `BurnThroughRangeMeters`（[C7] 禁止第二份算式）。
+        /// </summary>
+        public static double EffectiveDetectRange(double signal, in SensorTech observer, double jamEffort)
+        {
+            if (!(signal > 0.0)) return 0.0;
+            double a = ObserverFactor(observer, jamEffort);
+            if (!(a > 0.0)) return 0.0;
+            return Math.Sqrt(a * signal);
+        }
+
+        /// <summary>可见性（**距离形态的兼容入口**）：内部转成平方判据 ⇒ 不再有第二份算式。
+        /// `d_target = 0`（重合）视为可见（若信号 &gt; 0）；零灵敏度 ⇒ 不可见。</summary>
         public static bool IsVisible(double signal, double targetDistanceMeters, in SensorTech observer, double jamEffort)
         {
             if (!(signal > 0.0)) return false;
             if (double.IsNaN(targetDistanceMeters) || targetDistanceMeters < 0.0) return false;
-            double r = EffectiveDetectRange(signal, observer, jamEffort);
-            if (!(r > 0.0)) return false;
-            return targetDistanceMeters <= r;
+            return IsVisibleByProduct(signal, targetDistanceMeters * targetDistanceMeters, in observer, jamEffort);
         }
-
-        /// <summary>无干扰的纯距离律（供对照与标定）：可见距离 = 灵敏度 × √信号。</summary>
-        public static double DetectRangeWithoutJam(double signal, double sensitivityMeters)
-            => signal > 0.0 && sensitivityMeters > 0.0 ? sensitivityMeters * Math.Sqrt(signal) : 0.0;
 
         /// <summary>位置不确定度（m）：压制的作用对象之一（另一是有效探测距离）。制导精度直接吃它。
         /// σ = d · √(方位误差² + 测距相对误差² + 干扰项²) —— 三项都与距离成正比，

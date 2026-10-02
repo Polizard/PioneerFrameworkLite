@@ -197,7 +197,9 @@ namespace PioneerFramework
         public bool Empty => sumMf <= 0f;
     }
 
-    public class SpaceMapComp : MapComponent, IPropulsionSource
+    // partial：PFView 地图浮雕的逐格分类缓存（含置脏入口）在 `SpaceMapComp.Relief.cs`；
+    // 地板/屋顶/建筑的置脏挂钩在 `SpaceMapComp.ReliefPatches.cs`。
+    public partial class SpaceMapComp : MapComponent, IPropulsionSource
     {
         // 可扩展的持久化数据，例如空间站名称、内部建筑列表等
         private string stationName = "Unnamed Station";
@@ -236,6 +238,113 @@ namespace PioneerFramework
 
         /// <summary>储罐总容量缓存（kg）：Σ 全部储罐容量，由储罐 Spawn/DeSpawn 同步。**double**（同 <see cref="totalPropellantMass"/>）。</summary>
         private double totalPropellantCapacity;
+
+        // ── [V7] 传感器阵列建筑登记表（建筑级 EW，2026-10-01）──
+        // 与工质向量/推进器同纪律：**不落盘**，由各建筑 comp 在 Spawn 时登记、DeSpawn 时注销、读档后重建。
+        // 汇总由 `SpaceGameComp` **每物理步**投影进所属 group（[N7] 投影链；建筑不自己改 Group）。
+        private readonly List<Thing> sensorArrays = new List<Thing>();
+
+        /// <summary>登记一座传感器阵列建筑（`CompSensorArray.PostSpawnSetup` 调）。</summary>
+        public void RegisterSensorArray(Thing t)
+        {
+            if (t == null || sensorArrays.Contains(t)) return;
+            sensorArrays.Add(t);
+        }
+
+        /// <summary>注销一座传感器阵列建筑（`CompSensorArray.PostDeSpawn` 调）。</summary>
+        public void UnregisterSensorArray(Thing t) => sensorArrays.Remove(t);
+
+        /// <summary>
+        /// 本地图（=船）传感器阵列建筑的**当前合计**（[V7] 建筑级）：逐座按 `HitPoints / MaxHitPoints` 折算
+        /// ⇒ **贡献随毁损而掉**（用户 2026-10-01 裁定）；已毁/未成形的不计。
+        /// ⚠ 只汇总、不判定——判定在消费侧（[V3] 认知层）。
+        /// </summary>
+        public SensorTech SensorArrayTech()
+        {
+            var acc = new SensorTech();
+            for (int i = 0; i < sensorArrays.Count; i++)
+            {
+                var t = sensorArrays[i];
+                if (t == null || t.Destroyed) continue;
+                var c = t.TryGetComp<CompSensorArray>();
+                if (c == null) continue;
+                float hp = t.MaxHitPoints > 0 ? (float)t.HitPoints / t.MaxHitPoints : 0f;
+                if (hp <= 0f) continue;
+                var p = c.Props;
+                acc.sensitivityMeters += p.passiveRangeMeters * hp;
+                acc.memorySeconds += p.memorySeconds * hp;   // 与灵敏度同口径：贡献随毁损而掉
+                acc.ecmResist += p.ecmResist * hp;
+                acc.eccmResist += p.eccmResist * hp;
+            }
+            return acc;
+        }
+
+        // ── [E3] 干扰机建筑登记表（2026-10-02）──
+        // 与传感器阵列同纪律：**不落盘**、由建筑 comp 登记/注销、读档后重建；汇总由物理步投影进 group。
+        private readonly List<Thing> jammers = new List<Thing>();
+
+        public void RegisterJammer(Thing t)
+        {
+            if (t != null && !jammers.Contains(t)) jammers.Add(t);
+        }
+
+        public void UnregisterJammer(Thing t) => jammers.Remove(t);
+
+        /// <summary>干扰效力汇总（按 `HitPoints / MaxHitPoints` 折算 ⇒ 贡献随毁损而掉）。</summary>
+        public float JammerStrength()
+        {
+            float acc = 0f;
+            for (int i = 0; i < jammers.Count; i++)
+            {
+                var t = jammers[i];
+                if (t == null || t.Destroyed) continue;
+                var c = t.TryGetComp<CompJammer>();
+                if (c == null) continue;
+                float hp = t.MaxHitPoints > 0 ? (float)t.HitPoints / t.MaxHitPoints : 0f;
+                if (hp <= 0f) continue;
+                acc += c.Props.jamStrength * hp;
+            }
+            return acc;
+        }
+
+        // ── [V7]/[E2] 主动雷达建筑登记表（2026-10-01）──
+        // 与传感器阵列同纪律：**不落盘**、由建筑 comp 登记/注销、读档后重建；汇总由物理步投影进 group。
+        private readonly List<Thing> activeRadars = new List<Thing>();
+
+        /// <summary>登记一座主动雷达建筑（`CompActiveRadar.PostSpawnSetup` 调）。</summary>
+        public void RegisterActiveRadar(Thing t)
+        {
+            if (t == null || activeRadars.Contains(t)) return;
+            activeRadars.Add(t);
+        }
+
+        /// <summary>注销一座主动雷达建筑（`CompActiveRadar.PostDeSpawn` 调）。</summary>
+        public void UnregisterActiveRadar(Thing t) => activeRadars.Remove(t);
+
+        /// <summary>
+        /// 本地图（=船）主动雷达的**当前合计**（[V7]/[E2]）：增益与辐射**逐座按 HP 比例折算后相加**
+        /// （加成/增量语义 ✓）；**波束几何取最大**（半锥角 / 距离上限——多台雷达共用一个外沿，v1 单波束模型）。
+        /// </summary>
+        public RadarCapability RadarCapability()
+        {
+            var acc = new RadarCapability();
+            for (int i = 0; i < activeRadars.Count; i++)
+            {
+                var t = activeRadars[i];
+                if (t == null || t.Destroyed) continue;
+                var c = t.TryGetComp<CompActiveRadar>();
+                if (c == null) continue;
+                float hp = t.MaxHitPoints > 0 ? (float)t.HitPoints / t.MaxHitPoints : 0f;
+                if (hp <= 0f) continue;
+                var p = c.Props;
+                acc.activeGainBonus += p.activeGainBonus * hp;
+                acc.activeRadiation += p.activeRadiation * hp;
+                if (p.beamHalfAngleDeg > acc.beamHalfAngleDeg) acc.beamHalfAngleDeg = p.beamHalfAngleDeg;
+                if (p.beamRangeMeters > acc.beamRangeMeters) acc.beamRangeMeters = p.beamRangeMeters;
+                if (p.scanRateDegPerSec > acc.scanRateDegPerSec) acc.scanRateDegPerSec = p.scanRateDegPerSec;
+            }
+            return acc;
+        }
 
         // ── 工质网络（储罐 + 引擎）──
         // 键 = 工质，值 = 使用该工质的引擎聚合（ve/ṁ/推力）。

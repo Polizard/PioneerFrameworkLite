@@ -424,6 +424,9 @@ namespace PioneerFramework
         /// 发射器目标同步（2026-09-06）：发射器（定位机）锁定目标变化时调用——该发射器释放的、
         /// 处于 Following 的导弹全部改指新目标（目标选取自动跟随发射器，不立即进终末）。
         /// </summary>
+        // [V3] 认知层（S3c）：末制导吃接触 ⇒ 需要每物理步取 SensorManager（按 Game 缓存）
+        private readonly GameComponentRef<SensorManager> sensorMgrRef = new GameComponentRef<SensorManager>();
+
         public void SyncFollowerTargets(int launcherGroupId, int targetGroupId)
         {
             int n = 0;
@@ -449,7 +452,18 @@ namespace PioneerFramework
         {
             if (rec.targetGroupId < 0) return;
             var target = spaceGame.GetGroupById(rec.targetGroupId);
-            if (target != null && target.IsActive) return;
+            // [V3]/S4c：跟随也**吃认知**（与 TickAttack 同口径）——"看不见了"同样算丢失，
+            // 否则会出现"图上没有它、弹还跟着它飞"的自相矛盾。
+            if (target != null && target.IsActive)
+            {
+                var sensor = sensorMgrRef.Get();
+                var follower = spaceGame.GetGroupById(rec.groupId);
+                if (sensor == null || follower == null || sensor.TryGetKnownState(follower.FactionId, target, out _)) return;
+                Log.Message(string.Format("[导弹跟随] V{0} G{1} 跟随目标 G{2} 接触丢失（看不见了）→ 等待发射器重指",
+                    rec.vehicleId, rec.groupId, rec.targetGroupId));
+                rec.targetGroupId = -1;
+                return;
+            }
             // 跟随目标失活：清目标等待发射器重新指定（记录保持 Following，不擅自转 Standby——
             // 发射器换目标时会再次同步；导弹保持普通航天器状态）
             Log.Message(string.Format("[导弹跟随] V{0} G{1} 跟随目标 G{2} 失活 → 等待发射器重指", rec.vehicleId, rec.groupId, rec.targetGroupId));
@@ -480,16 +494,27 @@ namespace PioneerFramework
             if (group == null || !group.IsActive) return; // 失效清理兜底
 
             var target = spaceGame.GetGroupById(rec.targetGroupId);
-            if (target == null || !target.IsActive)
+            // ⚠ [V3] S3c / 设计稿 §9：**末制导吃接触** —— 目标解析从"必须解析为一个 group"改为
+            //   "可解析为一条**已知状态**"：公开组/我方单位 ⇒ 真值；匿踪组 ⇒ 本阵营的接触（Live/Shadow）。
+            //   ⇒ **接触丢了就追丢**（走 K6 那条中止路，处置归玩家/AI）；影子仍可打（打"它大概在哪"）。
+            var sensor = sensorMgrRef.Get();
+            Contact know = default(Contact);
+            bool targetKnown;
+            if (target == null || !target.IsActive) targetKnown = false;
+            else if (sensor == null) targetKnown = true;                 // 认知层缺位 ⇒ 放行（旧行为）
+            else targetKnown = sensor.TryGetKnownState(group.FactionId, target, out know);
+            if (!targetKnown)
             {
-                // K6：目标失活 → 只中止回 Standby 并上报，处置归玩家/AI（不自毁不改派）
+                // K6：目标失活/消失/接触丢失 → 只中止回 Standby 并上报，处置归玩家/AI（不自毁不改派）
                 if (group.HasActiveBurn) group.EndBurn();
                 rec.mission = MissionType.Standby;
                 terminalLogged.Remove(rec.groupId);
-                Log.Message(string.Format("[导弹中止] V{0} G{1} 目标G{2} 失活/消失 → 中止撞击，回 Standby 待命",
-                    rec.vehicleId, rec.groupId, rec.targetGroupId));
+                Log.Message(string.Format("[导弹中止] V{0} G{1} 目标G{2} {3} → 中止撞击，回 Standby 待命",
+                    rec.vehicleId, rec.groupId, rec.targetGroupId,
+                    target == null || !target.IsActive ? "失活/消失" : "接触丢失（看不见了）"));
                 return;
             }
+            if (target == null) return;   // ⚠ 只为可空分析：上面的 `target != null` 被折进 `targetKnown`，流分析看不见（运行期不可能触发）
 
             var missileDef = rec.missileDefName == null
                 ? null
@@ -498,8 +523,10 @@ namespace PioneerFramework
 
             DVector3 pos = GroupPos(group);
             DVector3 vel = GroupVel(group);
-            DVector3 tPos = GroupPos(target);
-            DVector3 tVel = GroupVel(target);
+            // 目标位置/速度：**有认知层就吃已知状态**（影子期按速度外推 = "假定它没机动"；真机动了就打偏）；
+            // 认知层缺位（组件没加载）⇒ 回真值（旧行为，别让缺组件变成"弹全哑了"）。
+            DVector3 tPos = sensor != null ? ContactMemory.CoastedPosition(in know, TimeScaleManager.GetPhysicsTickSafe()) : GroupPos(target);
+            DVector3 tVel = sensor != null ? know.velocity : GroupVel(target);
             // 弹着偏置（§10 精确打击，2026-09-07）：Attack 携带"目标局部系偏移"（发射器点选格 → 米，
             // y=0）时，瞄准点 = 目标锚点（群中心 + 目标本体实体局部偏移）+ 旋转后的偏置——随目标
             // 运动/姿态保持贴在该格；无偏置 / 目标无实体 → 目标质心（零偏置路径，无行为回归）。

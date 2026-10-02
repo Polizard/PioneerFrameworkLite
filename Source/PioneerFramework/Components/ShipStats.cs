@@ -25,5 +25,25 @@ namespace PioneerFramework.Components
         // ⚠ 消费者：[V7] 的传感器组件（`SensorArrayComponentData`）写，[V3]/[E6] 的认知层读。**本步尚无写入者**。
         public float ecmResist;       // 无量纲，抗压制（≥0）
         public float eccmResist;      // 无量纲，抗欺骗（≥0）
+
+        // ── 主动雷达的两个槽（[V7]/[E2]，2026-10-01 随主动雷达建筑一起加）──
+        // 部件级组件当初**刻意不声明**它们（"ShipStats 没有对应槽位，声明了没人读的空字段"）——现在有槽了、也有读者了。
+        // 语义（都是**加法**，因为 ShipStats 的聚合语义就是求和）：
+        //   · `activeGainBonus`：主动增益**加成** ⇒ 有效探测距离的倍率 = `1 + Σ`（0 = 无增益）；
+        //   · `activeRadiation`：主动开机时的**信号增量**（S_REF 倍数）——加在 `SignalModel.ActivePingMultiplier` **基准之上**
+        //     （基准覆盖"没装设备也能开机"的情形，设备把量级抬上去 ✓ W1：开机即更响，响多少由设备定）。
+        public float activeGainBonus; // 无量纲加成（≥0）
+        public float activeRadiation; // S_REF 倍数（≥0）
+
+        // 观测者**记忆时长**（s，**物理秒轴**；2026-10-02 用户裁定 ②）：接触在"最后一次刷新"之后还能活多久
+        // （[V3] 的记忆窗口 T）。**0 = 未设** ⇒ 用 `DetectionCore.DefaultMemorySeconds`（待定标）。
+        // 落在这里的理由：它是**观测者**的属性（"我记多久"），不是目标的属性；且用户的
+        // "信息处理速度（以后要改为非无穷）"将来就长在这一格上 —— 一处具名分量，不许散成传感器代码里的常数。
+        public float memorySeconds;   // s（≥0；0 = 用默认）
+
+        /// <summary>**干扰效力**（无量纲，≥0）：压制式干扰的强度（[E3]/S4）。
+        /// 汇总进群级 `JamStrength`；作用方式见 `DetectionCore.JamEffort`（按"干扰机→观测方"距离平方反比衰减）。
+        /// 0 = 无干扰能力。</summary>
+        public float jamStrength;
     }
 }

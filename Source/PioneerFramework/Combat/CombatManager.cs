@@ -1671,6 +1671,12 @@ namespace PioneerFramework.Combat
         /// <param name="volleyCount">导弹齐射枚数（弹群实体数；null = 武器 Def.missileCount）。射弹/射线忽略。</param>
         public void FireWeapon(int groupId, WeaponInstance weapon, DVector3 targetPosition, DVector3? spawnPosition = null, DVector3? targetVelocity = null, int? targetGroupId = null, bool missileFollowMode = false, DVector3 aimOffsetShip = default, int? volleyCount = null)
         {
+            // [N6]/S4 **开火揭示**：非导弹开火 ⇒ 开火者自身信号抬升一个窗口（`SignalModel.RevealMultiplier`）。
+            // 依据设计稿 A4/§4.3：**导弹发射器开火不算暴露**（冷发射；弹体点火才是暴露源）⇒ 按武器类型分流。
+            var shooter = GetSpaceGameComp()?.GetGroupById(groupId);
+            if (shooter != null && weapon?.def != null && weapon.def.weaponType != WeaponType.Missile)
+                shooter.NotifyWeaponFire(TimeScaleManager.GetPhysicsTickSafe());
+
             if (weapon == null)
             {
                 Log.Warning(string.Format("[FireWeapon] Group {0} 武器为空", groupId));
@@ -2693,10 +2699,11 @@ namespace PioneerFramework.Combat
         }
 
         /// <summary>"太空地板"判定（奥德赛 DLC TerrainDef Space：exposesToVacuum、不可站、无实心甲板；
-        /// 兼容 defName 与 tag 两种标注）。</summary>
+        /// 兼容 defName 与 tag 两种标注）。判据本体已收敛到 <see cref="SpaceTerrainUtility"/>——
+        /// 地图浮雕（`SpaceMapComp`）用同一份，别在这里再写第二份。</summary>
         private static bool IsSpaceFloor(TerrainDef terrain)
         {
-            return terrain != null && (terrain.defName == "Space" || terrain.HasTag("Space"));
+            return SpaceTerrainUtility.IsSpaceFloor(terrain);
         }
 
         /// <summary>Map 爆炸视觉（纯 Fleck，GenExplosion NRE 规避）：一次爆炸从命中点炸开的观感——

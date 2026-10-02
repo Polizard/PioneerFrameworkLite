@@ -147,20 +147,32 @@ namespace PioneerFramework.Tests
         [Fact]
         public void PFViewSource_ContainsNoOutlineIntegrationTokens()
         {
-            string source = File.ReadAllText(SourcePath("PFView/MainTabWindow_PFView.cs"));
-            foreach (var forbidden in new[]
+            // 2026-10-02：PFView 拆成 4 个 partial 文件（V-0 地基，见仓库根修缮方案）。
+            // 扫描面必须覆盖全部四份——否则搬到新文件里的代码会掉出本判据射程（只许加覆盖，不许放软）。
+            foreach (var file in new[]
             {
-                "PioneerFramework.PFView",
-                "outlineShaderProvider",
-                "outlineRenderer",
-                "InitializeShipOutlineResources",
-                "BeginShipOutlineFrame",
-                "SubmitShipOutline",
-                "CompleteShipOutlineFrame",
-                "CleanupShipOutlineResources"
+                "PFView/MainTabWindow_PFView.cs",
+                "PFView/MainTabWindow_PFView.Render.cs",
+                "PFView/MainTabWindow_PFView.Scene.cs",
+                "PFView/MainTabWindow_PFView.GUI.cs",
+                "PFView/PFViewToonShader.cs"
             })
             {
-                Assert.False(source.Contains(forbidden), $"PFView still contains outline integration token: {forbidden}");
+                string source = File.ReadAllText(SourcePath(file));
+                foreach (var forbidden in new[]
+                {
+                    "PioneerFramework.PFView",
+                    "outlineShaderProvider",
+                    "outlineRenderer",
+                    "InitializeShipOutlineResources",
+                    "BeginShipOutlineFrame",
+                    "SubmitShipOutline",
+                    "CompleteShipOutlineFrame",
+                    "CleanupShipOutlineResources"
+                })
+                {
+                    Assert.False(source.Contains(forbidden), $"{file} still contains outline integration token: {forbidden}");
+                }
             }
         }
 

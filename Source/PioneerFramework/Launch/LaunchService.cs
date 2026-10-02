@@ -125,8 +125,6 @@ namespace PioneerFramework.Launch
             // 发射台 tile → 经纬度 → ECI 惯性状态；出生 = 地表上方 10km，速度继承自转初速 v_surface。
             // 出生半径 R+10km < 安全半径 R+100km 且初速 ~524 > 着陆阈值 10 → 由 RocketLaunchController 置碰撞豁免。
             const double LaunchAltitudeMeters = 10000.0;
-            // 世界视图发射点标记（红色正方体）钉在这个 tile 上
-            SpaceGroupVisualManager.SetLaunchSiteTile(groundMap.Tile);
             var (pos, birthVel) = GetSurfaceState.GroundStateAtLaunch(groundMap, LaunchAltitudeMeters, EarthBodyId);
 
             var group = new SpaceEntityGroup(groupId, factionId)

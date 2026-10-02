@@ -180,6 +180,18 @@ SRC=/path/to/MechJeb2/MechJebLib; DST=Source/PioneerFramework/ThirdParty/MechJeb
 for f in $(cd "$DST" && find . -name '*.cs' | sed 's|^\./||'); do diff -q "$SRC/$f" "$DST/$f" || echo "DIFF: $f"; done
 ```
 
+### U-4「方位基准统一」—— ⛔ **2026-10-01 试做后撤回**（T-C 档；上游用例**确实会红**）
+
+**结论：不做（维持"已登记未统一"）。** 用户 2026-10-01 先裁"要做"，但**实测推翻了当时的影响面估计**，按本规则 T-C 档撤回。
+
+| 试过什么 | 结果 | 为什么撤回 |
+|---|---|---|
+| `LongitudeFromBCI` 的方位基准改成宿主口径（`Atan2(-r.z, r.x)` → `Atan2(r.x, -r.z)`）、`RhatFromLatLng` 同步、`ECIToENU`/`ENUToECI` 两份矩阵按新 λ 重写 | **上游用例红 ≥2 条**（闸门实测：`Failed: 2`，已确认其一 = `FunctionsTests.ECIToPitchHeadingTest1` 第 80 行，期望 π/2、实得 3π/2） | 属 **T-C（改约定）**：要动**上游用例的期望值**，而"期望值原样保留"是移植面的红线（对比：批5 类型统一之所以是 T-A，正因为断言一个没动） |
+
+**为什么当初的影响面估计错了（留档给下次）**：我只 grep 了 `LongitudeFromBCI`/`ECIToENU`/`ENUToECI` 三个**核心符号**，
+而真正把它吃进断言的是**包装层**（`ECIToPitchHeading` ← `ECIToENU`；`VelocityForInclination`/`HeadingForLaunchInclination` ← `Simple.cs`）。
+⇒ 教训与 P1 那次同族：**改这一族前，要把包装层一起数进来**（"谁的输出会因此变"要按依赖闭包数，不是按符号名数）。
+
 ### 上游外依赖：`JetBrains.Annotations` —— 不引入，靠 Unity 白拿
 
 `Functions/Angles.cs` 有 6 处 `[UsedImplicitly]`（纯 ReSharper 提示、**零运行时语义**），

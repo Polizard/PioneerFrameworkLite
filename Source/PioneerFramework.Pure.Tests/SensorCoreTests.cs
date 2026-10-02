@@ -82,19 +82,50 @@ namespace PioneerFramework.Pure.Tests
         }
 
         /// <summary>
-        /// **唯一算式护栏**：`DetectRangeWithoutJam`（纯距离律）与 `EffectiveDetectRange`（无干扰）
-        /// 必须同值——它们是同一个数学对象。出现分叉即说明有人写了第二份算式（[C7] 不变式）。
+        /// **判据的唯一算式**（[L](a) / [S] 五级反思）：乘积式 `d² ≤ A_obs·S` 与距离形态 `d ≤ √(A·S)`
+        /// 必须给出**同一结论**。扫参数网格（灵敏度 × 信号 × 干扰 × 抗压制 × 距离档），逐点比对两个入口；
+        /// 只有落在"翻转点 ±1e-9 相对"带内的点才允许分歧（浮点次序差，单独计数）。
+        ///
+        /// 这条取代旧的 `DetectRangeWithoutJam` 护栏——护栏对象从"两份算式"变成
+        /// "**一份算式 + 一个派生视图**"（`DetectRangeWithoutJam` 已按 §1.8 [S2] 删除）。
         /// </summary>
         [Fact]
-        public void DetectRange_WithoutJam_MatchesThePlainRangeLaw()
+        public void ProductForm_And_RangeView_Agree_ExceptAtFloatingBoundary()
         {
-            var tech = new SensorTech { sensitivityMeters = 7.5e5f, ecmResist = 12f };
-            for (double s = 0.25; s <= 16.0; s *= 2.0)
-            {
-                double a = DetectionCore.EffectiveDetectRange(s, tech, 0.0);
-                double b = DetectionCore.DetectRangeWithoutJam(s, tech.sensitivityMeters);
-                Assert.Equal(b, a, 6);
-            }
+            float[] sens = { 1.0e5f, 1.0e6f, 5.0e6f };
+            double[] signals = { 0.25, 1.0, 4.0, 20.0 };
+            double[] jams = { 0.0, 1.0, 9.0 };
+            float[] resists = { 0f, 2f, 50f };
+            double[] rel = { 0.5, 0.9, 0.999999, 1.0, 1.000001, 1.1, 1.5, 2.0 };
+
+            long total = 0, mismatch = 0, boundary = 0, visibleCount = 0;
+            foreach (float se in sens)
+                foreach (double sig in signals)
+                    foreach (double jam in jams)
+                        foreach (float res in resists)
+                        {
+                            var tech = new SensorTech { sensitivityMeters = se, ecmResist = res };
+                            double range = DetectionCore.EffectiveDetectRange(sig, tech, jam);
+                            double prod = DetectionCore.ObserverFactor(tech, jam) * sig;
+                            foreach (double k in rel)
+                            {
+                                double d = range * k;
+                                bool byProduct = DetectionCore.IsVisibleByProduct(sig, d * d, tech, jam);
+                                bool byRange = DetectionCore.IsVisible(sig, d, tech, jam);
+                                total++;
+                                if (byProduct) visibleCount++;
+                                if (byProduct == byRange) continue;
+                                double gap = prod > 0.0 ? System.Math.Abs(d * d - prod) / prod : 0.0;
+                                if (gap < 1e-9) boundary++;
+                                else mismatch++;
+                            }
+                        }
+
+            Assert.True(total > 0);
+            Assert.Equal(0, mismatch);
+            Assert.True(visibleCount > 0 && visibleCount < total, "网格必须同时含可见与不可见（否则等价性判据是空的）");
+            Assert.True(boundary <= total / 4,
+                string.Format("边界带内的分歧过多（{0}/{1}）——是不是有人把判据改了形态？", boundary, total));
         }
 
         // ── 干扰：平方反比 + 烧穿 ────────────────────────────────────────
@@ -124,7 +155,7 @@ namespace PioneerFramework.Pure.Tests
 
             double predicted = DetectionCore.EffectiveDetectRange(signal, tech, jam);
             Assert.True(jam > 1.0, "前提：压制效力必须显著大于 0，否则测不到烧穿");
-            Assert.True(predicted < DetectionCore.DetectRangeWithoutJam(signal, tech.sensitivityMeters),
+            Assert.True(predicted < DetectionCore.EffectiveDetectRange(signal, tech, 0.0),
                 "前提：被压制时的有效距离必须小于无干扰距离");
 
             int flips = 0;
@@ -168,7 +199,7 @@ namespace PioneerFramework.Pure.Tests
             // 饱和是**渐近**的：任何有限 ecmResist 都还留着一个微小残差，
             // 所以只能断言相对差可忽略（绝对容差在 1e6 量级上没有意义——本测试初版就栽在这里）。
             var immune = new SensorTech { sensitivityMeters = 1.0e6f, ecmResist = 1.0e9f };
-            double unjammed = DetectionCore.DetectRangeWithoutJam(1.0, immune.sensitivityMeters);
+            double unjammed = DetectionCore.EffectiveDetectRange(1.0, immune, 0.0);
             double suppressed = DetectionCore.EffectiveDetectRange(1.0, immune, jam);
             Assert.True(Math.Abs(suppressed - unjammed) / unjammed < 1e-6,
                 string.Format("极高抗压制应渐近退化到无干扰（无干扰 {0:F3} m，实测 {1:F3} m）", unjammed, suppressed));
