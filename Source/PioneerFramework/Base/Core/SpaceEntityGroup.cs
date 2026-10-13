@@ -481,6 +481,53 @@ namespace PioneerFramework
         /// <summary>不抵消的天体 ID 白名单。null 或空 = 未启用过滤。</summary>
         public HashSet<int> orbitKeepingWhitelist;
 
+        // ── 引力掩码 + 单向闩锁（[A6]，2026-10-06，计划稿 §2.5/D6）──
+        /// <summary>
+        /// **不计算引力的天体 id**（组属性；null/空 = 今天行为）。大气档 = "只算中心天体"
+        /// （地球系场 2 源 → 1 源）。**过滤在求和循环里做**（`NBodyIntegrator.FieldAccelJerk` 的掩码重载），
+        /// 不建"过滤后的源表"。**反向（→忽略）只能由档位显式设**（见 <see cref="SetGravityMask"/>）。
+        /// </summary>
+        public List<int>? ignoredGravityBodyIds;
+
+        /// <summary>
+        /// **单向闩锁**（[A6]）：恢复过全场就**永不自动回忽略**（幂等；序列化）。
+        /// 语义 = "只加精度"：恢复 → 只有置位这一条路；反向要显式重建（且被闩锁拒绝）。
+        /// </summary>
+        public bool fieldRestoreLatched;
+
+        /// <summary>该天体的引力本组是否忽略（求和循环 / 保持修正共用这一个判定）。</summary>
+        public bool IsGravityIgnored(int bodyId)
+        {
+            var m = ignoredGravityBodyIds;
+            if (m == null) return false;
+            for (int i = 0; i < m.Count; i++)
+                if (m[i] == bodyId) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// **进大气档**（档位显式设掩码；[A6] 三步交接之①）：置"不计算的天体"列表。
+        /// ⚠ 闩锁置位后**拒绝**（不许二次翻转）；空列表 = 清掩码（等价于没设）。
+        /// </summary>
+        public bool SetGravityMask(List<int>? bodyIds)
+        {
+            if (fieldRestoreLatched) return false;
+            ignoredGravityBodyIds = bodyIds != null && bodyIds.Count > 0 ? bodyIds : null;
+            return ignoredGravityBodyIds != null;
+        }
+
+        /// <summary>
+        /// **恢复全场**（[A6] 三步交接之②：自动、单向、幂等）：清掩码 + 置闩锁。
+        /// 返回"本次是否真的发生了恢复"（供日志/验收读数用）。
+        /// </summary>
+        public bool RestoreFullGravityField()
+        {
+            bool had = ignoredGravityBodyIds != null;
+            ignoredGravityBodyIds = null;
+            fieldRestoreLatched = true;
+            return had;
+        }
+
         // ── 主动燃烧（缓释 dV） ──
         /// <summary>是否有正在执行的主动燃烧。</summary>
         public bool HasActiveBurn = false;
@@ -511,6 +558,124 @@ namespace PioneerFramework
         /// 点火前提前转向 → burn 准时居中）。零 = 未启用。瞬态，不序列化。
         /// </summary>
         public DVector3 pendingAlignDir;
+
+        /// <summary>
+        /// **大气段顺气流指向**（[A6+]，2026-10-06）：置位时，物理步把**船体前轴（+z）**转到
+        /// **空气相对速度方向**（D13："不做风标力矩 ⇒ 指向纪律由自动驾驶/制导承担"）。
+        /// 由爬升控制器在"气动不可忽略"的空域置位、出区/结束即清；**瞬态、不序列化**
+        /// （控制器每步重设 ⇒ 读档后一步内恢复）。与主推轴/矢量锥无关（全向船也能被指向）。
+        /// </summary>
+        public bool aeroAlignToAirflow;
+
+        /// <summary>
+        /// **[A5] 熄火读数的"只报一次"标志**（瞬态、不序列化）：吸气式网络因空气不足而本步不出力时，
+        /// 只要还在烧就会**每步再判一次** ⇒ 用本标志把日志限成一次（每步一行的探针 = 散射探针，纪律不许）。
+        /// 由 `EndBurn` 清 ⇒ 下次点火重新有机会报。
+        /// </summary>
+        public bool intakeFlameoutLogged;
+
+        /// <summary>
+        /// **[A4] 包线归零读数的"只报一次"标志**（瞬态、不序列化）：某网络因包线因子 0
+        /// （典型 = 真空里的吸气式）本步不出力时，每步都会再判一次 ⇒ 用本标志把日志限成一次。
+        /// 由 `EndBurn` 清。
+        /// </summary>
+        public bool envelopeRoutedOffLogged;
+
+        // ── [A7] 悬浮（定点保持，计划稿 §2.6 / D10）────────────────────────────────
+        /// <summary>
+        /// **是否在悬浮**（定点保持）：控制器每物理步把船按在**固连定点**上（见 `hoverLatRad` 等），
+        /// 姿态锁**本地铅垂**（D10），推力走**全矢量（RCS）网**。**Scribe**：悬浮是工作模式，读档该在。
+        /// </summary>
+        public bool hoverActive;
+
+        /// <summary>
+        /// **[A8] 悬浮的档位**：false = **物理档**（定点保持控制器 + 真实推力耗料，默认）；
+        /// true = **解析档**（位置/速度由定点解析给出、不模拟受力，但**照扣料** —— D8 的等效计费）。
+        /// 档位只管"受不受力"，**耗料是工作模式的属性** ⇒ 两档都烧料、账单应一致（判据见台架）。
+        /// **Scribe**：与工作模式一样该跨读档。
+        /// </summary>
+        public bool hoverAnalytic;
+
+        /// <summary>悬浮定点：**固连纬度**（rad，Scribe）。</summary>
+        public double hoverLatRad;
+        /// <summary>悬浮定点：**固连经度**（rad，Scribe）。</summary>
+        public double hoverLonRad0;
+        /// <summary>悬浮定点：**高度**（m，相对地表，Scribe）。</summary>
+        public double hoverAltitudeMeters;
+
+        /// <summary>
+        /// **调试用：无限燃料**（Scribe）—— 2026-10-07 用户点名要"无限燃料的船"。
+        /// 语义 = 唯一的工质扣减口（`SpaceGameComp.ConsumeGroupPropellant`）**报告"已扣完"但实际不动**
+        /// ⇒ 所有下游（悬浮 / 解析档 / 搬运 / 料尽退出）看到的是"料一直在"，**不掺任何质量/推力改动**
+        /// （把罐加大反而会把重量加上去、悬不住 —— 那正是要避开的失真）。
+        /// </summary>
+        public bool debugInfinitePropellant;
+
+        /// <summary>
+        /// **搬运起搬时若在悬浮 ⇒ 到点自动恢复悬浮**（Scribe）—— 2026-10-07 用户实测"一搬就坠毁"：
+        /// 起搬会（按模式互斥）退出悬浮，而**大气层里没有悬浮就等于开始掉**（30 km 掉到地面几十秒，
+        /// 撞地 339.7 m/s ⇒ 坠毁 + 地图销毁）。巡航的语义应是"**搬过去、然后继续悬停**"，
+        /// 所以要记住"原来在悬着"并在到达点恢复（档位一起记）。
+        /// </summary>
+        public bool hoverResumeAfterTransfer;
+        /// <summary>恢复时要回的档位（`hoverResumeAfterTransfer` 配套；起搬前是解析档就回解析档）。</summary>
+        public bool hoverResumeAnalytic;
+
+        // ── [A8] 点到点解析搬运单（解析档的"搬运/巡航"；Scribe）──────────────────────
+        /// <summary>**是否在解析搬运中**（解析档：不模拟受力，但**按等效 dv 速率照扣料**）。</summary>
+        public bool transferActive;
+        /// <summary>搬运起点（系统系，起搬那一刻的位置/速度）。</summary>
+        public DVector3 transferFromPos, transferFromVel;
+        /// <summary>搬运终点（系统系，目标位置/速度——到达时**精确**落在这上面）。</summary>
+        public DVector3 transferToPos, transferToVel;
+        /// <summary>这次搬运要付的等效 Δv 总量（m/s；账 = `m·dv/ve`，与物理档同口径）。</summary>
+        public double transferDvTotal;
+        /// <summary>起搬的物理时刻（s；进度 = (now − start)/T）。</summary>
+        public double transferStartTick;
+        /// <summary>搬运时长（s，起搬时算好；到达判据用它）。</summary>
+        public double transferDuration;
+        /// <summary>
+        /// **[A8] 到达时刻的落位误差（m）**：由 `ApplyAnalyticTransfer` 在**到达那一步**当场量下
+        /// （它就在位置写完之后、同一步内）—— 判据只读这个数，**不在事后重建**。
+        /// 起因：判据侧三次口径迭代（惯性快照 1053 m / ω 搬点 387.6 km / 固连经纬度 387.6 km）互相打架，
+        /// 与其继续调"我算的那条线"，不如让**生产自己**把那一刻的量记下来（谁也没法比它更准）。
+        /// </summary>
+        public double transferArrivalErrorMeters;
+
+        /// <summary>搬运**中点**读数"只报一次"标志（瞬态）。</summary>
+        public bool transferMidLogged;
+        /// <summary>
+        /// 搬运**到达**读数"只报一次"标志（瞬态）。
+        /// ⚠ **与中点是两个标志**（2026-10-07 读日志抓到）：原先共用一个 ⇒ 中点先把它置位 ⇒ **到达那行被吞**
+        /// ⇒ 日志里只有"起搬/中点"、看着像"根本没到达"（我据此白怀疑了落位三轮）。
+        /// **"只报一次"的标志只能管一件事**；要压制的永远是**最不重要**的那条。
+        /// </summary>
+        public bool transferArriveLogged;
+
+        /// <summary>悬浮"推力不足"只报一次（瞬态）。</summary>
+        public bool hoverShortfallLogged;
+
+        // ── [A7] 悬浮逐步读数（瞬态；诊断/表现层用）──
+        /// <summary>本步指令 Δv（m/s）。</summary>
+        public double hoverLastDvCmd;
+        /// <summary>本步实给 Δv（m/s；不足时 &lt; 指令）。</summary>
+        public double hoverLastDvApplied;
+        /// <summary>本步可用全矢量推力（N）。</summary>
+        public double hoverLastThrustN;
+
+        /// <summary>悬浮周期读数的累积物理秒（瞬态；到 10 s 打一行并清零 —— **按秒累积，不按 tick 差**）。</summary>
+        public double hoverLogAccumSeconds;
+
+        // ── [A7] 悬浮读数**区间统计**（瞬态；每次打行后清零）—— 单点读数分不清"真漂"与"相位锁定的振荡"：
+        /// <summary>区间内高度差（径向）最小值/最大值/累加/采样数。</summary>
+        public double hoverLogErrMin = double.MaxValue;
+        public double hoverLogErrMax = double.MinValue;
+        public double hoverLogErrSum;
+        public int hoverLogCount;
+        /// <summary>区间内径向速度累加（算均值用）。</summary>
+        public double hoverLogVSum;
+        /// <summary>开悬浮那一刻的船半径（对照"船半径有没有真的在掉"）。</summary>
+        public double hoverLogRadius0;
 
         /// <summary>
         /// 本物理步累积的合冲量（速度 ΔV，m/s）。
@@ -1246,6 +1411,8 @@ namespace PioneerFramework
             remainingBurnDV = 0.0;
             burnUseRcs = false;
             burnIsCorrection = false;
+            intakeFlameoutLogged = false;   // [A5] 熄火读数复位（下次点火重新有机会报一次）
+            envelopeRoutedOffLogged = false; // [A4] 包线归零读数复位（同上）
         }
 
         #endregion
@@ -1647,6 +1814,20 @@ namespace PioneerFramework
                 return;
             }
 
+            // ── 新规则（[A6]，2026-10-06）：**解析圆轨与气动互斥** ─────────────────────
+            // 解析轨不积分（**忽略阻力**）⇒ 只要点还在大气壳内（ρ > 0）就走不得（结果必错）⇒ 拒绝进入。
+            // ⚠ 判据 = `IsInsideAtmosphere`（ρ 严格为零才是解析轨的合法域），**不是**闩锁恢复那条
+            //   "ρ/ρ₀ ≤ e^−k"（那条管"气动可忽略到什么程度"；两条语义不同，别合并）。
+            // ⚠ 现有调用点全部在 500 km 以上 ⇒ 本守卫在 ρ 数值未定期间是休眠的（零行为变化）。
+            if (centralDefForRadius != null
+                && centralDefForRadius.Atmosphere.IsInsideAtmosphere(r - centralDefForRadius.radius))
+            {
+                Log.Warning(string.Format(
+                    "SpaceEntityGroup {0}: Refusing analytic circular orbit around body {1} at r={2:F0} km — inside the atmosphere (analytic rail ignores drag). [A6]",
+                    GroupId, centralBodyId, r / 1000.0));
+                return;
+            }
+
             DVector3 radialDir = pos.normalized;
             // 不校验切向速度：调用方（空间站/飞船部署等）可能只提供位置、速度为零。
             // 下方会强制用中心天体 GM 重算圆轨速度 sqrt(mu/r)，零速度也能入轨。
@@ -1944,6 +2125,29 @@ namespace PioneerFramework
                     orbitKeepingWhitelist.UnionWith(whitelistList);
                 }
             }
+
+            // 引力掩码 + 单向闩锁（[A6]，2026-10-06）：默认 null/false（旧档读出来就是今天行为）
+            Scribe_Collections.Look(ref ignoredGravityBodyIds, "ignoredGravityBodyIds", LookMode.Value);
+            Scribe_Values.Look(ref fieldRestoreLatched, "fieldRestoreLatched", false);
+
+            // 悬浮（[A7]）：定点 + 开关都进档（工作模式该跨读档；`hoverActiveCount` 由 PostLoad 重数）
+            Scribe_Values.Look(ref hoverActive, "hoverActive", false);
+            Scribe_Values.Look(ref hoverAnalytic, "hoverAnalytic", false);   // [A8] 档位（默认物理档）
+            // [A8] 解析搬运单（工作模式该跨读档）
+            Scribe_Values.Look(ref transferActive, "transferActive", false);
+            Scribe_Values.Look(ref transferFromPos, "transferFromPos");
+            Scribe_Values.Look(ref transferFromVel, "transferFromVel");
+            Scribe_Values.Look(ref transferToPos, "transferToPos");
+            Scribe_Values.Look(ref transferToVel, "transferToVel");
+            Scribe_Values.Look(ref transferDvTotal, "transferDvTotal", 0.0);
+            Scribe_Values.Look(ref transferStartTick, "transferStartTick", 0.0);
+            Scribe_Values.Look(ref transferDuration, "transferDuration", 0.0);
+            Scribe_Values.Look(ref hoverLatRad, "hoverLatRad", 0.0);
+            Scribe_Values.Look(ref hoverLonRad0, "hoverLonRad0", 0.0);
+            Scribe_Values.Look(ref hoverAltitudeMeters, "hoverAltitudeMeters", 0.0);
+            Scribe_Values.Look(ref debugInfinitePropellant, "debugInfinitePropellant", false);   // 调试船跨读档
+            Scribe_Values.Look(ref hoverResumeAfterTransfer, "hoverResumeAfterTransfer", false);  // 搬运到点恢复悬浮
+            Scribe_Values.Look(ref hoverResumeAnalytic, "hoverResumeAnalytic", false);
 
             // 交会引导序列化
             Scribe_Values.Look(ref HasRendezvousGuidance, "hasRendezvousGuidance", false);

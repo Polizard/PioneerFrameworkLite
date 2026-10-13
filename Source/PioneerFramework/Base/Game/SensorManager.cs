@@ -79,6 +79,20 @@ namespace PioneerFramework
             return IsVisibleTo(player.loadID, g);
         }
 
+        /// <summary>
+        /// **玩家向目标列表的相位标注**（[V3] 收尾 · B1 交互装门，2026-10-11）：影子期 ⇒ 「 影子（最后已知）」；
+        /// 公开组 / Live / 玩家派系取不到 ⇒ 空串。词的唯一口径在 `TargetListCore.PhaseSuffix`（纯函数、带纯测试）；
+        /// 本方法只负责把"玩家派系 + 是不是匿踪 + 当前相位"三个事实凑齐。
+        /// ⚠ 列表的**准入**用 <see cref="PlayerCanSee"/>（影子算看得见、失联不算）——标注与准入是两件事。
+        /// </summary>
+        public string PlayerPhaseSuffix(SpaceEntityGroup g)
+        {
+            if (g == null || !g.IsStealth) return "";
+            var player = Faction.OfPlayer;
+            if (player == null) return "";
+            return TargetListCore.PhaseSuffix(isStealth: true, phase: ContactPhaseOf(player.loadID, g.GroupId));
+        }
+
         /// <summary>最近一次扫描的对数（读数：成本与"剪枝是否生效"的证据；不是判据）。</summary>
         public long DebugPairCount { get; private set; }
 

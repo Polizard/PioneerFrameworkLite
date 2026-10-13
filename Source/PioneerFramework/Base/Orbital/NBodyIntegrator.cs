@@ -101,6 +101,22 @@ namespace PioneerFramework
             DVector3 pos, DVector3 vel,
             List<GravitySource> sources,
             out DVector3 acceleration, out DVector3 jerk)
+            => FieldAccelJerk(pos, vel, sources, null, out acceleration, out jerk);
+
+        /// <summary>
+        /// **引力场（带"不计算的天体"掩码，[A6]，2026-10-06）**：在**求和循环里**跳过
+        /// `ignoredBodyIds` 中的天体（大气档 = "只算中心天体"；掩码极短 ⇒ 循环内线性扫，不用 HashSet）。
+        ///
+        /// ⚠ 两条纪律（都是既有事故换来的）：
+        /// · **过滤必须在求和循环内**——**不许**给每组建一张"过滤后的源表"
+        ///   （S-a 收尾刚删掉"每群每步拷表"，见 `SpaceGameComp.ResolveSystemSources` 的注释）；
+        /// · **空掩码与无掩码逐位同路**：同一循环、同一累加顺序；`null` 只多一次空判断（不碰浮点算式）。
+        /// </summary>
+        public static void FieldAccelJerk(
+            DVector3 pos, DVector3 vel,
+            List<GravitySource> sources,
+            List<int>? ignoredBodyIds,
+            out DVector3 acceleration, out DVector3 jerk)
         {
             double ax = 0.0, ay = 0.0, az = 0.0;
             double jx = 0.0, jy = 0.0, jz = 0.0;
@@ -110,6 +126,7 @@ namespace PioneerFramework
                 for (int i = 0; i < sources.Count; i++)
                 {
                     var s = sources[i];
+                    if (ignoredBodyIds != null && ContainsId(ignoredBodyIds, s.bodyId)) continue;
                     BodyAccelJerkCore(
                         pos.x, pos.y, pos.z, vel.x, vel.y, vel.z,
                         s.position.x, s.position.y, s.position.z,
@@ -124,6 +141,14 @@ namespace PioneerFramework
 
             acceleration = new DVector3(ax, ay, az);
             jerk = new DVector3(jx, jy, jz);
+        }
+
+        /// <summary>小数组线性查找（掩码 ≤3 项；求和循环里不引入 HashSet 的哈希/分配成本）。</summary>
+        private static bool ContainsId(List<int> ids, int bodyId)
+        {
+            for (int i = 0; i < ids.Count; i++)
+                if (ids[i] == bodyId) return true;
+            return false;
         }
 
         /// <summary>

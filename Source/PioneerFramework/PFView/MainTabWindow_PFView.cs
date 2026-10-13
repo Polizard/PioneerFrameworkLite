@@ -40,8 +40,6 @@ namespace PioneerFramework
 
         // 太阳的"等效替代"摆放（见 DrawCelestialBodies）：恒星真实距离远超远裁剪面，
         // 故只保留方向、把距离/尺寸随相机距离等比放大 —— 角大小恒定，任意缩放下都看得见。
-        private const float SunMinPlaceDist = 5000f;
-        private const float SunAngularScale = 0.06f;       // 视半径/距离 ≈ 3.4°
 
         // ════════════════════════════════════════════════════
         //  状态
@@ -163,23 +161,6 @@ namespace PioneerFramework
         }
 
         // 太阳 billboard 材质：克隆 Standard + HDR 自发光
-        private static Material _sunBillboardMat;
-        private static Material SunBillboardMat
-        {
-            get
-            {
-                if (_sunBillboardMat == null && renderMat != null)
-                {
-                    _sunBillboardMat = new Material(renderMat);
-                    _sunBillboardMat.EnableKeyword("_EMISSION");
-                    _sunBillboardMat.SetColor("_EmissionColor", new Color(8f, 6f, 3f));
-                    _sunBillboardMat.SetColor("_Color", new Color(1f, 1f, 0.9f));
-                    _sunBillboardMat.SetFloat("_Glossiness", 0f);
-                    _sunBillboardMat.SetFloat("_Metallic", 0f);
-                }
-                return _sunBillboardMat;
-            }
-        }
 
         static MainTabWindow_PFView()
         {
@@ -238,7 +219,10 @@ namespace PioneerFramework
                 UpdateCamera();
                 RenderScene(mgr);
                 if (renderTexture != null)
+                {
                     GUI.DrawTexture(inRect, renderTexture, ScaleMode.StretchToFill);
+                    DrawAtmosphereHaze(inRect);   // 大气"物体雾"层：画面之上、HUD 之下（α = 天空 α × 0.3）
+                }
             }
             else
             {

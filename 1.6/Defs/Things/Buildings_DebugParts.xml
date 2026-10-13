@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- ════════════════════════════════════════════════════════════════
+       调试件：**测试用超级矢量引擎**
+       WHY（2026-10-07 用户点名要"超级牛逼的测试用引擎"）：
+         地图站的质量口径 = `mapW × 50 × mapH × 90 kg/m³`（`SpaceMapGenerator.CreateStationEntity`）
+         ⇒ **60×60 站 = 16,200 t** ⇒ 悬停要 **≈128 MN**；而 `PF_Building_Thruster_Rcs` 只有 4.5 kN/台
+         （要 ≈2.8 万台）。常规引擎差 3 个数量级 ⇒ 地图站**根本吊不起来**（实测那台"推力不足 ⇒ 会掉"）。
+         本件单台 **300 MN**（ve 300,000 × ṁ 1,000）——**只为把测试船吊起来**，不是玩法件、不进建造菜单。
+       ⚠ 贴图必须是**真存在的文件**（`1.6/Textures/...`）：写不存在的路径 = 每次画都吐红字
+         （实测踩过 871 行；本 mod 另有 6 个 Def 还挂着那条错路径，见还原点说明的挂账）。
+       ════════════════════════════════════════════════════════════════ -->
+  <ThingDef>
+    <defName>PF_Building_Thruster_TestSuper</defName>
+    <label>测试用超级矢量引擎（调试）</label>
+    <description>调试件：全矢量（RCS）推进，单台 300 MN 级——用来把地图站这种万吨级目标吊在空中。不是玩法件，建造菜单里没有它。</description>
+    <category>Building</category>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/ZQ_Booster</texPath>
+      <!-- ⚠ `graphicClass` **必须显式写**：不写 = `graphicClass is null` 配置红字（2026-10-07 实测，DefDatabase 报的） -->
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(2,2)</drawSize>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>PassThroughOnly</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>400</MaxHitPoints>
+      <Flammability>0</Flammability>
+      <Mass>5000</Mass>
+      <Beauty>-20</Beauty>
+      <WorkToBuild>600</WorkToBuild>
+    </statBases>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_Thruster">
+        <propellantDefName>PF_Propellant_Hydrogen</propellantDefName>
+        <exhaustVelocity>300000</exhaustVelocity>
+        <massFlowRate>1000</massFlowRate>
+        <isVectoredRcs>true</isVectoredRcs>
+      </li>
+    </comps>
+  </ThingDef>
+</Defs>

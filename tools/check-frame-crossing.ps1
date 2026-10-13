@@ -146,6 +146,11 @@ $absFrameAllowed = @(
     "MainTabWindow_PFView.Render.cs", # PFView renderer (2026-10-02 V-0: split into partials -- same
     "MainTabWindow_PFView.Scene.cs",  #   display-only decision, same call sites, new file names)
     "MainTabWindow_PFView.GUI.cs",    #   (ibid)
+    "MainTabWindow_PFView.Atmosphere.cs", # PFView renderer partial (2026-10-10 大气表现：相机高度 = |abs 差| -- 同一条
+                                          #   display-only 决定：只喂天空 α / 壳位置，不进物理、不进制导)
+    "MainTabWindow_PFView.Sun.cs",    # PFView renderer partial (2026-10-11 sun disc + star shell): the
+                                      #   "sun in view / occluded by a body" readout -- display-only,
+                                      #   same decision as the other PFView partials
     "Window_SpaceBattleView3D.cs",    # 3D battle view
     "ViewFrame.cs",                   # view-frame helper (abs - abs)
     "GetSurfaceState.cs"              # tile->abs ECI helper (currently only used by a zero-caller API)

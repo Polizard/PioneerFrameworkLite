@@ -213,7 +213,7 @@ namespace PioneerFramework
         /// 支持指定尺寸 / 姿态（验证旋转感知碰撞盒 GetAabbSystem）/ 初始速度。
         /// </summary>
         private static SpaceEntityGroup CreateShipNoMap(SpaceGameComp spaceGame, int factionId, DVector3 pos,
-            DVector3 size, Quaternion rotation, string name, DVector3? velocity = null)
+            DVector3 size, Quaternion rotation, string name, DVector3? velocity = null, float dryMass = 0f)
         {
             int groupId = spaceGame.AllocGroupId();
             int entityId = spaceGame.AllocEntityId();
@@ -254,6 +254,10 @@ namespace PioneerFramework
                 hp = 100f,
                 isIndestructible = false // 纯物理航天器可被摧毁
             };
+            // 可选干质量（[补4]，2026-10-06）：**没有组件 = 质量 1 kg**（SpacePart 的兜底），
+            // 而 1 kg 对几十 m² 的迎风面在 ρ₀=1.2 的大气里等于纸片 —— 撞击探针要"能撞出坠毁"就得给质量。
+            if (dryMass > 0f)
+                part.AddComponent(new HullMassComponent { mass = dryMass });
             entity.SetParts(new List<SpacePart> { part });
 
             spaceGame.RegisterEntity(entity);
@@ -564,7 +568,19 @@ namespace PioneerFramework
         internal static readonly System.Collections.Generic.List<int> LastImpactProbeGroups =
             new System.Collections.Generic.List<int>();
 
-        /// <summary>撞击事件探针的单颗摆法（<see cref="SpawnImpactEventTest"/>）：地表上方 200 m、相对地表的纯径向下降。</summary>
+        /// <summary>
+        /// 撞击事件探针的单颗摆法（<see cref="SpawnImpactEventTest"/>）：地表上方 200 m、相对地表的纯径向下降。
+        ///
+        /// **[补4]（2026-10-06，用户裁定"探针判据只是临时的、可以改"）——探针重裁**：
+        /// 原探针 = 无组件（⇒ 质量 1 kg）+ 6×6×12 外廓（⇒ Cd·A ≈ 36–72 m²）。ρ₀=1.2 的大气一开，
+        /// 它在下落中会被瞬间刹停（终端速度 ~0.4 m/s）⇒ "300 m/s ⇒ 坠毁"这条**物理上不再可能**
+        /// （不是判据松了，是那枚探针在新世界里成了一片纸）。重裁为 **20 t + 3×3×6**（Cd·A ≈ 9–18 m²）：
+        ///   · 坠毁探针：终端速度 ≈ 121–171 m/s &gt; 100 阈值；从 300 m/s 掉 200 m 只损失 ~20–30 m/s
+        ///     ⇒ 撞地仍有 ~270 m/s ⇒ **坠毁**（对姿态不敏感：面积 9↔18 都落在阈值的正确一侧）；
+        ///   · 着陆探针：20 m/s 起落 200 m ⇒ 撞地 ≈ 60 m/s（纯重力上限 60.3）⇒ **着陆**
+        ///     （即使零阻力也在阈值之下 ⇒ 对气动数据不敏感）。
+        /// 判据形状（着陆/坠毁各一次 + 经纬度不同）**未动**。
+        /// </summary>
         private static void SpawnImpactProbeShip(SpaceGameComp spaceGame, double radius, double omega,
             double physicsTick, double latRad, double lonRad0, double descentMps)
         {
@@ -576,7 +592,7 @@ namespace PioneerFramework
             DVector3 vel = surfVel - up * descentMps;
 
             var g = CreateShipNoMap(spaceGame, Faction.OfPlayer.loadID, pos,
-                new DVector3(6f, 6f, 12f), Quaternion.identity, "撞击事件", vel);
+                new DVector3(3f, 3f, 6f), Quaternion.identity, "撞击事件", vel, dryMass: 20_000f);
             if (g == null) return;
             g.CelestialBodyId = EARTH_BODY_ID;      // ⚠ 不设 exemptPlanetCollision：要让撞击事件真的触发
             LastImpactProbeGroups.Add(g.GroupId);
@@ -1540,9 +1556,479 @@ namespace PioneerFramework
                 MessageTypeDefOf.TaskCompletion);
         }
 
-        /// <summary>在地图指定格子放置一个建筑，返回其 CompPropellantTank（若无则 null）。</summary>
-        private static CompPropellantTank PlaceBuilding(Map map, string defName, IntVec3 cell)
+        /// <summary>
+        /// **[A4] 吸气式试验机**（**看读数用**，不进自动化判据）。
+        ///
+        /// 场景：无 Map 细长棍（1×1×12 m ⇒ 正面 1 m²、侧面 12 m²，顺气流指向由 [A6+] 的制导纪律负责），
+        /// 干重 8 t，出生在 **地表 30 km**、**水平顺行 400 m/s**，点火方向 = **当前速度方向**（水平加速）。
+        /// 推进 = `StandardPropulsion` 的**标准吸气式档**（ve 30000 / ṁ 5 / a=1 / 空气 15:1）+ 空气罐 500 kg
+        /// （**初始空罐** ⇒ 充填是"从零开始"，一眼可读）。
+        ///
+        /// 该看的三件事（都由物理路径自己打，日志各最多一条）：
+        ///  ① **充填**：空气罐从 0 涨起来（30 km 处 ρ≈0.028、400 m/s ⇒ 进气道 12 m² 给 ≈135 kg/s，
+        ///     超过全流量 75 kg/s ⇒ 罐会灌满；罐满后充填自然停）；
+        ///  ② **包线**：推力随高度衰减（φ = ρ/ρ0）——爬升越高，加速越慢（本场景没有自动驾驶，
+        ///     它飞着飞着就往下掉，ρ 回升、推力又涨回来：这正是"L1 无升力"的直接表现）；
+        ///  ③ **熄火/不路由**：空气抽干 ⇒ `[大气·进气] …熄火`（该步燃料不扣）；飞进真空 ⇒
+        ///     `[大气·包线] …包线因子 0 ⇒ 不路由`（D5 的网络可用性门控）。
+        ///
+        /// ⚠ 这不是"能不能飞"的判据 —— L1 无升力、无悬浮（[A7] 才做定点保持），它**注定会落**。
+        /// </summary>
+        public static void SpawnAirBreathingTest(bool openView = true)
         {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null)
+            {
+                Messages.Message("SpaceGameComp 未找到！", MessageTypeDefOf.RejectInput);
+                return;
+            }
+
+            var airDef = StandardPropulsion.IntakeAirDef;
+            var fuelDef = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Hydrogen");
+            if (airDef == null || fuelDef == null)
+            {
+                Log.Error("[吸气式试验机] 工质 Def 缺失（" + StandardPropulsion.IntakeAirDefName + " / PF_Propellant_Hydrogen）");
+                return;
+            }
+
+            // 物理依赖时间推进
+            Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
+
+            int factionId = Faction.OfPlayer.loadID;
+            int groupId = spaceGame.AllocGroupId();
+            int entityId = spaceGame.AllocEntityId();
+
+            double altitude = 30000.0;
+            double radius = SpaceConstants.PlanetRadiusMeters + altitude;
+            var radial = new DVector3(1, 0, 0);
+            var tangent = ProgradeEquatorialTangent(radial).normalized;
+            var pos = radial * radius;
+            var vel = tangent * 400.0;                      // 水平 400 m/s（顺行）
+
+            var group = new SpaceEntityGroup(groupId, factionId)
+            {
+                IsActive = true,
+                IsMovable = true,
+                IsCollidable = true,
+                CelestialBodyId = EARTH_BODY_ID
+            };
+            group.CurrentOrbit = new OrbitState
+            {
+                positionSystem = (SystemVec3)pos,
+                velocitySystem = (SystemVec3)vel,
+                rotation = Quaternion.identity,
+            };
+            spaceGame.RegisterGroup(group);
+
+            var entity = new SpaceEntity(entityId, factionId)
+            {
+                HasMap = false,
+                IsMapArchived = false,
+                IsCollidable = true,
+                IsMovable = true,
+                CanInteract = false,
+                IsAffectedByGravity = true,
+            };
+            entity.GroupId = groupId;
+            entity.SetPositionVelocity(DVector3.zero, DVector3.zero);
+            entity.SetRotation(Quaternion.identity);
+
+            // 细长棍 + 进气道（[补3] 的同款几何：就是要让气动看得出来）
+            var part = new SpacePart
+            {
+                partId = 1,
+                defName = "PF_ShipPart_TestMissile",
+                positionShip = DVector3.zero,
+                boundsSizeShip = new DVector3(1, 1, 12),
+                hp = 200f,
+                isIndestructible = false,
+            };
+            part.AddComponent(new Components.HullMassComponent { mass = 8000f });
+            part.AddComponent(StandardPropulsion.Intake(areaM2: 12f));
+            entity.SetParts(new List<SpacePart> { part });
+
+            // 主网（吸气式）+ 空气罐（空罐 ⇒ 充填从零可见）
+            entity.AddPropulsion(StandardPropulsion.AirBreathingEngine(fuelDef, fuelKg: 500.0, airDef: airDef));
+            entity.AddPropulsion(StandardPropulsion.AirTank(airDef, capacityKg: 500.0, fillKg: 0.0));
+
+            spaceGame.RegisterEntity(entity);
+            group.AddEntity(entityId);
+
+            // 点火：沿**水平速度方向**加速（不爬升 ⇒ 本场景只看水平飞行下的充填与包线）
+            group.StartBurn(tangent * 3000.0);
+            SpaceGameComp.DebugDetailedThrust = true;
+
+            if (openView)
+                Messages.Message("吸气式试验机已部署（30 km，水平 400 m/s，空罐起飞）——看 [大气·进气] / [大气·包线] 读数",
+                    MessageTypeDefOf.TaskCompletion);
+            Log.Message(string.Format(
+                "[吸气式试验机] G{0} E{1} 高度 {2:F0} km｜水平 {3:F0} m/s｜干重 8 t｜吸气式 ve={4:F0} ṁ={5:F0} a={6:F1}｜" +
+                "空气罐 0/500 kg（进气道 12 m²）｜全推续航（满罐）= {7:F0} s｜点火 Δv 3000 m/s（沿当前速度）",
+                groupId, entityId, altitude / 1000.0, 400.0,
+                StandardPropulsion.AirBreathingVe, StandardPropulsion.StandardMassFlow,
+                StandardPropulsion.AirBreathingDensityExponent,
+                AirBreathingCore.FullThrottleEnduranceSeconds(500.0, StandardPropulsion.StandardMassFlow)));
+
+            if (openView)
+            {
+                var view3D = new Window_SpaceBattleView3D(group);
+                Find.WindowStack.Add(view3D);
+            }
+        }
+
+        /// <summary>
+        /// **[A7] 悬浮试验机**（**看读数用**，进不了自动化判据 —— 它是闭环控制器，得看它稳不稳）。
+        ///
+        /// 场景：无 Map 棍（1×1×10 m）干重 3 t + 全矢量 RCS 工质 3 t（ve 3000 / ṁ 20 ⇒ 60 kN，
+        /// 对 6 t 全重给 ≈10 m/s²，压得住本行星地表 8 m/s² 的重力并留余量）；
+        /// 出生在**地表 30 km**、**带着 −20 m/s 的向下速度**（让控制器有事做：它得先刹住再保持），
+        /// **立刻开悬浮**（定点 = 出生点的星下点 + 30 km）。
+        ///
+        /// 该看的：
+        ///   · 高度**守在 30 km** 附近（台架给的抖幅量级 = 死区 `HoverDefaultDeadZone` ≈ 几米；
+        ///     计划稿原话的"dt² 十米级"实测**不适用**于"每步刷新抵消"的实现，见 `HoverBenchTests`）；
+        ///   · 燃料按 ≈ `|g|·m/ve` ≈ 16 kg/s 往下走（**悬浮是吃料的**：物理档 = 真实推力）；
+        ///   · 姿态**上轴朝下不歪**（D10 锁铅垂；顺气流指向被悬浮让位）；
+        ///   · 读数行（需 `DebugDetailedSteering` = 默认已在操舵详细日志里开）每 10 游戏秒一行 `[悬浮]`。
+        ///
+        /// ⚠ 本刀口径：悬浮**只走全矢量（RCS）**推力、**不转船体**（主引擎要对准会把船拧歪）；
+        ///   RCS 给不出就报"推力不足"（如实报，不偷偷切主网）。玩家向入口（操舵台/PFView）属视觉/交互线，本刀不做。
+        /// </summary>
+        public static void SpawnHoverTest(bool openView = true, double fuelKg = 3000.0)
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null)
+            {
+                Messages.Message("SpaceGameComp 未找到！", MessageTypeDefOf.RejectInput);
+                return;
+            }
+            var hydrazine = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Hydrazine");
+            if (hydrazine == null)
+            {
+                Log.Error("[悬浮试验机] 工质 Def 缺失（PF_Propellant_Hydrazine）");
+                return;
+            }
+
+            Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
+            SpaceGameComp.DebugDetailedSteering = true;   // 开 [悬浮] 周期读数（10 游戏秒一行）
+
+            int factionId = Faction.OfPlayer.loadID;
+            int groupId = spaceGame.AllocGroupId();
+            int entityId = spaceGame.AllocEntityId();
+
+            double altitude = 30000.0;
+            double radius = SpaceConstants.PlanetRadiusMeters + altitude;
+            var radial = new DVector3(1, 0, 0);
+            var pos = radial * radius;
+            // ⚠ **必须带共转速度**：悬浮的定点是"地面上的一个点"，它随行星以 ω·(R+alt) ≈ 523 m/s（赤道）转。
+            //   以惯性系零速扔出去 = 一出生就背着 523 m/s 的速度差 ⇒ 控制器拿 10 m/s² 去追一个永远追不上的
+            //   目标 ⇒ 烧干料、自由落体（**2026-10-06 首轮实测翻的就是这个**，日志见该轮交接）。
+            double omega = Launch.GetSurfaceState.RotationOmega(
+                Current.Game?.GetComponent<CelestialBodyManager>(), EARTH_BODY_ID);
+            var vel = SurfaceFrame.SurfaceVelocity(pos, omega) + radial * -20.0;   // 共转 −20 m/s（向下）
+
+            var group = new SpaceEntityGroup(groupId, factionId)
+            {
+                IsActive = true,
+                IsMovable = true,
+                IsCollidable = true,
+                CelestialBodyId = EARTH_BODY_ID,
+            };
+            group.CurrentOrbit = new OrbitState
+            {
+                positionSystem = (SystemVec3)pos,
+                velocitySystem = (SystemVec3)vel,
+                rotation = Quaternion.identity,
+            };
+            spaceGame.RegisterGroup(group);
+
+            var entity = new SpaceEntity(entityId, factionId)
+            {
+                HasMap = false,
+                IsMapArchived = false,
+                IsCollidable = true,
+                IsMovable = true,
+                CanInteract = false,
+                IsAffectedByGravity = true,
+            };
+            entity.GroupId = groupId;
+            entity.SetPositionVelocity(DVector3.zero, DVector3.zero);
+            entity.SetRotation(Quaternion.identity);
+
+            var part = new SpacePart
+            {
+                partId = 1,
+                defName = "PF_ShipPart_TestMissile",
+                positionShip = DVector3.zero,
+                boundsSizeShip = new DVector3(1, 1, 10),
+                hp = 200f,
+                isIndestructible = false,
+            };
+            part.AddComponent(new Components.HullMassComponent { mass = 3000f });
+            entity.SetParts(new List<SpacePart> { part });
+
+            // 全矢量网（isVectoredRcs）：悬浮唯一认的那一类。
+            // ⚠ 罐量刻意**短**（2026-10-06 第六轮用户裁定："十几分钟不行，几乎永远"）：测试要的是
+            //   **几秒内看到状态**，不是让试验机在天上吊一刻钟 ⇒ 3 t / ve 3000 ⇒ 6 t 全重下 a = 10 m/s²、
+            //   等效耗料率 ≈16 kg/s、续航 ≈190 s（够按「悬浮·切档」；想看"料尽"，按「悬浮·抽空」几秒就到）。
+            // `fuelKg` 默认 3000（**手动场景**：短才对，≈190 s）；**自动跑批器**传更长的一档 ——
+            //   它要连着跑"物理 150 s + 解析 50 s + 回物理 25 s"再抽空，3000 kg 会在半路见底，
+            //   把"料尽退出"提前到解析档（实测抓到：那条会被误报成功能红字）。
+            // ⚠ **加燃料必须同时给推力**：6000 kg 时全重 9 t，若还按 ve=3000/ṁ=20（60 kN）⇒
+            //   a = 6.7 m/s² **低于本地重力 7.9** ⇒ 悬不住（实测抓到：物理档一路掉到 −12.5 km）。
+            //   ⇒ 长续航档把 ve 抬到 9000（180 kN ⇒ 9 t 时 a ≈ 20 m/s²），并按质量算 ṁ。
+            bool longRange = fuelKg > 3500.0;
+            float veUsed = longRange ? 9000f : 3000f;
+            float mfUsed = longRange ? (float)((3000.0 + fuelKg) * 8.0 / 9000.0 * 2.5) : 20f;   // 留 2.5 倍余量
+            entity.AddPropulsion(new PropulsionData
+            {
+                propellant = hydrazine, ve = veUsed, massFlow = mfUsed,
+                mass = fuelKg, capacity = fuelKg, isVectoredRcs = true,
+            });
+
+            spaceGame.RegisterEntity(entity);
+            group.AddEntity(entityId);
+
+            bool ok = spaceGame.SetHover(group, true);
+            if (openView)
+            {
+                Messages.Message(ok
+                        ? "悬浮试验机已部署（30 km，−20 m/s，已开悬浮）——看 [悬浮] 读数与高度是否守住"
+                        : "悬浮试验机已部署，但悬浮未能开启（缺天体/在地表下）",
+                    MessageTypeDefOf.TaskCompletion);
+            }
+            Log.Message(string.Format(
+                "[悬浮试验机] G{0} E{1} 高度 {2:F0} km｜−20 m/s 起步｜全重 {3:F1} t｜RCS ve={4:F0} ṁ={5:F1}（≈{6:F0} kN）｜" +
+                "料 {7:F0} kg（≈{8:F0} s 满推续航）｜定点已锁 ⇒ 该看：高度守住 + 上轴朝铅垂；" +
+                "按「悬浮·切档」切解析档（**定点不变**，读数行变成 [悬浮·解析档]）；按「悬浮·抽空」几秒看料尽退出",
+                groupId, entityId, altitude / 1000.0,
+                (3000.0 + fuelKg) / 1000.0, veUsed, mfUsed, veUsed * mfUsed / 1000f, fuelKg,
+                AirBreathingCore.FullThrottleEnduranceSeconds(fuelKg, mfUsed)));
+
+            if (openView)
+            {
+                var view3D = new Window_SpaceBattleView3D(group);
+                Find.WindowStack.Add(view3D);
+            }
+        }
+
+        /// <summary>
+        /// **赤道 × 本初子午线 悬停船（超级测试船：调试引擎 + 无限燃料）** —— 2026-10-07 用户点名。
+        ///
+        /// 位置 = **φ 0°、λ 0°**（RimWorld 约定 λ = Atan2(x, −z) ⇒ 本初子午线在 **−z 轴**），高度 30 km
+        /// （大气层内，悬浮有意义），带共转速度（少给 20 m/s 向下）。
+        ///
+        /// **有 Map**（船上带**操舵台** ⇒ 可直接开「船上控制台」看地块图/读数/悬浮档位）。
+        ///
+        /// ⚠ 为什么配**调试超级引擎**：地图站质量 = `mapW×50×mapH×90 kg/m³`（**60×60 = 16,200 t**）
+        /// ⇒ 悬停要 ≈128 MN，而常规 RCS 只有 4.5 kN/台 ⇒ 差 3 个数量级（实测那台"推力不足 ⇒ 会掉"的真因）。
+        /// 本钮用 `PF_Building_Thruster_TestSuper`（单台 300 MN），**台数按质量当场推**（1.6× 余量，不是拍的）。
+        ///
+        /// **无限燃料** = `group.debugInfinitePropellant`（唯一扣减口报告"已扣完"但不动账）——
+        /// **不是**把罐加大（那会把重量加上去、反而更吊不动）。
+        /// </summary>
+        public static void SpawnEquatorHoverTest(bool openView = true)
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (spaceGame == null || mgr == null)
+            {
+                Messages.Message("SpaceGameComp / CelestialBodyManager 未找到！", MessageTypeDefOf.RejectInput);
+                return;
+            }
+            const string engineDefName = "PF_Building_Thruster_TestSuper";
+            var engineDef = DefDatabase<ThingDef>.GetNamedSilentFail(engineDefName);
+            CompProperties_Thruster? engineProps = null;
+            if (engineDef != null && engineDef.comps != null)
+            {
+                for (int i = 0; i < engineDef.comps.Count; i++)
+                    if (engineDef.comps[i] is CompProperties_Thruster p) { engineProps = p; break; }
+            }
+            if (engineProps == null)
+            {
+                Log.Error("[赤道测试船] 调试引擎 Def 缺失或没有 CompProperties_Thruster：" + engineDefName);
+                return;
+            }
+            Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
+            SpaceGameComp.DebugDetailedSteering = true;   // [悬浮] 周期读数
+
+            double tick = TimeScaleManager.GetPhysicsTickSafe();
+            double omega = GetSurfaceState.RotationOmega(mgr, EARTH_BODY_ID);
+            double radius = GetSurfaceState.BodyRadius(mgr, EARTH_BODY_ID);
+            const double altitude = 30000.0;
+            // 赤道 × 本初子午线：**由 SurfaceState 直接给**（不经过 tile —— 那是经纬度的定义点）
+            var (pos, velSurf) = SurfaceFrame.SurfaceState(radius + altitude, 0.0, 0.0, omega, tick);
+            var vel = velSurf + pos.normalized * (-20.0);      // 共转 −20 m/s（向下）
+
+            int groupId = spaceGame.AllocGroupId();
+            int entityId = spaceGame.AllocEntityId();
+            var entity = spaceGame.CreateStation(entityId, groupId, Faction.OfPlayer.loadID,
+                pos, mapWidth: 60, mapHeight: 60, stationName: "赤道原点 测试船");
+            if (entity == null) return;
+            var group = spaceGame.GetGroupById(groupId);
+            if (group == null) return;
+            group.CurrentOrbit.velocitySystem = (SystemVec3)vel;   // CreateStation 给的是零速 ⇒ 补共转
+            group.OrbitDirty = true;
+
+            // ── 台数**按质量当场推**（余量 1.6×）——不许拍（纪律：预算/选型要么由生产量推出、要么写明余量）──
+            double massKg = entity.TotalMass;                       // 站体质量（HullMassComponent 已同步就绪）
+            double gSurface = SpaceConstants.PrimaryGravitationalParameter / (radius * radius);
+            double needN = massKg * gSurface * 1.6;
+            double perEngineN = engineProps.exhaustVelocity * engineProps.massFlowRate;
+            int engines = perEngineN > 0.0 ? (int)System.Math.Ceiling(needN / perEngineN) : 1;
+            if (engines < 1) engines = 1;
+
+            var map = SpaceMapGenerator.FindPocketMap(entity.MapId);
+            if (map != null)
+            {
+                PlaceBuilding(map, "PF_Building_SteeringConsole", new IntVec3(30, 0, 30));   // 控制台入口
+                var tank = PlaceBuilding(map, "PF_Building_Tank_Hydrogen", new IntVec3(28, 0, 30));
+                if (tank != null) tank.TryFill(600f);       // 有料就行（**无限**：存量只影响质量口径）
+                for (int i = 0; i < engines; i++)
+                    PlaceBuilding(map, engineDefName, new IntVec3(18 + (i % 10), 0, 34 + (i / 10)));
+            }
+
+            group.debugInfinitePropellant = true;          // **无限燃料**（唯一扣减口不动账）
+            bool ok = spaceGame.SetHover(group, true);     // 物理档悬浮（调试引擎真给推力）
+            string spot = string.Format("φ 0.0° / λ 0.0°（赤道 × 本初子午线）· 高度 {0:F0} km", altitude / 1000.0);
+            Messages.Message(ok
+                    ? "赤道原点测试船已部署（" + spot + "，无限燃料，已开悬浮）——带操舵台 ⇒ 可开「船上控制台」"
+                    : "赤道原点测试船已部署（" + spot + "），但悬浮未能开启（详情见日志）",
+                ok ? MessageTypeDefOf.TaskCompletion : MessageTypeDefOf.RejectInput);
+            Log.Message(string.Format(
+                "[赤道测试船] G{0} E{1}：{2}｜质量 {3:F0} t｜需 {4:F1} MN（含 1.6× 余量）｜调试引擎 {5} 台 × {6:F0} MN" +
+                "｜无限燃料=开｜悬浮={7}｜（有 Map；站体边长 60×60 m）",
+                groupId, entityId, spot, massKg / 1000.0, needN / 1e6, engines, perEngineN / 1e6,
+                ok ? "物理档" : "未开"));
+
+            if (openView)
+                Find.WindowStack.Add(new Window_SpaceBattleView3D(group));
+        }
+
+        /// <summary>**[A7] 悬浮·关**（把当前所有在悬浮的组都关掉；调试用 —— 玩家向入口在操舵台/PFView 那条线）。</summary>
+        public static void StopAllHover()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            int n = 0;
+            foreach (var g in spaceGame.GetAllGroups())
+            {
+                if (g != null && g.hoverActive && spaceGame.SetHover(g, false)) n++;
+            }
+            Messages.Message("悬浮已关：" + n + " 组", MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// **[A8 测试用] 悬浮·抽空**：把在悬浮的组的**全矢量（RCS）料**抽到只剩 <paramref name="keepKg"/>，
+        /// 让"**料尽 ⇒ 显式退出 ⇒ 自由落体**"这条路径**几秒内**可见（不必等它自己烧干 ——
+        /// 用户 2026-10-06 裁定"十几分钟不行，几乎来不及看"）。
+        /// </summary>
+        public static void DrainHoverFuel(double keepKg = 60.0)
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            int n = 0; double drained = 0.0;
+            foreach (var g in spaceGame.GetAllGroups())
+            {
+                if (g == null || !g.hoverActive) continue;
+                foreach (int eid in g.GetEntityIds())
+                {
+                    var e = spaceGame.GetEntityById(eid);
+                    if (e == null) continue;
+                    for (int i = 0; i < e.propulsion.Count; i++)
+                    {
+                        var d = e.propulsion[i];
+                        if (d == null || !d.isVectoredRcs || d.propellant == null) continue;
+                        double cut = d.mass - keepKg;
+                        if (cut > 0.0) drained += e.TryConsumePropellant(d.propellant, cut);
+                    }
+                    n++;
+                }
+            }
+            Messages.Message("悬浮料已抽空（剩 " + keepKg.ToString("F0") + " kg/实体）：抽掉 " + drained.ToString("F0") + " kg",
+                MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// **[A8] 悬浮·切档（解析 ⇄ 物理）**：把当前在悬浮的组整体切到另一档，**进出都写日志**（D7）。
+        /// 该看的：① 日志里两条 `[档位]` 行（含档位 / 等效耗料率 / 续航）；② **解析档下位置被钉死在定点**
+        /// （读数高度差应恒为 0 且**没有锯齿**——不再有 × 步的推力）；③ **两档耗料率应同量级**
+        /// （解析档按 `m·g/ve` 计费，物理档真给推力 ⇒ 判据"账单一致"）。
+        /// </summary>
+        public static void ToggleHoverTier()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            int n = 0;
+            foreach (var g in spaceGame.GetAllGroups())
+            {
+                if (g == null || !g.hoverActive) continue;
+                bool toAnalytic = !g.hoverAnalytic;
+                if (spaceGame.SwitchHoverTier(g, toAnalytic)) n++;   // ⚠ 只翻档位、**不重锁定点**
+            }
+            Messages.Message(n > 0 ? ("悬浮档位已切换：" + n + " 组（看 [档位] 日志）") : "没有在悬浮的组",
+                MessageTypeDefOf.TaskCompletion);
+        }
+
+        /// <summary>
+        /// **[A3]–[A5] 有 Map 侧大气三件套试验台**（2026-10-07，供跑批器与手动场景共用）：
+        /// 在**殖民地地图**上立一座带地图的飞船（`CreateTestStation`），并装上：
+        /// 空气罐 ×1 · 进气道 ×1 · 吸气式发动机 ×1（ve 30000 / ṁ 5 / a=1 / 空气 15:1）。
+        ///
+        /// **为什么要它**：有 Map 侧的进气/抽气/包线此前只钉了"数据一致性"这一层；要跑**飞行中**的行为，
+        /// 需要的其实是**空气相对速度**（不用真发射）—— 跑批器直接把群速度改成"共转 + 500 m/s 顺行"即可。
+        /// 手动看：地图上会多出三个建筑；停在地表时 v_air≈0 ⇒ **如实不进气**（这是负对照）。
+        /// </summary>
+        public static bool SpawnMapAeroTest(out int groupId, out Map? map, bool openView = true,
+            double altitudeMeters = 60000.0)
+        {
+            groupId = -1;
+            map = null;
+            // 高度取 **60 km**（2026-10-07 两轮实测后定）：
+            //   · 500 km（默认）：ρ=0 ⇒ 进气与包线**双双失真**（首轮红）
+            //   · 30 km：ρ≈0.028，几百 m² 迎风面的站**被阻力拽下来撞掉**（第二轮"组不见了"）
+            //   · 60 km：ρ≈6.7e-4 ⇒ 进气够用（A=6 m²、v_air=500 ⇒ ≈2 kg/s）、阻力撑得住这一两百秒
+            var (entity, group, map0) = CreateTestStation(altitudeMeters);
+            if (entity == null || group == null || map0 == null) return false;
+            map = map0;
+
+            var airTank = PlaceBuilding(map0, "PF_Building_Tank_IntakeAir", new IntVec3(24, 0, 30));
+            PlaceBuilding(map0, "PF_Building_IntakeAir", new IntVec3(26, 0, 30));
+            PlaceBuilding(map0, "PF_Building_Thruster_AirBreathing", new IntVec3(28, 0, 30));
+            // [③ + A8] **操舵台 = 玩家向控制台的入口**（2026-10-07 用户裁定）⇒ 试验台必须带一台，
+            // 否则"控制台"这条 UI 在场景里无处可点（挂点从储罐挪到操舵台之后就是这条依赖）。
+            PlaceBuilding(map0, "PF_Building_SteeringConsole", new IntVec3(32, 0, 30));
+            // ⚠ 空气罐**故意留空**（充填要看得见"从 0 涨起来"）⇒ 新立的罐本来就是空的，什么都不用做。
+            _ = airTank;   // （保留引用：将来若要预装，用 `TryFill`）
+            // 燃料罐**必须加满**（不然"燃料在扣"根本测不出来 —— 实测抓到的第二条红）
+            var h2Tank = PlaceBuilding(map0, "PF_Building_Tank_Hydrogen", new IntVec3(30, 0, 30));
+            if (h2Tank != null) h2Tank.TryFill(h2Tank.Capacity);
+
+            // ⚠ **站台默认在圆轨上**（`CreateTestStation` 给的初速 ≈6.3 km/s ⇒ v_air≈5.8 km/s）
+            //   ⇒ 那已经是"飞着"的状态（首轮实测：气罐被灌到 1896 kg）。要让**负对照**站得住，
+            //   必须先把群速度改成**与地表共转**（v_air≈0）—— 负对照的前提是"真的没空速"，不是"环境正好没空气"。
+            var mgr0 = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (mgr0 != null)
+            {
+                double omega0 = Launch.GetSurfaceState.RotationOmega(mgr0, group.CelestialBodyId);
+                var pos0 = group.CurrentOrbit.positionSystem.v;
+                group.CurrentOrbit.velocitySystem = (SystemVec3)SurfaceFrame.SurfaceVelocity(pos0, omega0);
+                group.OrbitDirty = true;
+            }
+
+            groupId = group.GroupId;
+            if (openView)
+            {
+                Messages.Message("有 Map 大气三件套已部署（进气道/空气罐/吸气式发动机）——停在地表 v_air≈0 ⇒ 不进气（负对照）"
+                    + "｜**控制台**：选中**操舵台** → 底部 Gizmo「船上控制台」（地块图 + 读数 + 起搬 + 悬浮）",
+                    MessageTypeDefOf.TaskCompletion);
+                Find.WindowStack.Add(new Window_SpaceBattleView3D(group));
+            }
+            return true;
+        }
+
+        /// <summary>在地图指定格子放置一个建筑，返回其 CompPropellantTank（若无则 null）。</summary>
+        private static CompPropellantTank PlaceBuilding(Map map, string defName, IntVec3 cell)        {
             var def = DefDatabase<ThingDef>.GetNamedSilentFail(defName);
             if (def == null)
             {

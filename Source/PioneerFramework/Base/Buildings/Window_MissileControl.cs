@@ -197,8 +197,10 @@ namespace PioneerFramework
                         }
                     }
                     Rect r = new Rect(0, iy, inRect.width - 24f, 24f);
-                    string label = string.Format("G{0} F{1}{2}{3}｜距攻击弹 {4}",
-                        g.GroupId, g.FactionId, isMissile ? " [导弹]" : "", hasMap ? " [有图]" : "", dTxt);
+                    // [V3] 收尾（2026-10-11 B1）：影子期条目标注「影子（最后已知）」——列表已按 PlayerCanSee 筛过
+                    string phase = sensor != null ? sensor.PlayerPhaseSuffix(g) : "";
+                    string label = string.Format("G{0} F{1}{2}{3}{4}｜距攻击弹 {5}",
+                        g.GroupId, g.FactionId, isMissile ? " [导弹]" : "", hasMap ? " [有图]" : "", phase, dTxt);
                     if (Widgets.ButtonText(r, label))
                         pendingCommands.Add(new CommandItem
                         {

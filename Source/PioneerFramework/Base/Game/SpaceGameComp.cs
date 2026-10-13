@@ -40,6 +40,14 @@ namespace PioneerFramework
         internal const int UPDATE_INTERVAL_TICKS = 2;
         private int lastUpdateTick = 0;
 
+        /// <summary>
+        /// **上一次物理步的物理 tick**（2026-10-11）：积分轨（非圆轨）组的 `positionSystem/velocitySystem`
+        /// 只在物理步边界被写（每 `UPDATE_INTERVAL_TICKS` = 2 tick 一步）⇒ 表示层要用 `pos + v·Δt` 把它
+        /// 外推到当前**渲染时刻**（连续时钟 = `TimeScaleManager.GetRenderTick()`）。
+        /// 与射弹那条"渲染位置解析化"是同一手法（那里用 `proj.prevPhysicsTick`，这里用组级统一零点）。
+        /// </summary>
+        public double LastPhysicsStepTick { get; private set; }
+
         // PERF-5：物理并行下限——编组数低于此值时顺序执行（线程调度 + 并发容器分配 > 顺序开销）
         // ⚠ `internal`（批 0-4）：规模验收场景必须断言**同一个**阈值——抄一份 32 就是第二份权威。
         internal const int PARALLEL_PHYSICS_MIN_GROUPS = 32;
@@ -612,10 +620,30 @@ namespace PioneerFramework
         /// <summary>
         /// 销毁群组：从粗细网格移除 → 清理战斗缓存 → 注销实体 → 注销群组。
         /// </summary>
-        public void DestroyGroup(int groupId)
+        /// <summary>
+        /// 销毁群组：粗/细网格移除 → 战斗缓存清理 → 收尸事件 → 注销实体 → 注销群组 → **处置船上地图**。
+        ///
+        /// ⚠ **[2026-10-08 用户裁定] 地图处置在**本方法内部**收口**：任何路径销毁一艘"有 Map 的船"，
+        /// 它的内景都必须跟着一起收场——否则留下的就是"**孤儿地图**"（建筑/物品/小人静默失联，
+        /// 属静默数据损失）。原先只有"坠毁"那一条路做了这件事，而全库有 **31 处** `DestroyGroup` 调用点
+        /// （安全接地 / 选中降落 / 战斗损毁 / 星座收尸 / 登船拆除 / 各类清理）⇒ 逐条补一定会再漏第 32 处。
+        /// `reason` **只进日志**（"坠毁于地球（北纬…）" / "选中降落" / "战斗中损毁" …），不改行为。
+        ///
+        /// ⚠ 与**地图归档**不冲突：归档（`BeginArchiveMap`）是把内景写成文件留底，走的是独立的显式 API；
+        /// 本方法只处置**在活着的**那张地图 ⇒ 归过档的船即使被销毁，档案还在、仍可取档。
+        /// </summary>
+        public void DestroyGroup(int groupId, string? reason = null)
         {
             if (!groups.TryGetValue(groupId, out var group))
                 return;
+
+            // 0. **先收集"这艘船有哪些地图"**（第 3 步注销实体之后就问不到 MapId 了）
+            List<int>? doomedMapIds = null;
+            foreach (int entityId in group.GetEntityIds())
+            {
+                if (entities.TryGetValue(entityId, out var e) && e != null && e.MapId >= 0)
+                    (doomedMapIds ??= new List<int>()).Add(e.MapId);
+            }
 
             // 1. 细网格移除（此时 group 状态仍有效）
             var combatGrid = Current.Game?.GetComponent<CombatGrid>();
@@ -648,6 +676,11 @@ namespace PioneerFramework
             // 5. 网格清理
             foreach (var grid in GetAllGrids())
                 grid.ApplyChanges();
+
+            // 6. **船上地图处置**（收口点；放在最后：此刻群组与实体都已注销，没人再指着一张正在拆的地图）
+            if (doomedMapIds != null)
+                for (int i = 0; i < doomedMapIds.Count; i++)
+                    DisposeGroupMap(groupId, doomedMapIds[i], reason);
         }
 
         public void RegisterMapComponent(int mapId, object mapComp) => mapComponents[mapId] = mapComp;
@@ -1082,6 +1115,12 @@ namespace PioneerFramework
             {
                 long blockClock = PerfProbe.ExtraClockStart();   // ★ 2026-10-02：整步块钟（含全部每物理步消费者）
                 lastUpdateTick = currentTick;
+                // 渲染外推基准（2026-10-11，"别的航天器位置在抖"）：**积分轨**组的位置/速度只在物理步边界更新
+                // （每 2 tick 一步）⇒ 表示层在步与步之间要用 `pos + v·Δt` 补平滑；Δt 的零点就是这里。
+                // ⚠ 不写 `timeScaleManager != null ? …`：`GameComponentRef.Get()` 的契约是非空
+                //   （缺组件时它返回 `null!`、下面 `UpdateAllMovements` 同样会 NRE）——多余的空判反会把
+                //   可空流分析变坏（CS8604 假红，2026-10-11 踩过）。
+                LastPhysicsStepTick = timeScaleManager.GetPhysicsTick();
                 // 第 25 条墙钟：整步 = 一次 UpdateAllMovements（操舵 + 冲量 + 群组物理 + 耗散 + **交会引导**）。
                 // ★ 2026-09-20 改为**常驻测量**（原先只在优化探针开着时测）：成本 = 两次 Stopwatch 读（纳秒级），
                 //   换来"随时按需出一份平均/最慢"（`PerfProbe.StepClockReport()`）。
@@ -1120,13 +1159,27 @@ namespace PioneerFramework
                 avmRef.Get()?.OnPhysicsStepCompleted();
                 PerfProbe.ExtraClockEnd(PerfProbe.ExtraClockAvm, avmClock);
                 // [V7] 验收状态机放在投影**之后**：它读的就是本步刚投影进去的值（不然会差一拍）。
-                SensorProjectionAcceptanceRunner.Tick();
-                // 来袭性能场景（2026-10-02）：空闲时第一行返回（静态 stage 判据）⇒ 零成本
-                SwarmAttackPerfRunner.Tick();
-                // [V3] 认知层验收（2026-10-02 S2）：必须在 `SensorManager` **之后**（读它本步刚写的视图）
-                SensorCognitionAcceptanceRunner.Tick();
-                // 电子战总控（2026-10-02）：按段推进已跑完的验收（空闲时零开销）
-                EwSystemAcceptanceRunner.Tick();
+                //
+                // ⚠ **[2026-10-08 加固] 这一整段跑批器/框架是"一荣俱荣、一损俱损"的**：它们同处每步块，
+                //   且**这一段原本没有任何兜底** ⇒ 任何一处抛异常，后面的跑批器与 `PflTestKit.Tick()`
+                //   （异步用例的**超时判定**）会被**一起跳过**；万一是持续性抛（每步都抛），
+                //   症状就是"用例冻结：既无结算、也无超时、日志里什么都看不到"（2026-10-08 实测撞到过）。
+                //   ⇒ 这里统一兜住 + **把异常打出来**（去重限频）：宁可留一行红字，也不许再静默。
+                try
+                {
+                    SensorProjectionAcceptanceRunner.Tick();
+                    // 来袭性能场景（2026-10-02）：空闲时第一行返回（静态 stage 判据）⇒ 零成本
+                    SwarmAttackPerfRunner.Tick();
+                    // [V3] 认知层验收（2026-10-02 S2）：必须在 `SensorManager` **之后**（读它本步刚写的视图）
+                    SensorCognitionAcceptanceRunner.Tick();
+                    // 电子战总控（2026-10-02）：按段推进已跑完的验收（空闲时零开销）
+                    EwSystemAcceptanceRunner.Tick();
+                    AtmosphereAcceptanceRunner.Tick();   // 大气/悬浮/档位（L1）：空闲时第一行返回
+                }
+                catch (Exception ex)
+                {
+                    LogAcceptanceTickException(ex);
+                }
                 // ⚠ 总控要在**各段自己的 Tick 之后**：它靠"上一段跑完"来起下一段。
                 //   （放在本块末尾即可——它自己只做读取与派发。）
                 PerfProbe.ExtraClockEnd(PerfProbe.ExtraClockBlock, blockClock);   // 整步块钟闭合
@@ -1170,6 +1223,7 @@ namespace PioneerFramework
             // 游戏内一键验收状态机（未运行时立即返回，空闲零开销）
             PerfAcceptanceRunner.Tick();
             PflTestKit.Tick();   // S1 框架：异步段的超时判定（同步用例不受影响）
+            AtmosphereAcceptanceRunner.TickAutoRun();   // [A8] 载入自动跑（DevMode + 标记文件；只查一次）
             LandingAcceptanceRunner.Tick();   // S3 判据：撞击事件（异步段；空闲时第一行返回）
 
             // 调试场景驱动（原 DebugShipSpawner.CompTick：场景自动下令 + 碰撞距离探针）
@@ -1202,6 +1256,12 @@ namespace PioneerFramework
             public double AppliedDv;       // 本步实际 ΔV（m/s）
             /// <summary>本次 tick 应消耗的工质总量（kg），主线程按各网络切片流率比例分配扣除。</summary>
             public double PropellantConsumed;
+            /// <summary>
+            /// **[A3] 本步进气充填量（kg）**：并行区**只算不写**（读 ρ/空速/罐余量），主线程统一入账
+            /// （与 `PropellantConsumed` 同纪律：并行区只累积，主线程才改 `propulsion[].mass`）。
+            /// 0 = 无进气道/无空气罐/罐满/不在大气（缺席即零）。
+            /// </summary>
+            public double IntakeFillKg;
             /// <summary>本次 burn 参与推进的方向切片（并行阶段构建的活动网络快照，含锥内推力/流率）。</summary>
             public List<ThrustSlice> ActiveSlices;
             /// <summary>
@@ -1324,8 +1384,9 @@ namespace PioneerFramework
 
             if (scratch.kept.Count > 0)
             {
+                // [A6]：掩码同进求和循环（被忽略的天体不在场里 ⇒ 它的扰动也不该被"抵消"）。
                 NBodyIntegrator.FieldAccelJerk(group.CurrentOrbit.positionSystem.v, group.CurrentOrbit.velocitySystem.v,
-                    scratch.kept, out corrAcc, out corrJerk);
+                    scratch.kept, group.ignoredGravityBodyIds, out corrAcc, out corrJerk);
             }
 
             // ② 计划中心的受迫（自由落体）加速度里、由非白名单父天体贡献的那部分：
@@ -1352,7 +1413,9 @@ namespace PioneerFramework
 
                 if (!NBodyIntegrator.TryFindSource(sources, parentId, out var parentSrc)) break;
 
-                if (whitelist == null || !whitelist.Contains(parentId))
+                // [A6]：被掩码的天体不进引力场 ⇒ 它在②里的"自由落体项"也不该被减（同一条语义）。
+                //   注意是"跳过这一项、继续走链"（祖辈项仍在场里，仍要减）。
+                if ((whitelist == null || !whitelist.Contains(parentId)) && !group.IsGravityIgnored(parentId))
                 {
                     if (NBodyIntegrator.TryFindSource(sources, childId, out var childSrc))
                     {
@@ -1403,8 +1466,10 @@ namespace PioneerFramework
                 return;
             }
 
+            // [A6]：**组引力掩码**在这一处（唯一的场求和）进去——默认 null ⇒ 与旧路径逐位同路；
+            //   大气档的非空掩码在求和循环内跳过被忽略天体（"只算中心天体"）。
             NBodyIntegrator.FieldAccelJerk(group.CurrentOrbit.positionSystem.v, group.CurrentOrbit.velocitySystem.v,
-                sources, out acc, out jerk);
+                sources, group.ignoredGravityBodyIds, out acc, out jerk);
 
             if (timing) PerfProbe.GravityClockEnd(clock);
 
@@ -1847,11 +1912,17 @@ namespace PioneerFramework
                         // ── RCS 全矢量（微调 burn）：任意方向出力，免对准/免锥 ──
                         // 交会/接近修正 burn 走此分支：无转向死区，修正即时。
                         mapComp.GetRcsThrustAlong(group.burnEnabledNetworks, activeSlices, out fTotal, out mfTotal);
+                        ApplyMapThrustGates(group, celestialMgr, group.CurrentOrbit.positionSystem.v,
+                            group.CurrentOrbit.velocitySystem.v, group.GetLinkedMapComp(), dtSeconds,
+                            activeSlices, ref fTotal, ref mfTotal);   // [A4]/[A5] 包线 + 进气门
                         if (fTotal <= 0f)
                         {
                             // RCS 工质尽 → 回退主引擎（对准，现状）
                             mapComp.GetThrustAlong(group.burnDirectionSystem, group.CurrentOrbit.rotation, DefaultThrustConeCos,
                                 group.burnEnabledNetworks, activeSlices, out fTotal, out mfTotal);
+                            ApplyMapThrustGates(group, celestialMgr, group.CurrentOrbit.positionSystem.v,
+                                group.CurrentOrbit.velocitySystem.v, group.GetLinkedMapComp(), dtSeconds,
+                            activeSlices, ref fTotal, ref mfTotal);   // [A4]/[A5] 包线 + 进气门
                             AlignMainAxis(group, group.burnDirectionSystem, dtSeconds);
                             if (fTotal <= 0f && mapComp.TotalThrust <= 0f)
                                 result.BurnExhausted = true; // 完全没有引擎 → 无法推进，终止
@@ -1864,6 +1935,9 @@ namespace PioneerFramework
                         {
                             // 纯全矢量船（仅虚拟推进/RCS，无 per-axis 引擎）：任意方向出力，免对准
                             mapComp.GetRcsThrustAlong(group.burnEnabledNetworks, activeSlices, out fTotal, out mfTotal);
+                            ApplyMapThrustGates(group, celestialMgr, group.CurrentOrbit.positionSystem.v,
+                                group.CurrentOrbit.velocitySystem.v, group.GetLinkedMapComp(), dtSeconds,
+                            activeSlices, ref fTotal, ref mfTotal);   // [A4]/[A5] 包线 + 进气门
                             if (fTotal <= 0f && mapComp.TotalThrust <= 0f)
                                 result.BurnExhausted = true; // 完全没有引擎 → 无法推进，终止
                         }
@@ -1874,6 +1948,9 @@ namespace PioneerFramework
                             // 未对准（锥内无推力）→ 本步只旋转对准（Align 控制器），不推力不耗工质。
                             mapComp.GetThrustAlong(group.burnDirectionSystem, group.CurrentOrbit.rotation, DefaultThrustConeCos,
                                 group.burnEnabledNetworks, activeSlices, out fTotal, out mfTotal);
+                            ApplyMapThrustGates(group, celestialMgr, group.CurrentOrbit.positionSystem.v,
+                                group.CurrentOrbit.velocitySystem.v, group.GetLinkedMapComp(), dtSeconds,
+                            activeSlices, ref fTotal, ref mfTotal);   // [A4]/[A5] 包线 + 进气门
                             // 已对准 → 消旋；未对准 → 转向（顺带零掉残余角速度）
                             AlignMainAxis(group, group.burnDirectionSystem, dtSeconds);
                             if (fTotal <= 0f && mapComp.TotalThrust <= 0f)
@@ -1984,16 +2061,103 @@ namespace PioneerFramework
 
                         if (burnSrc != null && (useMain || useRcs))
                         {
+                            // [A4] 包线上下文（**惰性**：只有真出现"带包线的网络"才算；纯火箭一次都不进）
+                            bool aeroCtxReady = false, aeroCtxOk = false;
+                            double aeroRho = 0.0, aeroRho0 = 0.0, aeroMach = 0.0;
+                            float envFactor = 1f;
                             foreach (var n in burnSrc.Networks)
                             {
                                 if (n.MassFlow <= 0f) continue;
+                                // 无工质的网络不是可烧网络：**下一行的 `AvailableMass(null) == 0` 本来就会跳过它**
+                                // ⇒ 本行把这件事显式化（零行为差异），顺带把可空性收窄给编译器。
+                                if (n.propellant == null) continue;
                                 if (group.burnEnabledNetworks != null && !group.burnEnabledNetworks.Contains(n.propellant)) continue;
                                 if (n.AvailableMass(burnSrc) <= 0f) continue;
                                 bool isRcs = n.HasRcsEngines;
                                 if ((isRcs && !useRcs) || (!isRcs && !useMain)) continue;
-                                activeSlices.Add(new ThrustSlice { network = n, thrust = n.Thrust, massFlow = n.MassFlow });
-                                fTotal += n.Thrust;
-                                mfTotal += n.MassFlow;
+                                // ── [A5] 进气限流（"抽干 ⇒ 熄火"）──────────────────────────────
+                                // 本网若声明了附带进气（空气），本步的可用流率还受**空气存量**封顶；
+                                // 空气一点没有 ⇒ cap = 0 ⇒ **不建切片**（推力 0、主工质不扣 = 熄火）。
+                                // ⚠ 纯火箭（`gasDraws == null`，绝大多数）不进这段：cap 恒 1 ⇒ 下面两行逐位同旧码。
+                                float cap = 1f;
+                                if (n.gasDraws != null)
+                                {
+                                    for (int g = 0; g < n.gasDraws.Count; g++)
+                                    {
+                                        var gd = n.gasDraws[g];
+                                        var gdDef = gd.propellant;
+                                        if (gdDef == null) continue;   // 构建端已跳过空 Def ⇒ 这里只是收窄可空性
+                                        double oneCap = AirBreathingCore.IntakeThrottleCap(
+                                            burnSrc.GetPropellantMass(gdDef), dtSeconds,
+                                            gd.flowKgPerSec, n.MassFlow);
+                                        if (oneCap < cap) cap = (float)oneCap;
+                                        if (cap <= 0f) break;
+                                    }
+                                    if (cap <= 0f)
+                                    {
+                                        // 熄火（本步）：**不建切片** ⇒ 本网不耗主工质（D4/§2.3 的"熄火期间燃料不扣"）。
+                                        // 逐网报一次（首步）——熄火会连报（每步都试）⇒ 用组级一次性标志。
+                                        if (!group.intakeFlameoutLogged)
+                                        {
+                                            group.intakeFlameoutLogged = true;
+                                            // ⚠ 空气存量一并报（2026-10-06 首轮实测：空罐起飞第一步必熄火一行，
+                                            //   那是**正确**行为 —— 报出 0 kg 才不会被读成故障）。
+                                            double airHave = 0.0;
+                                            for (int g = 0; g < n.gasDraws.Count; g++)
+                                            {
+                                                var gdAir = n.gasDraws[g];
+                                                if (gdAir.propellant != null) airHave += burnSrc.GetPropellantMass(gdAir.propellant);
+                                            }
+                                            result.AddDiag(string.Format(
+                                                "[大气·进气] G{0} 熄火：空气不足（{1}，现有 {2:F1} kg）⇒ 本步不出力、不耗主工质（t={3:F0}）",
+                                                group.GroupId, n.gasDraws[0].propellant?.defName ?? "?", airHave, physicsTick));
+                                        }
+                                        continue;
+                                    }
+                                }
+                                // ── [A4] 包线（密度 × Mach）+ 真空门控 ──────────────────────────
+                                // φ 只乘**推力**、不乘流率：低密度 = 同样的油少出力（这正是包线的物理含义；
+                                // 流率由"油门"管 —— 上面的 cap 是**空气**给的流率上限，两者各司其职）。
+                                // φ == 0（真空里的吸气式）⇒ **不建切片** = D5 的"真空不得路由到吸气式网络"。
+                                if (n.envelopeTerms != null)
+                                {
+                                    if (!aeroCtxReady)
+                                    {
+                                        aeroCtxReady = true;
+                                        aeroCtxOk = TryGetAeroContext(group, celestialMgr,
+                                            group.CurrentOrbit.positionSystem.v, group.CurrentOrbit.velocitySystem.v,
+                                            out aeroRho, out DVector3 vAirEnv);
+                                        aeroMach = aeroCtxOk
+                                            ? AirBreathingCore.MachFromAirSpeed(vAirEnv.magnitude)
+                                            : 0.0;
+                                        // ρ0 取本群中心天体的剖面常数（与 `TryGetAeroContext` 同一个 body）；
+                                        // 拿不到（无大气/无中心天体）⇒ 0 ⇒ `ThrustFactor` 判 `ρ0 ≤ 0` 返回 0（保守不路由）。
+                                        var envBody = celestialMgr.GetBodyById(group.CelestialBodyId);
+                                        aeroRho0 = envBody?.Atmosphere.rho0 ?? 0.0;
+                                    }
+                                    // 真空（aeroCtxOk == false）⇒ ρ = 0 ⇒ a>0 的项 φ = 0 ⇒ 整网可能归零。
+                                    double phi = AirBreathingCore.EnvelopeFactor(n.envelopeTerms, n.Thrust,
+                                        aeroRho, aeroRho0, aeroMach);
+                                    if (!(phi > 0.0))
+                                    {
+                                        if (!group.envelopeRoutedOffLogged)
+                                        {
+                                            group.envelopeRoutedOffLogged = true;
+                                            result.AddDiag(string.Format(
+                                                "[大气·包线] G{0} 网络（{1}）包线因子 0（ρ={2:F4E2}）⇒ 本步不路由、不耗料（t={3:F0}）",
+                                                group.GroupId, n.propellant?.defName ?? "?", aeroRho, physicsTick));
+                                        }
+                                        continue;
+                                    }
+                                    envFactor = (float)phi;
+                                }
+                                else
+                                {
+                                    envFactor = 1f;
+                                }
+                                activeSlices.Add(new ThrustSlice { network = n, thrust = n.Thrust * cap * envFactor, massFlow = n.MassFlow * cap });
+                                fTotal += n.Thrust * cap * envFactor;
+                                mfTotal += n.MassFlow * cap;
                             }
                         }
                         // 主推未对准且无 RCS（主网有料）：0 推力 0 耗料，burn 保持激活等对准（不标 exhausted）。
@@ -2111,6 +2275,38 @@ namespace PioneerFramework
             if (!group.HasActiveBurn && group.pendingAlignDir.sqrMagnitude > 1e-12)
                 AlignMainAxis(group, group.pendingAlignDir, dtSeconds);
 
+            // ── 大气段**顺气流指向**（[A6+]，2026-10-06 实测补）────────────────────────────
+            // 起因（游戏内实测，Player.log）：测试火箭（[补3] 长棍 3×3×30）**姿态固定在世界系单位阵**
+            // （全向船无主推轴 ⇒ 既没有对准语义，爬升又走 RCS 全矢量 ⇒ 全程不对准），于是**侧着飞**：
+            // 头锥 9 m² ↔ 侧向 90 m² ⇒ 阻力吃掉大半推力（29 km/747 m/s 处 ≈9.7 m/s²，推力才 21）
+            // ⇒ 50 t 烧干在 162 km、到不了 550 km。
+            // D13 早有裁定："第一期不做风标力矩（魔法动量轮会瞬间抵消它）⇒ **指向纪律由自动驾驶/制导承担**"
+            // ⇒ 这一条就是那条纪律的落点：**制导请求时**（`group.aeroAlignToAirflow`），把**船体前轴**（+z，
+            // 也就是气动外形的"头锥"轴）转到**空气相对速度方向**（顺气流 = 最小迎风面积）。
+            // ⚠ 与主推轴/矢量锥**无关**：全向船（无主推轴）照样要被指向。
+            // ⚠ 放在预对准**之后**：气动不可忽略的空域里，顺气流优先于"对准待点火方向"。
+            // [A7] 悬浮时**不**走这条：D10 定的是"悬浮锁铅垂"，两条指向纪律不能同时对船体前轴下手。
+            if (group.aeroAlignToAirflow && !group.hoverActive)
+            {
+                DVector3 alignPos = group.CurrentOrbit.positionSystem.v;
+                DVector3 alignVel = group.CurrentOrbit.velocitySystem.v;
+                if (TryGetAeroContext(group, celestialMgr, alignPos, alignVel, out _, out DVector3 vAirAlign)
+                    && vAirAlign.sqrMagnitude > 1e-6)
+                {
+                    DVector3 bodyFwd = DVector3.Rotate(DVector3.forward, group.CurrentOrbit.rotation);
+                    AlignShipAxis(group, bodyFwd, vAirAlign, dtSeconds);
+                }
+            }
+
+            // ── [A7] 悬浮：**船体上轴（+y）= 本地铅垂**（D10；与 SAS 的"主推轴对准"是两根不同的轴）──
+            if (group.hoverActive)
+            {
+                DVector3 upPos = group.CurrentOrbit.positionSystem.v;
+                DVector3 upTarget = HoverCore.UpAxisTarget(upPos);
+                DVector3 bodyUp = DVector3.Rotate(DVector3.up, group.CurrentOrbit.rotation);
+                AlignShipAxis(group, bodyUp, upTarget, dtSeconds);
+            }
+
             // 引力场采样：非圆轨需要它做积分；圆轨（解析推进）只有在轨道保持需要结算 dV 时才需要。
             // 保持旧成本画像——圆轨且无轨道保持的群组不做任何引力计算。
             var scratch = gravityScratch;
@@ -2137,10 +2333,49 @@ namespace PioneerFramework
                 result.OrbitKeepingDvCost = keepAcc.magnitude * dtSeconds;
             }
 
-            if (group.IsCircularOrbit)
+            // ── [A8] **解析档悬浮**：位置/速度由**定点解析**给出（不积分、不受力），**照扣料** ──
+            //   形状与解析圆轨完全一样（本库"位置解析、耗料照算"跑了整整一年的那条先例，D8 的出处）。
+            //   耗料在主线程 `ApplyHover` 里按 `m·dv/ve` 结算（与轨道保持同一个口径）。
+            // ── [D7②] **交战降级**（用户 2026-10-08 裁定：**不新建"交战触发"**，用现成的"有射弹"信号，
+            //    信号 = **既有的唯一口径** （见 `CombatActionActive`）——
+            //    即"有射弹在飞 **或** 导弹处于终末攻击"，与"子弹时间"降速用的是同一份判据。
+            //    解析档（轨上/定点解析）**不模拟受力** ⇒ 交战中意味着"免疫扰动"，那是不该有的特权
+            //    ⇒ 一出现交战动作就**自动降级到物理档**（D7 的不对称原则：降级只加精度，**可自动**）。
+            //    ⚠ 信号是**全局**的（任何地方在打都算）——按用户裁定刻意取的粗口径；
+            //      若要"只对附近交火降级"，加局部性判据（射弹到本组的距离）即可，另案。
+            if (group.hoverActive && group.hoverAnalytic && CombatActionActive)
             {
-                DVector3 newPos = group.GetCircularPositionAtTick(physicsTick);
-                // 圆轨下速度是随相位旋转的解析函数：同步 CurrentOrbit.velocity，
+                Log.Message(string.Format(
+                    "[档位] G{0} **交战动作出现 ⇒ 自动退出解析档**（降级只加精度、可自动）｜定点不变，改由物理档保持",
+                    group.GroupId));
+                SwitchHoverTier(group, analytic: false);
+            }
+
+            if (group.transferActive)
+            {
+                // [A8] 解析搬运：位置/速度由**解析路径**给（大圆 + 半径线性），不走积分、不受力。
+                double u = AnalyticTransferCore.Progress(physicsTick - group.transferStartTick, group.transferDuration);
+                result.NeedsUpdate = true;
+                result.NewPosition = AnalyticTransferCore.PositionAt(group.transferFromPos, group.transferToPos, u);
+                result.NewVelocity = AnalyticTransferCore.VelocityAt(group.transferFromPos, group.transferToPos, u,
+                    group.transferDuration);
+            }
+            else if (group.hoverActive && group.hoverAnalytic)
+            {
+                var hvBody = celestialMgr.GetBodyById(group.CelestialBodyId);
+                if (hvBody != null)
+                {
+                    double hvOmega = Launch.GetSurfaceState.RotationOmega(celestialMgr, group.CelestialBodyId);
+                    var (hvPos, hvVel) = HoverCore.TargetState(hvBody.radius, group.hoverLatRad, group.hoverLonRad0,
+                        group.hoverAltitudeMeters, hvOmega, physicsTick);
+                    result.NeedsUpdate = true;
+                    result.NewPosition = hvPos;
+                    result.NewVelocity = hvVel;
+                }
+            }
+            else if (group.IsCircularOrbit)
+            {
+                DVector3 newPos = group.GetCircularPositionAtTick(physicsTick);                // 圆轨下速度是随相位旋转的解析函数：同步 CurrentOrbit.velocity，
                 // 使预览/机动规划/交会等所有读 velocity 的消费方得到当前相位正确值
                 // （否则它们会拿到入轨瞬间的初始切线速度，导致轨道被算成漂移的椭圆）。
                 DVector3 newVel = group.GetCircularVelocityAtTick(physicsTick);
@@ -2162,8 +2397,17 @@ namespace PioneerFramework
 
                 if (subSteps <= 1)
                 {
-                    NBodyIntegrator.ThirdOrderTaylorStep(pos, vel, fieldAcc, fieldJerk, dtSeconds,
+                    // [A2-2] 气动（阻尼）：与引力同为"合力"的一部分；域外/真空 ⇒ **精确零**
+                    //   （三道"缺席即零"早退见 ComputeGroupAeroAccel）。jerk 不含气动项（局部带估算，见 AeroDrag.Accel）。
+                    // ⚠ 零气动时**不加**（`fieldAcc + 零` 会把 −0.0 归一成 +0.0）⇒ 无气动的世界与旧码逐位一致。
+                    DVector3 aeroAcc = ComputeGroupAeroAccel(group, celestialMgr, pos, vel);
+                    DVector3 totalAcc = aeroAcc.sqrMagnitude > 0.0 ? fieldAcc + aeroAcc : fieldAcc;
+                    NBodyIntegrator.ThirdOrderTaylorStep(pos, vel, totalAcc, fieldJerk, dtSeconds,
                         out var newPos, out var newVel);
+
+                    // [A3] 进气充填（只算不写）：与气动**同一次上下文**（ρ、v_air 同口径），
+                    //   量记进结果，主线程统一入账（并行区不许改 `propulsion[].mass`）。
+                    result.IntakeFillKg = ComputeGroupIntakeFill(group, celestialMgr, pos, vel, dtSeconds);
 
                     result.NeedsUpdate = true;
                     result.NewPosition = newPos;
@@ -2179,7 +2423,10 @@ namespace PioneerFramework
                         var subSources = ResolveSystemSources(celestialMgr, group, physicsTick + i * subDt, scratch);
                         ComputeGroupFieldAccelJerk(group, celestialMgr, physicsTick + i * subDt, scratch, subSources,
                             out var acc, out var jerk, out _, out _, timeSegment: true);
-                        NBodyIntegrator.ThirdOrderTaylorStep(pos, vel, acc, jerk, subDt, out pos, out vel);
+                        // [A2-2] 子步档：气动按**子步当前** (pos, vel) 重算（ρ 与 v_air 都随步内演化）；零时同上门。
+                        DVector3 subAero = ComputeGroupAeroAccel(group, celestialMgr, pos, vel);
+                        DVector3 subAcc = subAero.sqrMagnitude > 0.0 ? acc + subAero : acc;
+                        NBodyIntegrator.ThirdOrderTaylorStep(pos, vel, subAcc, jerk, subDt, out pos, out vel);
                     }
 
                     result.NeedsUpdate = true;
@@ -2219,6 +2466,341 @@ namespace PioneerFramework
             return result;
         }
 
+        // ══════════════════════════════════════════════════════════════════════
+        //  气动（[A2-2]，2026-10-06）：唯一消费者 = ComputeGroupPhysics 的力总和
+        // ══════════════════════════════════════════════════════════════════════
+
+        /// <summary>[补1] "不许静默零阻力"的一次性告警闸（并行区里只读）。</summary>
+        private static int aeroShapeWarned;
+
+        /// <summary>
+        /// 群级气动外形（[A2-2] 的无 Map 生产者；**有 Map 组走同一盒模型的显式 fallback** —— [补1]：
+        /// map 组 part 的 `boundsSizeShip` = 地图足迹 (宽, 50, 高)，见 `SpaceMapGenerator`）。
+        /// 逐 part 求盒模型三轴 `(Cd·A)` 再**相加**（不建模遮挡）——L1 的 LOD 就是"把外形降成三个数"。
+        /// 并行区只读调用：只遍历实体/部件表，无分配、无写。
+        /// </summary>
+        private AeroShape GetGroupAeroShape(SpaceEntityGroup group)
+        {
+            double fwd = 0.0, left = 0.0, up = 0.0, refLen = 0.0;
+            foreach (int eid in group.GetEntityIds())
+            {
+                var e = GetEntityById(eid);
+                if (e == null) continue;
+                var parts = e.Parts;
+                for (int i = 0; i < parts.Count; i++)
+                {
+                    var p = parts[i];
+                    if (p.isDestroyed) continue;
+                    var s = AeroShape.FromBox(p.boundsSizeShip);
+                    fwd += s.forwardCdA;
+                    left += s.leftCdA;
+                    up += s.upCdA;
+                    if (s.referenceLength > refLen) refLen = s.referenceLength;
+                }
+            }
+            return new AeroShape(fwd, left, up, refLen);
+        }
+
+        /// <summary>
+        /// **气动上下文**（[A6+] 2026-10-06 从 `ComputeGroupAeroAccel` 抽出的唯一实现）：
+        /// 三道"缺席即零"早退（成本从低到高）之后给出 ρ 与**空气相对速度** v_air。
+        /// ① 全库一份活大气都没有 ⇒ 一次静态 bool 读即返回；
+        /// ② 本群中心天体无活剖面（ρ≡0 / 无大气）⇒ 返回；
+        /// ③ **域外一次标量比较**（r ≥ R + atmoTop）⇒ 返回。
+        /// 两个使用者：**阻力**（`ComputeGroupAeroAccel`）与**顺气流指向**（物理步的姿态纪律）。
+        /// ⚠ 并行区只读调用；天体剖面已由 `CelestialBodyManager.EnsureInitialized` 预暖（建表是分配）。
+        /// </summary>
+        private bool TryGetAeroContext(SpaceEntityGroup group, CelestialBodyManager mgr,
+            in DVector3 pos, in DVector3 vel, out double rho, out DVector3 vAir)
+        {
+            rho = 0.0;
+            vAir = DVector3.zero;
+
+            if (!AtmosphereModel.AnyAtmosphereActive) return false;                            // ①
+
+            var body = mgr.GetBodyById(group.CelestialBodyId);
+            if (body == null) return false;
+            var atmo = body.Atmosphere;
+            if (!atmo.IsActive) return false;                                                  // ②
+
+            double r = pos.magnitude;
+            if (!(r < body.radius + body.atmosphereThickness)) return false;                   // ③
+
+            rho = atmo.Density(r - body.radius);
+            if (!(rho > 0.0)) return false;
+
+            double omega = Launch.GetSurfaceState.RotationOmega(mgr, group.CelestialBodyId);
+            vAir = vel - SurfaceFrame.SurfaceVelocity(pos, omega);
+            return true;
+        }
+
+        /// <summary>
+        /// 气动加速度（系统系；[A2-2]，计划稿 §2.2）。消费 `AeroDrag.Accel`（唯一算式）；
+        /// 三道"缺席即零"早退在 `TryGetAeroContext` 里（这里只再判外形）。
+        /// ⚠ 解析圆轨（`IsCircularOrbit`）走不到这里（圆轨是解析推进、不积分）——"解析轨与气动互斥"
+        ///   那条规则由 **[A6]** 的档位守卫负责（此处不预埋）。
+        /// </summary>
+        private DVector3 ComputeGroupAeroAccel(SpaceEntityGroup group, CelestialBodyManager mgr,
+            in DVector3 pos, in DVector3 vel)
+        {
+            if (!TryGetAeroContext(group, mgr, pos, vel, out double rho, out DVector3 vAir))
+                return DVector3.zero;
+
+            var shape = GetGroupAeroShape(group);
+            if (shape.IsDegenerate)
+            {
+                // [补1]：不许静默"零面积/零阻力"——生产者喂了退化外形（部件无 bounds）是数据事故，报一次。
+                if (System.Threading.Interlocked.CompareExchange(ref aeroShapeWarned, 1, 0) == 0)
+                    Log.Error("[大气·气动] 群 " + group.GroupId + " 外形退化（三轴 Cd·A 有 ≤0 项）⇒ 本步不产生阻力。" +
+                        "查部件 boundsSizeShip；[补1]：有 Map 组也要有显式 fallback，不许静默零面积。" +
+                        "（本条只报一次，后续同类不再刷屏）");
+                return DVector3.zero;
+            }
+
+            Quaternion rot = group.CurrentOrbit.rotation;
+            DVector3 axisFwd = DVector3.Rotate(DVector3.forward, rot);
+            DVector3 axisLeft = DVector3.Rotate(DVector3.left, rot);
+            DVector3 axisUp = DVector3.Rotate(DVector3.up, rot);
+            double mass = GetGroupMass(group, GetGroupPropulsionSource(group));
+            return AeroDrag.Accel(rho, vAir, shape, axisFwd, axisLeft, axisUp, mass);
+        }
+
+        /// <summary>
+        /// **进气道工质 Def 的一次解析缓存（[A3]）**：`DefDatabase` 查询只允许在主线程做，且只做一次
+        /// （解析点 = 物理步预暖段，与成员表/源表同处）；并行区只读这个静态字段。
+        /// ⚠ Def 在运行期只读 ⇒ 缓存无陈旧风险；**Def 缺席 ⇒ 保持 null ⇒ 进气整条路径缺席即零**
+        ///   （不报错：本 mod 的 Def 集是自带的，缺它就是"这一版没有进气"）。
+        /// </summary>
+        private static PropellantDef? intakeAirDefCache;
+
+        private static PropellantDef? IntakeAirDef
+        {
+            get
+            {
+                if (intakeAirDefCache == null)
+                    intakeAirDefCache = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_IntakeAir");
+                return intakeAirDefCache;
+            }
+        }
+
+        /// <summary>
+        /// **[A4 有 Map 侧] 对切片按包线 φ 缩放 + 真空不路由**（与无 Map 侧**同一条语义**）：
+        /// · φ **只乘推力、不乘流率**（低密度 = 同样的油少出力）；
+        /// · φ = 0（真空里的吸气式）⇒ **整条切片剔掉**（D5 网络可用性门控）⇒ `fTotal`/`mfTotal` 按保留项重算；
+        /// · **纯火箭（`envelopeTerms == null`）逐位不变**（一次比较就返回，连 ρ 都不取）。
+        /// 为什么放在这里而不是 `SpaceMapComp`：它是**帧/上下文**的事（要 ρ、v_air、Mach），
+        /// 而地图侧只认识"推力/流率"——半径对得上才不重复实现（与无 Map 侧共用 `TryGetAeroContext`）。
+        /// </summary>
+        private void ApplyMapThrustGates(SpaceEntityGroup group, CelestialBodyManager mgr,
+            in DVector3 pos, in DVector3 vel, IPropulsionSource? src, double dtSeconds,
+            List<ThrustSlice> slices, ref float fTotal, ref float mfTotal)
+        {
+            bool anyGate = false;
+            for (int i = 0; i < slices.Count; i++)
+            {
+                var n0 = slices[i].network;
+                if (n0 != null && (n0.envelopeTerms != null || n0.gasDraws != null)) { anyGate = true; break; }
+            }
+            if (!anyGate) return;                                                // 纯火箭 ⇒ 逐位不变
+
+            double rho = 0.0, rho0 = 0.0, mach = 0.0;
+            if (TryGetAeroContext(group, mgr, pos, vel, out double rhoC, out DVector3 vAirC))
+            {
+                rho = rhoC;
+                mach = AirBreathingCore.MachFromAirSpeed(vAirC.magnitude);
+                var b = mgr.GetBodyById(group.CelestialBodyId);
+                rho0 = b?.Atmosphere.rho0 ?? 0.0;
+            }
+            // 真空（取不到上下文）⇒ ρ=0 ⇒ a>0 的网 φ=0 ⇒ 下面会整条剔掉（正是 D5 要的门控）
+
+            float f = 0f, mf = 0f;
+            bool routedOff = false, flamedOut = false;
+            for (int i = slices.Count - 1; i >= 0; i--)
+            {
+                var sl = slices[i];
+                var net = sl.network;
+                if (net != null)
+                {
+                    // 门① 包线 `(ρ/ρ0)^a·f(M)`：φ = 0 ⇒ 不路由
+                    if (net.envelopeTerms != null)
+                    {
+                        double phi = AirBreathingCore.EnvelopeFactor(net.envelopeTerms, net.Thrust, rho, rho0, mach);
+                        if (!(phi > 0.0))
+                        {
+                            routedOff = true;
+                            slices.RemoveAt(i);
+                            continue;
+                        }
+                        sl.thrust = (float)(sl.thrust * phi);
+                    }
+                    // 门② 附带进气（空气）：抽不到 ⇒ 熄火（本步不出力、主工质不扣）
+                    //   与无 Map 侧**同一份算式**（`IntakeThrottleCap`）—— 那边在构造前算 cap 因而不建切片，
+                    //   这边在构造后按同一口径缩 F 与 ṁ（物理含义一致：流率被空气封顶）。
+                    if (net.gasDraws != null && src != null)
+                    {
+                        float cap = 1f;
+                        for (int g = 0; g < net.gasDraws.Count; g++)
+                        {
+                            var gd = net.gasDraws[g];
+                            if (gd.propellant == null) continue;
+                            double oneCap = AirBreathingCore.IntakeThrottleCap(src.GetPropellantMass(gd.propellant),
+                                dtSeconds, gd.flowKgPerSec, net.MassFlow);
+                            if (oneCap < cap) cap = (float)oneCap;
+                            if (cap <= 0f) break;
+                        }
+                        if (cap <= 0f)
+                        {
+                            flamedOut = true;
+                            slices.RemoveAt(i);            // 熄火：不建这条切片
+                            continue;
+                        }
+                        if (cap < 1f)
+                        {
+                            sl.thrust *= cap;
+                            sl.massFlow *= cap;            // 流率随空气封顶（与无 Map 侧同义）
+                        }
+                    }
+                    slices[i] = sl;
+                }
+                f += sl.thrust;
+                mf += sl.massFlow;
+            }
+            fTotal = f;
+            mfTotal = mf;
+
+            if (routedOff && !group.envelopeRoutedOffLogged)
+            {
+                group.envelopeRoutedOffLogged = true;
+                Log.Message(string.Format(
+                    "[大气·包线] G{0}（有 Map 侧）某网包线因子 0（ρ={1:F4E2}）⇒ 本步不路由该网（D5 门控）",
+                    group.GroupId, rho));
+            }
+            if (flamedOut && !group.intakeFlameoutLogged)
+            {
+                group.intakeFlameoutLogged = true;
+                Log.Message(string.Format(
+                    "[大气·进气] G{0}（有 Map 侧）熄火：空气不足 ⇒ 本步不出力、不耗主工质", group.GroupId));
+            }
+        }
+
+        /// <summary>
+        /// **群级进气面积**（m²·k）：Σ 各**未毁**部件的 `IntakeComponentData.intakeArea · coefficient`。
+        /// **没有进气道 ⇒ 0 ⇒ 一点不充**（[补1] 的"不许静默兜底"：不进气道这件事必须由生产者显式声明）。
+        /// 并行区只读调用（与 `GetGroupAeroShape` 同纪律；无 Map 与有 Map 都读 `e.Parts`）。
+        /// </summary>
+        private double GetGroupIntakeArea(SpaceEntityGroup group)
+        {
+            double area = 0.0;
+            foreach (int eid in group.GetEntityIds())
+            {
+                var e = GetEntityById(eid);
+                if (e == null) continue;
+                var parts = e.Parts;
+                for (int i = 0; i < parts.Count; i++)
+                {
+                    var p = parts[i];
+                    if (p.isDestroyed) continue;
+                    var intake = p.GetComponent<Components.IntakeComponentData>();
+                    if (intake == null) continue;
+                    double k = intake.coefficient > 0f ? intake.coefficient : 0.0;
+                    area += intake.intakeArea * k;
+                }
+            }
+            return area;
+        }
+
+        /// <summary>
+        /// **[A3] 本步进气充填量（kg，只算不写）**：主线程入账前的量。
+        /// 判据（计划稿 §2.3）：速率 = `k·A·ρ(h)·|v_air|`（唯一算式 = `AirBreathingCore.IntakeRateKgPerSec`），
+        /// 再按**罐余量**截断（`FillStep`）。三道缺席即零：① Def 缺席 ② 无进气道 ③ 罐满/无罐。
+        /// ⚠ 与阻力**共用** `TryGetAeroContext`（同一次 ρ/空速口径）；这里多一次调用是有意的：
+        ///   阻力只在该组"非圆轨"分支里算，而充填与"怎么推进"无关（悬浮档/解析档的船在大气里照样吸气）。
+        ///   成本 = 三道早退（真空里就是一次静态 bool 读）⇒ 与气动同量级。
+        /// ⚠ 解析圆轨（`IsCircularOrbit`）组也走这里：`TryGetAeroContext` 不含"解析档互斥"判定（那是 [A6] 的
+        ///   档位守卫）⇒ 解析档照充填 —— 这正是 D8 要的（档位只管受不受力，不管烧不烧料/吸不吸气）。
+        /// </summary>
+        private double ComputeGroupIntakeFill(SpaceEntityGroup group, CelestialBodyManager mgr,
+            in DVector3 pos, in DVector3 vel, double dtSeconds)
+        {
+            if (!(dtSeconds > 0.0)) return 0.0;
+            var airDef = IntakeAirDef;
+            if (airDef == null) return 0.0;                                                    // ① Def 缺席
+
+            if (!TryGetAeroContext(group, mgr, pos, vel, out double rho, out DVector3 vAir)) return 0.0;
+
+            // [A3] 有 Map 侧（2026-10-07 接线）：面积与余量都从**地图聚合**取（按工质那本容量账）
+            var mapComp = group.GetLinkedMapComp();
+            double area, room;
+            if (mapComp != null)
+            {
+                area = mapComp.TotalIntakeArea;
+                room = mapComp.GetPropellantRoom(airDef);
+            }
+            else
+            {
+                area = GetGroupIntakeArea(group);
+                room = GetGroupPropellantRoom(group, airDef);
+            }
+            if (!(area > 0.0)) return 0.0;                                                      // ② 无进气道
+            if (!(room > 0.0)) return 0.0;                                                       // ③ 罐满/无罐
+
+            double rate = AirBreathingCore.IntakeRateKgPerSec(1.0, area, rho, vAir.magnitude);
+            double add = AirBreathingCore.FillStep(rate, dtSeconds, 0.0, room);                   // 以"余量"为容器的截断
+            return add > 0.0 ? add : 0.0;
+        }
+
+        /// <summary>
+        /// 群内**某工质**的罐余量（kg）—— 无 Map 侧的唯一口径：Σ 实体 `propulsion` 同工质条目的
+        /// `capacity − mass`（逐条截断后求和 ⇒ 不会把"这条罐超容、那条罐空着"算成有余量）。
+        /// ⚠ 只服务**无 Map**组；有 Map 组走 `SpaceMapComp.GetPropellantRoom`（它按工质记容量，2026-10-07 补）。
+        /// </summary>
+        private double GetGroupPropellantRoom(SpaceEntityGroup group, PropellantDef def)
+        {
+            double room = 0.0;
+            if (def == null) return 0.0;
+            foreach (int eid in group.GetEntityIds())
+            {
+                var e = GetEntityById(eid);
+                if (e == null || e.propulsion == null) continue;
+                for (int i = 0; i < e.propulsion.Count; i++)
+                {
+                    var d = e.propulsion[i];
+                    if (d == null || d.propellant != def) continue;
+                    double r = d.capacity - d.mass;
+                    if (r > 0.0) room += r;
+                }
+            }
+            return room;
+        }
+
+        /// <summary>
+        /// **[A3] 进气充填的入账**（主线程唯一写点）：把 `kg` 沿**各实体的空气罐**按余量分摊
+        /// —— 与 `TryConsumePropellant` 沿实体分摊**同构**（一个加一个减，都"先吃余量大的、天然截断"）。
+        /// 入参是并行区按**群总余量**截断过的量；逐实体再按各自余量截断 ⇒ 合起来 = `min(群余量, kg)` ✓。
+        /// </summary>
+        private void ApplyGroupIntakeFill(SpaceEntityGroup group, double kg)
+        {
+            var def = IntakeAirDef;
+            if (def == null) return;
+
+            // [A3] 有 Map 侧：写进**地图的工质池**（与燃烧扣料同一个池子、同一条 API）
+            var mapComp = group.GetLinkedMapComp();
+            if (mapComp != null)
+            {
+                double room = mapComp.GetPropellantRoom(def);
+                if (room > 0.0) mapComp.AddPropellantMass(def, Math.Min(kg, room));
+                return;
+            }
+
+            double remaining = kg;
+            foreach (int eid in group.GetEntityIds())
+            {
+                if (remaining <= 0.0) break;
+                var e = GetEntityById(eid);
+                if (e != null) remaining -= e.TryFillPropellant(def, remaining);
+            }
+        }
+
         /// <summary>
         /// 主推轴世界方向（D15）：Map = mapComp.MainThrustAxis 随 rotation 旋转；
         /// 无 Map 主推方向型 = entity.mainAxisShip 随 rotation 旋转；全向类（无主推轴）= zero。
@@ -2249,27 +2831,39 @@ namespace PioneerFramework
         /// 在并行物理区调用（只写本 group 独占的 angularVelocity，与 pendingImpulse 同纪律）。
         /// </summary>
         private void AlignMainAxis(SpaceEntityGroup group, DVector3 targetDir, double dtSeconds)
+            => AlignShipAxis(group, GetMainThrustAxisSystem(group), targetDir, dtSeconds);
+
+        /// <summary>
+        /// **把船体的任意一条轴转到目标世界方向**（[A6+] 2026-10-06 抽自 `AlignMainAxis`，唯一实现）：
+        /// 收心正中（死区 `DefaultThrustAlignCos` ~1.5°）⇒ 消旋；否则按剩余夹角限速转动
+        /// （角速度 = 最短旋转轴 × 角速率，反平行时换一根垂直轴）。
+        ///
+        /// 两个使用者：① `AlignMainAxis`（**主推轴**，烧/预对准）；② **大气段顺气流指向**（**船体前轴 +z**）。
+        /// `currentAxisSystem` 必须是**单位**世界方向；零向量 ⇒ 直接返回（该轴无定义，如全向类的主推轴）。
+        /// 在并行物理区调用（只写本 group 独占的 `angularVelocity`，与 pendingImpulse 同纪律）。
+        /// </summary>
+        private static void AlignShipAxis(SpaceEntityGroup group, DVector3 currentAxisSystem,
+            DVector3 targetDir, double dtSeconds)
         {
-            DVector3 mainAxisSystem = GetMainThrustAxisSystem(group);
-            if (mainAxisSystem.sqrMagnitude < 1e-12)
-                return; // 无主推轴（全向类）：无姿态对准
+            if (currentAxisSystem.sqrMagnitude < 1e-12)
+                return; // 该轴无定义（如全向类的主推轴）：无对准语义
             DVector3 targetN = targetDir.normalized;
             if (targetN.sqrMagnitude < 1e-12)
             {
                 group.angularVelocity = DVector3.zero;
                 return;
             }
-            double dot = Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(mainAxisSystem, targetN)));
+            double dot = Math.Max(-1.0, Math.Min(1.0, DVector3.Dot(currentAxisSystem, targetN)));
             if (dot >= DefaultThrustAlignCos)
             {
                 group.angularVelocity = DVector3.zero; // 已收心到正中（≤~1.5°）：消旋，防 burn 期间漂移
                 return;
             }
             double error = Math.Acos(dot);
-            // 最短旋转轴 = mainAxis × target（右手系）；反平行时叉积退化 → 任取垂直轴
-            DVector3 rotAxis = DVector3.Cross(mainAxisSystem, targetN);
+            // 最短旋转轴 = 该轴 × target（右手系）；反平行时叉积退化 → 任取垂直轴
+            DVector3 rotAxis = DVector3.Cross(currentAxisSystem, targetN);
             if (rotAxis.sqrMagnitude < 1e-12)
-                rotAxis = DVector3.Cross(mainAxisSystem, Math.Abs(mainAxisSystem.y) < 0.9 ? DVector3.up : DVector3.forward);
+                rotAxis = DVector3.Cross(currentAxisSystem, Math.Abs(currentAxisSystem.y) < 0.9 ? DVector3.up : DVector3.forward);
             DVector3 axisN = rotAxis.normalized;
             // 剩余夹角小于一步最大转角 → 降速收敛（避免越过目标震荡）
             double rate = Math.Min(group.MaxAngularRate, error / Math.Max(dtSeconds, 1e-9));
@@ -2293,11 +2887,21 @@ namespace PioneerFramework
                 SteeringController.Close();
                 return;
             }
-            var mapComp = group.GetLinkedMapComp();
-            if (mapComp == null) return; // 无 Map 船暂不支持操舵
-
             bool anyInput = SteeringController.AnyTranslation || SteeringController.AnyRotation
                 || SteeringController.SasKind != SasTargetKind.None;
+
+            // ── [A8]/D7 降级触发①「**玩家下令（操舵台接管）**」：接管即**退出悬浮** ──
+            //    ⚠ **必须在地图门之前**（2026-10-07 自动判据抓到）：`ApplySteering` 对无 Map 船是**早退**的，
+            //    原先写在门后 ⇒ 无 Map 组的接管永远不触发（判据当场红：hoverActive=True）。
+            //    接管语义与"这条船能不能被操舵"无关：玩家按下了接管，悬浮（自动驾驶的工作模式）就该让位。
+            if (anyInput && group.hoverActive)
+            {
+                SetHover(group, false);
+                Log.Message(string.Format("[档位] G{0} 操舵台接管 ⇒ 退出悬浮（D7 降级触发①：玩家下令）", group.GroupId));
+            }
+
+            var mapComp = group.GetLinkedMapComp();
+            if (mapComp == null) return; // 无 Map 船暂不支持操舵
 
             // D10：任何操舵输入 → 手动接管：中止 burn、清空机动队列与引导
             if (anyInput)
@@ -2326,6 +2930,14 @@ namespace PioneerFramework
                 slices.Clear();
                 mapComp.GetManualThrustAlong(transDir, group.CurrentOrbit.rotation, DefaultThrustConeCos,
                     group.burnEnabledNetworks, mapComp.armedGroupsMask, slices, out float f, out float mf);
+                // [A4] 手动推力同样过包线（真空里吸气式网不出力；火箭恒 1.0 ⇒ 逐位不变）
+                var steerMgr = celestialRef.Get();
+                if (steerMgr != null)
+                {
+                    var steerSrc = GetGroupPropulsionSource(group);
+                    ApplyMapThrustGates(group, steerMgr, group.CurrentOrbit.positionSystem.v,
+                        group.CurrentOrbit.velocitySystem.v, steerSrc, dtSeconds, slices, ref f, ref mf);
+                }
                 bool burning = false;
                 if (f > 0f && mf > 0f)
                 {
@@ -2388,11 +3000,689 @@ namespace PioneerFramework
             }
         }
 
+        // ══════════════════════════════════════════════════════════════════════════
+        //  [A7] 悬浮（定点保持）—— 主线程，紧挨操舵之后（同一套"算片 → 冲量 → 扣料"链条）
+        // ══════════════════════════════════════════════════════════════════════════
+
+        /// <summary>在悬浮的组数（**静态计数**：没有它时整条路径一次比较就返回 ⇒ "缺席即零"）。</summary>
+        private static int hoverActiveCount;
+
+        /// <summary>主线程用的引力 scratch（悬浮每步要在**并行相位之外**取一次本地场）。</summary>
+        private readonly GravityScratch hoverScratch = new GravityScratch();
+
+        /// <summary>悬浮读数**按物理秒**累积（每 10 s 一行；踩过"用 tick 差当秒"的坑，见读数块注释）。</summary>
+        private const double HoverLogIntervalSeconds = 10.0;
+
+        /// <summary>
+        /// **开/关悬浮（唯一入口）**：开时把**当前星下点**锁成定点（固连经纬度 + 当前高度）。
+        /// 与 `SteeringController` 无关（本刀不做玩家 UI —— 船上操舵台/PFView 那条线是视觉/交互 WIP 的属地）。
+        /// </summary>
+        public bool SetHover(SpaceEntityGroup group, bool on) => SetHover(group, on, analytic: false);
+
+        /// <summary>
+        /// **[A8] 开/关悬浮 + 选档位**（`analytic` = 解析档）。解析档的**准入判据**照 D8 的先例
+        /// （tile-landing"付不起直接拒绝"）：**必须有全矢量（RCS）网** —— 否则等效计费没有 `ve` 可依、
+        /// 也没法在退出解析档时兑现 ⇒ 直接拒绝并如实报。
+        /// **进出必须显式**（D7）：两条路都写日志，含**当前档位 + 计费速率**（面板口径的日志版）。
+        /// </summary>
+        public bool SetHover(SpaceEntityGroup group, bool on, bool analytic)
+        {
+            if (group == null) return false;
+            // [模式互斥] 搬运中不许开悬浮（理由见 `CanHover`）：两者都"每步改位置" ⇒ 同时跑就是互相打架。
+            if (on && group.transferActive)
+            {
+                Log.Warning(string.Format(
+                    "[档位] G{0} 拒绝开悬浮：**正在搬运中**（搬运与定点保持互斥；先「停止」或等它到达）", group.GroupId));
+                return false;
+            }
+            if (on && analytic && !CanHover(group, analytic: true, out string? whyAna))
+            {
+                Log.Warning(string.Format("[档位] G{0} 拒绝进解析档：{1}（D8：付不起直接拒绝）",
+                    group.GroupId, whyAna ?? "原因未给"));
+                return false;
+            }
+            if (!SetHoverCore(group, on)) return false;
+            if (on) group.hoverAnalytic = analytic;
+            LogTier(group, on ? (analytic ? "进解析档（定点解析，照扣料）" : "进物理档（定点保持控制器）")
+                              : "退出悬浮 ⇒ 回默认（解析搬运/巡航）");
+            return true;
+        }
+
+        /// <summary>
+        /// **悬浮可用性预检**（**只读**、不改任何状态）——控制台拿它把"为什么按不动 / 开了会怎样"
+        /// **写在界面上**，而不是让玩家去猜（2026-10-07：控制台原来给的是"不在大气里/没有网/没引擎"三选一，
+        /// 玩家只能看日志猜是哪一条 ⇒ 改成**唯一出处**的预检，返回**具体**原因）。
+        ///
+        /// 与生产门**同一份判据**（本方法就是 `SetHover`/`SwitchHoverTier` 用的那道门，不再各写一份）：
+        /// · 没有天体 / 在地表以下 ⇒ 不可用（硬拒）；
+        /// · **解析档**必须有全矢量（RCS）网（`ve` 可依）⇒ 没有则硬拒；
+        /// · **物理档**生产上允许开 ⇒ 本方法**放行但给出警告语**（"全矢量网为空 ⇒ 开了会掉"）——
+        ///   实测：玩家对一台**没有 RCS** 的试验船开了物理档，船直接掉到地上（`[悬浮] … 推力不足`）。
+        /// </summary>
+        public bool CanHover(SpaceEntityGroup group, bool analytic, out string? reason)
+        {
+            reason = null;
+            if (group == null) { reason = "编队不存在"; return false; }
+            var mgr = celestialRef.Get();
+            var body = mgr?.GetBodyById(group.CelestialBodyId);
+            if (body == null) { reason = "找不到天体"; return false; }
+            if (group.CurrentOrbit.positionSystem.v.magnitude <= body.radius)
+            {
+                reason = "本船在地表以下 ⇒ 没有可锁的定点";
+                return false;
+            }
+            // **[模式互斥]** 搬运中不能开悬浮：两者都"每步改位置"（搬运按航线推、悬浮按定点按），
+            // 一起跑就是互相打架（2026-10-07 用户实测："船疑似被锚定死了，走不出去"）。
+            if (group.transferActive)
+            {
+                reason = "正在搬运中 ⇒ 悬浮不可用（先按「停止」或等它到达）";
+                return false;
+            }
+            // **[D7②] 交战 ⇒ 解析档不可用**（用户 2026-10-08：用现成的"有射弹"信号，不新建交战触发）
+            if (analytic && CombatActionActive)
+            {
+                reason = "处于交战动作（有射弹在飞 / 导弹终末攻击）⇒ 解析档（定点解析）不可用；物理档照常（降级只加精度）";
+                return false;
+            }
+            var src = GetGroupPropulsionSource(group);
+            if (src == null || EffectiveFullVectorVe(src) <= 0f)
+            {
+                reason = "没有可用的全矢量（RCS）网：解析档没有 ve 可计费；物理档开了也纠不动（会掉）";
+                return !analytic;     // 物理档生产上允许开 ⇒ 放行（警告语已给）
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// **[A8] 档位切换（解析 ⇄ 物理）**：**只翻档位、不重锁定点** ——
+        /// 定点是**工作模式**的属性（D9），档位只管"受不受力"（D7）⇒ 切档不该把船按到"现在所处的位置"上。
+        /// ⚠ 实测踩过：切档误走"重开悬浮"⇒ 重新锁一次定点（日志第二条"开启"、切回后横向误差 434 m 再收敛）。
+        /// </summary>
+        public bool SwitchHoverTier(SpaceEntityGroup group, bool analytic)
+        {
+            if (group == null || !group.hoverActive) return false;
+            if (group.hoverAnalytic == analytic) return true;
+            if (analytic && !CanHover(group, analytic: true, out string? whyAna))
+            {
+                Log.Warning(string.Format("[档位] G{0} 拒绝切解析档：{1}（D8：付不起直接拒绝）",
+                    group.GroupId, whyAna ?? "原因未给"));
+                return false;
+            }
+            group.hoverAnalytic = analytic;
+            LogTier(group, analytic ? "切解析档（定点解析，照扣料；**定点不变**）"
+                                    : "切物理档（定点保持控制器；**定点不变**）");
+            return true;
+        }
+
+        /// <summary>全矢量（RCS）网的有效 ve（解析档计费用；与物理档用同一批网 ⇒ 两档账单可比）。</summary>
+        private static float EffectiveFullVectorVe(IPropulsionSource src)
+        {
+            float f = 0f, mf = 0f;
+            var nets = src.Networks;
+            for (int i = 0; i < nets.Count; i++)
+            {
+                if (!nets[i].HasRcsEngines || nets[i].MassFlow <= 0f) continue;
+                f += nets[i].Thrust;
+                mf += nets[i].MassFlow;
+            }
+            return mf > 0f ? f / mf : 0f;
+        }
+
+        /// <summary>
+        /// **[A8] 档位日志（D7"进出必须显式"）**：报**档位 + 耗料率 + 还能撑多久** ——
+        /// 面板口径的日志版（面板 UI 属视觉/交互线，本刀先只保证"玩家能在日志里看到自己在哪档"）。
+        /// </summary>
+        private void LogTier(SpaceEntityGroup group, string what)
+        {
+            var src = GetGroupPropulsionSource(group);
+            double mass = GetGroupMass(group, src);
+            var mgr = celestialRef.Get();
+            var body = mgr != null ? mgr.GetBodyById(group.CelestialBodyId) : null;
+            double g = body != null && body.radius > 0.0
+                ? SpaceConstants.PrimaryGravitationalParameter / (body.radius * body.radius)
+                : 0.0;
+            double ve = src != null ? EffectiveFullVectorVe(src) : 0f;
+            double rate = ve > 0.0 ? mass * g / ve : 0.0;          // 悬浮的等效质量流率（kg/s）
+            double fuel = src != null ? src.TotalPropellantMass : 0.0;
+            Log.Message(string.Format(
+                "[档位] G{0} {1}｜档位={2}｜全矢量 ve={3:F0} m/s｜等效耗料率 ≈{4:F2} kg/s｜余料 {5:F0} kg（≈{6:F0} s）",
+                group.GroupId, what, group.hoverActive ? (group.hoverAnalytic ? "解析" : "物理") : "—（回默认）",
+                ve, rate, fuel, rate > 0.0 ? fuel / rate : 0.0));
+        }
+
+        private bool SetHoverCore(SpaceEntityGroup group, bool on)
+        {
+            if (group == null) return false;
+            if (!on)
+            {
+                if (group.hoverActive) hoverActiveCount--;
+                group.hoverActive = false;
+                group.hoverAnalytic = false;   // [A8] 档位随悬浮一起清（下次开启重新选档）
+                return true;
+            }
+            var mgr = celestialRef.Get();
+            if (mgr == null) return false;
+            var body = mgr.GetBodyById(group.CelestialBodyId);
+            if (body == null) return false;
+
+            double omega = Launch.GetSurfaceState.RotationOmega(mgr, group.CelestialBodyId);
+            var pos = group.CurrentOrbit.positionSystem.v;
+            double r = pos.magnitude;
+            if (!(r > body.radius)) return false;                       // 在地表以下 ⇒ 不锁
+            // ⚠ tick 口径 = **物理时间轴**（`GetPhysicsTickSafe`）：与固连系的其它调用点同一根轴
+            //   （用 `TicksGame` 会在时间倍率下把经度算歪 ω·Δt）。
+            var (lat, lon) = SurfaceFrame.EciToLongLat(pos, omega, TimeScaleManager.GetPhysicsTickSafe());
+            group.hoverLatRad = lat;
+            group.hoverLonRad0 = lon;
+            group.hoverAltitudeMeters = r - body.radius;
+            if (!group.hoverActive) hoverActiveCount++;
+            group.hoverActive = true;
+            group.hoverShortfallLogged = false;
+            Log.Message(string.Format("[悬浮] G{0} 开启：锁定点 φ={1:F5} rad λ0={2:F5} rad 高度 {3:F1} m（本刀口径 = 全矢量 RCS 推力 + 锁铅垂）",
+                group.GroupId, lat, lon, group.hoverAltitudeMeters));
+            return true;
+        }
+
+        /// <summary>
+        /// **[A8] 解析搬运的每步记账与到达清单**（主线程）：
+        /// · 记 `dv = Δv_total·dt/T`（**末步截断**），扣 `m·dv/ve`（沿途全部网络按 ṁ 比例分账，与其它路径同口径）；
+        /// · 料尽 ⇒ **显式退出**（不静默、不留"免费档"）；
+        /// · `u ≥ 1` ⇒ **精确落位**到目标状态 + 清搬运单 + 一行日志（D7"进出必须显式"）。
+        /// </summary>
+        private void ApplyAnalyticTransfer(double dtSeconds, double physicsTick, CelestialBodyManager mgr)
+        {
+            if (!(dtSeconds > 0.0)) return;
+            foreach (var group in groups.Values)
+            {
+                if (!group.transferActive) continue;
+                var src = GetGroupPropulsionSource(group);
+                float ve = src != null ? src.EffectiveVe : 0f;
+                if (src == null || ve <= 0f)
+                {
+                    Log.Warning(string.Format("[搬运] G{0} 中断：没有引擎（或 ve≤0）", group.GroupId));
+                    group.transferActive = false;
+                    continue;
+                }
+
+                double elapsed = physicsTick - group.transferStartTick;
+                double u = AnalyticTransferCore.Progress(elapsed, group.transferDuration);
+                double dtUsed = Math.Min(dtSeconds, Math.Max(group.transferDuration - (elapsed - dtSeconds), 0.0));
+                if (dtUsed < 0.0) dtUsed = 0.0;
+
+                // **[D7②] 交战中止**（用户 2026-10-08 裁定：用现成的"有射弹"信号）：
+                //   解析搬运是"轨上"的 ⇒ 交战中不该继续享受"不模拟受力"的特权 ⇒ 中途**中止**、
+                //   交还物理档（船按当前状态继续飞，玩家可以物理档机动/悬浮）。停在哪 = 当前位置。
+                if (u < 1.0 && CombatActionActive)
+                {
+                    group.transferActive = false;
+                    group.OrbitDirty = true;
+                    Log.Message(string.Format(
+                        "[搬运] G{0} **中止**（交战动作出现 ⇒ 解析轨降级为物理档）：停在当前位置（已到 u={1:F2}）",
+                        group.GroupId, u));
+                    TryResumeHoverAfterTransfer(group, src, "中止");   // 起搬前在悬着 ⇒ 就地恢复（不然在大气里会开始掉）
+                    continue;
+                }
+
+                if (u < 1.0 && dtUsed > 0.0)
+                {
+                    double dvStep = AnalyticTransferCore.DvThisStep(group.transferDvTotal, group.transferDuration, dtUsed);
+                    double mass = GetGroupMass(group, src);
+                    double dm = AnalyticTransferCore.PropellantThisStep(mass, dvStep, ve);
+                    if (dm > 0.0)
+                    {
+                        float mfTotal = 0f;
+                        var nets = src.Networks;
+                        for (int i = 0; i < nets.Count; i++)
+                            if (nets[i].MassFlow > 0f) mfTotal += nets[i].MassFlow;
+                        double got = 0.0;
+                        if (mfTotal > 0f)
+                        {
+                            for (int i = 0; i < nets.Count; i++)
+                            {
+                                var n = nets[i];
+                                if (n.MassFlow <= 0f || n.propellant == null) continue;
+                                double share = dm * ((double)n.MassFlow / mfTotal);
+                                got += ConsumeGroupPropellant(group, n.propellant, (float)share);
+                            }
+                        }
+                        // 料尽 ⇒ 显式退出（与悬浮解析档同一条纪律）
+                        if (got < dm * 0.5)
+                        {
+                            group.transferActive = false;
+                            Log.Message(string.Format("[搬运] G{0} **料尽** ⇒ 退出搬运（不静默；已到 u={1:F2}）",
+                                group.GroupId, u));
+                            continue;
+                        }
+                    }
+                }
+
+                if (u >= 1.0)
+                {
+                    group.transferActive = false;
+                    group.CurrentOrbit.positionSystem = (SystemVec3)group.transferToPos;   // **精确落位**
+                    group.CurrentOrbit.velocitySystem = (SystemVec3)group.transferToVel;
+                    // 到达误差**当场量**（就在写完之后、同一步内）—— 事后重建会掺进"一步的位移"（判据侧踩过三次）
+                    group.transferArrivalErrorMeters =
+                        (group.CurrentOrbit.positionSystem.v - group.transferToPos).magnitude;
+                    group.OrbitDirty = true;
+                    if (!group.transferArriveLogged)
+                    {
+                        group.transferArriveLogged = true;
+                        Log.Message(string.Format(
+                            "[搬运] G{0} **到达**（解析档）：Δv 记账 {1:F1} m/s｜落位误差 {2:F3} m｜余料 {3:F0} kg",
+                            group.GroupId, group.transferDvTotal, group.transferArrivalErrorMeters,
+                            src.TotalPropellantMass));
+                    }
+                    // **到点恢复悬浮**（起搬前在悬着的话）：大气层里"搬完不悬"= 开始掉（实测 30 km 掉到地面、
+                    // 撞地 339.7 m/s ⇒ 坠毁 + 地图销毁）。恢复点 = 到达点（`SetHoverCore` 按**当前位置**锁点 ✓）。
+                    TryResumeHoverAfterTransfer(group, src, "到达");
+                }
+                else if (!group.transferMidLogged && u >= 0.5)
+                {
+                    group.transferMidLogged = true;   // 中点报一行（长搬运才有；防"整段无声"）
+                    Log.Message(string.Format("[搬运] G{0} 中点 u=0.50｜余料 {1:F0} kg", group.GroupId, src.TotalPropellantMass));
+                }
+            }
+        }
+
+        /// <summary>
+        /// **悬浮控制（每物理步，主线程）**：定点误差 → 指令加速度 → 全矢量推力 → 冲量 + 扣料。
+        ///
+        /// 口径（本刀，与计划稿 §2.6 一致）：
+        ///   · 指令 = `HoverCore.CommandAccel(fieldAcc, posErr, velErr)`（**每步刷新引力抵消**，
+        ///     台架实测这比"常推力"抖幅小得多，且对 dt 不敏感 —— 见 `HoverBenchTests`）；
+        ///   · 推力**只走全矢量（RCS / 垂直推进器）网**：悬浮要锁铅垂（D10），主引擎会对准而把船转歪；
+        ///     本刀不转船体，RCS 不够就是"推力不足"（如实报，不偷偷给主网）。
+        ///   · 包线与进气**照常生效**（吸气式 RCS 在高空一样衰减/抽干）⇒ 悬浮不能绕开大气模型。
+        ///   · 冲量进 `pendingImpulse` ⇒ 本步 `ApplyPendingImpulses` 立即生效（与手动操舵同相）。
+        /// </summary>
+        private void ApplyHover(double dtSeconds, double physicsTick, CelestialBodyManager mgr)
+        {
+            if (hoverActiveCount <= 0 || !(dtSeconds > 0.0)) return;
+
+            foreach (var group in groups.Values)
+            {
+                if (!group.hoverActive) continue;
+                if (!group.IsMovable || !group.IsActive) continue;
+
+                var body = mgr.GetBodyById(group.CelestialBodyId);
+                if (body == null) continue;
+                double omega = Launch.GetSurfaceState.RotationOmega(mgr, group.CelestialBodyId);
+
+                var (tPos, tVel) = HoverCore.TargetState(body.radius, group.hoverLatRad, group.hoverLonRad0,
+                    group.hoverAltitudeMeters, omega, physicsTick);
+                var pos = group.CurrentOrbit.positionSystem.v;
+                var vel = group.CurrentOrbit.velocitySystem.v;
+
+                // 本地场（主线程算一次；掩码/多体都在里面 ⇒ 与积分用的是同一个场）
+                var sources = ResolveSystemSources(mgr, group, physicsTick, hoverScratch);
+                ComputeGroupFieldAccelJerk(group, mgr, physicsTick, hoverScratch, sources,
+                    out DVector3 fieldAcc, out _, out _, out _, timeSegment: false);
+
+                // ⚠ 只做**半步重力回正**（实测已验：稳态偏置 162 m ⇒ 5.1 m）；**定点前馈暂不加** ——
+                //   1-D 台架验证不了它（没建模切向运动，符号/相位反复翻）⇒ 另案：要加就配 2-D 台架。
+                //   残留的 +5.1 m = `ω²r/Kp`（PD 不带前馈时的固有偏置），是**已知且已量化**的。
+                DVector3 aCmd = HoverCore.CommandAccel(fieldAcc, tPos - pos,
+                    tVel - HoverCore.DebiasVelocity(vel, fieldAcc, dtSeconds),   // 半步重力回正（见 HoverCore）
+                    feedForwardAccel: HoverCore.TargetAccel(tPos, omega));        // 定点前馈（2-D 台架验过后上线）
+                double dvWanted = aCmd.magnitude * dtSeconds;
+                if (!(dvWanted > 1e-9)) continue;                        // 已在定点（死区内）⇒ 本步不点火
+
+                // 全矢量网可用推力（含包线 + 空气门控；与燃烧路径同源的两条算式）
+                var src = GetGroupPropulsionSource(group);
+                if (src == null) continue;
+                var nets = src.Networks;                                 // 解析档与物理档**同源**（两档账单才可比）
+
+                // ── [A8] **解析档**：不出推力、不算误差 ⇒ 只按 D8 等效计费（`m·g·dt/ve`）扣料 ──
+                //   位置由物理区的定点解析给出（见 ComputeGroupPhysics 的同名分支）⇒ 这里只管账。
+                //   ⚠ 料尽必须**显式退出解析档**（D7：进出都必须写日志）——不然就成了"免费档"。
+                if (group.hoverAnalytic)
+                {
+                    float veA = EffectiveFullVectorVe(src);
+                    double gMagA = fieldAcc.magnitude;
+                    double dvA = HoverCore.EquivalentDvPerStep(gMagA, dtSeconds);
+                    if (veA <= 0f || !(dvA > 0.0))
+                    {
+                        LogTier(group, "解析档中止（没有可用全矢量 ve）⇒ 退出悬浮");
+                        SetHover(group, false);
+                        continue;
+                    }
+                    double dmA = GetGroupMass(group, src) * dvA / veA;
+                    float mfA = 0f;
+                    for (int i = 0; i < nets.Count; i++)
+                    {
+                        var nA = nets[i];
+                        if (!nA.HasRcsEngines || nA.MassFlow <= 0f || nA.propellant == null) continue;
+                        mfA += nA.MassFlow;
+                    }
+                    bool dryA = mfA <= 0f;
+                    double gotA = 0.0;
+                    if (!dryA)
+                    {
+                        for (int i = 0; i < nets.Count; i++)
+                        {
+                            var nA = nets[i];
+                            if (!nA.HasRcsEngines || nA.MassFlow <= 0f || nA.propellant == null) continue;
+                            double shareA = dmA * ((double)nA.MassFlow / mfA);
+                            gotA += ConsumeGroupPropellant(group, nA.propellant, (float)shareA);
+                        }
+                        dryA = gotA < dmA * 0.5;   // 抽不够（料尽）⇒ 判干
+                    }
+                    if (dryA)
+                    {
+                        LogTier(group, "解析档**料尽** ⇒ 退出悬浮（不静默）");
+                        SetHover(group, false);
+                        continue;
+                    }
+                    // 解析档的读数（**必须打**：这一档的看点就是"位置被钉死" ⇒ 区间 min/max 宽度应为 0）
+                    if (DebugDetailedSteering)
+                    {
+                        double rNowA = pos.magnitude;
+                        DVector3 radHatA = rNowA > 1e-9 ? pos * (1.0 / rNowA) : DVector3.up;
+                        double eA = DVector3.Dot(pos - tPos, radHatA);
+                        double vA = DVector3.Dot(vel, radHatA);
+                        group.hoverLogErrSum += eA; group.hoverLogVSum += vA; group.hoverLogCount++;
+                        if (eA < group.hoverLogErrMin) group.hoverLogErrMin = eA;
+                        if (eA > group.hoverLogErrMax) group.hoverLogErrMax = eA;
+                        group.hoverLogAccumSeconds += dtSeconds;
+                        if (group.hoverLogAccumSeconds >= HoverLogIntervalSeconds)
+                        {
+                            double nA = Math.Max(group.hoverLogCount, 1);
+                            Log.Message(string.Format(
+                                "[悬浮·解析档] G{0} 高度差 现{1:F3}｜区间[{2:F3},{3:F3}]均{4:F3}｜径向速度 现{5:F3}｜" +
+                                "横向{6:F2}｜**本步记账 Δv={7:F4} m/s ⇒ 耗料 {8:F3} kg**｜料{9:F0} kg",
+                                group.GroupId, eA, group.hoverLogErrMin, group.hoverLogErrMax, group.hoverLogErrSum / nA,
+                                vA, (tPos - pos).magnitude, dvA, gotA, src.TotalPropellantMass));
+                            group.hoverLogAccumSeconds = 0.0;
+                            group.hoverLogErrMin = double.MaxValue;
+                            group.hoverLogErrMax = double.MinValue;
+                            group.hoverLogErrSum = 0.0;
+                            group.hoverLogVSum = 0.0;
+                            group.hoverLogCount = 0;
+                        }
+                    }
+                    continue;
+                }
+                var hoverSlices = hoverSliceScratch;
+                hoverSlices.Clear();
+                double fTotal = 0.0, mfTotal = 0.0;
+                for (int i = 0; i < nets.Count; i++)
+                {
+                    var n = nets[i];
+                    if (!n.HasRcsEngines || n.MassFlow <= 0f) continue;
+                    if (n.propellant == null || n.AvailableMass(src) <= 0f) continue;
+
+                    float envFactor = 1f;
+                    if (n.envelopeTerms != null)
+                    {
+                        double rhoH = 0.0;
+                        DVector3 vAirH = DVector3.zero;
+                        if (TryGetAeroContext(group, mgr, pos, vel, out double rhoCtx, out DVector3 vAirCtx))
+                        { rhoH = rhoCtx; vAirH = vAirCtx; }
+                        double phiH = AirBreathingCore.EnvelopeFactor(n.envelopeTerms, n.Thrust, rhoH, body.Atmosphere.rho0,
+                            AirBreathingCore.MachFromAirSpeed(vAirH.magnitude));
+                        if (!(phiH > 0.0)) continue;                     // 真空 ⇒ 吸气式网不出力（D5 同一条门控）
+                        envFactor = (float)phiH;
+                    }
+                    float cap = 1f;
+                    if (n.gasDraws != null)
+                    {
+                        for (int g = 0; g < n.gasDraws.Count; g++)
+                        {
+                            var gd = n.gasDraws[g];
+                            if (gd.propellant == null) continue;
+                            double oneCap = AirBreathingCore.IntakeThrottleCap(src.GetPropellantMass(gd.propellant),
+                                dtSeconds, gd.flowKgPerSec, n.MassFlow);
+                            if (oneCap < cap) cap = (float)oneCap;
+                        }
+                        if (cap <= 0f) continue;                         // 空气抽干 ⇒ 熄火（悬浮也不例外）
+                    }
+                    float fNet = (float)(n.Thrust * (double)cap * envFactor);
+                    hoverSlices.Add(new ThrustSlice { network = n, thrust = fNet, massFlow = n.MassFlow * cap });
+                    fTotal += fNet;
+                    mfTotal += n.MassFlow * cap;
+                }
+
+                double mass = GetGroupMass(group, src);
+
+                // ── [A7] 周期读数（**按物理秒累积**，不按 tick 差 —— 2026-10-06 实测踩过：
+                //    这个 mod 里 1 tick ≈ 1 物理秒，写成 `TicksGame + 600` 本意"10 秒"实际成了 10 分钟，
+                //    整段悬浮只打出一行。放在"推力不足"检查**之前**：料尽那一刻也要看得见。──
+                if (DebugDetailedSteering)
+                {
+                    DVector3 dPosR = pos - tPos;
+                    double rNow = pos.magnitude;
+                    DVector3 radialHat = rNow > 1e-9 ? pos * (1.0 / rNow) : DVector3.up;
+                    double eNow = DVector3.Dot(dPosR, radialHat);        // 正 = 高于目标
+                    double vRadNow = DVector3.Dot(vel, radialHat);       // 正 = 上升
+                    double gRadNow = DVector3.Dot(fieldAcc, radialHat);
+
+                    // 区间统计（2026-10-06 第三轮实测后加）：单点读数**看不出**"真在漂"还是"相位锁定的振荡"
+                    // （上一轮读数里"高度差恒定 + 径向速度恒定"两者自相矛盾，缺的就是这一组数）。
+                    group.hoverLogErrSum += eNow;
+                    group.hoverLogVSum += vRadNow;
+                    group.hoverLogCount++;
+                    if (eNow < group.hoverLogErrMin) group.hoverLogErrMin = eNow;
+                    if (eNow > group.hoverLogErrMax) group.hoverLogErrMax = eNow;
+
+                    if (group.hoverLogCount == 1)   // 首次给基线（开悬浮那一刻的半径/场/ρ）
+                    {
+                        group.hoverLogRadius0 = rNow;
+                        Log.Message(string.Format(
+                            "[悬浮] G{0} 起点：船半径 {1:F1} m｜目标半径 {2:F1} m｜场径向 {3:F4} m/s²｜定点高 {4:F1} m｜ρ {5:F5} kg/m³",
+                            group.GroupId, rNow, tPos.magnitude, gRadNow, group.hoverAltitudeMeters,
+                            TryGetAeroContext(group, mgr, pos, vel, out double rho0L, out _) ? rho0L : 0.0));
+                    }
+
+                    group.hoverLogAccumSeconds += dtSeconds;
+                    if (group.hoverLogAccumSeconds >= HoverLogIntervalSeconds)
+                    {
+                        double n = Math.Max(group.hoverLogCount, 1);
+                        Log.Message(string.Format(
+                            "[悬浮] G{0} 高度差 现{1:F1}｜区间[{2:F1},{3:F1}]均{4:F1}｜径向速度 现{5:F2}均{6:F2}｜" +
+                            "半径 船{7:F1}(起始{8:F1})目标{9:F1}｜场径向{10:F4}｜横向现{11:F1}｜速度误差{12:F2}｜" +
+                            "指令{13:F3} 实给{14:F3}｜可用a{15:F3}｜料{16:F0} kg",
+                            group.GroupId,
+                            eNow, group.hoverLogErrMin, group.hoverLogErrMax, group.hoverLogErrSum / n,
+                            vRadNow, group.hoverLogVSum / n,
+                            rNow, group.hoverLogRadius0, tPos.magnitude,
+                            gRadNow,
+                            (dPosR - radialHat * eNow).magnitude, (vel - tVel).magnitude,
+                            dvWanted, fTotal > 0.0 ? Math.Min(dvWanted, mass > 0.0 ? fTotal / mass * dtSeconds : 0.0) : 0.0,
+                            mass > 0.0 ? fTotal / mass : 0.0, src.TotalPropellantMass));
+                        group.hoverLogAccumSeconds = 0.0;
+                        group.hoverLogErrMin = double.MaxValue;
+                        group.hoverLogErrMax = double.MinValue;
+                        group.hoverLogErrSum = 0.0;
+                        group.hoverLogVSum = 0.0;
+                        group.hoverLogCount = 0;
+                    }
+                }
+
+                if (!(fTotal > 0.0) || !(mfTotal > 0.0))
+                {
+                    if (!group.hoverShortfallLogged)
+                    {
+                        group.hoverShortfallLogged = true;
+                        // 读数要能自解释（2026-10-06 首轮实测的教训）：只写"推力不足"会让下一个人
+                        // 以为是"没装 RCS"，而实测的真相是"**全矢量网被抽干了**"（场景把船扔成惯性零速、
+                        // 控制器去追 523 m/s 的地面共转目标 ⇒ 3000 kg 烧光）。⇒ 网数/余料一并报出来。
+                        int rcsNets = 0, rcsDry = 0;
+                        for (int i = 0; i < nets.Count; i++)
+                        {
+                            if (!nets[i].HasRcsEngines || nets[i].MassFlow <= 0f) continue;
+                            rcsNets++;
+                            if (nets[i].propellant == null || nets[i].AvailableMass(src) <= 0f) rcsDry++;
+                        }
+                        Log.Warning(string.Format(
+                            "[悬浮] G{0} 推力不足 ⇒ 本步不纠偏（会掉）｜全矢量网 {1} 条（其中 **料尽/无料** {2} 条）｜全组余料 {3:F0} kg｜可用 a=0",
+                            group.GroupId, rcsNets, rcsDry, src.TotalPropellantMass));
+                        // **料尽 ⇒ 显式退出**（2026-10-07 自动判据抓到：原先物理档料尽后 `hoverActive` 仍是 true，
+                        //   等于"嘴上还悬着、身子在掉" —— 与设计稿引的先例"燃料干涸自动退出"（§1.2）相悖，
+                        //   也与解析档的料尽退出不对称）。只有**真的没料**才退；"没装网"这类留着让人看见。
+                        if (HoverCore.ShouldExitHoverWhenDry(rcsNets, rcsDry))
+                        {
+                            LogTier(group, "物理档**料尽** ⇒ 退出悬浮（不静默：状态不再谎报'在悬浮'）");
+                            SetHover(group, false);
+                        }
+                    }
+                    continue;
+                }
+
+                double aAvail = fTotal / Math.Max(mass, 1.0);
+                double dvApply = Math.Min(dvWanted, aAvail * dtSeconds);   // 给不出就只给得起的量
+                double throttle = dvWanted > 0.0 ? dvApply / dvWanted : 0.0;
+                group.pendingImpulse += aCmd * (dvApply / Math.Max(aCmd.magnitude, 1e-12));
+                group.hoverLastDvCmd = dvWanted;
+                group.hoverLastDvApplied = dvApply;
+                group.hoverLastThrustN = fTotal;
+
+                // 扣料：耗料 = 等效质量流 × 实际油门（= m·dv/ve 的同一条账，走既有唯一消耗口）
+                double dm = mfTotal * dtSeconds * throttle;
+                for (int i = 0; i < hoverSlices.Count; i++)
+                {
+                    var s = hoverSlices[i];
+                    double share = mfTotal > 0.0 ? dm * (s.massFlow / mfTotal) : 0.0;
+                    if (share > 0.0)
+                        ConsumeGroupPropellant(group, s.network.propellant, (float)share);
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════════════
+        //  [A8] 点到点解析搬运（解析档的"搬运/巡航"）
+        // ══════════════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// **起一次解析搬运**（唯一入口）：把船从**当前位置**搬到给定目标状态，按 `Δv 总额` 计时计费。
+        ///
+        /// 准入（D8"付不起直接拒绝" + [A6]"解析档与气动互斥"）：
+        /// · 有引擎（`ve > 0`）—— 没引擎就没"等效 dv"可付；
+        /// · **起点与终点都不在大气里**（ρ = 0）—— 大气是物理档的属地，解析档不模拟受力 ✓ 与解析圆轨同一条规矩。
+        /// 进出**必须显式**（D7）：成与不成各一行日志（含 Δv 总额、时长、等效耗料率）。
+        /// </summary>
+        public bool StartAnalyticTransfer(SpaceEntityGroup group, DVector3 targetPos, DVector3 targetVel,
+            double dvTotal, double physicsTick)
+        {
+            if (group == null || !(dvTotal > 0.0)) return false;
+            var src = GetGroupPropulsionSource(group);
+            if (src == null || src.EffectiveVe <= 0f)
+            {
+                Log.Warning(string.Format("[搬运] G{0} 拒绝：没有引擎 ⇒ 付不起等效 Δv", group.GroupId));
+                return false;
+            }
+            float ve = src.EffectiveVe;
+            var mgr = celestialRef.Get();
+            if (mgr == null) return false;
+            // ⚠ **大气层内是允许的**（2026-10-07 用户纠正）：搬运/巡航这一行与"解析圆轨"不是一回事 ——
+            //   D8 说的是"解析档**不模拟受力**但**照扣料**"，不是"解析档不许进大气"。
+            //   原先把 [A6] 的"解析圆轨不许进大气"越界套到了搬运上 ⇒ 把巡航关在了大气层外面（那是错的门）。
+            //   这里只挡**真正不可能的事**：端点在地表以下（或天体中心）⇒ 拒绝。
+            if (group.CurrentOrbit.positionSystem.v.magnitude <= mgr.GetBodyById(group.CelestialBodyId)?.radius
+                || targetPos.magnitude <= 1e-6)
+            {
+                Log.Warning(string.Format("[搬运] G{0} 拒绝：起点或终点在地表以下（几何不可能）", group.GroupId));
+                return false;
+            }
+
+            // **[D7②] 交战 ⇒ 解析档不可用**（用户 2026-10-08 裁定：用现成的"有射弹"信号，**不新建交战触发**）：
+            //   解析搬运是"轨上"的（不模拟受力）⇒ 交战中不许用它（免"免疫扰动"的特权）。
+            //   ⚠ 这道门必须在**任何副作用之前**（尤其别先把悬浮退掉再拒绝 ⇒ 船白丢一次定点）。
+            if (CombatActionActive)
+            {
+                Log.Warning(string.Format(
+                    "[搬运] G{0} 拒绝起搬：**处于交战动作（有射弹在飞 / 导弹终末攻击）** ⇒ 解析档（轨上）不可用；交战结束后再搬，或改物理档机动",
+                    group.GroupId));
+                return false;
+            }
+
+            // **[模式互斥] 起搬 ⇒ 先显式退出悬浮**（D7"进出必须显式"）：
+            //   悬浮 = 定点保持（每步把船按在锁点上），搬运 = 按航线每步推位置 —— **两种工作模式不能同时跑**。
+            //   ⚠ 2026-10-07 用户实测："飞船疑似被锚定死了，走不出去" —— 就是这两条在互相打架（旧代码起搬不清悬浮、
+            //     悬浮也不看搬运单）。这里改成一件事：**玩家要它走，就先把按着它的手松开**。
+            //   ⚠ 同时**记住"原来在悬着"**：大气层里没有悬浮就等于开始掉（实测：到达后 30 km 一路掉到地面，
+            //     撞地 339.7 m/s ⇒ 坠毁）。巡航的语义 = "搬过去、然后继续悬停" ⇒ **到点自动恢复原档位**。
+            if (group.hoverActive)
+            {
+                group.hoverResumeAfterTransfer = true;
+                group.hoverResumeAnalytic = group.hoverAnalytic;
+                SetHoverCore(group, false);
+                Log.Message(string.Format(
+                    "[档位] G{0} 起搬 ⇒ **退出悬浮**（搬运与定点保持互斥）——**到点自动恢复{1}档悬浮**",
+                    group.GroupId, group.hoverResumeAnalytic ? "解析" : "物理"));
+            }
+            else
+            {
+                group.hoverResumeAfterTransfer = false;
+                group.hoverResumeAnalytic = false;
+            }
+
+            var pos = group.CurrentOrbit.positionSystem.v;
+            var vel = group.CurrentOrbit.velocitySystem.v;
+            double mass = GetGroupMass(group, src);
+            double aAvg = GetGroupAvailableAccel(group, src);
+
+            group.transferFromPos = pos;
+            group.transferFromVel = vel;
+            group.transferToPos = targetPos;
+            group.transferToVel = targetVel;
+            group.transferDvTotal = dvTotal;
+            group.transferStartTick = physicsTick;
+            group.transferDuration = AnalyticTransferCore.Duration(dvTotal, aAvg);
+            group.transferActive = true;
+            group.transferMidLogged = false;
+            group.transferArriveLogged = false;
+            Log.Message(string.Format(
+                "[搬运] G{0} 起搬（解析档）：Δv={1:F1} m/s｜时长={2:F1} s｜可用 a≈{3:F3} m/s²｜等效耗料率≈{4:F2} kg/s｜余料 {5:F0} kg",
+                group.GroupId, dvTotal, group.transferDuration, aAvg,
+                AnalyticTransferCore.PropellantThisStep(mass, dvTotal, ve) / Math.Max(group.transferDuration, 1e-9),
+                src.TotalPropellantMass));
+            return true;
+        }
+
+        /// <summary>
+        /// **中止解析搬运**（玩家从控制台按「停止」）：清搬运单、**留在当前位置与当前速度**（不"精确落位"到目标）。
+        /// 与料尽退出同一条纪律 —— **显式**（一行日志），不许静默消失。
+        /// </summary>
+        public bool StopAnalyticTransfer(SpaceEntityGroup group, string reason)
+        {
+            if (group == null || !group.transferActive) return false;
+            double u = AnalyticTransferCore.Progress(
+                TimeScaleManager.GetPhysicsTickSafe() - group.transferStartTick, group.transferDuration);
+            group.transferActive = false;
+            group.OrbitDirty = true;
+            Log.Message(string.Format("[搬运] G{0} **中止**（{1}）：停在当前位置（已到 u={2:F2}）｜Δv 只记到这儿",
+                group.GroupId, reason ?? "无理由", u));
+            return true;
+        }
+
+        /// <summary>本处可用推力加速度（解析搬运估时用）。</summary>
+        private double GetGroupAvailableAccel(SpaceEntityGroup group, IPropulsionSource src)
+        {
+            float f = 0f;
+            var nets = src.Networks;
+            for (int i = 0; i < nets.Count; i++) f += nets[i].Thrust;
+            double mass = GetGroupMass(group, src);
+            return mass > 0.0 ? f / mass : 0.0;
+        }
+
+        /// <summary>该点是否在大气里（ρ > 0）—— 与解析圆轨守卫**同一条口径**（`AtmosphereModel.IsInsideAtmosphere`）。</summary>
+        private static bool IsInsideAtmosphere(SpaceEntityGroup group, CelestialBodyManager mgr, DVector3 pos)
+        {
+            var body = mgr.GetBodyById(group.CelestialBodyId);
+            if (body == null || !body.Atmosphere.IsActive) return false;
+            double r = pos.magnitude;
+            if (!(r > body.radius)) return true;      // 地表以下也算"大气里"（保守）
+            return body.Atmosphere.IsInsideAtmosphere(r - body.radius);
+        }
+
+        /// <summary>悬浮的切片 scratch（主线程复用；与操舵那个分开，免得两条路互相清空）。</summary>
+        private readonly List<ThrustSlice> hoverSliceScratch = new List<ThrustSlice>(4);
+
         /// <summary>
         /// 物理步首：把各 group 累积的合冲量施加到速度并清零。
         /// 圆轨 group 先退出圆轨（解析位置/速度会被覆盖）；施加后标记轨道脏。
-        /// </summary>
-        // DevMode 逐笔对账的**每步行数上限**（2026-10-02：大批量燃烧组会把这一步刷爆 ⇒ 审计自己成了被测负载）。
+        /// </summary>        // DevMode 逐笔对账的**每步行数上限**（2026-10-02：大批量燃烧组会把这一步刷爆 ⇒ 审计自己成了被测负载）。
         private const int BurnAuditMaxLinesPerStep = 40;
         private int burnAuditLinesThisStep;
         private bool burnAuditTruncatedThisStep;
@@ -2470,6 +3760,13 @@ namespace PioneerFramework
             ApplySteering(dtSeconds);
             PerfProbe.PhaseClockEnd(PerfProbe.PhaseSteer, phSteer);
 
+            // ── [A8] 解析搬运：每步记账（`m·dv/ve`，与悬浮解析档同一个消耗口）+ 到达清单 ──
+            ApplyAnalyticTransfer(dtSeconds, physicsTick, celestialMgr);
+
+            // ── [A7] 悬浮控制（每物理步，主线程）：定点误差 → 全矢量推力 → 冲量 + 扣料 ──
+            //    放这里与操舵同相：冲量进 `pendingImpulse` ⇒ 下一行的 `ApplyPendingImpulses` 本步立即生效。
+            ApplyHover(dtSeconds, physicsTick, celestialMgr);
+
             // ── 物理步首：统一施加上一步累积的合冲量（burn/碰撞动量交换/爆炸/手动 ΔV），
             //    然后清零。并行区此后只累积新冲量，不直接改速度。──
             long phImpulse = PerfProbe.PhaseClockStart();
@@ -2546,6 +3843,19 @@ namespace PioneerFramework
                 {
                     int prewarmBodyId = movableGroups[i].CelestialBodyId;
                     if (prewarmBodyId >= 0) celestialMgr.GetSystemMembers(prewarmBodyId);
+                }
+            }
+
+            // [A3] 进气工质 Def 的**一次解析**（`DefDatabase` 查询只在主线程做；并行区只读静态缓存）。
+            // 放在这里与上面同一条理由："进并行区之前、单线程"的那一段。
+            // 只在"活大气 且 确有带进气道的组"时才查 —— 两者任一不成立 ⇒ 整条进气路径缺席，不必解析。
+            if (AtmosphereModel.AnyAtmosphereActive && IntakeAirDef == null)
+            {
+                for (int i = 0; i < movableGroups.Count; i++)
+                {
+                    if (GetGroupIntakeArea(movableGroups[i]) <= 0.0) continue;
+                    _ = IntakeAirDef;
+                    break;
                 }
             }
 
@@ -2637,6 +3947,11 @@ namespace PioneerFramework
                 long apBf = PerfProbe.ApplySubClockStart();   // 块①b：工质账 + EndBurn + 收工结算
                 bool burnEndedThisStep = false;
 
+                // ── [A3] 进气充填入账（主线程唯一写点；与"扣料"同在块①b，同相）──
+                // 前提量在并行区算好（`IntakeFillKg`）⇒ 这里只做写入，不查大气。
+                if (result.IntakeFillKg > 0.0)
+                    ApplyGroupIntakeFill(group, result.IntakeFillKg);
+
                 if (result.HasActiveBurn)
                 {
                     // 多网络按切片流率比例分配消耗并扣各自工质；全部网络工质尽 → 燃烧终止
@@ -2668,6 +3983,21 @@ namespace PioneerFramework
                             totalConsumed += actual;
                             if (actual < share - 0.001f)
                                 exhaustedCount++;
+                            // [A5] 附带进气同步扣（空气）：按**同一个比**——`每单位主工质要多少空气`
+                            //   = `gd.flowKgPerSec / ṁ`（注册时就是按 ṁ 累的 ⇒ 与引擎配比等价）。
+                            //   扣的量恒由上面的 cap 保证 ≤ 存量（cap 就是按存量算的）⇒ 这里不会抽穿。
+                            var draws = slice.network.gasDraws;
+                            if (draws != null && actual > 0f && slice.network.MassFlow > 0f)
+                            {
+                                for (int g = 0; g < draws.Count; g++)
+                                {
+                                    var gd = draws[g];
+                                    double perFuel = gd.flowKgPerSec / slice.network.MassFlow;
+                                    double airNeed = AirBreathingCore.AirRequired(actual, perFuel);
+                                    if (airNeed > 0.0 && gd.propellant != null)
+                                        ConsumeGroupPropellant(group, gd.propellant, (float)airNeed);
+                                }
+                            }
                         }
                     }
                     group.burnConsumedPropellant += totalConsumed;
@@ -5506,6 +6836,11 @@ namespace PioneerFramework
                     "Group {0} 坠毁于{1}（{2}）：撞击速度 {3:F1} m/s，超过安全限值 {4:F0} m/s。",
                     groupId, bodyName, spot, impactSpeed, SpaceConstants.MaxSafeLandingSpeedMps),
                     MessageTypeDefOf.ThreatBig);
+
+                // **坠毁 ⇒ 连地图一起销毁**（2026-10-07 用户裁定）—— 这件事现在**收口在 `DestroyGroup` 内部**，
+                // 本处只把原因传进去（2026-10-08 用户裁定："地图处置收口进 DestroyGroup"）。
+                DestroyGroup(groupId, string.Format("坠毁于{0}（{1}），撞击 {2:F1} m/s", bodyName, spot, impactSpeed));
+                return;
             }
             else
             {
@@ -5519,7 +6854,104 @@ namespace PioneerFramework
                     MessageTypeDefOf.TaskCompletion);
             }
 
-            DestroyGroup(groupId);
+            // ⚠ **[挂账] 着陆的"事件树"仍未实现**：安全接地的船现在**直接被销毁**（其内景也随
+            //   `DestroyGroup` 一起收场）。将来若要"落地的船变成地表明面上的实体/锚点"，从这一处接。
+            DestroyGroup(groupId, string.Format("着陆于{0}（{1}），接地 {2:F1} m/s", bodyName, spot, impactSpeed));
+        }
+
+        /// <summary>
+        /// **跑批器/框架这一段异常的"留痕"出口**（2026-10-08 加固）：去重限频（同一消息只报第一次 + 每 600 次再报一次），
+        /// 目的是把"每步都抛 ⇒ 后面的跑批器与超时判定被一起跳过 ⇒ 用例静默冻结"这一类事故**直接显形**。
+        /// 用 `Log.Error`（红字）：这条路径上静默是最贵的代价（2026-10-08 我为此查了一整个会话）。
+        /// </summary>
+        private static readonly Dictionary<string, int> acceptanceTickErrorCounts = new Dictionary<string, int>();
+
+        private static void LogAcceptanceTickException(Exception ex)
+        {
+            string key = ex.GetType().Name + ": " + ex.Message;
+            acceptanceTickErrorCounts.TryGetValue(key, out int n);
+            acceptanceTickErrorCounts[key] = n + 1;
+            if (n == 0 || n % 600 == 0)
+            {
+                Log.Error(string.Format(
+                    "[验收·异常] 每步块里的跑批器抛出异常（第 {0} 次）⇒ **本步后面的跑批器与异步超时判定都会被跳过**；" +
+                    "若持续出现就是「用例冻结（无结算/无超时）」的根因：{1}", n + 1, ex));
+            }
+        }
+
+        /// <summary>
+        /// **是否处于「战斗动作」= 交战** —— [D7②] 的信号源。
+        ///
+        /// **不新建任何交战触发**（2026-10-08 用户裁定："我们本来那个就有，用那个就行"）：
+        /// 直接读**既有的唯一口径** `TimeScaleManager.IsInCombatAction()` ——
+        /// 它 = **有射弹在飞**（`CombatManager.IsBattleActive` = `activeProjectiles.Count > 0`，
+        /// 与"子弹时间"降速用的是同一个源）**或** 导弹处于 Attack 终末自动段（`HasActiveAttack`）。
+        /// 那个判据原本是 private（只有时间流速闸在用），本批让它公开 + 走组件缓存，两个读者共用一份实现。
+        /// ⚠ 因此它的覆盖比"只看射弹"更宽（导弹终末也算）—— 这正是既有口径的原意。
+        /// </summary>
+        private bool CombatActionActive
+        {
+            get
+            {
+                var tsm = timeScaleRef.Get();
+                return tsm != null && tsm.IsInCombatAction();
+            }
+        }
+
+        /// <summary>
+        /// **船上地图处置（销毁收口点）** —— 由 `DestroyGroup` 统一调用（2026-10-08 用户裁定：
+        /// "地图处置收口进 `DestroyGroup` 内部"）。**不静默**：日志写明丢掉了什么 + **原因**；
+        /// 小人走原版 `MapDeiniter` 的"地图关闭"路径（发信 + 转世界，不凭空消失）。
+        /// 相机/当前地图的切换由原版 `Game.DeinitAndRemoveMap` 负责（正在看这张图时会自动切走）。
+        /// ⚠ 归档过（`MapArchiveManager`）的船，档案是独立文件 ⇒ 地图被销毁后仍可取档。
+        /// </summary>
+        private void DisposeGroupMap(int groupId, int mapId, string? reason)
+        {
+            try
+            {
+                Map map = SpaceMapGenerator.FindPocketMap(mapId);
+                if (map == null) return;
+                int buildings = map.listerThings.ThingsInGroup(ThingRequestGroup.BuildingArtificial).Count;
+                int pawns = map.mapPawns.AllPawnsSpawned.Count;
+                Log.Message(string.Format(
+                    "[地图] G{0} 销毁 ⇒ **船上地图 {1} 已清场**：{2} 个建筑、{3} 个小人（按原版「地图关闭」处理）｜原因：{4}",
+                    groupId, mapId, buildings, pawns, string.IsNullOrEmpty(reason) ? "未给（DestroyGroup 调用点未传）" : reason));
+                Current.Game.DeinitAndRemoveMap(map, notifyPlayer: true);
+            }
+            catch (Exception ex)
+            {
+                // 收尸路径吞异常是最难查的一类事故 ⇒ 至少留一行红字（但不要连带把主循环炸掉）
+                Log.Error(string.Format("[地图] G{0} 处置船上地图 {1} 时出错：{2}", groupId, mapId, ex));
+            }
+        }
+
+        /// <summary>
+        /// **搬运收尾时按需恢复悬浮**（起搬前在悬着才恢复；`where` 只进日志："到达" / "中止"）。
+        /// **唯一实现**：到达分支与"交战中止"分支共用（两处各写一份 = 两套权威）。
+        /// 不恢复时**必留一行 Warning**（大气层里没有悬浮 = 开始掉，不静默）。
+        /// </summary>
+        private void TryResumeHoverAfterTransfer(SpaceEntityGroup group, IPropulsionSource src, string where)
+        {
+            if (!group.hoverResumeAfterTransfer) return;
+            group.hoverResumeAfterTransfer = false;
+            bool wantAnalytic = group.hoverResumeAnalytic;
+            bool dry = src == null || src.TotalPropellantMass <= 0.0;
+            string? why = null;
+            bool ok = !dry && CanHover(group, wantAnalytic, out why) && SetHoverCore(group, true);
+            if (ok && wantAnalytic) group.hoverAnalytic = true;
+            if (ok)
+            {
+                Log.Message(string.Format(
+                    "[搬运] G{0} {1} ⇒ **恢复{2}档悬浮**（定点 = 当前位置：φ={3:F5} λ0={4:F5} 高度 {5:F1} m）",
+                    group.GroupId, where, wantAnalytic ? "解析" : "物理",
+                    group.hoverLatRad, group.hoverLonRad0, group.hoverAltitudeMeters));
+            }
+            else
+            {
+                Log.Warning(string.Format(
+                    "[搬运] G{0} {1}，但**没能恢复悬浮**（{2}）——⚠ 在大气层里它会开始掉；要么手动按悬浮，要么离开大气",
+                    group.GroupId, where, dry ? "料尽" : (why ?? "原因未给")));
+            }
         }
 
         /// <summary>
@@ -5636,7 +7068,9 @@ namespace PioneerFramework
                 group.GroupId, bodyName, spot, q.deltaV, est.RequiredPropellant),
                 MessageTypeDefOf.TaskCompletion);
 
-            DestroyGroup(group.GroupId);
+            // 地图处置收口在 `DestroyGroup` 内部（2026-10-08 用户裁定）⇒ 这里只把**原因**传进去。
+            // ⚠ 仍是"[挂账] 着陆的事件树未实现"：落地的船现在直接销毁（内景随 DestroyGroup 一起收场）。
+            DestroyGroup(group.GroupId, string.Format("选中降落（付费瞬间降落）于{0}（{1}）", bodyName, spot));
             return true;
         }
 
@@ -5649,7 +7083,11 @@ namespace PioneerFramework
         /// 比"累加器 float 分辨率 7.8 g"低 5 个数量级 ⇒ 不影响那个已被钉死的缺陷。</summary>
         private float ConsumeGroupPropellant(SpaceEntityGroup group, PropellantDef def, float kg)
         {
-            if (def == null || kg <= 0f) return 0f;
+            if (def == null || kg <= 0f || group == null) return 0f;   // 无群组/无工质 → 扣 0
+            // [调试] 无限燃料（`group.debugInfinitePropellant`）：**报告"扣完了"但一动也不动**。
+            // 放在**唯一的扣减口**上 ⇒ 悬浮/解析档/搬运/料尽判据全都自动跟着"料一直在"，
+            // 而质量与推力一个字都没改（**不能靠把罐加大来假装无限**：那会把重量加上去、反而悬不住）。
+            if (group.debugInfinitePropellant) return kg;
             var src = GetGroupPropulsionSource(group);
             if (src == null) return 0f; // 无推进源 → 扣 0
             return (float)src.TryConsumePropellant(def, kg);
@@ -5795,6 +7233,43 @@ namespace PioneerFramework
         /// 与实体 RemainingDeltaV 同口径：ve·ln(wet/dry)。
         /// </summary>
         /// <summary>群组 dV/工质读数。**工质两项是 double**（与累加器同精度：面板/验收读数不该比物理更粗）。</summary>
+        /// <summary>
+        /// **[A8]/③ 面板口径：某工质网该显示什么**（"全推续航"而不是 Δv）—— 2026-10-07 补。
+        ///
+        /// **为什么**：Tsiolkovsky 的 Δv 对**吸气式**没有指挥意义 —— 它的 `ve_eff` 是**包线给定**的等效值，
+        /// 随 ρ 与 Mach 变，"还能变多少速"由当时的空气决定 ⇒ 能答的只有"**这么开还能开多久**"（`存量/ṁ`）。
+        /// 判据（"这条网是不是环境相关"）= **有包线表 或 有附带进气**：两者任一存在，Δv 就不是可承诺量。
+        ///
+        /// **本件只给口径与数据（单一出处）**：面板 UI 在 PFView 那条线，本线不碰它的文件。
+        /// 返回：每条网 —— 工质 / 是否环境相关（该显示续航）/ 全推续航秒 / 该网现存料（kg）/ ṁ。
+        /// </summary>
+        public List<(PropellantDef propellant, bool environmentDependent, double enduranceSeconds,
+            double propellantMass, double massFlow)> GetGroupEnduranceReport(SpaceEntityGroup group)
+        {
+            var result = new List<(PropellantDef propellant, bool environmentDependent, double enduranceSeconds,
+                double propellantMass, double massFlow)>();
+            if (group == null) return result;
+            var src = GetGroupPropulsionSource(group);
+            if (src == null) return result;
+
+            var nets = src.Networks;
+            for (int i = 0; i < nets.Count; i++)
+            {
+                var n = nets[i];
+                if (n.MassFlow <= 0f) continue;                      // 不成网的条目（如空气罐）不在此列
+                // "环境相关" = 有包线表（a≠0 / 折线）**或**要另外抽气（空气）⇒ Δv 不可承诺，改报续航
+                bool envDependent = n.envelopeTerms != null || n.gasDraws != null;
+                double fuel = n.AvailableMass(src);
+                result.Add((
+                    n.propellant,
+                    envDependent,
+                    AirBreathingCore.FullThrottleEnduranceSeconds(fuel, n.MassFlow),
+                    fuel,
+                    n.MassFlow));
+            }
+            return result;
+        }
+
         public (float remainingDv, float maxDv, double propellantMass, double propellantCapacity) GetGroupDeltaV(SpaceEntityGroup group)
         {
             if (group == null) return (0f, 0f, 0f, 0f);
@@ -5839,8 +7314,10 @@ namespace PioneerFramework
             {
                 planetGrids = new Dictionary<int, SpatialGrid3D<ISpatialEntity>>();
                 groupLastCoarsePos = new Dictionary<int, DVector3>();
+                hoverActiveCount = 0;   // [A7] 静态计数**按档重数**（静态量跨会话 ⇒ 不重数就会与档差一位）
                 foreach (var group in groups.Values)
                 {
+                    if (group.hoverActive) hoverActiveCount++;
                     var targetGrid = GetGridForGroup(group.GroupId);
                     if (targetGrid != null)
                     {

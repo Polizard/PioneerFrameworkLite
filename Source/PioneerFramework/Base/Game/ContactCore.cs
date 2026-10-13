@@ -205,6 +205,23 @@ namespace PioneerFramework
     }
 
 
+    /// <summary>
+    /// **目标列表（玩家向）的标注口径**（[V3] 收尾 · B1 交互装门，2026-10-11）——"相位 → 词"的**唯一一处**。
+    /// 消费者：定位机「指定目标」/「精确炮击」· 发射器「指定目标」/「精确打击」· 无人机控制窗撞击目标 · 雷达「跟踪目标」。
+    ///
+    /// 规则：**只有匿踪组的影子期**才标 —— 标「影子」是在告诉玩家"这是**最后已知位置**，不是当前位置"。
+    /// 公开组（应答机自报、无相位可言）与 Live（本步刚刷新）都不标（标了是噪音）；Lost 根本不会进列表
+    /// （`SensorManager.PlayerCanSee` 已挡掉）。
+    /// ⚠ 准入判据**不在本文件**：列表统一走 `SensorManager.PlayerCanSee`（与视图/开火同一条，别在这里另开一条）。
+    /// </summary>
+    public static class TargetListCore
+    {
+        /// <summary>影子期后缀（其余相位/公开组 ⇒ 空串）。</summary>
+        public static string PhaseSuffix(bool isStealth, TrackPhase phase)
+            => isStealth && phase == TrackPhase.Shadow ? " 影子（最后已知）" : "";
+    }
+
+
     // ⚠ [D13] 2026-09-16：反向索引（VisibleIndex）已取消——三个用途全部有更便宜的正向做法：
     //   开火揭示 = 事件触发"对开火者重判定一次"（同一份探测代码）；EW 通知 = 查自己阵营的视图；
     //   ARM 靶子 = 对视图正向筛 isRadiationSource。取消后同时消掉"读档重建"整类坑与一个泄漏面。

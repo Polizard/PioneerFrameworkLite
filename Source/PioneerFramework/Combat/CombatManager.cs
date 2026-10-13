@@ -784,7 +784,7 @@ namespace PioneerFramework.Combat
                 if (groupEmpty)
                 {
                     interceptMgr.UnregisterGroup(group.GroupId);
-                    spaceGame.DestroyGroup(group.GroupId);
+                    spaceGame.DestroyGroup(group.GroupId, "战斗中损毁（射弹/接触）");
                 }
                 return true;
             }
@@ -988,7 +988,7 @@ namespace PioneerFramework.Combat
                 {
                     if (PerfProbe.Enabled) PerfProbe.DestroyedConsume(gid, Find.TickManager.TicksGame); // 探针：同一步重复销毁检测
                     avmDestroy?.UnregisterGroup(gid); // 弹群登记注销（§11）
-                    spaceGame.DestroyGroup(gid);
+                    spaceGame.DestroyGroup(gid, "战斗中损毁（导弹接触）");
                 }
             }
         }
@@ -2449,7 +2449,7 @@ namespace PioneerFramework.Combat
             foreach (int gid in emptiedGroups)
             {
                 avmHi?.UnregisterGroup(gid);
-                spaceGameHi?.DestroyGroup(gid);
+                spaceGameHi?.DestroyGroup(gid, "战斗中损毁（战斗部命中）");
             }
             activeExplosions.Add(new ExplosionInstance
             {
@@ -2492,7 +2492,7 @@ namespace PioneerFramework.Combat
 
             var avm = GetAvm();
             avm?.UnregisterGroup(missileGroup.GroupId);
-            spaceGame.DestroyGroup(missileGroup.GroupId);
+            spaceGame.DestroyGroup(missileGroup.GroupId, "导弹自毁/耗尽");
         }
 
         /// <summary>
@@ -2531,7 +2531,7 @@ namespace PioneerFramework.Combat
             {
                 var avm = GetAvm();
                 avm?.UnregisterGroup(gid);
-                spaceGame.DestroyGroup(gid);
+                spaceGame.DestroyGroup(gid, "战斗中损毁（转化交接）");
             }
             ApplyExplosionImpulse(frameId, center, R, E, excludeGroupId);
             activeExplosions.Add(new ExplosionInstance

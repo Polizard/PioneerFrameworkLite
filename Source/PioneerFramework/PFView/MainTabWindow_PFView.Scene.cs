@@ -4,6 +4,8 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Verse;
+using PioneerFramework.Launch;   // GetSurfaceState（天体→PlanetLayer）
+using RimWorld.Planet;            // PlanetLayer（自转自检的参数类型）
 using RimWorld;
 using PioneerFramework.Combat;
 
@@ -12,31 +14,65 @@ namespace PioneerFramework
     public partial class MainTabWindow_PFView : MainTabWindow
     {
         /// <summary>每帧更新方向光，使其从恒星方向照射到行星</summary>
+        /// <summary>太阳方向上一条读数的时间戳（限频日志用）。</summary>
+        private double lastSunLogTick = double.MinValue;
+
+        /// <summary>
+        /// PFView 场景里的**太阳方向**（`toSun`：从天体中心**指向太阳**，PFView 的**惯性系**）。
+        ///
+        /// **出处 = 原版权威** `GenCelestial.CurSunPositionInWorldSpace()`（世界视图的太阳、地图昼夜用的**同一条**，
+        /// 本 mod 的 `CalendarAndSunPatch` 已把它改成"physicsTick + 天体自转周期"口径 ✓）
+        /// ⇒ 再经 `PFViewBodyRotation`（= `SurfaceFrame.FixedToEci` 的基向量像反推）从**固连系**映射到 PFView 的**惯性系**
+        /// （与地表贴图用的是同一个旋转 ⇒ "太阳在哪儿"与"哪半球被照亮"永远一致，与世界视图同源）。
+        ///
+        /// ⚠⚠ 2026-10-11 为什么要改（用户：「PFView 界面下和世界视图下看到的太阳光不一样」）：
+        /// 原来这里算的是 `normalize(行星位置 − 恒星位置)`，而本 mod 把**根源行星钉在原点、恒星也在原点** ⇒ 那个矢量**恒为 0**
+        /// ⇒ 下面的 `sqrMagnitude > 0.001` 早退分支一直生效 ⇒ **方向光从没更新过**（停在初始化方向，昼夜是冻结的 ✗）。
+        /// </summary>
+        private Vector3 SunDirectionInView(CelestialBodyManager mgr, double tick)
+        {
+            Vector3 sunFixed = GenCelestial.CurSunPositionInWorldSpace();     // 固连系（世界地图系）里"指向太阳"
+            if (sunFixed.sqrMagnitude < 1e-6f) return -Vector3.forward;
+
+            // 固连→惯性 的旋转取自**根源行星**（原版那条太阳方向就是定义在它的世界系里的）
+            int shipBodyId = selectedGroupId >= 0 ? GetSelectedGroupBodyId() : currentSystemBodyId;
+            int rootId = mgr.GetRootPlanetId(shipBodyId);
+            Quaternion spin = PFViewBodyRotation.FixedToEciRotation(rootId >= 0 ? rootId : 0);
+            return (spin * sunFixed).normalized;
+
+            // ⚠ 自检读数（限频）：固连方向 → 惯性方向。**惯性方向应随时间基本不变**（太阳在惯性系里不动 ✓）；
+            //   若它随时间漂 ⇒ 说明"原版权威的相位"与"地表自转的相位"用了两把尺子（那才是下一步要查的）。
+        }
+
         private void UpdateLighting(CelestialBodyManager mgr, double tick, DVector3 origin)
         {
             if (sunLight == null) return;
+            if (mgr.GetStar() == null) return;
 
-            var star = mgr.GetStar();
-            if (star == null) return;
+            Vector3 toSunInertial = SunDirectionInView(mgr, tick);          // 惯性系（读数判据看这一支）
+            Vector3 toSun = viewFrameRot * toSunInertial;                   // 视图参考系（固连档下太阳随自转"走"= 正确）
+            // 方向光的 `forward` = 光**传播**方向 = 太阳→天体 = −toSun
+            sunLight.transform.forward = -toSun;
 
-            // 找到飞船所在的行星（不是飞船本身的位置！）
-            int shipBodyId = selectedGroupId >= 0 ? GetSelectedGroupBodyId() : currentSystemBodyId;
-            // ⚠ 2026-09-26（D8）：同上，收敛到 `GetRootPlanetId`（不再手搓"父体即行星"）。
-            int shipRootPlanetId = mgr.GetRootPlanetId(shipBodyId);
-            CelestialBodyDef planetBody = shipRootPlanetId >= 0 ? mgr.GetBodyById(shipRootPlanetId) : null;
-            if (planetBody == null) return;
-
-            // 行星世界坐标 = 从恒星指向行星的矢量（恒星在(0,0,0)）
-            DVector3 planetPosAbs = mgr.GetBodyPositionAbs(planetBody.bodyId, tick);
-
-            // 方向光从恒星照向行星：forward = 恒星→行星方向
-            Vector3 lightDir = new Vector3(
-                (float)planetPosAbs.x,
-                (float)planetPosAbs.y,
-                (float)planetPosAbs.z).normalized;
-
-            if (lightDir.sqrMagnitude > 0.001f)
-                sunLight.transform.forward = lightDir;
+            if (tick - lastSunLogTick > 300.0)
+            {
+                lastSunLogTick = tick;
+                Vector3 fixedDir = GenCelestial.CurSunPositionInWorldSpace();
+                Log.Message(string.Format("[PFView·太阳] 固连方向 ({0:F2},{1:F2},{2:F2}) → 惯性 toSun ({3:F2},{4:F2},{5:F2})（惯性系应随时间基本不变）｜参考系={6}｜light.forward ({7:F2},{8:F2},{9:F2})",
+                    fixedDir.x, fixedDir.y, fixedDir.z, toSunInertial.x, toSunInertial.y, toSunInertial.z,
+                    viewFrameIsFixed ? "固连" : "惯性",
+                    -toSun.x, -toSun.y, -toSun.z));
+                Log.Message(string.Format(
+                    "[PFView·太阳盘] 角半径 {0:F2}°（直径 {1:F2}°）⇒ 屏高 {2}px / FOV {3:F0}° 下直径 ≈ {4:F0} px｜画序：星空({5}) → 太阳盘({6}) → 场景(2000+)｜{7}｜{8}",
+                    sunDiscAngularRadiusDeg, sunDiscAngularRadiusDeg * 2f,
+                    renderCamera != null ? renderCamera.pixelHeight : 0,
+                    renderCamera != null ? renderCamera.fieldOfView : 45f,
+                    PFViewSunDisc.DiameterPixels(sunDiscAngularRadiusDeg,
+                        renderCamera != null ? renderCamera.fieldOfView : 45f,
+                        renderCamera != null ? renderCamera.pixelHeight : 1080),
+                    (int)UnityEngine.Rendering.RenderQueue.Background, SunDiscRenderQueue,
+                    SunInViewNote(mgr, tick, origin), SunDiscDrawNote()));
+            }
         }
 
         // ════════════════════════════════════════════════════
@@ -47,14 +83,30 @@ namespace PioneerFramework
         {
             if (renderCamera == null || renderTexture == null) return;
 
-            double tick = TimeScaleManager.GetPhysicsTickSafe();
+            // ⚠ 2026-10-11（"别的航天器整体位置在抖"的治本）：这里用**帧级连续时钟**（不是阶梯的物理 tick）。
+            //   物理 tick 由整数 `TicksGame` 推出 ⇒ 渲染帧率高于 tick 率时，位置一格一格跳；
+            //   两台站不同轨道时相对速度可达 km/s（每 tick 相对位移上千米）⇒ 肉眼就是"抖"。
+            //   连续时钟 + 解析圆轨（本就支持子 tick）/ 积分轨按速度外推 ⇒ 位置连续。
+            double tick = RenderTick();
             cachedRenderTick = (int)Math.Round(tick); // int 缓存仅作 OnPostRender 轨道线采样/键，天体位置一律用 double tick
             DVector3 origin = GetRenderOrigin(tick);
 
+            UpdateViewFrame(mgr, tick, origin);   // 参考系（惯性/固连）——**必须在一切取位/取向之前**
             UpdateLighting(mgr, tick, origin);
+            UpdateAtmosphereSky(mgr, tick, origin);   // 大气视觉：天空盒按相机高度变蓝（并给雾层/壳准备读数）
+            UpdateSunDisc(mgr);                       // 太阳圆片：本帧角半径（由"根行星绕日半径"定）
+            DrawStarfield();                          // 倒数第一层：星空盒（复用世界视图同一份星表；大气里 1−天空α 淡出）
             DrawAllObjects(origin, mgr, tick);
 
             renderCamera.Render();
+            ProbeSunDisc(tick);   // 限频：从 RT 读回圆盘处像素 ⇒ "太阳到底画上了没有"用数字回答（2026-10-11）
+        }
+
+        /// <summary>帧级连续渲染时钟（`TimeScaleManager.GetRenderTick()` 的静态便捷口；无 Game ⇒ 退回物理 tick）。</summary>
+        private static double RenderTick()
+        {
+            var tsm = Current.Game?.GetComponent<TimeScaleManager>();
+            return tsm != null ? tsm.GetRenderTick() : TimeScaleManager.GetPhysicsTickSafe();
         }
 
         private void DrawAllObjects(DVector3 origin, CelestialBodyManager mgr, double tick)
@@ -125,6 +177,16 @@ namespace PioneerFramework
 
         private void DrawCelestialBodies(CelestialBodyManager mgr, double tick, DVector3 origin)
         {
+            // 本帧的"指向太阳"方向（惯性系）：太阳球摆位与方向光共用同一份（同源 ⇒ 不会两套真相）
+            sunDirectionView = viewFrameRot * SunDirectionInView(mgr, tick);   // 视图参考系（太阳盘/星空盒/定居点昼夜共用）
+            DrawCelestialBodiesCore(mgr, tick, origin);
+        }
+
+        /// <summary>本帧的太阳方向（由 `DrawCelestialBodies` 每帧写；太阳球与方向光同用）。</summary>
+        private Vector3 sunDirectionView = Vector3.forward;
+
+        private void DrawCelestialBodiesCore(CelestialBodyManager mgr, double tick, DVector3 origin)
+        {
             var relevantIds = GetLocalSystemBodyIds(mgr);
             Vector3 camPos = GetCameraViewPos();
 
@@ -139,37 +201,22 @@ namespace PioneerFramework
                 // ═══ 恒星：等效替代，方向对即可 ═══
                 if (isStar)
                 {
-                    // 恒星真实距离（1 AU 量级）远超远裁剪面，故画"等效替代"：只保留方向。
-                    // 距离随相机距离等比放大 → 角大小恒定，缩放到全星系尺度时太阳不会退成一个点；
-                    // 方向取**相机→恒星**（旧版取锚点→恒星，相机离锚点远时方向本身就有视差偏差）。
-                    Vector3 sunDir = (vp - camPos);
-                    if (sunDir.sqrMagnitude < 1e-6f) sunDir = -camPos;
-                    if (sunDir.sqrMagnitude < 1e-6f) sunDir = Vector3.forward;
-                    float placeDist = Mathf.Clamp(Mathf.Max(camDistance, SunMinPlaceDist), SunMinPlaceDist, FarClip * 0.25f);
-                    float sunSize = placeDist * SunAngularScale;
-                    Vector3 sunRenderPos = camPos + sunDir.normalized * placeDist;
-
-                    if (SunBillboardMat != null)
-                    {
-                        // 发光球体（大，保证可见）
-                        Matrix4x4 sphereMtx = Matrix4x4.TRS(sunRenderPos, Quaternion.identity,
-                            Vector3.one * sunSize * 2f);
-                        Graphics.DrawMesh(sphereMeshLOD2, sphereMtx, SunBillboardMat, SceneLayer);
-
-                        // billboard 叠加（朝向相机，RW 风格）
-                        Vector3 toCam = (camPos - sunRenderPos).normalized;
-                        if (toCam.sqrMagnitude < 0.0001f) toCam = Vector3.forward;
-                        Quaternion sunRot = Quaternion.LookRotation(toCam, Vector3.up);
-                        Matrix4x4 sunMtx = Matrix4x4.TRS(sunRenderPos, sunRot, Vector3.one * sunSize);
-                        Graphics.DrawMesh(quadMesh, sunMtx, SunBillboardMat, SceneLayer);
-                    }
+                    // ⚠ 2026-10-11 用户裁定：「把太阳渲染成一个**圆** —— 大小只和当前行星系环绕太阳的半径有关系」，
+                    //   圆片固定在**倒数第二层**（除了星空盒，任何东西都能遮挡它）。
+                    //   ⇒ 拆掉原来那套"发光球 + 朝向相机的面片 + 按相机距离摆到某个有限距离 + 一堆远裁剪余量"：
+                    //     现在就是**一个朝向相机的四边形**，角半径 = `atan(Sun.radius / 根行星.orbitRadius)`（`PFViewSunDisc`），
+                    //     摆在"无穷远"方向（`FarClip*0.4` ⇒ 远在一切之上），材质**不写深度**、画序**排在场景之前**
+                    //     ⇒ 后画的场景自然盖住它（确定性；不再有任何远裁剪/深度竞争）。
+                    //   方向仍取 `sunDirectionView`（与方向光同一份 ✓ ⇒ "太阳画在哪儿"与"哪半球被照亮"永远一致）。
+                    DrawSunDisc(camPos);
 
                     // ── 调试：在太阳位置放黄色方块（默认关闭；面板上"太阳标记"勾选）──
                     if (debugShowSunMarker && renderMat != null)
                     {
+                        Vector3 dbgPos = camPos + SunDiscDir(camPos) * SunPlaceDistView;
                         matBlock.SetColor("_Color", new Color(1f, 1f, 0f));
-                        Matrix4x4 dbgMtx = Matrix4x4.TRS(sunRenderPos, Quaternion.identity,
-                            Vector3.one * sunSize * 2.5f);
+                        Matrix4x4 dbgMtx = Matrix4x4.TRS(dbgPos, Quaternion.identity,
+                            Vector3.one * sunDiscQuadSize * 2.5f);
                         Graphics.DrawMesh(cubeMesh, dbgMtx, renderMat, SceneLayer, null, 0, matBlock);
                     }
                     continue;
@@ -181,8 +228,15 @@ namespace PioneerFramework
                 Color c = body.bodyType == CelestialBodyType.Planet ?
                     new Color(0.2f, 0.5f, 0.8f) : new Color(0.7f, 0.7f, 0.7f);
 
-                // 天体不自转，仅依赖方向光从恒星方向照射呈现明暗面
-                Quaternion selfRot = Quaternion.identity;
+                // ⚠ **天体要按自转相位转**（2026-10-10 用户实测："世界视图里 Group 在陆地上方，PFView 一侧却不是"）：
+                //    贴图内容是**天体固连系**的地形，而飞船位置是 **ECI/绝对系**的 ⇒ 画行星必须把贴图转到 ECI 才对齐。
+                //    原来这里是 `Quaternion.identity`（"天体不自转"）—— 纯色球时代无所谓，有贴图之后就是错的
+                //    （差一个 ωt，地球 6°/分钟）。相位出自 `PFViewBodyRotation`（SurfaceFrame.FixedToEci 的列反推，不写符号）。
+                // ⚠ 左乘 `viewFrameRot`：固连档下"本船所在天体"变成恒等（地面静止），其余天体保留相对自转 ✓
+                // ⚠⚠ 自检**必须用未换系的那一份**（`bodyRotEci`）——自检比的是"我的自转 vs 权威 tile→ECI"，
+                //    在 ECI 系里比；喂换系后的值会在固连档下报几千 km 的**假红**（2026-10-12 修，别改回去）。
+                Quaternion bodyRotEci = PFViewBodyRotation.FixedToEciRotation(body.bodyId);
+                Quaternion selfRot = viewFrameRot * bodyRotEci;
 
                 // 相机到天体的真实方向与距离
                 Vector3 dirFromCam = (vp - camPos).normalized;
@@ -216,16 +270,128 @@ namespace PioneerFramework
                                angularSize > 0.05f ? sphereMeshLOD1 :
                                                      sphereMeshLOD2;
 
-                DrawCelestialSphere(renderPos, renderR, c, selfRot, lodMesh, renderMat, true);
+                // 基底球（底）：**无数据区 / 无补丁**的那部分 —— 背景 biome 贴图平铺（原版对未生成区域的同一口径）。
+                // ⚠ `drawOutline: false` 是必需的：回退描边画的是**1.05 倍大的纯黑球**，
+                // 而地表分格只外扩 0.6% ⇒ 黑壳比两者都靠外，会把贴图球和分格**一起挡住**
+                // （2026-10-10 用户："看不见 tile" —— 实际看到的就是那颗黑壳）。
+                // 描边本来就是"toon shader 缺席时的替身"，贴图球这条路上不该有它。
+                var bodyLayer = GetSurfaceState.GetLayerForBody(mgr, body.bodyId);
+
+                // 先看有没有烘焙补丁 —— 它决定**基底球要不要下沉**（见下方注释）。
+                bool hasPatch = TryGetSurfacePatch(body, bodyLayer, out var patchMesh, out var patchMat);
+
+                // ⚠ 两层的**高度分工**（2026-10-11 用户实测"低飞朝向地表时烘焙渲染消失"之后定死）：
+                //   · **补丁**只离地一点点（`PatchEpsilon`，地球 1 km）⇒ 低飞的相机永远不会钻到它下面；
+                //   · **基底球**在有补丁时**下沉** `BaseSinkFactor`（地球 40 km）⇒ 深度余量由下沉买（两层间距 ≫ δz），
+                //     而不是把补丁抬高（上一批抬到 30 km，低飞相机于是跑到了补丁底下、朝下只看到基底球 = 那次的病根）。
+                float baseRenderR = hasPatch ? renderR * (1f - PFViewSurfaceBake.BaseSinkFactor) : renderR;
+                var baseMat = GetBaseSphereMaterial(body, bodyLayer);
+                if (baseMat != null)
+                    // ⚠⚠ 2026-10-11 修：这里的颜色参数**会被写进 MaterialPropertyBlock 覆盖材料的 `_Color`** ——
+                    //   原来传 `Color.white` ⇒ 材料上的 `SurfaceReflectance`(0.20) 被抹掉 ⇒ 基底球一直**比补丁亮 5 倍**
+                    //   （"反射率不一致"从第一天起就是这个原因；没有贴图时更直接变成"纯白"）。
+                    //   ⇒ 传**与材料同值**的灰色，覆盖就等于没覆盖 ✓（补丁那条路没有 PropertyBlock，材料值直接生效）。
+                    DrawCelestialSphere(renderPos, baseRenderR, SurfaceTint, selfRot, lodMesh, baseMat, false, allowToon: false);
+                else
+                    DrawCelestialSphere(renderPos, baseRenderR, c, selfRot, lodMesh, renderMat, true);
+
+                if (hasPatch)
+                {
+                    Matrix4x4 patchMtx = Matrix4x4.TRS(renderPos, selfRot, Vector3.one * renderR * 2f);
+                    Graphics.DrawMesh(patchMesh, patchMtx, patchMat, SceneLayer);
+                }
+                else if (noPatchLogged.Add(body.bodyId))
+                {
+                    // 没补丁 = 这颗天体的"地表"就是**基底球**（背景 biome 平铺），不是烘焙地形 —— 说明白，别让它像"渲染坏了"
+                    Log.Message(string.Format(
+                        "[PFView·地表] body={0} **没有烘焙补丁** ⇒ 现在画的这一层是基底球（背景 biome 平铺），不是烘焙地形；去调试页签烤一次即得",
+                        body.defName));
+                }
+
+                // 自转/换系自检（限频）：拿"船下地块"比"我画的方向"与 mod 的权威 tile→ECI
+                // —— 这正是用户报的那条症状的判据（差 > 1 km 就是自转/换系错了）。
+                VerifySurfaceAlignment(body, bodyLayer, bodyRotEci, tick);
+
+                // 定居点层（D-2，2026-10-12）：**实时画、不烘**（动态数据不进静态图）。
+                // 挂在这里 = 贴在同一套 TRS 上（renderPos/selfRot/renderR 都在作用域内），且在**大气壳之前**
+                // ⇒ 壳会自然罩在定居点上面（与"贴在地表"的观感一致）。
+                DrawSettlementOverlay(body, bodyLayer, renderPos, renderR, selfRot);
+
+                // 大气壳（2026-10-10 用户口径）：半径 = R + **大气厚度的一半**（XML 定义），半透明。
+                // 日照走**几何**（只画朝太阳那半边 ⇒ 夜侧没有壳）；双面网格 ⇒ 球缘那圈自然叠两层 = 大气辉光贴边。
+                DrawAtmosphereShell(body, renderPos, renderR, -sunLightForward);
+
+                // 2026-10-10：原"近档：可见分格补丁"已随用户裁定（不论远近均用烘焙贴图、取消档位）退役，
+                // 归档在 `Source/已弃置/PFViewTiles-近档分格-20261010.cs`。天体表面现在统一由上面两层承担。
             }
         }
 
+        private readonly System.Collections.Generic.Dictionary<int, long> lastAlignCheckTick =
+            new System.Collections.Generic.Dictionary<int, long>();
+
+        /// <summary>"这颗天体没有烘焙补丁"只说一次（免得每帧刷屏）。</summary>
+        private readonly System.Collections.Generic.HashSet<int> noPatchLogged =
+            new System.Collections.Generic.HashSet<int>();
+
+        /// <summary>
+        /// **自转/换系自检**（限频：每天体每 60 物理秒一次）：拿某一个地块比两边 ——
+        /// ① 我画的 = `selfRot ×（层里的格心方向**归一化后**）× R`（`PFViewBodyRotation.SurfacePointEci`）；
+        /// ② mod 的权威 = `GetSurfaceState.TileToEci`。
+        /// ⇒ 差应 ≈ 0；**> 1 km 就是自转相位/换系错了**（正是用户 2026-10-10 报的「PFView 贴图与世界视图角度不一致」的判据）。
+        /// 地块取"生成区中间的格子"：本条判据与"取哪一格"无关（两边都是同一个旋转关系），取它能顺便在人眼上对得上。
+        /// </summary>
+        private void VerifySurfaceAlignment(CelestialBodyDef body, PlanetLayer? layer, Quaternion selfRot, double tick)
+        {
+            if (layer == null || layer.TilesCount <= 0) return;
+            long now = (long)tick;
+            if (lastAlignCheckTick.TryGetValue(body.bodyId, out long last) && now - last < 60) return;
+            lastAlignCheckTick[body.bodyId] = now;
+
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            double omega = GetSurfaceState.RotationOmega(mgr, body.bodyId);
+            int tile = layer.TilesCount / 2;
+            Vector3 dirFixedRaw = layer.GetTileCenter(tile);
+
+            // ⚠ 2026-10-11 修（**仪器自误**）：`GetTileCenter` 返回的是**"layer 半径"长的向量**（1 单位 = 50 km
+            //   ⇒ 地球层 ≈100、月球层 ≈30），原式 `(selfRot * dirFixed) * body.radius` 漏了归一化 ⇒
+            //   `|mine|` 大了 layer 半径倍 ⇒ 假红「差 494,998 km / 43,454 km」（与 (100−1)×5000 km、(30−1)×1500 km 逐位对上）。
+            //   归一化收在 `PFViewBodyRotation.SurfacePointEci`（与权威侧 `TileToFixedPosition` 同口径），判据见该类注释。
+            DVector3 mine = PFViewBodyRotation.SurfacePointEci(selfRot, dirFixedRaw, body.radius);   // 我画的（米、绝对系）
+            DVector3 auth = GetSurfaceState.TileToEci(layer, tile, body.radius, omega, tick);   // 权威（米、绝对系）
+            double errKm = (mine - auth).magnitude / 1000.0;
+
+            // 自转相位做成**可读数字**（用户 2026-10-10："没有自转起来" ⇒ 光靠眼睛判不了 21.6°/分钟 的东西）：
+            double angleDeg = omega * tick * Mathf.Rad2Deg % 360.0;
+            double degPerMinute = omega * Mathf.Rad2Deg * 60.0;   // tick ≈ 物理秒；游戏内 60 tick/秒 ⇒ 实时约 ×60
+
+            // 船下地块（**权威口径**给的地块 + 经纬度）：跟世界视图那边可以交叉核对的一把手柄
+            string shipInfo = "";
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var grp = selectedGroupId >= 0 && spaceGame != null ? spaceGame.GetGroupById(selectedGroupId) : null;
+            if (grp != null && grp.CelestialBodyId == body.bodyId && mgr != null)
+            {
+                DVector3 shipEci = GetGroupPosAbs(grp, tick) - mgr.GetBodyPositionAbs(body.bodyId, tick);
+                int t = GetSurfaceState.EciToTile(shipEci, layer, omega, tick);
+                if (t >= 0)
+                {
+                    Vector2 ll = layer.LongLatOf(t);
+                    shipInfo = string.Format("｜船下地块={0}（φ{1:F1}° λ{2:F1}°）", t, ll.y, ll.x);
+                }
+            }
+
+            Log.Message(string.Format(
+                "[PFView·自转] body={0} 相位 {1:F1}°（{2:F2}°/分钟·物理秒）{3}｜网格×自转 对 权威(tile→ECI) 差 {4:F2} km{5}",
+                body.defName, angleDeg, degPerMinute, shipInfo, errKm,
+                errKm > 1.0 ? "  ⚠ > 1 km ⇒ 自转/换系错了" : "  ✓"));
+        }
+
         /// <summary>天体球体渲染（三渲二：Toon Shader 内置轮廓线 + 二分阴影，不可用时回退）</summary>
-        private void DrawCelestialSphere(Vector3 pos, float radius, Color c, Quaternion selfRot, Mesh mesh, Material mat, bool drawOutline)
+        private void DrawCelestialSphere(Vector3 pos, float radius, Color c, Quaternion selfRot, Mesh mesh, Material mat,
+            bool drawOutline, bool allowToon = true)
         {
             float r = Mathf.Max(radius, MinBodyVisRadius);
 
-            if (ToonMat != null && drawOutline)
+            if (allowToon && ToonMat != null && drawOutline)
             {
                 // Toon Shader：轮廓线由 Shader 的 OUTLINE Pass 自动处理，仅需一次 DrawMesh
                 Matrix4x4 mtx = Matrix4x4.TRS(pos, selfRot, Vector3.one * r * 2f);
@@ -266,6 +432,10 @@ namespace PioneerFramework
                 Vector3 vp = AbsToView(gPosAbs, origin);
                 float dist = vp.magnitude;
 
+                // [B4 排查读数] 盯第一"别的"组：帧间位移统计（限频 300 帧一行）
+                if (dbgWatchedGroupId < 0 || dbgWatchedGroupId == g.GroupId)
+                    FeedJitterProbe(g, vp, tick, dist);
+
                 if (dist < PartRenderDist)
                 {
                     DrawGroupParts(g, gPosAbs, origin, spaceGame);
@@ -281,10 +451,62 @@ namespace PioneerFramework
                 matBlock.SetColor("_Color", new Color(0.3f, 0.9f, 1.0f, 0.9f));
                 Graphics.DrawMesh(quadMesh, mtx, renderMat, SceneLayer, null, 0, matBlock);
 
-                // 远距离也要能看出朝向：指示棒长度随标记尺寸同比（= 屏幕尺寸恒定）
-                DrawHeadingBar(g, spaceGame, vp, s * 1.5f);
+                // 远距离也要能看出朝向：指示棒长度随标记尺寸同比（= 屏幕尺寸恒定）。
+                // 有 Map 的编队不画（同上：黄棒只留给无 Map 的抽象标记）。
+                if (!GroupHasMapEntity(g, spaceGame))
+                    DrawHeadingBar(g, spaceGame, vp, s * 1.5f);
             }
 
+        }
+
+        /// <summary>本编队是否含"有 Map 的实体"（空间站 / 舱内图火箭）。用于决定远距标记要不要配黄棒。</summary>
+        private static bool GroupHasMapEntity(SpaceEntityGroup group, SpaceGameComp spaceGame)
+        {
+            foreach (int eid in group.GetEntityIds())
+            {
+                var e = spaceGame.GetEntityById(eid);
+                if (e != null && e.MapId >= 0)
+                    return true;
+            }
+            return false;
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        //  [B4 排查读数] "别的航天器整体位置在抖"（2026-10-11，用户实测报回）
+        //  量的是**帧间位移**：安静的光滑运动 ⇒ 各帧位移均匀（最大/平均 ≈1）；
+        //  时间轴阶梯 ⇒ 大量**停顿帧**（位移=0，同一 tick 重复渲染）+ 偶发大跳（最大/平均 ≫1）。
+        //  限频：每 300 帧一行（约 2~5 秒），盯**第一个非选中组**。
+        // ═══════════════════════════════════════════════════════════════════
+        private int dbgWatchedGroupId = -1;
+        private int dbgFrames;
+        private double dbgLastTick;
+        private Vector3 dbgLastVp;
+        private double dbgSumStep, dbgMaxStep, dbgTickAdvance;
+        private int dbgStallFrames;
+
+        private void FeedJitterProbe(SpaceEntityGroup g, Vector3 vp, double tick, float distUnits)
+        {
+            if (dbgFrames > 0)
+            {
+                double step = (vp - dbgLastVp).magnitude;
+                dbgSumStep += step;
+                if (step > dbgMaxStep) dbgMaxStep = step;
+                dbgTickAdvance += tick - dbgLastTick;
+                if (step <= 1e-6) dbgStallFrames++;
+            }
+            dbgWatchedGroupId = g.GroupId;
+            dbgLastVp = vp;
+            dbgLastTick = tick;
+            dbgFrames++;
+            if (dbgFrames < 300) return;
+
+            double mean = dbgSumStep / (dbgFrames - 1);
+            Log.Message(string.Format(
+                "[PFView·抖动] G{0} 圆轨={1} 距离 {2:F0} km｜帧 {3}｜tick 推进 {4:F2}（{5:F3}/帧）｜停顿帧 {6}｜帧间位移 平均 {7:F3} 最大 {8:F3} 单位（比 {9:F1}×）",
+                g.GroupId, g.IsCircularOrbit ? "是" : "否", distUnits * 0.01f, dbgFrames,
+                dbgTickAdvance, dbgTickAdvance / (dbgFrames - 1), dbgStallFrames,
+                mean, dbgMaxStep, mean > 1e-9 ? dbgMaxStep / mean : 0.0));
+            dbgFrames = 0; dbgSumStep = 0.0; dbgMaxStep = 0.0; dbgTickAdvance = 0.0; dbgStallFrames = 0;
         }
 
         private void DrawGroupParts(SpaceEntityGroup group, DVector3 groupPosAbs, DVector3 origin, SpaceGameComp spaceGame)
@@ -293,8 +515,9 @@ namespace PioneerFramework
             // 旧实现用**速度方向**做 LookRotation（船头永远朝轨道切线）：那是轨道运动的切线，不是船的
             // 朝向 —— 船转到任何姿态画面都一样，玩家看到的朝向与物理（主推对准 / 碰撞盒 / 命中几何，
             // 三者都消费同一个 rotation）毫无关系。改用真姿态后，船怎么转、画面就怎么转。
-            Quaternion gRot = group.CurrentOrbit.rotation;
+            Quaternion gRot = viewFrameRot * group.CurrentOrbit.rotation;   // 姿态同过参考系（固连档下"相对地面"的姿态）
             float scale = debugScaleParts ? 200f : 1f;
+            bool drewRelief = false;
 
             foreach (int eid in group.GetEntityIds())
             {
@@ -309,12 +532,20 @@ namespace PioneerFramework
                 // 有 Map 的实体（空间站/舱内图火箭）：画"地图挤出来的浮雕"（2026-10-02）；
                 // 无图 / 图已封存 / 房间数据未追平 / 全图无建造痕迹 ⇒ 落回下面的 part 盒体。
                 if (entity.MapId >= 0 && TryDrawMapRelief(entity, eVp, gRot, scale))
+                {
+                    drewRelief = true;
                     continue;
+                }
 
                 // 单 part 化：无设计数据分支，统一按运行时 Parts 绘制盒体（§5.4 C4）
                 if (entity.Parts.Count > 0)
                     DrawRuntimeParts(entity, eVp, gRot, scale);
             }
+
+            // 有 Map 的编队不画黄棒（用户 2026-10-02："把那个黄色的指示取消掉"）：船体本身的形体
+            // 就是朝向读数，那根棒是旧"雪糕"的残留；主推轴读数仍在姿态球（T 记号）与左栏文字里。
+            if (drewRelief)
+                return;
 
             // 朝向指示棒长：以本组包围盒对角线的 0.7 倍为准（"放大部件"调试模式下同比放大），
             // 下限 3 view 单位 = 30m —— 棒子要能从船体里伸出来才看得见朝向
@@ -329,10 +560,14 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 朝向指示棒：从编队中心沿**主推轴**画一根细棒。
+        /// 朝向指示棒（黄棒）：从编队中心沿**主推轴**画一根细棒。
         /// 主推轴 = 点火会把本编队推向哪边，取自 `SpaceGameComp.GetMainThrustAxisSystem`（与 burn / SAS
         /// 自动对准 / 主推方向同一出处），所以画出来的方向就是物理会执行的方向。
         /// 无引擎（无推力）/ 全向类（无主推轴）时不画 —— 不摆一根物理上不存在的箭头。
+        ///
+        /// ⚠ 只给**无 Map 编队**用（抽象标记需要一个朝向读数）。**有 Map 的编队不画**
+        /// （用户 2026-10-02："把那个黄色的指示取消掉"）：浮雕/盒子本身就是船体，朝向看形体；
+        /// 主推轴读数仍在姿态球（T 记号）与左栏文字里，没有丢信息。
         /// </summary>
         private static void DrawHeadingBar(SpaceEntityGroup group, SpaceGameComp spaceGame, Vector3 centerVp, float barLen)
         {
@@ -341,42 +576,21 @@ namespace PioneerFramework
             DVector3 axisSystem = spaceGame.GetMainThrustAxisSystem(group);
             if (axisSystem.sqrMagnitude < 1e-12) return;
 
-            // AbsToView 只有平移 + 正等比缩放 ⇒ 方向在视图系与世界系同向，直接当视图方向用
-            Vector3 dir = (Vector3)axisSystem.normalized;
-            if (dir.sqrMagnitude < 0.5f) return;
-
-            float width = Mathf.Max(barLen * 0.08f, 0.05f);
-            Vector3 mid = centerVp + dir * (barLen * 0.5f);
-            Quaternion rot = Quaternion.LookRotation(dir, Mathf.Abs(dir.y) < 0.9f ? Vector3.up : Vector3.forward);
-            Matrix4x4 mtx = Matrix4x4.TRS(mid, rot, new Vector3(width, width, barLen));
-            matBlock.SetColor("_Color", new Color(1f, 0.75f, 0.15f, 1f));
-            Graphics.DrawMesh(cubeMesh, mtx, renderMat, SceneLayer, null, 0, matBlock);
+            // AbsToView 只有平移 + 正等比缩放 ⇒ 方向在视图系与世界系同向，直接当视图方向用。
+            // 本函数只管**取数据**（主推轴）；画（长细比/朝向四元数/材质层）在 `ShipModelRenderer.DrawHeadingBar`（D-1）。
+            ShipModelRenderer.DrawHeadingBar(centerVp, (Vector3)axisSystem.normalized, barLen,
+                cubeMesh, renderMat, matBlock, SceneLayer);
         }
 
+        /// <summary>
+        /// PFView 视角适配（D-1，2026-10-11）：把窗口自己的状态解析成 `ShipModelRenderer` 的**显式入参**
+        /// （材质 = Toon 优先 / 网格 / 层 / 米→视图换算 / 共享 matBlock）。矩阵与画法的口径全在绘制段那边
+        /// —— 本函数不表达任何"怎么画"，只表达"PFView 用哪套资源画"。
+        /// </summary>
         private static void DrawRuntimeParts(SpaceEntity entity, Vector3 eVp, Quaternion gRot, float scale = 1f)
         {
-            Material partMat = ToonMat ?? renderMat;
-            if (ToonMat != null)
-                matBlock.SetFloat("_OutlineWidth", 0.02f); // V-1.3：部件也画描边（旧值 0 是"shader 尚未加载"时代的死判断）
-
-            foreach (var part in entity.Parts)
-            {
-                if (part.isDestroyed) continue;
-
-                var mesh = cubeMesh;
-
-                Vector3 pv = (Vector3)part.positionShip * MetersToView * scale;
-                Vector3 sv = (Vector3)part.boundsSizeShip * MetersToView * scale;
-                if (sv.x < 0.1f) sv.x = 0.1f;
-                if (sv.y < 0.1f) sv.y = 0.1f;
-                if (sv.z < 0.1f) sv.z = 0.1f;
-
-                Vector3 wp = eVp + gRot * pv;
-                Matrix4x4 mtx = Matrix4x4.TRS(wp, gRot, sv);
-                var col = new Color(0.3f, 0.6f, 1.0f);
-                matBlock.SetColor("_Color", col);
-                Graphics.DrawMesh(mesh, mtx, partMat, SceneLayer, null, 0, matBlock);
-            }
+            ShipModelRenderer.DrawParts(entity, eVp, gRot, scale, cubeMesh, ToonMat ?? renderMat, matBlock,
+                ToonMat != null, MetersToView, SceneLayer);
         }
 
         private void DrawProjectiles(DVector3 origin)
@@ -389,7 +603,7 @@ namespace PioneerFramework
             // 与 TicksGame 直接相减单位错位 → 外推恒为 0 → 渲染只显示离散物理位置 → 折线。
             // 天体偏移同样用 double physicsTick：int 化在 1/60x 下每 60 real tick 才跳 1 秒，
             // 天体位置离散跳变 → 射弹/场景"集体闪现"。全部用 double 后完全连续。
-            double tick = TimeScaleManager.GetPhysicsTickSafe();
+            double tick = RenderTick();   // 连续时钟（2026-10-11 起）：射弹的外推基准也一并连续
             Vector3 camView = GetCameraViewPos();   // 逐弹重复求一次相机位（含三角函数）没有意义
 
             foreach (var proj in cm.ActiveProjectiles)

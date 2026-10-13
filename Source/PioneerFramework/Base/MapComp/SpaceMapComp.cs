@@ -100,6 +100,16 @@ namespace PioneerFramework
     }
 
     /// <summary>
+    /// **[A5] 网络级"附带进气"项**：一种**非主工质**（空气）+ 全流量下的抽取率（kg/s）。
+    /// 与网络的 Σṁ **同尺** ⇒ 主工质耗 X kg 时，本项需 `X · flowKgPerSec / Σṁ` kg（`AirBreathingCore` 的比）。
+    /// </summary>
+    public class GasDraw
+    {
+        public PropellantDef? propellant;
+        public double flowKgPerSec;
+    }
+
+    /// <summary>
     /// 工质网络：一种工质 + 使用它的所有推进器引擎的聚合。
     /// 记录「以排气速度 ve 喷射质量流 ṁ」：推力 F = ve·ṁ。
     /// 一条船可同时携带多个工质网络（核热网络/化学网络/离子网络…），
@@ -146,6 +156,125 @@ namespace PioneerFramework
         {
             // 边界 cast：这是**阈值读**（判"还有没有料"），不参与累加 ⇒ float 足够
             return src != null ? (float)src.GetPropellantMass(propellant) : 0f;
+        }
+
+        /// <summary>
+        /// **[A5] 本网的附带进气（非主工质，通常 = 空气）**：空 = **纯火箭**（整条门控路径不进 ⇒ 逐位不变）。
+        /// 构建期由 <see cref="RegisterGasDraws"/> 写入、运行期只读（并行区安全，同 `Networks` 纪律）。
+        /// </summary>
+        public System.Collections.Generic.List<GasDraw>? gasDraws;
+
+        /// <summary>
+        /// **[A4] 网络包线表**（按"同一种包线形状"分组的 `Σ(ve·ṁ)`）：空 = **纯火箭**
+        /// （`envelopeTerms == null` ⇒ 切片构造处整段包线代码不进 ⇒ 既有四台逐位不变）。
+        /// 构建期由 <see cref="RegisterEnvelope"/> 写、运行期只读。求值 = `AirBreathingCore.EnvelopeFactor`。
+        /// </summary>
+        public System.Collections.Generic.List<EnvelopeTerm>? envelopeTerms;
+
+        /// <summary>
+        /// **[A4] 包线注册**（在 <see cref="RegisterEngine"/> 之外单独走，理由同 `RegisterGasDraws`）：
+        /// **火箭项（a=0 且无折线）根本不入表** —— 它们 φ≡1、不需要逐项求值；但**它们的权重照占**
+        /// （`EnvelopeFactor` 的分母 = 全网 `Σ(ve·ṁ)`，未入表那部分按 φ≡1 计入 ⇒ 混装网络不被拉低）。
+        /// 同形状（a 相同且折线逐点相同）的引擎**合并成一项**（N 台同型 ≡ N 倍）。
+        /// </summary>
+        public void RegisterEnvelope(float ve, float mf, float densityExponent,
+            System.Collections.Generic.IReadOnlyList<MachPoint>? machCurve)
+        {
+            bool rocket = densityExponent == 0f && (machCurve == null || machCurve.Count == 0);
+            if (rocket) return;
+            double veMf = (double)ve * mf;
+            if (!(veMf > 0.0)) return;
+            if (envelopeTerms == null) envelopeTerms = new System.Collections.Generic.List<EnvelopeTerm>(2);
+            for (int i = 0; i < envelopeTerms.Count; i++)
+            {
+                var t = envelopeTerms[i];
+                if (t.densityExponent != densityExponent) continue;
+                if (!SameCurve(t.machCurve, machCurve)) continue;
+                t.veMf += veMf;
+                return;
+            }
+            envelopeTerms.Add(new EnvelopeTerm { veMf = veMf, densityExponent = densityExponent, machCurve = machCurve });
+        }
+
+        /// <summary>**[A5] 附带进气注销**（有 Map 侧推进器可被拆 ⇒ 与 `UnregisterEnvelope` 同理）。</summary>
+        public void UnregisterGasDraws(System.Collections.Generic.IReadOnlyList<GasIntake>? intakes, float massFlow)
+        {
+            if (gasDraws == null || intakes == null || intakes.Count == 0 || massFlow <= 0f) return;
+            for (int i = 0; i < intakes.Count; i++)
+            {
+                var gi = intakes[i];
+                if (gi?.propellant == null || !(gi.perUnitRatio > 0f)) continue;
+                double sub = (double)gi.perUnitRatio * massFlow;
+                for (int j = 0; j < gasDraws.Count; j++)
+                {
+                    if (gasDraws[j].propellant != gi.propellant) continue;
+                    gasDraws[j].flowKgPerSec -= sub;
+                    if (gasDraws[j].flowKgPerSec <= 1e-9) gasDraws.RemoveAt(j);
+                    break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// **[A4] 包线注销**（有 Map 侧推进器可被拆 ⇒ 必须有对称项；无 Map 侧不需要，见注册处注释）。
+        /// 按 (a, 折线) 找到那一项减掉权重，减到 ≤0 就去掉（不许留"幽灵权重"）。
+        /// </summary>
+        public void UnregisterEnvelope(float ve, float mf, float densityExponent,
+            System.Collections.Generic.IReadOnlyList<MachPoint>? machCurve)
+        {
+            if (envelopeTerms == null) return;
+            double veMf = (double)ve * mf;
+            if (!(veMf > 0.0)) return;
+            for (int i = 0; i < envelopeTerms.Count; i++)
+            {
+                var t = envelopeTerms[i];
+                if (t.densityExponent != densityExponent) continue;
+                if (!SameCurve(t.machCurve, machCurve)) continue;
+                t.veMf -= veMf;
+                if (t.veMf <= 1e-9) envelopeTerms.RemoveAt(i);
+                break;
+            }
+        }
+
+        /// <summary>折线逐点相同判定（建网期用，3–5 点，不值当上哈希）。</summary>
+        private static bool SameCurve(System.Collections.Generic.IReadOnlyList<MachPoint>? a,
+            System.Collections.Generic.IReadOnlyList<MachPoint>? b)
+        {
+            int na = a?.Count ?? 0, nb = b?.Count ?? 0;
+            if (na != nb) return false;
+            for (int i = 0; i < na; i++)
+            {
+                if (a![i].mach != b![i].mach || a[i].factor != b[i].factor) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// **[A5] 附带进气注册**：按引擎流率把"每消耗 1 kg 主工质要多抽多少附带工质"累进 `gasDraws`
+        /// （N 台同型引擎 ≡ N 倍 ⇒ 与 <see cref="RegisterEngine"/> 同律；同工质多项**合并**）。
+        /// ⚠ 刻意**不做成 `RegisterEngine` 的重载**：那个三参重载已被 `axisIndex:int` 占用，
+        ///   再加一个 `null` 可传的重载会把"传 null 调谁"变成编译期歧义 —— 单开一个方法，既有调用点零改动。
+        /// ⚠ 与 `RegisterEngine` 一样假定**构建期调用**（无注销对称项；有 Map 侧要注销时随那时的接线一起补）。
+        /// </summary>
+        public void RegisterGasDraws(System.Collections.Generic.IReadOnlyList<GasIntake>? intakes, float massFlow)
+        {
+            if (intakes == null || intakes.Count == 0 || massFlow <= 0f) return;
+            for (int i = 0; i < intakes.Count; i++)
+            {
+                var gi = intakes[i];
+                if (gi?.propellant == null || !(gi.perUnitRatio > 0f)) continue;
+                double add = (double)gi.perUnitRatio * massFlow;
+                if (gasDraws == null) gasDraws = new System.Collections.Generic.List<GasDraw>(2);
+                bool merged = false;
+                for (int j = 0; j < gasDraws.Count; j++)
+                {
+                    if (gasDraws[j].propellant != gi.propellant) continue;
+                    gasDraws[j].flowKgPerSec += add;
+                    merged = true;
+                    break;
+                }
+                if (!merged) gasDraws.Add(new GasDraw { propellant = gi.propellant, flowKgPerSec = add });
+            }
         }
 
         /// <summary>无朝向注册（无 Map 全矢量源）：只入总聚合，不入 per-axis。</summary>
@@ -230,6 +359,15 @@ namespace PioneerFramework
         // 该向量是运行时聚合缓存，不落盘：由各储罐建筑在 Spawn 时 +、
         // 在加注/消耗/摧毁时 ±，读档/取档后由建筑重建，避免重复记账。
         private Dictionary<PropellantDef, double> propellantMass = new Dictionary<PropellantDef, double>();
+
+        /// <summary>
+        /// **按工质的容量**（kg）—— 2026-10-07 补（[A3] 有 Map 侧进气道的前置）。
+        /// 为什么必须有：`propellantMass` 一直按工质记，容量却只有**总数**（`totalPropellantCapacity`）；
+        /// 于是"空气罐还剩多少余量"无从算起 —— 拿总容量当空气容量就会**凭空生空气**（燃料罐的容差被算成空气余量）。
+        /// 由 `CompPropellantTank` 在自己的 Spawn/DeSpawn 处按工质登记（与总容量**同源**）。
+        /// 同样是运行时聚合缓存，不进档（读档后由储罐重登记）。
+        /// </summary>
+        private Dictionary<PropellantDef, double> propellantCapacity = new Dictionary<PropellantDef, double>();
 
         /// <summary>工质总质量缓存（**double**，供并行物理线程只读，避免遍历字典）。
         /// ⚠ double 的理由见 <see cref="IPropulsionSource.GetPropellantMass"/>：累加量在 72 t 处
@@ -355,6 +493,9 @@ namespace PioneerFramework
         // ── 推进器建筑列表（burn 状态传播 / 喷焰表现）──
         private readonly List<CompThruster> thrusters = new List<CompThruster>();
 
+        /// <summary>**[A3] 本船的进气道**（建筑 comp；Spawn/DeSpawn 登记/注销）—— 充填相按"面积×系数"求和。</summary>
+        private readonly List<CompIntakeAir> intakes = new List<CompIntakeAir>();
+
         // ── 六方向推力聚合（per-axis 缓存，引擎注册/注销时维护；并行物理线程只读）──
         private readonly float[] totalThrustByAxis = new float[6];
 
@@ -429,6 +570,31 @@ namespace PioneerFramework
 
         /// <summary>储罐总容量（kg，满箱工质总量，MaxDeltaV 用）。**double**（同上）。</summary>
         public double TotalPropellantCapacity => totalPropellantCapacity;
+
+        /// <summary>某工质的容量（kg）。未登记返回 0（**不是**总容量 —— 见 `propellantCapacity` 的说明）。</summary>
+        public double GetPropellantCapacity(PropellantDef def)
+        {
+            if (def == null) return 0.0;
+            return propellantCapacity.TryGetValue(def, out var c) ? c : 0.0;
+        }
+
+        /// <summary>某工质的**余量**（kg）＝ 容量 − 存量（[A3] 有 Map 侧充填的截断口径）。</summary>
+        public double GetPropellantRoom(PropellantDef def)
+        {
+            double room = GetPropellantCapacity(def) - GetPropellantMass(def);
+            return room > 0.0 ? room : 0.0;
+        }
+
+        /// <summary>**按工质**的容量增减（由 `CompPropellantTank` Spawn/DeSpawn 同步；与总容量同源）。</summary>
+        public void AddPropellantCapacity(PropellantDef def, double delta)
+        {
+            if (def == null || delta == 0.0) return;
+            double next = GetPropellantCapacity(def) + delta;
+            if (next <= 0.0001)
+                propellantCapacity.Remove(def);
+            else
+                propellantCapacity[def] = next;
+        }
 
         /// <summary>储罐总容量增减（由 CompPropellantTank Spawn/DeSpawn 同步）。</summary>
         public void AddPropellantCapacity(double delta)
@@ -520,7 +686,9 @@ namespace PioneerFramework
             }
         }
 
-        public void RegisterEngine(PropellantDef def, float ve, float massFlow, ThrustAxis axis, bool isRcs = false)
+        public void RegisterEngine(PropellantDef def, float ve, float massFlow, ThrustAxis axis, bool isRcs = false,
+            float densityExponent = 0f, System.Collections.Generic.IReadOnlyList<MachPoint>? machCurve = null,
+            System.Collections.Generic.IReadOnlyList<GasIntake>? gasIntakes = null)
         {
             if (def == null || massFlow <= 0f) return;
             if (!networks.TryGetValue(def, out var net))
@@ -539,10 +707,15 @@ namespace PioneerFramework
                 net.RegisterEngine(ve, massFlow, axisIndex);
                 totalThrustByAxis[axisIndex] += ve * massFlow;
             }
+            // [A4] 包线（**火箭项不入表** ⇒ 既有四台推进器零改动、逐位不变）
+            net.RegisterEnvelope(ve, massFlow, densityExponent, machCurve);
+            net.RegisterGasDraws(gasIntakes, massFlow);   // [A5] 附带进气配比（空 = 纯火箭）
             RebuildNetworkList();
         }
 
-        public void UnregisterEngine(PropellantDef def, float ve, float massFlow, ThrustAxis axis, bool isRcs = false)
+        public void UnregisterEngine(PropellantDef def, float ve, float massFlow, ThrustAxis axis, bool isRcs = false,
+            float densityExponent = 0f, System.Collections.Generic.IReadOnlyList<MachPoint>? machCurve = null,
+            System.Collections.Generic.IReadOnlyList<GasIntake>? gasIntakes = null)
         {
             if (def == null || massFlow <= 0f) return;
             if (networks.TryGetValue(def, out var net))
@@ -558,6 +731,8 @@ namespace PioneerFramework
                     net.UnregisterEngine(ve, massFlow, axisIndex);
                     totalThrustByAxis[axisIndex] = Mathf.Max(0f, totalThrustByAxis[axisIndex] - ve * massFlow);
                 }
+                net.UnregisterEnvelope(ve, massFlow, densityExponent, machCurve);   // [A4] 对称注销
+                net.UnregisterGasDraws(gasIntakes, massFlow);                       // [A5] 对称注销
                 if (net.Empty)
                     networks.Remove(def);
                 RebuildNetworkList();
@@ -702,6 +877,37 @@ namespace PioneerFramework
         {
             if (t != null && !thrusters.Contains(t))
                 thrusters.Add(t);
+        }
+
+        /// <summary>[A3] 进气道登记（Spawn 时由 `CompIntakeAir` 调）。</summary>
+        public void RegisterIntake(CompIntakeAir c)
+        {
+            if (c != null && !intakes.Contains(c)) intakes.Add(c);
+        }
+
+        /// <summary>[A3] 进气道注销（DeSpawn 时由 `CompIntakeAir` 调）。</summary>
+        public void UnregisterIntake(CompIntakeAir c)
+        {
+            if (c != null) intakes.Remove(c);
+        }
+
+        /// <summary>
+        /// **[A3] 群级进气面积**（m²·k，与无 Map 侧 `GetGroupIntakeArea` 同口径）：
+        /// Σ 各**完好**进气道的 `intakeArea · coefficient`。**没有进气道 ⇒ 0 ⇒ 一点不充**（不静默兜底）。
+        /// </summary>
+        public double TotalIntakeArea
+        {
+            get
+            {
+                double area = 0.0;
+                for (int i = 0; i < intakes.Count; i++)
+                {
+                    var c = intakes[i];
+                    if (c == null || c.parent == null || c.parent.Destroyed) continue;
+                    area += c.IntakeArea;
+                }
+                return area;
+            }
         }
 
         public void UnregisterThruster(CompThruster t)

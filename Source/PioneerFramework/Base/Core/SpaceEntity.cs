@@ -302,6 +302,8 @@ namespace PioneerFramework
                             net.RegisterEngineRcs(d.ve, d.massFlow); // RCS 副网：入总聚合 + RCS 聚合（D15/D13 同构）
                         else
                             net.RegisterEngine(d.ve, d.massFlow);     // 主引擎：总聚合（无 Map 由实体主推轴约束）
+                        net.RegisterGasDraws(d.gasIntakes, d.massFlow);   // [A5] 附带进气（空 = 纯火箭）
+                        net.RegisterEnvelope(d.ve, d.massFlow, d.densityExponent, d.machCurve);   // [A4] 包线（火箭项不入表）
                         list.Add(net);
                     }
                     cachedPropulsionNetworks = list;
@@ -347,9 +349,33 @@ namespace PioneerFramework
             return consumed;
         }
 
+        /// <summary>
+        /// **[A3] 充填自带工质（kg）**，返回实际加入量（受**容量**截断）—— 进气充填的唯一写入口。
+        /// ⚠ 与 <see cref="TryConsumePropellant"/> 同一条纪律：跨**全部**同工质条目分摊，且
+        /// `totalPropulsionMass` 与逐条 `mass` **同相**更新 —— 它在这两条路径上都是**增量维护的缓存**
+        /// （不在读时重算）⇒ 这里不维护就会与逐条之和对不上，进而喂错 `a = F/m`。
+        /// </summary>
+        public double TryFillPropellant(PropellantDef def, double kg)
+        {
+            if (def == null || kg <= 0.0 || propulsion == null) return 0.0;
+            double added = 0.0;
+            for (int i = 0; i < propulsion.Count && added < kg; i++)
+            {
+                var d = propulsion[i];
+                if (d == null || d.propellant != def) continue;
+                double room = d.capacity - d.mass;
+                if (!(room > 0.0)) continue;
+                double take = System.Math.Min(kg - added, room);
+                d.mass += take;
+                added += take;
+            }
+            if (added > 0.0)
+                totalPropulsionMass += added;
+            return added;
+        }
+
         /// <summary>自带工质总质量（kg）。**double**：它是"每步扣一点"的累加量，float 会在 72 t 处只剩 7.8 g 分辨率。</summary>
         public double TotalPropellantMass => totalPropulsionMass;
-
         /// <summary>自带燃料总容量（kg，MaxDeltaV 用）。**double**（同 <see cref="TotalPropellantMass"/>）。</summary>
         public double TotalPropellantCapacity => totalPropulsionCapacity;
 
@@ -558,6 +584,19 @@ namespace PioneerFramework
     /// 无 Map 实体的单工质推进配置（工质种类 + 引擎参数 + 燃料存量/容量）。
     /// burn 通过 SpaceEntity（IPropulsionSource）读取；有 Map 实体忽略此数据（走 SpaceMapComp）。
     /// </summary>
+    /// <summary>
+    /// **[A5] 引擎的"附带进气"配比**：每消耗 1 kg 主工质，还要另外抽走 <see cref="perUnitRatio"/> kg
+    /// 本工质（通常 = 空气）。无 Map 侧写在 `PropulsionData.gasIntakes` 里；**空 = 纯火箭**。
+    /// </summary>
+    public class GasIntake
+    {
+        /// <summary>被抽走的工质（通常 = `PF_Propellant_IntakeAir`）。缺席 = 本项不生效（注册端会跳过）。</summary>
+        public PropellantDef? propellant;
+
+        /// <summary>每单位主工质的抽取比（kg/kg，>0）。0 或负 = 本项不生效。</summary>
+        public float perUnitRatio = 1f;
+    }
+
     public class PropulsionData : IExposable
     {
         /// <summary>工质种类。</summary>
@@ -581,6 +620,23 @@ namespace PioneerFramework
         public double capacity;
 
         /// <summary>
+        /// **密度指数 a**（[A4]/D5 包线；无 Map 侧）：`F = ve·ṁ·油门·(ρ/ρ0)^a·f(M)`。
+        /// **0 = 火箭**（退化：包线因子恒 1 ⇒ 既有无 Map 载具零改动）。吸气式常规取 1。
+        /// 求值在 `AirBreathingCore.ThrustFactor`（唯一算式）。
+        /// </summary>
+        public float densityExponent;
+
+        /// <summary>**Mach 折线**（[A4]/D5；无 Map 侧）：空 = 不折（f≡1）。见 `AirBreathingCore`。</summary>
+        public List<MachPoint>? machCurve;
+
+        /// <summary>
+        /// **[A5] 附带进气配比**（无 Map 侧）：本引擎每消耗 1 kg <see cref="propellant"/> 还要抽走的别的工质。
+        /// **空 = 纯火箭**（既有载具零改动、门控路径不进）；吸气式 = 一项"空气 15:1"这样的条目。
+        /// 消费端 = 本船的进气道充填（[A3]）往同一个空气条目里灌；**抽干 ⇒ 熄火**（见 `AirBreathingCore`）。
+        /// </summary>
+        public List<GasIntake>? gasIntakes;
+
+        /// <summary>
         /// 是否弱 RCS 副网（D15/D13 同构，仅无 Map 实体使用）：
         /// true = 全矢量小推力修正（主推未对准时仍可出力、主网尽时兜底），不参与主推轴向约束；
         /// false = 主引擎（无 Map 主推方向型沿 entity.mainAxisShip 锥内出力；全向型无约束）。
@@ -599,6 +655,9 @@ namespace PioneerFramework
             Scribe_Values.Look(ref mass, "mass", 0.0);
             Scribe_Values.Look(ref capacity, "capacity", 0.0);
             Scribe_Values.Look(ref isVectoredRcs, "isVectoredRcs", false);
+            Scribe_Values.Look(ref densityExponent, "densityExponent", 0f);
+            Scribe_Collections.Look(ref machCurve, "machCurve", LookMode.Deep);
+            Scribe_Collections.Look(ref gasIntakes, "gasIntakes", LookMode.Deep);
         }
     }
 }

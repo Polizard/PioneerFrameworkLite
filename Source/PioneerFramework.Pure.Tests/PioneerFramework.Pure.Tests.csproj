@@ -78,6 +78,26 @@
     <!-- PFView 地图浮雕（V-7，2026-10-02）：逐格分类 → 矩形盒体的纯逻辑（合并/降采样/确定性）——
          无 Verse/Unity 依赖，链进来用纯测试钉住"不重叠不漏格 + 超限降采样只增不减"。 -->
     <Compile Include="..\PioneerFramework\Base\MapComp\MapReliefPlan.cs" Link="Pure\MapReliefPlan.cs" />
+    <!-- 大气层 [A1]（2026-10-06）：**密度提供者**（64 点表 + 线性插值；纯函数、无 Verse/Unity）——
+         链进来用纯测试钉住"单调 / 边界连续 / ρ(100 km)/ρ₀ ≈ 0 / ρ≡0 惰性分支 / 插值误差有界"。
+         ⚠ [补2]：ρ₀/H 的正式数值延后裁定 ⇒ 测试用**合成参数**，测模型不测数据。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\AtmosphereModel.cs" Link="Pure\AtmosphereModel.cs" />
+    <!-- 大气层 [A2-1]（2026-10-06）：**气动形状**（三轴 Cd·A 薄 struct + 盒模型导出；纯、零消费者）——
+         链进来钉住"盒→三轴映射 / 立方体 = 三轴相等退化 / 退化守卫（不许静默零面积）"。
+         ⚠ [补1]：有 Map 生产者不第一批做；[补3]：测试火箭按"长棍"给数据（属 [A2] 数据裁定，不在本文件）。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\AeroShape.cs" Link="Pure\AeroShape.cs" />
+    <!-- 大气层 [A3]+[A4]+[A5]（2026-10-06）：**吸气式纯核心**（进气速率 / 包线因子 / Mach 折线 /
+         混合比与熄火门）——链进来钉住"火箭退化恰 1.0""真空进气=0""抽干熄火"。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\AirBreathingCore.cs" Link="Pure\AirBreathingCore.cs" />
+    <!-- 大气层 [A2-2]（2026-10-06）：**阻力律**（唯一算式：二次范数 + 各向同性退化标量路径）——
+         链进来跑风洞台架五条判据（含"共转 ⇒ 零"要用生产同一口 SurfaceFrame，一并链入）。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\AeroDrag.cs" Link="Pure\AeroDrag.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\SurfaceFrame.cs" Link="Pure\SurfaceFrame.cs" />
+    <!-- 大气层 [A7]（2026-10-06）：**悬浮控制律**（PD + 死区 + 上限 / 定点目标 / 姿态设定点 /
+         解析档等效计费）——链进来跑"定律边界"与"抖幅 ∝ dt²"台架（后者是计划稿 §2.6 的断言）。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\HoverCore.cs" Link="Pure\HoverCore.cs" />
+    <!-- [A8] 点到点解析搬运（2026-10-07）：路径（大圆+半径线性）/ 时长 / 等效计费 —— 链进来钉"端点、不穿天体、账单守恒"。 -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\AnalyticTransferCore.cs" Link="Pure\AnalyticTransferCore.cs" />
   </ItemGroup>
 
   <ItemGroup>

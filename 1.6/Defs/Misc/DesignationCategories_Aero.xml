@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!--
+    **[A3]–[A5] 玩家向的建造类目「大气/气动件」**（2026-10-07）：
+    把进气道 / 空气罐 / 吸气式发动机成组放在建筑师菜单里 —— 玩家才找得到"这套东西是大气里用的"。
+    形状照原版 `Furniture`（`DesignationCategoryDef` 不需要图标：菜单页用该类目第一件建筑贴图）。
+    这是**数据层分类**；代码层不开新模块/新类型系统（D13：不做第二套类型系统）。
+  -->
+  <DesignationCategoryDef>
+    <defName>PF_Aero</defName>
+    <label>大气/气动件</label>
+    <order>500</order>
+    <specialDesignatorClasses>
+      <li>Designator_Cancel</li>
+      <li>Designator_Deconstruct</li>
+    </specialDesignatorClasses>
+  </DesignationCategoryDef>
+</Defs>

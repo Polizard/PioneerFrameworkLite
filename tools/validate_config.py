@@ -6,6 +6,7 @@ Checks:
 - every PFDefs [DefOf] field has a matching defName in Defs
 - About.xml declares a valid packageId, supportedVersions 1.6 and Harmony dependency
 - committed AssetBundles and Shader sources exist
+- CelestialBodyDef XML elements must be declared C# fields (atmosphere-data guard, 2026-10-06)
 - optional Languages Keyed/DefInjected consistency (when Languages/ exists)
 - optional LoadFolders.xml well-formedness (when present)
 """
@@ -205,6 +206,106 @@ def main():
                         "known base textures)."
                     )
 
+    # 7.5 ThingDef 自带 `graphicData` 的，必须**显式**写 `graphicClass`（texPath 也不能空）。
+    #     WHY（2026-10-07 实测，**用户在游戏里撞见的**而闸门当时没查）：`graphicClass` 既不默认也不继承
+    #     ⇒ 漏写就是启动时一行红字 `Config error in <def>: graphicClass is null`
+    #     （`Verse.GraphicData.ConfigErrors` 报的）。同族：`texPath is null or empty`。
+    #     教训：**RimWorld 自己的 ConfigErrors 是免费的检查清单** —— 能离线复刻的就要复刻进闸门。
+    for xml_path, root in xml_roots:
+        for child in root.iter("ThingDef"):
+            gd = child.find("graphicData")
+            if gd is None:
+                continue
+            name = (child.findtext("defName") or child.get("ParentName") or "?").strip()
+            if not (gd.findtext("graphicClass") or "").strip():
+                fail(
+                    f"{xml_path.relative_to(ROOT)}: ThingDef '{name}' has graphicData but no "
+                    "graphicClass (RimWorld reports 'Config error: graphicClass is null' at load)."
+                )
+            if not (gd.findtext("texPath") or "").strip():
+                fail(
+                    f"{xml_path.relative_to(ROOT)}: ThingDef '{name}' has graphicData but empty "
+                    "texPath (RimWorld reports 'Config error: texPath is null or empty')."
+                )
+
+
+    # 8. **我们自己的** Def / CompProperties 元素必须对得上已声明字段（2026-10-06）。
+    #    WHY（同族两起）：
+    #      ① 大气层 [A1] 建密度数据：`<atmosphereRho>` 少打一个 0 ⇒ RimWorld 只报一行 XML error、
+    #         值静默留在默认 ⇒ 密度模型静默失效；
+    #      ② 2026-10-06 游戏日志实测真红字：`<defaultMode>Auto</defaultMode>` 打在
+    #         `CompProperties_MapDesignator` 上 —— 该类**没有这个字段**（模式是运行时 gizmo 开关
+    #         `autoFire`）。元素从落地那天起就没生效过，只贡献一行红字。
+    #    范围（刻意窄，零误报优先）：只查**基类字段可枚举**的类型 ——
+    #      · `Class="PioneerFramework.*CompProperties_*"`：基类 `Verse.CompProperties` 的字段只有 `compClass`；
+    #      · 简单 Def 派生（`SIMPLE_DEF_TYPES` 里逐个登记）：基类 `Def` 的字段见 `DEF_BASE_FIELDS`。
+    #    ⚠ 不查 ThingDef 派生（`Combat.WeaponDef` 等）：基类字段是 RimWorld 的、这里枚举不全 ⇒ 会误报。
+    #    ⚠ GenStep / WorldGenStep 同样跳过（今天它们没有子元素；要查得先把基类字段登记进来）。
+    DEF_BASE_FIELDS = {
+        "defName", "label", "labelShort", "description",
+        "ignoreConfigErrors", "modExtensions",
+    }
+    COMP_PROPS_BASE_FIELDS = {"compClass"}
+    SIMPLE_DEF_TYPES = {"CelestialBodyDef", "PropellantDef"}
+    _field_re = re.compile(
+        r"^\s*public\s+(?:readonly\s+|static\s+|volatile\s+)*[\w\.<>\[\],\?]+\s+(\w+)\s*(?:=[^;{]*)?;\s*$")
+
+    def _class_re(type_name):
+        return re.compile(r"\b(?:class|struct)\s+" + re.escape(type_name) + r"\b")
+
+    src_root = ROOT / "Source"
+    declared_cache = {}
+
+    def declared_fields(type_name):
+        """声明该类型的那个 .cs 文件里，所有 `public … <名>;` 形式的字段名（宽松：同文件全收，宁松勿误报）。"""
+        if type_name in declared_cache:
+            return declared_cache[type_name]
+        found = None
+        for cs_path in sorted(src_root.rglob("*.cs")):
+            parts = cs_path.parts
+            if "已弃置" in parts or "bin" in parts or "obj" in parts:
+                continue
+            text = cs_path.read_text(encoding="utf-8", errors="replace")
+            if not _class_re(type_name).search(text):
+                continue
+            names = set()
+            for line in text.splitlines():
+                m = _field_re.match(line)
+                if m:
+                    names.add(m.group(1))
+            found = names
+            break
+        declared_cache[type_name] = found
+        return found
+
+    for xml_path, root in xml_roots:
+        rel = xml_path.relative_to(ROOT)
+        for node in root.iter():
+            cls = node.get("Class")
+            if cls and cls.startswith("PioneerFramework."):
+                type_name = cls.split(".")[-1]
+                if "CompProperties" not in type_name:
+                    continue                      # GenStep 等：基类字段不可枚举 ⇒ 跳过
+                base_fields = COMP_PROPS_BASE_FIELDS
+            elif node.tag.startswith("PioneerFramework."):
+                type_name = node.tag.split(".")[-1]
+                if type_name not in SIMPLE_DEF_TYPES:
+                    continue
+                base_fields = DEF_BASE_FIELDS
+            else:
+                continue
+
+            declared = declared_fields(type_name)
+            if declared is None:
+                fail(f"{rel}: XML references type '{cls or node.tag}' but no class/struct "
+                     f"'{type_name}' is declared under Source/")
+            for el in node:
+                if el.tag not in declared and el.tag not in base_fields:
+                    fail(
+                        f"{rel}: {cls or node.tag} has element <{el.tag}> which is not a declared field "
+                        f"of {type_name} (RimWorld would ignore it and the value would silently stay "
+                        "at its default)"
+                    )
 
     print(
         f"OK: {len(def_names)} defs, {len(fields)} DefOf fields, "

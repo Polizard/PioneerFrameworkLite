@@ -30,6 +30,40 @@ namespace PioneerFramework
         public bool hasSurface;
         /// <summary>大气层厚度（米），0 = 无大气</summary>
         public double atmosphereThickness;
+        /// <summary>
+        /// 基准高度（h=0）处的大气密度 ρ₀ (kg/m³)。**0 = 未定/无大气**（[补2]，2026-10-06：
+        /// 数值不按地球取值、延后裁定）—— 与 <see cref="atmosphereThickness"/> = 0 一样
+        /// ⇒ 密度模型**恒惰性**（"缺席即零"，见 <see cref="AtmosphereModel"/>）。
+        /// </summary>
+        public double atmosphereRho0;
+        /// <summary>
+        /// 大气标尺高度 H (m)：ρ(h) = ρ₀·exp(−h/H)。**0 = 未定**（同 ρ₀ ⇒ 惰性）。
+        /// </summary>
+        public double atmosphereScaleHeight;
+        /// <summary>
+        /// **恢复阈值**（[A6]，2026-10-06）：多少**个标尺高度**之外认为"气动可忽略"（ρ/ρ₀ ≤ e^−k）。
+        /// 同一常数、同一语义供两处：① 引力掩码的**单向闩锁恢复**判据（取反）；
+        /// ② **解析圆轨准入**（`EnterCircularOrbit` 进入前查）。保守取 9.5（计划稿 §2.5："保守取 9-10 个标尺高度"）。
+        /// 默认值写在字段上 ⇒ 不配 XML 也有意义。
+        /// </summary>
+        public double atmosphereRestoreScaleHeights = 9.5;
+        /// <summary>
+        /// 大气**视觉色**（2026-10-10 渲染线加，用户口径："摄像机越深入天空盒越蔚蓝"）。
+        /// 语义 = "从这颗天体的大气内部抬头看到的颜色"：天空盒按它上色、外面那圈半透明壳也用它。
+        /// 不填 ⇒ 天蓝（默认值就在字段上）。想给别的行星配色（火星土黄之类）就往它的 Def 里加一行
+        /// `<atmosphereColor>(0.62, 0.48, 0.35)</atmosphereColor>`。
+        /// ⚠ **只影响表现**：物理（阻力/包线/掩码/准入）一律读 ρ₀ / H / 厚度，不读这个颜色。
+        /// </summary>
+        public Color atmosphereColor = new Color(0.35f, 0.55f, 0.85f, 1f);
+        /// <summary>
+        /// **基底球渲染色**（2026-10-11 用户口径："在天体定义里加一个基底球渲染颜色，然后把这颗行星的设置为烘焙海洋格子的颜色"）。
+        /// 语义 = **显示色**（"我想在屏幕上看到什么颜色"，按 0..1 填，例如烘焙海洋格的字节 (72,72,104) ⇒ (0.282,0.282,0.408)）——
+        /// 代码会按工程的颜色空间把它转成**渲染用的线性值**再用（`PFViewSurfaceBake.ToRenderColor`），
+        /// 因为 `Material.color` 在 Linear 工程里是**线性值**：把显示色直接填进去会明显偏亮（"基底球看起来浅"）。
+        /// **默认 `Color.clear`（a=0）= 未设置** ⇒ 退回"数据区里水格最多的 biome 的贴图"那条口径。
+        /// 只影响表现：物理/几何一律不读它。
+        /// </summary>
+        public Color baseSphereColor = new Color(0f, 0f, 0f, 0f);
         /// <summary>自转周期（游戏 tick），默认 60000 = 1 RimWorld 天。火星约 61500，木星约 21400</summary>
         public double dayLengthTicks = 60000.0;
         /// <summary>对应的 PlanetLayerDef 名称。不填则默认使用 defName 匹配</summary>
@@ -89,6 +123,34 @@ namespace PioneerFramework
             EnsureOrbitFrame();
             refX = orbitFrameRefX;
             refY = orbitFrameRefY;
+        }
+
+        // ── 运行时缓存（[A1]，2026-10-06）：大气密度剖面（64 点表），首次访问时建 ──
+        [Verse.Unsaved]
+        private volatile bool atmosphereProfileCached;
+        [Verse.Unsaved]
+        private AtmosphereProfile atmosphereProfileCache;
+
+        /// <summary>
+        /// **大气密度剖面（[A1]，计划稿 §2.1）**：由 <see cref="atmosphereRho0"/> / <see cref="atmosphereScaleHeight"/> /
+        /// <see cref="atmosphereThickness"/> 建一次 64 点表并缓存；**任一参数 ≤ 0 ⇒ 惰性剖面**（`Density` 恒 0）。
+        ///
+        /// **写序**：同 <see cref="EnsureOrbitFrame"/> —— 先把值写好、最后才置标志（volatile）；
+        /// 两线程同时首建无害（各自建出的表逐位相同，谁最后写都一样）。
+        /// ⚠ 建表是**分配**：调用方应在**进并行物理区前预暖**（[A2] 的调用纪律）。
+        /// </summary>
+        public AtmosphereProfile Atmosphere
+        {
+            get { EnsureAtmosphereProfile(); return atmosphereProfileCache; }
+        }
+
+        /// <summary>预热/取剖面：幂等；惰性参数下也置标志（省得每次重试建表）。</summary>
+        public void EnsureAtmosphereProfile()
+        {
+            if (atmosphereProfileCached) return;
+            atmosphereProfileCache = AtmosphereModel.Build(
+                atmosphereRho0, atmosphereScaleHeight, atmosphereThickness);
+            atmosphereProfileCached = true;
         }
 
         // ── XML 交叉引用 ──

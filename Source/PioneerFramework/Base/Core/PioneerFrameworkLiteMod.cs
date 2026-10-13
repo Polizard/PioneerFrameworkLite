@@ -1,0 +1,68 @@
+using UnityEngine;
+using Verse;
+
+namespace PioneerFramework
+{
+    /// <summary>
+    /// **先驱框架Lite 的模组设置**（2026-10-11 用户口径：「搞一个开关，让玩家自己决定要不要替换星空和太阳（默认开启）」）。
+    ///
+    /// **一个开关管两头，缺一不可**：
+    /// · **开（默认）**：世界视图（含含图编队地图的背景）里的太阳/星空用本模组补画的那套（`WorldSunBillboard` / `WorldStarfield`，
+    ///   材质/朝向/视大小照原版）；原版 `GlobalDrawLayer_Sun` / `GlobalDrawLayer_Stars` **停用**（见 `VanillaSkySuppression`）。
+    /// · **关**：一切照原版（原版那两层照画；我们补画的太阳/星空不画）。
+    ///
+    /// 为什么必须成对：原版那两套画在**球心外 20 单位**、平时靠**行星壳**挡，而行星表面 shader 全是**单面**（`cull=Back`）
+    /// ⇒ **镜头一进壳（船落地/低空时背景相机在舱底外侧）就整片露出** ⇒ 只"补画"不"停用"会出现**两个太阳**（2026-10-11 用户实测报回）；
+    /// 只"停用"不"补画"则天上什么都没有。⇒ 两条腿只有一个开关。
+    /// </summary>
+    public class PioneerFrameworkLiteSettings : ModSettings
+    {
+        /// <summary>是否用本模组的太阳/星空**替换**原版（**默认开**）。</summary>
+        public bool replaceWorldSky = true;
+
+        public override void ExposeData()
+        {
+            Scribe_Values.Look(ref replaceWorldSky, "replaceWorldSky", true);
+        }
+    }
+
+    /// <summary>
+    /// 模组入口（RimWorld 按"程序集里唯一的 `Mod` 子类"自动认领）。本模组此前没有 `Mod` 类；
+    /// 2026-10-11 为"要不要替换世界视图的太阳与星空"这个玩家开关而加。
+    /// 设置读写走标准通道：`GetSettings&lt;T&gt;()` / `WriteSettings()` ⇒ 存在 RimWorld 的配置里（跨局保留）。
+    /// </summary>
+    public class PioneerFrameworkLiteMod : Mod
+    {
+        /// <summary>设置实例（`Mod` 构造时建立）。headless/未构造时为 null ⇒ 各处一律按"默认开"处理
+        /// （见 `VanillaSkySuppression.ReplaceEnabled`：`?? true`）。</summary>
+        public static PioneerFrameworkLiteSettings? Settings;
+
+        public PioneerFrameworkLiteMod(ModContentPack content) : base(content)
+        {
+            Settings = GetSettings<PioneerFrameworkLiteSettings>();
+        }
+
+        public override string SettingsCategory() => "先驱框架Lite";
+
+        public override void DoSettingsWindowContents(Rect inRect)
+        {
+            if (Settings == null) return;
+
+            var listing = new Listing_Standard();
+            listing.Begin(inRect);
+            // ⚠ 只用最小且确定的 API（`CheckboxLabeled(2 参)` / `Label`）——不确定的签名不猜（仓库纪律）
+            listing.CheckboxLabeled("替换世界视图的太阳与星空（默认开）", ref Settings.replaceWorldSky);
+            listing.Gap(6f);
+            listing.Label("开（默认）：世界视图与含图编队地图背景里的太阳/星空用本模组补画的那套；");
+            listing.Label("原版那两套画在行星中心附近、只在镜头进入行星壳（船落地/低空）时才会露出来，已停用。");
+            listing.Label("关：一切照原版（含「镜头进壳时会看到原版太阳/星空」这条）。");
+            listing.End();
+        }
+
+        public override void WriteSettings()
+        {
+            base.WriteSettings();
+            Settings?.Write();
+        }
+    }
+}

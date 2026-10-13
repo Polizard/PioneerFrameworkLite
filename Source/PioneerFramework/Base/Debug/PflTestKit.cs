@@ -126,9 +126,13 @@ namespace PioneerFramework
             }
             current = new Case(name, category ?? "", timeoutTicks);
             current.startedTick = Find.TickManager?.TicksGame ?? 0;
+            lastHeartbeatTicks = 0;   // 心跳节拍跟着用例走（换人即归零）
             Cases.Add(current);
             return current;
         }
+
+        /// <summary>还有未结算的用例吗（异步**排队**用：等它结完再开下一个，避免抢那唯一的槽位）。</summary>
+        public static bool AnyPending => current != null && !current.finished;
 
         /// <summary>现在开着的用例是「<paramref name="name"/>」吗（异步段的驱动方在写判据前必须先问这一句）。</summary>
         public static bool IsCurrent(string name)
@@ -278,6 +282,18 @@ namespace PioneerFramework
         {
             if (current == null || current.finished || current.timeoutTicks <= 0) return;
             int now = Find.TickManager?.TicksGame ?? 0;
+
+            // **心跳**（2026-10-08 加固；每 600 真实 tick 一行）：异步用例在跑时定期留痕 ⇒
+            //   "框架还在 tick 吗 / 本用例等了多久 / 离超时还有多少" **直接可读**。
+            //   为什么必须有：2026-10-08 实测撞到过一次"用例冻结"（既无结算、也无超时），当时日志里
+            //   连"框架到底还在不在 tick"都判不出来，只能靠反推。有心跳就不必再反推。
+            if (now - current.startedTick - lastHeartbeatTicks >= 600)
+            {
+                lastHeartbeatTicks = now - current.startedTick;
+                Log.Message(string.Format("[测试框架·心跳] 异步用例「{0}」仍在跑：已 {1} tick / 超时 {2}",
+                    current.name, now - current.startedTick, current.timeoutTicks));
+            }
+
             if (now - current.startedTick > current.timeoutTicks)
             {
                 current.checks.Add(new CheckResult(Kind.Coverage, false, current.name,
@@ -287,8 +303,12 @@ namespace PioneerFramework
                 Uncovered++; Total++;
                 Announce(current);
                 current = null;
+                lastHeartbeatTicks = 0;
             }
         }
+
+        /// <summary>心跳节拍（相对 `current.startedTick`；用例换人时由 `Begin` 归零）。</summary>
+        private static int lastHeartbeatTicks;
 
         /// <summary>中止：当前用例记 UNCOVERED，已完成的结论不受影响。</summary>
         public static void Abort()

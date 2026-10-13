@@ -103,7 +103,10 @@
       <li Class="PioneerFramework.CompProperties_MapDesignator">
         <cooldownTicks>12</cooldownTicks>
         <scanIntervalTicks>32</scanIntervalTicks>
-        <defaultMode>Auto</defaultMode>
+        <!-- 2026-10-06 删除 <defaultMode>Auto</defaultMode>：CompProperties_MapDesignator 没有这个字段
+             （模式是运行时 gizmo 开关 `autoFire`，默认即 Auto）⇒ 该元素从来打不上、只在启动时刷一条
+             `XML error: ... doesn't correspond to any field` 红字。行为与该元素在位时**逐位相同**。
+             守卫：tools/validate_config.py 第 8 条（我们自己的 CompProperties / 简单 Def 元素必须对得上字段）。 -->
       </li>
     </comps>
   </ThingDef>

@@ -9,6 +9,10 @@ namespace PioneerFramework
     /// 打开时读键（Input.GetKey 保持态 + Event.current 离散态），状态写 SteeringController，
     /// 由 SpaceGameComp 每物理步应用。ESC 关闭。
     ///
+    /// 两个打开入口（同一条路：`SteeringController.Open` + 本窗口）：
+    ///   · 船上操舵台的 Gizmo（`CompSteeringConsole`，玩家在船图里）；
+    ///   · PFView 左栏"手动操舵"开关（2026-10-02 用户裁定：按下进入、再按解除）。
+    ///
     /// 目录说明（2026-09-14 D1）：本文件原在 `Base/Debug/`，但它是**玩家可达的正式 UI**
     /// （由 `CompSteeringConsole` 的 Gizmo 打开，非 dev-only），放在 Debug 目录会误导
     /// （让人以为"仅开发者可见"而低估其开销与回归面）。现与开它的 Comp 同目录——
@@ -21,12 +25,14 @@ namespace PioneerFramework
         private const float RowH = 24f;
         private static readonly Color bgColor = new Color(0.05f, 0.05f, 0.08f, 0.55f);
 
-        public Window_Steering()
+        public Window_Steering(bool absorbAroundWindow = true)
         {
             closeOnAccept = false;
             closeOnCancel = false;
             doCloseX = true;
-            absorbInputAroundWindow = true;
+            // true（默认，船上操舵台那条路）= 窗口以外的点击也吃掉，操舵时不误点地图下命令；
+            // false（PFView 那条路）= 鼠标留给 3D 相机（旋转/平移/缩放）。
+            absorbInputAroundWindow = absorbAroundWindow;
             forcePause = false;          // 操舵时游戏保持运行（物理推进/转动）
             preventCameraMotion = false;
             draggable = true;
@@ -44,18 +50,13 @@ namespace PioneerFramework
         {
             Widgets.DrawBoxSolid(inRect, bgColor);
 
-            // 有效性：窗口开着但 group 失效 / 船上操舵台被拆 → 自动关闭
+            // 有效性：窗口开着但 group 失效 / 船上操舵台被拆 → 自动关闭。
+            // 准入判据 = **船自己的图**上有完好操舵台（2026-10-02 起 PFView 左栏也能操舵，
+            // 玩家不必人在船上；旧判据看的是"玩家当前所在图"，在 PFView 里必然为空 ⇒ 窗口一开就自关）。
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             var group = spaceGame != null ? spaceGame.GetGroupById(SteeringController.GroupId) : null;
-            var curMap = Current.Game?.CurrentMap; // 同上：全库约定是 Current.Game?.
-            if (group == null || !group.IsActive || curMap == null || !CompSteeringConsole.HasConsole(curMap))
-            {
-                SteeringController.Close();
-                Close();
-                return;
-            }
-            var mapComp = group.GetLinkedMapComp();
-            if (mapComp == null)
+            var mapComp = group?.GetLinkedMapComp();
+            if (group == null || !group.IsActive || mapComp == null || !CompSteeringConsole.HasConsole(mapComp.map))
             {
                 SteeringController.Close();
                 Close();

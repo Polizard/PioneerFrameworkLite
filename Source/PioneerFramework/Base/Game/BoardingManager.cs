@@ -258,7 +258,7 @@ namespace PioneerFramework
             {
                 Log.Message(string.Format("[Boarding] Unit {0} 目标空间站 {1} 已消失，任务取消", unit.id, unit.targetGroupId));
                 KillMembers(unit, "目标空间站消失");
-                SpaceGame?.DestroyGroup(unit.groupId); // 同步销毁临时 3D 实体，防孤儿幽灵船
+                SpaceGame?.DestroyGroup(unit.groupId, "登船拆除（临时实体）"); // 同步销毁临时 3D 实体，防孤儿幽灵船
                 unit.state = BoardingState.Destroyed;
                 return;
             }
@@ -270,7 +270,7 @@ namespace PioneerFramework
                 {
                     Log.Message(string.Format("[Boarding] Unit {0} ({1}) 飞行中被击毁", unit.id, unit.type));
                     KillMembers(unit, "跳帮单位被击毁");
-                    SpaceGame?.DestroyGroup(unit.groupId);
+                    SpaceGame?.DestroyGroup(unit.groupId, "登船拆除（临时实体）");
                     unit.state = BoardingState.Destroyed;
                     return;
                 }
@@ -466,7 +466,7 @@ namespace PioneerFramework
             {
                 Log.Message(string.Format("[Boarding] Unit {0} 目标空间站内部 Map 不可用，降落失败", unit.id));
                 KillMembers(unit, "目标站内部 Map 不可用");
-                spaceGame.DestroyGroup(unit.groupId); // 同步销毁临时 3D 实体，防孤儿幽灵船
+                spaceGame.DestroyGroup(unit.groupId, "登船拆除（临时实体）"); // 同步销毁临时 3D 实体，防孤儿幽灵船
                 unit.state = BoardingState.Destroyed;
                 return;
             }
@@ -481,7 +481,7 @@ namespace PioneerFramework
                 {
                     Log.Error("[Boarding] PF_Building_Shuttle Def 缺失，降落失败");
                     KillMembers(unit, "穿梭机 Def 缺失");
-                    spaceGame.DestroyGroup(unit.groupId); // 同步销毁临时 3D 实体，防孤儿幽灵船
+                    spaceGame.DestroyGroup(unit.groupId, "登船拆除（临时实体）"); // 同步销毁临时 3D 实体，防孤儿幽灵船
                     unit.state = BoardingState.Destroyed;
                     return;
                 }
@@ -511,7 +511,7 @@ namespace PioneerFramework
             }
 
             // 销毁临时 3D 实体/group，注销飞行记录
-            spaceGame.DestroyGroup(unit.groupId);
+            spaceGame.DestroyGroup(unit.groupId, "登船拆除（临时实体）");
             unit.state = BoardingState.Landed;
             TotalLanded++;
             RecordResult(unit, BoardingState.Landed, "着陆完成");

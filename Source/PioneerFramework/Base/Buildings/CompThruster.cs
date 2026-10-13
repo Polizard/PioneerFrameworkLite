@@ -32,6 +32,30 @@ namespace PioneerFramework
         /// </summary>
         public bool isVectoredRcs;
 
+        /// <summary>
+        /// **密度指数 a**（[A4]/D5 包线）：`F = ve·ṁ·油门·(ρ/ρ0)^a·f(M)`。
+        /// **0 = 火箭**（退化：包线因子恒 1、与既有算式逐位一致 ⇒ 现有引擎零改动）；
+        /// 吸气式常规取 1（推力正比空气密度）。判定与求值都在 `AirBreathingCore`（唯一算式）。
+        /// **有 Map 侧已接线**（2026-10-07）：`SpaceMapComp.RegisterEngine` 会把这两个字段转给网络
+        /// （`RegisterEnvelope`，火箭项不入表 ⇒ 既有四台零改动），切片构造处按 φ 缩放（只乘推力、不乘流率），
+        /// **真空里 φ=0 ⇒ 整条网不路由**（D5 门控）。⚠ 进气道/空气罐（有 Map 侧）仍**未**接线。
+        /// </summary>
+        public float densityExponent;
+
+        /// <summary>
+        /// **Mach 折线 f(M)**（[A4]/D5）：3–5 个采样点（按 mach 升序给出），**空 = 不折（f≡1）**。
+        /// 与 `densityExponent == 0` 合起来构成"火箭退化"。**有 Map 侧已接线**（见上一条）。
+        /// </summary>
+        public System.Collections.Generic.List<MachPoint>? machCurve;
+
+        /// <summary>
+        /// **[A5] 附带进气配比**（有 Map 侧）：本引擎每消耗 1 kg 主工质，还要抽走的别的工质
+        /// （通常是空气，15:1 = KSP 形状）。**空 = 纯火箭**。
+        /// 抽不到 ⇒ **熄火**（本步不出力且主工质不扣）——判据与无 Map 侧**同一份算式**
+        /// （`AirBreathingCore.IntakeThrottleCap`），门控点在切片构造处（`ApplyMapThrustGates`）。
+        /// </summary>
+        public System.Collections.Generic.List<GasIntake>? gasIntakes;
+
         public CompProperties_Thruster()
         {
             compClass = typeof(CompThruster);
@@ -124,12 +148,16 @@ namespace PioneerFramework
             {
                 // Spawn 时定死轴向（建筑 Rot4 在放置后不变；重建时重新 Spawn 会重算）
                 ShipAxis = parent != null ? Props.thrustAxis.RotateByRot4(parent.Rotation) : Props.thrustAxis;
-                mapComp.RegisterEngine(PropellantDef, Ve, MassFlowRate, ShipAxis, IsVectoredRcs);
+                mapComp.RegisterEngine(PropellantDef, Ve, MassFlowRate, ShipAxis, IsVectoredRcs,
+                    densityExponent: Props.densityExponent, machCurve: Props.machCurve,           // [A4] 包线
+                    gasIntakes: Props.gasIntakes);                                               // [A5] 附带进气
                 mapComp.RegisterThruster(this);
             }
             else
             {
-                mapComp.UnregisterEngine(PropellantDef, Ve, MassFlowRate, ShipAxis, IsVectoredRcs);
+                mapComp.UnregisterEngine(PropellantDef, Ve, MassFlowRate, ShipAxis, IsVectoredRcs,
+                    densityExponent: Props.densityExponent, machCurve: Props.machCurve,
+                    gasIntakes: Props.gasIntakes);
                 mapComp.UnregisterThruster(this);
             }
         }

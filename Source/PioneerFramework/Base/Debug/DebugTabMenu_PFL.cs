@@ -2,6 +2,7 @@
 using System.Reflection;
 using LudeonTK;
 using PioneerFramework.Combat;
+using PioneerFramework.Launch;   // GetSurfaceState（天体→PlanetLayer 的唯一出处；烘焙入口要用）
 using RimWorld;
 using Verse;
 
@@ -34,8 +35,17 @@ namespace PioneerFramework
             // ═══ 验收（性能优化 9 条 + 中低优先批）═══
             // S2 首片（2026-09-23）：单一入口「一键测试（全覆盖）」—— 跑得完的全收进统一判定框架，
             // 跑不完/还没判据的**逐条显式登记**（不许用沉默冒充全覆盖）
+            AddAction("大气/悬浮/档位·判据（L1 自动跑，无需人盯读数）", "00 验收", 58,
+                AtmosphereAcceptanceRunner.Run,
+                () => "一条按钮跑完 [A1]–[A8] 的可判定面：解析档准入拒绝+对照 · 解析轨与气动互斥 · " +
+                      "进气充填 · 包线（推力<标称 35%）· 物理档悬浮（高度差<25 m）· 切解析档（**位置钉死 <1 m**、" +
+                      "定点不变、耗料率 ≈ m·g/ve ±25%）· 切回 · 料尽自动退出。收工清场。");
             AddAction("一键测试（全覆盖：框架自检 + 引力电池 + 降落/撞击判据 + 未覆盖项登记）", "00 验收", 35, FullTestRunner.Run, null);
             // [V7]（2026-10-01）：自跑站 + 站内传感器阵列建筑，验"投影非零 → 打伤减半 → 摧毁归零"，并打印存档前读数
+            // PFView 天体地表烘焙（2026-10-10）：手动选天体 → 只烤**有地块覆盖的球冠** + 山/河/路点缀 → 落旁挂 PNG（跟存档走）
+            AddAction("PFView·烘焙天体地表补丁（只烘有地块的区域 + 山/河/路；手动选天体；结果落旁挂文件，不自动烘）", "20 视图/表现", 60,
+                BakeSurfaceMenu, null);
+
             AddAction("传感器/雷达投影验收（[V7]：站 + 两座建筑 → 投影 / W1 开机 / 打伤 / 摧毁 / 往返）", "00 验收", 34,
                 SensorProjectionAcceptanceRunner.Run, null);
             // S1（2026-09-23）：统一判定框架的首两个用例 —— 把"只打印数字"的探针变成有判据的用例
@@ -175,6 +185,40 @@ namespace PioneerFramework
             AddAction("降落/撞击·判据（S3：报价·距离门·跨层错配·越界·缺表面·执行三件事 + 撞击事件）",
                 "05 场景 · 引力场(A0)", 74, RunLandingJudgments, null);
             AddAction("降落/撞击·判据中止", "05 场景 · 引力场(A0)", 73, LandingAcceptanceRunner.Abort, null);
+
+            // ═══ 场景 · 大气（A1–A6；[A7] 悬浮落地后并入本类）═══
+            AddAction("吸气式试验机（30 km 水平 400 m/s，空罐起飞：看充填 / 包线衰减 / 抽干熄火）",
+                "06 场景 · 大气(A)", 90, () => DebugShipSpawner.SpawnAirBreathingTest(),
+                () => "L1 无升力 ⇒ 它注定会落，这不是判据场景。三件该看的事：① 空气罐从 0 涨起来（充填）；" +
+                      "② 推力随 ρ 衰减（包线 φ = ρ/ρ0）；③ 空气抽干 ⇒ [大气·进气] 熄火一行（该步燃料不扣）；" +
+                      "飞进真空 ⇒ [大气·包线] 不路由一行（D5 网络门控）。");
+            AddAction("赤道 × 本初子午线 测试船（0°N 0°E 上空 30 km：调试超级引擎 + 无限燃料 + 悬浮 + 操舵台）",
+                "06 场景 · 大气(A)", 89, () => DebugShipSpawner.SpawnEquatorHoverTest(),
+                () => "定点 (φ0 λ0) 的长期基准船（**有 Map**，带操舵台 ⇒ 可开「船上控制台」）。" +
+                      "它用**调试超级引擎** `PF_Building_Thruster_TestSuper`（单台 300 MN）——因为地图站质量 = mapW×50×mapH×90 " +
+                      "⇒ 60×60 站 = **16,200 t** ⇒ 悬停要 ≈128 MN，常规 RCS（4.5 kN/台）差 3 个数量级（那台\"推力不足⇒会掉\"的真因）。" +
+                      "**台数按质量当场推**（1.6× 余量）。**无限燃料** = `debugInfinitePropellant`（唯一扣减口报\"已扣完\"但不动账，" +
+                      "不是把罐加大——那会加重量）。");
+            AddAction("悬浮试验机（30 km −20 m/s 起步，立刻开悬浮：看高度守住 + 燃料 16 kg/s）",
+                "06 场景 · 大气(A)", 88, () => DebugShipSpawner.SpawnHoverTest(),
+                () => "[A7] 定点保持 + 锁铅垂（D10），推力**只走全矢量 RCS**、不转船体。" +
+                      "该看：高度守在 30 km（抖幅量级 = 死区 ≈ 几米）· 燃料 ≈|g|·m/ve ≈16 kg/s 下走 · " +
+                      "上轴朝铅垂 · [悬浮] 读数每 10 游戏秒一行（需 DebugDetailedSteering）。" +
+                      "⚠ RCS 给不出会报「推力不足」—— 那是如实报，不是 bug。");
+            AddAction("悬浮·全部关闭（调试用；玩家向入口在操舵台/PFView 那条线）",
+                "06 场景 · 大气(A)", 86, DebugShipSpawner.StopAllHover, null);
+            AddAction("悬浮·切档（解析 ⇄ 物理；进出写 [档位] 日志，看两档耗料率是否同量级）",
+                "06 场景 · 大气(A)", 84, DebugShipSpawner.ToggleHoverTier,
+                () => "[A8] 判据 = 两档账单一致：解析档按 `m·g/ve` 记账，物理档真给推力。切到解析档后位置应被" +
+                      "**钉死在定点**（高度差恒 0、无锯齿），耗料率应与物理档同量级；料尽会**显式退出**并报一行。");
+            AddAction("有 Map 大气三件套（进气道/空气罐/吸气式发动机立在殖民地地图上；停着不进气=负对照）",
+                "06 场景 · 大气(A)", 82, () => DebugShipSpawner.SpawnMapAeroTest(out _, out _, openView: true),
+                () => "有 Map 侧的飞行中行为：停在地表 v_air≈0 ⇒ **不进气**（负对照）；给它空气相对速度后进气道才工作。" +
+                      "跑批器已自动跑这一条（负+正对照），本按钮是手动看建筑用的。");
+            AddAction("悬浮·抽空（抽到剩 60 kg：几秒内看「料尽 ⇒ 显式退出 ⇒ 自由落体」）",
+                "06 场景 · 大气(A)", 83, () => DebugShipSpawner.DrainHoverFuel(),
+                () => "试验机的料是**刻意短**的（≈190 s）——测试要的是几秒内看到状态，不是让船吊一刻钟。" +
+                      "要看\"料尽\"这条路径，按本钮抽空即可（不用等它自己烧干）。");
 
             // ═══ 场景 · 轨道 / 空间站 ═══
             AddAction("部署空间站", "10 场景 · 轨道/空间站", 100, DebugShipSpawner.SpawnTestStation, null);
@@ -370,6 +414,37 @@ namespace PioneerFramework
             LandingAcceptanceRunner.RunSync();
             LandingAcceptanceRunner.StageImpact();
             PflTestKit.PrintVerdict("降落/撞击判据（S3）");
+        }
+
+        /// <summary>
+        /// PFView 天体地表**补丁烘焙**（2026-10-10 用户口径："给个按钮，点开选天体，手动烘焙；结果跟存档走；不自动烘"
+        /// + "只烘焙有 tile 覆盖的区域，其他的部分用基底填充"）。
+        /// 选完当场同步烤（几十~几百 ms），落旁挂 PNG（`SaveDataFolderPath/PF_SurfaceBake/<世界种子>_<bodyId>_patch.png`）。
+        /// </summary>
+        private static void BakeSurfaceMenu()
+        {
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (mgr == null)
+            {
+                Messages.Message("不在太空场景（无 CelestialBodyManager）", MessageTypeDefOf.RejectInput, false);
+                return;
+            }
+
+            var options = new System.Collections.Generic.List<FloatMenuOption>();
+            foreach (var body in mgr.GetAllBodies())
+            {
+                var b = body;
+                var layer = GetSurfaceState.GetLayerForBody(mgr, b.bodyId);
+                string label = layer == null
+                    ? string.Format("{0}（{1}；无地表层，不可烤）", b.defName, b.bodyType)
+                    : string.Format("{0}（{1}；层格 {2}）", b.defName, b.bodyType, layer.TilesCount);
+                options.Add(new FloatMenuOption(label, delegate
+                {
+                    PFViewSurfaceBake.TryBake(b, layer, Find.World.info.Seed, out string? msg);
+                    Messages.Message(msg ?? "烘焙返回空消息", MessageTypeDefOf.TaskCompletion, false);
+                }));
+            }
+            Find.WindowStack.Add(new FloatMenu(options));
         }
 
         private DebugActionNode AddAction(string label, string category, int priority, Action action, Func<string>? labelGetter)

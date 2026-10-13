@@ -26,7 +26,9 @@ namespace PioneerFramework
                 TrySelectGroup(e.mousePosition - inRect.position, inRect.size);
             }
 
-            if (e.type == EventType.KeyDown && e.keyCode == KeyCode.R)
+            // 相机复位键让位于操舵：操舵键位里 R = "上"（见 Window_Steering 键位表），
+            // 若两处都认，按一次 R 会"一边上升一边把相机拽回复位"（用户 2026-10-02 起 PFView 也能操舵）。
+            if (e.type == EventType.KeyDown && e.keyCode == KeyCode.R && !SteeringController.IsOpen)
             {
                 InitCameraForCurrentBody();
             }
@@ -246,6 +248,7 @@ namespace PioneerFramework
             float ph = 5                                             // 上留白
                      + RowTitle                                      // 标题
                      + RowText + RowBtn                              // 目标行 + 设为目标
+                     + RowBtn                                        // 手动操舵开关
                      + shownWeapons * 22 + (weapons.Count > shownWeapons ? RowText : 0) + 4 + RowBtn
                      + (target != null ? 26 + 30 : 0)                 // 传送 + 调速
                      + roomSectionH
@@ -280,6 +283,16 @@ namespace PioneerFramework
             if (Widgets.ButtonText(new Rect(x, y, w, 24), targetGroupId == selectedGroupId ? "清除目标" : "设为目标"))
             {
                 targetGroupId = targetGroupId == selectedGroupId ? -1 : selectedGroupId;
+            }
+            y += RowBtn;
+
+            // ── 手动操舵开关（用户 2026-10-02："操舵开关集成到左边；按下进入手动操舵，再按解除"）──
+            //    按下 = 打开操舵 HUD（`Window_Steering`，键位/SAS/动作组都在那儿），再按 = 关窗解除。
+            bool steeringThis = SteeringController.IsOpen && SteeringController.GroupId == g.GroupId;
+            if (Widgets.ButtonText(new Rect(x, y, w, 24),
+                    steeringThis ? "◼ 手动操舵（再按解除）" : "手动操舵"))
+            {
+                ToggleManualSteering(g);
             }
             y += RowBtn;
 
@@ -360,10 +373,57 @@ namespace PioneerFramework
             }
         }
 
+        /// <summary>
+        /// 手动操舵开关（左栏"选中编队"面板）：按下进入手动操舵，再按解除。
+        /// 与船上操舵台的 Gizmo 走**同一条路**：`SteeringController.Open` + 打开操舵 HUD 窗口
+        /// （键位读取/SAS/动作组/主推进方向都在那个窗口里，这里不复制第二套）。
+        /// 单例语义（`SteeringController` 同时只操舵一艘）：换船时**先关旧窗**再开新的 ——
+        /// 不能只依赖窗口的 onlyOneOfTypeAllowed 自动替换：替换发生在 Add 时，旧窗的 PostClose 会把
+        /// 刚设好的 GroupId 一起清掉（顺序错了新窗就会立刻自关）。
+        /// 准入判据与 HUD 每帧校验**同一份**：船自己的图上要有完好操舵台。
+        /// </summary>
+        private void ToggleManualSteering(SpaceEntityGroup g)
+        {
+            Window_Steering? open = FindSteeringWindow();
+
+            // 已在操舵本编队 ⇒ 再按 = 解除（关窗；PostClose 里 Close + 推进器熄火）
+            if (open != null && SteeringController.IsOpen && SteeringController.GroupId == g.GroupId)
+            {
+                open.Close();
+                return;
+            }
+
+            if (open != null)
+                open.Close();   // 换船：先解除旧的（见上面注释的顺序陷阱）
+
+            Map? shipMap = g.GetLinkedMapComp()?.map;
+            if (!CompSteeringConsole.HasConsole(shipMap))
+            {
+                Messages.Message("本编队没有可用的操舵台（未安装 / 已损坏 / 被拆）——手动操舵需要船上有操舵台。",
+                    MessageTypeDefOf.RejectInput, false);
+                return;
+            }
+
+            SteeringController.Open(g.GroupId);
+            // absorbAroundWindow: false —— PFView 这条路上鼠标要留给 3D 相机（旋转/平移/缩放）；
+            // 船上操舵台那条路仍是 true（操舵时别让点击漏到地图上误下命令）。
+            Find.WindowStack.Add(new Window_Steering(absorbAroundWindow: false));
+        }
+
+        private static Window_Steering? FindSteeringWindow()
+        {
+            var windows = Find.WindowStack.Windows;
+            for (int i = 0; i < windows.Count; i++)
+                if (windows[i] is Window_Steering ws)
+                    return ws;
+            return null;
+        }
+
         /// <summary>方向 → "方位 x° / 仰角 y°"（方位 = 绕 +Y 从 +Z 起算，仰角 = 相对 XZ 平面）。
         /// 用方向读数而不是"前/后/左/右"这类船体局部轴向名：局部轴的命名在本库里本身有歧义
         /// （`ThrustAxis` 的逐项注释说 +Z 是船头，`RotateByRot4` 的注释与导弹默认 `mainAxisShip=-Z`
-        /// 都指向 -Z 是船头），表现层不替它选边；方位/仰角与画面上那根黄棒一一对应。</summary>
+        /// 都指向 -Z 是船头），表现层不替它选边；方位/仰角与姿态球上那个 T 记号（主推轴）一一对应
+        /// ——数值与记号同取 `GetMainThrustAxisSystem`，同一份数据、同一套角度约定。</summary>
         private static string DirectionLabel(DVector3 dir)
         {
             DVector3 n = dir.normalized;

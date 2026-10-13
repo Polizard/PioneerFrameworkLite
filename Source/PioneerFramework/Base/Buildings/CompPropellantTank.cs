@@ -251,6 +251,11 @@ namespace PioneerFramework
         }
 
         /// <summary>同步本罐容量到 mapComp（MaxDeltaV 的满箱口径）。</summary>
+        /// <summary>
+        /// **[A3] 工质容量登记**：除总容量外**同时按工质**记一本（2026-10-07 补）——
+        /// 有 Map 侧进气道充填要问"空气还剩多少余量"，只有总容量就会拿燃料罐的容差当空气余量（凭空生空气）。
+        /// 与总容量**同源同点**（同一个 Spawn/DeSpawn 调用），所以两本账不会漂。
+        /// </summary>
         private void RegisterCapacity(int sign, Map map)
         {
             var m = map ?? parent.Map;
@@ -258,6 +263,7 @@ namespace PioneerFramework
             var mapComp = m.GetComponent<SpaceMapComp>();
             if (mapComp == null) return;
             mapComp.AddPropellantCapacity(sign * Capacity);
+            mapComp.AddPropellantCapacity(PropellantDef, sign * Capacity);   // [A3] 按工质那本
         }
     }
 }

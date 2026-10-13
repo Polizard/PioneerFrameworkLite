@@ -1,3 +1,4 @@
+using System;                    // Math（ToViewRotation 的相位/半角三角函数）
 using PioneerFramework.Launch;   // GetSurfaceState（layer↔天体、自转角速度的唯一出处）
 using UnityEngine;
 using Verse;                     // Current.Game
@@ -125,6 +126,36 @@ namespace PioneerFramework
             // Ry(+ω_view·t)：与 SurfaceFrame.FixedToEci = Ry(−ωt) 互逆（同一份算式，见上）
             return (Vector3)SurfaceFrame.EciToFixed((DVector3)rel, omega, tick);
         }
+
+        /// <summary>
+        /// **姿态**的换系口：系统系朝向 → 视图系朝向（与 `ToViewUnity` 同一份旋转）。
+        ///
+        /// 视图系是"位置整体左乘一个绕 +Y 的旋转（`SurfaceFrame.EciToFixed`）"，所以刚体姿态也左乘同一个旋转：
+        /// `Q_view = R_frame · Q_系统系` ⇒ 物体的局部轴在视图系里仍指向它自己指的方向。
+        ///
+        /// ⚠ 这里**不另写一遍旋转算式**（那正是本类存在的理由）：相位从 `EciToFixed` 自己的像反推 ——
+        /// 拿单位基向量 `+x̂` 过一遍它，`x̂` 的像 = `(cos, 0, −sin)` ⇒ `atan2(−z, x) = ω·t`。
+        /// 符号将来在 `SurfaceFrame` 里改动一次，这里跟着变（不会各自写对、合起来错）。
+        ///
+        /// ⚠ 只用**受管**四元数构造（`new Quaternion` + 四元数乘法）：`Quaternion.LookRotation/AngleAxis`
+        /// 在 Unity 引用程序集里是 ECall，headless 一调即抛（与 `BoardingMathTests` 登记的 `Quaternion.Euler` 同族，
+        /// 也是本类 2026-09-23 把换系从 `AngleAxis` 换掉的原因）⇒ 保持本口可 headless 钉住。
+        /// </summary>
+        public static Quaternion ToViewRotation(Quaternion systemFrameRotation, double tick)
+        {
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            int viewed = ViewedBodyId;
+            double omega = GetSurfaceState.RotationOmega(mgr, viewed);
+
+            // x̂ 的像给出相位（基向量 ⇒ 与位置那条路同式、且不受天体偏移影响）
+            DVector3 xImage = SurfaceFrame.EciToFixed(new DVector3(1.0, 0.0, 0.0), omega, tick);
+            double ang = Math.Atan2(-xImage.z, xImage.x);   // = ω·t
+            // 绕 +Y 转 ang 的四元数（Unity 手性：Ry(+) 把 +ẑ 转向 +x̂，与上面的算式逐项一致）
+            float half = (float)(ang * 0.5);
+            var frameRotation = new Quaternion(0f, (float)Math.Sin(half), 0f, (float)Math.Cos(half));
+            return frameRotation * systemFrameRotation;
+        }
+
         /// <summary>
         /// **物理半径（米）→ Unity 球体的缩放值**（给 `GameObject.CreatePrimitive(PrimitiveType.Sphere)` 这类网格用）。
         ///

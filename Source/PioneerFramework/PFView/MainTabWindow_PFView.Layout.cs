@@ -91,6 +91,15 @@ namespace PioneerFramework
             Widgets.CheckboxLabeled(new Rect(x, by, 132f, bh), "太阳标记", ref debugShowSunMarker);
             x += 134f;
             Widgets.CheckboxLabeled(new Rect(x, by, 132f, bh), "地图浮雕", ref debugMapRelief);
+            x += 134f;
+            Widgets.CheckboxLabeled(new Rect(x, by, 108f, bh), "定居点", ref debugSettlements);   // D-2：实时层（含夜灯）
+            x += 116f;
+            // 参考系档位（2026-10-12「按场景选」）：点击循环 自动 → 惯性 → 固连；换档下一帧生效并立打读数
+            if (Widgets.ButtonText(new Rect(x, by, 132f, bh), "参考系: " + PFViewFrameCore.ModeName(viewFrameMode)))
+            {
+                viewFrameMode = (PFViewFrameMode)(((int)viewFrameMode + 1) % 3);
+                lastFrameLogTick = double.MinValue;
+            }
 
             string anchor = selectedGroupId >= 0
                 ? $"锚定 编队 {selectedGroupId}"
@@ -430,7 +439,7 @@ namespace PioneerFramework
             float rx = c.x + radius + 8f;
             const float lh = 16f;
 
-            // 左：姿态 + 主推轴（与 3D 黄棒同一份数据）
+            // 左：姿态 + 主推轴（与姿态球上的 T 记号同一份数据）
             float y = r.y + 10f;
             MiniLabel(new Rect(lx, y, sideW - 16f, lh), "姿态", PFViewPalette.TextSecondary);
             y += lh;
@@ -440,7 +449,7 @@ namespace PioneerFramework
             MiniLabel(new Rect(lx, y, sideW - 16f, lh), string.Format("角速度 {0:F1}°/s", g.angularVelocity.magnitude * Mathf.Rad2Deg), PFViewPalette.TextPrimary);
             y += lh + 6f;
 
-            MiniLabel(new Rect(lx, y, sideW - 16f, lh), "主推轴（黄棒）", PFViewPalette.TextSecondary);
+            MiniLabel(new Rect(lx, y, sideW - 16f, lh), "主推轴（T 记号）", PFViewPalette.TextSecondary);
             y += lh;
             DVector3 thrustAxis = spaceGame.GetMainThrustAxisSystem(g);
             if (thrustAxis.sqrMagnitude > 1e-12)
@@ -566,7 +575,11 @@ namespace PioneerFramework
         private void DrawStatusLine()
         {
             double tick = TimeScaleManager.GetPhysicsTickSafe();
-            string s = $"相机 {camDistance * ViewToMeters / 1000f:F0} km｜t {tick:F0} s｜滚轮缩放 · 右键旋转 · 中键平移 · R 复位";
+            // 操舵中：R 让位给"上升"（键位在操舵窗里），相机复位暂停 —— 提示里说清楚，别让玩家以为坏了
+            string keys = SteeringController.IsOpen
+                ? "滚轮缩放 · 右键旋转 · 中键平移 · 操舵中：R = 上升（相机复位暂停）"
+                : "滚轮缩放 · 右键旋转 · 中键平移 · R 复位";
+            string s = $"相机 {camDistance * ViewToMeters / 1000f:F0} km｜t {tick:F0} s｜{keys}";
             MiniLabel(rStatus, s, PFViewPalette.TextMuted);
         }
 

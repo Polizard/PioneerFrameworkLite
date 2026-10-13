@@ -113,7 +113,11 @@ namespace PioneerFramework
                 partId = 1,
                 defName = "PF_ShipPart_TestRocket",
                 positionShip = DVector3.zero,
-                boundsSizeShip = new DVector3(30, 30, 30),
+                // [补3]（2026-10-06 用户裁定："测试火箭按长棍做，就是要体现气动"）：
+                //   原先的 30×30×30 是**占位盒**——按 [D13] 导出气动外形会得到 900 m² 的迎风面积
+                //   （54 t 的火箭在 10 km 高度等于挂着降落伞）⇒ 换成"长棍"：30 m 长 / 3 m 径，
+                //   头锥 9 m² ↔ 侧向 90 m²（1:10 各向异性）⇒ 正飞能爬、侧飞失速，"气动"看得见。
+                boundsSizeShip = new DVector3(3, 3, 30),
                 hp = 500f,
                 isIndestructible = false
             };

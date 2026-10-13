@@ -361,6 +361,7 @@ namespace PioneerFramework
             var myGroup = GetMyGroup();
             if (sg == null || cm == null || myGroup == null) return;
 
+            var sensor = sensorMgrRef.Get();   // [V3]（2026-10-11 B1）：影子期条目的标注口
             var options = new List<FloatMenuOption>();
             DVector3 myPos = cm.GetGroupPos(myGroup);
             foreach (var g in sg.GetAllGroups())
@@ -369,8 +370,9 @@ namespace PioneerFramework
                 if (!CanEngage(g)) continue;           // [V3] 列表只列"看得见"的（与视图同一判据）
                 if (GetMapEntity(g) == null) continue; // 只需有 Map 的目标（空间站/带图船）
                 double d = (cm.GetGroupPos(g) - myPos).magnitude;
+                string suffix = sensor != null ? sensor.PlayerPhaseSuffix(g) : "";   // 影子期标注
                 var captured = g;
-                options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）", g.GroupId, d / 1000.0),
+                options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）{2}", g.GroupId, d / 1000.0, suffix),
                     () => BeginPrecisionPick(captured)));
             }
             if (options.Count == 0)
@@ -569,14 +571,20 @@ namespace PioneerFramework
             var myGroup = GetMyGroup();
             if (sg == null || cm == null || myGroup == null) return;
 
+            // [V3]（2026-10-11 B1）：列表准入 = **与开火同一条判据**（`CanEngage` → `PlayerCanSee`；影子算看得见）——
+            // 原来这里不筛 ⇒ 列表会列出玩家还没发现的敌舰（信息泄漏），选了又打不着。
+            var sensor = sensorMgrRef.Get();
+
             var options = new List<FloatMenuOption>();
             DVector3 myPos = cm.GetGroupPos(myGroup);
             foreach (var g in sg.GetAllGroups())
             {
                 if (!g.IsActive || g.GroupId == myGroup.GroupId || !IsHostile(g, myGroup)) continue;
+                if (!CanEngage(g)) continue;
                 double d = (cm.GetGroupPos(g) - myPos).magnitude;
+                string suffix = sensor != null ? sensor.PlayerPhaseSuffix(g) : "";
                 var captured = g;
-                options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）", g.GroupId, d / 1000.0), () =>
+                options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）{2}", g.GroupId, d / 1000.0, suffix), () =>
                 {
                     SetManualTarget(captured.GroupId);
                 }));

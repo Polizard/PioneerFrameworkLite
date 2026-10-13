@@ -94,6 +94,10 @@ namespace PioneerFramework
             //    它落地时会把判据写进那个用例并提前结算）—— 撞击事件落地后会自己打一行「用例…结算」。
             LandingAcceptanceRunner.StageImpact();
 
+            // ⑤b **大气/悬浮/档位（L1）判据排队**（2026-10-07）：它自己会等撞击事件结完再开跑
+            //     ⇒ 用户**不必再专门点一次**（本按钮本来就是例行按的那条）。
+            AtmosphereAcceptanceRunner.QueueAfterCurrent();
+
             PflTestKit.PrintVerdict("一键测试（全覆盖）");
         }
 

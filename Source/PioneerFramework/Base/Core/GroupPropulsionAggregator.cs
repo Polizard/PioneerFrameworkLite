@@ -78,6 +78,8 @@ namespace PioneerFramework
                         net.RegisterEngineRcs(d.ve, d.massFlow);
                     else
                         net.RegisterEngine(d.ve, d.massFlow);
+                    net.RegisterGasDraws(d.gasIntakes, d.massFlow);   // [A5] 附带进气（空 = 纯火箭）
+                    net.RegisterEnvelope(d.ve, d.massFlow, d.densityExponent, d.machCurve);   // [A4] 包线（火箭项不入表）
                 }
             }
             return nets;

@@ -34,22 +34,11 @@ namespace PioneerFramework
         /// `|hitY| ≤ 5m → 贴地直射` 的那条判据线。别再拿 AABB 的 ±25 m 当墙。</summary>
         private const float HullHalfThickness = 5f;
 
-        // ── 视觉旋钮（三档高度但差不大；三色区分三档）──
+        // ── 视觉旋钮：三档**半高**（米，上下对称挤出）—— 这是**网格几何**口径，留在本文件 ──
         // 索引 = 分类（0 不用）：1 结构梁 / 2 舱室 / 3 装甲。
-        // 值 = **半高**（米，上下对称挤出）：结构梁 = 薄片（±1，用户 2026-10-02）；
-        // 装甲 = 满船体（±5）；舱室居中。
+        // 结构梁 = 薄片（±1，用户 2026-10-02）；装甲 = 满船体（±5）；舱室居中。
+        // ⚠ 三档**颜色**与描边宽是"画"的口径 ⇒ 已移到 `ShipModelRenderer.ReliefColors` / `ReliefOutlineWidth`（D-1）。
         private static readonly float[] ReliefHalfHeights = { 0f, 1f, 4.5f, HullHalfThickness };
-        private static readonly Color[] ReliefColors =
-        {
-            new Color(0f, 0f, 0f, 0f),
-            new Color(0.55f, 0.58f, 0.62f),   // 结构梁：中性灰
-            new Color(0.78f, 0.82f, 0.86f),   // 舱室：亮钢
-            new Color(0.34f, 0.38f, 0.44f),   // 装甲：深板岩
-        };
-
-        /// <summary>浮雕的描边宽度（对象空间 = **格**；1 格 = 0.1 视图单位 ⇒ 这里 0.05 ≈ 5% 格宽）。
-        /// 天体/部件用的 0.02–0.035 是"单位网格"口径，直接拿来会把 1 格的小方块糊掉。</summary>
-        private const float ReliefOutlineWidth = 0.05f;
 
         private class ReliefMeshSet
         {
@@ -88,18 +77,11 @@ namespace PioneerFramework
             if (mat == null)
                 return false;
 
-            // 网格以"格"为单位 ⇒ 矩阵缩放 = 米→视图（1 格 = 1 米）。debugScaleParts 与部件同倍放大。
-            Matrix4x4 mtx = Matrix4x4.TRS(eVp, gRot, Vector3.one * (MetersToView * scale));
-            if (ToonMat != null)
-                matBlock.SetFloat("_OutlineWidth", ReliefOutlineWidth);
-
-            for (int c = 1; c < set.Meshes.Length; c++)
-            {
-                Mesh? mesh = set.Meshes[c];
-                if (mesh == null) continue;
-                matBlock.SetColor("_Color", ReliefColors[c]);
-                Graphics.DrawMesh(mesh, mtx, mat, SceneLayer, null, 0, matBlock);
-            }
+            // 画（矩阵：网格以"格"为单位 ⇒ 缩放 = 米→视图、debugScaleParts 同倍；三档颜色；描边宽）
+            // 全在 `ShipModelRenderer.DrawRelief`（D-1：与场景无关的绘制段）——本函数只管**取数据**
+            // （地图/分类/网格缓存）与**回退判定**。
+            ShipModelRenderer.DrawRelief(set.Meshes, eVp, gRot, scale, mat, matBlock, ToonMat != null,
+                MetersToView, SceneLayer);
             return true;
         }
 

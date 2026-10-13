@@ -164,6 +164,33 @@ namespace PioneerFramework.Pure.Tests
                 $"径向速度超上限: {result.maxRadialSpeed:F2} m/s > {radialLimit:F2}");
         }
 
+        // ── **高纬收敛性**（2026-10-06 修：切向基准必须在轨道面内）──────────────────────────
+        // 旧律的切向基准 = 全局东方 `Cross(up, r̂)`：赤道时恰在轨道面内，**倾斜轨道上会漂出面** ⇒
+        // 每步命令一个面外修正 ⇒ 燃料烧在改面上。游戏内实测（φ=51.7°、50 t）：烧干、到不了 5500 km
+        // （apo≈5351 km）；台架同步复现（耗尽 197 km / v=6042 / apo 5368）。
+        // 本用例即那条缺陷的**回归判据**（既有用例全在赤道，照不出它）。
+        [Theory]
+        [InlineData(0.0)]
+        [InlineData(30.0)]
+        [InlineData(51.7)]   // 游戏内实测发射场纬度
+        [InlineData(70.0)]
+        public void Ascent_Converges_AtHighLatitude(double latDeg)
+        {
+            double gm = SpaceConstants.PrimaryGravitationalParameter;
+            var p = LaunchGuidanceParams.CreateDefault(SpaceConstants.PlanetRadiusMeters);
+            double vC = Math.Sqrt(gm / p.rTarget);
+            var (pos0, vel0) = SurfaceLaunchState(latDeg * Math.PI / 180.0, 0.0);
+
+            var result = RunAscent(pos0, vel0, gm, p);
+
+            Assert.True(result.arrived, $"高纬 {latDeg}° 应到达（切向基准必须面内）");
+            Assert.False(result.fuelExhausted, "不应在到达前耗尽工质");
+            Assert.True(result.fuelRemaining > 2000.0,
+                $"到达时工质余量不足: {result.fuelRemaining:F0}kg（需 >2000kg）");
+            Assert.InRange(result.finalR, p.rTarget - p.tolR, p.rTarget + p.tolR);
+            Assert.InRange(result.finalV, vC - p.tolV, vC + p.tolV);
+        }
+
         // ── 预算：有限推力闭环总耗 ΔV 应在 BurnCore 估算范围内 ──
         [Fact]
         public void Budget_FiniteThrust_ConsumptionWithinEstimate()

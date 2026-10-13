@@ -31,6 +31,16 @@
     <planetLayerDefName>Surface</planetLayerDefName>           <!-- 绑到默认地表 layer -->
     <dayLengthTicks>60000</dayLengthTicks>                    <!-- 1 天 = 60000 tick -->
     <atmosphereThickness>100000</atmosphereThickness>         <!-- 100 km -->
+    <!-- 大气密度（[A1] 的数据；2026-10-06 用户裁定"取整、合理即可"）：
+         ρ(h) = ρ₀·exp(−h/H)。取 1.2 kg/m³ / 8,000 m —— 与地球同量级但取整（[补2]：不照抄地球的 1.225/8500）。
+         后果（已核）：ρ(100 km)/ρ₀ = e^(−12.5) ≈ 3.7e-6（"顶上≈0"判据 ✓）；
+         掩码闩锁恢复阈值 = 9.5·H = **76 km**（仍 < 大气顶 100 km ✓，见 atmosphereRestoreScaleHeights）。 -->
+    <atmosphereRho0>1.2</atmosphereRho0>
+    <atmosphereScaleHeight>8000</atmosphereScaleHeight>
+    <!-- 基底球渲染色（2026-10-11 用户口径）：**烘焙海洋格的颜色**。
+         出处 = 实测（离线量盘上的补丁图）：数据区里占 53% 的海洋格 = 字节 (72,72,104) ⇒ 归一到 0..1 = (0.282, 0.282, 0.408)。
+         ⚠ 这里填的是**显示色**（想在屏幕上看到的颜色）；代码会按颜色空间转成线性渲染值（见 CelestialBodyDef.baseSphereColor 的注释）。 -->
+    <baseSphereColor>(0.282, 0.282, 0.408, 1)</baseSphereColor>
     <orbitRadius>120000000</orbitRadius>      <!-- 120,000 km 轨道半径 -->
     <!-- ⚠ 批5.C（2026-09-29）：原写 240000，与太阳的 GM（2e16）**不自洽**；自洽值 = 2π√((1.2e8)³/2e16) = 58,400 s。
          本条**当前不生效**（地球是根源：被钉在原点且速度为零，`GetBodyLocalPosition(Earth)` 恒为 0）⇒

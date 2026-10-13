@@ -38,6 +38,13 @@ namespace PioneerFramework
         private const float BaseIconSize = 20f;
         private const float SurfaceIconSize = 28f; // 地表图标稍大，更容易看到
         private const float IconScaleReferenceAltitude = 850f;
+        /// <summary>
+        /// 图标随相机高度的缩放**上限**（2026-10-11 用户裁定：「icon **只有最大尺寸、没有最小尺寸**」）。
+        /// 原来 `Clamp(sqrt(altitude/850), 1, 3)` —— 那个下限 1 让"贴近看"时图标仍是 28 单位：
+        /// 在最近高度（125 单位）它占屏高约 65%，把视野撑满。**去掉下限**后拉近时图标跟着变小；
+        /// 拉远时仍由此值封顶（世界尺寸不无限涨）。屏幕观感：∝ 1/√高度（拉远会变小 —— 用户已确认
+        /// 「点不中」不是问题，所以不设屏幕最小尺寸）。
+        /// </summary>
         private const float IconScaleMaxMultiplier = 3f;
         private const float OrbitMarkerSpacing = 14f;        // 轨道标记点间距（Unity单位）
         private const int MinOrbitSamples = 36;
@@ -625,7 +632,16 @@ namespace PioneerFramework
 
         /// <summary>本帧的物理时刻（**保留 double**）：渲染与物理必须同一 tick —— int 化在 1/60× 流速下
         /// 会让天体位置每 60 真实 tick 跳 1 秒（PFView `:1003-1008` 的实测结论）。</summary>
-        private static double PhysicsTickNow() => TimeScaleManager.GetPhysicsTickSafe();
+        /// <summary>
+        /// 世界视图的当前时刻（**帧级连续时钟**，2026-10-11 起）：与 PFView 同一条
+        /// `TimeScaleManager.GetRenderTick()` —— 位置/轨道/波束全是"任意实数 tick 的解析函数"，
+        /// 喂连续值 ⇒ 图标/轨道/波束**不再一格一格跳**（"别的航天器位置在抖"的另一半）。
+        /// </summary>
+        private static double PhysicsTickNow()
+        {
+            var tsm = Current.Game?.GetComponent<TimeScaleManager>();
+            return tsm != null ? tsm.GetRenderTick() : TimeScaleManager.GetPhysicsTickSafe();
+        }
 
         /// <summary>系统系（Unity 单位）→ 视图系。**薄转发**，算式在 `ViewFrame` 里只有一份。</summary>
         private static Vector3 ToView(Vector3 systemFrameUnity)
@@ -678,7 +694,9 @@ namespace PioneerFramework
 
             Quaternion rot = Quaternion.LookRotation(cam.transform.up, toCam.normalized);
             float altitude = Find.WorldCameraDriver?.altitude ?? 1000f;
-            float scale = Mathf.Clamp(Mathf.Sqrt(altitude / IconScaleReferenceAltitude), 1f, IconScaleMaxMultiplier);
+            // 用户裁定（2026-10-11）：**只留最大尺寸、不要最小尺寸**（原来下限 1× ⇒ 贴脸时图标占屏高 ~65%）。
+            // 相机高度下限（125 单位）本身保证 sqrt 项为正 ⇒ 不需要额外下限保护。
+            float scale = Mathf.Min(Mathf.Sqrt(altitude / IconScaleReferenceAltitude), IconScaleMaxMultiplier);
             float size = SurfaceIconSize * scale;
             if (selectedGroupId == group.GroupId) size *= 1.12f;
 
@@ -951,15 +969,22 @@ namespace PioneerFramework
         private static readonly Color ShadowColor = new Color(0.78f, 0.78f, 0.82f, 0.85f);      // 影子：灰白
         private static readonly Color DecoyColor = new Color(0.95f, 0.55f, 0.35f, 0.9f);        // 假接触（未识破）
         private static readonly Color DecoySpottedColor = new Color(0.6f, 0.32f, 0.32f, 0.9f);  // 已识破
-        private static readonly Color BeamColor = new Color(0.35f, 0.9f, 1f, 0.45f);            // 波束锥
+        private static readonly Color BeamColor = new Color(0.35f, 0.95f, 1f, 0.8f);            // 波束锥（2026-10-11：α 0.45→0.8，原值在行星底图上太淡 = "看不见"的一半原因）
 
         /// <summary>
         /// [V-2] 认知层可视化：影子接触（σ 圈）/ 假接触（识破换标记）/ 雷达波束锥。
         /// 数据一律走认知层读入口（`AppendVisible` / `ContactPhaseOf`），**不读真值**；
-        /// dev 真值开关打开时整体跳过（那时要看的本来就是真值）。
+        /// dev 真值开关打开时**影子/假接触**整体跳过（那时要看的本来就是真值）。
+        ///
+        /// ⚠ 2026-10-11（用户报"看不见波束锥"）：**波束锥从 dev 开关的跳过里摘出来**，两条理由 ——
+        /// ① 它画的是"**我自己的雷达指向哪**"（我方已知状态、不是对敌认知）⇒ dev 模式下同样该看得见；
+        /// ② 原实现整体被 dev 开关跳过 ⇒ 开了 dev 就永远看不到锥（一个容易踩的盲区）。
+        /// 同批补 `[波束锥]` 限频读数：**"该画没画"必须给出原因**（未开机 / RadarCap 为空 / 全被行星剔除 / 顶点在屏外）。
         /// </summary>
         private static void DrawCognitionOverlay(Camera cam, SpaceGameComp spaceGame, SensorManager? sensor)
         {
+            DrawBeamCones(cam, spaceGame);   // 先画锥（不受 dev 开关影响，见上）
+
             if (sensor == null || SensorManager.DebugShowGroundTruth) return;
             var player = Faction.OfPlayer;
             if (player == null) return;
@@ -985,79 +1010,94 @@ namespace PioneerFramework
                 DrawCognitionDot(svp, cam, ShadowColor, 1.3f);
                 DrawSigmaRing(svp, c.positionSigma, cam);
             }
+        }
 
-            // ── 波束锥：开机（ActivePingEnabled）且"选中 或 我方"的编队 ──
-            var groups = spaceGame.GetAllGroups();
-            foreach (var g in groups)
+        /// <summary>波束锥读数的时间戳（限频日志用）。</summary>
+        private static double lastBeamConeLogTick = double.MinValue;
+
+        /// <summary>
+        /// 波束锥一层：**开机（`ActivePingEnabled`）且"选中 或 我方"**的编队各画一支
+        /// （顶点 = 编队位置、轴向 = `RadarBoresight`、几何取群级 `RadarCap`）。
+        /// 每帧调用（世界视图绘制路径）+ **限频读数**：把"该画没画"的原因变成数字（2026-10-11 加）。
+        /// </summary>
+        private static void DrawBeamCones(Camera cam, SpaceGameComp spaceGame)
+        {
+            if (spaceGame == null) return;
+            var player = Faction.OfPlayer;
+            if (player == null) return;
+            int fid = player.loadID;
+            double now = PhysicsTickNow();
+
+            int pingGroups = 0, matched = 0, drew = 0, pts = 0, visPts = 0;
+            string? blockReason = null;
+            string? perGroup = null;
+
+            // 点尺寸（2026-10-11 修：原 1.1 单位 = 屏上 3–5 px、还半透明 ⇒ 用户"看不见"）。
+            // 口径照图标那套"屏幕尺寸恒定"（`sqrt(altitude/850)`），但基准小一档：3–9 单位（图标是 28–84）。
+            float altitude = Find.WorldCameraDriver?.altitude ?? 1000f;
+            float dotSize = 3f * Mathf.Clamp(Mathf.Sqrt(altitude / IconScaleReferenceAltitude), 1f, IconScaleMaxMultiplier);
+
+            foreach (var g in spaceGame.GetAllGroups())
             {
                 if (g == null || !g.IsActive || !g.ActivePingEnabled) continue;
+                pingGroups++;
                 if (g.GroupId != selectedGroupId && g.FactionId != fid) continue;
-                DrawBeamCone(g, cam, now);
+                matched++;
+
+                if (DrawBeamCone(g, cam, now, dotSize, out int p, out int v, out string? why))
+                {
+                    drew++; pts += p; visPts += v;
+                    if (perGroup == null)
+                    {
+                        var rc = g.RadarCap;
+                        perGroup = string.Format("G{0} 半锥角 {1:F1}° · 距离 {2:F0} km · 锥点 {3}/视可见 {4} · 点径 {5:F1} 单位",
+                            g.GroupId, rc.beamHalfAngleDeg, rc.beamRangeMeters / 1000f, p, v, dotSize);
+                    }
+                }
+                else if (blockReason == null) blockReason = why;
             }
+
+            // 限频：**有开机编队 = 60 物理秒一行**（现场排查节奏）；没有 = 300 物理秒一行（常态心跳，证路径通）
+            double interval = pingGroups > 0 ? 60.0 : 300.0;
+            if (now - lastBeamConeLogTick < interval) return;
+            lastBeamConeLogTick = now;
+            Log.Message(string.Format(
+                "[波束锥] 开机编队 {0}（命中\"选中或我方\" {1}）⇒ 绘制 {2}｜锥点 {3}/视可见 {4}{5}{6}",
+                pingGroups, matched, drew, pts, visPts,
+                blockReason != null ? "｜未画原因：" + blockReason : "",
+                perGroup != null ? "｜" + perGroup : ""));
         }
 
-        private static void DrawCognitionDot(Vector3 viewPos, Camera cam, Color color, float size)
+        /// <summary>
+        /// 画一支波束锥。返回 false = **没画**（`blockReason` 写明哪一条没满足 —— 读数用，不是判据）。
+        /// `dotSize` = 点径（视图单位；由调用方按相机高度算 ⇒ 屏幕尺寸恒定）。
+        /// </summary>
+        private static bool DrawBeamCone(SpaceEntityGroup g, Camera cam, double now, float dotSize,
+            out int points, out int visiblePoints, out string? blockReason)
         {
-            if (!IsViewPosVisible(viewPos, 1f)) return;
-            Vector3 toCam = cam.transform.position - viewPos;
-            if (toCam.sqrMagnitude < 0.01f) return;
+            points = 0; visiblePoints = 0; blockReason = null;
 
-            Quaternion rot = Quaternion.LookRotation(cam.transform.up, toCam.normalized);
-            Matrix4x4 matrix = Matrix4x4.TRS(viewPos + toCam.normalized * 0.5f, rot, new Vector3(size, 1f, size));
-            orbitMarkerPropertyBlock.SetColor("_Color", color);
-            CountDraw(DcMarker);
-            Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
-        }
-
-        /// <summary>点阵画笔：输入**视图系**点列（与 `DrawOrbitPath` 的区别：不做 ToView、单独计数）。</summary>
-        private static void DrawMarkerPoints(List<Vector3> viewPoints, Color color, float size, Camera cam)
-        {
-            for (int i = 0; i < viewPoints.Count; i++)
-            {
-                Vector3 viewPos = viewPoints[i];
-                if (!IsViewPosVisible(viewPos, 1f)) continue;
-                Vector3 toCam = cam.transform.position - viewPos;
-                if (toCam.sqrMagnitude < 0.01f) continue;
-                Quaternion rot = Quaternion.LookRotation(cam.transform.up, toCam.normalized);
-                Matrix4x4 matrix = Matrix4x4.TRS(viewPos + toCam.normalized * 0.5f, rot, new Vector3(size, 1f, size));
-                orbitMarkerPropertyBlock.SetColor("_Color", color);
-                CountDraw(DcMarker);
-                Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
-            }
-        }
-
-        /// <summary>σ 不确定圈：绕最后已知点、在垂直于视线的平面上画圆（半径 = σ）。</summary>
-        private static void DrawSigmaRing(Vector3 viewPos, double sigmaMeters, Camera cam)
-        {
-            if (sigmaMeters <= 0.5) return;
-            float radiusUnity = (float)(sigmaMeters * SpaceConstants.UnitsPerMeter);
-            if (radiusUnity < 0.05f) return;
-
-            Vector3 toCam = (cam.transform.position - viewPos).normalized;
-            Vector3 u = Vector3.Cross(toCam, Mathf.Abs(toCam.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
-            Vector3 v = Vector3.Cross(toCam, u).normalized;
-
-            cognitionPointBuf.Clear();
-            const int n = 24;
-            for (int i = 0; i < n; i++)
-            {
-                float a = Mathf.PI * 2f * i / n;
-                cognitionPointBuf.Add(viewPos + (u * Mathf.Cos(a) + v * Mathf.Sin(a)) * radiusUnity);
-            }
-            DrawMarkerPoints(cognitionPointBuf, ShadowColor, 1.0f, cam);
-        }
-
-        /// <summary>雷达波束锥：顶点 = 编队位置，半锥角/距离取群级 `RadarCap`，轴向 = `RadarBoresight`。</summary>
-        private static void DrawBeamCone(SpaceEntityGroup g, Camera cam, double now)
-        {
             var rc = g.RadarCap;
-            if (rc.beamRangeMeters <= 0f || rc.beamHalfAngleDeg <= 0f) return;
+            if (rc.beamRangeMeters <= 0f || rc.beamHalfAngleDeg <= 0f)
+            {
+                blockReason = string.Format("G{0} 的 RadarCap 为空（半锥角 {1:F1}° / 距离 {2:F0} km）"
+                    + "——本船没有主动雷达建筑，或建筑投影还没跑",
+                    g.GroupId, rc.beamHalfAngleDeg, rc.beamRangeMeters / 1000f);
+                return false;
+            }
 
             DVector3 dir = g.RadarBoresight(now);
-            if (dir.sqrMagnitude < 1e-9) return;
+            if (dir.sqrMagnitude < 1e-9) { blockReason = string.Format("G{0} 的 RadarBoresight 退化（零向量）", g.GroupId); return false; }
             dir = dir.normalized;
 
             DVector3 apex = g.IsCircularOrbit ? g.GetCircularPositionAtTick(now) : g.CurrentOrbit.positionSystem.v;
+
+            // ⚠ 真·视锥读数（2026-10-11 补）：`IsViewPosVisible` 只判**行星遮挡**，不是"在不在屏幕上" ——
+            //   之前那行 `视可见 84` 会给人假安心（点全在屏外时它也报 84）。这里把锥顶的**视口坐标**打出来。
+            Vector3 apexView = ViewFrame.ToViewUnity(apex, now);
+            Vector3 vpApex = cam.WorldToViewportPoint(apexView);
+            bool apexOnScreen = vpApex.z > 0f && vpApex.x >= 0f && vpApex.x <= 1f && vpApex.y >= 0f && vpApex.y <= 1f;
+
             DVector3 axisRef = Math.Abs(dir.y) < 0.9 ? new DVector3(0, 1, 0) : new DVector3(1, 0, 0);
             DVector3 u = DVector3.Cross(dir, axisRef).normalized;
             DVector3 v = DVector3.Cross(dir, u).normalized;
@@ -1088,7 +1128,71 @@ namespace PioneerFramework
                     cognitionPointBuf.Add(ViewFrame.ToViewUnity(apex + (rimPt - apex) * t, now));
                 }
             }
-            DrawMarkerPoints(cognitionPointBuf, BeamColor, 1.1f, cam);
+
+            points = cognitionPointBuf.Count;
+            visiblePoints = DrawMarkerPoints(cognitionPointBuf, BeamColor, dotSize, cam);
+            if (!apexOnScreen)
+                blockReason = string.Format("G{0} 锥顶**在屏幕外**（视口 {1:F2},{2:F2}）——把镜头转向本船再看",
+                    g.GroupId, vpApex.x, vpApex.y);
+            else if (visiblePoints == 0)
+                blockReason = string.Format("G{0} 锥顶在屏内（视口 {1:F2},{2:F2}）但 {3} 个点**全部被行星剔除**——换个角度看",
+                    g.GroupId, vpApex.x, vpApex.y, points);
+            return true;
+        }
+
+        private static void DrawCognitionDot(Vector3 viewPos, Camera cam, Color color, float size)
+        {
+            if (!IsViewPosVisible(viewPos, 1f)) return;
+            Vector3 toCam = cam.transform.position - viewPos;
+            if (toCam.sqrMagnitude < 0.01f) return;
+
+            Quaternion rot = Quaternion.LookRotation(cam.transform.up, toCam.normalized);
+            Matrix4x4 matrix = Matrix4x4.TRS(viewPos + toCam.normalized * 0.5f, rot, new Vector3(size, 1f, size));
+            orbitMarkerPropertyBlock.SetColor("_Color", color);
+            CountDraw(DcMarker);
+            Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
+        }
+
+        /// <summary>点阵画笔：输入**视图系**点列（与 `DrawOrbitPath` 的区别：不做 ToView、单独计数）。
+        /// 返回**实际画出的点数**（被行星/视锥剔除的不计）——供 `[波束锥]` 读数用。</summary>
+        private static int DrawMarkerPoints(List<Vector3> viewPoints, Color color, float size, Camera cam)
+        {
+            int drawn = 0;
+            for (int i = 0; i < viewPoints.Count; i++)
+            {
+                Vector3 viewPos = viewPoints[i];
+                if (!IsViewPosVisible(viewPos, 1f)) continue;
+                Vector3 toCam = cam.transform.position - viewPos;
+                if (toCam.sqrMagnitude < 0.01f) continue;
+                Quaternion rot = Quaternion.LookRotation(cam.transform.up, toCam.normalized);
+                Matrix4x4 matrix = Matrix4x4.TRS(viewPos + toCam.normalized * 0.5f, rot, new Vector3(size, 1f, size));
+                orbitMarkerPropertyBlock.SetColor("_Color", color);
+                CountDraw(DcMarker);
+                Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
+                drawn++;
+            }
+            return drawn;
+        }
+
+        /// <summary>σ 不确定圈：绕最后已知点、在垂直于视线的平面上画圆（半径 = σ）。</summary>
+        private static void DrawSigmaRing(Vector3 viewPos, double sigmaMeters, Camera cam)
+        {
+            if (sigmaMeters <= 0.5) return;
+            float radiusUnity = (float)(sigmaMeters * SpaceConstants.UnitsPerMeter);
+            if (radiusUnity < 0.05f) return;
+
+            Vector3 toCam = (cam.transform.position - viewPos).normalized;
+            Vector3 u = Vector3.Cross(toCam, Mathf.Abs(toCam.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
+            Vector3 v = Vector3.Cross(toCam, u).normalized;
+
+            cognitionPointBuf.Clear();
+            const int n = 24;
+            for (int i = 0; i < n; i++)
+            {
+                float a = Mathf.PI * 2f * i / n;
+                cognitionPointBuf.Add(viewPos + (u * Mathf.Cos(a) + v * Mathf.Sin(a)) * radiusUnity);
+            }
+            DrawMarkerPoints(cognitionPointBuf, ShadowColor, 1.0f, cam);
         }
 
         #endregion
@@ -1313,7 +1417,19 @@ namespace PioneerFramework
                 double ratio = ji.factorNoJam > 0.0 ? ji.factorWithJam / ji.factorNoJam : 1.0;
                 jam = string.Format(" · 受扰 J={0:F2} 灵敏度{1:P0}", ji.jam, ratio);
             }
-            return string.Format("认知: {0}{1}{2}", phase, sigma, jam);
+
+            // 主动雷达/波束读数（[E2]/B1，2026-10-11）：**"看不见波束锥"要能一眼分流** ——
+            // 0°/0km = 这艘船没有可用的主动雷达（建筑投影为空）⇒ 世界视图里不会有锥（见 `[波束锥]` 日志）。
+            string beam = "";
+            if (group.ActivePingEnabled || group.RadarCap.beamHalfAngleDeg > 0f)
+            {
+                var rc = group.RadarCap;
+                beam = string.Format(" · 波束 {0:F0}°/{1:F0}km{2}",
+                    rc.beamHalfAngleDeg, rc.beamRangeMeters / 1000f,
+                    group.ActivePingEnabled ? "（开机）" : "");
+            }
+
+            return string.Format("认知: {0}{1}{2}{3}", phase, sigma, jam, beam);
         }
 
         private static void DrawPanelInfo(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)

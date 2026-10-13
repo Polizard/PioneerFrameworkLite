@@ -149,13 +149,15 @@ namespace PioneerFramework.Tests
         {
             // 2026-10-02：PFView 拆成 4 个 partial 文件（V-0 地基，见仓库根修缮方案）。
             // 扫描面必须覆盖全部四份——否则搬到新文件里的代码会掉出本判据射程（只许加覆盖，不许放软）。
+            // 2026-10-11（D-1）：画船的绘制段抽到 `PFView/ShipModelRenderer.cs`（零件/朝向棒/浮雕）⇒ 一并扫。
             foreach (var file in new[]
             {
                 "PFView/MainTabWindow_PFView.cs",
                 "PFView/MainTabWindow_PFView.Render.cs",
                 "PFView/MainTabWindow_PFView.Scene.cs",
                 "PFView/MainTabWindow_PFView.GUI.cs",
-                "PFView/PFViewToonShader.cs"
+                "PFView/PFViewToonShader.cs",
+                "PFView/ShipModelRenderer.cs"
             })
             {
                 string source = File.ReadAllText(SourcePath(file));

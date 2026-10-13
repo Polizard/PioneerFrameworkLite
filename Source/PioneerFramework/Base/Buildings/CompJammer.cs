@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using RimWorld;
 using Verse;
 
@@ -49,6 +50,39 @@ namespace PioneerFramework
         {
             base.PostDeSpawn(map, mode);
             map?.GetComponent<SpaceMapComp>()?.UnregisterJammer(parent);
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        //  Gizmo（**[E2] 交互装门**，2026-10-11；计划 §7 [E2]：开关挂"有传感器组件的建筑"）
+        // ═══════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// **干扰开机 / 静默** —— 写组级 `JammingEnabled`（建筑只给能力，开关与暴露代价在群上；见类头说明）。
+        /// 开机后：敌方观测方的有效阈值被抬高（干扰按"干扰机→观测方"平方反比衰减）；
+        /// 代价 = 自身信号升高（`SignalModel.JamMultiplier`）⇒ 成为反辐射武器的靶子（W1 的自平衡）。
+        /// ⚠ 玩家闸 = **船的派系**（归属链），不是建筑自己的 `Thing.Faction` —— 见 `ShipBuildingUI`。
+        /// </summary>
+        public override IEnumerable<Gizmo> CompGetGizmosExtra()
+        {
+            foreach (Gizmo g in base.CompGetGizmosExtra()) yield return g;
+
+            var group = ShipBuildingUI.GetOwnerGroup(parent);
+            if (group == null || !ShipBuildingUI.IsPlayerOwned(parent, group)) yield break;
+
+            yield return new Command_Toggle
+            {
+                defaultLabel = group.JammingEnabled ? "干扰开机（辐射中）" : "干扰静默",
+                defaultDesc = string.Format("压制式干扰开关：开机后抬高**敌方观测方**的探测阈值（作用随距离平方反比衰减）。"
+                    + "本组干扰效力合计 {0:F1}（含部件级；开机后才生效）。代价 = 自身信号升高、成为反辐射武器的靶子。",
+                    group.JamStrength),
+                icon = TexCommand.DesirePower,
+                isActive = () => group.JammingEnabled,
+                toggleAction = () =>
+                {
+                    group.JammingEnabled = !group.JammingEnabled;
+                    Log.Message(string.Format("[干扰] G{0} 开机 → {1}", group.GroupId, group.JammingEnabled));
+                },
+            };
         }
     }
 }

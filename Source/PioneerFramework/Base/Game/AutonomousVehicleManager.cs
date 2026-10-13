@@ -324,7 +324,7 @@ namespace PioneerFramework
                     else
                     {
                         UnregisterGroup(rec.groupId);
-                        spaceGame.DestroyGroup(rec.groupId);
+                        spaceGame.DestroyGroup(rec.groupId, "自主载具回收");
                     }
                     return true;
             }
@@ -368,7 +368,7 @@ namespace PioneerFramework
                         terminalLogged.Remove(rec.groupId);
                         byGroupId.Remove(rec.groupId);
                         vehicles.RemoveAt(i);
-                        if (dead != null) spaceGame.DestroyGroup(rec.groupId);
+                        if (dead != null) spaceGame.DestroyGroup(rec.groupId, "自主载具损毁");
                         continue;
                     }
                     var group = spaceGame.GetGroupById(rec.groupId);
@@ -404,7 +404,7 @@ namespace PioneerFramework
                         terminalLogged.Remove(rec.groupId);
                         byGroupId.Remove(rec.groupId);
                         vehicles.RemoveAt(i);
-                        spaceGame.DestroyGroup(rec.groupId);
+                        spaceGame.DestroyGroup(rec.groupId, "自主载具回收");
                     }
                 }
             }

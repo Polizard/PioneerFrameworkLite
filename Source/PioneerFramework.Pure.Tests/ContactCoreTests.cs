@@ -109,5 +109,18 @@ namespace PioneerFramework.Pure.Tests
             Assert.True(c.IsStaleAt(12000.0 + 601.0, 600.0));
         }
 
+        // ── 目标列表的相位标注（[V3] 收尾 · B1 交互装门，2026-10-11）：只有匿踪组的影子期才标 ──
+
+        [Theory]
+        [InlineData(false, TrackPhase.Live, "")]                 // 公开组（应答机）：无相位可言 ⇒ 不标
+        [InlineData(false, TrackPhase.Shadow, "")]               // 公开组不存在影子期，即便传来也不标
+        [InlineData(true, TrackPhase.Live, "")]                  // 匿踪 + 本步刚刷新：正常，不标
+        [InlineData(true, TrackPhase.Shadow, " 影子（最后已知）")]  // 匿踪 + 影子期：**唯一要标的情形**
+        [InlineData(true, TrackPhase.Lost, "")]                  // 失联：根本不会进列表（PlayerCanSee 已挡）
+        public void TargetList_PhaseSuffix_OnlyTagsStealthShadow(bool isStealth, TrackPhase phase, string expected)
+        {
+            Assert.Equal(expected, TargetListCore.PhaseSuffix(isStealth, phase));
+        }
+
     }
 }

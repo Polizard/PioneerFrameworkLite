@@ -157,6 +157,49 @@ namespace PioneerFramework
             return calendarBaseTick + deltaReal * scale - gameStartAbsTickCapture;
         }
 
+        // ── 帧级连续渲染时钟（2026-10-11，"别的航天器位置在抖"的治本）────────────────────────
+        // 问题：`GetPhysicsTick()` 由**整数** `TicksGame` 推出 ⇒ 渲染时间轴是**阶梯**。两台站不同轨道时
+        //       相对速度可达 km/s（每 tick 相对位移上千米）⇒ 渲染帧率高于 tick 率时，位置**一格一格跳**
+        //       = 用户报的"别的航天器整体位置在抖"（大小形状不变，只有位置在跳）。
+        // 修法：把物理 tick **连续化** —— 加上"当前真实 tick 内已过的比例 × 档位倍率"。
+        //       消费侧本来就按"任意实数 tick"取位置：圆轨是解析函数（`GetCircularPositionAtTick(double)`
+        //       的注释就写着"支持子tick"），积分轨按速度外推（`SpaceGameComp.LastPhysicsStepTick`）。
+        // ⚠ 只做**相位平滑**，不改时间基准：平均值仍严格等于物理 tick（相位有界 [0, scale]）。
+        private int renderClockTicksGame = int.MinValue;
+        private double renderClockFrac;                      // 当前真实 tick 内已过的比例（[0,1]）
+        private double renderClockSecPerTick = 1.0 / 60.0;   // 实测（滑均）：一个真实 tick ≈ 多少秒
+
+        /// <summary>
+        /// **帧级连续时间**（渲染专用）：物理 tick + 子 tick 相位。取任意实数 tick 的位置函数都能吃它。
+        /// ⚠ 不用于物理结算（那边仍按物理步整数边界走）——这是**表示层**的时间。
+        /// </summary>
+        public double GetRenderTick()
+        {
+            EnsureCalendarBaseline();
+            int tg = Find.TickManager.TicksGame;
+
+            double dt = RealTime.deltaTime;   // 本帧真实时长（秒）；RimWorld 自己的帧钟，不必引 UnityEngine
+            if (dt > 0.0 && dt < 0.5) renderClockFrac += dt / renderClockSecPerTick;
+
+            if (tg != renderClockTicksGame)
+            {
+                if (renderClockTicksGame != int.MinValue)
+                {
+                    int dtTicks = tg - renderClockTicksGame;
+                    // 实测"每 tick 秒数"（只吃合理样本：暂停/卡帧/换档跳变不吃）
+                    if (dtTicks > 0 && dtTicks <= 8 && dt > 0.0)
+                        renderClockSecPerTick = renderClockSecPerTick * 0.75 + (dt / dtTicks) * 0.25;
+                    renderClockFrac -= dtTicks;   // 相位**减去**走过的 tick 数（保留小数部分 ⇒ 无跳变）
+                }
+                else renderClockFrac = 0.0;
+                renderClockTicksGame = tg;
+            }
+            if (renderClockFrac < 0.0) renderClockFrac = 0.0;
+            else if (renderClockFrac > 1.0) renderClockFrac = 1.0;   // 暂停/掉帧：夹住，等 tick 复位
+
+            return GetPhysicsTick() + renderClockFrac * GetCalendarScale();
+        }
+
         /// <summary>
         /// 获取用于历法显示的 TicksAbs（基于 TicksAbs，用于 DateReadout）。
         /// 注意：这是纯显示层时间，不做物理计算；内部不使用 TicksAbs 属性，避免与 TickManager_TicksAbs_Patch 递归。
@@ -274,15 +317,28 @@ namespace PioneerFramework
             return true;
         }
 
-        private bool IsInCombatAction()
+        /// <summary>
+        /// **是否处于「战斗动作」**（本库唯一的战斗判据口径，原来叫 private `IsInCombatAction`）：
+        /// ① **有射弹在飞**（`CombatManager.IsBattleActive` = `activeProjectiles.Count > 0`）；
+        /// ② 或**导弹处于 Attack 终末自动段**（`AutonomousVehicleManager.HasActiveAttack`；2026-09-07 用户定稿：
+        ///    与射弹同级 ⇒ 存在即视为战斗动作）。
+        ///
+        /// 读者（两处，**同一份实现、不各写一份**）：
+        /// · 时间流速闸（禁止"有战斗动作时回 Normal"）；
+        /// · **解析档降级 [D7②]**（交战 ⇒ 退出解析轨）—— 2026-10-08 用户裁定："**用现成那个就行，别新建交战触发**"。
+        /// ⚠ 改公开的顺带修一处成本：原来每次**现查组件**（`Current.Game.GetComponent` = 组件表线性扫描），
+        ///   而新读者是**每物理步**调用 ⇒ 现在两个组件都走 `GameComponentRef` 缓存（全局查询增量 = 0）。
+        /// </summary>
+        public bool IsInCombatAction()
         {
-            var combatManager = Current.Game.GetComponent<Combat.CombatManager>();
+            var combatManager = combatMgrRef.Get();
             if (combatManager != null && combatManager.IsBattleActive) return true;
-            // 导弹 Attack 终末自动段与射弹同级（2026-09-07 用户定稿）：存在即视为战斗动作，
-            // 阻止"回 Normal"命令执行（Combat 档维持由 SpaceGameComp 240-tick 检查负责）
-            var avm = Current.Game.GetComponent<AutonomousVehicleManager>();
+            var avm = avmRef.Get();
             return avm != null && avm.HasActiveAttack;
         }
+
+        private readonly GameComponentRef<Combat.CombatManager> combatMgrRef = new GameComponentRef<Combat.CombatManager>();
+        private readonly GameComponentRef<AutonomousVehicleManager> avmRef = new GameComponentRef<AutonomousVehicleManager>();
 
         private void ExecuteCommand(TimeScaleCommand command)
         {

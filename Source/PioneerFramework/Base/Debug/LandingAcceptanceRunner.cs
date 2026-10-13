@@ -47,7 +47,6 @@ namespace PioneerFramework
         // ── 异步段状态（撞击事件）──
         private static bool impactPending;
         private static int impactStartTick;
-        private static int impactLogMark;
         private static readonly List<int> impactGroups = new List<int>();
 
         // ══════════════════════════════════════════════════════════════════════════
@@ -423,7 +422,6 @@ namespace PioneerFramework
             }
 
             impactStartTick = Find.TickManager?.TicksGame ?? 0;
-            impactLogMark = LogMessageCount();
             impactPending = true;
             // 超时由本类自己判（消息更具体）；给框架一个更宽的后备，防"本类的 Tick 没被驱动"时卡住登记表。
             PflTestKit.Begin(ImpactCaseName, Category, ImpactTimeoutTicks + 120);
@@ -471,8 +469,8 @@ namespace PioneerFramework
                 return;
             }
 
-            string? landLog = FindLogLine(impactLogMark, "] Group " + impactGroups[0] + " LANDED");
-            string? crashLog = FindLogLine(impactLogMark, "] Group " + impactGroups[1] + " CRASHED");
+            string? landLog = FindLogLine("] Group " + impactGroups[0] + " LANDED");
+            string? crashLog = FindLogLine("] Group " + impactGroups[1] + " CRASHED");
             string? landMsg = FindArchivedMessage(impactStartTick, "着陆于");
             string? crashMsg = FindArchivedMessage(impactStartTick, "坠毁于");
 
@@ -564,22 +562,23 @@ namespace PioneerFramework
             return logLine.Substring(a + 5, b - a - 5);
         }
 
-        private static int LogMessageCount()
+        /// <summary>
+        /// 在**内存日志**里找一条含 <paramref name="needle"/> 的行（取**最后一次**命中）。
+        ///
+        /// ⚠ 2026-10-06 修（游戏内实测**假红**）：原实现从 `fromIndex`（= 摆探针那刻的日志条数）
+        /// 往后扫，但 `Verse.Log.Messages` 是**环形缓冲、上限 1000 条**（`LogMessageQueue.maxMessages`）——
+        /// 会话里日志一多它就饱和、条数停在上限，于是 `fromIndex ≥ 列表长度` ⇒ 循环全跳过 ⇒
+        /// **恒返回 null**。本次实测：`Player.log` 2619/2622 行明明有
+        /// `[Collision] … CRASHED / LANDED`，用例却报"日志里没有 LANDED 行"（假红）。
+        /// 现在**全表扫、取最后一次命中**：探针组 id 由 `AllocGroupId` 单调新分配 ⇒ 命中即本次，
+        /// 不需要"从标记往后"这条脆弱约束。
+        /// </summary>
+        private static string? FindLogLine(string needle)
         {
-            int n = 0;
-            foreach (var _ in Log.Messages) n++;
-            return n;
-        }
-
-        private static string? FindLogLine(int fromIndex, string needle)
-        {
-            int i = 0;
+            string? found = null;
             foreach (var m in Log.Messages)
-            {
-                if (i++ < fromIndex) continue;
-                if (m.text != null && m.text.Contains(needle)) return m.text;
-            }
-            return null;
+                if (m.text != null && m.text.Contains(needle)) found = m.text;
+            return found;
         }
 
         /// <summary>在**玩家可见的归档**里找一条消息（`Messages.Message(..., historical:true)` 的收口）。</summary>

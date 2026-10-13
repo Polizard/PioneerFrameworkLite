@@ -154,6 +154,13 @@ namespace PioneerFramework
             foreach (var kv in bodiesById)
                 if (kv.Value.bodyType == CelestialBodyType.Planet) cachedPlanets.Add(kv.Value);
 
+            // ── 大气密度剖面预暖（[A2-2]，2026-10-06）────────────────────────────────
+            // 建表（唯一一次分配）与"有没有活大气"的静态闸门都在这里拉齐：本方法是"天体 Def 静态表"
+            // 的既有建立点（R1 已规定**不许在并行区相位里建表**）⇒ 顺手把剖面也建掉，物理步的
+            // 并行区就只剩只读（惰性参数 = rho0 未定 ⇒ 建出的剖面恒惰性、零分配）。
+            foreach (var def in allDefs)
+                def.EnsureAtmosphereProfile();
+
             Log.Message(string.Format("[CelestialBodyManager] Loaded {0} celestial bodies, built moon indices. World radius = {1:F0} m ({2} tiles).",
                 allDefs.Count, SpaceConstants.PlanetRadiusMeters, (int)(SpaceConstants.PlanetRadiusMeters / SpaceConstants.MetersPerUnit)));
 

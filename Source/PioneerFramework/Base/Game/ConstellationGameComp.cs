@@ -473,7 +473,7 @@ namespace PioneerFramework
             if (g.anchorWorldObjectId >= 0) settlementToAnchor.Remove(g.anchorWorldObjectId);
             if (DebugDetailedConstellation)
                 Log.Message(string.Format("[星座] 释放锚点 G{0}（据点 {1}）", groupId, g.anchorWorldObjectId));
-            sg.DestroyGroup(groupId); // 唯一收尸链路：GroupDestroyed → OnGroupDestroyed（幂等，不会回环）
+            sg.DestroyGroup(groupId, "星座收尸（成员退出）"); // 唯一收尸链路：GroupDestroyed → OnGroupDestroyed（幂等，不会回环）
         }
 
         // ════════════════════════════════════════════════════════════

@@ -152,5 +152,82 @@ namespace PioneerFramework.Tests
             Assert.Equal(1, ViewFrame.ViewedBodyId);          // 取不到 layer ⇒ 根行星，不抛
             Assert.Equal(0.0, ViewFrame.ViewedBodyRadiusUnity - (float)SpaceConstants.PlanetRadiusUnity, 3);
         }
+
+        // ── ⑦ 姿态换系（2026-10-09：含图编队"背景相机跟着船走"的朝向口）──────────
+        //    位置那条路已被 ②③ 钉住；姿态是新口子，风险全在"位置用一个旋转、姿态用另一个"。
+
+        /// <summary>绕 +Y 的受管四元数（测试侧手算：`Quaternion.Euler/AngleAxis` 是 ECall，headless 会炸）。</summary>
+        static Quaternion YRotation(double ang)
+        {
+            float half = (float)(ang * 0.5);
+            return new Quaternion(0f, (float)Math.Sin(half), 0f, (float)Math.Cos(half));
+        }
+
+        static Quaternion Normalized(Quaternion q)
+        {
+            float m = (float)Math.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+            return new Quaternion(q.x / m, q.y / m, q.z / m, q.w / m);
+        }
+
+        /// <summary>按"作用在基向量上"比四元数 ⇒ 对 `q` 与 `−q`（同一旋转的两种表示）宽容。</summary>
+        static void AssertRotationNear(Quaternion expected, Quaternion actual)
+        {
+            AssertNear(expected * Vector3.right, actual * Vector3.right);
+            AssertNear(expected * Vector3.up, actual * Vector3.up);
+            AssertNear(expected * Vector3.forward, actual * Vector3.forward);
+        }
+
+        [Fact]
+        public void AtTickZero_ViewRotationIsIdentity()
+        {
+            var attitude = YRotation(0.26);   // 随便一个非恒等姿态
+            AssertRotationNear(attitude, ViewFrame.ToViewRotation(attitude, 0.0));
+        }
+
+        [Fact]
+        public void AtQuarterPeriod_IdentityAttitude_LooksAlongMinusZ()
+        {
+            // 手算锚点（不调被测物算期望）：1/4 周期 ⇒ 视图旋转 = Ry(90°)
+            // ⇒ 系统系 +x̂ 在视图系里指向 −ẑ、+ẑ 指向 +x̂（与 ③ 的位置断言同源）
+            var rot = ViewFrame.ToViewRotation(Quaternion.identity, Period / 4.0);
+            AssertNear(new Vector3(0f, 0f, -1f), rot * Vector3.right);
+            AssertNear(new Vector3(1f, 0f, 0f), rot * Vector3.forward);
+            AssertNear(new Vector3(0f, 1f, 0f), rot * Vector3.up);   // 极轴不许被转
+        }
+
+        [Fact]
+        public void PositionAndAttitude_UseTheSameFrame()
+        {
+            // 船的姿态 Q ⇒ 它的"船头"（局部 +ẑ）在视图系里的方向，
+            // 必须等于"系统系里沿船头挪 100 km 的两个点"各自过 ToViewUnity 后得到的方向。
+            // 两条路只要用了不同的旋转（哪怕只差一个符号），这条就红。
+            var q = Normalized(new Quaternion(0.2f, 0.5f, -0.3f, 0.78f));
+            const double tick = 12345.0;
+            const double L = 1.0e5;    // 100 km = 2 视图单位：够大，免浮点相消
+            var baseSystem = new DVector3(4.0e6, 1.0e6, -2.0e6);
+            var headSystem = baseSystem + (DVector3)(q * Vector3.forward) * L;
+
+            var posView = ViewFrame.ToViewUnity(baseSystem, tick);
+            var headView = ViewFrame.ToViewUnity(headSystem, tick);
+            var dirByPosition = (headView - posView).normalized;
+            var dirByRotation = ViewFrame.ToViewRotation(q, tick) * Vector3.forward;
+
+            AssertNear(dirByPosition, dirByRotation);
+        }
+
+        [Theory]
+        [InlineData(0.0)]
+        [InlineData(15000.0)]
+        [InlineData(123456.75)]     // 跨多个周期 + 非整 tick
+        [InlineData(-45000.0)]      // 负 tick（读档回放口径）
+        public void GroundFixedAttitude_DoesNotRotateInView(double tick)
+        {
+            // 与地表固连的姿态（物理侧 `FixedToEci` = Ry(−ωt) ⇒ 系统系姿态 = Ry(−ωt)·Q_fixed）
+            // 在视图系里必须**原地不动** —— 与 ② 的位置往返同一条纪律，姿态侧的对应物。
+            var qFixed = YRotation(Math.PI / 4.0);
+            var qSystem = YRotation(-Omega * tick) * qFixed;
+
+            AssertRotationNear(qFixed, ViewFrame.ToViewRotation(qSystem, tick));
+        }
     }
 }

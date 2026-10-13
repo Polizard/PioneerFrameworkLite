@@ -555,14 +555,20 @@ namespace PioneerFramework
             var myGroup = GetMyGroup();
             if (sg == null || cm == null || myGroup == null) return;
 
+            // [V3]（2026-10-11 B1）：列表准入 = **与开火同一条判据**（`PlayerCanSee`；影子算看得见）。
+            // 原来这里不筛 ⇒ 玩家能在列表里看到自己**没发现**的敌舰（信息泄漏），选了又打不着。
+            var sensor = Current.Game?.GetComponent<SensorManager>();
+
             var options = new List<FloatMenuOption>();
             DVector3 myPos = cm.GetGroupPos(myGroup);
             foreach (var g in sg.GetAllGroups())
             {
                 if (!g.IsActive || g.GroupId == myGroup.GroupId || !IsHostile(g)) continue;
+                if (sensor != null && !sensor.PlayerCanSee(g)) continue;
                 double d = (cm.GetGroupPos(g) - myPos).magnitude;
+                string suffix = sensor != null ? sensor.PlayerPhaseSuffix(g) : "";
                 var captured = g;
-                options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）", g.GroupId, d / 1000.0), () =>
+                options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）{2}", g.GroupId, d / 1000.0, suffix), () =>
                 {
                     manualTargetGroupId = captured.GroupId;
                 }));
@@ -593,7 +599,7 @@ namespace PioneerFramework
             BeginPrecisionPick(target);
         }
 
-        /// <summary>精确炮击目标选择列表（仅列出带 Map 的敌舰）。</summary>
+        /// <summary>精确炮击目标选择列表（仅列出带 Map 的敌舰）。⚠ 准入同"指定目标"：只列看得见的（2026-10-11 B1）。</summary>
         private void ShowPrecisionTargetPicker()
         {
             var sg = Current.Game?.GetComponent<SpaceGameComp>();
@@ -601,15 +607,18 @@ namespace PioneerFramework
             var myGroup = GetMyGroup();
             if (sg == null || cm == null || myGroup == null) return;
 
+            var sensor = Current.Game?.GetComponent<SensorManager>();
             var options = new List<FloatMenuOption>();
             DVector3 myPos = cm.GetGroupPos(myGroup);
             foreach (var g in sg.GetAllGroups())
             {
                 if (!g.IsActive || g.GroupId == myGroup.GroupId || !IsHostile(g)) continue;
+                if (sensor != null && !sensor.PlayerCanSee(g)) continue;   // [V3] 只列看得见的（影子算）
                 if (GetTargetEntity(g) == null) continue; // 只需有 Map 的目标（空间站）
                 double d = (cm.GetGroupPos(g) - myPos).magnitude;
+                string suffix = sensor != null ? sensor.PlayerPhaseSuffix(g) : "";
                 var captured = g;
-                options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）", g.GroupId, d / 1000.0),
+                options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）{2}", g.GroupId, d / 1000.0, suffix),
                     () => BeginPrecisionPick(captured)));
             }
             if (options.Count == 0)

@@ -32,8 +32,21 @@ namespace PioneerFramework
         /// 2026-09-05：自转方向由 RimWorld 太阳约定锚定（固连系太阳星下点西移 ⇒ ECI 自转 Ry(−ωt)），
         /// 表面切向 = ω·(p×up) = radial×up → 顺行发射必须取 −1，
         /// 否则控制律会先把自转初速刹掉再反向加速（白烧 ~2×v_surface ≈ 1048 m/s 赤道）。
+        /// ⚠ 2026-10-06 起只在**退化兜底**分支里用（角动量可忽略时）；正常路径的切向基准是面内 `ĥ×r̂`。
         /// </summary>
         public double progradeSign;
+
+        /// <summary>
+        /// **径向通道增益**（2026-10-06）：1 = 一步把误差全交付（现状/默认）；&lt;1 = 一阶趋近。
+        /// **≤0 视为 1**（旧档/未配置 = 直通，不做迁移）。
+        /// ⚠ 它是对"制导输入缺在飞冲量"那个病灶的**半剂量补丁**；根因修好之后（见
+        /// `RocketLaunchController.GuidanceVelocity`）增益**无益、Fast 下反而有害** ⇒ 默认 1.0。
+        /// 字段保留：台架用它做对照整定（`AscentTuningTests`）。
+        /// </summary>
+        public double radialGain;
+
+        /// <summary>**切向通道增益**（同上；≤0 视为 1）。默认 0.5。</summary>
+        public double tanGain;
 
         /// <summary>设计 §4.4 冻结默认参数，rTarget = planetRadius + 500km。</summary>
         public static LaunchGuidanceParams CreateDefault(double planetRadiusMeters)
@@ -50,7 +63,12 @@ namespace PioneerFramework
                 vAscent = 500.0,
                 altPitchStart = 20000.0,
                 altPitchEnd = 450000.0,
-                progradeSign = -1.0 // 顺行 = 与真实自转（radial×up）同向
+                progradeSign = -1.0, // 顺行 = 与真实自转（radial×up）同向
+                // 增益默认 = 1.0（直通）。2026-10-06 台架实测：**真正治本的是"制导输入含在飞冲量"**
+                // （`RocketLaunchController.GuidanceVelocity`）；换成它之后增益**无益、Fast 下反而有害**
+                // （dt=8/延1：预测+增益0.3/0.5 = 1676 kg，预测+直通 = **2222 kg**）。字段保留供台架/整定。
+                radialGain = 1.0,
+                tanGain = 1.0
             };
         }
     }
@@ -96,8 +114,20 @@ namespace PioneerFramework
 
             double vC = Math.Sqrt(gm / p.rTarget);   // 目标圆轨速度（常数）
             DVector3 radialOut = pos / r;
-            // 切向基准 + 方向符号：−1 = radial×up（与真实自转同向，顺行发射），+1 = up×radial（旧约定）
-            DVector3 tangent = DVector3.Cross(DVector3.up, radialOut).normalized * p.progradeSign;
+
+            // ── 切向基准（**必须在轨道面内**；2026-10-06 修，台架定案）──────────────────────
+            // 旧写法 = 全局东方 `Cross(up, r̂)`：**赤道**发射时它恰在轨道面内（所以赤道测试一直全绿），
+            // 但在**倾斜轨道**上它会**漂出轨道面** ⇒ 制导每步都命令一个面外切向修正 ⇒ 燃料烧在改面上。
+            // 台架实测（φ=51.7°、50 t、同一枚测试火箭）：旧写法=烧干 50 t、耗尽于 197 km、apo 只到 5368 km
+            // （**与游戏日志同步复现**：耗尽 175–200 km / v=6042 / apo≈5351）；换成面内基准后**到达且余 2.4 t**。
+            // 现写法 = **面内顺行水平** `ĥ×r̂`（**无记忆**：只由当前 pos/vel 定 ⇒ 读档不漂，与"控制器无积分器"一致）。
+            // 退化兜底（角动量可忽略：纯径向/零速——`|v_tan| ≤ 1 m/s`）⇒ 回退旧式全局东方 × `progradeSign`。
+            DVector3 hVec = DVector3.Cross(pos, vel);
+            DVector3 tangent;
+            if (hVec.sqrMagnitude > r * r)
+                tangent = DVector3.Cross(hVec, radialOut).normalized;
+            else
+                tangent = DVector3.Cross(DVector3.up, radialOut).normalized * p.progradeSign;
             if (tangent.sqrMagnitude < 1e-12)
                 return new LaunchGuidanceStep(DVector3.zero, false);
 
@@ -131,6 +161,14 @@ namespace PioneerFramework
 
             DVector3 desiredVel = radialOut * radialTarget + tangent * tanTarget;
             DVector3 dv = desiredVel - vel;
+
+            // ── 通道增益（2026-10-06 抗延迟；见 `radialGain` 字段的台架证据）──────────────────
+            // 目标速度只含径向/切向两个分量 ⇒ 重新合成无损（只在浮点上差最后几位）。
+            // ⚠ **≤0 视为 1**：旧档/未配置 = 旧行为（不做存档迁移）。
+            double gRad = p.radialGain > 0.0 ? p.radialGain : 1.0;
+            double gTan = p.tanGain > 0.0 ? p.tanGain : 1.0;
+            dv = radialOut * (DVector3.Dot(dv, radialOut) * gRad)
+               + tangent * (DVector3.Dot(dv, tangent) * gTan);
 
             // 到达判定：窗口内才切给入轨（§4.2/§4.5）
             bool arrived = Math.Abs(deltaR) < p.tolR && Math.Abs(vel.magnitude - vC) < p.tolV;

@@ -53,6 +53,12 @@
       <HintPath>Libs\Unity\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- 2026-10-10（烘焙落盘）：PNG 编解码 = ImageConversion.EncodeToPNG / LoadImage（扩展方法在这个模块里）。
+         与其余 Unity 模块同源（都是从游戏 Managed/ 取出，Private=false 不随包分发）。 -->
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>Libs\Unity\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.AssetBundleModule">
       <HintPath>Libs\Unity\UnityEngine.AssetBundleModule.dll</HintPath>
       <Private>false</Private>
