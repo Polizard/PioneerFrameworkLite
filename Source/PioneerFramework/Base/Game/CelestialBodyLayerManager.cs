@@ -588,10 +588,8 @@ namespace PioneerFramework
                             if (capturedLayer.IsSelected)
                                 return;
 
+                            // 切换视图复用已有地形网格；首次生成和数据变更由各自的脏标记驱动。
                             PlanetLayer.Selected = capturedLayer;
-
-                            // 强制重绘地形层，确保切换后 biome 更新立即显示
-                            Find.World.renderer.SetDirty<WorldDrawLayer_Terrain>(capturedLayer);
 
                             Messages.Message(string.Format("已切换至天体视图：{0}",
                                 capturedLayer.Def.label ?? capturedLayer.Def.defName),

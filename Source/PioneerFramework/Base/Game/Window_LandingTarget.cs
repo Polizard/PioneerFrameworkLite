@@ -138,13 +138,12 @@ namespace PioneerFramework
                 SwitchSurfaceView(mgr, targetBodyId);
         }
 
-        /// <summary>把星球视图切到该天体的地表层（与「查看天体」同一个做法，含强制重绘）。</summary>
+        /// <summary>把星球视图切到该天体的地表层，复用已有地形网格。</summary>
         private static void SwitchSurfaceView(CelestialBodyManager mgr, int bodyId)
         {
             var layer = Launch.GetSurfaceState.GetLayerForBody(mgr, bodyId);
             if (layer == null || layer.IsSelected) return;
             PlanetLayer.Selected = layer;
-            Find.World.renderer.SetDirty<WorldDrawLayer_Terrain>(layer);
         }
     }
 }
