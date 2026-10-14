@@ -103,7 +103,6 @@
       <li Class="PioneerFramework.CompProperties_MapDesignator">
         <cooldownTicks>12</cooldownTicks>
         <scanIntervalTicks>32</scanIntervalTicks>
-        <defaultMode>Auto</defaultMode>
       </li>
     </comps>
   </ThingDef>
