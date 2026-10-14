@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    M0 基线台架（2026-10-14，数学核心现代化）：**量"改前数字"**。
+    · 形态 = 控制台（net10.0），跑一把打印一张表；数字落进 `数学核心NET10优化计划-20261013.md`；
+    · 源码 = **链接纯核**（与 Pure.Tests 同一份"已知可编"集合）+ `PFViewSurfaceDetails.cs`（唯一要 UnityStubs 的文件）；
+    · **不 ProjectReference 主工程**（保持零宿主耦合；与 MechJebLibTest/Pure.Tests 同惯例）；
+    · 运行：在 `Source/PioneerFramework.Bench/` 下 `dotnet run -c Release`（**必须 Release**；Debug 数字没意义）。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>PioneerFramework.Bench</RootNamespace>
+    <AssemblyName>PioneerFramework.Bench</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- 纯核条件编译开关（与 Pure.Tests/MechJebLibTest 同一份约定：让链接的源码不引 Verse/RimWorld） -->
+    <DefineConstants>$(DefineConstants);PURE_MATH</DefineConstants>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\PioneerFramework\ThirdParty\MechJebLib\**\*.cs"
+             Exclude="..\PioneerFramework\ThirdParty\MechJebLib\ODE\**\*.cs;..\PioneerFramework\ThirdParty\MechJebLib\Interpolants\**\*.cs;..\PioneerFramework\ThirdParty\MechJebLib\TwoBody\Farnocchia.cs;..\PioneerFramework\ThirdParty\MechJebLib\Rootfinding\Bisection.cs;..\PioneerFramework\ThirdParty\MechJebLib\Rootfinding\Newton.cs;..\PioneerFramework\ThirdParty\MechJebLib\Primitives\Vec.cs;..\PioneerFramework\ThirdParty\MechJebLib\Primitives\VecOps.cs;..\PioneerFramework\ThirdParty\MechJebLib\Utils\ObjectPool.cs" />
+    <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Linked\DVector3.cs" />
+    <Compile Include="..\PioneerFramework\Base\Core\FrameVec3.cs" Link="Linked\FrameVec3.cs" />
+    <Compile Include="..\PioneerFramework\ThreadSafety\ParallelOps.cs" Link="Linked\ParallelOps.cs" />
+    <Compile Include="..\PioneerFramework\Base\Core\SlabMath.cs" Link="Linked\SlabMath.cs" />
+    <Compile Include="..\PioneerFramework\Base\Core\SpaceConstants.cs" Link="Linked\SpaceConstants.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\OrbitMath.cs" Link="Linked\OrbitMath.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\OrbitView.cs" Link="Linked\OrbitView.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\Gooding.cs" Link="Linked\Gooding.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\TransferGeometry.cs" Link="Linked\TransferGeometry.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\NBodyIntegrator.cs" Link="Linked\NBodyIntegrator.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\BodySampleCache.cs" Link="Linked\BodySampleCache.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\BurnCore.cs" Link="Linked\BurnCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousCore.cs" Link="Linked\RendezvousCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGuidanceCore.cs" Link="Linked\RendezvousGuidanceCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\LaunchGuidanceCore.cs" Link="Linked\LaunchGuidanceCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\Game\MissileGuidanceCore.cs" Link="Linked\MissileGuidanceCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\Game\ConstellationCore.cs" Link="Linked\ConstellationCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\Game\SensorCore.cs" Link="Linked\SensorCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\Game\ContactCore.cs" Link="Linked\ContactCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\MapComp\MapReliefPlan.cs" Link="Linked\MapReliefPlan.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\AtmosphereModel.cs" Link="Linked\AtmosphereModel.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\AeroShape.cs" Link="Linked\AeroShape.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\AirBreathingCore.cs" Link="Linked\AirBreathingCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\AeroDrag.cs" Link="Linked\AeroDrag.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\SurfaceFrame.cs" Link="Linked\SurfaceFrame.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\HoverCore.cs" Link="Linked\HoverCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\AnalyticTransferCore.cs" Link="Linked\AnalyticTransferCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\BurnStep.cs" Link="Linked\BurnStep.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\BurnExecutorPolicy.cs" Link="Linked\BurnExecutorPolicy.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\TrimBurn.cs" Link="Linked\TrimBurn.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\ManeuverRegime.cs" Link="Linked\ManeuverRegime.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGoal.cs" Link="Linked\RendezvousGoal.cs" />
+    <!-- 烘焙 CPU 细节核（唯一要 UnityStubs 的文件：Color32/Mathf 值类型） -->
+    <Compile Include="..\PioneerFramework\PFView\PFViewSurfaceDetails.cs" Link="Linked\PFViewSurfaceDetails.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="UnityStubs">
+      <HintPath>$(Rw17Dir)\UnityStubs.dll</HintPath>
+      <!-- 台架是**跑**的（不像主工程只编）：UnityStubs 必须随输出复制，否则运行时找不到 Color32/Mathf -->
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

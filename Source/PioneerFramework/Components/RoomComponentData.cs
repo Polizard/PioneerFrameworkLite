@@ -6,7 +6,7 @@ namespace PioneerFramework.Components
     /// <summary>舱室组件：对应一张 RW 2D 地图。尺寸按部件水平面物理尺寸（1格=1米）。</summary>
     public class RoomComponentData : PartComponentData
     {
-        public string roomTypeDefName; // 舱室类型 Def 名（空 = 默认类型）
+        public string roomTypeDefName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）; // 舱室类型 Def 名（空 = 默认类型）
         public int mapWidth = 10;
         public int mapHeight = 10;
         public float dryMass = 400f; // 组件自重 kg

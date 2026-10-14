@@ -94,7 +94,7 @@ namespace PioneerFramework
         private const int StarCount = 1500;
 
         /// <summary>单颗星的面片边长范围（视图单位）= `GlobalDrawLayer_Stars.StarsDrawSize` 同款。</summary>
-        private static readonly FloatRange StarDrawSize = new FloatRange(1f, 3.8f);
+        private static readonly FloatRange StarDrawSize = new(1f, 3.8f);
 
         /// <summary>离太阳方向多近开始缩小（点积阈值）= 原版 `DistToSunToReduceStarSize` 同款。</summary>
         private const float SunFadeStart = 0.8f;
@@ -110,7 +110,7 @@ namespace PioneerFramework
         internal const float ShellRadius = 300f;   // PFView 的星空盒复用同一份（见 PFViewSunDisc.StarShellScale）
 
         /// <summary>星色：偏冷白（比纯白更像星）——加性混合下就是"亮点"。</summary>
-        private static readonly Color StarColor = new Color(0.90f, 0.93f, 1f);
+        private static readonly Color StarColor = new(0.90f, 0.93f, 1f);
 
         // 网格按世界种子缓存（原版也按种子定分布）。**只缓存种子、不扣 World 引用**（换局不占内存）。
         // 每个不同种子留一张 ~6000 顶点的网格；一局一枚，可忽略。

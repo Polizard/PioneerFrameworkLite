@@ -10,7 +10,7 @@ namespace PioneerFramework.Combat
         public int id;
         public int sourceGroupId;
         public int factionId;
-        public WeaponDef weaponDef;
+        public WeaponDef weaponDef = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         /// <summary>**系统系**位置（批6 S3-3c：类型承载系 —— 混系会编译不过，见 `FrameVec3.cs`）。</summary>
         public SystemVec3 position;
         /// <summary>**系统系**速度。</summary>

@@ -106,11 +106,11 @@ namespace PioneerFramework
 
             bool inView = angle < Mathf.Min(halfV, halfH) - sunDiscAngularRadiusDeg;   // 扣掉圆盘自身半径
             string state = occludedBy != null
-                ? string.Format("**被 {0} 挡住**（相机在背光侧 ⇒ 属正常）", occludedBy)
+                ? $"**被 {occludedBy} 挡住**（相机在背光侧 ⇒ 属正常）"
                 : inView
                     ? "**视野内**（看不见才是问题）"
                     : "视野外（右拖转镜头找它；相机永远看向焦点，太阳常在背后）";
-            return string.Format("视线夹角 {0:F1}°（半视野 竖 {1:F0}° / 横 {2:F0}°）⇒ {3}", angle, halfV, halfH, state);
+            return $"视线夹角 {angle:F1}°（半视野 竖 {halfV:F0}° / 横 {halfH:F0}°）⇒ {state}";
         }
 
         /// <summary>
@@ -121,12 +121,7 @@ namespace PioneerFramework
         {
             var mesh = GetSunDiscMesh();
             var mat = GetSunDiscMaterial();
-            return string.Format("绘制：网格 {0}（UV {1}）· 材质 {2}（q {3}）· 摆位 {4:G3} · 尺寸 {5:G3}",
-                mesh != null ? "OK" : "**缺**",
-                mesh != null ? "OK" : "-",
-                mat != null && mat.shader != null ? mat.shader.name : "**缺**",
-                mat != null ? mat.renderQueue : -1,
-                SunPlaceDistView, sunDiscQuadSize);
+            return $"绘制：网格 {(mesh != null ? "OK" : "**缺**")}（UV {(mesh != null ? "OK" : "-")}）· 材质 {(mat != null && mat.shader != null ? mat.shader.name : "**缺**")}（q {(mat != null ? mat.renderQueue : -1)}）· 摆位 {SunPlaceDistView:G3} · 尺寸 {sunDiscQuadSize:G3}";
         }
 
         /// <summary>
@@ -157,13 +152,9 @@ namespace PioneerFramework
             float centerFrac = ReadBlockBrightFraction(cx, cy, block, out float centerMean);
             float skyFrac = ReadBlockBrightFraction(refX, cy, block, out float skyMean);
 
-            Log.Message(string.Format(
-                "[PFView·太阳盘·探针] 圆盘处 ({0},{1}) {2}px：亮像素占比 {3:F2}（均红 {4:F2}）↔ 旁边同尺寸块 ({5},{6})：{7:F2}（均红 {8:F2}）｜{9}",
-                Mathf.Clamp(cx, 0, Mathf.Max(0, w - block)), Mathf.Clamp(cy, 0, Mathf.Max(0, h - block)), block,
-                centerFrac, centerMean, refX, Mathf.Clamp(cy, 0, Mathf.Max(0, h - block)), skyFrac, skyMean,
-                centerFrac > 0.30f ? "**圆盘在**（实心芯 ≈0.79 的占比；暖白 ⇒ 红通道近 1）"
+            Log.Message($"[PFView·太阳盘·探针] 圆盘处 ({Mathf.Clamp(cx, 0, Mathf.Max(0, w - block))},{Mathf.Clamp(cy, 0, Mathf.Max(0, h - block))}) {block}px：亮像素占比 {centerFrac:F2}（均红 {centerMean:F2}）↔ 旁边同尺寸块 ({refX},{Mathf.Clamp(cy, 0, Mathf.Max(0, h - block))})：{skyFrac:F2}（均红 {skyMean:F2}）｜{(centerFrac > 0.30f ? "**圆盘在**（实心芯 ≈0.79 的占比；暖白 ⇒ 红通道近 1）"
                                    : centerFrac < 0.05f ? "**没画出来**（或与天空同色；若上一行写着「被 X 挡住」⇒ 那是被挡，正常）"
-                                                        : "有点亮但不满 ⇒ 半透明/偏小/只有边缘"));
+                                                        : "有点亮但不满 ⇒ 半透明/偏小/只有边缘")}");
         }
 
         /// <summary>

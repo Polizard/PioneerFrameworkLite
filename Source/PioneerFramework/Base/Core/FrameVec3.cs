@@ -33,18 +33,18 @@ namespace PioneerFramework
 
         // ── 跨系：**唯一**的进出方式，两条都显式（见文件头规则 2） ──────────────────
         public static explicit operator DVector3(SystemVec3 a) => a.v;
-        public static explicit operator SystemVec3(DVector3 a) => new SystemVec3(a);
+        public static explicit operator SystemVec3(DVector3 a) => new(a);
 
         // ── 同系算子（逐位委托 `DVector3`） ────────────────────────────────────────
-        public static SystemVec3 operator +(SystemVec3 a, SystemVec3 b) => new SystemVec3(a.v + b.v);
-        public static SystemVec3 operator -(SystemVec3 a, SystemVec3 b) => new SystemVec3(a.v - b.v);
-        public static SystemVec3 operator -(SystemVec3 a) => new SystemVec3(-a.v);
-        public static SystemVec3 operator *(SystemVec3 a, double d) => new SystemVec3(a.v * d);
-        public static SystemVec3 operator *(double d, SystemVec3 a) => new SystemVec3(a.v * d);
-        public static SystemVec3 operator /(SystemVec3 a, double d) => new SystemVec3(a.v / d);
+        public static SystemVec3 operator +(SystemVec3 a, SystemVec3 b) => new(a.v + b.v);
+        public static SystemVec3 operator -(SystemVec3 a, SystemVec3 b) => new(a.v - b.v);
+        public static SystemVec3 operator -(SystemVec3 a) => new(-a.v);
+        public static SystemVec3 operator *(SystemVec3 a, double d) => new(a.v * d);
+        public static SystemVec3 operator *(double d, SystemVec3 a) => new(a.v * d);
+        public static SystemVec3 operator /(SystemVec3 a, double d) => new(a.v / d);
 
         public static double Dot(SystemVec3 a, SystemVec3 b) => DVector3.Dot(a.v, b.v);
-        public static SystemVec3 Cross(SystemVec3 a, SystemVec3 b) => new SystemVec3(DVector3.Cross(a.v, b.v));
+        public static SystemVec3 Cross(SystemVec3 a, SystemVec3 b) => new(DVector3.Cross(a.v, b.v));
 
         // 相等/不等：**同系**比较（语义委托 `DVector3` 的 `==`，不在这里重写）
         public static bool operator ==(SystemVec3 a, SystemVec3 b) => a.v == b.v;
@@ -57,7 +57,7 @@ namespace PioneerFramework
 
         public double magnitude => v.magnitude;
         public double sqrMagnitude => v.sqrMagnitude;
-        public SystemVec3 normalized => new SystemVec3(v.normalized);
+        public SystemVec3 normalized => new(v.normalized);
         public bool IsFinite() => v.IsFinite();
 
         // 分量读取（**与系无关**：读一个坐标不会混系 ⇒ 不破坏护栏，但省掉大量 `.v.x` 噪声）
@@ -65,7 +65,7 @@ namespace PioneerFramework
         public double y => v.y;
         public double z => v.z;
 
-        public static readonly SystemVec3 zero = new SystemVec3(DVector3.zero);
+        public static readonly SystemVec3 zero = new(DVector3.zero);
 
 #if !PURE_MATH
         /// <summary>
@@ -102,17 +102,17 @@ namespace PioneerFramework
         public BodyVec3(DVector3 value) => v = value;
 
         public static explicit operator DVector3(BodyVec3 a) => a.v;
-        public static explicit operator BodyVec3(DVector3 a) => new BodyVec3(a);
+        public static explicit operator BodyVec3(DVector3 a) => new(a);
 
-        public static BodyVec3 operator +(BodyVec3 a, BodyVec3 b) => new BodyVec3(a.v + b.v);
-        public static BodyVec3 operator -(BodyVec3 a, BodyVec3 b) => new BodyVec3(a.v - b.v);
-        public static BodyVec3 operator -(BodyVec3 a) => new BodyVec3(-a.v);
-        public static BodyVec3 operator *(BodyVec3 a, double d) => new BodyVec3(a.v * d);
-        public static BodyVec3 operator *(double d, BodyVec3 a) => new BodyVec3(a.v * d);
-        public static BodyVec3 operator /(BodyVec3 a, double d) => new BodyVec3(a.v / d);
+        public static BodyVec3 operator +(BodyVec3 a, BodyVec3 b) => new(a.v + b.v);
+        public static BodyVec3 operator -(BodyVec3 a, BodyVec3 b) => new(a.v - b.v);
+        public static BodyVec3 operator -(BodyVec3 a) => new(-a.v);
+        public static BodyVec3 operator *(BodyVec3 a, double d) => new(a.v * d);
+        public static BodyVec3 operator *(double d, BodyVec3 a) => new(a.v * d);
+        public static BodyVec3 operator /(BodyVec3 a, double d) => new(a.v / d);
 
         public static double Dot(BodyVec3 a, BodyVec3 b) => DVector3.Dot(a.v, b.v);
-        public static BodyVec3 Cross(BodyVec3 a, BodyVec3 b) => new BodyVec3(DVector3.Cross(a.v, b.v));
+        public static BodyVec3 Cross(BodyVec3 a, BodyVec3 b) => new(DVector3.Cross(a.v, b.v));
 
         public static bool operator ==(BodyVec3 a, BodyVec3 b) => a.v == b.v;
         public static bool operator !=(BodyVec3 a, BodyVec3 b) => !(a == b);
@@ -122,7 +122,7 @@ namespace PioneerFramework
 
         public double magnitude => v.magnitude;
         public double sqrMagnitude => v.sqrMagnitude;
-        public BodyVec3 normalized => new BodyVec3(v.normalized);
+        public BodyVec3 normalized => new(v.normalized);
         public bool IsFinite() => v.IsFinite();
 
         // 分量读取（与系无关；见 `SystemVec3` 的同名成员）
@@ -130,7 +130,7 @@ namespace PioneerFramework
         public double y => v.y;
         public double z => v.z;
 
-        public static readonly BodyVec3 zero = new BodyVec3(DVector3.zero);
+        public static readonly BodyVec3 zero = new(DVector3.zero);
 
         public override string ToString() => v.ToString();
     }
@@ -147,7 +147,7 @@ namespace PioneerFramework
     {
         /// <summary>**系统系位置 → 天体局部系位置**（减去中心天体的系统系偏移）。</summary>
         public static BodyVec3 SystemToBody(DVector3 systemPos, SystemVec3 centralBodyOffset) =>
-            new BodyVec3(systemPos - centralBodyOffset.v);
+            new(systemPos - centralBodyOffset.v);
 
         /// <summary>带系版本（过渡期用：读 `positionSystem` 时不必先 `.v`）。语义与上面那条**同一份**。</summary>
         public static BodyVec3 SystemToBody(SystemVec3 systemPos, SystemVec3 centralBodyOffset) =>
@@ -155,7 +155,7 @@ namespace PioneerFramework
 
         /// <summary>**系统系速度 → 天体局部系速度**（减去中心天体的系统系速度）。</summary>
         public static BodyVec3 SystemToBodyVelocity(DVector3 systemVel, SystemVec3 centralBodyVelocity) =>
-            new BodyVec3(systemVel - centralBodyVelocity.v);
+            new(systemVel - centralBodyVelocity.v);
 
         /// <summary>带系版本（过渡期用）。语义与上面那条**同一份**。</summary>
         public static BodyVec3 SystemToBodyVelocity(SystemVec3 systemVel, SystemVec3 centralBodyVelocity) =>

@@ -21,7 +21,7 @@ namespace PioneerFramework
     {
         // ── 静态注册 ──
         /// <summary>PlanetLayer.LayerID → 自转周期(tick)</summary>
-        private static readonly Dictionary<int, float> celestialBodyLayers = new Dictionary<int, float>();
+        private static readonly Dictionary<int, float> celestialBodyLayers = new();
 
         /// <summary>当前活跃的天体 layer（= PlanetLayer.Selected 如果是天体 layer）</summary>
         public static PlanetLayer CurrentCelestialBodyLayer
@@ -131,9 +131,7 @@ namespace PioneerFramework
                     if (!layerRegisterSlowLogged)
                     {
                         layerRegisterSlowLogged = true;
-                        Log.Warning(string.Format(
-                            "[CelestialBodyLayerManager] 天体 layer 注册连续失败 {0} 次，转为每 {1} tick 重试（避免每帧反射 + 日志刷屏）",
-                            LAYER_REGISTER_FAST_ATTEMPTS, LAYER_REGISTER_RETRY_TICKS));
+                        Log.Warning($"[CelestialBodyLayerManager] 天体 layer 注册连续失败 {LAYER_REGISTER_FAST_ATTEMPTS} 次，转为每 {LAYER_REGISTER_RETRY_TICKS} tick 重试（避免每帧反射 + 日志刷屏）");
                     }
                 }
                 TryRegisterExistingLayers();
@@ -185,13 +183,12 @@ namespace PioneerFramework
                 return;
             }
 
-            Log.Message(string.Format("[CelestialBodyLayerManager] planetLayers 中有 {0} 个 layer", layers.Count));
+            Log.Message($"[CelestialBodyLayerManager] planetLayers 中有 {layers.Count} 个 layer");
 
             foreach (var kv in layers)
             {
                 if (kv.Value?.Def != null)
-                    Log.Message(string.Format("[CelestialBodyLayerManager]   已有 layer: {0} (LayerID={1}, TilesCount={2})",
-                        kv.Value.Def.defName, kv.Value.LayerID, kv.Value.TilesCount));
+                    Log.Message($"[CelestialBodyLayerManager]   已有 layer: {kv.Value.Def.defName} (LayerID={kv.Value.LayerID}, TilesCount={kv.Value.TilesCount})");
                 TryRegisterLayer(kv.Value);
             }
 
@@ -224,7 +221,7 @@ namespace PioneerFramework
                     : body.defName;
 
                 // 查找是否已存在此 layer
-                PlanetLayer existingLayer = null;
+                PlanetLayer? existingLayer = null;
                 foreach (var kv in layers)
                 {
                     if (kv.Value?.Def?.defName == targetLayerDefName)
@@ -237,25 +234,22 @@ namespace PioneerFramework
                 // 已存在且 tiles 正常 → 跳过
                 if (existingLayer != null && existingLayer.TilesCount > 0)
                 {
-                    Log.Message(string.Format("[CelestialBodyLayerManager] 天体 layer {0} 已存在 (TilesCount={1})，跳过创建",
-                        targetLayerDefName, existingLayer.TilesCount));
+                    Log.Message($"[CelestialBodyLayerManager] 天体 layer {targetLayerDefName} 已存在 (TilesCount={existingLayer.TilesCount})，跳过创建");
                     continue;
                 }
 
                 // 已存在但 tiles 为空 → 需要重新生成
                 if (existingLayer != null && existingLayer.TilesCount == 0)
                 {
-                    Log.Message(string.Format("[CelestialBodyLayerManager] 天体 layer {0} 已存在但 TilesCount==0，重新运行世界生成",
-                        targetLayerDefName));
+                    Log.Message($"[CelestialBodyLayerManager] 天体 layer {targetLayerDefName} 已存在但 TilesCount==0，重新运行世界生成");
                     try
                     {
                         existingLayer.RunWorldGeneration();
-                        Log.Message(string.Format("[CelestialBodyLayerManager] 天体 layer {0} 世界生成完成 (tiles={1})",
-                            targetLayerDefName, existingLayer.TilesCount));
+                        Log.Message($"[CelestialBodyLayerManager] 天体 layer {targetLayerDefName} 世界生成完成 (tiles={existingLayer.TilesCount})");
                     }
                     catch (Exception ex)
                     {
-                        Log.Error(string.Format("[CelestialBodyLayerManager] 天体 layer {0} 世界生成失败: {1}", targetLayerDefName, ex));
+                        Log.Error($"[CelestialBodyLayerManager] 天体 layer {targetLayerDefName} 世界生成失败: {ex}");
                     }
                     continue;
                 }
@@ -264,29 +258,28 @@ namespace PioneerFramework
                 var layerDef = DefDatabase<PlanetLayerDef>.GetNamedSilentFail(targetLayerDefName);
                 if (layerDef == null)
                 {
-                    Log.Warning(string.Format("[CelestialBodyLayerManager] PlanetLayerDef '{0}' 未找到，跳过创建天体 layer", targetLayerDefName));
+                    Log.Warning($"[CelestialBodyLayerManager] PlanetLayerDef '{targetLayerDefName}' 未找到，跳过创建天体 layer");
                     continue;
                 }
 
                 var settingsDef = DefDatabase<PlanetLayerSettingsDef>.GetNamedSilentFail(targetLayerDefName);
                 if (settingsDef == null)
                 {
-                    Log.Warning(string.Format("[CelestialBodyLayerManager] PlanetLayerSettingsDef '{0}' 未找到，跳过创建天体 layer", targetLayerDefName));
+                    Log.Warning($"[CelestialBodyLayerManager] PlanetLayerSettingsDef '{targetLayerDefName}' 未找到，跳过创建天体 layer");
                     continue;
                 }
 
-                Log.Message(string.Format("[CelestialBodyLayerManager] 创建天体 PlanetLayer: {0}", targetLayerDefName));
+                Log.Message($"[CelestialBodyLayerManager] 创建天体 PlanetLayer: {targetLayerDefName}");
                 var newLayer = wg.RegisterPlanetLayer(layerDef, settingsDef.settings);
 
                 try
                 {
                     newLayer.RunWorldGeneration();
-                    Log.Message(string.Format("[CelestialBodyLayerManager] 天体 layer {0} 世界生成完成 (tiles={1})",
-                        targetLayerDefName, newLayer.TilesCount));
+                    Log.Message($"[CelestialBodyLayerManager] 天体 layer {targetLayerDefName} 世界生成完成 (tiles={newLayer.TilesCount})");
                 }
                 catch (Exception ex)
                 {
-                    Log.Error(string.Format("[CelestialBodyLayerManager] 天体 layer {0} 世界生成失败: {1}", targetLayerDefName, ex));
+                    Log.Error($"[CelestialBodyLayerManager] 天体 layer {targetLayerDefName} 世界生成失败: {ex}");
                 }
             }
         }
@@ -311,25 +304,24 @@ namespace PioneerFramework
                 var layer = kv.Value;
                 if (layer?.Def == null) continue;
 
-                Log.Message(string.Format("[CelestialBodyLayerManager]   检查 layer: {0} (LayerID={1}, TilesCount={2})",
-                    layer.Def.defName, layer.LayerID, layer.TilesCount));
+                Log.Message($"[CelestialBodyLayerManager]   检查 layer: {layer.Def.defName} (LayerID={layer.LayerID}, TilesCount={layer.TilesCount})");
 
                 // 跳过地球的 Surface layer（由原版生成，不应覆盖）
                 if (layer.Def.defName == "Surface")
                 {
-                    Log.Message(string.Format("[CelestialBodyLayerManager]   跳过 Surface (地球)"));
+                    Log.Message("[CelestialBodyLayerManager]   跳过 Surface (地球)");
                     continue;
                 }
 
                 if (!IsCelestialBodyLayer(layer))
                 {
-                    Log.Message(string.Format("[CelestialBodyLayerManager]   {0} 不是天体 layer，跳过", layer.Def.defName));
+                    Log.Message($"[CelestialBodyLayerManager]   {layer.Def.defName} 不是天体 layer，跳过");
                     continue;
                 }
 
                 if (layer.TilesCount == 0)
                 {
-                    Log.Warning(string.Format("[CelestialBodyLayerManager]   {0} TilesCount==0，跳过填充（需要先重新生成）", layer.Def.defName));
+                    Log.Warning($"[CelestialBodyLayerManager]   {layer.Def.defName} TilesCount==0，跳过填充（需要先重新生成）");
                     continue;
                 }
 
@@ -340,7 +332,7 @@ namespace PioneerFramework
                     var tile = layer[i];
                     if (tile == null)
                     {
-                        Log.Warning(string.Format("[CelestialBodyLayerManager]   {0}[{1}] 为 null！", layer.Def.defName, i));
+                        Log.Warning($"[CelestialBodyLayerManager]   {layer.Def.defName}[{i}] 为 null！");
                         continue;
                     }
                     if (tile.PrimaryBiome != desertBiome)
@@ -354,8 +346,7 @@ namespace PioneerFramework
                     }
                 }
 
-                Log.Message(string.Format("[CelestialBodyLayerManager]   {0}: 已改={1}, 未改={2}, 总计={3}",
-                    layer.Def.defName, changed, unchanged, layer.TilesCount));
+                Log.Message($"[CelestialBodyLayerManager]   {layer.Def.defName}: 已改={changed}, 未改={unchanged}, 总计={layer.TilesCount}");
 
                 if (changed > 0)
                 {
@@ -364,7 +355,7 @@ namespace PioneerFramework
                         if (drawLayer is WorldDrawLayer_Terrain)
                         {
                             drawLayer.SetDirty();
-                            Log.Message(string.Format("[CelestialBodyLayerManager]   {0} WorldDrawLayer_Terrain 标记为脏", layer.Def.defName));
+                            Log.Message($"[CelestialBodyLayerManager]   {layer.Def.defName} WorldDrawLayer_Terrain 标记为脏");
                             break;
                         }
                     }
@@ -380,7 +371,7 @@ namespace PioneerFramework
         /// 1. 如果 CelestialBodyDef 设置了 planetLayerDefName，用该名称匹配 PlanetLayerDef.defName
         /// 2. 否则用 CelestialBodyDef.defName 匹配 PlanetLayerDef.defName
         /// </summary>
-        public static void TryRegisterLayer(PlanetLayer layer)
+        public static void TryRegisterLayer(PlanetLayer? layer)
         {
             if (layer == null || celestialBodyLayers.ContainsKey(layer.LayerID))
                 return;
@@ -391,10 +382,10 @@ namespace PioneerFramework
                 return;
             }
 
-            Log.Message(string.Format("[CelestialBodyLayerManager] TryRegisterLayer: {0} (LayerID={1})", layer.Def.defName, layer.LayerID));
+            Log.Message($"[CelestialBodyLayerManager] TryRegisterLayer: {layer.Def.defName} (LayerID={layer.LayerID})");
 
             var allBodies = DefDatabase<CelestialBodyDef>.AllDefsListForReading;
-            CelestialBodyDef matchedBody = null;
+            CelestialBodyDef? matchedBody = null;
 
             foreach (var body in allBodies)
             {
@@ -404,8 +395,7 @@ namespace PioneerFramework
                     ? body.planetLayerDefName
                     : body.defName;
 
-                Log.Message(string.Format("[CelestialBodyLayerManager]   对比: body={0} targetDef={1} vs layerDef={2}",
-                    body.defName, targetLayerDefName, layer.Def.defName));
+                Log.Message($"[CelestialBodyLayerManager]   对比: body={body.defName} targetDef={targetLayerDefName} vs layerDef={layer.Def.defName}");
 
                 if (targetLayerDefName == layer.Def.defName)
                 {
@@ -417,12 +407,11 @@ namespace PioneerFramework
             if (matchedBody != null)
             {
                 celestialBodyLayers[layer.LayerID] = (float)matchedBody.dayLengthTicks;
-                Log.Message(string.Format("[CelestialBodyLayerManager] 已注册天体 layer: {0} (dayLength={1} ticks, body={2})",
-                    layer.Def.defName, matchedBody.dayLengthTicks, matchedBody.defName));
+                Log.Message($"[CelestialBodyLayerManager] 已注册天体 layer: {layer.Def.defName} (dayLength={matchedBody.dayLengthTicks} ticks, body={matchedBody.defName})");
             }
             else
             {
-                Log.Message(string.Format("[CelestialBodyLayerManager] {0} 未匹配任何 CelestialBodyDef，不注册为天体 layer", layer.Def.defName));
+                Log.Message($"[CelestialBodyLayerManager] {layer.Def.defName} 未匹配任何 CelestialBodyDef，不注册为天体 layer");
             }
         }
 
@@ -451,8 +440,8 @@ namespace PioneerFramework
 
             // 补丁1：WorldGrid.RegisterPlanetLayer 创建新 layer 时自动注册天体 layer
             var registerMethod = AccessTools.Method(typeof(WorldGrid), "RegisterPlanetLayer",
-                new Type[] { typeof(PlanetLayerDef), typeof(PlanetLayerSettings),
-                    typeof(float?), typeof(Vector3?), typeof(Vector3?), typeof(float?) });
+                [typeof(PlanetLayerDef), typeof(PlanetLayerSettings),
+                    typeof(float?), typeof(Vector3?), typeof(Vector3?), typeof(float?)]);
             if (registerMethod != null)
             {
                 harmony.Patch(registerMethod,
@@ -593,8 +582,7 @@ namespace PioneerFramework
                             // 强制重绘地形层，确保切换后 biome 更新立即显示
                             Find.World.renderer.SetDirty<WorldDrawLayer_Terrain>(capturedLayer);
 
-                            Messages.Message(string.Format("已切换至天体视图：{0}",
-                                capturedLayer.Def.label ?? capturedLayer.Def.defName),
+                            Messages.Message($"已切换至天体视图：{(capturedLayer.Def.label ?? capturedLayer.Def.defName)}",
                                 MessageTypeDefOf.SilentInput, false);
                         }));
                     }

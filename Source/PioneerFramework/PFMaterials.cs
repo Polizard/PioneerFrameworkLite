@@ -15,7 +15,7 @@ namespace PioneerFramework
         {
             if (MoonPlanetUngeneratedPlanetParts != null)
             {
-                return MoonPlanetUngeneratedPlanetParts;
+                return MoonPlanetUngeneratedPlanetParts = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
             }
             else
             {
@@ -25,6 +25,6 @@ namespace PioneerFramework
             }
             return MoonPlanetUngeneratedPlanetParts;
         }
-        public static Material MoonPlanetUngeneratedPlanetParts;
+        public static Material MoonPlanetUngeneratedPlanetParts = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;
     }
 }

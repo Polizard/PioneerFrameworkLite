@@ -75,14 +75,13 @@ namespace PioneerFramework
 
         /// <summary>手选方位的六个候选：**全部走 `ThrustAxis`**（船体局部六向 —— 与主推轴 / SAS 同一套命名与换系口）。</summary>
         private static readonly (ThrustAxis axis, string label)[] DirectionChoices =
-        {
-            (ThrustAxis.Forward, "船头（+Z）"),
+        [(ThrustAxis.Forward, "船头（+Z）"),
             (ThrustAxis.Back,    "船尾（-Z，主推方向）"),
             (ThrustAxis.Left,    "左舷（-X）"),
             (ThrustAxis.Right,   "右舷（+X）"),
             (ThrustAxis.Up,      "上方（+Y，甲板朝天）"),
             (ThrustAxis.Down,    "下方（-Y，舱底朝下）"),
-        };
+        ];
 
         public override IEnumerable<Gizmo> CompGetGizmosExtra()
         {
@@ -93,8 +92,7 @@ namespace PioneerFramework
 
             // 波束几何读数（能力面由投影每物理步写入 ⇒ 是当前值）——放各按钮的 desc 里，省一次开窗
             var cap = group.RadarCap;
-            string geo = string.Format("（波束：半锥角 {0:F0}° · 距离上限 {1:F0} km · 扫掠 {2:F0}°/s）",
-                cap.beamHalfAngleDeg, cap.beamRangeMeters / 1000f, cap.scanRateDegPerSec);
+            string geo = $"（波束：半锥角 {cap.beamHalfAngleDeg:F0}° · 距离上限 {cap.beamRangeMeters / 1000f:F0} km · 扫掠 {cap.scanRateDegPerSec:F0}°/s）";
 
             // ① 开机 / 静默（W1 枢纽的唯一开关）
             yield return new Command_Toggle
@@ -108,7 +106,7 @@ namespace PioneerFramework
                 toggleAction = () =>
                 {
                     group.ActivePingEnabled = !group.ActivePingEnabled;
-                    Log.Message(string.Format("[雷达] G{0} 开机 → {1}", group.GroupId, group.ActivePingEnabled));
+                    Log.Message($"[雷达] G{group.GroupId} 开机 → {group.ActivePingEnabled}");
                 },
             };
 
@@ -133,7 +131,7 @@ namespace PioneerFramework
             yield return new Command_Action
             {
                 defaultLabel = track
-                    ? string.Format("波束：跟踪 G{0}…（当前）", group.RadarTrackGroupId)
+                    ? $"波束：跟踪 G{group.RadarTrackGroupId}…（当前）"
                     : "波束：跟踪目标…",
                 defaultDesc = "从**看得见的**编队里选一个，波束持续指向它的当前位置；它失联/被毁后自动退化为扫掠。\n" + geo,
                 icon = TexButton.Info,
@@ -144,7 +142,7 @@ namespace PioneerFramework
         private static void SetBeamMode(SpaceEntityGroup group, SpaceEntityGroup.RadarAim mode, string note)
         {
             group.RadarAimMode = mode;
-            Log.Message(string.Format("[雷达] G{0} 波束模式 → {1}", group.GroupId, note));
+            Log.Message($"[雷达] G{group.GroupId} 波束模式 → {note}");
         }
 
         /// <summary>
@@ -162,8 +160,7 @@ namespace PioneerFramework
                     DVector3 dir = group.GetThrustAxisSystem(captured);
                     group.RadarManualDir = dir;                        // setter 自动归一
                     group.RadarAimMode = SpaceEntityGroup.RadarAim.Manual;
-                    Log.Message(string.Format("[雷达] G{0} 手选方位 = {1}｜惯性系 ({2:F2},{3:F2},{4:F2})",
-                        group.GroupId, label, dir.x, dir.y, dir.z));
+                    Log.Message($"[雷达] G{group.GroupId} 手选方位 = {label}｜惯性系 ({dir.x:F2},{dir.y:F2},{dir.z:F2})");
                 }));
             }
             Find.WindowStack.Add(new FloatMenu(options));
@@ -188,15 +185,15 @@ namespace PioneerFramework
                 if (sensor != null && !sensor.PlayerCanSee(g)) continue;   // [V3] 列表准入（红线：列表读认知层）
 
                 string dist = cm != null
-                    ? string.Format("（{0:F0} km）", (cm.GetGroupPos(g) - myPos).magnitude / 1000.0)
+                    ? $"（{(cm.GetGroupPos(g) - myPos).magnitude / 1000.0:F0} km）"
                     : "";
                 string suffix = sensor != null ? sensor.PlayerPhaseSuffix(g) : "";
                 var captured = g;
-                options.Add(new FloatMenuOption(string.Format("G{0}{1}{2}", g.GroupId, dist, suffix), () =>
+                options.Add(new FloatMenuOption($"G{g.GroupId}{dist}{suffix}", () =>
                 {
                     group.RadarTrackGroupId = captured.GroupId;
                     group.RadarAimMode = SpaceEntityGroup.RadarAim.Track;
-                    Log.Message(string.Format("[雷达] G{0} 跟踪目标 → G{1}", group.GroupId, captured.GroupId));
+                    Log.Message($"[雷达] G{group.GroupId} 跟踪目标 → G{captured.GroupId}");
                 }));
             }
             if (options.Count == 0)

@@ -31,10 +31,10 @@ namespace PioneerFramework
 
 
         private static readonly TimeReference[] _timeReferences =
-            { TimeReference.APOAPSIS, TimeReference.PERIAPSIS, TimeReference.X_FROM_NOW, TimeReference.ALTITUDE };
+            [TimeReference.APOAPSIS, TimeReference.PERIAPSIS, TimeReference.X_FROM_NOW, TimeReference.ALTITUDE];
 
         /// <summary>点火时刻选择器。UI 通过它读写"什么时候烧"。</summary>
-        public readonly TimeSelector TimeSelector = new TimeSelector(_timeReferences);
+        public readonly TimeSelector TimeSelector = new(_timeReferences);
 
         public override void DoParametersGUI(OrbitView o, double universalTime, ITargetView target) =>
             TimeSelector.DoChooseTimeGUI();
@@ -44,7 +44,7 @@ namespace PioneerFramework
             double ut = TimeSelector.ComputeManeuverTime(o, universalTime, target);
             DVector3 deltaV = OrbitalManeuverCalculator.DeltaVToCircularize(o, ut);
 
-            return new List<PlanNode> { new PlanNode(deltaV, ut) };
+            return new List<PlanNode> { new(deltaV, ut) };
         }
     }
 }

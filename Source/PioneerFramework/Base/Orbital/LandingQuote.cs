@@ -79,8 +79,7 @@ namespace PioneerFramework
             bool badDir = !(tileDirFixed.sqrMagnitude > 1e-12);
             if (!(bodyRadius > 0.0) || !(omega > 0.0) || badDir)
                 return new Result(false, 0.0, double.NaN, maxDist, DVector3.zero, DVector3.zero,
-                    string.Format("参数不完整（天体半径 {0:F0} m、自转角速度 {1:E2} rad/s、落点方向{2}）",
-                        bodyRadius, omega, badDir ? "未给" : "已给"));
+                    $"参数不完整（天体半径 {bodyRadius:F0} m、自转角速度 {omega:E2} rad/s、落点方向{(badDir ? "未给" : "已给")}）");
 
             DVector3 pEci = SurfaceFrame.FixedToEci(tileDirFixed.normalized * bodyRadius, omega, physicsTick);
             DVector3 pSystem = bodyOffsetPos + pEci;
@@ -96,10 +95,10 @@ namespace PioneerFramework
 
             if (dist > maxDist)
                 return new Result(false, dv, dist, maxDist, pSystem, vSystem,
-                    string.Format("落点太远：地表 {0:F0} km > 上界 {1:F0} km", dist / 1000.0, maxDist / 1000.0));
+                    $"落点太远：地表 {dist / 1000.0:F0} km > 上界 {maxDist / 1000.0:F0} km");
 
             return new Result(true, dv, dist, maxDist, pSystem, vSystem,
-                string.Format("可落：地表距离 {0:F0} km、Δv {1:F0} m/s", dist / 1000.0, dv));
+                $"可落：地表距离 {dist / 1000.0:F0} km、Δv {dv:F0} m/s");
         }
     }
 }

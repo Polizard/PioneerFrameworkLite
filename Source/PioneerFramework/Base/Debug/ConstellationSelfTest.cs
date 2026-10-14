@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using RimWorld;
@@ -29,7 +29,7 @@ namespace PioneerFramework
         /// <summary>最近一次的通过 / 失败项数（供统一入口收进结论）。</summary>
         public static int LastPassed => passed;
         public static int LastFailed => failed;
-        private static readonly StringBuilder log = new StringBuilder();
+        private static readonly StringBuilder log = new();
 
         public static void Run()
         {
@@ -52,7 +52,7 @@ namespace PioneerFramework
             // ═══ ① CRUD ═══
             int a = comp.CreateConstellation(TestNameA);
             int b = comp.CreateConstellation(TestNameB);
-            Check(a > 0 && b > 0 && a != b, string.Format("创建星座 C{0}/C{1}", a, b));
+            Check(a > 0 && b > 0 && a != b, $"创建星座 C{a}/C{b}");
             Check(comp.GetConstellation(a) != null && comp.FindByName(TestNameA)?.ConstellationId == a, "按 id / 按名查找");
             Check(comp.RenameConstellation(a, TestNameA + "（改名）") && comp.FindByName(TestNameA + "（改名）") != null, "重命名");
             comp.RenameConstellation(a, TestNameA);
@@ -68,8 +68,9 @@ namespace PioneerFramework
             if (freeId > 0)
             {
                 Check(comp.TryAddMember(a, freeId) == ConstellationAddResult.NotAdmissible,
-                    string.Format("拒绝：非圆轨非锚点 G{0}（深空自由飞行体语义）→ NotAdmissible", freeId));
-                Check(sg.GetGroupById(freeId).GetEntityIds().Count == 0, "探针成立：无实体 group 也可入 API 判定");
+                    $"拒绝：非圆轨非锚点 G{freeId}（深空自由飞行体语义）→ NotAdmissible");
+            // 凭据（2026-10-15 手清）：freeId 是本探针刚造的 group ⇒ 查得到；查不到=装配坏了，应响亮失败
+                Check(sg.GetGroupById(freeId)!.GetEntityIds().Count == 0, "探针成立：无实体 group 也可入 API 判定");
                 sg.DestroyGroup(freeId);
             }
             else
@@ -81,18 +82,18 @@ namespace PioneerFramework
             int orbitId = CreateProbeGroup(sg, circular: true);
             if (orbitId > 0)
             {
-                Check(comp.AddMember(a, orbitId), string.Format("圆轨入编 G{0}", orbitId));
+                Check(comp.AddMember(a, orbitId), $"圆轨入编 G{orbitId}");
                 Check(comp.TryAddMember(a, orbitId) == ConstellationAddResult.AlreadyMember,
                     "拒绝：同星座内重复 → AlreadyMember");
-                Check(comp.AddMember(b, orbitId), string.Format("多归属：同一圆轨组同时在 C{0} 与 C{1}", a, b));
+                Check(comp.AddMember(b, orbitId), $"多归属：同一圆轨组同时在 C{a} 与 C{b}");
                 Check(comp.GetConstellationIdsOfGroup(orbitId).Count == 2, "反查索引：该组归属 2 个星座");
 
                 var state = comp.GetMembersWithState(a).ToList();
                 Check(state.Count == comp.GetMembers(a).Count && state.All(p => p.group != null),
-                    string.Format("实时查询：C{0} 返回 {1} 条成员状态", a, state.Count));
+                    $"实时查询：C{a} 返回 {state.Count} 条成员状态");
 
                 sg.DestroyGroup(orbitId);
-                Check(sg.GetGroupById(orbitId) == null, string.Format("收尸：圆轨成员 G{0} 已销毁", orbitId));
+                Check(sg.GetGroupById(orbitId) == null, $"收尸：圆轨成员 G{orbitId} 已销毁");
                 Check(comp.GetConstellationIdsOfGroup(orbitId).Count == 0, "收尸：反查索引已清空");
                 Check(!comp.GetMembers(a).Any(m => m.groupId == orbitId) && !comp.GetMembers(b).Any(m => m.groupId == orbitId),
                     "收尸：C" + a + " 与 C" + b + " 的成员表均已摘除");
@@ -108,10 +109,10 @@ namespace PioneerFramework
             int anchorId = 0;
             if (settlement != null)
             {
-                Check(comp.AddSettlementMember(a, settlement.ID), string.Format("据点「{0}」(wo{1}) 入编 C{2}", settlement.Label, settlement.ID, a));
+                Check(comp.AddSettlementMember(a, settlement.ID), $"据点「{settlement.Label}」(wo{settlement.ID}) 入编 C{a}");
                 anchorId = comp.GetMembers(a).FirstOrDefault(m => sg.GetGroupById(m.groupId)?.IsSurfaceAnchor == true).groupId;
                 var anchor = sg.GetGroupById(anchorId);
-                Check(anchor != null && anchor.IsSurfaceAnchor, string.Format("锚点 group G{0} 已创建", anchorId));
+                Check(anchor != null && anchor.IsSurfaceAnchor, $"锚点 group G{anchorId} 已创建");
                 Check(anchor != null && !anchor.IsActive && !anchor.IsMovable && !anchor.IsCollidable,
                     "锚点约束：IsActive/IsMovable/IsCollidable 全 false");
                 Check(anchor != null && anchor.anchorWorldObjectId == settlement.ID, "锚点回指据点 ID");
@@ -132,15 +133,13 @@ namespace PioneerFramework
                     SystemVec3 frameOffset = anchor.GetCentralBodyOffset(TimeScaleManager.GetPhysicsTickSafe());
                     double distMeters = FrameConvert.SystemToBody(anchor.CurrentOrbit.positionSystem, frameOffset).magnitude;
                     Check(System.Math.Abs(distMeters - body.radius) < 1.0,
-                        string.Format("锚点在系统系：距中心天体 {0:F0} km == R_body（{1:F0} km）",
-                            distMeters / 1000.0, body.radius / 1000.0));
+                        $"锚点在系统系：距中心天体 {distMeters / 1000.0:F0} km == R_body（{body.radius / 1000.0:F0} km）");
 
                     // 根行星（地球）在系统系就是原点 → |pos| 必须等于 R_body，与天体绝对位置无关的硬校验
                     if (celestialMgr != null && celestialMgr.GetRootPlanetId(anchor.CelestialBodyId) == anchor.CelestialBodyId)
                     {
                         Check(System.Math.Abs(anchor.CurrentOrbit.positionSystem.magnitude - body.radius) < 1.0,
-                            string.Format("根行星锚点在系原点：|pos|={0:F0} km == R_body（未串入天体公转偏移）",
-                                anchor.CurrentOrbit.positionSystem.magnitude / 1000.0));
+                            $"根行星锚点在系原点：|pos|={anchor.CurrentOrbit.positionSystem.magnitude / 1000.0:F0} km == R_body（未串入天体公转偏移）");
                     }
                 }
                 else
@@ -156,7 +155,7 @@ namespace PioneerFramework
 
                 // ═══ ⑤ 锚点收尸：DestroyGroup → 全星座摘除 ═══
                 sg.DestroyGroup(anchorId);
-                Check(sg.GetGroupById(anchorId) == null, string.Format("收尸：锚点 G{0} 已销毁", anchorId));
+                Check(sg.GetGroupById(anchorId) == null, $"收尸：锚点 G{anchorId} 已销毁");
                 Check(comp.GetConstellationIdsOfGroup(anchorId).Count == 0, "收尸：锚点反查索引已清空");
                 Check(!comp.GetMembers(a).Any(m => m.groupId == anchorId) && !comp.GetMembers(b).Any(m => m.groupId == anchorId),
                     "收尸：两星座的锚点成员均已摘除");
@@ -166,7 +165,7 @@ namespace PioneerFramework
                 comp.AddSettlementMember(a, settlement.ID);
                 Check(comp.GetConstellationIdsOfGroup(anchor2).Count == 1, "重建锚点并入编（为释放测试）");
                 comp.DeleteConstellation(a);
-                Check(sg.GetGroupById(anchor2) == null, string.Format("释放：删星座后无引用锚点 G{0} 已回收", anchor2));
+                Check(sg.GetGroupById(anchor2) == null, $"释放：删星座后无引用锚点 G{anchor2} 已回收");
                 Check(comp.GetConstellation(a) == null, "删除：C" + a + " 已不存在");
             }
             else
@@ -176,13 +175,13 @@ namespace PioneerFramework
 
             Cleanup(comp);
 
-            log.AppendLine(string.Format("[星座自检] 结束：{0} 通过 / {1} 失败", passed, failed));
-            log.AppendLine(string.Format("[星座自检] 结论：{0}", failed == 0 ? "全部通过" : "存在失败项，见上方 FAIL"));
+            log.AppendLine(System.Globalization.CultureInfo.CurrentCulture, $"[星座自检] 结束：{passed} 通过 / {failed} 失败");
+            log.AppendLine(System.Globalization.CultureInfo.CurrentCulture, $"[星座自检] 结论：{(failed == 0 ? "全部通过" : "存在失败项，见上方 FAIL")}");
             Log.Message(log.ToString());
             if (failed == 0)
                 Messages.Message("星座自检：全部通过（详见日志）", MessageTypeDefOf.SilentInput, false);
             else
-                Messages.Message(string.Format("星座自检：{0} 项失败（详见日志）", failed), MessageTypeDefOf.NegativeEvent, false);
+                Messages.Message($"星座自检：{failed} 项失败（详见日志）", MessageTypeDefOf.NegativeEvent, false);
         }
 
         /// <summary>
@@ -232,7 +231,7 @@ namespace PioneerFramework
         {
             if (ok) passed++;
             else failed++;
-            log.AppendLine(string.Format("  {0}  {1}", ok ? "PASS" : "FAIL", label));
+            log.AppendLine(System.Globalization.CultureInfo.CurrentCulture, $"  {(ok ? "PASS" : "FAIL")}  {label}");
         }
     }
 }

@@ -35,8 +35,8 @@ namespace PioneerFramework
         private Rect rStatus;
 
         // 列表缓冲（追加式，免每帧分配；[M3] 硬规则：不用 IEnumerable）
-        private readonly List<Contact> contactBuf = new List<Contact>();
-        private readonly List<SpaceEntityGroup> groupListBuf = new List<SpaceEntityGroup>();
+        private readonly List<Contact> contactBuf = new();
+        private readonly List<SpaceEntityGroup> groupListBuf = new();
 
         // 姿态球圆盘贴图（程序化生成一次；RimWorld 纪律：不用外部贴图资源）
         private static Texture2D? pfvDiscTex;
@@ -444,9 +444,9 @@ namespace PioneerFramework
             MiniLabel(new Rect(lx, y, sideW - 16f, lh), "姿态", PFViewPalette.TextSecondary);
             y += lh;
             Vector3 euler = g.CurrentOrbit.rotation.eulerAngles;
-            MiniLabel(new Rect(lx, y, sideW - 16f, lh), string.Format("yaw {0:F0}° pitch {1:F0}° roll {2:F0}°", euler.y, euler.x, euler.z), PFViewPalette.TextPrimary);
+            MiniLabel(new Rect(lx, y, sideW - 16f, lh), $"yaw {euler.y:F0}° pitch {euler.x:F0}° roll {euler.z:F0}°", PFViewPalette.TextPrimary);
             y += lh;
-            MiniLabel(new Rect(lx, y, sideW - 16f, lh), string.Format("角速度 {0:F1}°/s", g.angularVelocity.magnitude * Mathf.Rad2Deg), PFViewPalette.TextPrimary);
+            MiniLabel(new Rect(lx, y, sideW - 16f, lh), $"角速度 {g.angularVelocity.magnitude * Mathf.Rad2Deg:F1}°/s", PFViewPalette.TextPrimary);
             y += lh + 6f;
 
             MiniLabel(new Rect(lx, y, sideW - 16f, lh), "主推轴（T 记号）", PFViewPalette.TextSecondary);
@@ -459,7 +459,7 @@ namespace PioneerFramework
                 if (vel.sqrMagnitude > 1e-6f)
                 {
                     float ang = Mathf.Acos(Mathf.Clamp(Vector3.Dot((Vector3)thrustAxis.normalized, vel.normalized), -1f, 1f)) * Mathf.Rad2Deg;
-                    MiniLabel(new Rect(lx, y, sideW - 16f, lh), string.Format("与速度夹角 {0:F0}°", ang), PFViewPalette.TextMuted);
+                    MiniLabel(new Rect(lx, y, sideW - 16f, lh), $"与速度夹角 {ang:F0}°", PFViewPalette.TextMuted);
                 }
             }
             else
@@ -471,7 +471,7 @@ namespace PioneerFramework
             y = r.y + 10f;
             MiniLabel(new Rect(rx, y, sideW - 16f, lh), "本组速度", PFViewPalette.TextSecondary);
             y += lh;
-            MiniLabel(new Rect(rx, y, sideW - 16f, lh), string.Format("{0:F0} m/s", vel.magnitude), PFViewPalette.TextPrimary);
+            MiniLabel(new Rect(rx, y, sideW - 16f, lh), $"{vel.magnitude:F0} m/s", PFViewPalette.TextPrimary);
             y += lh + 6f;
             MiniLabel(new Rect(rx, y, sideW - 16f, lh), "记号图例", PFViewPalette.TextSecondary);
             y += lh;

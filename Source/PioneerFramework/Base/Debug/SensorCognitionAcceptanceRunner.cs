@@ -100,10 +100,7 @@ namespace PioneerFramework
             outOfRangeMeters = range * 5.0;
 
             PflTestKit.Begin("[V3] 认知层：点亮 / 影子 / 失联（一键）", "00 验收");
-            PflTestKit.Note(string.Format(
-                "观测者 G{0}（灵 {1:F0} km · 记忆窗口 {2:F1} s）｜目标 G{3}（匿踪）｜判据边界 {4:F0} km ⇒ 内 {5:F0} km / 外 {6:F0} km",
-                observerGroupId, tech.sensitivityMeters / 1000f, ContactMemory.EffectiveMemorySeconds(tech.memorySeconds),
-                targetGroupId, range / 1000.0, inRangeMeters / 1000.0, outOfRangeMeters / 1000.0));
+            PflTestKit.Note($"观测者 G{observerGroupId}（灵 {tech.sensitivityMeters / 1000f:F0} km · 记忆窗口 {ContactMemory.EffectiveMemorySeconds(tech.memorySeconds):F1} s）｜目标 G{targetGroupId}（匿踪）｜判据边界 {range / 1000.0:F0} km ⇒ 内 {inRangeMeters / 1000.0:F0} km / 外 {outOfRangeMeters / 1000.0:F0} km");
 
             sawLive = sawShadow = sawLost = sawRecover = false;
             stage = Stage.AwaitSettle;
@@ -143,10 +140,10 @@ namespace PioneerFramework
                         sawLive = has && phase == TrackPhase.Live;
                         PflTestKit.Check(PflTestKit.Kind.Value, has && c.targetGroupId == targetGroupId,
                             "①范围内 ⇒ 接触出现（点查询拿到，id 对得上）",
-                            string.Format("拿到 {0}｜id {1} vs 期望 {2}｜相位 {3}", has, c.targetGroupId, targetGroupId, phase));
+                            $"拿到 {has}｜id {c.targetGroupId} vs 期望 {targetGroupId}｜相位 {phase}");
                         PflTestKit.Check(PflTestKit.Kind.Invariant, phase == TrackPhase.Live && c.source == ContactSource.OwnSensor,
                             "①刚刷新 ⇒ 相位 Live、来源 = 自舰探测",
-                            string.Format("相位 {0}｜来源 {1}", phase, c.source));
+                            $"相位 {phase}｜来源 {c.source}");
                         sigmaLive = c.positionSigma;
                         sigmaShadow = sigmaLive;
                         MoveTarget(sg, outOfRangeMeters);
@@ -164,10 +161,10 @@ namespace PioneerFramework
                         lastUpdateAtShadow = c.lastUpdatePhysics;
                         PflTestKit.Check(PflTestKit.Kind.Invariant, phase == TrackPhase.Shadow && stillVisible,
                             "②移出范围 ⇒ 立刻变影子（仍在视图里 —— 影子可被打击/制导）",
-                            string.Format("相位 {0}｜点查询 {1}（σ {2:F0} m）", phase, stillVisible, sigmaShadow));
+                            $"相位 {phase}｜点查询 {stillVisible}（σ {sigmaShadow:F0} m）");
                         PflTestKit.Check(PflTestKit.Kind.Value, sigmaShadow > sigmaLive,
                             "②影子期 σ 必须比新鲜时大（记忆不免费）",
-                            string.Format("新鲜 {0:F0} m → 影子 {1:F0} m", sigmaLive, sigmaShadow));
+                            $"新鲜 {sigmaLive:F0} m → 影子 {sigmaShadow:F0} m");
                         stage = Stage.WaitExpire; stageStep = 0;
                     }
                     break;
@@ -185,7 +182,7 @@ namespace PioneerFramework
                         bool inView = AppendVisibleContains(sensor, targetGroupId);
                         PflTestKit.Check(PflTestKit.Kind.Invariant, sawLost && !has && !inView,
                             "③超过记忆窗口 ⇒ 失联（点查询 false、全量读里也没有）",
-                            string.Format("相位 {0}｜点查询 {1}｜全量读含它 {2}", phase, has, inView));
+                            $"相位 {phase}｜点查询 {has}｜全量读含它 {inView}");
                         MoveTarget(sg, inRangeMeters);
                         stage = Stage.MoveBack; stageStep = 0;
                     }
@@ -198,7 +195,7 @@ namespace PioneerFramework
                         sawRecover = phase == TrackPhase.Live;
                         PflTestKit.Check(PflTestKit.Kind.Value, sawRecover,
                             "④回到范围内 ⇒ 一步之内回到 Live（快进那一半）",
-                            string.Format("相位 {0}", phase));
+                            $"相位 {phase}");
                         stage = Stage.CheckPointQuery; stageStep = 0;
                     }
                     break;
@@ -210,7 +207,7 @@ namespace PioneerFramework
                         sensor.TryGetContact(playerFaction, targetGroupId, out var after);
                         PflTestKit.Check(PflTestKit.Kind.Invariant, before.lastUpdatePhysics == after.lastUpdatePhysics,
                             "⑤点查询绝不触发刷新（100 次调用后时间戳不动）",
-                            string.Format("t {0:F1} → {1:F1}", before.lastUpdatePhysics, after.lastUpdatePhysics));
+                            $"t {before.lastUpdatePhysics:F1} → {after.lastUpdatePhysics:F1}");
                         // 公开投影走另一条路：把目标改成"自报坐标"
                         var tg = Target(targetGroupId, sg);
                         if (tg != null) tg.IsStealth = false;
@@ -224,14 +221,14 @@ namespace PioneerFramework
                         bool inView = AppendVisibleContains(sensor, targetGroupId, out var src);
                         PflTestKit.Check(PflTestKit.Kind.Value, inView && src == ContactSource.Public,
                             "⑥公开组走另一条路（全量读含它、来源 = 公开投影，与记忆无关）",
-                            string.Format("全量读含它 {0}｜来源 {1}", inView, src));
+                            $"全量读含它 {inView}｜来源 {src}");
                         var tgBack = Target(targetGroupId, sg);
                         if (tgBack != null) tgBack.IsStealth = true;
                         PflTestKit.CheckUnchecked("⑦存档往返（手动）",
                             "点「认知快照」→ 存档 → 读档 → 再点一次 ⇒ 两行应逐字一致（记忆/接触必须落盘）");
                         PflTestKit.Check(PflTestKit.Kind.Coverage, sawLive && sawShadow && sawLost && sawRecover,
                             "总览：四态流转都真的走到过",
-                            string.Format("Live {0}｜Shadow {1}｜Lost {2}｜恢复 {3}", sawLive, sawShadow, sawLost, sawRecover));
+                            $"Live {sawLive}｜Shadow {sawShadow}｜Lost {sawLost}｜恢复 {sawRecover}");
                         PflTestKit.End();
                         PrintSnapshot();
                         PflTestKit.CleanupSince();
@@ -284,7 +281,7 @@ namespace PioneerFramework
             bool seenQuiet = AppendVisibleContainsDecoy(sensor, quietId, out _, out _);
             PflTestKit.Check(PflTestKit.Kind.Invariant, !seenQuiet,
                 "①观测者静默 ⇒ 诱饵看不见（欺骗依赖对方主动探测开机，DRFM 语义）",
-                string.Format("静默时视图里含诱饵 = {0}（诱饵 id {1}）", seenQuiet, quietId));
+                $"静默时视图里含诱饵 = {seenQuiet}（诱饵 id {quietId}）");
 
             // ② 开机 ⇒ 该假接触出现（与真接触同构：同一个列表、同样的读法）
             obs.ActivePingEnabled = true;
@@ -292,8 +289,7 @@ namespace PioneerFramework
             bool seenOn = AppendVisibleContainsDecoy(sensor, quietId, out var srcOn, out var isMarked);
             PflTestKit.Check(PflTestKit.Kind.Value, seenOn && srcOn == ContactSource.Decoy && !isMarked,
                 "②开机后被「照到」⇒ 假接触进视图（来源 = 诱饵；抗欺骗不够 ⇒ **不**带识破标记）",
-                string.Format("视图中 = {0}｜来源 {1}｜识破标记 {2}（观测者抗欺骗 {3:F1} vs 欺骗强度 {4:F1}）",
-                    seenOn, srcOn, isMarked, obs.DetectTech.eccmResist, Strength));
+                $"视图中 = {seenOn}｜来源 {srcOn}｜识破标记 {isMarked}（观测者抗欺骗 {obs.DetectTech.eccmResist:F1} vs 欺骗强度 {Strength:F1}）");
 
             // ③ 识破（深层提示）：把观测者的抗欺骗抬到欺骗强度之上 ⇒ **仍然显示**，但带标记
             obs.BuildingTechBonus = new SensorTech { sensitivityMeters = 1.0e6f, memorySeconds = 6f, eccmResist = 5f };
@@ -301,7 +297,7 @@ namespace PioneerFramework
             bool seenHl = AppendVisibleContainsDecoy(sensor, quietId, out _, out var isMarkedHl);
             PflTestKit.Check(PflTestKit.Kind.Invariant, seenHl && isMarkedHl,
                 "③识破 = **深层提示**（技术够高才看得到这是假的：接触仍在，但打上 isDecoy 标记）",
-                string.Format("视图中 = {0}｜识破标记 {1}（抗欺骗 5.0 > 强度 {2:F1}）", seenHl, isMarkedHl, Strength));
+                $"视图中 = {seenHl}｜识破标记 {isMarkedHl}（抗欺骗 5.0 > 强度 {Strength:F1}）");
 
             // ③b **去伪存真**（用户 2026-10-02 裁定：同阵营直接共享 ⇒ 识破标记**单调**）：
             //   把观测者抗欺骗降回低值（它自己不再识破）再扫一次 ⇒ 标记**必须仍在**
@@ -311,7 +307,7 @@ namespace PioneerFramework
             bool seenLow = AppendVisibleContainsDecoy(sensor, quietId, out _, out var stillMarked);
             PflTestKit.Check(PflTestKit.Kind.Invariant, seenLow && stillMarked,
                 "③b 去伪存真：同阵营共享 ⇒ 识破标记**单调**（低抗欺骗成员不许把标记洗掉）",
-                string.Format("降回抗欺骗 0.0 后再扫：视图中 = {0}｜标记仍在 = {1}", seenLow, stillMarked));
+                $"降回抗欺骗 0.0 后再扫：视图中 = {seenLow}｜标记仍在 = {stillMarked}");
 
             // ④ 生命期：注入一条瞬时诱饵 ⇒ 过期即不出现（读时判，不扫描）
             // ⚠ 用 **0** 而不是"很小的正数"：本用例是**一次性动作**，两次调用之间**时钟不前进**
@@ -321,7 +317,7 @@ namespace PioneerFramework
             bool seenGone = AppendVisibleContainsDecoy(sensor, goneId, out _, out _);
             PflTestKit.Check(PflTestKit.Kind.Invariant, !seenGone,
                 "④生命期到 ⇒ 消失（假接触只受自己的生命期管，不受记忆窗口管）",
-                string.Format("过期诱饵仍在视图 = {0}", seenGone));
+                $"过期诱饵仍在视图 = {seenGone}");
 
             sensor.RemoveDecoy(quietId);
             sensor.RemoveDecoy(goneId);
@@ -395,22 +391,19 @@ namespace PioneerFramework
             double sTgt = Target(tgtId, sg)?.SignalStrength ?? 0.0;
             double jam = DetectionCore.JamEffort(JamStrength, JammerDist);
 
-            PflTestKit.Note(string.Format("观测者灵 {0:F0} km｜干扰机：强度 {1:F1} @ {2:F0} km ⇒ J_eff={3:F2}｜目标 S={4:F4} @ {5:F0} km",
-                tech.sensitivityMeters / 1000f, JamStrength, JammerDist / 1000.0, jam, sTgt, FarDist / 1000.0));
+            PflTestKit.Note($"观测者灵 {tech.sensitivityMeters / 1000f:F0} km｜干扰机：强度 {JamStrength:F1} @ {JammerDist / 1000.0:F0} km ⇒ J_eff={jam:F2}｜目标 S={sTgt:F4} @ {FarDist / 1000.0:F0} km");
 
             // ① 干扰关机：基线可见
             bool baseVisible = DetectionCore.IsVisible(sTgt, FarDist, in tech, 0.0);
             PflTestKit.Check(PflTestKit.Kind.Value, baseVisible,
                 "①无干扰时看得见（基线；否则下面两条无从谈起）",
-                string.Format("有效距离 {0:F0} km vs 距离 {1:F0} km",
-                    DetectionCore.EffectiveDetectRange(sTgt, in tech, 0.0) / 1000.0, FarDist / 1000.0));
+                $"有效距离 {DetectionCore.EffectiveDetectRange(sTgt, in tech, 0.0) / 1000.0:F0} km vs 距离 {FarDist / 1000.0:F0} km");
 
             // ② 干扰开机：同一目标被按住
             bool jammedVisible = DetectionCore.IsVisible(sTgt, FarDist, in tech, jam);
             PflTestKit.Check(PflTestKit.Kind.Invariant, !jammedVisible,
                 "②干扰开机 ⇒ 抬高阈值、目标被按住（看不见）",
-                string.Format("J_eff={0:F2}｜有效距离 {1:F0} km < 距离 {2:F0} km", jam,
-                    DetectionCore.EffectiveDetectRange(sTgt, in tech, jam) / 1000.0, FarDist / 1000.0));
+                $"J_eff={jam:F2}｜有效距离 {DetectionCore.EffectiveDetectRange(sTgt, in tech, jam) / 1000.0:F0} km < 距离 {FarDist / 1000.0:F0} km");
 
             // ③ 烧穿（免费推论）：干扰不动、目标拉近 ⇒ 必然重新可见。
             // ⚠ 距离**由判据自己算**（0.5× / 1.5× 被压制后的有效距离）——不拍脑袋写系数：
@@ -423,8 +416,7 @@ namespace PioneerFramework
             bool outsideVisible = DetectionCore.IsVisible(sTgt, outsideD, in tech, jam);
             PflTestKit.Check(PflTestKit.Kind.Value, insideVisible && !outsideVisible,
                 "③烧穿：干扰不动、目标拉近 ⇒ 在有效距离处恰好翻真一次（内可见 / 外不可见）",
-                string.Format("被压制后有效距离 {0:F0} km ⇒ 内 {1:F0} km 可见={2}｜外 {3:F0} km 可见={4}",
-                    effJammed / 1000.0, insideD / 1000.0, insideVisible, outsideD / 1000.0, outsideVisible));
+                $"被压制后有效距离 {effJammed / 1000.0:F0} km ⇒ 内 {insideD / 1000.0:F0} km 可见={insideVisible}｜外 {outsideD / 1000.0:F0} km 可见={outsideVisible}");
 
             // ④ W1 第二开关：干扰开机自己变响（干扰机必须辐射）
             jammer.JammingEnabled = false;
@@ -434,7 +426,7 @@ namespace PioneerFramework
             PflTestKit.Check(PflTestKit.Kind.Value,
                 System.Math.Abs((jOn - jOff) - SignalModel.JamMultiplier) <= 1e-6,
                 "④干扰开机自己变响（W1：干扰机必须辐射才能干扰）",
-                string.Format("升幅 {0:F3} vs 期望 {1:F1}（关机态 {2:F3}）", jOn - jOff, SignalModel.JamMultiplier, jOff));
+                $"升幅 {jOn - jOff:F3} vs 期望 {SignalModel.JamMultiplier:F1}（关机态 {jOff:F3}）");
             jammer.JammingEnabled = false;
 
             // ⑤ 开火揭示：一次开火 ⇒ +基准（窗口内）
@@ -444,11 +436,9 @@ namespace PioneerFramework
             PflTestKit.Check(PflTestKit.Kind.Value,
                 System.Math.Abs((sAfter - sBefore) - SignalModel.RevealMultiplier) <= 1e-6,
                 "⑤开火揭示：开火者信号 +基准（窗口内）",
-                string.Format("升幅 {0:F3} vs 期望 {1:F1}｜窗口 {2:F0} s（到期靠**时间流逝**，读时检查）",
-                    sAfter - sBefore, SignalModel.RevealMultiplier, SignalModel.RevealWindowSeconds));
+                $"升幅 {sAfter - sBefore:F3} vs 期望 {SignalModel.RevealMultiplier:F1}｜窗口 {SignalModel.RevealWindowSeconds:F0} s（到期靠**时间流逝**，读时检查）");
             PflTestKit.CheckUnchecked("⑥揭示窗口到期回落",
-                string.Format("等 {0:F0} s（= {1:F0} 个物理步）后再读同一群的 S 应回落 —— 手动观察即可", 
-                    SignalModel.RevealWindowSeconds, SignalModel.RevealWindowSeconds / 2.0));
+                $"等 {SignalModel.RevealWindowSeconds:F0} s（= {SignalModel.RevealWindowSeconds / 2.0:F0} 个物理步）后再读同一群的 S 应回落 —— 手动观察即可");
 
             PrintSnapshot();
             PflTestKit.End();
@@ -518,8 +508,7 @@ namespace PioneerFramework
             PflTestKit.Begin("[V3] 视图对账（绘制/点击准入 = 认知层可见集）", "00 验收");
             PflTestKit.Check(PflTestKit.Kind.Invariant, visible == expected,
                 "世界棋子的可见数 = 公开 + 我方 + 在册接触（不漏画、不多画）",
-                string.Format("总 {0} ⇒ 可见 {1} vs 应为 {2}（公开 {3} + 我方 {4} + 接触 {5}）｜dev 真值开关 {6}｜t={7:F1}",
-                    total, visible, expected, pub, own, tracked, SensorManager.DebugShowGroundTruth, now));
+                $"总 {total} ⇒ 可见 {visible} vs 应为 {expected}（公开 {pub} + 我方 {own} + 接触 {tracked}）｜dev 真值开关 {SensorManager.DebugShowGroundTruth}｜t={now:F1}");
             PflTestKit.End();
             PflTestKit.CleanupSince();      // 清掉本对账自铺的场（快照取在铺场之前）
         }
@@ -588,7 +577,7 @@ namespace PioneerFramework
             return false;
         }
 
-        private static readonly List<Contact> visibleScratch = new List<Contact>();
+        private static readonly List<Contact> visibleScratch = new();
 
         private static SpaceEntityGroup? Target(int groupId, SpaceGameComp sg) => sg.GetGroupById(groupId);
 

@@ -16,7 +16,7 @@ namespace PioneerFramework.GroundAssembly
 
     public class CompRocketBlueprint : ThingComp
     {
-        private RocketDesignSpec spec;
+        private RocketDesignSpec spec = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         public RocketDesignSpec Spec
         {

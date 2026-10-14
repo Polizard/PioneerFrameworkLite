@@ -16,7 +16,7 @@ namespace PioneerFramework
         public ushort stuffShortHash; // 0 = 无 stuff
         public int factionId;
         public int hitPoints;
-        public List<CompRecord> comps = new List<CompRecord>();
+        public List<CompRecord> comps = new();
     }
 
     /// <summary>
@@ -24,8 +24,8 @@ namespace PioneerFramework
     /// </summary>
     public class CompRecord
     {
-        public string compTypeName;
-        public byte[] xmlData;
+        public string compTypeName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public byte[] xmlData = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
     }
 
     /// <summary>
@@ -35,7 +35,7 @@ namespace PioneerFramework
     {
         public short x;
         public short z;
-        public string terrainDefName;
+        public string terrainDefName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
     }
 
     /// <summary>
@@ -140,7 +140,7 @@ namespace PioneerFramework
                     int version = br.ReadInt32();
                     if (version > VERSION)
                     {
-                        Log.Error(string.Format("[MapArchive] Unsupported version {0} in {1}", version, filePath));
+                        Log.Error($"[MapArchive] Unsupported version {version} in {filePath}");
                         return false;
                     }
 
@@ -167,7 +167,7 @@ namespace PioneerFramework
             }
             catch (System.Exception ex)
             {
-                Log.Error(string.Format("[MapArchive] Failed to read {0}: {1}", filePath, ex.Message));
+                Log.Error($"[MapArchive] Failed to read {filePath}: {ex.Message}");
                 return false;
             }
         }

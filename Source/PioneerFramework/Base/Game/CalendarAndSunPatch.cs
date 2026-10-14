@@ -13,7 +13,7 @@ namespace PioneerFramework
     {
         private static readonly FieldInfo SunLatCurveField;
         /// <summary>缓存的 CelestialSunGlowPercent 委托，避免每 tick 反射</summary>
-        private static readonly Func<float, int, float, float> CelestialSunGlowPercent;
+        private static readonly Func<float, int, float, float> CelestialSunGlowPercent = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         static CalendarAndSunPatch()
         {
@@ -21,26 +21,26 @@ namespace PioneerFramework
 
             var prefix = new HarmonyMethod(typeof(CalendarAndSunPatch), nameof(GenDate_TicksAbs_Prefix));
 
-            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.DayOfYear), new[] { typeof(long), typeof(float) }), prefix: prefix);
-            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.DayPercent), new[] { typeof(long), typeof(float) }), prefix: prefix);
-            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.HourInteger), new[] { typeof(long), typeof(float) }), prefix: prefix);
-            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.DayOfTwelfth), new[] { typeof(long), typeof(float) }), prefix: prefix);
-            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.Quadrum), new[] { typeof(long), typeof(float) }), prefix: prefix);
-            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.Year), new[] { typeof(long), typeof(float) }), prefix: prefix);
+            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.DayOfYear), [typeof(long), typeof(float)]), prefix: prefix);
+            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.DayPercent), [typeof(long), typeof(float)]), prefix: prefix);
+            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.HourInteger), [typeof(long), typeof(float)]), prefix: prefix);
+            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.DayOfTwelfth), [typeof(long), typeof(float)]), prefix: prefix);
+            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.Quadrum), [typeof(long), typeof(float)]), prefix: prefix);
+            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.Year), [typeof(long), typeof(float)]), prefix: prefix);
 
-            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.Season), new[] { typeof(long), typeof(Vector2) }),
+            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.Season), [typeof(long), typeof(Vector2)]),
                 prefix: new HarmonyMethod(typeof(CalendarAndSunPatch), nameof(GenDate_Season_Prefix)));
 
-            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.DateReadoutStringAt), new[] { typeof(long), typeof(Vector2) }),
+            harmony.Patch(AccessTools.Method(typeof(GenDate), nameof(GenDate.DateReadoutStringAt), [typeof(long), typeof(Vector2)]),
                 prefix: new HarmonyMethod(typeof(CalendarAndSunPatch), nameof(GenDate_DateReadoutStringAt_Prefix)));
 
             // 殖民地 Map 光照
-            harmony.Patch(AccessTools.Method(typeof(GenCelestial), nameof(GenCelestial.CurCelestialSunGlow), new[] { typeof(Map) }),
+            harmony.Patch(AccessTools.Method(typeof(GenCelestial), nameof(GenCelestial.CurCelestialSunGlow), [typeof(Map)]),
                 prefix: new HarmonyMethod(typeof(CalendarAndSunPatch), nameof(CurCelestialSunGlow_Prefix)));
 
             // 殖民地 Map 太阳方向（GetLightSourceInfo → GenLocalDate.DayPercent(Map)）
             // 必须也使用天体自转周期，否则太阳位置和亮度不同步
-            harmony.Patch(AccessTools.Method(typeof(GenLocalDate), nameof(GenLocalDate.DayPercent), new[] { typeof(Map) }),
+            harmony.Patch(AccessTools.Method(typeof(GenLocalDate), nameof(GenLocalDate.DayPercent), [typeof(Map)]),
                 prefix: new HarmonyMethod(typeof(CalendarAndSunPatch), nameof(GenLocalDate_DayPercent_Map_Prefix)));
 
             // 世界地图太阳位置
@@ -51,7 +51,7 @@ namespace PioneerFramework
 
             // 缓存 CelestialSunGlowPercent 为委托，避免每 tick 反射
             var glowPercentMethod = AccessTools.Method(typeof(GenCelestial), "CelestialSunGlowPercent",
-                new[] { typeof(float), typeof(int), typeof(float) });
+                [typeof(float), typeof(int), typeof(float)]);
             if (glowPercentMethod != null)
             {
                 CelestialSunGlowPercent = (Func<float, int, float, float>)

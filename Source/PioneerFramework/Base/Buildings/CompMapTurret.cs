@@ -9,7 +9,7 @@ namespace PioneerFramework
     public class CompProperties_MapTurret : CompProperties
     {
         /// <summary>武器 Def 名（WeaponDef）。</summary>
-        public string weaponDefName;
+        public string weaponDefName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         public CompProperties_MapTurret()
         {
@@ -25,7 +25,7 @@ namespace PioneerFramework
     [StaticConstructorOnStartup]
     public class CompMapTurret : ThingComp
     {
-        private TurretMount mount;
+        private TurretMount mount = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>
         /// 炮头贴图（启动时主线程加载；暂用原版铀炮炮头 TurretSniper_Top，后续换专属贴图）。
@@ -141,9 +141,9 @@ namespace PioneerFramework
     /// <summary>单个发射锚点：独立武器 / 朝向 / 定位机绑定（整体式，无上下之分）。</summary>
     public class TurretMount : IExposable
     {
-        public WeaponInstance weapon;
+        public WeaponInstance weapon = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         public float rotation; // 朝向角（船体局部系，度，顺时针绕局部 Y）
-        public Thing boundDesignator;
+        public Thing boundDesignator = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         public void ExposeData()
         {

@@ -32,11 +32,11 @@ namespace PioneerFramework
         public string operationName = "";
 
         /// <summary>参数值，**显示单位**（km / 度 / 比值），按 `GetParams()` 的顺序。</summary>
-        public double[] paramValues = new double[0];
+        public double[] paramValues = [];
 
         /// <summary>参数标签（**捕获时记下**）：让队列界面不必再去找回操作就能显示人话，
         /// 也让"旧计划"在操作改名后依然读得懂。</summary>
-        public string[] paramLabels = new string[0];
+        public string[] paramLabels = [];
 
         /// <summary>时间选择器状态：当前项下标 / 提前量（秒）/ 到达高度（米）。没有时间选择器时下标为 -1。</summary>
         public int timeRefIndex = -1;
@@ -149,10 +149,10 @@ namespace PioneerFramework
             {
                 string label = i < paramLabels.Length ? paramLabels[i] : "参数";
                 sb.Append(i == 0 ? "（" : "，").Append(label).Append('=')
-                  .Append(paramValues[i].ToString("0.###"));
+                  .Append($"{paramValues[i]:0.###}");
             }
             if (paramValues.Length > 0) sb.Append('）');
-            if (absoluteTick >= 0.0) sb.Append("｜点火 tick=").Append(absoluteTick.ToString("F0"));
+            if (absoluteTick >= 0.0) sb.Append("｜点火 tick=").Append($"{absoluteTick:F0}");
             return sb.ToString();
         }
     }

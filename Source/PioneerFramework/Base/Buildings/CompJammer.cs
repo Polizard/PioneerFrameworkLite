@@ -72,15 +72,13 @@ namespace PioneerFramework
             yield return new Command_Toggle
             {
                 defaultLabel = group.JammingEnabled ? "干扰开机（辐射中）" : "干扰静默",
-                defaultDesc = string.Format("压制式干扰开关：开机后抬高**敌方观测方**的探测阈值（作用随距离平方反比衰减）。"
-                    + "本组干扰效力合计 {0:F1}（含部件级；开机后才生效）。代价 = 自身信号升高、成为反辐射武器的靶子。",
-                    group.JamStrength),
+                defaultDesc = $"压制式干扰开关：开机后抬高**敌方观测方**的探测阈值（作用随距离平方反比衰减）。本组干扰效力合计 {group.JamStrength:F1}（含部件级；开机后才生效）。代价 = 自身信号升高、成为反辐射武器的靶子。",
                 icon = TexCommand.DesirePower,
                 isActive = () => group.JammingEnabled,
                 toggleAction = () =>
                 {
                     group.JammingEnabled = !group.JammingEnabled;
-                    Log.Message(string.Format("[干扰] G{0} 开机 → {1}", group.GroupId, group.JammingEnabled));
+                    Log.Message($"[干扰] G{group.GroupId} 开机 → {group.JammingEnabled}");
                 },
             };
         }

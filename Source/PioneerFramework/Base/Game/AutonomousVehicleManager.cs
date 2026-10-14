@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Verse;
@@ -51,9 +51,9 @@ namespace PioneerFramework
             /// <summary>弹群逻辑枚数 N（§5.1 单等效体：巡航段整群按 1 枚标准弹跑，N 仅逻辑口径）。</summary>
             public int logicalCount = 1;
             /// <summary>弹体/弹头 Def 名（转化交接生成弹头射弹时解析 MissileDef 参数）。</summary>
-            public string missileDefName;
+            public string missileDefName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
             /// <summary>发射武器 Def 名（弹头射弹 weaponDef 引用 + 面板/日志用）。</summary>
-            public string weaponDefName;
+            public string weaponDefName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
             /// <summary>当前 Mission（默认 Attack(目标) 或 Standby，发射链写入；新 Mission 覆盖旧 Mission）。</summary>
             public MissionType mission = MissionType.Standby;
             /// <summary>Attack 目标 group id（Standby/Loiter 时为 -1）。</summary>
@@ -109,16 +109,14 @@ namespace PioneerFramework
 
             public override string ToString()
             {
-                return string.Format("V{0} G{1} E{2} volley={3} fromG{4} N={5} {6}->G{7}",
-                    vehicleId, groupId, entityId, volleyId, launcherGroupId, logicalCount,
-                    mission, targetGroupId);
+                return $"V{vehicleId} G{groupId} E{entityId} volley={volleyId} fromG{launcherGroupId} N={logicalCount} {mission}->G{targetGroupId}";
             }
         }
 
-        private List<VehicleRecord> vehicles = new List<VehicleRecord>();
+        private List<VehicleRecord> vehicles = new();
         /// <summary>groupId → record 反查索引（K9 导弹识别入口热路径——碰撞检测每物理步对每个球快筛
         /// 拒绝的 pair 反查；线性遍历在齐射多枚时被 pair 数放大，改字典 O(1)。登记/注销/存档加载维护）。</summary>
-        private readonly Dictionary<int, VehicleRecord> byGroupId = new Dictionary<int, VehicleRecord>();
+        private readonly Dictionary<int, VehicleRecord> byGroupId = new();
         private int nextVehicleId = 1;
         private int nextVolleyId = 1;
 
@@ -135,12 +133,12 @@ namespace PioneerFramework
         public static bool DebugDetailedGuidance;
 
         /// <summary>已打过"终末接管"首条日志的 group（瞬态不序列化；mission 改派后重打）。</summary>
-        private readonly HashSet<int> terminalLogged = new HashSet<int>();
+        private readonly HashSet<int> terminalLogged = new();
 
         public AutonomousVehicleManager(Game game) { }
 
         // 性能第 5 条：OnPhysicsStepCompleted / TickAttack 每物理步都要取，按 Game 缓存
-        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new GameComponentRef<SpaceGameComp>();
+        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new();
         private SpaceGameComp SpaceGame => spaceGameRef.Get();
 
         public IReadOnlyList<VehicleRecord> Vehicles => vehicles;
@@ -173,12 +171,12 @@ namespace PioneerFramework
             };
             vehicles.Add(rec);
             byGroupId[groupId] = rec;
-            Log.Message(string.Format("[AutonomousVehicle] 登记 {0}", rec));
+            Log.Message($"[AutonomousVehicle] 登记 {rec}");
             return rec;
         }
 
         /// <summary>按 groupId 反查（K9 导弹识别入口；字典 O(1)）。</summary>
-        public VehicleRecord GetRecord(int groupId)
+        public VehicleRecord? GetRecord(int groupId)
         {
             return byGroupId.TryGetValue(groupId, out var rec) ? rec : null;
         }
@@ -214,7 +212,7 @@ namespace PioneerFramework
             {
                 if (vehicles[i].groupId == groupId)
                 {
-                    Log.Message(string.Format("[AutonomousVehicle] 注销 V{0} G{1}", vehicles[i].vehicleId, groupId));
+                    Log.Message($"[AutonomousVehicle] 注销 V{vehicles[i].vehicleId} G{groupId}");
                     vehicles.RemoveAt(i);
                     byGroupId.Remove(groupId);
                     return;
@@ -239,8 +237,7 @@ namespace PioneerFramework
                 if (spaceGame.GetGroupById(rec.groupId) == null) continue; // 已销毁：失效清理兜底，不下发
                 if (IssueCommand(rec.groupId, mission, targetGroupId)) n++;
             }
-            Log.Message(string.Format("[导弹指令] 发射器G{0} 命令全体：{1} 成功下发 {2} 枚（目标G{3}）",
-                launcherGroupId, mission, n, targetGroupId));
+            Log.Message($"[导弹指令] 发射器G{launcherGroupId} 命令全体：{mission} 成功下发 {n} 枚（目标G{targetGroupId}）");
             return n;
         }
 
@@ -260,13 +257,13 @@ namespace PioneerFramework
             var rec = GetRecord(groupId);
             if (rec == null)
             {
-                Log.Warning(string.Format("[导弹指令] G{0} 不在册（无记录）", groupId));
+                Log.Warning($"[导弹指令] G{groupId} 不在册（无记录）");
                 return false;
             }
             var group = spaceGame.GetGroupById(groupId);
             if (group == null || !group.IsActive)
             {
-                Log.Warning(string.Format("[导弹指令] G{0} 3D 对象不存在", groupId));
+                Log.Warning($"[导弹指令] G{groupId} 3D 对象不存在");
                 return false;
             }
 
@@ -276,7 +273,7 @@ namespace PioneerFramework
                     var target = spaceGame.GetGroupById(targetGroupId);
                     if (target == null || !target.IsActive)
                     {
-                        Log.Warning(string.Format("[导弹指令] V{0} Attack 目标 G{1} 不存在", rec.vehicleId, targetGroupId));
+                        Log.Warning($"[导弹指令] V{rec.vehicleId} Attack 目标 G{targetGroupId} 不存在");
                         return false;
                     }
                     if (group.HasActiveBurn) group.EndBurn();
@@ -292,8 +289,7 @@ namespace PioneerFramework
                     else if (oldTarget != targetGroupId)
                         rec.aimOffsetShip = DVector3.zero;
                     terminalLogged.Remove(rec.groupId);
-                    Log.Message(string.Format("[导弹指令] V{0} G{1} Attack→G{2}（终末撞击命令）{3}", rec.vehicleId, rec.groupId, targetGroupId,
-                        rec.aimOffsetShip != DVector3.zero ? string.Format(" 弹着偏置=({0:F1},{1:F1})m", rec.aimOffsetShip.x, rec.aimOffsetShip.z) : ""));
+                    Log.Message($"[导弹指令] V{rec.vehicleId} G{rec.groupId} Attack→G{targetGroupId}（终末撞击命令）{(rec.aimOffsetShip != DVector3.zero ? $" 弹着偏置=({rec.aimOffsetShip.x:F1},{rec.aimOffsetShip.z:F1})m" : "")}");
                     return true;
 
                 case MissionType.Standby:
@@ -302,7 +298,7 @@ namespace PioneerFramework
                     terminalLogged.Remove(rec.groupId);
                     rec.attackStartSurface = 0.0;
                     rec.guidanceState = default; // 中止后重新观测（下次 Attack 从零建立最近点基准）
-                    Log.Message(string.Format("[导弹指令] V{0} G{1} Standby（中止当前动作，保持轨道待命）", rec.vehicleId, rec.groupId));
+                    Log.Message($"[导弹指令] V{rec.vehicleId} G{rec.groupId} Standby（中止当前动作，保持轨道待命）");
                     return true;
 
                 case MissionType.Loiter:
@@ -311,14 +307,14 @@ namespace PioneerFramework
                     rec.mission = MissionType.Loiter;
                     terminalLogged.Remove(rec.groupId);
                     rec.attackStartSurface = 0.0;
-                    Log.Message(string.Format("[导弹指令] V{0} G{1} Loiter（熄火静默待机——轨道部署由玩家机动完成）", rec.vehicleId, rec.groupId));
+                    Log.Message($"[导弹指令] V{rec.vehicleId} G{rec.groupId} Loiter（熄火静默待机——轨道部署由玩家机动完成）");
                     return true;
 
                 case MissionType.SelfDestruct:
                     var cm = Current.Game?.GetComponent<CombatManager>();
                     if (cm != null)
                     {
-                        Log.Message(string.Format("[导弹指令] V{0} G{1} SelfDestruct → 就地引爆", rec.vehicleId, rec.groupId));
+                        Log.Message($"[导弹指令] V{rec.vehicleId} G{rec.groupId} SelfDestruct → 就地引爆");
                         cm.ExplodeMissileAt(group, rec, spaceGame);
                     }
                     else
@@ -363,8 +359,7 @@ namespace PioneerFramework
                     {
                         var dead = spaceGame.GetGroupById(rec.groupId);
                         int n = dead != null ? dead.GetEntityIds().Count : 0;
-                        Log.Message(string.Format("[导弹清理] V{0} G{1} 燃尽惯性弹寿命到期（{2} 枚）→ 从世界移除",
-                            rec.vehicleId, rec.groupId, n));
+                        Log.Message($"[导弹清理] V{rec.vehicleId} G{rec.groupId} 燃尽惯性弹寿命到期（{n} 枚）→ 从世界移除");
                         terminalLogged.Remove(rec.groupId);
                         byGroupId.Remove(rec.groupId);
                         vehicles.RemoveAt(i);
@@ -374,8 +369,7 @@ namespace PioneerFramework
                     var group = spaceGame.GetGroupById(rec.groupId);
                     if (group == null)
                     {
-                        Log.Message(string.Format("[AutonomousVehicle] G{0} 3D 对象已消失，清理登记（V{1} {2}->G{3}）",
-                            rec.groupId, rec.vehicleId, rec.mission, rec.targetGroupId));
+                        Log.Message($"[AutonomousVehicle] G{rec.groupId} 3D 对象已消失，清理登记（V{rec.vehicleId} {rec.mission}->G{rec.targetGroupId}）");
                         terminalLogged.Remove(rec.groupId);
                         byGroupId.Remove(rec.groupId);
                         vehicles.RemoveAt(i);
@@ -425,7 +419,7 @@ namespace PioneerFramework
         /// 处于 Following 的导弹全部改指新目标（目标选取自动跟随发射器，不立即进终末）。
         /// </summary>
         // [V3] 认知层（S3c）：末制导吃接触 ⇒ 需要每物理步取 SensorManager（按 Game 缓存）
-        private readonly GameComponentRef<SensorManager> sensorMgrRef = new GameComponentRef<SensorManager>();
+        private readonly GameComponentRef<SensorManager> sensorMgrRef = new();
 
         public void SyncFollowerTargets(int launcherGroupId, int targetGroupId)
         {
@@ -441,7 +435,7 @@ namespace PioneerFramework
                 n++;
             }
             if (n > 0)
-                Log.Message(string.Format("[导弹跟随] 发射器G{0} 换目标 → {1} 枚在飞导弹同步改指 G{2}", launcherGroupId, n, targetGroupId));
+                Log.Message($"[导弹跟随] 发射器G{launcherGroupId} 换目标 → {n} 枚在飞导弹同步改指 G{targetGroupId}");
         }
 
         /// <summary>
@@ -459,14 +453,13 @@ namespace PioneerFramework
                 var sensor = sensorMgrRef.Get();
                 var follower = spaceGame.GetGroupById(rec.groupId);
                 if (sensor == null || follower == null || sensor.TryGetKnownState(follower.FactionId, target, out _)) return;
-                Log.Message(string.Format("[导弹跟随] V{0} G{1} 跟随目标 G{2} 接触丢失（看不见了）→ 等待发射器重指",
-                    rec.vehicleId, rec.groupId, rec.targetGroupId));
+                Log.Message($"[导弹跟随] V{rec.vehicleId} G{rec.groupId} 跟随目标 G{rec.targetGroupId} 接触丢失（看不见了）→ 等待发射器重指");
                 rec.targetGroupId = -1;
                 return;
             }
             // 跟随目标失活：清目标等待发射器重新指定（记录保持 Following，不擅自转 Standby——
             // 发射器换目标时会再次同步；导弹保持普通航天器状态）
-            Log.Message(string.Format("[导弹跟随] V{0} G{1} 跟随目标 G{2} 失活 → 等待发射器重指", rec.vehicleId, rec.groupId, rec.targetGroupId));
+            Log.Message($"[导弹跟随] V{rec.vehicleId} G{rec.groupId} 跟随目标 G{rec.targetGroupId} 失活 → 等待发射器重指");
             rec.targetGroupId = -1;
         }
 
@@ -509,9 +502,7 @@ namespace PioneerFramework
                 if (group.HasActiveBurn) group.EndBurn();
                 rec.mission = MissionType.Standby;
                 terminalLogged.Remove(rec.groupId);
-                Log.Message(string.Format("[导弹中止] V{0} G{1} 目标G{2} {3} → 中止撞击，回 Standby 待命",
-                    rec.vehicleId, rec.groupId, rec.targetGroupId,
-                    target == null || !target.IsActive ? "失活/消失" : "接触丢失（看不见了）"));
+                Log.Message($"[导弹中止] V{rec.vehicleId} G{rec.groupId} 目标G{rec.targetGroupId} {(target == null || !target.IsActive ? "失活/消失" : "接触丢失（看不见了）")} → 中止撞击，回 Standby 待命");
                 return;
             }
             if (target == null) return;   // ⚠ 只为可空分析：上面的 `target != null` 被折进 `targetKnown`，流分析看不见（运行期不可能触发）
@@ -565,8 +556,7 @@ namespace PioneerFramework
                         }
                     }
                     if (rec.aimEntityId >= 0)
-                        Log.Message(string.Format("[导弹瞄准] V{0} G{1} 多实体目标G{2} 随机锁定 E{3}（交战期保持，锁定实体离群时重选）",
-                            rec.vehicleId, rec.groupId, target.GroupId, rec.aimEntityId));
+                        Log.Message($"[导弹瞄准] V{rec.vehicleId} G{rec.groupId} 多实体目标G{target.GroupId} 随机锁定 E{rec.aimEntityId}（交战期保持，锁定实体离群时重选）");
                 }
                 if (aimE != null)
                     aimPoint = tPos + aimE.Position;
@@ -583,10 +573,7 @@ namespace PioneerFramework
                 if (now - rec.lastCruiseLogTick >= 600)
                 {
                     rec.lastCruiseLogTick = now;
-                    Log.Message(string.Format(
-                        "[导弹巡航] V{0} G{1}→G{2} 表面距={3:F0}km（&gt;接管边界 {4:F0}km）惯性巡航——轨道交会/变轨由指挥（旧功能）管辖，等待进入终末或改派",
-                        rec.vehicleId, rec.groupId, rec.targetGroupId,
-                        surfaceDist / 1000.0, missileDef.homingEngageDistance / 1000.0));
+                    Log.Message($"[导弹巡航] V{rec.vehicleId} G{rec.groupId}→G{rec.targetGroupId} 表面距={surfaceDist / 1000.0:F0}km（&gt;接管边界 {missileDef.homingEngageDistance / 1000.0:F0}km）惯性巡航——轨道交会/变轨由指挥（旧功能）管辖，等待进入终末或改派");
                 }
                 return;
             }
@@ -598,10 +585,7 @@ namespace PioneerFramework
             {
                 if (mergedInboundLogged.Add(rec.groupId))
                 {
-                    Log.Message(string.Format(
-                        "[弹群] V{0} G{1} Attack 合并态入界（N={2} 组内实体={3} surface={4:F1}km ≤ homing {5:F0}km）→ 解离",
-                        rec.vehicleId, rec.groupId, rec.logicalCount, CountAliveEntities(group, spaceGame),
-                        surfaceDist / 1000.0, missileDef.homingEngageDistance / 1000.0));
+                    Log.Message($"[弹群] V{rec.vehicleId} G{rec.groupId} Attack 合并态入界（N={rec.logicalCount} 组内实体={CountAliveEntities(group, spaceGame)} surface={surfaceDist / 1000.0:F1}km ≤ homing {missileDef.homingEngageDistance / 1000.0:F0}km）→ 解离");
                 }
                 DissociateVolley(rec, group, spaceGame);
 
@@ -618,32 +602,17 @@ namespace PioneerFramework
                 surfaceDist = dist - GroupRadius(target, spaceGame);
             }
 
-            // ── 终末段接管 ──
-            if (!terminalLogged.Contains(rec.groupId))
+            // ── 终末段接管（`Add` 的返回值即"这次才登记" ⇒ 免一次 Contains 双查；CA1868）──
+            if (terminalLogged.Add(rec.groupId))
             {
-                terminalLogged.Add(rec.groupId);
                 rec.attackStartSurface = surfaceDist; // 追丢中止基准（本次 Attack 接管点）
                 // 目标状态诊断（2026-09-07：designator 开火报 20km 而接管报 56km/0.22km 的矛盾——
                 // 打印目标解析/数值状态与绝对位置速度，判定目标是否在圆轨解析态）
-                string targetState = string.Format(
-                    "目标G{0} pos=({1:F0},{2:F0},{3:F0})m vel=({4:F1},{5:F1},{6:F1})m/s 圆轨={7} r={8:F0}km",
-                    target.GroupId,
-                    tPos.x, tPos.y, tPos.z,
-                    tVel.x, tVel.y, tVel.z,
-                    target.IsCircularOrbit ? "是" : "否",
-                    (target.IsCircularOrbit ? target.circularRadius : 0.0) / 1000.0);
-                Log.Message(string.Format(
-                    "[导弹制导] V{0} G{1}→G{2} 终末接管：表面距={3:F2}km 质心距={4:F2}km 目标半径={5:F0}m（控制律：横向速度归零 + 接近率补量双门控[阈值{6:F0} 巡航{7:F0} 时间裕度{8:F1}] 几何丢失[最近点+{9:F0}km]）｜ {10}",
-                    rec.vehicleId, rec.groupId, rec.targetGroupId,
-                    surfaceDist / 1000.0, dist / 1000.0, GroupRadius(target, spaceGame),
-                    missileDef.guidanceClosingThreshold, missileDef.terminalSpeed, missileDef.guidanceTimeMargin,
-                    missileDef.guidanceLostMarginMeters / 1000.0, targetState));
+                string targetState = $"目标G{target.GroupId} pos=({tPos.x:F0},{tPos.y:F0},{tPos.z:F0})m vel=({tVel.x:F1},{tVel.y:F1},{tVel.z:F1})m/s 圆轨={(target.IsCircularOrbit ? "是" : "否")} r={(target.IsCircularOrbit ? target.circularRadius : 0.0) / 1000.0:F0}km";
+                Log.Message($"[导弹制导] V{rec.vehicleId} G{rec.groupId}→G{rec.targetGroupId} 终末接管：表面距={surfaceDist / 1000.0:F2}km 质心距={dist / 1000.0:F2}km 目标半径={GroupRadius(target, spaceGame):F0}m（控制律：横向速度归零 + 接近率补量双门控[阈值{missileDef.guidanceClosingThreshold:F0} 巡航{missileDef.terminalSpeed:F0} 时间裕度{missileDef.guidanceTimeMargin:F1}] 几何丢失[最近点+{missileDef.guidanceLostMarginMeters / 1000.0:F0}km]）｜ {targetState}");
                 if (aimPoint != tPos)
                 {
-                    Log.Message(string.Format(
-                        "[导弹制导] V{0} G{1} 弹着偏置启用：瞄准目标局部({2:F1},0,{3:F1})m → 世界点=({4:F0},{5:F0},{6:F0})m（撞击与弹头 Map 爆炸落于所选格）",
-                        rec.vehicleId, rec.groupId, rec.aimOffsetShip.x, rec.aimOffsetShip.z,
-                        aimPoint.x, aimPoint.y, aimPoint.z));
+                    Log.Message($"[导弹制导] V{rec.vehicleId} G{rec.groupId} 弹着偏置启用：瞄准目标局部({rec.aimOffsetShip.x:F1},0,{rec.aimOffsetShip.z:F1})m → 世界点=({aimPoint.x:F0},{aimPoint.y:F0},{aimPoint.z:F0})m（撞击与弹头 Map 爆炸落于所选格）");
                 }
             }
             // 清玩家遗留机动节点（巡航段节点由队列引擎执行；终末起自主撞击接管）
@@ -651,7 +620,7 @@ namespace PioneerFramework
             {
                 int n = group.plannedManeuvers.Count;
                 group.ClearManeuvers();
-                Log.Message(string.Format("[导弹接管] V{0} G{1} 清除遗留机动节点 {2} 个 → 自主火炬撞击", rec.vehicleId, rec.groupId, n));
+                Log.Message($"[导弹接管] V{rec.vehicleId} G{rec.groupId} 清除遗留机动节点 {n} 个 → 自主火炬撞击");
             }
 
             // 燃尽预检：主+RCS 总工质低于阈值 → 熄火惯性弹（K5；物理侧主网尽会自动转 RCS 兜底直至燃尽），
@@ -665,8 +634,7 @@ namespace PioneerFramework
                 {
                     rec.fuelOutReported = true;
                     rec.despawnAtTick = now + (int)Math.Max(30f, missileDef.bodyLifetimeSeconds);
-                    Log.Message(string.Format("[导弹燃尽] V{0} G{1} 工质尽（{2:F0}kg）→ 熄火惯性弹（K5：不判 miss，{3}s 后自动清理）",
-                        rec.vehicleId, rec.groupId, fuelKg, (int)missileDef.bodyLifetimeSeconds));
+                    Log.Message($"[导弹燃尽] V{rec.vehicleId} G{rec.groupId} 工质尽（{fuelKg:F0}kg）→ 熄火惯性弹（K5：不判 miss，{(int)missileDef.bodyLifetimeSeconds}s 后自动清理）");
                 }
                 return;
             }
@@ -687,11 +655,7 @@ namespace PioneerFramework
                 terminalLogged.Remove(rec.groupId);
                 rec.attackStartSurface = 0.0;
                 rec.guidanceState = default;
-                Log.Message(string.Format(
-                    "[导弹中止] V{0} G{1}→G{2} 几何丢失：最近点 {3:F1}km → 当前 {4:F1}km（超出 lostMargin {5:F0}km，掉头再捕获无望）→ 中止回 Standby 待命，等待玩家改派",
-                    rec.vehicleId, rec.groupId, rec.targetGroupId,
-                    step.state.minSurfaceDist / 1000.0, step.surfaceDist / 1000.0,
-                    missileDef.guidanceLostMarginMeters / 1000.0));
+                Log.Message($"[导弹中止] V{rec.vehicleId} G{rec.groupId}→G{rec.targetGroupId} 几何丢失：最近点 {step.state.minSurfaceDist / 1000.0:F1}km → 当前 {step.surfaceDist / 1000.0:F1}km（超出 lostMargin {missileDef.guidanceLostMarginMeters / 1000.0:F0}km，掉头再捕获无望）→ 中止回 Standby 待命，等待玩家改派");
                 return;
             }
 
@@ -711,17 +675,13 @@ namespace PioneerFramework
                 if (!rec.reacquireLogged)
                 {
                     rec.reacquireLogged = true;
-                    Log.Message(string.Format(
-                        "[导弹再捕获] V{0} G{1}→G{2} 擦过目标（最近点 {3:F1}km，当前 {4:F1}km）→ 掉头再捕获（接近率 {5:F0}m/s 反向，横向差 {6:F0}m/s）",
-                        rec.vehicleId, rec.groupId, rec.targetGroupId,
-                        step.state.minSurfaceDist / 1000.0, step.surfaceDist / 1000.0, step.closing, step.lateral));
+                    Log.Message($"[导弹再捕获] V{rec.vehicleId} G{rec.groupId}→G{rec.targetGroupId} 擦过目标（最近点 {step.state.minSurfaceDist / 1000.0:F1}km，当前 {step.surfaceDist / 1000.0:F1}km）→ 掉头再捕获（接近率 {step.closing:F0}m/s 反向，横向差 {step.lateral:F0}m/s）");
                 }
             }
             else if (rec.reacquireLogged)
             {
                 rec.reacquireLogged = false;
-                Log.Message(string.Format("[导弹再捕获] V{0} G{1} 已重新咬住目标（表面距 {2:F1}km，接近率 {3:F0}m/s）",
-                    rec.vehicleId, rec.groupId, step.surfaceDist / 1000.0, step.closing));
+                Log.Message($"[导弹再捕获] V{rec.vehicleId} G{rec.groupId} 已重新咬住目标（表面距 {step.surfaceDist / 1000.0:F1}km，接近率 {step.closing:F0}m/s）");
             }
 
             // 详细日志（门控，10 tick 限频）：距离/速度/接近率/横向差/点火状态
@@ -729,17 +689,7 @@ namespace PioneerFramework
             if (DebugDetailedGuidance && now - rec.lastGuidanceLogTick >= 10)
             {
                 rec.lastGuidanceLogTick = now;
-                Log.Message(string.Format(
-                    "[导弹制导] V{0} G{1}→G{2} 表面距={3:F1}km 速={4:F0}m/s 接近={5:F1}m/s 横差={6:F0}m/s 冲刺={7:F0}m/s 需求上限={8:F0}m/s 燃料={9:F0}kg burn={10}{11} | t={12} 弹pos=({13:F0},{14:F0},{15:F0}) 目pos=({16:F0},{17:F0},{18:F0})",
-                    rec.vehicleId, rec.groupId, rec.targetGroupId,
-                    step.surfaceDist / 1000.0, vel.magnitude, step.closing, step.lateral, step.boostDemand,
-                    step.closingDemand,
-                    fuelKg,
-                    group.HasActiveBurn ? "on" : "off",
-                    step.reacquiring ? " 再捕获" : "",
-                    now,
-                    pos.x, pos.y, pos.z,
-                    tPos.x, tPos.y, tPos.z));
+                Log.Message($"[导弹制导] V{rec.vehicleId} G{rec.groupId}→G{rec.targetGroupId} 表面距={step.surfaceDist / 1000.0:F1}km 速={vel.magnitude:F0}m/s 接近={step.closing:F1}m/s 横差={step.lateral:F0}m/s 冲刺={step.boostDemand:F0}m/s 需求上限={step.closingDemand:F0}m/s 燃料={fuelKg:F0}kg burn={(group.HasActiveBurn ? "on" : "off")}{(step.reacquiring ? " 再捕获" : "")} | t={now} 弹pos=({pos.x:F0},{pos.y:F0},{pos.z:F0}) 目pos=({tPos.x:F0},{tPos.y:F0},{tPos.z:F0})");
             }
         }
 
@@ -760,7 +710,7 @@ namespace PioneerFramework
 
         /// <summary>合并态入界探针（瞬态，不序列化）：记录已打过"Attack 合并态入界"首条日志的 group，
         /// 验证解离触发链（2026-09-08 场景排障：首波 volley 未解离即接触目标）。</summary>
-        private readonly HashSet<int> mergedInboundLogged = new HashSet<int>();
+        private readonly HashSet<int> mergedInboundLogged = new();
 
         /// <summary>
         /// 实体离群唯一出口（阵亡清理/拦截引爆/碰撞转化共用）：
@@ -789,8 +739,7 @@ namespace PioneerFramework
                 rec.entityId = -1;
                 foreach (int eid in group.GetEntityIds()) { rec.entityId = eid; break; }
             }
-            Log.Message(string.Format("[弹群] G{0} E{1} 离群（{2}）：剩 {3} 枚",
-                group.GroupId, deadEntityId, reason, rec.logicalCount));
+            Log.Message($"[弹群] G{group.GroupId} E{deadEntityId} 离群（{reason}）：剩 {rec.logicalCount} 枚");
             return rec.logicalCount <= 0;
         }
 
@@ -899,10 +848,7 @@ namespace PioneerFramework
                 }
                 created++;
             }
-            Log.Message(string.Format(
-                "[弹群解离] G{0}（N={1}）→ 领弹留组（组内实体 {2}）+ 拆出 {3} 枚独立导弹（volley={4} 目标G{5} 偏置=({6:F1},0,{7:F1})m）",
-                group.GroupId, alive, CountAliveEntities(group, spaceGame), created, rec.volleyId, rec.targetGroupId,
-                rec.aimOffsetShip.x, rec.aimOffsetShip.z));
+            Log.Message($"[弹群解离] G{group.GroupId}（N={alive}）→ 领弹留组（组内实体 {CountAliveEntities(group, spaceGame)}）+ 拆出 {created} 枚独立导弹（volley={rec.volleyId} 目标G{rec.targetGroupId} 偏置=({rec.aimOffsetShip.x:F1},0,{rec.aimOffsetShip.z:F1})m）");
         }
 
         /// <summary>与 CombatManager.GetGroupPos 同基准：圆轨解析位置 / 非圆轨 CurrentOrbit.position（physicsTick 基准）。</summary>
@@ -923,7 +869,7 @@ namespace PioneerFramework
 
         /// <summary>目标瞄准本体实体：首个带 Map 实体（空间站/带图船——弹着偏置只对 Map 目标有意义）；
         /// 无带 Map 实体时取首个实体（防御性兜底）。</summary>
-        private static SpaceEntity GetAimEntity(SpaceEntityGroup target, SpaceGameComp spaceGame)
+        private static SpaceEntity? GetAimEntity(SpaceEntityGroup target, SpaceGameComp spaceGame)
         {
             foreach (int eid in target.GetEntityIds())
             {

@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    语句/算法现代化批（N2③）的工具（2026-10-14）：IDE 系列语句形态的等价改写（目标类型 new / 集合表达式 / using 声明）。
+    为什么要有它：手写"扫行号猜签名"三轮各栽一类（落到邻近 struct/bool 方法、把体开括号当出体、
+    站点在 lambda/表达式体成员里被错位映射）⇒ 改用 **Roslyn 语义模型**回答三件事：
+      ① 站点属于谁？（`GetEnclosingSymbol` ⇒ 方法 / lambda / 局部函数，一锤定音）
+      ② 返回类型是引用类型吗？（`ITypeSymbol.IsReferenceType` ⇒ struct/bool 自然排除）
+      ③ 返回类型在哪？（`MethodDeclarationSyntax.ReturnType.Span.End` ⇒ 精确插入点）
+
+    ⚠ 直引 SDK 自带的 Roslyn（`$(MSBuildSDKsPath)/../Roslyn/bincore`）⇒ **不需要 NuGet/联网**。
+    ⚠ 本工程在 `tools/` 下、**不进 `test-all`**（dev 工具，不属 Source 三件套）。
+    用法：dotnet run（后跟 <告警日志> <引用DLL…> [dry 开关]）
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>CodeModernizer</AssemblyName>
+    <RootNamespace>CodeModernizer</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Microsoft.CodeAnalysis">
+      <HintPath>$(MSBuildSDKsPath)\..\Roslyn\bincore\Microsoft.CodeAnalysis.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.CodeAnalysis.CSharp">
+      <HintPath>$(MSBuildSDKsPath)\..\Roslyn\bincore\Microsoft.CodeAnalysis.CSharp.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

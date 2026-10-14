@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
@@ -31,12 +31,12 @@ namespace PioneerFramework.Launch
                 fuelAmount = 1000f,
                 parts = new List<RocketPartSpec>
                 {
-                    new RocketPartSpec { defName = "PF_RocketPart_Debug_Thruster", category = "thruster", quantity = 1 },
-                    new RocketPartSpec { defName = "PF_RocketPart_Debug_Tank", category = "tank", quantity = 1 }
+                    new() { defName = "PF_RocketPart_Debug_Thruster", category = "thruster", quantity = 1 },
+                    new() { defName = "PF_RocketPart_Debug_Tank", category = "tank", quantity = 1 }
                 },
                 payloads = new List<RocketPayloadSpec>
                 {
-                    new RocketPayloadSpec { defName = "PF_Payload_Debug", installPosition = "nose", quantity = 1 }
+                    new() { defName = "PF_Payload_Debug", installPosition = "nose", quantity = 1 }
                 }
             };
         }
@@ -98,7 +98,7 @@ namespace PioneerFramework.Launch
         /// true = 调试直发：跳过「有人控制台 / 舱室封闭」两项人员校验；
         /// false = 正式发射：执行完整发射条件校验。
         /// </param>
-        public static SpaceEntity LaunchFromGround(Map groundMap, IntVec3 center, RocketDesignSpec spec, bool debug = false)
+        public static SpaceEntity? LaunchFromGround(Map groundMap, IntVec3 center, RocketDesignSpec? spec, bool debug = false)
         {
             if (groundMap == null || spec == null)
                 return null;
@@ -147,7 +147,7 @@ namespace PioneerFramework.Launch
             entity.SetRotation(UnityEngine.Quaternion.identity);
 
             bool hasCabinMap = spec.CabinType == RocketCabinType.Spacecraft;
-            Map map = null;
+            Map? map = null;
             bool hadExistingMap = false;
             if (hasCabinMap)
             {
@@ -204,8 +204,7 @@ namespace PioneerFramework.Launch
             double weightN = (dryMass + propMass) * gSurface;
             if (thrustN <= weightN)
             {
-                Messages.Message(string.Format("推力不足，无法起飞：F={0:0.#} kN ≤ 重力 {1:0.#} kN（TWR≤1）。",
-                    thrustN / 1000.0, weightN / 1000.0), MessageTypeDefOf.RejectInput, false);
+                Messages.Message($"推力不足，无法起飞：F={thrustN / 1000.0:0.#} kN ≤ 重力 {weightN / 1000.0:0.#} kN（TWR≤1）。", MessageTypeDefOf.RejectInput, false);
                 CleanupFailedLaunch(spaceGame, groupId, map, !hadExistingMap);
                 return null;
             }
@@ -381,7 +380,7 @@ namespace PioneerFramework.Launch
         /// 查找地面火箭/发射台已经生成并关联的舱内口袋地图。
         /// 若存在则发射时复用，保证玩家提前装修好的舱内人员/建筑随火箭入轨。
         /// </summary>
-        private static Map FindExistingRocketMap(Map groundMap, IntVec3 center)
+        private static Map? FindExistingRocketMap(Map groundMap, IntVec3 center)
         {
             if (groundMap == null)
                 return null;
@@ -419,7 +418,7 @@ namespace PioneerFramework.Launch
             if (map == null || rocketDef?.comps == null)
                 return;
 
-            CompProperties_Launchable launchable = null;
+            CompProperties_Launchable? launchable = null;
             for (int i = 0; i < rocketDef.comps.Count; i++)
             {
                 if (rocketDef.comps[i] is CompProperties_Launchable la)
@@ -429,7 +428,7 @@ namespace PioneerFramework.Launch
                 }
             }
 
-            ThingDef skyfallerDef = launchable?.skyfallerLeaving;
+            ThingDef? skyfallerDef = launchable?.skyfallerLeaving;
             if (skyfallerDef == null)
             {
                 Log.Warning($"[PioneerFramework] No skyfallerLeaving for {rocketDef.defName}; launch animation skipped.");
@@ -462,7 +461,7 @@ namespace PioneerFramework.Launch
             if (map == null)
                 return;
 
-            Building launchpad = map.thingGrid.ThingsListAt(center)
+            Building? launchpad = map.thingGrid.ThingsListAt(center)
                 .OfType<Building>()
                 .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
             if (launchpad == null)
@@ -481,7 +480,7 @@ namespace PioneerFramework.Launch
             if (rocketDef == null || LaunchPadUtility.RocketRecoveryDefFor(rocketDef) == null)
                 return;
 
-            Building launchpad = map.thingGrid.ThingsListAt(center)
+            Building? launchpad = map.thingGrid.ThingsListAt(center)
                 .OfType<Building>()
                 .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
             if (launchpad == null)

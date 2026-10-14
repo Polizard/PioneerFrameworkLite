@@ -36,14 +36,14 @@ namespace PioneerFramework
                 GravityFieldSelfTest.Run();
                 PflTestKit.Check(PflTestKit.Kind.Invariant, GravityFieldSelfTest.LastFailed == 0,
                     "电池失败项为 0",
-                    string.Format("通过 {0} / 失败 {1}", GravityFieldSelfTest.LastPassed, GravityFieldSelfTest.LastFailed));
+                    $"通过 {GravityFieldSelfTest.LastPassed} / 失败 {GravityFieldSelfTest.LastFailed}");
                 if (GravityFieldSelfTest.LastFailed > 0)
                 {
                     var detail = new System.Text.StringBuilder();
                     var fails = GravityFieldSelfTest.LastFailures;
                     for (int i = 0; i < fails.Count; i++)
                     {
-                        if (i > 0) detail.Append("；");
+                        if (i > 0) detail.Append('；');
                         detail.Append(fails[i]);
                     }
                     PflTestKit.Check(PflTestKit.Kind.Value, false, "电池失败明细", detail.ToString());
@@ -129,11 +129,11 @@ namespace PioneerFramework
             }
             int f = failures();
             PflTestKit.Check(PflTestKit.Kind.Invariant, f == 0, "失败判据为 0",
-                string.Format("判据 {0} 条 / 失败 {1} 条", c, f));
+                $"判据 {c} 条 / 失败 {f} 条");
             if (cleanup)
             {
                 int cleared = PflTestKit.CleanupSince();
-                PflTestKit.Note(string.Format("清场销毁了 {0} 个跑批器自建的编队（**不留资产**）", cleared));
+                PflTestKit.Note($"清场销毁了 {cleared} 个跑批器自建的编队（**不留资产**）");
             }
             PflTestKit.End();
         }

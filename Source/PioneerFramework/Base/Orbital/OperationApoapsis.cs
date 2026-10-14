@@ -14,10 +14,7 @@ namespace PioneerFramework
 
         public OperationApoapsis()
         {
-            _planParams = new[]
-            {
-                    new PlanParam("远心点半径", "km", () => NewApA.Val / 1000.0, v => NewApA.Val = v * 1000.0),
-            };
+            _planParams = [new PlanParam("远心点半径", "km", () => NewApA.Val / 1000.0, v => NewApA.Val = v * 1000.0),];
         }
 
         public override IReadOnlyList<PlanParam> GetParams() => _planParams;
@@ -26,12 +23,12 @@ namespace PioneerFramework
 
 
         /// <summary>新远心点**高度**（km 口径：显示的 200 × 1000 = 存 200000 m）。</summary>
-        public readonly EditableDoubleMult NewApA = new EditableDoubleMult(200000, 1000);
+        public readonly EditableDoubleMult NewApA = new(200000, 1000);
 
         private static readonly TimeReference[] _timeReferences =
-            { TimeReference.APOAPSIS, TimeReference.PERIAPSIS, TimeReference.X_FROM_NOW, TimeReference.ALTITUDE };
+            [TimeReference.APOAPSIS, TimeReference.PERIAPSIS, TimeReference.X_FROM_NOW, TimeReference.ALTITUDE];
 
-        public readonly TimeSelector TimeSelector = new TimeSelector(_timeReferences);
+        public readonly TimeSelector TimeSelector = new(_timeReferences);
 
         public override void DoParametersGUI(OrbitView o, double universalTime, ITargetView target) =>
             TimeSelector.DoChooseTimeGUI();
@@ -45,7 +42,7 @@ namespace PioneerFramework
             DVector3 deltaV =
                 OrbitalManeuverCalculator.DeltaVToChangeApoapsis(o, ut, NewApA + o.bodyRadius);
 
-            return new List<PlanNode> { new PlanNode(deltaV, ut) };
+            return new List<PlanNode> { new(deltaV, ut) };
         }
     }
 }

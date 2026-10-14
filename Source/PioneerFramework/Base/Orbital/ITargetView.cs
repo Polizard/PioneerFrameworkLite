@@ -46,10 +46,10 @@ namespace PioneerFramework
         }
 
         /// <summary>目标过期/不可解算时的置信度：`value` 为 0，且 `IsUsable` 为 false。</summary>
-        public static readonly PlanConfidence Unusable = new PlanConfidence(double.PositiveInfinity, double.PositiveInfinity, 0.0);
+        public static readonly PlanConfidence Unusable = new(double.PositiveInfinity, double.PositiveInfinity, 0.0);
 
         /// <summary>精确已知：σ = 0、年龄 = 0 ⇒ `value` = 1。</summary>
-        public static readonly PlanConfidence Exact = new PlanConfidence(0.0, 0.0, 1.0);
+        public static readonly PlanConfidence Exact = new(0.0, 0.0, 1.0);
 
         /// <summary>计划是否还建立在可用情报上。</summary>
         public bool IsUsable => value > 0.0;

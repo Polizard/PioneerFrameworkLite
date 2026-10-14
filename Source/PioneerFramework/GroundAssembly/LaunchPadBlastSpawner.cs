@@ -130,59 +130,48 @@ namespace PioneerFramework.GroundAssembly
         }
 
         private static readonly (float t, float v)[] PadIgnitionSmoke_SmokeOmniFrequency =
-        {
-            (0f, 200f), (0.2f, 300f), (0.3f, 0f), (0.4f, 0f), (0.6f, 0f)
-        };
+        [(0f, 200f), (0.2f, 300f), (0.3f, 0f), (0.4f, 0f), (0.6f, 0f)
+        ];
 
         private static readonly (float t, float v)[] PadIgnitionSmoke_SmokeOmniSize =
-        {
-            (0f, 6f), (0.25f, 4f), (0.75f, 4f), (1f, 3f)
-        };
+        [(0f, 6f), (0.25f, 4f), (0.75f, 4f), (1f, 3f)
+        ];
 
         private static readonly (float t, float v)[] PadIgnitionSmoke_SmokeOmniRotationRate =
-        {
-            (0f, 3f), (1f, 1f)
-        };
+        [(0f, 3f), (1f, 1f)
+        ];
 
         private static readonly (float t, float v)[] PadIgnitionSmoke_RocketExhaustFrequency =
-        {
-            (0f, 100f), (0.1f, 200f), (0.2f, 300f), (0.3f, 200f), (0.4f, 0f), (0.5f, 0f)
-        };
+        [(0f, 100f), (0.1f, 200f), (0.2f, 300f), (0.3f, 200f), (0.4f, 0f), (0.5f, 0f)
+        ];
 
         private static readonly (float t, float v)[] PadIgnitionSmoke_RocketExhaustSize =
-        {
-            (0f, 6f), (0.25f, 5f), (0.75f, 5f), (1f, 5f)
-        };
+        [(0f, 6f), (0.25f, 5f), (0.75f, 5f), (1f, 5f)
+        ];
 
         private static readonly (float t, float v)[] PadIgnitionSmoke_RocketExhaustSpeed =
-        {
-            (0f, 7f), (0.2f, 7f), (0.3f, 0f), (0.4f, 0f), (1f, 0f)
-        };
+        [(0f, 7f), (0.2f, 7f), (0.3f, 0f), (0.4f, 0f), (1f, 0f)
+        ];
 
         private static readonly (float t, float v)[] PadIgnitionSmoke_RocketExhaustRotationRate =
-        {
-            (0f, 3f), (1f, 1f)
-        };
+        [(0f, 3f), (1f, 1f)
+        ];
 
         private static readonly (float t, float v)[] PadIgnitionSmoke_RocketExhaustShortFrequency =
-        {
-            (0.2f, 0f), (0.3f, 250f), (0.4f, 250f), (1f, 250f)
-        };
+        [(0.2f, 0f), (0.3f, 250f), (0.4f, 250f), (1f, 250f)
+        ];
 
         private static readonly (float t, float v)[] PadIgnitionSmoke_RocketExhaustShortSize =
-        {
-            (0f, 3.5f), (1f, 3.5f)
-        };
+        [(0f, 3.5f), (1f, 3.5f)
+        ];
 
         private static readonly (float t, float v)[] PadIgnitionSmoke_RocketExhaustShortSpeed =
-        {
-            (0.2f, 30f), (0.75f, 40f), (1f, 40f)
-        };
+        [(0.2f, 30f), (0.75f, 40f), (1f, 40f)
+        ];
 
         private static readonly (float t, float v)[] PadIgnitionSmoke_RocketExhaustShortRotationRate =
-        {
-            (0f, 3f), (1f, 1f)
-        };
+        [(0f, 3f), (1f, 1f)
+        ];
 
         private static float SampleCurveLinear((float t, float v)[] pts, float u)
         {

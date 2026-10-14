@@ -43,12 +43,12 @@ namespace PioneerFramework
             draggable = true;
         }
 
-        public override Vector2 InitialSize => new Vector2(560f, 520f);
+        public override Vector2 InitialSize => new(560f, 520f);
 
         public override void DoWindowContents(Rect inRect)
         {
             Text.Font = GameFont.Medium;
-            Widgets.Label(new Rect(0f, 0f, inRect.width, 32f), string.Format("交会引导 · G{0}", _self.GroupId));
+            Widgets.Label(new Rect(0f, 0f, inRect.width, 32f), $"交会引导 · G{_self.GroupId}");
             Text.Font = GameFont.Small;
             float y = 36f;
 
@@ -77,9 +77,8 @@ namespace PioneerFramework
                 {
                     (double distKm, double relVel, double phaseDeg, bool ok) = Probe(g);
                     string label = ok
-                        ? string.Format("G{0} · 距离 {1:F0} km · 相对速度 {2:F1} m/s · 相位差 {3:F0}°",
-                            g.GroupId, distKm, relVel, phaseDeg)
-                        : string.Format("G{0} · （轨道状态不可预测）", g.GroupId);
+                        ? $"G{g.GroupId} · 距离 {distKm:F0} km · 相对速度 {relVel:F1} m/s · 相位差 {phaseDeg:F0}°"
+                        : $"G{g.GroupId} · （轨道状态不可预测）";
 
                     var rowRect = new Rect(0f, ry, view.width, RowH);
                     if (_targetId == g.GroupId)
@@ -93,7 +92,7 @@ namespace PioneerFramework
             y += listH + Gap;
 
             // ── ② 选中目标 + 接合/断开 ──────────────────────────────────────────
-            SpaceEntityGroup target = _targetId >= 0 ? _spaceGame.GetGroupById(_targetId) : null;
+            SpaceEntityGroup? target = _targetId >= 0 ? _spaceGame.GetGroupById(_targetId) : null;
             if (target == null)
             {
                 Widgets.Label(new Rect(0f, y, inRect.width, 24f), "未选目标。");
@@ -103,17 +102,13 @@ namespace PioneerFramework
             {
                 (double distKm, double relVel, double phaseDeg, bool ok) = Probe(target);
                 Widgets.Label(new Rect(0f, y, inRect.width, 24f), ok
-                    ? string.Format("目标 G{0}：距离 {1:F0} km · 相对速度 {2:F1} m/s · 相位差 {3:F0}°",
-                        target.GroupId, distKm, relVel, phaseDeg)
-                    : string.Format("目标 G{0}：轨道状态不可预测（稍后再试）", target.GroupId));
+                    ? $"目标 G{target.GroupId}：距离 {distKm:F0} km · 相对速度 {relVel:F1} m/s · 相位差 {phaseDeg:F0}°"
+                    : $"目标 G{target.GroupId}：轨道状态不可预测（稍后再试）");
                 y += 26f;
 
                 // 到位判据与"停下尺度"是**阶梯读的两个门**（目的给距离容差、停下属另一个）⇒ 摆出来给玩家看，
                 // 但不在这里改（它们由 `EffectiveRendezvousGoal`/`rendezvousMatchDist` 一处定义）。
-                Widgets.Label(new Rect(0f, y, inRect.width, 44f), string.Format(
-                    "到位容差 {0:F0} m（目的口径）· 停下尺度 {1:F0} m\n"
-                    + "计划与价格由阶梯在运行时给出（日志 `[阶梯] … Δv 合计`）——UI 不另算一份，免得两份口径打架。",
-                    _self.EffectiveRendezvousGoal.distanceTol, _self.rendezvousMatchDist));
+                Widgets.Label(new Rect(0f, y, inRect.width, 44f), $"到位容差 {_self.EffectiveRendezvousGoal.distanceTol:F0} m（目的口径）· 停下尺度 {_self.rendezvousMatchDist:F0} m\n计划与价格由阶梯在运行时给出（日志 `[阶梯] … Δv 合计`）——UI 不另算一份，免得两份口径打架。");
                 y += 50f;
             }
 
@@ -121,7 +116,7 @@ namespace PioneerFramework
             bool engaged = _self.HasRendezvousGuidance;
             GUI.color = engaged ? new Color(0.35f, 1f, 0.55f, 1f) : new Color(0.72f, 0.76f, 0.8f, 1f);
             Widgets.Label(new Rect(0f, y, inRect.width, 24f), engaged
-                ? string.Format("状态：引导中（{0}）", _self.rendezvousArmed ? "已接合" : "已登记但未接合")
+                ? $"状态：引导中（{(_self.rendezvousArmed ? "已接合" : "已登记但未接合")}）"
                 : "状态：待命");
             GUI.color = Color.white;
             y += 30f;

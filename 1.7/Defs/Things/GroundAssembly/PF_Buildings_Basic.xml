@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+
+  <!-- 离港轨迹抽象父类：迁移自 DMS:NF DMSNF_RocketLeavingBase -->
+  <ThingDef Name="PF_RocketLeavingBase" ParentName="DropPodLeaving" Abstract="True">
+    <skyfaller>
+      <movementType>Decelerate</movementType>
+      <reversed>true</reversed>
+      <rotateGraphicTowardsDirection>true</rotateGraphicTowardsDirection>
+      <ticksToImpactRange>
+        <min>0</min>
+        <max>0</max>
+      </ticksToImpactRange>
+      <ticksToDiscardInReverse>640~640</ticksToDiscardInReverse>
+      <anticipationSound>DropPod_Leaving</anticipationSound>
+      <anticipationSoundTicks>-10</anticipationSoundTicks>
+      <shadow>Things/Skyfaller/SkyfallerShadowRectangle</shadow>
+      <shadowSize>(5, 6)</shadowSize>
+      <speed>0.1</speed>
+      <speedCurve>
+        <points>
+          <li>(0, 0.02)</li>
+          <li>(0.08, 0.03)</li>
+          <li>(0.15, 0.10)</li>
+          <li>(0.22, 0.22)</li>
+          <li>(0.30, 0.45)</li>
+          <li>(0.40, 0.85)</li>
+          <li>(0.55, 1.45)</li>
+          <li>(0.72, 2.05)</li>
+          <li>(0.88, 2.65)</li>
+          <li>(1, 3.20)</li>
+        </points>
+      </speedCurve>
+      <angleCurve>
+        <points>
+          <li>(0, 0)</li>
+          <li>(1, 0)</li>
+        </points>
+      </angleCurve>
+    </skyfaller>
+    <comps>
+      <li Class="PioneerFramework.Launch.CompProperties_RocketTangentGraphic" />
+      <li Class="PioneerFramework.Launch.CompProperties_RocketExhaustTrail">
+        <delayTicks>5</delayTicks>
+        <offsetY>-2.2</offsetY>
+        <extendedOffsetY>-0.9</extendedOffsetY>
+        <centerToEngineBackset>1.8</centerToEngineBackset>
+        <extendedCenterToEngineBackset>0.8</extendedCenterToEngineBackset>
+        <trailExtendDelayTicks>30</trailExtendDelayTicks>
+        <plumeExtraSegments>5</plumeExtraSegments>
+        <extendedPlumeExtraSegments>6</extendedPlumeExtraSegments>
+        <plumeSegmentScale>0.55</plumeSegmentScale>
+        <minDensity>0.2</minDensity>
+        <flameWidthMultiplier>1.2</flameWidthMultiplier>
+        <initialLateralPhasePct>0.234375</initialLateralPhasePct>
+        <secondStageFlameRampPct>0.1875</secondStageFlameRampPct>
+        <secondStageFlameMinScaleMultiplier>0.5</secondStageFlameMinScaleMultiplier>
+        <secondStageFlameMinLengthMultiplier>0.5</secondStageFlameMinLengthMultiplier>
+        <highSpeedTaperStartPct>0.7</highSpeedTaperStartPct>
+        <highSpeedTaperEndPct>1</highSpeedTaperEndPct>
+        <highSpeedFlameLifetimeMultiplier>0.5</highSpeedFlameLifetimeMultiplier>
+        <highSpeedSmokeLifetimeMultiplier>0.1</highSpeedSmokeLifetimeMultiplier>
+        <highSpeedLengthMultiplier>0.78</highSpeedLengthMultiplier>
+        <speedCompStart>0.16</speedCompStart>
+        <speedCompEnd>0.27</speedCompEnd>
+        <highSpeedFlameSpawnChance>0.45</highSpeedFlameSpawnChance>
+        <highSpeedSmokeSpawnChance>0</highSpeedSmokeSpawnChance>
+        <highSpeedFlameSizeMultiplier>0.62</highSpeedFlameSizeMultiplier>
+        <enableContinuousFlame>true</enableContinuousFlame>
+        <continuousFlameStartComp01>0.5</continuousFlameStartComp01>
+        <continuousFlameLength>2.8</continuousFlameLength>
+        <continuousFlameWidth>0.75</continuousFlameWidth>
+        <continuousFlameMinAlpha>0.36</continuousFlameMinAlpha>
+        <continuousFlameMaxAlpha>0.62</continuousFlameMaxAlpha>
+        <exhaustFleck>Smoke</exhaustFleck>
+        <exhaustCurve>
+          <points>
+            <li>(0, 0)</li>
+            <li>(0.28125, 0)</li>
+            <li>(0.30, 8)</li>
+            <li>(1, 8)</li>
+          </points>
+        </exhaustCurve>
+        <smokeFleck>Smoke</smokeFleck>
+        <smokeCurve>
+          <points>
+            <li>(0, 1.8)</li>
+            <li>(0.12, 2.6)</li>
+            <li>(0.30, 8.5)</li>
+            <li>(0.55, 7.2)</li>
+            <li>(0.82, 4.4)</li>
+            <li>(1, 2.2)</li>
+          </points>
+        </smokeCurve>
+        <exhaustBatches>2</exhaustBatches>
+        <onlyOnCurrentMap>true</onlyOnCurrentMap>
+      </li>
+    </comps>
+  </ThingDef>
+
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Building_RocketFrame_Basic</defName>
+    <label>基础火箭框架</label>
+    <description>未完工火箭框架。施工到 100% 后代表火箭外壳和 Part 都已造好。</description>
+    <thingClass>Frame</thingClass>
+    <entityDefToBuild>PF_Building_Rocket_Recoverable_Basic</entityDefToBuild>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/R7_Rocket</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(10,10)</drawSize>
+      <drawOffset>(0,0,4)</drawOffset>
+    </graphicData>
+    <altitudeLayer>BuildingOnTop</altitudeLayer>
+    <size>(3,3)</size>
+    <rotatable>false</rotatable>
+    <passability>PassThroughOnly</passability>
+    <castEdgeShadows>false</castEdgeShadows>
+    <fillPercent>0.5</fillPercent>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>2000</MaxHitPoints>
+      <Flammability>0.1</Flammability>
+      <WorkToBuild>2000</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>300</Steel>
+    </costList>
+    <uiOrder>2201</uiOrder>
+    <comps>
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_UnfinishedRocket" />
+    </comps>
+  </ThingDef>
+
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Building_RocketFrame_Basic_NonRecoverable</defName>
+    <label>基础不可回收火箭框架</label>
+    <description>未完工不可回收火箭框架。施工到 100% 后代表火箭外壳和 Part 都已造好。</description>
+    <thingClass>Frame</thingClass>
+    <entityDefToBuild>PF_Building_Rocket_Basic</entityDefToBuild>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/R7_Rocket</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(10,10)</drawSize>
+      <drawOffset>(0,0,4)</drawOffset>
+    </graphicData>
+    <altitudeLayer>BuildingOnTop</altitudeLayer>
+    <size>(3,3)</size>
+    <rotatable>false</rotatable>
+    <passability>PassThroughOnly</passability>
+    <castEdgeShadows>false</castEdgeShadows>
+    <fillPercent>0.5</fillPercent>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>2000</MaxHitPoints>
+      <Flammability>0.1</Flammability>
+      <WorkToBuild>2000</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>300</Steel>
+    </costList>
+    <uiOrder>2201</uiOrder>
+    <comps>
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_UnfinishedRocket" />
+    </comps>
+  </ThingDef>
+
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Building_Rocket_Basic</defName>
+    <label>基础火箭</label>
+    <description>PFL 基础不可回收火箭，用于测试地面总装和发射入轨。</description>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/R7_Rocket</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(10,10)</drawSize>
+      <drawOffset>(0,0,4)</drawOffset>
+    </graphicData>
+    <altitudeLayer>BuildingOnTop</altitudeLayer>
+    <size>(3,3)</size>
+    <rotatable>false</rotatable>
+    <passability>PassThroughOnly</passability>
+    <castEdgeShadows>false</castEdgeShadows>
+    <fillPercent>0.5</fillPercent>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>800</MaxHitPoints>
+      <Flammability>0.1</Flammability>
+      <WorkToBuild>1000</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>200</Steel>
+    </costList>
+    <dropPodActive>PF_ActivePod_Basic</dropPodActive>
+    <dropPodFaller>PF_Skyfaller_Incoming_Basic</dropPodFaller>
+    <comps>
+      <li Class="CompProperties_Transporter">
+        <restEffectiveness>0.8</restEffectiveness>
+        <massCapacity>2000</massCapacity>
+      </li>
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketPocketMap" />
+      <li Class="CompProperties_Launchable_TransportPod">
+        <activeTransporterDef>PF_ActivePod_Basic</activeTransporterDef>
+        <skyfallerLeaving>PF_Skyfaller_Leaving_Basic</skyfallerLeaving>
+      </li>
+    </comps>
+    <inspectorTabs>
+      <li>ITab_ContentsTransporter</li>
+    </inspectorTabs>
+    <designationCategory>Misc</designationCategory>
+    <uiOrder>2202</uiOrder>
+    <uiIconScale>0.1</uiIconScale>
+  </ThingDef>
+
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Building_Rocket_Recoverable_Basic</defName>
+    <label>基础可回收火箭</label>
+    <description>PFL 基础可回收火箭，用于测试发射、第一级回收和重建。</description>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/ZQ_Rocket</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(10,10)</drawSize>
+      <drawOffset>(0,0,4)</drawOffset>
+    </graphicData>
+    <altitudeLayer>BuildingOnTop</altitudeLayer>
+    <size>(3,3)</size>
+    <rotatable>false</rotatable>
+    <passability>PassThroughOnly</passability>
+    <castEdgeShadows>false</castEdgeShadows>
+    <fillPercent>0.5</fillPercent>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>1200</MaxHitPoints>
+      <Flammability>0.1</Flammability>
+      <WorkToBuild>1200</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>300</Steel>
+    </costList>
+    <dropPodActive>PF_ActivePod_Basic</dropPodActive>
+    <dropPodFaller>PF_Skyfaller_Incoming_Basic</dropPodFaller>
+    <comps>
+      <li Class="CompProperties_Transporter">
+        <restEffectiveness>0.8</restEffectiveness>
+        <massCapacity>15000</massCapacity>
+      </li>
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketPocketMap" />
+      <li Class="CompProperties_Launchable_TransportPod">
+        <activeTransporterDef>PF_ActivePod_Basic</activeTransporterDef>
+        <skyfallerLeaving>PF_Skyfaller_Leaving_Recoverable_Basic</skyfallerLeaving>
+      </li>
+    </comps>
+    <inspectorTabs>
+      <li>ITab_ContentsTransporter</li>
+    </inspectorTabs>
+    <designationCategory>Misc</designationCategory>
+    <uiOrder>2203</uiOrder>
+    <uiIconScale>0.1</uiIconScale>
+  </ThingDef>
+
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Building_Booster_Returned_Basic</defName>
+    <label>基础回收第一级</label>
+    <description>回收回来的基础第一级助推器，可运回总装发射台重建。</description>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/ZQ_Booster</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(5,5)</drawSize>
+      <drawOffset>(0,0,2)</drawOffset>
+    </graphicData>
+    <altitudeLayer>BuildingOnTop</altitudeLayer>
+    <size>(1,1)</size>
+    <rotatable>false</rotatable>
+    <passability>PassThroughOnly</passability>
+    <castEdgeShadows>false</castEdgeShadows>
+    <fillPercent>0.5</fillPercent>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>600</MaxHitPoints>
+      <Flammability>0.1</Flammability>
+      <Mass>200</Mass>
+      <WorkToBuild>500</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>50</Steel>
+    </costList>
+    <minifiedDef>MinifiedThing</minifiedDef>
+    <minifiedDrawScale>1.5</minifiedDrawScale>
+    <thingCategories>
+      <li>Buildings</li>
+    </thingCategories>
+    <designationCategory>Misc</designationCategory>
+    <uiOrder>2204</uiOrder>
+    <comps>
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_ReturnedBooster" />
+    </comps>
+    <uiIconScale>0.1</uiIconScale>
+  </ThingDef>
+
+</Defs>

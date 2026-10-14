@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using RimWorld;
 using RimWorld.Planet;   // PlanetTile（降落探针：tile 自带 layer ⇒ 跨层错配从类型上就挡得住）
 using UnityEngine;
@@ -27,8 +27,8 @@ namespace PioneerFramework
         private static int probeGroupA = -1;
         private static int probeGroupB = -1;
         private static int probeGroupC = -1;
-        private static int probeNextLogTick = 0;
-        private static int probeLogCount = 0;
+        private static int probeNextLogTick ;
+        private static int probeLogCount ;
         private const int PROBE_LOG_INTERVAL = 120;
         private const int PROBE_LOG_MAX = 300;
 
@@ -120,19 +120,11 @@ namespace PioneerFramework
             double dB = relB.magnitude;
             double dC = relC.magnitude;
             var tsm = Current.Game?.GetComponent<TimeScaleManager>();
-            Log.Message(string.Format(
-                "[碰撞探针] realTick={0} physicsTick={1:F1} A=({2:F1},{3:F1},{4:F1})km " +
-                "B=({5:F1},{6:F1},{7:F1})km C=({8:F1},{9:F1},{10:F1})km " +
-                "|B-A|={11:F1}m B-Ax={12:F1}m |C-A|={13:F1}m C-Ax={14:F1}m",
-                now, tsm != null ? tsm.GetPhysicsTick() : 0.0,
-                pa.x / 1000.0, pa.y / 1000.0, pa.z / 1000.0,
-                pb.x / 1000.0, pb.y / 1000.0, pb.z / 1000.0,
-                pc.x / 1000.0, pc.y / 1000.0, pc.z / 1000.0,
-                dB, relB.x, dC, relC.x));
+            Log.Message($"[碰撞探针] realTick={now} physicsTick={(tsm != null ? tsm.GetPhysicsTick() : 0.0):F1} A=({pa.x / 1000.0:F1},{pa.y / 1000.0:F1},{pa.z / 1000.0:F1})km B=({pb.x / 1000.0:F1},{pb.y / 1000.0:F1},{pb.z / 1000.0:F1})km C=({pc.x / 1000.0:F1},{pc.y / 1000.0:F1},{pc.z / 1000.0:F1})km |B-A|={dB:F1}m B-Ax={relB.x:F1}m |C-A|={dC:F1}m C-Ax={relC.x:F1}m");
         }
 
         /// <summary>与 CombatManager.GetGroupPos 相同的基准：圆轨解析位置 / 非圆轨 CurrentOrbit.positionSystem。</summary>
-        private static DVector3 GetGroupPosDebug(SpaceEntityGroup g)
+        private static DVector3 GetGroupPosDebug(SpaceEntityGroup? g)
         {
             if (g.IsCircularOrbit)
                 return g.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe());
@@ -140,7 +132,7 @@ namespace PioneerFramework
         }
 
         /// <summary>与 CombatManager.GetGroupVelocity 相同的基准：圆轨解析切向速度 / 非圆轨 CurrentOrbit.velocitySystem。</summary>
-        private static DVector3 GetGroupVelDebug(SpaceEntityGroup g)
+        private static DVector3 GetGroupVelDebug(SpaceEntityGroup? g)
         {
             if (g.IsCircularOrbit)
                 return g.GetCircularVelocityAtTick(TimeScaleManager.GetPhysicsTickSafe());
@@ -170,7 +162,7 @@ namespace PioneerFramework
 
 
         /// <summary>创建指定高度圆轨道的测试空间站（含地图 + 单 part），返回实体/群组/地图。</summary>
-        private static (SpaceEntity entity, SpaceEntityGroup group, Map map) CreateTestStation(double altitudeMeters = 500000.0)
+        private static (SpaceEntity? entity, SpaceEntityGroup? group, Map? map) CreateTestStation(double altitudeMeters = 500000.0)
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null)
@@ -202,8 +194,7 @@ namespace PioneerFramework
 
             var map = SpaceMapGenerator.FindPocketMap(entity.MapId);
 
-            Log.Message(string.Format("[StationTest] Created station: entityId={0}, groupId={1}, MapId={2}",
-                entityId, groupId, entity.MapId));
+            Log.Message($"[StationTest] Created station: entityId={entityId}, groupId={groupId}, MapId={entity.MapId}");
 
             return (entity, group, map);
         }
@@ -263,13 +254,7 @@ namespace PioneerFramework
             spaceGame.RegisterEntity(entity);
             group.AddEntity(entityId);
 
-            Log.Message(string.Format(
-                "[碰撞测试] 创建无Map航天器 \"{5}\" Entity {0} Group {1} size=({2:F0}x{3:F0}x{4:F0}) " +
-                "旋转=({6:F0},{7:F0},{8:F0}) pos=({9:F0},{10:F0},{11:F0})km vel=({12:F0},{13:F0},{14:F0})m/s",
-                entityId, groupId, size.x, size.y, size.z, name,
-                rotation.eulerAngles.x, rotation.eulerAngles.y, rotation.eulerAngles.z,
-                pos.x / 1000.0, pos.y / 1000.0, pos.z / 1000.0,
-                group.CurrentOrbit.velocitySystem.x, group.CurrentOrbit.velocitySystem.y, group.CurrentOrbit.velocitySystem.z));
+            Log.Message($"[碰撞测试] 创建无Map航天器 \"{name}\" Entity {entityId} Group {groupId} size=({size.x:F0}x{size.y:F0}x{size.z:F0}) 旋转=({rotation.eulerAngles.x:F0},{rotation.eulerAngles.y:F0},{rotation.eulerAngles.z:F0}) pos=({pos.x / 1000.0:F0},{pos.y / 1000.0:F0},{pos.z / 1000.0:F0})km vel=({group.CurrentOrbit.velocitySystem.x:F0},{group.CurrentOrbit.velocitySystem.y:F0},{group.CurrentOrbit.velocitySystem.z:F0})m/s");
             return group;
         }
 
@@ -323,10 +308,7 @@ namespace PioneerFramework
 
             // 打印部署时刻状态（真实 tick / 物理 tick / 时间档位）
             var tsm = Current.Game?.GetComponent<TimeScaleManager>();
-            Log.Message(string.Format("[碰撞测试] 场景就绪: realTick={0} physicsTick={1:F1} 时间档位={2}；B/C 将相对 A 靠近，等待 [ShipCollision]",
-                Find.TickManager.TicksGame,
-                tsm != null ? tsm.GetPhysicsTick() : 0.0,
-                tsm != null ? tsm.CurrentLevel.ToString() : "N/A"));
+            Log.Message($"[碰撞测试] 场景就绪: realTick={Find.TickManager.TicksGame} physicsTick={(tsm != null ? tsm.GetPhysicsTick() : 0.0):F1} 时间档位={(tsm != null ? tsm.CurrentLevel.ToString() : "N/A")}；B/C 将相对 A 靠近，等待 [ShipCollision]");
 
             // 打开 3D 视角（默认地图视图看不到太空中的船，容易误以为"没反应"）
             Find.WindowStack.Add(new Window_SpaceBattleView3D(groupA));
@@ -431,10 +413,7 @@ namespace PioneerFramework
             // 点火：世界 +X，dv=500 m/s（初始轴 -Z → 夹角 90°，先转向+RCS 修正，再主网直烧）
             group.StartBurn(new DVector3(500, 0, 0));
 
-            Log.Message(string.Format(
-                "[AxialThrustTest] 就绪: G{0} E{1} 主推轴局部=(0,0,-1) 姿态identity→burnDir=+X(夹角90°) dv=500m/s " +
-                "主网=H2(ṁ6kg/s F12kN) RCS=肼(ṁ2kg/s F1.8kN) 双罐=H2 2000/肼 300kg；开 [Thrust] 日志观察对准+RCS→主网切换",
-                groupId, entityId));
+            Log.Message($"[AxialThrustTest] 就绪: G{groupId} E{entityId} 主推轴局部=(0,0,-1) 姿态identity→burnDir=+X(夹角90°) dv=500m/s 主网=H2(ṁ6kg/s F12kN) RCS=肼(ṁ2kg/s F1.8kN) 双罐=H2 2000/肼 300kg；开 [Thrust] 日志观察对准+RCS→主网切换");
 
             // 打开 3D 视角
             Find.WindowStack.Add(new Window_SpaceBattleView3D(group));
@@ -463,18 +442,16 @@ namespace PioneerFramework
             if (map != null)
             {
                 var mapComp = map.GetComponent<SpaceMapComp>();
-                Log.Message(string.Format("[StationTest] SpaceMapComp: ownerEntityId={0}",
-                    mapComp?.ownerEntityId ?? -1));
+                Log.Message($"[StationTest] SpaceMapComp: ownerEntityId={(mapComp?.ownerEntityId ?? -1)}");
             }
             foreach (var p in entity.Parts)
-                Log.Message(string.Format("[StationTest] Part {0} linkedMapId={1}", p.partId, p.linkedMapId));
+                Log.Message($"[StationTest] Part {p.partId} linkedMapId={p.linkedMapId}");
 
             // 打开 3D 视角
             var view3D = new Window_SpaceBattleView3D(group);
             Find.WindowStack.Add(view3D);
 
-            Messages.Message(string.Format("空间站已创建 (Group {0})，Map {1}，3D视角已打开。",
-                group.GroupId, entity.MapId), MessageTypeDefOf.TaskCompletion);
+            Messages.Message($"空间站已创建 (Group {group.GroupId})，Map {entity.MapId}，3D视角已打开。", MessageTypeDefOf.TaskCompletion);
         }
 
         /// <summary>
@@ -517,10 +494,7 @@ namespace PioneerFramework
             var vel = new DVector3(0.0, 0.0, vCirc); // 切向（⊥ 半径）→ 圆轨
 
             bool ok = combatMgr.SpawnDebugMissedWarhead("PF_Missile_Standard", EARTH_BODY_ID, pos, vel);
-            Log.Message(string.Format("[漏靶弹头测试] 弹头已生成={0}：r={1:F0}km 圆轨速度={2:F0}m/s｜"
-                + "预期 ㉒|a|≈{3:F3} m/s²（=μ/r²）、㉔弯曲比≈1×、寿命 {4:F0}s",
-                ok, r / 1000.0, vCirc,
-                earth.gravitationalParameter / (r * r), 120.0));
+            Log.Message($"[漏靶弹头测试] 弹头已生成={ok}：r={r / 1000.0:F0}km 圆轨速度={vCirc:F0}m/s｜预期 ㉒|a|≈{earth.gravitationalParameter / (r * r):F3} m/s²（=μ/r²）、㉔弯曲比≈1×、寿命 {120.0:F0}s");
         }
 
         /// <summary>
@@ -566,7 +540,7 @@ namespace PioneerFramework
         /// 给 `LandingAcceptanceRunner` 跟踪它们的结局用（判据不许靠"看日志里有没有消息"当唯一证据）。
         /// </summary>
         internal static readonly System.Collections.Generic.List<int> LastImpactProbeGroups =
-            new System.Collections.Generic.List<int>();
+            new();
 
         /// <summary>
         /// 撞击事件探针的单颗摆法（<see cref="SpawnImpactEventTest"/>）：地表上方 200 m、相对地表的纯径向下降。
@@ -597,10 +571,7 @@ namespace PioneerFramework
             g.CelestialBodyId = EARTH_BODY_ID;      // ⚠ 不设 exemptPlanetCollision：要让撞击事件真的触发
             LastImpactProbeGroups.Add(g.GroupId);
 
-            Log.Message(string.Format(
-                "[撞击事件] G{0} 已创建：高度 {1:F0} m、相对地表纯径向下降 {2:F0} m/s、落点预期 ({3:F1}°, {4:F1}°)" +
-                "｜无碰撞豁免 ⇒ 撞到地表时应出现『着陆 / 坠毁』消息",
-                g.GroupId, altitude, descentMps, latRad * 180.0 / System.Math.PI, lonRad0 * 180.0 / System.Math.PI));
+            Log.Message($"[撞击事件] G{g.GroupId} 已创建：高度 {altitude:F0} m、相对地表纯径向下降 {descentMps:F0} m/s、落点预期 ({latRad * 180.0 / System.Math.PI:F1}°, {lonRad0 * 180.0 / System.Math.PI:F1}°)｜无碰撞豁免 ⇒ 撞到地表时应出现『着陆 / 坠毁』消息");
         }
 
         /// <summary>
@@ -727,8 +698,8 @@ namespace PioneerFramework
         }
 
         /// <summary>最近一次 <see cref="TrySpawnLandingProbeShips"/> 两颗探针**正对着的 tile**（判据/探针共用）。</summary>
-        internal static int LastEarthProbeTile = 0;
-        internal static int LastMoonProbeTile = 0;
+        internal static int LastEarthProbeTile ;
+        internal static int LastMoonProbeTile ;
 
         /// <summary>
         /// 探针船的推进档（照抄既有的"过推档"）：主网 ve 4000 / ṁ140 / 66000 kg＋RCS 网 ve 1500 / ṁ20 / 4000 kg。
@@ -767,12 +738,11 @@ namespace PioneerFramework
             var layer = GetSurfaceState.GetLayerForBody(mgr, bodyId);
             if (layer == null || layer.TilesCount <= 0)
             {
-                Log.Error(string.Format("[降落探针] {0}：天体 {1} 没有地表网格", tag, bodyId));
+                Log.Error($"[降落探针] {tag}：天体 {bodyId} 没有地表网格");
                 return;
             }
             int tile = shipTile;
-            Log.Message(string.Format("[降落探针] {0} G{1}：船正对的 tile={2}（layer 共 {3} 格；摆场时由构造给出）",
-                tag, g.GroupId, tile, layer.TilesCount));
+            Log.Message($"[降落探针] {tag} G{g.GroupId}：船正对的 tile={tile}（layer 共 {layer.TilesCount} 格；摆场时由构造给出）");
 
             PrintLandingQuote(sg, g, bodyId, new PlanetTile(tile, layer), tag + "·正对落点");
             int far = (tile + System.Math.Max(1, layer.TilesCount / 3)) % layer.TilesCount;
@@ -783,12 +753,9 @@ namespace PioneerFramework
         private static void PrintLandingQuote(SpaceGameComp sg, SpaceEntityGroup g, int bodyId, PlanetTile tile, string tag)
         {
             if (sg.TryQuoteLanding(g, bodyId, tile, out var q, out var est, out var bodyName, out var spot, out var reason))
-                Log.Message(string.Format(
-                    "[降落探针] {0} {1} tile={2}（{3}）⇒ **可落** Δv={4:F1} m/s（工质 {5:F1} kg）｜地表 {6:F0} km / 门 {7:F0} km",
-                    tag, bodyName, tile.tileId, spot, q.deltaV, est.RequiredPropellant,
-                    q.surfaceDistance / 1000.0, q.maxDistance / 1000.0));
+                Log.Message($"[降落探针] {tag} {bodyName} tile={tile.tileId}（{spot}）⇒ **可落** Δv={q.deltaV:F1} m/s（工质 {est.RequiredPropellant:F1} kg）｜地表 {q.surfaceDistance / 1000.0:F0} km / 门 {q.maxDistance / 1000.0:F0} km");
             else
-                Log.Message(string.Format("[降落探针] {0} tile={1} ⇒ **拒绝**：{2}", tag, tile.tileId, reason));
+                Log.Message($"[降落探针] {tag} tile={tile.tileId} ⇒ **拒绝**：{reason}");
         }
 
         /// <summary>对星下点 tile 真的执行一次降落（消息 + 扣料 + 销毁三件事的探针）。</summary>
@@ -796,14 +763,11 @@ namespace PioneerFramework
             SpaceEntityGroup g, int bodyId, double physicsTick, string tag, int shipTile)
         {
             var layer = GetSurfaceState.GetLayerForBody(mgr, bodyId);
-            if (layer == null) { Log.Error(string.Format("[降落探针] {0}：没有地表网格", tag)); return; }
+            if (layer == null) { Log.Error($"[降落探针] {tag}：没有地表网格"); return; }
             int tile = shipTile;   // 船**正对**的 tile（摆场时由构造给出；不再用 `EciToTile` 反查）
             var before = sg.GetGroupDeltaV(g);
             bool ok = sg.TryLandAtTile(g, bodyId, new PlanetTile(tile, layer), out var reason);
-            Log.Message(string.Format(
-                "[降落探针] {0} G{1} 执行 tile={2} ⇒ {3}｜{4}｜执行前剩余 Δv={5:F0} m/s，执行后编队{6}",
-                tag, g.GroupId, tile, ok ? "**成功**" : "**被拒**", reason, before.remainingDv,
-                sg.GetGroupById(g.GroupId) == null ? "已销毁 ✓" : "**仍在（应当已销毁）**"));
+            Log.Message($"[降落探针] {tag} G{g.GroupId} 执行 tile={tile} ⇒ {(ok ? "**成功**" : "**被拒**")}｜{reason}｜执行前剩余 Δv={before.remainingDv:F0} m/s，执行后编队{(sg.GetGroupById(g.GroupId) == null ? "已销毁 ✓" : "**仍在（应当已销毁）**")}");
         }
 
         public static void SpawnMoonGravityTest()
@@ -839,14 +803,11 @@ namespace PioneerFramework
             // 中心天体 = 月球（引力场按系统系解析；坐标仍在系统系 → 无需改 CurrentOrbit）
             group.CelestialBodyId = MOON_BODY_ID;
 
-            Log.Message(string.Format(
-                "[月球引力测试] G{0} 已创建：r={1:F0}km 圆轨速度={2:F0}m/s 实给={3:F0}m/s（椭圆 e≈0.154）" +
-                "｜开「性能优化验收探针」后看汇总行 ㉑ 的子天体域差分比值",
-                group.GroupId, r / 1000.0, vCirc, vCirc * 0.92));
+            Log.Message($"[月球引力测试] G{group.GroupId} 已创建：r={r / 1000.0:F0}km 圆轨速度={vCirc:F0}m/s 实给={vCirc * 0.92:F0}m/s（椭圆 e≈0.154）｜开「性能优化验收探针」后看汇总行 ㉑ 的子天体域差分比值");
         }
 
 
-        #region 无 Map 编队放置（预设圆轨）
+        // ── 无 Map 编队放置（预设圆轨） ──
 
         /// <summary>无 Map 编队的预设圆轨（<see cref="PlaceNoMapOrbitGroup"/>）。</summary>
         public enum NoMapOrbitPreset
@@ -914,8 +875,7 @@ namespace PioneerFramework
                     DVector3 radial = EquatorialRadial(physicsTick);
                     pos = radial * radius;
                     vel = ProgradeEquatorialTangent(radial) * System.Math.Sqrt(mu / radius);
-                    presetLabel = string.Format("同步轨道（周期 {0:F0}s = 天体自转周期 ⇒ 与地表相对静止）",
-                        2.0 * System.Math.PI / omega);
+                    presetLabel = $"同步轨道（周期 {2.0 * System.Math.PI / omega:F0}s = 天体自转周期 ⇒ 与地表相对静止）";
                     dirLabel = "顺行（与地表自转同向 = 地面发射入轨方向）";
                     break;
                 }
@@ -940,7 +900,7 @@ namespace PioneerFramework
                     if (tangent.sqrMagnitude < 0.01) tangent = ProgradeEquatorialTangent(radial);
                     pos = moonPos + radial * radius;
                     vel = moonVel + tangent * System.Math.Sqrt(spaceGame.GetBodyGM(bodyId) / radius);
-                    presetLabel = string.Format("绕月轨道（月面上方 {0:F0}km，背地侧起点）", 1_800_000.0 / 1000.0);
+                    presetLabel = $"绕月轨道（月面上方 {1_800_000.0 / 1000.0:F0}km，背地侧起点）";
                     dirLabel = "顺行（与月球公转同向；月球公转相对地球自转是反向，故不要拿它跟地球轨道比方向）";
                     break;
                 }
@@ -951,7 +911,7 @@ namespace PioneerFramework
                     DVector3 radial = EquatorialRadial(physicsTick);
                     pos = radial * radius;
                     vel = ProgradeEquatorialTangent(radial) * System.Math.Sqrt(spaceGame.GetBodyGM(bodyId) / radius);
-                    presetLabel = string.Format("近地轨道（地表上方 {0:F0}km）", 500_000.0 / 1000.0);
+                    presetLabel = $"近地轨道（地表上方 {500_000.0 / 1000.0:F0}km）";
                     dirLabel = "顺行（与地表自转同向 = 地面发射入轨方向）";
                     break;
                 }
@@ -964,18 +924,9 @@ namespace PioneerFramework
             var centralDef = mgr.GetBodyById(bodyId);
             var (remainingDv, maxDv, propMass, propCap) = spaceGame.GetGroupDeltaV(group);
             double period = 2.0 * System.Math.PI * System.Math.Sqrt(radius * radius * radius / spaceGame.GetBodyGM(bodyId));
-            Log.Message(string.Format(
-                "[放置] G{0} E{1} 无Map编队 → {2}｜中心={3}(ID={4}) r={5:F0}km（高度 {6:F0}km）圆轨周期={7:F0}s " +
-                "v={8:F0}m/s dV={9:F0}/{10:F0} m/s 工质={11:F0}/{12:F0}kg｜{13}｜轨道保持=开（维持圆轨会持续耗料，设计如此）",
-                groupId, entityId, presetLabel,
-                centralDef != null ? centralDef.label : "?", bodyId,
-                radius / 1000.0, (radius - (centralDef != null ? centralDef.radius : 0.0)) / 1000.0, period,
-                group.IsCircularOrbit ? group.GetCircularVelocityAtTick(physicsTick).magnitude : vel.magnitude,
-                remainingDv, maxDv, propMass, propCap, dirLabel));
+            Log.Message($"[放置] G{groupId} E{entityId} 无Map编队 → {presetLabel}｜中心={(centralDef != null ? centralDef.label : "?")}(ID={bodyId}) r={radius / 1000.0:F0}km（高度 {(radius - (centralDef != null ? centralDef.radius : 0.0)) / 1000.0:F0}km）圆轨周期={period:F0}s v={(group.IsCircularOrbit ? group.GetCircularVelocityAtTick(physicsTick).magnitude : vel.magnitude):F0}m/s dV={remainingDv:F0}/{maxDv:F0} m/s 工质={propMass:F0}/{propCap:F0}kg｜{dirLabel}｜轨道保持=开（维持圆轨会持续耗料，设计如此）");
 
-            Messages.Message(string.Format(
-                "已放置无Map编队 G{0}：{1}｜dV {2:F0} m/s（世界视图选中它 →「机动规划/转移到圆轨」消耗 dV）",
-                groupId, presetLabel, remainingDv), MessageTypeDefOf.TaskCompletion, false);
+            Messages.Message($"已放置无Map编队 G{groupId}：{presetLabel}｜dV {remainingDv:F0} m/s（世界视图选中它 →「机动规划/转移到圆轨」消耗 dV）", MessageTypeDefOf.TaskCompletion, false);
         }
 
         /// <summary>放置：近地轨道圆轨（地表 500km，顺行）。</summary>
@@ -1016,15 +967,8 @@ namespace PioneerFramework
             if (group == null) return;
             double e = (ra - rp) / (ra + rp);
             double period = 2.0 * System.Math.PI * System.Math.Sqrt(a * a * a / mu);
-            Log.Message(string.Format(
-                "[放置] G{0} E{1} 无Map编队 → **GTO 椭圆轨道**｜rp={2:F0}km ra={3:F0}km a={4:F0}km e={5:F3} " +
-                "周期={6:F0}s vp={7:F0}m/s｜dV={8:F0} m/s｜**非圆轨**（走引力积分，不进圆轨解析模式）",
-                group.GroupId, entityId, rp / 1000.0, ra / 1000.0, a / 1000.0, e, period, vp,
-                spaceGame.GetGroupDeltaV(group).remainingDv));
-            Messages.Message(string.Format(
-                "已放置 GTO 椭圆目标 G{0}（近地点 {1:F0}km / 远地点 {2:F0}km，e={3:F2}）。" +
-                "再放一个 LEO 编队去「交会（选目标）」它 —— 这就是 LEO→GTO 的原始工况。",
-                group.GroupId, rp / 1000.0, ra / 1000.0, e), MessageTypeDefOf.TaskCompletion, false);
+            Log.Message($"[放置] G{group.GroupId} E{entityId} 无Map编队 → **GTO 椭圆轨道**｜rp={rp / 1000.0:F0}km ra={ra / 1000.0:F0}km a={a / 1000.0:F0}km e={e:F3} 周期={period:F0}s vp={vp:F0}m/s｜dV={spaceGame.GetGroupDeltaV(group).remainingDv:F0} m/s｜**非圆轨**（走引力积分，不进圆轨解析模式）");
+            Messages.Message($"已放置 GTO 椭圆目标 G{group.GroupId}（近地点 {rp / 1000.0:F0}km / 远地点 {ra / 1000.0:F0}km，e={e:F2}）。再放一个 LEO 编队去「交会（选目标）」它 —— 这就是 LEO→GTO 的原始工况。", MessageTypeDefOf.TaskCompletion, false);
         }
 
         /// <summary>放置：绕月轨道圆轨（月面 1800km）。</summary>
@@ -1132,15 +1076,8 @@ namespace PioneerFramework
             // （`PlanPhasingOrbit` 的 `useLow` 要求 `a < aTgt`，同轨时为假）⇒ 只能等目标从后面绕上来。
             // ⇒ **要补的相位 = 360°−φ（φ>0 前方）或 |φ|（φ<0 后方）** —— 这条几何事实决定要等多久。
             double phaseToClose = phaseDegAheadDeg >= 0.0 ? 360.0 - phaseDegAheadDeg : -phaseDegAheadDeg;
-            Log.Message(string.Format(
-                "[绕月交会] G{0}(追击) → G{1}(目标)｜中心=月球(ID={2}) r={3:F0}km（月面 {4:F0}km）周期={5:F0}s｜" +
-                "**实测相位差 {6:F0}°**（参数给 {7:F0}°；+ 目标在前）｜μ={8:E2}｜追击预算 {9:F0} m/s｜" +
-                "引导=阶梯（登记即生效）｜**同轨起步 ⇒ 只能抬轨等目标绕过来：要补 {10:F0}° 相位**" +
-                "· 期望：匹配平面 → 变轨/调相 → 画拦截 → 收尾降档 → 到达判据收口；**不许任何一艘撞月**",
-                chaser.GroupId, target.GroupId, MOON_BODY_ID, radius / 1000.0, 1_800_000.0 / 1000.0, period,
-                sepDeg, phaseDegAheadDeg, mu, dvBudget, phaseToClose));
-            Messages.Message(string.Format("绕月交会：G{0} → G{1}（相位差 {2:F0}°，已自动接合）",
-                    chaser.GroupId, target.GroupId, sepDeg),
+            Log.Message($"[绕月交会] G{chaser.GroupId}(追击) → G{target.GroupId}(目标)｜中心=月球(ID={MOON_BODY_ID}) r={radius / 1000.0:F0}km（月面 {1_800_000.0 / 1000.0:F0}km）周期={period:F0}s｜**实测相位差 {sepDeg:F0}°**（参数给 {phaseDegAheadDeg:F0}°；+ 目标在前）｜μ={mu:E2}｜追击预算 {dvBudget:F0} m/s｜引导=阶梯（登记即生效）｜**同轨起步 ⇒ 只能抬轨等目标绕过来：要补 {phaseToClose:F0}° 相位**· 期望：匹配平面 → 变轨/调相 → 画拦截 → 收尾降档 → 到达判据收口；**不许任何一艘撞月**");
+            Messages.Message($"绕月交会：G{chaser.GroupId} → G{target.GroupId}（相位差 {sepDeg:F0}°，已自动接合）",
                 MessageTypeDefOf.TaskCompletion, false);
         }
 
@@ -1265,15 +1202,8 @@ namespace PioneerFramework
             double sepDeg = System.Math.Atan2(
                 DVector3.Dot(planeNormal, DVector3.Cross(radial0, radialTgt)),
                 DVector3.Dot(radial0, radialTgt)) * 180.0 / System.Math.PI;
-            Log.Message(string.Format(
-                "[绕月交会·异轨] G{0}(追击 r={1:F0}km) → G{2}(目标 r={3:F0}km)｜**实测相位差 {4:F2}°**" +
-                "（+ 目标在前；{5} 次 `MakePlan` 试探扫出）｜μ={6:E2}｜**阶梯第一次规划 = 直接霍曼，计划用时 {7:F0}s**" +
-                "（Δv {8:F1} m/s）｜{9}｜**本档不含调相段** ⇒ 考「远场 → 霍曼 → 终端」· 墙钟闸 {10:F0}s",
-                chaser.GroupId, rChaser / 1000.0, target.GroupId, rTgt / 1000.0,
-                sepDeg, probes, mu, bestPlanSpan, bestDvSum, bestStatus,
-                MoonRendezvousAcceptanceRunner.WallDeadlineSeconds));
-            Messages.Message(string.Format("绕月交会·异轨：G{0} → G{1}（直接霍曼，计划 {2:F0}s ⇒ 约 1 分钟出结论）",
-                    chaser.GroupId, target.GroupId, bestPlanSpan),
+            Log.Message($"[绕月交会·异轨] G{chaser.GroupId}(追击 r={rChaser / 1000.0:F0}km) → G{target.GroupId}(目标 r={rTgt / 1000.0:F0}km)｜**实测相位差 {sepDeg:F2}°**（+ 目标在前；{probes} 次 `MakePlan` 试探扫出）｜μ={mu:E2}｜**阶梯第一次规划 = 直接霍曼，计划用时 {bestPlanSpan:F0}s**（Δv {bestDvSum:F1} m/s）｜{bestStatus}｜**本档不含调相段** ⇒ 考「远场 → 霍曼 → 终端」· 墙钟闸 {MoonRendezvousAcceptanceRunner.WallDeadlineSeconds:F0}s");
+            Messages.Message($"绕月交会·异轨：G{chaser.GroupId} → G{target.GroupId}（直接霍曼，计划 {bestPlanSpan:F0}s ⇒ 约 1 分钟出结论）",
                 MessageTypeDefOf.TaskCompletion, false);
         }
 
@@ -1471,15 +1401,8 @@ namespace PioneerFramework
             //        vs 实际累计 ≈1207 m/s（1.9×）⇒ **一个可能撒谎的读数不如没有**。
             //   ⇒ 现在只报**预算**（客观事实）；真实价格由阶梯在运行时给出（日志 `[阶梯] … Δv 合计`）。
             double dvBudget = spaceGame.GetGroupDeltaV(chaser).remainingDv;
-            Log.Message(string.Format(
-                "[交会验收] G{0}(追击) → G{1}(目标)｜追击 r={2:F0}km 目标 r={3:F0}km 相位差 {4:F0}° 目标倾角 {5:F1}°｜" +
-                "预算 {6:F0} m/s（**不再预估 Δv**：旧估计借已作废律的价目函数、与实际 1.9× 不符；真实价格见运行时 [阶梯] 行）｜" +
-                "引导=阶梯（远场律与 5% CW 终端已于 2026-09-22 作废删除）· 期望：先匹配平面 → 变轨/调相 → 画拦截 → 收尾降档 → 到达判据收口",
-                chaser.GroupId, target.GroupId, radius / 1000.0, radiusTgt / 1000.0, phaseDegAhead, targetIncDeg, dvBudget));
-            Messages.Message(string.Format(
-                "交会验收已布置：G{0} 追击 G{1}（相位 {2:F0}°，目标高 {3:F0}km）。预算 {4:F0} m/s；"
-                + "真实 Δv 由阶梯在运行时给出，读数见日志 [阶梯]/[交会·收尾]。",
-                chaser.GroupId, target.GroupId, phaseDegAhead, targetAltKm, dvBudget),
+            Log.Message($"[交会验收] G{chaser.GroupId}(追击) → G{target.GroupId}(目标)｜追击 r={radius / 1000.0:F0}km 目标 r={radiusTgt / 1000.0:F0}km 相位差 {phaseDegAhead:F0}° 目标倾角 {targetIncDeg:F1}°｜预算 {dvBudget:F0} m/s（**不再预估 Δv**：旧估计借已作废律的价目函数、与实际 1.9× 不符；真实价格见运行时 [阶梯] 行）｜引导=阶梯（远场律与 5% CW 终端已于 2026-09-22 作废删除）· 期望：先匹配平面 → 变轨/调相 → 画拦截 → 收尾降档 → 到达判据收口");
+            Messages.Message($"交会验收已布置：G{chaser.GroupId} 追击 G{target.GroupId}（相位 {phaseDegAhead:F0}°，目标高 {targetAltKm:F0}km）。预算 {dvBudget:F0} m/s；真实 Δv 由阶梯在运行时给出，读数见日志 [阶梯]/[交会·收尾]。",
                 MessageTypeDefOf.TaskCompletion, false);
         }
 
@@ -1494,7 +1417,6 @@ namespace PioneerFramework
         }
 
 
-        #endregion
 
         /// 核热引擎(液氢) + 氢储罐(满 5000kg)、离子引擎(氙) + 氙储罐(满 1000kg)，
         /// 规划两条各自绑定网络的机动（①核热径向 ②离子切向），并打开机动队列窗口。
@@ -1544,8 +1466,7 @@ namespace PioneerFramework
                 active = true
             });
 
-            Log.Message(string.Format("[DualEngineTest] 场景就绪: 氢罐 {0}kg / 氙罐 {1}kg，机动1(核热+50径向) T+600，机动2(离子+30切向) T+1200",
-                hydrogenTank?.StoredMass ?? 0f, xenonTank?.StoredMass ?? 0f));
+            Log.Message($"[DualEngineTest] 场景就绪: 氢罐 {(hydrogenTank?.StoredMass ?? 0f)}kg / 氙罐 {(xenonTank?.StoredMass ?? 0f)}kg，机动1(核热+50径向) T+600，机动2(离子+30切向) T+1200");
 
             // 打开机动队列窗口（查看/调整每条机动的网络选择）与 3D 视角
             Find.WindowStack.Add(new ManeuverQueueWindow(group));
@@ -1661,13 +1582,7 @@ namespace PioneerFramework
             if (openView)
                 Messages.Message("吸气式试验机已部署（30 km，水平 400 m/s，空罐起飞）——看 [大气·进气] / [大气·包线] 读数",
                     MessageTypeDefOf.TaskCompletion);
-            Log.Message(string.Format(
-                "[吸气式试验机] G{0} E{1} 高度 {2:F0} km｜水平 {3:F0} m/s｜干重 8 t｜吸气式 ve={4:F0} ṁ={5:F0} a={6:F1}｜" +
-                "空气罐 0/500 kg（进气道 12 m²）｜全推续航（满罐）= {7:F0} s｜点火 Δv 3000 m/s（沿当前速度）",
-                groupId, entityId, altitude / 1000.0, 400.0,
-                StandardPropulsion.AirBreathingVe, StandardPropulsion.StandardMassFlow,
-                StandardPropulsion.AirBreathingDensityExponent,
-                AirBreathingCore.FullThrottleEnduranceSeconds(500.0, StandardPropulsion.StandardMassFlow)));
+            Log.Message($"[吸气式试验机] G{groupId} E{entityId} 高度 {altitude / 1000.0:F0} km｜水平 {400.0:F0} m/s｜干重 8 t｜吸气式 ve={StandardPropulsion.AirBreathingVe:F0} ṁ={StandardPropulsion.StandardMassFlow:F0} a={StandardPropulsion.AirBreathingDensityExponent:F1}｜空气罐 0/500 kg（进气道 12 m²）｜全推续航（满罐）= {AirBreathingCore.FullThrottleEnduranceSeconds(500.0, StandardPropulsion.StandardMassFlow):F0} s｜点火 Δv 3000 m/s（沿当前速度）");
 
             if (openView)
             {
@@ -1797,13 +1712,7 @@ namespace PioneerFramework
                         : "悬浮试验机已部署，但悬浮未能开启（缺天体/在地表下）",
                     MessageTypeDefOf.TaskCompletion);
             }
-            Log.Message(string.Format(
-                "[悬浮试验机] G{0} E{1} 高度 {2:F0} km｜−20 m/s 起步｜全重 {3:F1} t｜RCS ve={4:F0} ṁ={5:F1}（≈{6:F0} kN）｜" +
-                "料 {7:F0} kg（≈{8:F0} s 满推续航）｜定点已锁 ⇒ 该看：高度守住 + 上轴朝铅垂；" +
-                "按「悬浮·切档」切解析档（**定点不变**，读数行变成 [悬浮·解析档]）；按「悬浮·抽空」几秒看料尽退出",
-                groupId, entityId, altitude / 1000.0,
-                (3000.0 + fuelKg) / 1000.0, veUsed, mfUsed, veUsed * mfUsed / 1000f, fuelKg,
-                AirBreathingCore.FullThrottleEnduranceSeconds(fuelKg, mfUsed)));
+            Log.Message($"[悬浮试验机] G{groupId} E{entityId} 高度 {altitude / 1000.0:F0} km｜−20 m/s 起步｜全重 {(3000.0 + fuelKg) / 1000.0:F1} t｜RCS ve={veUsed:F0} ṁ={mfUsed:F1}（≈{veUsed * mfUsed / 1000f:F0} kN）｜料 {fuelKg:F0} kg（≈{AirBreathingCore.FullThrottleEnduranceSeconds(fuelKg, mfUsed):F0} s 满推续航）｜定点已锁 ⇒ 该看：高度守住 + 上轴朝铅垂；按「悬浮·切档」切解析档（**定点不变**，读数行变成 [悬浮·解析档]）；按「悬浮·抽空」几秒看料尽退出");
 
             if (openView)
             {
@@ -1890,16 +1799,12 @@ namespace PioneerFramework
 
             group.debugInfinitePropellant = true;          // **无限燃料**（唯一扣减口不动账）
             bool ok = spaceGame.SetHover(group, true);     // 物理档悬浮（调试引擎真给推力）
-            string spot = string.Format("φ 0.0° / λ 0.0°（赤道 × 本初子午线）· 高度 {0:F0} km", altitude / 1000.0);
+            string spot = $"φ 0.0° / λ 0.0°（赤道 × 本初子午线）· 高度 {altitude / 1000.0:F0} km";
             Messages.Message(ok
                     ? "赤道原点测试船已部署（" + spot + "，无限燃料，已开悬浮）——带操舵台 ⇒ 可开「船上控制台」"
                     : "赤道原点测试船已部署（" + spot + "），但悬浮未能开启（详情见日志）",
                 ok ? MessageTypeDefOf.TaskCompletion : MessageTypeDefOf.RejectInput);
-            Log.Message(string.Format(
-                "[赤道测试船] G{0} E{1}：{2}｜质量 {3:F0} t｜需 {4:F1} MN（含 1.6× 余量）｜调试引擎 {5} 台 × {6:F0} MN" +
-                "｜无限燃料=开｜悬浮={7}｜（有 Map；站体边长 60×60 m）",
-                groupId, entityId, spot, massKg / 1000.0, needN / 1e6, engines, perEngineN / 1e6,
-                ok ? "物理档" : "未开"));
+            Log.Message($"[赤道测试船] G{groupId} E{entityId}：{spot}｜质量 {massKg / 1000.0:F0} t｜需 {needN / 1e6:F1} MN（含 1.6× 余量）｜调试引擎 {engines} 台 × {perEngineN / 1e6:F0} MN｜无限燃料=开｜悬浮={(ok ? "物理档" : "未开")}｜（有 Map；站体边长 60×60 m）");
 
             if (openView)
                 Find.WindowStack.Add(new Window_SpaceBattleView3D(group));
@@ -1945,7 +1850,7 @@ namespace PioneerFramework
                     n++;
                 }
             }
-            Messages.Message("悬浮料已抽空（剩 " + keepKg.ToString("F0") + " kg/实体）：抽掉 " + drained.ToString("F0") + " kg",
+            Messages.Message("悬浮料已抽空（剩 " + $"{keepKg:F0}" + " kg/实体）：抽掉 " + $"{drained:F0}" + " kg",
                 MessageTypeDefOf.TaskCompletion);
         }
 
@@ -2028,7 +1933,7 @@ namespace PioneerFramework
         }
 
         /// <summary>在地图指定格子放置一个建筑，返回其 CompPropellantTank（若无则 null）。</summary>
-        private static CompPropellantTank PlaceBuilding(Map map, string defName, IntVec3 cell)        {
+        private static CompPropellantTank? PlaceBuilding(Map map, string defName, IntVec3 cell)        {
             var def = DefDatabase<ThingDef>.GetNamedSilentFail(defName);
             if (def == null)
             {
@@ -2080,17 +1985,7 @@ namespace PioneerFramework
 
             var mapComp = map.GetComponent<SpaceMapComp>();
             if (mapComp == null) return;
-            Log.Message(string.Format(
-                "[SteerTest] 场景就绪 Group{0}：主推进轴={1} 六向推力(kN) F={2:F1} B={3:F1} L={4:F1} R={5:F1} U={6:F1} D={7:F1} RCS={8:F1}kN 氢={9:F0}kg",
-                group.GroupId, mapComp.MainThrustAxis,
-                mapComp.GetAxisTotalThrust((int)ThrustAxis.Forward) / 1000f,
-                mapComp.GetAxisTotalThrust((int)ThrustAxis.Back) / 1000f,
-                mapComp.GetAxisTotalThrust((int)ThrustAxis.Left) / 1000f,
-                mapComp.GetAxisTotalThrust((int)ThrustAxis.Right) / 1000f,
-                mapComp.GetAxisTotalThrust((int)ThrustAxis.Up) / 1000f,
-                mapComp.GetAxisTotalThrust((int)ThrustAxis.Down) / 1000f,
-                mapComp.RcsTotalThrust / 1000f,
-                mapComp.TotalPropellantMass));
+            Log.Message($"[SteerTest] 场景就绪 Group{group.GroupId}：主推进轴={mapComp.MainThrustAxis} 六向推力(kN) F={mapComp.GetAxisTotalThrust((int)ThrustAxis.Forward) / 1000f:F1} B={mapComp.GetAxisTotalThrust((int)ThrustAxis.Back) / 1000f:F1} L={mapComp.GetAxisTotalThrust((int)ThrustAxis.Left) / 1000f:F1} R={mapComp.GetAxisTotalThrust((int)ThrustAxis.Right) / 1000f:F1} U={mapComp.GetAxisTotalThrust((int)ThrustAxis.Up) / 1000f:F1} D={mapComp.GetAxisTotalThrust((int)ThrustAxis.Down) / 1000f:F1} RCS={mapComp.RcsTotalThrust / 1000f:F1}kN 氢={mapComp.TotalPropellantMass:F0}kg");
 
             // 打开操舵 HUD + 跳转玩家站地图
             SteeringController.Open(group.GroupId);
@@ -2175,10 +2070,8 @@ namespace PioneerFramework
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
-            Log.Message(string.Format("[TurretTest] 场景就绪: 玩家 Group {0} 整体式炮塔已绑定位机，敌对 Group {1} 位于 20km 外（赤道面），Auto 索敌启动",
-                playerGroup.GroupId, enemyGroupId));
-            Messages.Message(string.Format("炮塔对射测试场景就绪：玩家 Group {0}，敌对 Group {1} 位于 20km 外（赤道面，验证 360° 射界）。",
-                playerGroup.GroupId, enemyGroupId), MessageTypeDefOf.TaskCompletion);
+            Log.Message($"[TurretTest] 场景就绪: 玩家 Group {playerGroup.GroupId} 整体式炮塔已绑定位机，敌对 Group {enemyGroupId} 位于 20km 外（赤道面），Auto 索敌启动");
+            Messages.Message($"炮塔对射测试场景就绪：玩家 Group {playerGroup.GroupId}，敌对 Group {enemyGroupId} 位于 20km 外（赤道面，验证 360° 射界）。", MessageTypeDefOf.TaskCompletion);
         }
 
         /// <summary>
@@ -2243,10 +2136,8 @@ namespace PioneerFramework
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
-            Log.Message(string.Format("[MissileTest] 场景就绪: 玩家 Group {0}（导弹发射器炮塔已绑定）→ 敌对 Group {1} 位于 20km 外，ManualFire 已触发",
-                playerGroup.GroupId, enemyGroupId));
-            Messages.Message(string.Format("导弹发射测试场景就绪：玩家 Group {0}，敌对 Group {1} 位于 20km 外（观察 [导弹发射] 日志与 3D 视图领弹出生）。",
-                playerGroup.GroupId, enemyGroupId), MessageTypeDefOf.TaskCompletion);
+            Log.Message($"[MissileTest] 场景就绪: 玩家 Group {playerGroup.GroupId}（导弹发射器炮塔已绑定）→ 敌对 Group {enemyGroupId} 位于 20km 外，ManualFire 已触发");
+            Messages.Message($"导弹发射测试场景就绪：玩家 Group {playerGroup.GroupId}，敌对 Group {enemyGroupId} 位于 20km 外（观察 [导弹发射] 日志与 3D 视图领弹出生）。", MessageTypeDefOf.TaskCompletion);
         }
 
         /// <summary>
@@ -2306,10 +2197,8 @@ namespace PioneerFramework
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
-            Log.Message(string.Format("[MissileImpactTest] 场景就绪: 玩家 Group {0} → 敌对 Group {1} 位于 1.5km 外，ManualFire 已触发，预计 ~5s 撞击",
-                playerGroup.GroupId, enemyGroupId));
-            Messages.Message(string.Format("导弹撞击测试场景就绪：玩家 Group {0}，敌对 Group {1} 位于 1.5km 外（观察 [导弹撞击] → [弹头命中] 日志与 3D 爆炸）。",
-                playerGroup.GroupId, enemyGroupId), MessageTypeDefOf.TaskCompletion);
+            Log.Message($"[MissileImpactTest] 场景就绪: 玩家 Group {playerGroup.GroupId} → 敌对 Group {enemyGroupId} 位于 1.5km 外，ManualFire 已触发，预计 ~5s 撞击");
+            Messages.Message($"导弹撞击测试场景就绪：玩家 Group {playerGroup.GroupId}，敌对 Group {enemyGroupId} 位于 1.5km 外（观察 [导弹撞击] → [弹头命中] 日志与 3D 爆炸）。", MessageTypeDefOf.TaskCompletion);
         }
 
         /// <summary>
@@ -2368,10 +2257,8 @@ namespace PioneerFramework
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
-            Log.Message(string.Format("[MissileCruiseTest] 场景就绪: 玩家 Group {0} → 敌对 Group {1} 位于 1.5km 外（巡航边界 500m），预期日志链：巡航 → 终末接管 → 撞击",
-                playerGroup.GroupId, enemyGroupId));
-            Messages.Message(string.Format("巡航→终末转移测试就绪（1.5km 靶，巡航边界 500m）：观察 [导弹巡航] → [导弹制导 终末接管] → [导弹撞击]。",
-                playerGroup.GroupId, enemyGroupId), MessageTypeDefOf.TaskCompletion);
+            Log.Message($"[MissileCruiseTest] 场景就绪: 玩家 Group {playerGroup.GroupId} → 敌对 Group {enemyGroupId} 位于 1.5km 外（巡航边界 500m），预期日志链：巡航 → 终末接管 → 撞击");
+            Messages.Message("巡航→终末转移测试就绪（1.5km 靶，巡航边界 500m）：观察 [导弹巡航] → [导弹制导 终末接管] → [导弹撞击]。", MessageTypeDefOf.TaskCompletion);
         }
 
         /// <summary>
@@ -2431,10 +2318,8 @@ namespace PioneerFramework
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
-            Log.Message(string.Format("[VolleyImpactTest] 场景就绪: 玩家 G{0} 弹群 N=8 → 敌对 G{1} ~25.3km。预期日志链：[导弹弹群] N=8 队列 → [弹群解离]（含错峰时隙）→ 8×[导弹制导 终末接管]（距离递增）→ 8×[导弹撞击]/[弹头命中]（错峰点火保证到达间隔 ≥ 间距/巡航，无兄弟爆炸误杀）",
-                playerGroup.GroupId, enemyGroupId));
-            Messages.Message(string.Format("弹群齐射测试就绪：N=8 深度队列 → 敌对 G{1} ~25.3km（观察 [导弹弹群]/[弹群解离]/8× 错峰撞击日志）。",
-                playerGroup.GroupId, enemyGroupId), MessageTypeDefOf.TaskCompletion);
+            Log.Message($"[VolleyImpactTest] 场景就绪: 玩家 G{playerGroup.GroupId} 弹群 N=8 → 敌对 G{enemyGroupId} ~25.3km。预期日志链：[导弹弹群] N=8 队列 → [弹群解离]（含错峰时隙）→ 8×[导弹制导 终末接管]（距离递增）→ 8×[导弹撞击]/[弹头命中]（错峰点火保证到达间隔 ≥ 间距/巡航，无兄弟爆炸误杀）");
+            Messages.Message($"弹群齐射测试就绪：N=8 深度队列 → 敌对 G{enemyGroupId} ~25.3km（观察 [导弹弹群]/[弹群解离]/8× 错峰撞击日志）。", MessageTypeDefOf.TaskCompletion);
         }
 
         /// <summary>
@@ -2523,10 +2408,8 @@ namespace PioneerFramework
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
-            Log.Message(string.Format("[VolleyMergedHitTest] 场景就绪: 玩家 G{0} 合并弹群 G{1}(N=4 Following) ← 敌站 G{2} 探针敌弹（Attack 目标=弹群）。预期：敌弹终末撞入编队 → 两条单枚 [导弹撞击] + [弹群] E.. 离群 N 4→3（兄弟继续合并）",
-                playerGroup.GroupId, volleyGroupId, enemyGroupId));
-            Messages.Message(string.Format("合并弹群撞击测试就绪：探针敌弹即将撞入 G{1} 弹群（观察单枚 [导弹撞击]/[弹群] 离群日志；之后用面板/「命令全体导弹」下 Attack 看解离）。",
-                playerGroup.GroupId, volleyGroupId), MessageTypeDefOf.TaskCompletion);
+            Log.Message($"[VolleyMergedHitTest] 场景就绪: 玩家 G{playerGroup.GroupId} 合并弹群 G{volleyGroupId}(N=4 Following) ← 敌站 G{enemyGroupId} 探针敌弹（Attack 目标=弹群）。预期：敌弹终末撞入编队 → 两条单枚 [导弹撞击] + [弹群] E.. 离群 N 4→3（兄弟继续合并）");
+            Messages.Message($"合并弹群撞击测试就绪：探针敌弹即将撞入 G{volleyGroupId} 弹群（观察单枚 [导弹撞击]/[弹群] 离群日志；之后用面板/「命令全体导弹」下 Attack 看解离）。", MessageTypeDefOf.TaskCompletion);
         }
 
         /// <summary>
@@ -2582,10 +2465,8 @@ namespace PioneerFramework
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
-            Log.Message(string.Format("[MissileLongRangeTest] 场景就绪: 玩家 G{0} 弹群 N=4 → 敌对 G{1} ~60km。预期：[导弹制导 终末接管]（表面距 ~60km）→ 全程收敛冲刺 → 4× 错峰 [导弹撞击]/[弹头命中]（间距 2km > 爆炸半径 1.5km，零冲量扰动）。~133 游戏秒后到达",
-                playerGroup.GroupId, enemyGroupId));
-            Messages.Message(string.Format("长距制导验证就绪：N=4 弹群 → 敌对 G{1} ~60km（观察制导收敛与 4× 错峰命中；约 133 游戏秒）。",
-                playerGroup.GroupId, enemyGroupId), MessageTypeDefOf.TaskCompletion);
+            Log.Message($"[MissileLongRangeTest] 场景就绪: 玩家 G{playerGroup.GroupId} 弹群 N=4 → 敌对 G{enemyGroupId} ~60km。预期：[导弹制导 终末接管]（表面距 ~60km）→ 全程收敛冲刺 → 4× 错峰 [导弹撞击]/[弹头命中]（间距 2km > 爆炸半径 1.5km，零冲量扰动）。~133 游戏秒后到达");
+            Messages.Message($"长距制导验证就绪：N=4 弹群 → 敌对 G{enemyGroupId} ~60km（观察制导收敛与 4× 错峰命中；约 133 游戏秒）。", MessageTypeDefOf.TaskCompletion);
         }
 
         /// <summary>
@@ -2651,10 +2532,8 @@ namespace PioneerFramework
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
-            Log.Message(string.Format("[MissileInterceptTest] 场景就绪: 玩家 G{0} 反导炮塔已绑定 → 敌对 G{1} 位于 20km 外（3 波敌弹 2s/9s/16s 来袭），敌弹接近后反导自动锁定。预期：异 volley 对撞双 [导弹撞击] + 迟发反导弹 [导弹中止]（K6）",
-                playerGroup.GroupId, enemyGroupId));
-            Messages.Message(string.Format("拦截对撞测试就绪：敌对 G{1} 位于 20km 外，3 波敌弹即将来袭（观察对撞双爆与 [导弹中止]）。",
-                playerGroup.GroupId, enemyGroupId), MessageTypeDefOf.TaskCompletion);
+            Log.Message($"[MissileInterceptTest] 场景就绪: 玩家 G{playerGroup.GroupId} 反导炮塔已绑定 → 敌对 G{enemyGroupId} 位于 20km 外（3 波敌弹 2s/9s/16s 来袭），敌弹接近后反导自动锁定。预期：异 volley 对撞双 [导弹撞击] + 迟发反导弹 [导弹中止]（K6）");
+            Messages.Message($"拦截对撞测试就绪：敌对 G{enemyGroupId} 位于 20km 外，3 波敌弹即将来袭（观察对撞双爆与 [导弹中止]）。", MessageTypeDefOf.TaskCompletion);
         }
 
         /// <summary>拦截测试敌弹波次：从敌站外侧朝玩家站发射一枚完整敌对导弹（不依赖敌站地图 tick）。</summary>
@@ -2684,15 +2563,14 @@ namespace PioneerFramework
             var group = CreateTestMissile("PF_Missile_Standard", "PF_Weapon_MissileLauncher", interceptEnemyFactionId,
                 birthPos, birthVel, enemyGroup.CelestialBodyId, dir, interceptPlayerGroupId);
             if (group != null)
-                Log.Message(string.Format("[拦截测试] 敌弹波次：G{0} 敌站G{1}→玩家G{2} 距离={3:F1}km", group.GroupId,
-                    interceptEnemyGroupId, interceptPlayerGroupId, dist / 1000.0));
+                Log.Message($"[拦截测试] 敌弹波次：G{group.GroupId} 敌站G{interceptEnemyGroupId}→玩家G{interceptPlayerGroupId} 距离={dist / 1000.0:F1}km");
         }
 
         /// <summary>
         /// 测试弹工厂（场景用）：CombatManager.CreateMissileGroup 建实体 + AutonomousVehicleManager 登记，
         /// 与发射链同参数语义（volleyId 独立、launcherGroupId=-1 表示非炮塔来源）。
         /// </summary>
-        private static SpaceEntityGroup CreateTestMissile(string missileDefName, string weaponDefName, int factionId,
+        private static SpaceEntityGroup? CreateTestMissile(string missileDefName, string weaponDefName, int factionId,
             DVector3 birthPos, DVector3 birthVel, int celestialBodyId, DVector3 birthDir, int? targetGroupId)
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
@@ -2752,9 +2630,9 @@ namespace PioneerFramework
             {
                 avm.UnregisterGroup(gid);
                 spaceGame.DestroyGroup(gid);
-                Log.Message(string.Format("[拦截测试] 手动销毁来袭导弹 G{0}", gid));
+                Log.Message($"[拦截测试] 手动销毁来袭导弹 G{gid}");
             }
-            Messages.Message(string.Format("已销毁 {0} 枚来袭导弹——正在追击它们的反导弹应中止回 Standby（[导弹中止]）。", targets.Count), MessageTypeDefOf.TaskCompletion);
+            Messages.Message($"已销毁 {targets.Count} 枚来袭导弹——正在追击它们的反导弹应中止回 Standby（[导弹中止]）。", MessageTypeDefOf.TaskCompletion);
         }
 
         /// <summary>
@@ -2805,7 +2683,7 @@ namespace PioneerFramework
                 if (g != null)
                     g.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
                 enemyGroupIds.Add(gid);
-                mapping += string.Format("G{0}={1}(期望面{2}) ", gid, d.name, d.expectFace);
+                mapping += $"G{gid}={d.name}(期望面{d.expectFace}) ";
             }
 
             // 6 组：整体式炮塔 + 定位机（Manual 各指一个敌站），自动完成绑定
@@ -2842,8 +2720,7 @@ namespace PioneerFramework
             if (designators.Count > 0)
             {
                 designators[0].DebugSetPreciseStrike(enemyGroupIds[0], new IntVec3(40, 0, 30));
-                Log.Message(string.Format("[OmniTurretTest] G{0} 已设精确炮击点 (40,30)：瞄准偏移船心 +10m（看 [精确炮击]/[炮塔出膛]/[贯穿生成] 日志）",
-                    enemyGroupIds[0]));
+                Log.Message($"[OmniTurretTest] G{enemyGroupIds[0]} 已设精确炮击点 (40,30)：瞄准偏移船心 +10m（看 [精确炮击]/[炮塔出膛]/[贯穿生成] 日志）");
             }
 
             // 打开 3D 视角 + 跳转玩家地图看 6 发齐射出膛弹
@@ -2851,14 +2728,13 @@ namespace PioneerFramework
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
-            Log.Message(string.Format("[OmniTurretTest] 场景就绪: 玩家 G{0}，6 炮塔各指一个敌站：{1}",
-                playerGroup.GroupId, mapping));
+            Log.Message($"[OmniTurretTest] 场景就绪: 玩家 G{playerGroup.GroupId}，6 炮塔各指一个敌站：{mapping}");
             Messages.Message("全方位炮塔对射场景就绪：6 敌站分布六方位，6 炮塔齐射验证 360° 射界与六面出膛（看日志 [炮塔出膛]）。",
                 MessageTypeDefOf.TaskCompletion);
         }
 
         /// <summary>在地图指定格子放置一个建筑，返回 Thing（无 faction，测试用）。</summary>
-        private static Thing PlaceBuildingRaw(Map map, string defName, IntVec3 cell)
+        private static Thing? PlaceBuildingRaw(Map map, string defName, IntVec3 cell)
         {
             var def = DefDatabase<ThingDef>.GetNamedSilentFail(defName);
             if (def == null)
@@ -2932,9 +2808,7 @@ namespace PioneerFramework
                     CameraJumper.TryJump(enemyMap.Center, enemyMap);
             }
 
-            Log.Message(string.Format(
-                "[PrecisionTest] 场景就绪: 玩家 G{0}，敌舰 G{1} 位于正下方 20km，精确炮击点 (40,30)（船心偏移 +10m），Auto 索敌启动",
-                playerGroup.GroupId, enemyGroupId));
+            Log.Message($"[PrecisionTest] 场景就绪: 玩家 G{playerGroup.GroupId}，敌舰 G{enemyGroupId} 位于正下方 20km，精确炮击点 (40,30)（船心偏移 +10m），Auto 索敌启动");
             Messages.Message("精确炮击测试场景就绪：目标在正下方（期望出膛面 y-），精确炮击点 (40,30)，敌舰地图上有红色标记。",
                 MessageTypeDefOf.TaskCompletion);
         }
@@ -2992,8 +2866,7 @@ namespace PioneerFramework
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
-            Log.Message(string.Format("[RayTurretTest] 场景就绪: 玩家 Group {0} 激光炮塔已绑定位机，敌对 Group {1} 位于 20km 外（赤道面），Auto 索敌启动",
-                playerGroup.GroupId, enemyGroupId));
+            Log.Message($"[RayTurretTest] 场景就绪: 玩家 Group {playerGroup.GroupId} 激光炮塔已绑定位机，敌对 Group {enemyGroupId} 位于 20km 外（赤道面），Auto 索敌启动");
             Messages.Message("定向能对射场景就绪：玩家 Group " + playerGroup.GroupId + "，敌对 Group " + enemyGroupId
                 + " 位于 20km 外（赤道面）。看日志 [激光发射]/[激光命中!]/[贯穿生成]。", MessageTypeDefOf.TaskCompletion);
         }
@@ -3056,8 +2929,7 @@ namespace PioneerFramework
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
-            Log.Message(string.Format("[RayOcclusionTest] 场景就绪: 玩家 G{0} 激光炮塔 Manual→G{1}(20km)，近站 G{2}(10km) 挡路，期望只命中近站",
-                playerGroup.GroupId, farGroupId, nearGroupId));
+            Log.Message($"[RayOcclusionTest] 场景就绪: 玩家 G{playerGroup.GroupId} 激光炮塔 Manual→G{farGroupId}(20km)，近站 G{nearGroupId}(10km) 挡路，期望只命中近站");
             Messages.Message("定向能遮挡验证场景就绪：定位机 Manual 指向 20km 远站，10km 近站挡在光束路径上。期望光束只命中近站（遮挡语义）。",
                 MessageTypeDefOf.TaskCompletion);
         }
@@ -3120,8 +2992,7 @@ namespace PioneerFramework
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
-            Log.Message(string.Format("[RayRotatedTest] 场景就绪: 玩家 G{0} 激光炮塔，敌对 G{1} 旋转45°（Z轴）20km 外，验证旋转正确 part 检测",
-                playerGroup.GroupId, enemyGroupId));
+            Log.Message($"[RayRotatedTest] 场景就绪: 玩家 G{playerGroup.GroupId} 激光炮塔，敌对 G{enemyGroupId} 旋转45°（Z轴）20km 外，验证旋转正确 part 检测");
             Messages.Message("定向能旋转命中验证场景就绪：敌站旋转 45°，看 [激光slab] 局部系线段倾斜 + [激光part] 命中局部点 y≠0（上方斜入）。",
                 MessageTypeDefOf.TaskCompletion);
         }
@@ -3166,7 +3037,7 @@ namespace PioneerFramework
                 if (g != null)
                     g.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
                 enemyGroupIds.Add(gid);
-                mapping += string.Format("G{0}={1} ", gid, d.name);
+                mapping += $"G{gid}={d.name} ";
             }
 
             // 2. 4 组：激光炮塔 + 定位机（Manual 各指一个敌站），自动绑定
@@ -3201,8 +3072,7 @@ namespace PioneerFramework
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
-            Log.Message(string.Format("[RayMultiTest] 场景就绪: 玩家 G{0}，4 激光炮塔各指一个敌站：{1}",
-                playerGroup.GroupId, mapping));
+            Log.Message($"[RayMultiTest] 场景就绪: 玩家 G{playerGroup.GroupId}，4 激光炮塔各指一个敌站：{mapping}");
             Messages.Message("定向能多目标齐射场景就绪：4 敌站四方位，4 激光炮塔齐射（看 [激光命中!] 四条独立命中链）。",
                 MessageTypeDefOf.TaskCompletion);
         }

@@ -13,9 +13,9 @@ namespace PioneerFramework
         public override int SeedPart => 421331;
 
         // 50x50 地图内的房间与门坐标。
-        public static readonly IntVec3 CabinRoomMin = new IntVec3(22, 0, 23);
-        public static readonly IntVec3 CabinRoomMax = new IntVec3(28, 0, 26);
-        public static readonly IntVec3 CabinDoorCell = new IntVec3(25, 0, 22);
+        public static readonly IntVec3 CabinRoomMin = new(22, 0, 23);
+        public static readonly IntVec3 CabinRoomMax = new(28, 0, 26);
+        public static readonly IntVec3 CabinDoorCell = new(25, 0, 22);
 
         public override void Generate(Map map, GenStepParams parms)
         {

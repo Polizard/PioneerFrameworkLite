@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- ════════════════════════════════════════════════════════════════
+       默认太阳系天体定义
+       轨道周期与轨道半径的关系（仅作参考）：
+         v = sqrt(GM_parent / r)，ω = v / r，T = 2π / ω
+       所有数值单位为米、秒（tick）。
+       ════════════════════════════════════════════════════════════════ -->
+
+  <!-- ── 恒星：太阳 ── -->
+  <PioneerFramework.CelestialBodyDef>
+    <defName>Sun</defName>
+    <bodyId>0</bodyId>
+    <label>太阳</label>
+    <bodyType>Star</bodyType>
+    <radius>3000000</radius>                  <!-- 3000 km -->
+    <gravitationalParameter>2.0e16</gravitationalParameter>  <!-- GM -->
+    <hasSurface>false</hasSurface>
+    <atmosphereThickness>0</atmosphereThickness>
+  </PioneerFramework.CelestialBodyDef>
+
+  <!-- ── 行星：地球 ── -->
+  <PioneerFramework.CelestialBodyDef>
+    <defName>Earth</defName>
+    <bodyId>1</bodyId>
+    <label>地球</label>
+    <bodyType>Planet</bodyType>
+    <radius>5000000</radius>                  <!-- 5000 km -->
+    <gravitationalParameter>2.0e14</gravitationalParameter>  <!-- GM -->
+    <hasSurface>true</hasSurface>
+    <planetLayerDefName>Surface</planetLayerDefName>           <!-- 绑到默认地表 layer -->
+    <dayLengthTicks>60000</dayLengthTicks>                    <!-- 1 天 = 60000 tick -->
+    <atmosphereThickness>100000</atmosphereThickness>         <!-- 100 km -->
+    <!-- 大气密度（[A1] 的数据；2026-10-06 用户裁定"取整、合理即可"）：
+         ρ(h) = ρ₀·exp(−h/H)。取 1.2 kg/m³ / 8,000 m —— 与地球同量级但取整（[补2]：不照抄地球的 1.225/8500）。
+         后果（已核）：ρ(100 km)/ρ₀ = e^(−12.5) ≈ 3.7e-6（"顶上≈0"判据 ✓）；
+         掩码闩锁恢复阈值 = 9.5·H = **76 km**（仍 < 大气顶 100 km ✓，见 atmosphereRestoreScaleHeights）。 -->
+    <atmosphereRho0>1.2</atmosphereRho0>
+    <atmosphereScaleHeight>8000</atmosphereScaleHeight>
+    <!-- 基底球渲染色（2026-10-11 用户口径）：**烘焙海洋格的颜色**。
+         出处 = 实测（离线量盘上的补丁图）：数据区里占 53% 的海洋格 = 字节 (72,72,104) ⇒ 归一到 0..1 = (0.282, 0.282, 0.408)。
+         ⚠ 这里填的是**显示色**（想在屏幕上看到的颜色）；代码会按颜色空间转成线性渲染值（见 CelestialBodyDef.baseSphereColor 的注释）。 -->
+    <baseSphereColor>(0.282, 0.282, 0.408, 1)</baseSphereColor>
+    <orbitRadius>120000000</orbitRadius>      <!-- 120,000 km 轨道半径 -->
+    <!-- ⚠ 批5.C（2026-09-29）：原写 240000，与太阳的 GM（2e16）**不自洽**；自洽值 = 2π√((1.2e8)³/2e16) = 58,400 s。
+         本条**当前不生效**（地球是根源：被钉在原点且速度为零，`GetBodyLocalPosition(Earth)` 恒为 0）⇒
+         改它**不改任何动力学**，只是消灭一条违反本文件头部规则的声明；将来若让根源绕日公转，这条已经对了。 -->
+    <orbitPeriod>58400</orbitPeriod>          <!-- 周期 58,400 tick（= 2π√(d³/μ太阳)，与原 240000 差 4.1×） -->
+    <orbitNormal>(0, 1, 0)</orbitNormal>       <!-- 赤道面 -->
+    <initialPhase>0</initialPhase>
+    <parentBodyDefName>Sun</parentBodyDefName>
+  </PioneerFramework.CelestialBodyDef>
+
+  <!-- ── 卫星：月球（绕地球）── -->
+  <PioneerFramework.CelestialBodyDef>
+    <defName>Moon</defName>
+    <bodyId>2</bodyId>
+    <label>月球</label>
+    <bodyType>Moon</bodyType>
+    <radius>1500000</radius>                  <!-- 1500 km（Lite 设定：便于 1800km 绕月轨道测试入轨） -->
+    <gravitationalParameter>5.0e12</gravitationalParameter>  <!-- GM -->
+    <hasSurface>true</hasSurface>
+    <planetLayerDefName>Moon</planetLayerDefName>            <!-- 绑到月球 layer -->
+    <dayLengthTicks>317900</dayLengthTicks>                  <!-- 潮汐锁定 ⇒ 自转周期 = 轨道周期（见下 317900） -->
+    <atmosphereThickness>0</atmosphereThickness>
+    <orbitRadius>80000000</orbitRadius>        <!-- 80,000 km 轨道半径（绕地球） -->
+    <!-- ⚠ 批5.C（2026-09-29）**星历必须服从物理**（用户裁定"让星历服从物理"）：
+         本文件头部那条规则（T = 2π/ω，v = √(GM_parent/r)）要求 T = 2π√((8e7)³/2e14) = **317,900 s**；
+         改前写 160,000 ⇒ 月球的"公转速度"比地球引力能提供的**快 1.99 倍** ⇒ **以月球为参考系的一切推理
+         都建在非惯性系上**（轨道保持的 ①/② 对消、阶梯的两体计划全在内）⇒ 绕月交会的飞船被一个
+         ~0.113 m/s² 的假加速度推着（= 月球本地引力的 25%）⇒ 一路坠月。
+         定案证据（2026-09-29 探针）：a_eph(Δv/Δt)=1.234E-1 vs a_父@天体=1.020E-2（差 11 倍）；
+         |v天体|=3141.6 ⇒ v²/r=1.234E-1 ✓ 自洽 ⇒ 星历确系圆轨，只是 μ 不匹配。 -->
+    <orbitPeriod>317900</orbitPeriod>          <!-- 周期 317,900 tick（= 2π√(d³/μ地球)，与原 160000 差 1.99×） -->
+    <orbitNormal>(0, 1, 0)</orbitNormal>       <!-- 同赤道面 -->
+    <initialPhase>1.5</initialPhase>
+    <parentBodyDefName>Earth</parentBodyDefName>
+  </PioneerFramework.CelestialBodyDef>
+
+  <!-- Lite 裁剪：火星（跨行星系不做，仅留 Sun/Earth/Moon）已删除 -->
+</Defs>

@@ -47,7 +47,7 @@ namespace PioneerFramework.Launch
                 return;
             }
 
-            RocketRecoveryDef recovery = LaunchPadUtility.RocketRecoveryDefFor(launchedRocketDef);
+            RocketRecoveryDef? recovery = LaunchPadUtility.RocketRecoveryDefFor(launchedRocketDef);
             if (recovery == null)
             {
                 return;
@@ -91,7 +91,7 @@ namespace PioneerFramework.Launch
         {
             cell = IntVec3.Invalid;
             List<Building> allBuildingsColonist = map.listerBuildings.allBuildingsColonist;
-            Building best = null;
+            Building? best = null;
             float bestDist = float.MaxValue;
 
             for (int i = 0; i < allBuildingsColonist.Count; i++)
@@ -147,7 +147,7 @@ namespace PioneerFramework.Launch
 
                 if (t is Blueprint blueprint)
                 {
-                    ThingDef buildDef = blueprint.def.entityDefToBuild as ThingDef;
+                    ThingDef? buildDef = blueprint.def.entityDefToBuild as ThingDef;
                     if (buildDef != null && (LaunchPadUtility.IsRocket(buildDef) || LaunchPadUtility.IsReturnedBooster(buildDef)))
                     {
                         return true;
@@ -156,7 +156,7 @@ namespace PioneerFramework.Launch
 
                 if (t is Frame frame)
                 {
-                    ThingDef buildDef = frame.def.entityDefToBuild as ThingDef;
+                    ThingDef? buildDef = frame.def.entityDefToBuild as ThingDef;
                     if (buildDef != null && (LaunchPadUtility.IsRocket(buildDef) || LaunchPadUtility.IsReturnedBooster(buildDef)))
                     {
                         return true;

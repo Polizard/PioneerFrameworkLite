@@ -63,16 +63,16 @@ namespace PioneerFramework
 
         /// <summary>**精确贴靠**（默认口径）。</summary>
         public static RendezvousGoal Precise(double distanceTol = 2000.0, double speedTol = 1.0)
-            => new RendezvousGoal(Kind.Precise, distanceTol, speedTol);
+            => new(Kind.Precise, distanceTol, speedTol);
 
         /// <summary>**战斗/接舷**：5 km 内、相对速度 ≤ 50 m/s 就够（能打/能登船，不需要贴靠）。
         /// ⚠ 这两个数是**本库的初始取值**，不是上游口径（上游没有这个目的）；要按战斗机制调就改这里。</summary>
         public static RendezvousGoal Combat()
-            => new RendezvousGoal(Kind.Combat, 5_000.0, 50.0);
+            => new(Kind.Combat, 5_000.0, 50.0);
 
         /// <summary>**松条件**：只判距离（相对速度不设限）。</summary>
         public static RendezvousGoal Loose(double distanceTol = 10_000.0)
-            => new RendezvousGoal(Kind.Loose, distanceTol, double.PositiveInfinity);
+            => new(Kind.Loose, distanceTol, double.PositiveInfinity);
 
         /// <summary>★★ **相位共轨**（2026-09-22 实现）——"**同一条轨道、按需保持某个相位差**"。
         ///
@@ -95,7 +95,7 @@ namespace PioneerFramework
         /// <param name="speedTol">相对速度容差（m/s）</param>
         public static RendezvousGoal PhaseSynced(double phaseDeg, double phaseTolDeg = 1.0,
             double aTol = 1000.0, double speedTol = 20.0)
-            => new RendezvousGoal(Kind.PhaseSynced, aTol, speedTol, phaseDeg, phaseTolDeg);
+            => new(Kind.PhaseSynced, aTol, speedTol, phaseDeg, phaseTolDeg);
 
         /// <summary>
         /// **沿轨有符号相位差**（度，−180..+180）：目标相对追击方的相位，**正 = 目标在前方**。
@@ -169,9 +169,7 @@ namespace PioneerFramework
 
         public override string ToString()
             => kind == Kind.PhaseSynced
-                ? string.Format("{0}(相位 {1:+0.0;-0.0;0}°±{2:F1}°, Δa≤{3:F0} m, relVel≤{4:F1})",
-                    kind, phaseDeg, phaseTolDeg, distanceTol, speedTol)
-                : string.Format("{0}(dist≤{1:F0} m, relVel≤{2})", kind, distanceTol,
-                    double.IsInfinity(speedTol) ? "∞" : speedTol.ToString("F1"));
+                ? $"{kind}(相位 {phaseDeg:+0.0;-0.0;0}°±{phaseTolDeg:F1}°, Δa≤{distanceTol:F0} m, relVel≤{speedTol:F1})"
+                : $"{kind}(dist≤{distanceTol:F0} m, relVel≤{(double.IsInfinity(speedTol) ? "∞" : $"{speedTol:F1}")})";
     }
 }

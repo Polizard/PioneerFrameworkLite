@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -46,7 +46,7 @@ namespace PioneerFramework
         // ════════════════════════════════════════════════════
 
         private int currentSystemBodyId = 1;
-        private List<CelestialBodyDef> selectableSystems = new List<CelestialBodyDef>();
+        private List<CelestialBodyDef> selectableSystems = new();
 
         private float camDistance = 50000f;
         private float camYaw;
@@ -67,7 +67,7 @@ namespace PioneerFramework
         // 本帧被 UI 占用的矩形（顶栏按钮 / 调试勾选 / 信息面板）。
         // 用于把鼠标输入与"点选编队、右键旋转、滚轮缩放"隔开：否则点面板上的按钮会
         // 同时选中按钮底下那艘船并把相机拽回去（§HandleGUIEvents 顺序问题）。
-        private readonly List<Rect> uiBlockRects = new List<Rect>();
+        private readonly List<Rect> uiBlockRects = new();
 
         /// <summary>
         /// 本帧鼠标是否落在"3D 视口"上：在窗口内、不在自己的 UI 矩形上、且没有被更上层的窗口
@@ -89,9 +89,9 @@ namespace PioneerFramework
         // 第 12 条（2026-09-10）：本窗口每帧重建 id 集合（GetLocalSystemBodyIds + 三处内联
         // {currentSystemBodyId}+卫星）。天体/卫星在开局后不可变，故按"所属天体 id"记忆化即精确复用；
         // 调用方仅 Contains/遍历、不跨帧保留。
-        private readonly HashSet<int> localSystemBodyIdsCache = new HashSet<int>();
+        private readonly HashSet<int> localSystemBodyIdsCache = new();
         private int localSystemBodyIdsCacheKey = int.MinValue;
-        private readonly HashSet<int> currentSystemBodyIdsCache = new HashSet<int>();
+        private readonly HashSet<int> currentSystemBodyIdsCache = new();
         private int currentSystemBodyIdsCacheKey = int.MinValue;
 
 #if DEBUG
@@ -106,24 +106,24 @@ namespace PioneerFramework
         //  3D 资源
         // ════════════════════════════════════════════════════
 
-        private Camera renderCamera;
-        private Light sunLight;
+        private Camera renderCamera = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private Light sunLight = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         private Light? fillLight;         // 必须留引用：DontDestroyOnLoad 的补光 GameObject 不销毁就每次开窗漏一盏
-        private RenderTexture renderTexture;
-        private GameObject cameraObject;
+        private RenderTexture renderTexture = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private GameObject cameraObject = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         private bool resourcesCreated;
 
-        private static Mesh sphereMeshLOD0;   // 高精：48×36
-        private static Mesh sphereMeshLOD1;   // 中精：24×18
-        private static Mesh sphereMeshLOD2;   // 低精：12×9
-        private static Mesh cubeMesh;
-        private static Mesh quadMesh;
+        private static Mesh sphereMeshLOD0 = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;   // 高精：48×36
+        private static Mesh sphereMeshLOD1 = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;   // 中精：24×18
+        private static Mesh sphereMeshLOD2 = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;   // 低精：12×9
+        private static Mesh cubeMesh = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private static Mesh quadMesh = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
-        private static Material renderMat;
-        private static MaterialPropertyBlock matBlock;
+        private static Material renderMat = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private static MaterialPropertyBlock matBlock = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         // 三渲二 Toon Shader 懒加载（从 AssetBundle 加载，不可用时回退 Standard）
-        private static Material _toonMat;
+        private static Material _toonMat = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         private static bool _toonMatTried;
         private static Material ToonMat
         {
@@ -190,7 +190,7 @@ namespace PioneerFramework
             soundClose = SoundDefOf.TabClose;
         }
 
-        public override Vector2 RequestedTabSize => new Vector2(UI.screenWidth, UI.screenHeight - 35);
+        public override Vector2 RequestedTabSize => new(UI.screenWidth, UI.screenHeight - 35);
 
         public override MainTabWindowAnchor Anchor => MainTabWindowAnchor.Left;
 
@@ -200,7 +200,8 @@ namespace PioneerFramework
         {
             base.PostOpen();
             EnsureResources();
-            RenderPipelineManager.endCameraRendering += OnPostRender;
+            // 2026-10-13（P2-b）：原挂 RenderPipelineManager.endCameraRendering 画轨道线；
+            // 1.7 无该类型（且 GL 已退化为 2D）⇒ 轨道线改在 RenderScene 里以 mesh 提交，钩子整个删除。
         }
 
         public override void WindowUpdate()
@@ -252,7 +253,6 @@ namespace PioneerFramework
 
         public override void PreClose()
         {
-            RenderPipelineManager.endCameraRendering -= OnPostRender;
             CleanupResources();
             base.PreClose();
         }

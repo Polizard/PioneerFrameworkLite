@@ -73,7 +73,7 @@ namespace PioneerFramework
             {
                 if (!g.IsActive) continue;
 
-                CelestialBodyDef def = celestialMgr.GetBodyById(g.CelestialBodyId);
+                CelestialBodyDef? def = celestialMgr.GetBodyById(g.CelestialBodyId);
                 if (def == null) continue;
 
                 checkedGroups++;
@@ -120,18 +120,18 @@ namespace PioneerFramework
 
                 sb.Append("\n  G").Append(g.GroupId)
                   .Append(g.IsCircularOrbit ? " 圆轨模式" : " 自由飞行")
-                  .Append(" |r|=").Append((gp.magnitude / 1000.0).ToString("F0")).Append("km")
-                  .Append(" e=").Append(ov.eccentricity.ToString("E2"))
-                  .Append(" a=").Append((ov.semiMajorAxis / 1000.0).ToString("F0")).Append("km")
-                  .Append(" T=").Append(ov.period.ToString("F0")).Append("s")
-                  .Append(" inc=").Append((ov.inclination * 180.0 / Math.PI).ToString("F4")).Append("°")
-                  .Append(" LAN=").Append((ov.LAN * 180.0 / Math.PI).ToString("F3")).Append("°")
-                  .Append(" ArgP=").Append((ov.argumentOfPeriapsis * 180.0 / Math.PI).ToString("F3")).Append("°")
-                  .Append(" ν=").Append((ov.trueAnomaly * 180.0 / Math.PI).ToString("F3")).Append("°")
-                  .Append("\n      ①往返 ").Append(roundTripErr.ToString("E1"))
-                  .Append("  ②倾角差 ").Append((incDiff * 180.0 / Math.PI).ToString("E2")).Append("°")
-                  .Append("（游戏系独立算 ").Append((incGame * 180.0 / Math.PI).ToString("F4")).Append("°）")
-                  .Append("  ③法向差 ").Append(normalErr.ToString("E1"))
+                  .Append(" |r|=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(gp.magnitude / 1000.0):F0}").Append("km")
+                  .Append(" e=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{ov.eccentricity:E2}")
+                  .Append(" a=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ov.semiMajorAxis / 1000.0):F0}").Append("km")
+                  .Append(" T=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{ov.period:F0}").Append('s')
+                  .Append(" inc=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ov.inclination * 180.0 / Math.PI):F4}").Append('°')
+                  .Append(" LAN=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ov.LAN * 180.0 / Math.PI):F3}").Append('°')
+                  .Append(" ArgP=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ov.argumentOfPeriapsis * 180.0 / Math.PI):F3}").Append('°')
+                  .Append(" ν=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ov.trueAnomaly * 180.0 / Math.PI):F3}").Append('°')
+                  .Append("\n      ①往返 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{roundTripErr:E1}")
+                  .Append("  ②倾角差 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(incDiff * 180.0 / Math.PI):E2}").Append('°')
+                  .Append("（游戏系独立算 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(incGame * 180.0 / Math.PI):F4}").Append("°）")
+                  .Append("  ③法向差 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{normalErr:E1}")
                   .Append(ok ? "   ⇒ PASS" : "   ⇒ **FAIL**");
             }
 
@@ -185,8 +185,8 @@ namespace PioneerFramework
                     if (!poleOk) failures++;
                     sb.Append("\n  ").Append(poleOk ? "✓" : "✗ **FAIL**")
                       .Append(" A. 合成点判据：极轴上 = ±90°、赤道面内 = 0°｜实得 +Y→")
-                      .Append(latN.ToString("F4")).Append("°  -Y→").Append(latS.ToString("F4"))
-                      .Append("°  +X→").Append(latX.ToString("F4")).Append("°  +Z→").Append(latZ.ToString("F4")).Append("°");
+                      .Append(System.Globalization.CultureInfo.CurrentCulture, $"{latN:F4}").Append("°  -Y→").Append(System.Globalization.CultureInfo.CurrentCulture, $"{latS:F4}")
+                      .Append("°  +X→").Append(System.Globalization.CultureInfo.CurrentCulture, $"{latX:F4}").Append("°  +Z→").Append(System.Globalization.CultureInfo.CurrentCulture, $"{latZ:F4}").Append('°');
 
                     // ── 判据 B：逐组交叉核对（宿主纬度 vs 适配层 asin(r̂·ŷ)） ──
                     //   验的是"我们声明的赤道轴（`DVector3.up` = +Y，P4 起适配层同系）与宿主实际的极轴是不是同一个"。
@@ -213,7 +213,7 @@ namespace PioneerFramework
                     else if (worstLatDiff > 1e-6) failures++;
                     sb.Append("\n  ").Append(surfSamples == 0 ? "⊘ **UNCHECKED**（0 个样本）" : (worstLatDiff <= 1e-6 ? "✓" : "✗ **FAIL**"))
                       .Append(" B. 逐组交叉核对：宿主纬度 vs 适配层纬度｜样本 ").Append(surfSamples)
-                      .Append(" 组，最大差 ").Append(worstLatDiff.ToString("E2")).Append("°");
+                      .Append(" 组，最大差 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{worstLatDiff:E2}").Append('°');
 
                     // ── 判据 C：**顺行判据**（钉住"本 mod 里 inclination=180° 才是顺行"这件事） ──
                     //   本 mod 的约定（`GetSurfaceState` 文件头）：自转轴 = +Y、东 = (−z→+x)、p_eci = Ry(−ωt)·p_fix。
@@ -237,8 +237,8 @@ namespace PioneerFramework
                         if (!proOk) failures++;
                         sb.Append("\n  ").Append(proOk ? "✓" : "✗ **FAIL**")
                           .Append(" C. 顺行判据（合成）：东向圆轨的 inclination 必须是 **180°**、西向是 0°｜实得 ")
-                          .Append((ovPro.inclination * 180.0 / Math.PI).ToString("F4")).Append("° / ")
-                          .Append((ovRetro.inclination * 180.0 / Math.PI).ToString("F4")).Append("°")
+                          .Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ovPro.inclination * 180.0 / Math.PI):F4}").Append("° / ")
+                          .Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ovRetro.inclination * 180.0 / Math.PI):F4}").Append('°')
                           .Append("\n      ⇒ **本 mod 里 inclination=180° = 顺行**（与 KSP/MJ 的 0° 直觉相反）。")
                           .Append("任何面向玩家的倾角参数都要做 `180° − i` 的意识换算，否则 `OperationInclination` 会给出近逆行的轨道。");
                     }

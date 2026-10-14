@@ -64,11 +64,7 @@ namespace PioneerFramework
             {
                 autoPending = false;
                 var still = sg.GetGroupById(autoGroupId);
-                Log.Message(string.Format(
-                    "[真飞验收] **UNCOVERED**：等了 {0} 真实 tick 仍没等到燃烧结束且过节点（编队{1}）" +
-                    "⇒ 结论不出（不是通过，也不是失败）｜要看原因请开 [Burn]/[Thrust] 日志",
-                    AutoTimeoutRealTicks,
-                    still == null ? "已消失" : string.Format("仍在，appliedDv={0:F1} m/s", still.appliedBurnDV)));
+                Log.Message($"[真飞验收] **UNCOVERED**：等了 {AutoTimeoutRealTicks} 真实 tick 仍没等到燃烧结束且过节点（编队{(still == null ? "已消失" : $"仍在，appliedDv={still.appliedBurnDV:F1} m/s")}）⇒ 结论不出（不是通过，也不是失败）｜要看原因请开 [Burn]/[Thrust] 日志");
                 return;
             }
 
@@ -172,13 +168,13 @@ namespace PioneerFramework
             stagedExpectedSma = ov.Radius(nodes[0].ut); // 圆化 = 半长轴变成那一刻的半径
 
             sb.Append("\n  船：G").Append(g.GroupId)
-              .Append("（偏心 e=0.3，半径 ").Append((ov.Radius(tick) / 1000.0).ToString("F0")).Append(" km）");
+              .Append("（偏心 e=0.3，半径 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ov.Radius(tick) / 1000.0):F0}").Append(" km）");
             sb.Append("\n  机动：tick=").Append(stagedNodeTick)
               .Append("（T-").Append(Math.Max(0, stagedNodeTick - (int)tick)).Append("s）")
-              .Append("｜计划 |Δv|=").Append(stagedPlanDv.ToString("F2")).Append(" m/s")
+              .Append("｜计划 |Δv|=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{stagedPlanDv:F2}").Append(" m/s")
               .Append("｜带意图=").Append(intent.operationName);
             sb.Append("\n  排队：").Append(queued ? summary : why);
-            sb.Append("\n  期望：圆化后 e ≈ 0、半长轴 ≈ ").Append((stagedExpectedSma / 1000.0).ToString("F0"))
+            sb.Append("\n  期望：圆化后 e ≈ 0、半长轴 ≈ ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(stagedExpectedSma / 1000.0):F0}")
               .Append(" km（那一刻的半径）");
             sb.Append("\n  ⇒ **等它烧完**（过推档，几百 m/s 约几分钟游戏时间）再按「真飞验收·检查」。");
 
@@ -234,9 +230,7 @@ namespace PioneerFramework
             coastStartTick = tick;
             coastPending = true;
 
-            Log.Message(string.Format(
-                "[漂移检查] 布置：G{0} **不排任何机动**｜tick={1:F0}｜e={2:F4} a={3:F0}km｜120 s 后自动对比纯二体传播",
-                g.GroupId, tick, ov.eccentricity, ov.semiMajorAxis / 1000.0));
+            Log.Message($"[漂移检查] 布置：G{g.GroupId} **不排任何机动**｜tick={tick:F0}｜e={ov.eccentricity:F4} a={ov.semiMajorAxis / 1000.0:F0}km｜120 s 后自动对比纯二体传播");
             Messages.Message($"漂移检查：G{g.GroupId} 已放置（不烧），120 s 后自动出结论", MessageTypeDefOf.NeutralEvent);
         }
 
@@ -275,12 +269,12 @@ namespace PioneerFramework
             bool pass = dv <= 0.05;
             var sb = new StringBuilder();
             sb.Append("[漂移检查] ═══ 自由飞行 120 s：实测 vs 纯二体 ═══");
-            sb.Append("\n  G").Append(g.GroupId).Append("｜不排任何机动｜经过 ").Append(elapsed.ToString("F0")).Append("s");
-            sb.Append("\n  |Δr|=").Append(dr.ToString("E3")).Append(" m｜|Δv|=").Append(dv.ToString("E3")).Append(" m/s");
-            sb.Append("\n  轨道：e ").Append(Astro.EccFromStateVectors(coastMu, coastR, coastV).ToString("E3"))
-              .Append(" → ").Append(ovNow.eccentricity.ToString("E3"))
-              .Append("｜a ").Append((coastR.magnitude / 1000.0).ToString("F0"))
-              .Append("km → ").Append((ovNow.semiMajorAxis / 1000.0).ToString("F1")).Append("km");
+            sb.Append("\n  G").Append(g.GroupId).Append("｜不排任何机动｜经过 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{elapsed:F0}").Append('s');
+            sb.Append("\n  |Δr|=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{dr:E3}").Append(" m｜|Δv|=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{dv:E3}").Append(" m/s");
+            sb.Append("\n  轨道：e ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{Astro.EccFromStateVectors(coastMu, coastR, coastV):E3}")
+              .Append(" → ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{ovNow.eccentricity:E3}")
+              .Append("｜a ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(coastR.magnitude / 1000.0):F0}")
+              .Append("km → ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ovNow.semiMajorAxis / 1000.0):F1}").Append("km");
             sb.Append("\n  ⇒ 判据：|Δv| ≤ 0.05 m/s（文档速率 6 m/s/天 ⇒ 120 s 上 8.3e-3，6× 余量）｜")
               .Append(pass ? "**PASS：环境确实等于纯二体** ⇒ 残差出在燃烧侧" : "**FAIL：环境不等于纯二体** ⇒ 这才是残差之源");
             Log.Message(sb.ToString());
@@ -361,12 +355,12 @@ namespace PioneerFramework
                 DVector3 hEv = DVector3.Cross(rEv, vEv);
 
                 sb.Append("\n  ── 不变量判据（模型无关）──");
-                sb.Append("\n  Δε：实测 ").Append((epsNow - epsPre).ToString("E6"))
-                  .Append(" vs 期望 ").Append((epsEv - epsPre).ToString("E6"))
-                  .Append("（比值 ").Append(Math.Abs(epsEv - epsPre) > 1e-12 ? ((epsNow - epsPre) / (epsEv - epsPre)).ToString("F4") : "n/a").Append("）");
-                sb.Append("\n  |Δh|：实测 ").Append(dHNow.ToString("E6"))
-                  .Append(" vs 期望 ").Append((hEv - hPre).magnitude.ToString("E6"))
-                  .Append("（比值 ").Append((hEv - hPre).magnitude > 1e-12 ? (dHNow / (hEv - hPre).magnitude).ToString("F4") : "n/a").Append("）");
+                sb.Append("\n  Δε：实测 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(epsNow - epsPre):E6}")
+                  .Append(" vs 期望 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(epsEv - epsPre):E6}")
+                  .Append("（比值 ").Append(Math.Abs(epsEv - epsPre) > 1e-12 ? $"{((epsNow - epsPre) / (epsEv - epsPre)):F4}" : "n/a").Append('）');
+                sb.Append("\n  |Δh|：实测 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{dHNow:E6}")
+                  .Append(" vs 期望 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(hEv - hPre).magnitude:E6}")
+                  .Append("（比值 ").Append((hEv - hPre).magnitude > 1e-12 ? $"{(dHNow / (hEv - hPre).magnitude):F4}" : "n/a").Append('）');
                 sb.Append("\n  ⇒ 读法：两个比值都 ≈1 ⇒ 幅值与方向都对（残差=时机/居中）；比值差得远 ⇒ 幅值；|Δh| 对而 h 方向偏 ⇒ 方向");
 
                 // ★ **逐要素对照**（2026-09-19 加）：不变量只给"能量/角动量"两个标量，定位不到是哪个要素错的。
@@ -394,14 +388,14 @@ namespace PioneerFramework
                     double plT = DVector3.Dot(stagedPlanDvVec, thatN);
                     double plN = DVector3.Dot(stagedPlanDvVec, hhatN);
                     sb.Append("\n  ── ★ 终端真值：实际交付的 Δv vs 计划（只用状态，无模型）──");
-                    sb.Append("\n    |Δv|：实测反推 ").Append(dvImplied.magnitude.ToString("F3"))
-                      .Append(" vs 计划 ").Append(stagedPlanDvVec.magnitude.ToString("F3"))
-                      .Append("（比值 ").Append((dvImplied.magnitude / Math.Max(stagedPlanDvVec.magnitude, 1e-9)).ToString("F5")).Append("）");
-                    sb.Append("\n    R/T/N 实测反推 ").Append(DVector3.Dot(dvImplied, rhatN).ToString("F2"))
-                      .Append(" / ").Append(DVector3.Dot(dvImplied, thatN).ToString("F2"))
-                      .Append(" / ").Append(DVector3.Dot(dvImplied, hhatN).ToString("F2"))
-                      .Append("　vs 计划 ").Append(plR.ToString("F2")).Append(" / ").Append(plT.ToString("F2"))
-                      .Append(" / ").Append(plN.ToString("F2"));
+                    sb.Append("\n    |Δv|：实测反推 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{dvImplied.magnitude:F3}")
+                      .Append(" vs 计划 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{stagedPlanDvVec.magnitude:F3}")
+                      .Append("（比值 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(dvImplied.magnitude / Math.Max(stagedPlanDvVec.magnitude, 1e-9)):F5}").Append('）');
+                    sb.Append("\n    R/T/N 实测反推 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{DVector3.Dot(dvImplied, rhatN):F2}")
+                      .Append(" / ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{DVector3.Dot(dvImplied, thatN):F2}")
+                      .Append(" / ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{DVector3.Dot(dvImplied, hhatN):F2}")
+                      .Append("　vs 计划 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{plR:F2}").Append(" / ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{plT:F2}")
+                      .Append(" / ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{plN:F2}");
                     // ★ 判据的"燃烧前参考"（排队时抓）vs 执行器的（点火时抓 `burnPreBurnOrbit`）—— 同一节点。
                     //   ⚠ 两边若不是同一个状态，"期望"从根上就偏了 ⇒ 这一行必须为 ~0。
                     if (g.burnHasPreBurnOrbit)
@@ -409,31 +403,31 @@ namespace PioneerFramework
                         (DVector3 rPre2, DVector3 vPre2) =
                             g.burnPreBurnOrbit.RightHandedStateVectorsAtUT(stagedNodeUt);
                         sb.Append("\n    ★ 两个「燃烧前参考」在同一节点：|Δr|=")
-                          .Append((rPre2 - rN).magnitude.ToString("E3")).Append(" m｜|Δv|=")
-                          .Append((vPre2 - vN).magnitude.ToString("E3")).Append(" m/s（应为 ~0）");
+                          .Append(System.Globalization.CultureInfo.CurrentCulture, $"{(rPre2 - rN).magnitude:E3}").Append(" m｜|Δv|=")
+                          .Append(System.Globalization.CultureInfo.CurrentCulture, $"{(vPre2 - vN).magnitude:E3}").Append(" m/s（应为 ~0）");
                     }
                     sb.Append("\n    ΔR/ΔT/ΔN = ")
-                      .Append((DVector3.Dot(dvImplied, rhatN) - plR).ToString("F2")).Append(" / ")
-                      .Append((DVector3.Dot(dvImplied, thatN) - plT).ToString("F2")).Append(" / ")
-                      .Append((DVector3.Dot(dvImplied, hhatN) - plN).ToString("F2"))
+                      .Append(System.Globalization.CultureInfo.CurrentCulture, $"{(DVector3.Dot(dvImplied, rhatN) - plR):F2}").Append(" / ")
+                      .Append(System.Globalization.CultureInfo.CurrentCulture, $"{(DVector3.Dot(dvImplied, thatN) - plT):F2}").Append(" / ")
+                      .Append(System.Globalization.CultureInfo.CurrentCulture, $"{(DVector3.Dot(dvImplied, hhatN) - plN):F2}")
                       .Append(" m/s　【通道扫描结论：切向每 +2.8 m/s 对应 Δa +8.5 km】");
                     const double R2D = 180.0 / Math.PI;
                     sb.Append("\n  ── 逐要素：期望 vs 实测（定位用）──");
-                    sb.Append("\n    a：").Append((ovExp.semiMajorAxis / 1000.0).ToString("F2"))
-                      .Append(" vs ").Append((ovNow2.semiMajorAxis / 1000.0).ToString("F2")).Append(" km")
-                      .Append("（差 ").Append((ovNow2.semiMajorAxis - ovExp.semiMajorAxis).ToString("F0")).Append(" m）");
-                    sb.Append("\n    e：").Append(ovExp.eccentricity.ToString("E6"))
-                      .Append(" vs ").Append(ovNow2.eccentricity.ToString("E6")).Append("（差 ")
-                      .Append((ovNow2.eccentricity - ovExp.eccentricity).ToString("E3")).Append("）");
-                    sb.Append("\n    i：").Append((ovExp.inclination * R2D).ToString("F6"))
-                      .Append(" vs ").Append((ovNow2.inclination * R2D).ToString("F6")).Append("°")
-                      .Append("（差 ").Append(((ovNow2.inclination - ovExp.inclination) * R2D).ToString("E3")).Append("°）");
-                    sb.Append("\n    LAN：").Append((ovExp.LAN * R2D).ToString("F6"))
-                      .Append(" vs ").Append((ovNow2.LAN * R2D).ToString("F6")).Append("°")
-                      .Append("（差 ").Append(((ovNow2.LAN - ovExp.LAN) * R2D).ToString("E3")).Append("°）");
-                    sb.Append("\n    argp：").Append((ovExp.argumentOfPeriapsis * R2D).ToString("F6"))
-                      .Append(" vs ").Append((ovNow2.argumentOfPeriapsis * R2D).ToString("F6")).Append("°")
-                      .Append("（差 ").Append(((ovNow2.argumentOfPeriapsis - ovExp.argumentOfPeriapsis) * R2D).ToString("E3")).Append("°）");
+                    sb.Append("\n    a：").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ovExp.semiMajorAxis / 1000.0):F2}")
+                      .Append(" vs ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ovNow2.semiMajorAxis / 1000.0):F2}").Append(" km")
+                      .Append("（差 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ovNow2.semiMajorAxis - ovExp.semiMajorAxis):F0}").Append(" m）");
+                    sb.Append("\n    e：").Append(System.Globalization.CultureInfo.CurrentCulture, $"{ovExp.eccentricity:E6}")
+                      .Append(" vs ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{ovNow2.eccentricity:E6}").Append("（差 ")
+                      .Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ovNow2.eccentricity - ovExp.eccentricity):E3}").Append('）');
+                    sb.Append("\n    i：").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ovExp.inclination * R2D):F6}")
+                      .Append(" vs ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ovNow2.inclination * R2D):F6}").Append('°')
+                      .Append("（差 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{((ovNow2.inclination - ovExp.inclination) * R2D):E3}").Append("°）");
+                    sb.Append("\n    LAN：").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ovExp.LAN * R2D):F6}")
+                      .Append(" vs ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ovNow2.LAN * R2D):F6}").Append('°')
+                      .Append("（差 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{((ovNow2.LAN - ovExp.LAN) * R2D):E3}").Append("°）");
+                    sb.Append("\n    argp：").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ovExp.argumentOfPeriapsis * R2D):F6}")
+                      .Append(" vs ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ovNow2.argumentOfPeriapsis * R2D):F6}").Append('°')
+                      .Append("（差 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{((ovNow2.argumentOfPeriapsis - ovExp.argumentOfPeriapsis) * R2D):E3}").Append("°）");
                 }
             }
 
@@ -449,17 +443,17 @@ namespace PioneerFramework
             bool done = !g.HasActiveBurn;
 
             sb.Append("\n  船：G").Append(g.GroupId)
-              .Append("｜计划 |Δv|=").Append(stagedPlanDv.ToString("F2"))
+              .Append("｜计划 |Δv|=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{stagedPlanDv:F2}")
               .Append(" m/s｜**实际已烧** ")
-              .Append((g.trimMainBurnDv > 0.0 ? g.trimMainBurnDv : g.appliedBurnDV).ToString("F2")).Append(" m/s")
+              .Append(System.Globalization.CultureInfo.CurrentCulture, $"{(g.trimMainBurnDv > 0.0 ? g.trimMainBurnDv : g.appliedBurnDV):F2}").Append(" m/s")
               .Append(g.trimMainBurnDv > 0.0
-                  ? "（主燃；另有微调 " + g.trimLastDv.ToString("F3") + " m/s —— 微调会清掉 `appliedBurnDV`，"
+                  ? "（主燃；另有微调 " + $"{g.trimLastDv:F3}" + " m/s —— 微调会清掉 `appliedBurnDV`，"
                     + "所以这里显式抓主燃那一份）"
                   : "");
-            sb.Append("\n  现在：e=").Append(e.ToString("E3"))
-              .Append("｜a=").Append((ov.semiMajorAxis / 1000.0).ToString("F0")).Append(" km")
-              .Append("（期望 ").Append((stagedExpectedSma / 1000.0).ToString("F0")).Append(" km，差 ")
-              .Append((smaErr * 100.0).ToString("F2")).Append("%）");
+            sb.Append("\n  现在：e=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{e:E3}")
+              .Append("｜a=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ov.semiMajorAxis / 1000.0):F0}").Append(" km")
+              .Append("（期望 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(stagedExpectedSma / 1000.0):F0}").Append(" km，差 ")
+              .Append(System.Globalization.CultureInfo.CurrentCulture, $"{(smaErr * 100.0):F2}").Append("%）");
             sb.Append("\n  ⇒ ").Append(!burned ? "**还没烧**（等机动时刻到了再检查）"
                 : !done ? "**正在烧**（等它烧完）"
                 : "已烧完");
@@ -467,7 +461,7 @@ namespace PioneerFramework
             //   微调自己也是一次机动 ⇒ 它烧的时候 `HasActiveBurn` 又是 true ⇒ 状态会退回"正在烧"，
             //   这是**正常**的（不是卡住）；等它烧完再看 e。
             sb.Append("\n  微调：").Append(g.trimLastDv > 0.0
-                ? "已出手 " + g.trimLastDv.ToString("F3") + " m/s"
+                ? "已出手 " + $"{g.trimLastDv:F3}" + " m/s"
                 : "未出手（Δv 在带外 / 无可修项 / 测试船关了它）");
             if (burned && done)
             {
@@ -482,8 +476,8 @@ namespace PioneerFramework
                   .Append(pass ? "**PASS**" : "**FAIL**")
                   .Append("（执行侧判据；计划侧早就过了）");
                 sb.Append("\n  ⇒ 执行损失反推：方向误差 ≈ ")
-                  .Append((e * vAt * 0.5).ToString("F1")).Append(" m/s")
-                  .Append("（e=").Append(e.ToString("E3")).Append("，v=").Append(vAt.ToString("F0")).Append(" m/s）");
+                  .Append(System.Globalization.CultureInfo.CurrentCulture, $"{(e * vAt * 0.5):F1}").Append(" m/s")
+                  .Append("（e=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{e:E3}").Append("，v=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{vAt:F0}").Append(" m/s）");
                 if (!pass)
                     // ⚠ 这段提示 2026-09-19 更正过一次：原文引用"点火夹角 107.4°"，那件事已结案
                     //（根因是场景提前量不够 + 燃烧居中吃掉对准时间，已修）。现在能确定的是**居中与点火夹角都对**，

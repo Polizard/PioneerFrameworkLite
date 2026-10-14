@@ -23,21 +23,20 @@ namespace PioneerFramework
     public static class ThrustAxisHelper
     {
         private static readonly ThrustAxis[] XzAxes =
-            { ThrustAxis.Forward, ThrustAxis.Back, ThrustAxis.Left, ThrustAxis.Right };
+            [ThrustAxis.Forward, ThrustAxis.Back, ThrustAxis.Left, ThrustAxis.Right];
 
         public static DVector3 ShipVector(this ThrustAxis axis)
-        {
-            switch (axis)
-            {
-                case ThrustAxis.Forward: return DVector3.forward;  // +Z
-                case ThrustAxis.Back:    return DVector3.back;     // -Z
-                case ThrustAxis.Left:    return DVector3.left;     // -X
-                case ThrustAxis.Right:   return DVector3.right;    // +X
-                case ThrustAxis.Up:      return DVector3.up;       // +Y
-                case ThrustAxis.Down:    return DVector3.down;     // -Y
-                default:                 return DVector3.forward;
-            }
-        }
+        
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              => axis switch
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              {
+            ThrustAxis.Forward => DVector3.forward,
+            ThrustAxis.Back => DVector3.back,
+            ThrustAxis.Left => DVector3.left,
+            ThrustAxis.Right => DVector3.right,
+            ThrustAxis.Up => DVector3.up,
+            ThrustAxis.Down => DVector3.down,
+            _ => DVector3.forward,
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              };
 
         /// <summary>
         /// XZ 四向随建筑 Rot4 旋转映射；Up/Down 固定。
@@ -105,7 +104,7 @@ namespace PioneerFramework
     /// </summary>
     public class GasDraw
     {
-        public PropellantDef? propellant;
+        public PropellantDef? propellant = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         public double flowKgPerSec;
     }
 
@@ -341,9 +340,9 @@ namespace PioneerFramework
         // ── PFL 火箭虚拟推进持久化（LA-18）──
         // RocketDesignSpec 与虚拟推进参数不依赖地图建筑，因此需要显式落盘；
         // 读档后在 FinalizeInit 中重新注册到本 MapComponent 的推进聚合。
-        private RocketDesignSpec rocketSpec;
+        private RocketDesignSpec rocketSpec = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         private bool hasVirtualPropulsion;
-        private string virtualPropellantDefName;
+        private string? virtualPropellantDefName;
         private float virtualVe;
         private float virtualMassFlow;
         private float virtualFuelMass;
@@ -358,7 +357,7 @@ namespace PioneerFramework
         // 多储罐同种工质自然累加；一条船可同时携带多种工质（液氢/化学/氙……）。
         // 该向量是运行时聚合缓存，不落盘：由各储罐建筑在 Spawn 时 +、
         // 在加注/消耗/摧毁时 ±，读档/取档后由建筑重建，避免重复记账。
-        private Dictionary<PropellantDef, double> propellantMass = new Dictionary<PropellantDef, double>();
+        private Dictionary<PropellantDef, double> propellantMass = new();
 
         /// <summary>
         /// **按工质的容量**（kg）—— 2026-10-07 补（[A3] 有 Map 侧进气道的前置）。
@@ -367,7 +366,7 @@ namespace PioneerFramework
         /// 由 `CompPropellantTank` 在自己的 Spawn/DeSpawn 处按工质登记（与总容量**同源**）。
         /// 同样是运行时聚合缓存，不进档（读档后由储罐重登记）。
         /// </summary>
-        private Dictionary<PropellantDef, double> propellantCapacity = new Dictionary<PropellantDef, double>();
+        private Dictionary<PropellantDef, double> propellantCapacity = new();
 
         /// <summary>工质总质量缓存（**double**，供并行物理线程只读，避免遍历字典）。
         /// ⚠ double 的理由见 <see cref="IPropulsionSource.GetPropellantMass"/>：累加量在 72 t 处
@@ -380,7 +379,7 @@ namespace PioneerFramework
         // ── [V7] 传感器阵列建筑登记表（建筑级 EW，2026-10-01）──
         // 与工质向量/推进器同纪律：**不落盘**，由各建筑 comp 在 Spawn 时登记、DeSpawn 时注销、读档后重建。
         // 汇总由 `SpaceGameComp` **每物理步**投影进所属 group（[N7] 投影链；建筑不自己改 Group）。
-        private readonly List<Thing> sensorArrays = new List<Thing>();
+        private readonly List<Thing> sensorArrays = new();
 
         /// <summary>登记一座传感器阵列建筑（`CompSensorArray.PostSpawnSetup` 调）。</summary>
         public void RegisterSensorArray(Thing t)
@@ -419,7 +418,7 @@ namespace PioneerFramework
 
         // ── [E3] 干扰机建筑登记表（2026-10-02）──
         // 与传感器阵列同纪律：**不落盘**、由建筑 comp 登记/注销、读档后重建；汇总由物理步投影进 group。
-        private readonly List<Thing> jammers = new List<Thing>();
+        private readonly List<Thing> jammers = new();
 
         public void RegisterJammer(Thing t)
         {
@@ -447,7 +446,7 @@ namespace PioneerFramework
 
         // ── [V7]/[E2] 主动雷达建筑登记表（2026-10-01）──
         // 与传感器阵列同纪律：**不落盘**、由建筑 comp 登记/注销、读档后重建；汇总由物理步投影进 group。
-        private readonly List<Thing> activeRadars = new List<Thing>();
+        private readonly List<Thing> activeRadars = new();
 
         /// <summary>登记一座主动雷达建筑（`CompActiveRadar.PostSpawnSetup` 调）。</summary>
         public void RegisterActiveRadar(Thing t)
@@ -487,14 +486,14 @@ namespace PioneerFramework
         // ── 工质网络（储罐 + 引擎）──
         // 键 = 工质，值 = 使用该工质的引擎聚合（ve/ṁ/推力）。
         // 引擎 Spawn/DeSpawn 时注册/注销；并行物理线程只读网络引用与 float。
-        private readonly Dictionary<PropellantDef, PropellantNetwork> networks = new Dictionary<PropellantDef, PropellantNetwork>();
-        private List<PropellantNetwork> networkList = new List<PropellantNetwork>();
+        private readonly Dictionary<PropellantDef, PropellantNetwork> networks = new();
+        private List<PropellantNetwork> networkList = new();
 
         // ── 推进器建筑列表（burn 状态传播 / 喷焰表现）──
-        private readonly List<CompThruster> thrusters = new List<CompThruster>();
+        private readonly List<CompThruster> thrusters = new();
 
         /// <summary>**[A3] 本船的进气道**（建筑 comp；Spawn/DeSpawn 登记/注销）—— 充填相按"面积×系数"求和。</summary>
-        private readonly List<CompIntakeAir> intakes = new List<CompIntakeAir>();
+        private readonly List<CompIntakeAir> intakes = new();
 
         // ── 六方向推力聚合（per-axis 缓存，引擎注册/注销时维护；并行物理线程只读）──
         private readonly float[] totalThrustByAxis = new float[6];

@@ -66,7 +66,7 @@ namespace PioneerFramework
         /// <summary>河：水色 = **地图上海洋的那一色**（= 背景 biome 贴图的平均色，也就是整球的底色）——
         /// 用户 2026-10-10 口径："河流的实心的颜色和星球海洋底色一致"（这样河口与海、帽外基底是同一种水）。
         /// 没背景 biome 贴图（算不出平均色）时用它兜底。</summary>
-        private static readonly Color32 RiverFallbackWaterColor = new Color32(59, 71, 90, 255);
+        private static readonly Color32 RiverFallbackWaterColor = new(59, 71, 90, 255);
         /// <summary>河：岸色 = 水色 × 它（只压暗一点点，读作"水边"；不想要描边就把 `RiverBankBorderPx` 给 0）。</summary>
         private const float RiverBankDarken = 0.72f;
         /// <summary>河：岸比芯每侧宽出多少 px（细描边；给 0 就是一条纯色线）。</summary>
@@ -93,9 +93,9 @@ namespace PioneerFramework
             public float thetaMaxRad;       // 补丁盘覆盖的半角（含余量）
         }
 
-        private static readonly Dictionary<int, Patch> baked = new Dictionary<int, Patch>();
-        private static readonly HashSet<int> failed = new HashSet<int>();
-        private static readonly HashSet<int> loadTried = new HashSet<int>();
+        private static readonly Dictionary<int, Patch> baked = new();
+        private static readonly HashSet<int> failed = new();
+        private static readonly HashSet<int> loadTried = new();
 
         /// <summary>缓存所属的世界种子（地形是世界种子的函数 ⇒ 换种子必须整个丢掉）。</summary>
         private static int cachedSeed = int.MinValue;
@@ -237,8 +237,7 @@ namespace PioneerFramework
                 if (tex.width != tex.height)
                 {
                     UnityEngine.Object.Destroy(tex);
-                    message = string.Format("旁挂文件不是正方形（{0}×{1}）⇒ 那是旧版整球图，忽略（重烤一次即得补丁）",
-                        tex.width, tex.height);
+                    message = $"旁挂文件不是正方形（{tex.width}×{tex.height}）⇒ 那是旧版整球图，忽略（重烤一次即得补丁）";
                     return false;
                 }
                 if (layer == null || !ComputeCapFromLayer(layer, out Vector3 center, out float halfAngleDeg))
@@ -261,7 +260,7 @@ namespace PioneerFramework
                     thetaMaxRad = (Mathf.Min(halfAngleDeg, MaxHalfAngleDeg) + PatchMarginDeg) * Mathf.Deg2Rad,
                 };
                 Version++;                       // 加载到补丁 ⇒ 同样要丢材质/网格缓存
-                message = string.Format("已从旁挂文件加载（{0:F0} KB）", bytes.Length / 1024f);
+                message = $"已从旁挂文件加载（{bytes.Length / 1024f:F0} KB）";
                 return true;
             }
             catch (Exception ex)
@@ -386,8 +385,8 @@ namespace PioneerFramework
         //   那张贴图 —— **它是给世界着色器做调制的细节图，不是颜色图**（大气线当年踩过同一个坑：
         //   "原版海洋贴图是给着色器调制的细节图，直接画=黑"）。
         // ⇒ 口径改成"**数据区里水格最多的那个 biome**的贴图"（= 烘焙海洋的同一来源 ⇒ 盘内/盘缘/基底球三处同色）✓
-        private static readonly Dictionary<int, Texture2D?> baseTexCache = new Dictionary<int, Texture2D?>();
-        private static readonly Dictionary<int, string> baseTexLabel = new Dictionary<int, string>();
+        private static readonly Dictionary<int, Texture2D?> baseTexCache = new();
+        private static readonly Dictionary<int, string> baseTexLabel = new();
 
         /// <summary>
         /// 解析"该天体的底色贴图"：优先取**水格最多的 biome 的贴图**（= 烘焙海洋的同一来源），
@@ -427,16 +426,15 @@ namespace PioneerFramework
                 if (best != null && bestN >= 16 && bestN * 100 >= layer.TilesCount)
                 {
                     tex = best.DrawMaterial?.mainTexture as Texture2D;
-                    label = string.Format("水格最多 biome={0}（贴图 {1}，{2}/{3} 格）",
-                        best.defName, tex != null ? tex.name : "?", bestN, waterTiles);
+                    label = $"水格最多 biome={best.defName}（贴图 {(tex != null ? tex.name : "?")}，{bestN}/{waterTiles} 格）";
                 }
                 if (tex == null)
                 {
                     var bg = layer.Def?.backgroundBiome;
                     tex = bg?.DrawMaterial?.mainTexture as Texture2D;
-                    label = string.Format("背景 biome（贴图 {0}）", tex != null ? tex.name : "?");
+                    label = $"背景 biome（贴图 {(tex != null ? tex.name : "?")}）";
                     if (bg != null && waterTiles > 0)
-                        label += string.Format("〔该层有 {0} 个水格，但没有够格的水 biome ⇒ 退回背景口径〕", waterTiles);
+                        label += $"〔该层有 {waterTiles} 个水格，但没有够格的水 biome ⇒ 退回背景口径〕";
                 }
             }
             catch (Exception ex)
@@ -526,11 +524,18 @@ namespace PioneerFramework
                 cam.nearClipPlane = 0.1f;
                 cam.farClipPlane = 100f;
                 cam.clearFlags = CameraClearFlags.SolidColor;
-                cam.cullingMask = 0;                             // 场景本身一概不画：只画下面的命令缓冲
+                // 2026-10-13（P2-c）：**改用绘制队列**——1.7 的 UnityStubs 里
+                // `CommandBuffer.DrawMesh`（CommandBuffer.cs:16）与 `Camera.AddCommandBuffer`（Camera.cs:163）
+                // 都是**记日志的空实现**（实测：日志两条 Stub + 我们的自检数字"盘内非底色占比 ≈ 0"，
+                // 而清屏色那几项自检全过 ⇒ `cam.Render()` 有效，是命令缓冲根本没画）。
+                // 当年用命令缓冲要解决的"同帧串到别的相机"（见下方历史注释）改由**独立图层**解决：
+                // 烘焙网格排 `BakeLayer`、烘焙相机只收该层（引擎的 `CopyPendingCommands` 按层掩码过滤；
+                // 队列在帧界清空，不漏帧）。
+                const int BakeLayer = 29;   // 烘焙专用层（PFView 场景层 = 30，互不串画；原版无 29/30 占用）
+                if (Find.Camera != null)
+                    Find.Camera.cullingMask &= ~(1 << BakeLayer);   // 地图相机同样摘掉该层（位 29 专属烘焙）
+                cam.cullingMask = 1 << BakeLayer;
                 cam.targetTexture = rt;
-                // ⚠ 用**命令缓冲**而不是 `Graphics.DrawMesh` 排队：后者是"本帧对**所有**相机生效"，
-                //   同一帧里 PFView 的相机也会画到这块 UV 平面上（闪一帧）。命令缓冲只挂在这台临时相机上。
-                var cb = new UnityEngine.Rendering.CommandBuffer { name = "PF_SurfaceBake" };
 
                 // 底色贴图 = 水格最多的 biome（= 烘焙海洋的同一来源）；没有水格才退回背景 biome（见 ResolveBaseTexture 的注释）
                 var bgTex = ResolveBaseTexture(layer, out string baseTexLabel);
@@ -548,10 +553,7 @@ namespace PioneerFramework
                 bool flatBase = body.baseSphereColor.a > 0f;
                 if (flatBase) bgCol = ToRenderColor(body.baseSphereColor);
                 else if (bgTex != null) bgCol = AverageColor(bgTex, bgCol);
-                Log.Message(string.Format("[PFView·烘焙] 渲染色空间={0}｜盘缘色={1}（{2}）",
-                    QualitySettings.activeColorSpace,
-                    flatBase ? "Def.baseSphereColor" : "水格最多 biome 贴图平均色",
-                    string.Format("({0:F0},{1:F0},{2:F0})", bgCol.r * 255f, bgCol.g * 255f, bgCol.b * 255f)));
+                Log.Message($"[PFView·烘焙] 渲染色空间={QualitySettings.activeColorSpace}｜盘缘色={(flatBase ? "Def.baseSphereColor" : "水格最多 biome 贴图平均色")}（{$"({bgCol.r * 255f:F0},{bgCol.g * 255f:F0},{bgCol.b * 255f:F0})"}）");
                 if (bgTex == null)
                     Log.Warning("[PFView·烘焙] 取不到底色贴图 ⇒ 补丁盘内只能用兜底色");
                 cam.backgroundColor = bgCol;
@@ -559,12 +561,9 @@ namespace PioneerFramework
                 // 2) 逐格多边形摊到**补丁平面**（每 biome 一个 submesh；映射 = `PatchUv`）
                 mesh = BuildBakeMesh(layer, centers, capCenter, patchT1, patchT2, thetaMaxRad, out var biomeMats);
                 for (int b = 0; b < biomeMats.Length; b++)
-                    cb.DrawMesh(mesh, Matrix4x4.identity, biomeMats[b], b);
+                    Graphics.DrawMesh(mesh, Matrix4x4.identity, biomeMats[b], BakeLayer, null, b, null);
 
-                cam.AddCommandBuffer(UnityEngine.Rendering.CameraEvent.BeforeForwardOpaque, cb);
                 cam.Render();
-                cam.RemoveAllCommandBuffers();
-                cb.Release();
                 cam.targetTexture = null;
                 UnityEngine.Object.Destroy(camGo);
 
@@ -583,6 +582,13 @@ namespace PioneerFramework
                 RenderTexture.ReleaseTemporary(rt);
                 rt = null;
 
+                // 3a) **回读一次，三处共用**（2026-10-14，M1#1）：原先自检/细节/口径核对各调一次
+                //     `GetPixels32()` ⇒ 每次一份 3072²×4 B = 36 MB 的新数组与整张拷贝（共 3 份、108 MB）。
+                //     现在只读一份：自检读它 → 细节就地改它 → `SetPixels32` 上传一次 → 口径核对读它
+                //     （上传前后像素值不变 ⇒ 三者数值口径与原来逐位相同）。
+                //     ⚠ 不做跨次缓存（静态留 36 MB 换"一次烘焙省一份分配"不值，烘焙有盘缓存 ⇒ 本就稀发）。
+                Color32[] px = tex.GetPixels32();
+
                 // 3b) **自检 1：几何** —— 所有格心必须落在补丁盘内。
                 // 这条是"网格/映射/球冠算错"的唯一硬证据：那种错从画面上看不出来（图还是那张图，只是错位/被裁）。
                 int outside = 0;
@@ -594,7 +600,7 @@ namespace PioneerFramework
                     if (dx * dx + dy * dy > 1.0001f) outside++;
                 }
                 if (outside > 0)
-                    Log.Error(string.Format("[PFView·烘焙] {0} 个格心落在补丁盘外 ⇒ 球冠/映射有问题（这张图不可用）", outside));
+                    Log.Error($"[PFView·烘焙] {outside} 个格心落在补丁盘外 ⇒ 球冠/映射有问题（这张图不可用）");
 
                 // 3c) **自检 2：像素** —— 盘内"非底色"像素占比（采样步长 4 ⇒ 省 16 倍时间）。
                 // 存在的理由：前两版都出现过"日志说成功、图其实什么都没画上"（一次纯白、一次品红带），
@@ -602,7 +608,6 @@ namespace PioneerFramework
                 float diskRatio = 0f;
                 if (bgTex != null)
                 {
-                    var px = tex.GetPixels32();
                     Color32 bg = bgCol;
                     const int step = 4;
                     int hit = 0, total = 0;
@@ -634,12 +639,12 @@ namespace PioneerFramework
                 Color32 waterColor = bgTex != null
                     ? new Color32((byte)(bgCol.r * 255f), (byte)(bgCol.g * 255f), (byte)(bgCol.b * 255f), 255)
                     : RiverFallbackWaterColor;
-                string detailReadout = CompositeDetails(tex, layer, centers, capCenter, patchT1, patchT2, thetaMaxRad, waterColor);
+                string detailReadout = CompositeDetails(tex, px, layer, centers, capCenter, patchT1, patchT2, thetaMaxRad, waterColor);
 
                 // 3e) **海洋口径自检**（2026-10-11 用户："基底球的反射率还是和烘焙的海洋不一致"）：
                 //     基底球直接采样原始 biome 贴图（sRGB）；补丁的海洋格也应当是原贴图的同一编码 ⇒ 两者比值 ≈ 1。
                 //     差一倍以上 = 编码口径不一致（线性/sRGB 双重转换那类），一眼可判。
-                string waterCheck = OceanColorCheck(tex, layer, centers, capCenter, patchT1, patchT2, thetaMaxRad);
+                string waterCheck = OceanColorCheck(px, layer, centers, capCenter, patchT1, patchT2, thetaMaxRad);
 
                 // 4) 落盘（旁挂文件）
                 int pngBytes = 0;
@@ -680,10 +685,7 @@ namespace PioneerFramework
                 double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * (1000.0 / System.Diagnostics.Stopwatch.Frequency);
                 float diameterKm = (float)(body.radius * 2.0 * thetaMaxRad / 1000.0);
                 float kmPerTexel = (float)(body.radius * thetaMaxRad / (PatchSize * 0.5) / 1000.0);
-                message = string.Format(
-                    "{0}：补丁 {1}² · 球冠半角 {2:F1}°（+{3:F0}° 余量；中心 φ{4:F1}° λ{5:F1}°）· {6} 格（越界 {7}）· 直径 {8:F0} km · {9:F2} km/texel（一格 25 km ≈ {10:F1} texel）· 用时 {11:F0} ms · PNG {12:F0} KB · 盘内覆被 {13:P1} · {14} · {15}",
-                    body.defName, PatchSize, capHalfDeg, PatchMarginDeg, centerLatLon.y, centerLatLon.x,
-                    tiles, outside, diameterKm, kmPerTexel, 25f / kmPerTexel, ms, pngBytes / 1024f, diskRatio, detailReadout, waterCheck);
+                message = $"{body.defName}：补丁 {PatchSize}² · 球冠半角 {capHalfDeg:F1}°（+{PatchMarginDeg:F0}° 余量；中心 φ{centerLatLon.y:F1}° λ{centerLatLon.x:F1}°）· {tiles} 格（越界 {outside}）· 直径 {diameterKm:F0} km · {kmPerTexel:F2} km/texel（一格 25 km ≈ {25f / kmPerTexel:F1} texel）· 用时 {ms:F0} ms · PNG {pngBytes / 1024f:F0} KB · 盘内覆被 {diskRatio:P1} · {detailReadout} · {waterCheck}";
                 Log.Message("[PFView·烘焙] " + message);
                 return true;
             }
@@ -724,14 +726,14 @@ namespace PioneerFramework
         /// 把山 / 河 / 路画进补丁像素，返回一句读数（进日志）。
         /// 顺序：山（地形起伏，乘性）→ 河（岸 → 芯）→ 路（按层，数据里的层色直接用）。
         /// </summary>
-        private static string CompositeDetails(Texture2D tex, PlanetLayer layer, Vector3[] centers,
+        private static string CompositeDetails(Texture2D tex, Color32[] px, PlanetLayer layer, Vector3[] centers,
             Vector3 capCenter, Vector3 patchT1, Vector3 patchT2, float thetaMaxRad, Color32 waterColor)
         {
             int size = PatchSize;
             float tilePx = TilePixelSize(layer, thetaMaxRad);
             if (tilePx < 0.25f) return "细节：跳过（一格不足 0.25 px）";
 
-            var px = tex.GetPixels32();
+            // `px` 由调用方回读一次并传入（M1#1）；细节就地改它，末尾统一 `SetPixels32` 上传。
 
             // ── ① 山：高度场（**半分辨率**）+ 无方向高通 ──
             //    半分辨率是划算的：起伏本来就是低频量 ⇒ 28 MB 而不是 113 MB，最后双线性采样回去。
@@ -787,8 +789,7 @@ namespace PioneerFramework
 
             tex.SetPixels32(px);
             tex.Apply();
-            return string.Format("山 {0} 座 · 河 {1} 段 · 路 {2} 段（一格 {3:F1} px · 起伏幅度 {4:P0}）",
-                hills, rivers, roads, tilePx, ReliefStrength);
+            return $"山 {hills} 座 · 河 {rivers} 段 · 路 {roads} 段（一格 {tilePx:F1} px · 起伏幅度 {ReliefStrength:P0}）";
         }
 
         /// <summary>
@@ -935,10 +936,11 @@ namespace PioneerFramework
         /// 报 ①/③（海洋 vs 底色，也就是用户看的那条）与 ②/③（盘缘 vs 纯底色；两者本该一模一样 ⇒ 不相等说明余量带里有东西）。
         /// ⚠ 2026-10-11 教训：上一版拿 **`bgCol`（线性值）** 去比**像素字节**，两把尺子 ⇒ 报了个 1.00 的假绿（真正的差异在编码上）。
         /// </summary>
-        private static string OceanColorCheck(Texture2D tex, PlanetLayer layer, Vector3[] centers,
+        private static string OceanColorCheck(Color32[] px, PlanetLayer layer, Vector3[] centers,
             Vector3 capCenter, Vector3 t1, Vector3 t2, float thetaMaxRad)
         {
-            var px = tex.GetPixels32();
+            // `px` 由调用方回读一次并传入（M1#1）；本核对读的时候，细节那一步已把改动上传过，
+            // 但"上传不改缓冲里的值" ⇒ 这份 `px` 与原来"这里再读一次"的数值逐位相同。
             Color32 Sample(float u, float v)
             {
                 int x = Mathf.Clamp((int)(u * PatchSize), 0, PatchSize - 1);
@@ -961,14 +963,9 @@ namespace PioneerFramework
                 Vector2 uv = PatchUv(centers[t], capCenter, t1, t2, thetaMaxRad);
                 Color32 c = Sample(uv.x, uv.y);
                 float ratio = Lum(corner) > 1f ? Lum(c) / Lum(corner) : 0f;
-                return string.Format(
-                    "口径自检：海洋格{0}像素({1},{2},{3}) ÷ 纯底色({4},{5},{6}) ⇒ {7:F2}{8}｜盘缘({9},{10},{11}) ÷ 纯底色 ⇒ {12:F2}{13}",
-                    t, c.r, c.g, c.b, corner.r, corner.g, corner.b, ratio,
-                    ratio > 1.3f || ratio < 0.77f ? "  ⚠" : "  ✓",
-                    ring.r, ring.g, ring.b, ringRatio,
-                    ringRatio > 1.15f || ringRatio < 0.87f ? "  ⚠ 盘缘带里有东西（本该=纯底色）" : "  ✓");
+                return $"口径自检：海洋格{t}像素({c.r},{c.g},{c.b}) ÷ 纯底色({corner.r},{corner.g},{corner.b}) ⇒ {ratio:F2}{(ratio > 1.3f || ratio < 0.77f ? "  ⚠" : "  ✓")}｜盘缘({ring.r},{ring.g},{ring.b}) ÷ 纯底色 ⇒ {ringRatio:F2}{(ringRatio > 1.15f || ringRatio < 0.87f ? "  ⚠ 盘缘带里有东西（本该=纯底色）" : "  ✓")}";
             }
-            return string.Format("口径自检：没有水格可采 ⇒ 只报盘缘 ÷ 纯底色 = {0:F2}", ringRatio);
+            return $"口径自检：没有水格可采 ⇒ 只报盘缘 ÷ 纯底色 = {ringRatio:F2}";
         }
 
         /// <summary>

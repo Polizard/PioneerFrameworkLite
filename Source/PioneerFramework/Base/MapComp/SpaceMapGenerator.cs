@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using RimWorld.Planet;
 using Verse;
 using UnityEngine;
@@ -18,7 +18,7 @@ namespace PioneerFramework
         /// <param name="height">地图高度（格数）</param>
         /// <param name="mapName">地图名称（仅日志）</param>
         /// <returns>生成的 Map 对象，失败返回 null</returns>
-        public static Map GeneratePocketMap(int width, int height, string mapName = null)
+        public static Map? GeneratePocketMap(int width, int height, string? mapName = null)
         {
             var anchorMap = GetAnchorMap();
             return GeneratePocketMap(width, height, anchorMap, "PF_SpacePocket", mapName);
@@ -33,7 +33,7 @@ namespace PioneerFramework
         /// <param name="sourceMap">锚点地图（所有空间站共享同一个）</param>
         /// <param name="mapName">地图名称（仅日志）</param>
         /// <returns>生成的 Map 对象，失败返回 null</returns>
-        public static Map GeneratePocketMap(int width, int height, Map sourceMap, string mapName = null)
+        public static Map? GeneratePocketMap(int width, int height, Map sourceMap, string? mapName = null)
         {
             return GeneratePocketMap(width, height, sourceMap, "PF_SpacePocket", mapName);
         }
@@ -41,7 +41,7 @@ namespace PioneerFramework
         /// <summary>
         /// 生成一个口袋地图（指定生成器）。
         /// </summary>
-        public static Map GeneratePocketMap(int width, int height, Map sourceMap, string generatorDefName, string mapName = null)
+        public static Map? GeneratePocketMap(int width, int height, Map? sourceMap, string generatorDefName, string? mapName = null)
         {
             // 1. 检查sourceMap有效性
             if (sourceMap == null)
@@ -103,7 +103,7 @@ namespace PioneerFramework
 
             if (map == null)
             {
-                Log.Error(string.Format("[PioneerFramework] Failed to generate pocket map: {0}", mapName ?? "Unnamed"));
+                Log.Error($"[PioneerFramework] Failed to generate pocket map: {(mapName ?? "Unnamed")}");
                 return null;
             }
 
@@ -120,8 +120,7 @@ namespace PioneerFramework
             if (spaceGame != null)
                 spaceGame.RegisterMapComponent(map.uniqueID, mapComp);
 
-            Log.Message(string.Format("[PioneerFramework] Generated pocket map '{0}' with ID {1}, size {2}x{3}, anchored to tile {4}", 
-                mapName ?? "SpaceMap", map.uniqueID, width, height, sourceMap.Tile));
+            Log.Message($"[PioneerFramework] Generated pocket map '{(mapName ?? "SpaceMap")}' with ID {map.uniqueID}, size {width}x{height}, anchored to tile {sourceMap.Tile}");
             return map;
         }
 
@@ -129,7 +128,7 @@ namespace PioneerFramework
         /// 生成航天器独立地图（非口袋地图语义）。
         /// 使用 SpacecraftMapParent，不加入 Find.World.pocketMaps。
         /// </summary>
-        public static Map GenerateSpacecraftMap(int width, int height, Map sourceMap, string spacecraftId, string generatorDefName)
+        public static Map? GenerateSpacecraftMap(int width, int height, Map sourceMap, string spacecraftId, string generatorDefName)
         {
             if (sourceMap == null)
                 return null;
@@ -190,8 +189,7 @@ namespace PioneerFramework
             if (spaceGame != null)
                 spaceGame.RegisterMapComponent(map.uniqueID, mapComp);
 
-            Log.Message(string.Format("[PioneerFramework] Generated spacecraft map ID {0} for spacecraft {1}, {2}x{3}",
-                map.uniqueID, spacecraftId, width, height));
+            Log.Message($"[PioneerFramework] Generated spacecraft map ID {map.uniqueID} for spacecraft {spacecraftId}, {width}x{height}");
             return map;
         }
 
@@ -199,7 +197,7 @@ namespace PioneerFramework
         /// 获取锚点地图（用于所有空间站共享tile）
         /// 优先返回玩家殖民地地图，如果没有则返回当前地图
         /// </summary>
-        public static Map GetAnchorMap()
+        public static Map? GetAnchorMap()
         {
             // 优先找玩家的殖民地地图
             foreach (var map in Find.Maps)
@@ -233,14 +231,14 @@ namespace PioneerFramework
             
             // 使用 PocketMapUtility 正确销毁地图
             PocketMapUtility.DestroyPocketMap(map);
-            Log.Message(string.Format("[PioneerFramework] Destroyed pocket map with ID {0}", map.uniqueID));
+            Log.Message($"[PioneerFramework] Destroyed pocket map with ID {map.uniqueID}");
         }
 
         /// <summary>
         /// 生成一个空白口袋地图（仅框架，无建筑无地形），用于取档恢复。
         /// 使用相同的 SpaceStationMapParent + PF_SpacePocket 生成器。
         /// </summary>
-        public static Map GenerateEmptyPocketMap(int width, int height)
+        public static Map? GenerateEmptyPocketMap(int width, int height)
         {
             var anchorMap = GetAnchorMap();
             if (anchorMap == null) return null;
@@ -306,8 +304,7 @@ namespace PioneerFramework
             if (spaceGame != null)
                 spaceGame.RegisterMapComponent(map.uniqueID, mapComp);
 
-            Log.Message(string.Format("[PioneerFramework] Generated empty pocket map ID {0}, size {1}x{2} for archive restore",
-                map.uniqueID, width, height));
+            Log.Message($"[PioneerFramework] Generated empty pocket map ID {map.uniqueID}, size {width}x{height} for archive restore");
             return map;
         }
 
@@ -412,7 +409,7 @@ namespace PioneerFramework
         /// <summary>
         /// 获取空间站实体关联的地图。
         /// </summary>
-        public static Map GetEntityMap(SpaceEntity entity)
+        public static Map? GetEntityMap(SpaceEntity entity)
         {
             if (entity == null || entity.MapId < 0) return null;
             return FindPocketMap(entity.MapId);
@@ -447,7 +444,7 @@ namespace PioneerFramework
         /// 已生成过（linkedMapId 指向存在的地图）时直接返回现有地图，幂等。
         /// 地图尺寸 = 部件水平面物理尺寸（1 格 = 1 米）。
         /// </summary>
-        public static Map GenerateRoomMap(SpaceEntity entity, SpacePart part)
+        public static Map? GenerateRoomMap(SpaceEntity entity, SpacePart part)
         {
             if (part == null || part.isDestroyed || !part.IsRoomModulePart)
                 return null;
@@ -469,7 +466,7 @@ namespace PioneerFramework
             var map = GeneratePocketMap(w, h, GetAnchorMap(), genName, "RoomMap");
             if (map == null)
             {
-                Log.Error(string.Format("[RoomMap] 舱室地图生成失败: part {0} ({1}x{2})", part.partId, w, h));
+                Log.Error($"[RoomMap] 舱室地图生成失败: part {part.partId} ({w}x{h})");
                 return null;
             }
 
@@ -480,8 +477,7 @@ namespace PioneerFramework
             }
             part.linkedMapId = map.uniqueID;
 
-            Log.Message(string.Format("[RoomMap] 舱室地图已生成: part {0}, map {1}, {2}x{3}",
-                part.partId, map.uniqueID, w, h));
+            Log.Message($"[RoomMap] 舱室地图已生成: part {part.partId}, map {map.uniqueID}, {w}x{h}");
             return map;
         }
 
@@ -502,7 +498,7 @@ namespace PioneerFramework
             }
 
             DestroyPocketMap(map);
-            Log.Message(string.Format("[RoomMap] 舱室地图 {0} 已销毁（内部 pawns 已清除）", mapId));
+            Log.Message($"[RoomMap] 舱室地图 {mapId} 已销毁（内部 pawns 已清除）");
         }
     }
 }

@@ -54,7 +54,7 @@ namespace PioneerFramework
         /// `<atmosphereColor>(0.62, 0.48, 0.35)</atmosphereColor>`。
         /// ⚠ **只影响表现**：物理（阻力/包线/掩码/准入）一律读 ρ₀ / H / 厚度，不读这个颜色。
         /// </summary>
-        public Color atmosphereColor = new Color(0.35f, 0.55f, 0.85f, 1f);
+        public Color atmosphereColor = new(0.35f, 0.55f, 0.85f, 1f);
         /// <summary>
         /// **基底球渲染色**（2026-10-11 用户口径："在天体定义里加一个基底球渲染颜色，然后把这颗行星的设置为烘焙海洋格子的颜色"）。
         /// 语义 = **显示色**（"我想在屏幕上看到什么颜色"，按 0..1 填，例如烘焙海洋格的字节 (72,72,104) ⇒ (0.282,0.282,0.408)）——
@@ -63,11 +63,11 @@ namespace PioneerFramework
         /// **默认 `Color.clear`（a=0）= 未设置** ⇒ 退回"数据区里水格最多的 biome 的贴图"那条口径。
         /// 只影响表现：物理/几何一律不读它。
         /// </summary>
-        public Color baseSphereColor = new Color(0f, 0f, 0f, 0f);
+        public Color baseSphereColor = new(0f, 0f, 0f, 0f);
         /// <summary>自转周期（游戏 tick），默认 60000 = 1 RimWorld 天。火星约 61500，木星约 21400</summary>
         public double dayLengthTicks = 60000.0;
         /// <summary>对应的 PlanetLayerDef 名称。不填则默认使用 defName 匹配</summary>
-        public string planetLayerDefName;
+        public string planetLayerDefName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         // ── 轨道参数（Star 类型不需要）──
         /// <summary>轨道半径（米）</summary>
@@ -155,7 +155,7 @@ namespace PioneerFramework
 
         // ── XML 交叉引用 ──
         /// <summary>父天体的 defName（XML 引用），空表示直接绕恒星</summary>
-        public string parentBodyDefName;
+        public string parentBodyDefName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         // ── 运行时解析（不由 XML 直接填充）──
         /// <summary>父天体的 bodyId，-1 表示绕恒星</summary>
@@ -167,7 +167,7 @@ namespace PioneerFramework
         // ── 运行时预加载 ──
         /// <summary>此天体的卫星列表（运行时由 CelestialBodyManager 填充）。</summary>
         [Verse.Unsaved]
-        public List<CelestialBodyDef> moonBodies = new List<CelestialBodyDef>();
+        public List<CelestialBodyDef> moonBodies = new();
 
         /// <summary>
         /// RimWorld Def 系统的引用解析。
@@ -183,7 +183,7 @@ namespace PioneerFramework
                 if (parent != null)
                     ParentBodyId = parent.bodyId;
                 else
-                    Log.Error(string.Format("[CelestialBodyDef] {0}: parentBodyDefName '{1}' not found.", defName, parentBodyDefName));
+                    Log.Error($"[CelestialBodyDef] {defName}: parentBodyDefName '{parentBodyDefName}' not found.");
             }
         }
 

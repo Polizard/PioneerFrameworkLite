@@ -24,9 +24,9 @@ namespace PioneerFramework
     {
         private const float RowH = 26f;
         private const float Gap = 6f;
-        private static readonly Color Dim = new Color(0.62f, 0.68f, 0.74f, 1f);
-        private static readonly Color OkColor = new Color(0.35f, 1f, 0.55f, 1f);
-        private static readonly Color BadColor = new Color(1f, 0.45f, 0.35f, 1f);
+        private static readonly Color Dim = new(0.62f, 0.68f, 0.74f, 1f);
+        private static readonly Color OkColor = new(0.35f, 1f, 0.55f, 1f);
+        private static readonly Color BadColor = new(1f, 0.45f, 0.35f, 1f);
 
         private readonly int groupId;
         private int targetBodyId;
@@ -46,7 +46,7 @@ namespace PioneerFramework
             draggable = true;
         }
 
-        public override Vector2 InitialSize => new Vector2(620f, 340f);
+        public override Vector2 InitialSize => new(620f, 340f);
 
         private static int FirstLandableBody(CelestialBodyManager? mgr)
         {
@@ -71,7 +71,7 @@ namespace PioneerFramework
             float y = 0f;
 
             Widgets.Label(new Rect(x, y, w, RowH),
-                string.Format("主动降落 · Group {0}（付出 Δv，换一次保证安全的瞬间降落）", group.GroupId));
+                $"主动降落 · Group {group.GroupId}（付出 Δv，换一次保证安全的瞬间降落）");
             y += RowH + Gap;
 
             // ── 目标天体（Lite 只有地球/月球；只有 hasSurface 的才列）──
@@ -96,12 +96,9 @@ namespace PioneerFramework
                     out var bodyName, out var spot, out var reason))
             {
                 Widgets.Label(new Rect(x, y, w, RowH),
-                    string.Format("落点：{0} {1}（tile {2}）", bodyName, spot, planetTile.tileId));
+                    $"落点：{bodyName} {spot}（tile {planetTile.tileId}）");
                 y += RowH;
-                Widgets.Label(new Rect(x, y, w, RowH), string.Format(
-                    "地表距离 {0:F0} km / 上界 {1:F0} km　｜　Δv 报价 {2:F0} m/s（工质 {3:F0} kg）　｜　剩余 Δv {4:F0} m/s",
-                    q.surfaceDistance / 1000.0, q.maxDistance / 1000.0, q.deltaV, est.RequiredPropellant,
-                    sg.GetGroupDeltaV(group).remainingDv));
+                Widgets.Label(new Rect(x, y, w, RowH), $"地表距离 {q.surfaceDistance / 1000.0:F0} km / 上界 {q.maxDistance / 1000.0:F0} km　｜　Δv 报价 {q.deltaV:F0} m/s（工质 {est.RequiredPropellant:F0} kg）　｜　剩余 Δv {sg.GetGroupDeltaV(group).remainingDv:F0} m/s");
                 y += RowH + Gap;
 
                 GUI.color = OkColor;
@@ -110,7 +107,7 @@ namespace PioneerFramework
                 y += RowH + Gap;
 
                 if (Widgets.ButtonText(new Rect(x, y, w, 32f),
-                        string.Format("降落（付出 Δv {0:F0} m/s）", q.deltaV)))
+                        $"降落（付出 Δv {q.deltaV:F0} m/s）"))
                 {
                     if (sg.TryLandAtTile(group, targetBodyId, planetTile, out var execReason))
                         Close();
@@ -122,7 +119,7 @@ namespace PioneerFramework
             else
             {
                 GUI.color = BadColor;
-                Widgets.Label(new Rect(x, y, w, RowH), string.Format("判定：{0}", reason));
+                Widgets.Label(new Rect(x, y, w, RowH), $"判定：{reason}");
                 GUI.color = Color.white;
                 y += RowH + Gap;
                 y += 32f;   // 给"降落"按钮留位（被拒时不画按钮，保持高度稳定）

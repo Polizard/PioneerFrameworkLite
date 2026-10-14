@@ -19,13 +19,10 @@ namespace PioneerFramework
             var generateContentsIntoMap = AccessTools.Method(
                 typeof(MapGenerator),
                 "GenerateContentsIntoMap",
-                new[]
-                {
-                    typeof(IEnumerable<GenStepWithParams>),
+                [typeof(IEnumerable<GenStepWithParams>),
                     typeof(Map),
                     typeof(int),
-                    typeof(bool)
-                });
+                    typeof(bool)]);
             if (generateContentsIntoMap == null)
             {
                 Log.Error("[PioneerFramework] Could not patch MapGenerator.GenerateContentsIntoMap for Moon maps.");
@@ -43,7 +40,7 @@ namespace PioneerFramework
             ref IEnumerable<GenStepWithParams> genStepDefs,
             Map map)
         {
-            string biomeDefName = map?.Biome?.defName;
+            string? biomeDefName = map?.Biome?.defName;
             if (genStepDefs == null ||
                 !IsMoonSurfaceBiomeDefName(biomeDefName))
             {
@@ -55,7 +52,7 @@ namespace PioneerFramework
                 .ToList();
         }
 
-        internal static bool IsMoonSurfaceBiomeDefName(string biomeDefName)
+        internal static bool IsMoonSurfaceBiomeDefName(string? biomeDefName)
         {
             return biomeDefName == MoonBiomeBasalt ||
                 biomeDefName == MoonBiomeRegolith ||
@@ -63,7 +60,7 @@ namespace PioneerFramework
         }
 
         internal static bool ShouldSkipGenStepForBiomeDefName(
-            string biomeDefName,
+            string? biomeDefName,
             string genStepDefName)
         {
             if (!IsMoonSurfaceBiomeDefName(biomeDefName) ||
@@ -91,7 +88,7 @@ namespace PioneerFramework
         }
 
         internal static bool ShouldReplaceMoonSurfaceTerrainForBiomeDefName(
-            string biomeDefName,
+            string? biomeDefName,
             string terrainDefName,
             bool isRockTerrain)
         {
@@ -106,7 +103,7 @@ namespace PioneerFramework
         }
 
         private static bool ShouldSkipGenStep(
-            string biomeDefName,
+            string? biomeDefName,
             GenStepWithParams genStepWithParams)
         {
             GenStepDef genStepDef = genStepWithParams.def;
@@ -134,7 +131,7 @@ namespace PioneerFramework
                 genStep is GenStep_RocksFromGrid;
         }
 
-        internal static bool IsFlatMoonSurfaceBiomeDefName(string biomeDefName)
+        internal static bool IsFlatMoonSurfaceBiomeDefName(string? biomeDefName)
         {
             return biomeDefName == MoonBiomeRegolith ||
                 biomeDefName == MoonBiomeWater;
@@ -147,7 +144,7 @@ namespace PioneerFramework
 
         public override void Generate(Map map, GenStepParams parms)
         {
-            string biomeDefName = map?.Biome?.defName;
+            string? biomeDefName = map?.Biome?.defName;
             if (!MoonSurfaceMapGeneration.IsMoonSurfaceBiomeDefName(
                 biomeDefName))
             {

@@ -132,7 +132,9 @@ namespace MechJebLib.Functions
             Check.Finite(nu);
             Check.NonNegativeFinite(ecc);
 
-            return 2 * Atanh(Sqrt((ecc - 1) / (ecc + 1)) * Tan(nu / 2));
+            // net10 的 System.Math 也有 Atanh（net48 没有）⇒ 与 `using static Statics` 二义；
+            // 显式限定到 MJ 的 Statics（= net48 上的既有绑定，行为不变）。
+            return 2 * Statics.Atanh(Sqrt((ecc - 1) / (ecc + 1)) * Tan(nu / 2));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -176,7 +178,7 @@ namespace MechJebLib.Functions
             Check.Finite(M);
             Check.NonNegativeFinite(ecc);
 
-            double F0 = Asinh(M / ecc);
+            double F0 = Statics.Asinh(M / ecc);   // 同上：net10 二义 ⇒ 限定（2026-10-13）
             return NewtonHyperbolic(F0, M, ecc);
         }
 

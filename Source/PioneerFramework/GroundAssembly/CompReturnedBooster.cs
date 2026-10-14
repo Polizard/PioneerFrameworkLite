@@ -32,11 +32,11 @@ namespace PioneerFramework.GroundAssembly
             if (!LaunchPadUtility.IsReturnedBooster(parent.def))
                 yield break;
 
-            RocketRecoveryDef recovery = FindRecovery(parent.def);
+            RocketRecoveryDef? recovery = FindRecovery(parent.def);
             if (recovery == null)
                 yield break;
 
-            Designation designation = parent.Map?.designationManager?.DesignationOn(parent, PFLaunchDefOf.PF_DesignateRebuildRocket);
+            Designation? designation = parent.Map?.designationManager?.DesignationOn(parent, PFLaunchDefOf.PF_DesignateRebuildRocket);
             if (designation == null)
             {
                 Command_Action rebuild = new Command_Action
@@ -46,7 +46,7 @@ namespace PioneerFramework.GroundAssembly
                     icon = ContentFinder<Texture2D>.Get("UI/Commands/LaunchReport", false) ?? BaseContent.BadTex,
                     action = delegate
                     {
-                        Map map = parent.Map;
+                        Map? map = parent.Map;
                         if (map == null || !CanRebuildNow(out _))
                             return;
 
@@ -94,7 +94,7 @@ namespace PioneerFramework.GroundAssembly
             if (parent == null || parent.Map == null || parent.Destroyed)
                 return;
 
-            RocketRecoveryDef recovery = FindRecovery(parent.def);
+            RocketRecoveryDef? recovery = FindRecovery(parent.def);
             if (recovery == null)
             {
                 Messages.Message("找不到回收配置。", MessageTypeDefOf.RejectInput);
@@ -102,7 +102,7 @@ namespace PioneerFramework.GroundAssembly
             }
 
             Map map = parent.Map;
-            Building launchpad = map.thingGrid.ThingsListAt(parent.Position)
+            Building? launchpad = map.thingGrid.ThingsListAt(parent.Position)
                 .OfType<Building>()
                 .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
             if (launchpad == null || !LaunchPadUtility.IsWithinBuildableArea(launchpad, parent.Position, parent.def, parent.Rotation))
@@ -148,7 +148,7 @@ namespace PioneerFramework.GroundAssembly
                 return false;
             }
 
-            Building launchpad = parent.Map.thingGrid.ThingsListAt(parent.Position)
+            Building? launchpad = parent.Map.thingGrid.ThingsListAt(parent.Position)
                 .OfType<Building>()
                 .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
             if (launchpad == null)
@@ -180,7 +180,7 @@ namespace PioneerFramework.GroundAssembly
             return desc;
         }
 
-        private static RocketRecoveryDef FindRecovery(ThingDef returnedDef)
+        private static RocketRecoveryDef? FindRecovery(ThingDef returnedDef)
         {
             if (returnedDef == null)
                 return null;

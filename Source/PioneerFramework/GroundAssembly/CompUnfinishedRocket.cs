@@ -20,7 +20,7 @@ namespace PioneerFramework.GroundAssembly
 
     public class CompUnfinishedRocket : ThingComp
     {
-        private RocketDesignSpec spec;
+        private RocketDesignSpec spec = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         private bool isCompleted;
 
@@ -56,7 +56,7 @@ namespace PioneerFramework.GroundAssembly
             {
                 IntVec3 pos = frame.Position;
                 Map map = frame.Map;
-                Pawn worker = map?.mapPawns?.FreeColonistsSpawned?.FirstOrDefault();
+                Pawn? worker = map?.mapPawns?.FreeColonistsSpawned?.FirstOrDefault();
                 if (worker == null)
                 {
                     Log.Warning("[PioneerFramework] 标记完工：找不到可用施工者，无法完成框架。");
@@ -69,7 +69,7 @@ namespace PioneerFramework.GroundAssembly
 
                 // 通知总装发射台：框架已变为已完工火箭。
                 ThingDef rocketDef = DefDatabase<ThingDef>.GetNamedSilentFail(Spec.rocketDefName);
-                Thing built = null;
+                Thing? built = null;
                 if (rocketDef != null && map != null)
                 {
                     built = map.thingGrid.ThingsListAt(pos)
@@ -77,7 +77,7 @@ namespace PioneerFramework.GroundAssembly
                 }
                 if (built != null)
                 {
-                    Building pad = built.Map?.thingGrid.ThingsListAt(pos)
+                    Building? pad = built.Map?.thingGrid.ThingsListAt(pos)
                         .OfType<Building>()
                         .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
                     pad?.TryGetComp<CompAssemblyPad>()?.NotifyRocketCompleted(built);

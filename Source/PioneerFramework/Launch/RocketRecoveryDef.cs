@@ -10,21 +10,21 @@ namespace PioneerFramework.Launch
     public class RocketRecoveryDef : Def
     {
         /// <summary>对应的可回收火箭 ThingDef（也可用 defName 与火箭 defName 同名来关联）。</summary>
-        public ThingDef launchedRocketDef;
+        public ThingDef launchedRocketDef = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>可选的未完工框架 ThingDef；为空时回退到火箭 ThingDef 自动生成的 frameDef。</summary>
-        public ThingDef frameDef;
+        public ThingDef frameDef = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>发射后回收下来的返回舱/第一级 ThingDef。</summary>
-        public ThingDef returnedThingDef;
+        public ThingDef returnedThingDef = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>返回舱入轨/再入时使用的 Skyfaller ThingDef。</summary>
-        public ThingDef incomingSkyfallerDef;
+        public ThingDef incomingSkyfallerDef = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>落地后未开舱的 ActivePod ThingDef。</summary>
-        public ThingDef activePodDef;
+        public ThingDef activePodDef = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>重建该火箭所需的材料表。</summary>
-        public List<ThingDefCountClass> rebuildCost = new List<ThingDefCountClass>();
+        public List<ThingDefCountClass> rebuildCost = new();
     }
 }

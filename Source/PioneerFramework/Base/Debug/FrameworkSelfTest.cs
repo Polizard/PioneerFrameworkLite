@@ -48,8 +48,7 @@ namespace PioneerFramework
             if (hostileId < 0 || player == null)
             {
                 PflTestKit.Unchecked("敌对阵营语义",
-                    string.Format("没有可判的样本（hostileId={0}、玩家阵营{1}）⇒ 敌对语义无从断言",
-                        hostileId, player == null ? "缺失" : "在"));
+                    $"没有可判的样本（hostileId={hostileId}、玩家阵营{(player == null ? "缺失" : "在")}）⇒ 敌对语义无从断言");
                 return;
             }
 
@@ -71,7 +70,7 @@ namespace PioneerFramework
             // 不变式：本用例自己不许制造解析失败（真 id 都该解析得出来）
             PflTestKit.Check(PflTestKit.Kind.Invariant, FactionResolver.UnresolvedCount == before,
                 "解析失败计数不增长",
-                string.Format("{0} → {1}", before, FactionResolver.UnresolvedCount));
+                $"{before} → {FactionResolver.UnresolvedCount}");
             PflTestKit.End();
         }
 
@@ -105,7 +104,7 @@ namespace PioneerFramework
             }
 
             PflTestKit.Begin("可见性四字段（[P1]）", "00 验收");
-            PflTestKit.Note(string.Format("活动编队 {0} 个；样本 G{1}", activeCount, sample.GroupId));
+            PflTestKit.Note($"活动编队 {activeCount} 个；样本 G{sample.GroupId}");
 
             // 主动开关的单调性（[V8] 的"开机即暴露"）——自造状态必须还原
             bool pingSaved = sample.ActivePingEnabled;
@@ -116,9 +115,9 @@ namespace PioneerFramework
             sample.ActivePingEnabled = pingSaved;
 
             PflTestKit.Check(PflTestKit.Kind.Invariant, sigOff >= 0.0 && sigOn >= 0.0, "信号强度非负",
-                string.Format("关 {0:F4} / 开 {1:F4}", sigOff, sigOn));
+                $"关 {sigOff:F4} / 开 {sigOn:F4}");
             PflTestKit.Check(PflTestKit.Kind.Value, sigOn >= sigOff - 1e-9, "主动开关单调抬升信号",
-                string.Format("开 {0:F4} ≥ 关 {1:F4}", sigOn, sigOff));
+                $"开 {sigOn:F4} ≥ 关 {sigOff:F4}");
             PflTestKit.Check(PflTestKit.Kind.Invariant, sample.ActivePingEnabled == pingSaved,
                 "主动开关已还原（自造状态必须还回去）");
 
@@ -161,15 +160,12 @@ namespace PioneerFramework
                     && System.Math.Abs(dt.eccmResist - (sumEccm + bonus.eccmResist)) <= 1e-3f;
                 PflTestKit.Check(PflTestKit.Kind.Invariant, consistent,
                     "DetectTech = 各实体 AggregatedStats 之和 + 建筑级投影（部件级 + 建筑级两段，别只看实体）",
-                    string.Format("编队 灵{0:F0}m/抗压{1:F2}/抗骗{2:F2}｜实体求和 灵{3:F0}m/抗压{4:F2}/抗骗{5:F2}" +
-                                  "｜建筑投影 灵{6:F0}m/抗压{7:F2}/抗骗{8:F2}（{9} 个实体）",
-                        dt.sensitivityMeters, dt.ecmResist, dt.eccmResist, sumRange, sumEcm, sumEccm,
-                        bonus.sensitivityMeters, bonus.ecmResist, bonus.eccmResist, entities));
+                    $"编队 灵{dt.sensitivityMeters:F0}m/抗压{dt.ecmResist:F2}/抗骗{dt.eccmResist:F2}｜实体求和 灵{sumRange:F0}m/抗压{sumEcm:F2}/抗骗{sumEccm:F2}｜建筑投影 灵{bonus.sensitivityMeters:F0}m/抗压{bonus.ecmResist:F2}/抗骗{bonus.eccmResist:F2}（{entities} 个实体）");
                 if (sawSensorPart)
                 {
                     PflTestKit.Check(PflTestKit.Kind.Value, dt.sensitivityMeters > 0f,
                         "装了传感器部件的编队 ⇒ 派生灵敏度必须 > 0（[V7] 给量纲：为 0 即链断了）",
-                        string.Format("灵 {0:F0} m（{1} 个实体）", dt.sensitivityMeters, entities));
+                        $"灵 {dt.sensitivityMeters:F0} m（{entities} 个实体）");
                 }
                 else
                 {

@@ -114,7 +114,7 @@ namespace PioneerFramework
             /// </summary>
             public double MaxClosingSpeed = 100.0;
             /// <summary>调相轨道的**半径下限**（上游用 `主体半径 + 大气高度 + 3000`；我们没有大气口径 ⇒ 外部给）。</summary>
-            public double MinRadius = 0.0;
+            public double MinRadius ;
 
         }
 
@@ -164,7 +164,7 @@ namespace PioneerFramework
             // ── 1. 完成 ──
             if (dist < p.DesiredDistance * DoneDistFactor + DoneDistSlack && relVel < DoneRelVel)
             {
-                status = string.Format("完成：dist={0:F1} m、|v_rel|={1:F3} m/s", dist, relVel);
+                status = $"完成：dist={dist:F1} m、|v_rel|={relVel:F3} m/s";
                 return Rung.Done;
             }
 
@@ -187,7 +187,7 @@ namespace PioneerFramework
             if (dist < p.MatchDistance * DoneDistFactor + DoneDistSlack)
             {
                 nodes.Add(new PlanNode(OrbitalManeuverCalculator.DeltaVToMatchVelocities(self, now, target), now));
-                status = string.Format("已进入停下尺度（{0:F1} m ≤ {1:F1} m）：就地匹配速度", dist, p.MatchDistance);
+                status = $"已进入停下尺度（{dist:F1} m ≤ {p.MatchDistance:F1} m）：就地匹配速度";
                 return Rung.MatchVelocitiesNow;
             }
 
@@ -218,8 +218,7 @@ namespace PioneerFramework
                 //   与上游的唯一语义差别，记在这里（上游没夹）。
                 if (burnUt < now) burnUt = now;
                 nodes.Add(new PlanNode(OrbitalManeuverCalculator.DeltaVToMatchVelocities(self, burnUt, target), burnUt));
-                status = string.Format("在最近点匹配速度：接近 {0:F0} m（期望 {1:F0} m）、T+{2:F0} s",
-                    self.Separation(target, caUt), p.MatchDistance, burnUt - now);
+                status = $"在最近点匹配速度：接近 {self.Separation(target, caUt):F0} m（期望 {p.MatchDistance:F0} m）、T+{burnUt - now:F0} s";
                 return Rung.MatchAtClosestApproach;
             }
 
@@ -301,11 +300,7 @@ namespace PioneerFramework
                         arrivalMissIndep = (rr - rTgtAtArrival).magnitude;
                     }
                 }
-                status = string.Format("很近（{0:F0} m）：画拦截（{1:F0} s 后到达，接近速度 {2:F1} m/s）｜**计划到达偏差 {3:F0} m**" +
-                    "｜**到达冲量 {4:F2} m/s**（= 丢掉的那一发，`vf−transferVf`）｜**CA {5:F0} m @ T+{6:F0} s**" +
-                    "｜**独立积分到达偏差 {7:F0} m**",
-                    dist, closingTime, closingSpeed, arrivalMiss, dv2Arrive.magnitude, caDist, caUt - now,
-                    arrivalMissIndep);
+                status = $"很近（{dist:F0} m）：画拦截（{closingTime:F0} s 后到达，接近速度 {closingSpeed:F1} m/s）｜**计划到达偏差 {arrivalMiss:F0} m**｜**到达冲量 {dv2Arrive.magnitude:F2} m/s**（= 丢掉的那一发，`vf−transferVf`）｜**CA {caDist:F0} m @ T+{caUt - now:F0} s**｜**独立积分到达偏差 {arrivalMissIndep:F0} m**";
                 return Rung.Intercept;
             }
 
@@ -332,7 +327,7 @@ namespace PioneerFramework
                     {
                         nodes.Add(new PlanNode(hdv1, hut1));
                         nodes.Add(new PlanNode(hdv2, hut2));
-                        status = string.Format("霍曼拦截：等 {0:F2} 圈后进入窗口（上限 {1:F0} 圈）", phasingOrbits, maxPhasing);
+                        status = $"霍曼拦截：等 {phasingOrbits:F2} 圈后进入窗口（上限 {maxPhasing:F0} 圈）";
                         return Rung.Hohmann;
                     }
                 }
@@ -360,8 +355,7 @@ namespace PioneerFramework
                     ? Math.Max(now, self.NextPeriapsisTime(now))
                     : self.NextApoapsisTime(now);
                 nodes.Add(new PlanNode(OrbitalManeuverCalculator.DeltaVToCircularize(self, ut), ut));
-                status = string.Format("圆化：在{0}（PeR={1:F0} / ApR={2:F0} km，目标 a={3:F0} km）",
-                    atPe ? "近拱点" : "远拱点", self.PeR / 1000.0, self.ApR / 1000.0, aTgt / 1000.0);
+                status = $"圆化：在{(atPe ? "近拱点" : "远拱点")}（PeR={self.PeR / 1000.0:F0} / ApR={self.ApR / 1000.0:F0} km，目标 a={aTgt / 1000.0:F0} km）";
                 return Rung.Circularize;
             }
 
@@ -376,8 +370,7 @@ namespace PioneerFramework
                     ? OrbitalManeuverCalculator.DeltaVAndTimeToMatchPlanesAscending(self, target, now, out double burnUt)
                     : OrbitalManeuverCalculator.DeltaVAndTimeToMatchPlanesDescending(self, target, now, out burnUt);
                 nodes.Add(new PlanNode(dv, burnUt));
-                status = string.Format("匹配平面：相对倾角 {0:F3}° ⇒ 在{1}交点（T+{2:F0} s）",
-                    relIncDeg, ascending ? "升" : "降", burnUt - now);
+                status = $"匹配平面：相对倾角 {relIncDeg:F3}° ⇒ 在{(ascending ? "升" : "降")}交点（T+{burnUt - now:F0} s）";
                 return Rung.MatchPlanes;
             }
         }
@@ -451,8 +444,7 @@ namespace PioneerFramework
                 double ut2 = transfer.NextApoapsisTime(ut1);
                 nodes.Add(new PlanNode(dv1, ut1));
                 nodes.Add(new PlanNode(OrbitalManeuverCalculator.DeltaVToCircularize(transfer, ut2), ut2));
-                status = string.Format("建调相轨道：抬远点到 {0:F0} km 后圆化（相位圈数超过上限 {1:F0}）",
-                    phasingRadius / 1000.0, maxPhasing);
+                status = $"建调相轨道：抬远点到 {phasingRadius / 1000.0:F0} km 后圆化（相位圈数超过上限 {maxPhasing:F0}）";
             }
             else if (self.PeR > phasingRadius)
             {
@@ -464,15 +456,13 @@ namespace PioneerFramework
                 double ut2 = transfer.NextPeriapsisTime(ut1);
                 nodes.Add(new PlanNode(dv1, ut1));
                 nodes.Add(new PlanNode(OrbitalManeuverCalculator.DeltaVToCircularize(transfer, ut2), ut2));
-                status = string.Format("建调相轨道：压近点到 {0:F0} km 后圆化（相位圈数超过上限 {1:F0}）",
-                    phasingRadius / 1000.0, maxPhasing);
+                status = $"建调相轨道：压近点到 {phasingRadius / 1000.0:F0} km 后圆化（相位圈数超过上限 {maxPhasing:F0}）";
             }
             else
             {
                 double ut = self.NextTimeOfRadius(now, phasingRadius);
                 nodes.Add(new PlanNode(OrbitalManeuverCalculator.DeltaVToCircularize(self, ut), ut));
-                status = string.Format("建调相轨道：在 {0:F0} km 处直接圆化（相位圈数超过上限 {1:F0}）",
-                    phasingRadius / 1000.0, maxPhasing);
+                status = $"建调相轨道：在 {phasingRadius / 1000.0:F0} km 处直接圆化（相位圈数超过上限 {maxPhasing:F0}）";
             }
         }
     }

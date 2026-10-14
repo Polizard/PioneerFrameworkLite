@@ -85,7 +85,7 @@ namespace PioneerFramework
         //   · 跨过 `PARALLEL_PHYSICS_MIN_GROUPS = 32` ⇒ **天然是"顺序 vs 并行"的 A/B**（<32 走顺序循环）；
         //   · 每档取"每步每组的 µs"（= 该档 µs/步 ÷ N）⇒ 逐档比它是否变大。
         // ⚠ 用**常驻**的步钟/引力段/建表段（"★ 2026-09-20 改为常驻测量"）⇒ 不需要勾探针开关。
-        private static readonly int[] SweepNs = { 8, 16, 32, 64, 128 };
+        private static readonly int[] SweepNs = [8, 16, 32, 64, 128];
         private const int SweepSteps = 60;   // 每档的 tick 跨度（= 30 物理步；比 StepsPerRun 大一倍 ⇒ 读数更稳）
         private static int sweepIndex;
         private static readonly double[] swAvgUs = new double[SweepNs.Length];
@@ -143,7 +143,7 @@ namespace PioneerFramework
         private static readonly int[] countedGroups = new int[RunCount];
         private static readonly int[] movableGroups = new int[RunCount];
         private static readonly double[] timeScale = new double[RunCount];
-        private static readonly HashSet<int> spawned = new HashSet<int>();
+        private static readonly HashSet<int> spawned = new();
         private static long missBaseline;        // 读数用（未命中数含预暖那一次，不作判据）
         private static long inRegionBaseline;     // R1 直接判据：并行区相位里建表的计数
         private static long sliceChecksBaseline;  // 变体 B 的正对照：切片 scratch 检查次数（燃烧路径走过的证据）
@@ -179,8 +179,7 @@ namespace PioneerFramework
         private const double FingerprintRelTol = 1e-9;
 
         private static readonly string[] FieldNames =
-        {
-            "pos.x", "pos.y", "pos.z", "vel.x", "vel.y", "vel.z",
+        ["pos.x", "pos.y", "pos.z", "vel.x", "vel.y", "vel.z",
             "rot.x", "rot.y", "rot.z", "rot.w",
             // ⚠ **绝对时钟值不许进哈希**：`circularStartTick` 是"铺场那一刻的物理 tick"，
             //    按构造逐轮必然不同（77/107/137）⇒ 放进来会让每一轮永远"不可复现"。
@@ -198,7 +197,7 @@ namespace PioneerFramework
             // 变体 B 的真推力证据：`appliedBurnDV` 只由燃烧步累加 ⇒ 它 >0 才说明"燃烧真的出了推力"
             // （只有 `HasActiveBurn` 为真是不够的：没对准时推力恒 0，路径走到了但什么也没发生）。
             "appliedBurnDV",
-        };
+        ];
 
         /// <summary>**哪些列必须精确相等**（与 `FieldNames` **同序**，长度必须一致）。
         /// 为什么需要分列：判据的**有界容差**只对"浮点累加量"成立 ——
@@ -227,8 +226,7 @@ namespace PioneerFramework
         /// 有 double 的分辨率** —— 那是**平台缺陷**（已登记为根因），不是这条判据该拦的东西。
         /// </summary>
         private static readonly double[] FieldAtol =
-        {
-            1e-3, 1e-3, 1e-3,          // pos.x/y/z（m）
+        [1e-3, 1e-3, 1e-3,          // pos.x/y/z（m）
             1e-6, 1e-6, 1e-6,          // vel.x/y/z（m/s）
             1e-9, 1e-9, 1e-9, 1e-9,    // rot.x/y/z/w（单位四元数）
             1e-3,                      // circRadius（m）
@@ -242,7 +240,7 @@ namespace PioneerFramework
             1e-9,                      // burnDbgMf（kg/s）
             2e-2,                      // burnDbgMass（kg）—— 见上：float 质量在 72 t 处的 2 ULP
             1e-5,                      // appliedBurnDV（m/s）
-        };
+        ];
 
         private static readonly List<int>[] roundIds = NewRounds<int>();
         private static readonly List<double[]>[] roundFields = NewRounds<double[]>();
@@ -317,11 +315,9 @@ namespace PioneerFramework
             if (repeatsLeft <= 0 && huntLeft <= 0) runSerial = 1; else runSerial++;
             int timeout = RunCount * (StepsPerRun * SpaceGameComp.UPDATE_INTERVAL_TICKS + 90) + 600;
             PflTestKit.Begin(CaseNameFor(v), Category, timeout);
-            PflTestKit.Note(string.Format("目标 N={0}（默认口径 256）｜本场景铺 {1} 组 × {2} 轮 × {3} 物理时刻跨度｜{4}",
-                "256（最终计划默认）", GroupCount, RunCount, StepsPerRun,
-                v == Variant.AnalyticCircular
+            PflTestKit.Note($"目标 N={"256（最终计划默认）"}（默认口径 256）｜本场景铺 {GroupCount} 组 × {RunCount} 轮 × {StepsPerRun} 物理时刻跨度｜{(v == Variant.AnalyticCircular
                     ? "解析圆轨（位置=tick 的函数）· 不燃烧"
-                    : "非圆轨（三阶泰勒积分）· 全群燃烧 " + BurnDv.ToString("F0") + " m/s"));
+                    : "非圆轨（三阶泰勒积分）· 全群燃烧 " + $"{BurnDv:F0}" + " m/s")}");
 
             // **预热组件引用缓存**（2026-09-27）：`GameComponentRef` 的**第一次**实查必然发生一次
             // `GetComponent`（组件表线性扫描）——那是"缓存"的定义，不是相位里的违规。而它**恰好**
@@ -433,7 +429,7 @@ namespace PioneerFramework
             double mu = sg.GetBodyGM(bodyId);
             if (!(mu > 0.0))
             {
-                PflTestKit.Unchecked("前置", string.Format("根天体 {0} 的 GM 非正 ⇒ 铺不出轨道", bodyId));
+                PflTestKit.Unchecked("前置", $"根天体 {bodyId} 的 GM 非正 ⇒ 铺不出轨道");
                 stage = Stage.Idle;
                 return;
             }
@@ -466,7 +462,7 @@ namespace PioneerFramework
                     // ⚠ 已经铺出去的组必须清掉再结案（否则用例结束了、场还留在玩家世界里 = 留垃圾）
                     PflTestKit.CleanupSince();
                     spawned.Clear();
-                    PflTestKit.Unchecked("铺场", string.Format("第 {0} 组创建失败（工质 Def 缺失？）", i));
+                    PflTestKit.Unchecked("铺场", $"第 {i} 组创建失败（工质 Def 缺失？）");
                     stage = Stage.Idle;
                     return;
                 }
@@ -522,11 +518,7 @@ namespace PioneerFramework
             swPerGroupUs[sweepIndex] = n > 0 ? swAvgUs[sweepIndex] / n : 0.0;
             swGravPerGroupUs[sweepIndex] = n > 0 ? swGravUs[sweepIndex] / n : 0.0;
 
-            Log.Message(string.Format(
-                "[N扫描] N={0,-4} 步={1,-3} 平均={2,7:F1}µs/步 **每群每步={3,7:F2}µs** 最慢={4,8:F1}µs｜"
-                + "引力段={5,7:F1}µs/步 每群={6,6:F2}µs｜建表段={7,6:F2}µs/步｜Gen0={8}",
-                n, steps, swAvgUs[sweepIndex], swPerGroupUs[sweepIndex], swMaxUs[sweepIndex],
-                swGravUs[sweepIndex], swGravPerGroupUs[sweepIndex], swCollectUs[sweepIndex], swGen0[sweepIndex]));
+            Log.Message($"[N扫描] N={n,-4} 步={steps,-3} 平均={swAvgUs[sweepIndex],7:F1}µs/步 **每群每步={swPerGroupUs[sweepIndex],7:F2}µs** 最慢={swMaxUs[sweepIndex],8:F1}µs｜引力段={swGravUs[sweepIndex],7:F1}µs/步 每群={swGravPerGroupUs[sweepIndex],6:F2}µs｜建表段={swCollectUs[sweepIndex],6:F2}µs/步｜Gen0={swGen0[sweepIndex]}");
         }
 
         /// <summary>N 扫描结案：**读数为主**（不发明阈值）。每群每步的耗时若**随 N 下降或持平** ⇒ 线性/更好；
@@ -541,8 +533,8 @@ namespace PioneerFramework
                 bool ok = swGroups[i] == SweepNs[i] && swSteps[i] > 0;
                 allRan = allRan && ok;
                 PflTestKit.Check(PflTestKit.Kind.Coverage, ok,
-                    string.Format("N={0} 档真的铺到并推进了（正对照）", SweepNs[i]),
-                    string.Format("实铺 {0} 组 · 计时步数 {1}", swGroups[i], swSteps[i]));
+                    $"N={SweepNs[i]} 档真的铺到并推进了（正对照）",
+                    $"实铺 {swGroups[i]} 组 · 计时步数 {swSteps[i]}");
             }
             if (!allRan)
             {
@@ -558,10 +550,10 @@ namespace PioneerFramework
             long globalLookups = ParallelRegionGuard.GlobalLookups - globalLookupBaseline;
             PflTestKit.Check(PflTestKit.Kind.Invariant, sharedWrites == 0,
                 "本场景期间零并行区相位共享写（G1 判据）",
-                string.Format("增量={0}（正常 0）。按站点：{1}", sharedWrites, ParallelRegionGuard.SiteReport()));
+                $"增量={sharedWrites}（正常 0）。按站点：{ParallelRegionGuard.SiteReport()}");
             PflTestKit.Check(PflTestKit.Kind.Invariant, globalLookups == 0,
                 "本场景期间零并行区相位全局查找（G1/R5 判据）",
-                string.Format("增量={0}（正常 0）", globalLookups));
+                $"增量={globalLookups}（正常 0）");
 
             // ⭐ **判据**（2026-09-27 用户提议的 N 扫描，读数从"只报变化"升级为真判据）：
             // 计划批 3 的判据原文 = "**每群每步分配不随 N 上升**" ⇒ 就按每群每步耗时比来判。
@@ -575,10 +567,7 @@ namespace PioneerFramework
             double gravPerGroupRatio = swGravPerGroupUs[a] > 0.0 ? swGravPerGroupUs[b] / swGravPerGroupUs[a] : double.NaN;
             PflTestKit.Check(PflTestKit.Kind.Value, perGroupRatio <= 1.5,
                 "每群每步耗时**不随 N 上升**（N32→N128 比值 ≤ 1.5）",
-                string.Format("整步 {0:F2}×（N32={1:F2}µs → N128={2:F2}µs）｜引力段 {3:F2}×（{4:F2} → {5:F2}µs）"
-                    + "｜⚠ N=8 档已排除：含铺场首步（最慢步 {6:F1}µs）的瞬态",
-                    perGroupRatio, swPerGroupUs[a], swPerGroupUs[b],
-                    gravPerGroupRatio, swGravPerGroupUs[a], swGravPerGroupUs[b], swMaxUs[0]));
+                $"整步 {perGroupRatio:F2}×（N32={swPerGroupUs[a]:F2}µs → N128={swPerGroupUs[b]:F2}µs）｜引力段 {gravPerGroupRatio:F2}×（{swGravPerGroupUs[a]:F2} → {swGravPerGroupUs[b]:F2}µs）｜⚠ N=8 档已排除：含铺场首步（最慢步 {swMaxUs[0]:F1}µs）的瞬态");
 
             int first = 0, last = SweepNs.Length - 1;
             double g1 = swPerGroupUs[first], g2 = swPerGroupUs[last];
@@ -587,16 +576,12 @@ namespace PioneerFramework
             var sb = new System.Text.StringBuilder();
             sb.Append("每群每步耗时：");
             for (int i = 0; i < SweepNs.Length; i++)
-                sb.Append(string.Format("N{0}={1:F2}µs ", SweepNs[i], swPerGroupUs[i]));
-            sb.Append(string.Format("｜**N{0}→N{1} 比值={2:F2}×**（≈1 或更小 = 线性或更好；显著 >1 = 有超线性项）",
-                SweepNs[first], SweepNs[last], ratio));
+                sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"N{SweepNs[i]}={swPerGroupUs[i]:F2}µs ");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"｜**N{SweepNs[first]}→N{SweepNs[last]} 比值={ratio:F2}×**（≈1 或更小 = 线性或更好；显著 >1 = 有超线性项）");
 
             PflTestKit.Check(PflTestKit.Kind.Coverage, true, "读数：每群每步耗时随 N 的变化（判据等读数定）", sb.ToString());
             PflTestKit.Check(PflTestKit.Kind.Coverage, true, "读数：每群每步**引力段**随 N 的变化",
-                string.Format("引力段每群：N{0}={1:F2}µs N{2}={3:F2}µs｜建表段/步：N{0}={4:F2}µs N{2}={5:F2}µs"
-                    + "（S-a 的去留看这个：建表段若只占引力段个位数百分比 ⇒ 不值得动物理热路径）",
-                    SweepNs[first], swGravPerGroupUs[first], SweepNs[last], swGravPerGroupUs[last],
-                    swCollectUs[first], swCollectUs[last]));
+                $"引力段每群：N{SweepNs[first]}={swGravPerGroupUs[first]:F2}µs N{SweepNs[last]}={swGravPerGroupUs[last]:F2}µs｜建表段/步：N{SweepNs[first]}={swCollectUs[first]:F2}µs N{SweepNs[last]}={swCollectUs[last]:F2}µs（S-a 的去留看这个：建表段若只占引力段个位数百分比 ⇒ 不值得动物理热路径）");
             var gen0Txt = new System.Text.StringBuilder();
             for (int i = 0; i < SweepNs.Length; i++)
             {
@@ -627,8 +612,8 @@ namespace PioneerFramework
         private const ulong FnvOffset = 14695981039346656037UL;
         private const int MaxSamples = StepsPerRun + 2;
         // 声明处就赋空数组：**nullable 分析要求**（CS8618），顺带让"未初始化也安全"成为类型层事实
-        private static ulong[][] stepHash = new ulong[0][];             // [轮][样本]
-        private static List<double[]>[][] stepFields = new List<double[]>[0][];  // [轮][样本] → 各组字段
+        private static ulong[][] stepHash = [];             // [轮][样本]
+        private static List<double[]>[][] stepFields = [];  // [轮][样本] → 各组字段
 
         private static void InitStepArrays()
         {
@@ -653,9 +638,7 @@ namespace PioneerFramework
         }
 
         /// <summary>组 → 字段数组。**必须与 <see cref="FieldNames"/> 一一对应且同序**（哈希与定位共用）。</summary>
-        private static double[] FieldsOf(SpaceEntityGroup g) => new double[]
-        {
-            g.CurrentOrbit.positionSystem.x, g.CurrentOrbit.positionSystem.y, g.CurrentOrbit.positionSystem.z,
+        private static double[] FieldsOf(SpaceEntityGroup g) => [g.CurrentOrbit.positionSystem.x, g.CurrentOrbit.positionSystem.y, g.CurrentOrbit.positionSystem.z,
             g.CurrentOrbit.velocitySystem.x, g.CurrentOrbit.velocitySystem.y, g.CurrentOrbit.velocitySystem.z,
             g.CurrentOrbit.rotation.x, g.CurrentOrbit.rotation.y, g.CurrentOrbit.rotation.z, g.CurrentOrbit.rotation.w,
             g.circularRadius, g.circularStartAngle, g.circularAngularVelocity,
@@ -663,8 +646,7 @@ namespace PioneerFramework
             // 诊断字段（R3 的面：全局节流若失效 ⇒ "哪些组被诊断到"会显形）
             g.burnDiagRuns, g.burnDiagRemaining,
             g.burnLastCmdDv, g.burnDbgF, g.burnDbgMf, g.burnDbgMass,
-            g.appliedBurnDV,
-        };
+            g.appliedBurnDV,];
 
         /// <summary>取一个"物理时刻变化点"的逐步指纹并留档字段。</summary>
         private static void TakeStepFingerprint(SpaceGameComp sg, int sample)
@@ -717,8 +699,7 @@ namespace PioneerFramework
                 if (firstGroup < 0) firstGroup = i;
             }
             if (firstGroup < 0)
-                return string.Format("样本 {0} 哈希不同但逐字段全同 ⇒ 差异在字段表之外（组数 {1} vs {2}？）",
-                    sample, a.Count, b.Count);
+                return $"样本 {sample} 哈希不同但逐字段全同 ⇒ 差异在字段表之外（组数 {a.Count} vs {b.Count}？）";
 
             var sb = new System.Text.StringBuilder();
             sb.Append("样本 ").Append(sample).Append("：**").Append(diffGroups).Append(" 个组不同**（首个 下标 ")
@@ -731,9 +712,9 @@ namespace PioneerFramework
             {
                 if (fa[k] == fb[k]) continue;
                 if (shown > 0) sb.Append('、');
-                sb.Append(FieldNames[k]).Append(" R1=").Append(fa[k].ToString("R"))
-                  .Append(" vs R").Append(otherRound + 1).Append('=').Append(fb[k].ToString("R"))
-                  .Append("（Δ=").Append((fb[k] - fa[k]).ToString("E3")).Append('）');
+                sb.Append(FieldNames[k]).Append(" R1=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{fa[k]:R}")
+                  .Append(" vs R").Append(otherRound + 1).Append('=').Append(System.Globalization.CultureInfo.CurrentCulture, $"{fb[k]:R}")
+                  .Append("（Δ=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(fb[k] - fa[k]):E3}").Append('）');
                 shown++;
             }
             return sb.ToString();
@@ -840,14 +821,11 @@ namespace PioneerFramework
                     for (int k = 0; k < len; k++)
                     {
                         if (a[k] == b[k]) continue;   // 逐**位**比（NaN != NaN 也会被判为不同，正好）
-                        return string.Format(
-                            "首个不同：下标 {0}（G{1}）｜字段 {2}｜R1={3:R} vs R{4}={5:R}",
-                            i, roundIds[0][i], FieldNames[k], a[k], r + 1, b[k]);
+                        return $"首个不同：下标 {i}（G{roundIds[0][i]}）｜字段 {FieldNames[k]}｜R1={a[k]:R} vs R{r + 1}={b[k]:R}";
                     }
                 }
             }
-            return string.Format("指纹不同但**字段表逐位全同**（{0} 组 × {1} 字段）⇒ 差异在字段表之外（哈希本身或计数）",
-                n, FieldNames.Length);
+            return $"指纹不同但**字段表逐位全同**（{n} 组 × {FieldNames.Length} 字段）⇒ 差异在字段表之外（哈希本身或计数）";
         }
 
         /// <summary>把一个 double 的**全部 64 位**拌进哈希（逐位可比，NaN 也稳定）。</summary>
@@ -870,21 +848,17 @@ namespace PioneerFramework
             // ① 反空样本：**先证明真的跑了**（否则"三次相同"是平凡成立 —— 本库踩过"0 样本报 PASS"）
             bool nonEmpty = countedGroups[0] > 0 && physicsHash[0] != 14695981039346656037UL;
             PflTestKit.Check(PflTestKit.Kind.Coverage, nonEmpty, "样本非空（真的铺到并推进了组）",
-                string.Format("三轮计数 {0}/{1}/{2}", countedGroups[0], countedGroups[1], countedGroups[2]));
+                $"三轮计数 {countedGroups[0]}/{countedGroups[1]}/{countedGroups[2]}");
 
             // ② 并行分支的前提：可动组数 ≥ 下限（与 SpaceGameComp 用**同一个常量**，不抄数）
             bool covers = movableGroups[0] >= SpaceGameComp.PARALLEL_PHYSICS_MIN_GROUPS;
             PflTestKit.Check(PflTestKit.Kind.Coverage, covers, "可动组数 ≥ 并行下限（并行分支必然被走到）",
-                string.Format("可动 {0} / 下限 {1}（三轮 {2}/{3}/{4}）",
-                    movableGroups[0], SpaceGameComp.PARALLEL_PHYSICS_MIN_GROUPS,
-                    movableGroups[0], movableGroups[1], movableGroups[2]));
+                $"可动 {movableGroups[0]} / 下限 {SpaceGameComp.PARALLEL_PHYSICS_MIN_GROUPS}（三轮 {movableGroups[0]}/{movableGroups[1]}/{movableGroups[2]}）");
 
             // ③ 时间档必须三轮一致，否则跨轮比较**无效**（不是失败，是无法断言）
             if (timeScale[0] != timeScale[1] || timeScale[1] != timeScale[2])
             {
-                PflTestKit.Unchecked("时间档一致", string.Format(
-                    "三轮时间档不同（{0}/{1}/{2}）⇒ 物理步长不同，跨轮指纹不可比；请在 1x 档下重跑",
-                    timeScale[0], timeScale[1], timeScale[2]));
+                PflTestKit.Unchecked("时间档一致", $"三轮时间档不同（{timeScale[0]}/{timeScale[1]}/{timeScale[2]}）⇒ 物理步长不同，跨轮指纹不可比；请在 1x 档下重跑");
                 return;
             }
 
@@ -892,10 +866,7 @@ namespace PioneerFramework
             //     2026-09-26 第一跑就是因为轮周期是奇数 tick 而在这一条上栽的）
             bool sameSteps = tickSpanPerRound[0] == tickSpanPerRound[1] && tickSpanPerRound[1] == tickSpanPerRound[2];
             PflTestKit.Check(PflTestKit.Kind.Invariant, sameSteps, "三轮物理时刻跨度相同 ⇒ 物理步数相同（仪器自检）",
-                string.Format("{0}/{1}/{2}｜铺场物理时刻 {3:F1}/{4:F1}/{5:F1}｜取指纹物理时刻 {6:F1}/{7:F1}/{8:F1}",
-                    tickSpanPerRound[0], tickSpanPerRound[1], tickSpanPerRound[2],
-                    startPhysicsTick[0], startPhysicsTick[1], startPhysicsTick[2],
-                    endPhysicsTick[0], endPhysicsTick[1], endPhysicsTick[2]));
+                $"{tickSpanPerRound[0]}/{tickSpanPerRound[1]}/{tickSpanPerRound[2]}｜铺场物理时刻 {startPhysicsTick[0]:F1}/{startPhysicsTick[1]:F1}/{startPhysicsTick[2]:F1}｜取指纹物理时刻 {endPhysicsTick[0]:F1}/{endPhysicsTick[1]:F1}/{endPhysicsTick[2]:F1}");
 
             // ④b **R1 的直接判据：零"工作线程写共享字典"**。
             //     为什么需要直接判据：指纹（症状）对 R1 只是**偶尔**抓得到（只有被丢结果的那一步正好落在指纹窗口里才显形）
@@ -904,11 +875,11 @@ namespace PioneerFramework
             long inRegionWrites = CelestialBodyManager.DebugParallelRegionCacheWrites - inRegionBaseline;
             PflTestKit.Check(PflTestKit.Kind.Invariant, inRegionWrites == 0,
                 "本场景期间零并行区内建表（R1 直接判据）",
-                string.Format("并行区相位里建表次数={0}（正常 0；>0 即并行区内的共享 Dictionary 写）", inRegionWrites));
+                $"并行区相位里建表次数={inRegionWrites}（正常 0；>0 即并行区内的共享 Dictionary 写）");
 
             long missDelta = CelestialBodyManager.DebugSystemMembersMisses - missBaseline;
             PflTestKit.Check(PflTestKit.Kind.Coverage, true, "读数：成员表未命中增量",
-                string.Format("{0}（含预暖那一次，合法；应为 1）", missDelta));
+                $"{missDelta}（含预暖那一次，合法；应为 1）");
 
             // ④b′ **G1 判据：并行区相位里零共享写 + 零全局查找**（增量口径 ⇒ 点过守卫自检也不污染读数）。
             //     覆盖 R2/R3/R5/R7/R8 那一整类；**R4（8 处日志）不在覆盖面内**（`Verse.Log` 是静态类，
@@ -923,15 +894,13 @@ namespace PioneerFramework
             string sharedSiteTally = ParallelRegionGuard.SiteReport();
             // ⚠ 无条件直打日志：挂在判据 detail 上的话，**判据通过时**它落在框架"通过判据读数最多 240 字"
             //   的截断区里 ⇒ 读数=0 的场景反而看不见分档（而"哪几条被搬干净了"正是要留的证据）。
-            Log.Message(string.Format("[规模验收] G1 分档（本场景）：共享写增量={0}｜全局查找增量={1}｜按站点：{2}",
-                sharedWrites, globalLookups, sharedSiteTally));
+            Log.Message($"[规模验收] G1 分档（本场景）：共享写增量={sharedWrites}｜全局查找增量={globalLookups}｜按站点：{sharedSiteTally}");
             PflTestKit.Check(PflTestKit.Kind.Invariant, sharedWrites == 0,
                 "本场景期间零并行区相位共享写（G1 判据；含 R2/R3/R7/R8）",
-                string.Format("增量={0}（正常 0）。**按站点**：{1}"
-                    + "⚠ 覆盖 PerfProbe 那几处需要勾上「性能优化验收探针」", sharedWrites, sharedSiteTally));
+                $"增量={sharedWrites}（正常 0）。**按站点**：{sharedSiteTally}⚠ 覆盖 PerfProbe 那几处需要勾上「性能优化验收探针」");
             PflTestKit.Check(PflTestKit.Kind.Invariant, globalLookups == 0,
                 "本场景期间零并行区相位全局查找（G1/R5 判据）",
-                string.Format("增量={0}（正常 0；>0 即相位里还有 GetComponent/Find.Maps 没收到形参）", globalLookups));
+                $"增量={globalLookups}（正常 0；>0 即相位里还有 GetComponent/Find.Maps 没收到形参）");
 
             // ④c **正对照**（变体 B）：证明"燃烧路径真的被走到"，否则下面的指纹判据都是**空样本**上的平凡成立。
             //     形态照框架的 0 样本纪律：**拿不到证据 ⇒ UNCHECKED + 不再宣称 PASS**（不是"记一条 coverage 接着走"
@@ -949,10 +918,7 @@ namespace PioneerFramework
             {
                 if (burnedGroups == 0 || sliceChecks == 0)
                 {
-                    PflTestKit.Unchecked("正对照（燃烧路径）", string.Format(
-                        "诊断块跑过的组 {0}/{1}、切片检查增量 {2} —— 有一个为 0 就说明" +
-                        "**燃烧路径没被走到**，本变体的指纹判据在空样本上成立，不作数",
-                        burnedGroups, GroupCount, sliceChecks));
+                    PflTestKit.Unchecked("正对照（燃烧路径）", $"诊断块跑过的组 {burnedGroups}/{GroupCount}、切片检查增量 {sliceChecks} —— 有一个为 0 就说明**燃烧路径没被走到**，本变体的指纹判据在空样本上成立，不作数");
                     return;
                 }
                 // ⭐ **升级成 R3 的直接判据（2026-09-26）**：改前它只能报"路径被走到"（`> 0`），
@@ -960,19 +926,16 @@ namespace PioneerFramework
                 //   现在要求**每个燃烧组都被诊断到过**（改后应恰好 = GroupCount；改前实测 = 3）。
                 PflTestKit.Check(PflTestKit.Kind.Invariant, burnedGroups >= GroupCount,
                     "每个燃烧组都被诊断到过（R3 直接判据：诊断不该只轮到迭代序第一个组）",
-                    string.Format("被诊断到的组 {0}/{1}｜切片检查增量 {2}（改前实测 3/{1} —— 全局静态节流把其余 61 个静默跳过）",
-                        burnedGroups, GroupCount, sliceChecks));
+                    $"被诊断到的组 {burnedGroups}/{GroupCount}｜切片检查增量 {sliceChecks}（改前实测 3/{GroupCount} —— 全局静态节流把其余 61 个静默跳过）");
                 // 推力是**另一件事**：没对准时燃烧"发生了但没推力" ⇒ 判据面只覆盖到"方向刷新/记账"，
                 // 没覆盖到"冲量施加"⇒ 不足时**同样不许宣称 PASS**（但已走到的部分如实登记为读数）。
                 if (thrustGroups == 0)
                 {
-                    PflTestKit.Unchecked("正对照（真推力）", string.Format(
-                        "末轮 appliedBurnDV>0 的组 0/{0} ⇒ 燃烧空转（多半是主推轴没对准顺行）" +
-                        "⇒ 冲量施加侧的判据面未覆盖", GroupCount));
+                    PflTestKit.Unchecked("正对照（真推力）", $"末轮 appliedBurnDV>0 的组 0/{GroupCount} ⇒ 燃烧空转（多半是主推轴没对准顺行）⇒ 冲量施加侧的判据面未覆盖");
                     return;
                 }
                 PflTestKit.Check(PflTestKit.Kind.Coverage, true, "正对照：燃烧真的出了推力",
-                    string.Format("末轮 appliedBurnDV>0 的组 {0}/{1}", thrustGroups, GroupCount));
+                    $"末轮 appliedBurnDV>0 的组 {thrustGroups}/{GroupCount}");
             }
             else
             {
@@ -988,19 +951,15 @@ namespace PioneerFramework
             lastRunRed = !equivalent;   // 猎捕模式据此决定还跑不跑（现在是"真差异"才停）
             string worstTxt = double.IsPositiveInfinity(violation)
                 ? "∞（计数列不等或组数不同）"
-                : string.Format("{0:E3}× 于 {1}（下标 {2}，R1 vs R{3}）",
-                    violation, FieldNames[wCol >= 0 ? wCol : 0], wIdx, wRound + 1);
+                : $"{violation:E3}× 于 {FieldNames[wCol >= 0 ? wCol : 0]}（下标 {wIdx}，R1 vs R{wRound + 1}）";
             PflTestKit.Check(PflTestKit.Kind.Invariant, equivalent,
                 "三次运行物理指纹等价（逐列绝对地板 + 相对 1e-9）",
-                string.Format("{0:X16} / {1:X16} / {2:X16}｜时间档 {3}｜**最坏越界倍数 {4}**（≤1 = 合格）{5}",
-                    physicsHash[0], physicsHash[1], physicsHash[2], timeScale[0],
-                    worstTxt, countMismatch ? "｜**组数逐轮不同**（那是真差异）" : ""));
+                $"{physicsHash[0]:X16} / {physicsHash[1]:X16} / {physicsHash[2]:X16}｜时间档 {timeScale[0]}｜**最坏越界倍数 {worstTxt}**（≤1 = 合格）{(countMismatch ? "｜**组数逐轮不同**（那是真差异）" : "")}");
             // **逐位相同降为登记读数**（不静默通过）：ULP 级差异是"浮点非结合性"的必然产物，
             // 记下来（带定位），但不判失败 —— 判失败会让判据每隔几轮就红一次，而每次红都要人来分辨。
             PflTestKit.Check(PflTestKit.Kind.Coverage, true, "读数：三轮是否逐位相同",
                 stable ? "逐位相同"
-                       : string.Format("有 ULP 级差异（登记，不判失败）：最坏越界倍数 {0:E3}×｜{1}",
-                           violation, LocalizeFirstDiff()));
+                       : $"有 ULP 级差异（登记，不判失败）：最坏越界倍数 {violation:E3}×｜{LocalizeFirstDiff()}");
             // ⚠ **定位必须单独打日志**（2026-09-26 实测才发现）：框架的用例结算行**只印前 2 条失败明细**
             //   （`PflTestKit` 里那条 `if (bad > 2) continue`），而指纹判据排在后面 ⇒ 指纹一红就只能知道
             //   "红了"、**不知道是哪个字段**（第一轮为此白花了一整轮）。⇒ 定位直接进日志，不吃那个上限。
@@ -1027,13 +986,13 @@ namespace PioneerFramework
                     int hi = firstSample + 1 < MaxSamples ? firstSample + 1 : firstSample;
                     for (int smp = lo; smp <= hi; smp++)
                     {
-                        sb.Append("样本").Append(smp).Append("[");
+                        sb.Append("样本").Append(smp).Append('[');
                         for (int r = 0; r < RunCount; r++)
                         {
                             if (r > 0) sb.Append(' ');
-                            sb.Append(stepHash[r][smp].ToString("X16"));  // 全串（比较等同性用；3 样本 × 3 轮共 ~150 字符）
+                            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"{stepHash[r][smp]:X16}");  // 全串（比较等同性用；3 样本 × 3 轮共 ~150 字符）
                         }
-                        sb.Append("]");
+                        sb.Append(']');
                     }
                     Log.Message(sb.ToString());
                 }
@@ -1042,9 +1001,7 @@ namespace PioneerFramework
             // ⑤ 覆盖度小结 + **未覆盖项显式登记**（不许用沉默冒充覆盖）
             PflTestKit.Check(PflTestKit.Kind.Coverage, true, "覆盖：每群每步的并行区 + R5（每群每步的 GetBodyOffsetSystem）");
             PflTestKit.Check(PflTestKit.Kind.Coverage, true, "读数：每轮步数/组数",
-                string.Format("tick 跨度 {0}/{1}/{2}｜组 {3}/{4}/{5}",
-                    tickSpanPerRound[0], tickSpanPerRound[1], tickSpanPerRound[2],
-                    countedGroups[0], countedGroups[1], countedGroups[2]));
+                $"tick 跨度 {tickSpanPerRound[0]}/{tickSpanPerRound[1]}/{tickSpanPerRound[2]}｜组 {countedGroups[0]}/{countedGroups[1]}/{countedGroups[2]}");
             PflTestKit.CheckUnchecked("冷缓存窗口（R1 的竞争面）",
                 "`EnsureInitialized` 只在读档/初始化时清缓存 ⇒ 该窗口只在读档后首步出现，三次运行都命中热缓存。批 2 需要时补「清缓存后铺场」的变体");
             PflTestKit.CheckUnchecked("绕月（非根天体）路径",
@@ -1076,8 +1033,7 @@ namespace PioneerFramework
                 var tsm2 = Current.Game?.GetComponent<TimeScaleManager>();
                 if (sg2 != null && mgr2 != null && tsm2 != null)
                 {
-                    Log.Message(string.Format("[规模验收] 继续跑：猎捕剩 {0} 次、连跑剩 {1} 次",
-                        huntLeft, repeatsLeft));
+                    Log.Message($"[规模验收] 继续跑：猎捕剩 {huntLeft} 次、连跑剩 {repeatsLeft} 次");
                     Start(variant);
                 }
                 else { huntLeft = 0; repeatsLeft = 0; }

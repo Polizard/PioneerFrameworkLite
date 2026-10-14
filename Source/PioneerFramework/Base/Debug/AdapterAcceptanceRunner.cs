@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using MechJebLib.Primitives;
@@ -37,18 +37,18 @@ namespace PioneerFramework
         /// <summary>最近一次的判据数 / 失败数（供统一入口 `FullTestRunner` 收进结论，不重复跑它）。</summary>
         public static int LastChecks => checks;
         public static int LastFailures => failures;
-        private static readonly StringBuilder sb = new StringBuilder();
+        private static readonly StringBuilder sb = new();
 
         private static void Check(bool ok, string label, string detail)
         {
             checks++;
             if (!ok) failures++;
             sb.Append("\n  ").Append(ok ? "✓" : "✗ **FAIL**").Append(' ').Append(label);
-            if (!string.IsNullOrEmpty(detail)) sb.Append("｜").Append(detail);
+            if (!string.IsNullOrEmpty(detail)) sb.Append('｜').Append(detail);
         }
 
         private static void Info(string label, string detail) =>
-            sb.Append("\n  · ").Append(label).Append("｜").Append(detail);
+            sb.Append("\n  · ").Append(label).Append('｜').Append(detail);
 
         // 批5 U4（2026-09-28）：本地那个恒等转换助手已删（类型统一后移植面类型就是 `DVector3`）。
 
@@ -78,10 +78,10 @@ namespace PioneerFramework
 
             sb.Append("[适配层验收] ═══ P0 适配层一键验收（同步：铺场 → F1 → 构造点 → 端到端 → 队列 → 契约）═══");
             sb.Append("\n  参数：bodyId=").Append(EARTH_BODY_ID)
-              .Append("  mu=").Append(mu.ToString("E3"))
-              .Append("  R0=").Append((R0 / 1000.0).ToString("F0")).Append("km")
-              .Append("  v_circ=").Append(vCirc.ToString("F1")).Append("m/s")
-              .Append("  tick=").Append(tick.ToString("F0"));
+              .Append("  mu=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{mu:E3}")
+              .Append("  R0=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(R0 / 1000.0):F0}").Append("km")
+              .Append("  v_circ=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{vCirc:F1}").Append("m/s")
+              .Append("  tick=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{tick:F0}");
 
             // ═══ A. 铺场：四个受控轨道（都取非圆轨模式，除了第一个）═══
             sb.Append("\n\n── A. 铺场（受控轨道；这些组的 (r,v) 是我指定的 ⇒ 期望值是闭式的）──");
@@ -182,9 +182,9 @@ namespace PioneerFramework
                 {
                     f1Fail++;
                     sb.Append("\n  ✗ **FAIL** G").Append(g.GroupId)
-                      .Append("｜①").Append(rtErr.ToString("E1"))
-                      .Append(" ②").Append((incDiff * 180 / Math.PI).ToString("E2")).Append("°")
-                      .Append(" ③").Append(nErr.ToString("E1"));
+                      .Append("｜①").Append(System.Globalization.CultureInfo.CurrentCulture, $"{rtErr:E1}")
+                      .Append(" ②").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(incDiff * 180 / Math.PI):E2}").Append('°')
+                      .Append(" ③").Append(System.Globalization.CultureInfo.CurrentCulture, $"{nErr:E1}");
                 }
             }
 
@@ -274,7 +274,7 @@ namespace PioneerFramework
                     $"σ↑ {c0.value:F4}→{c1.value:F4}　年龄↑ {c0.value:F4}→{c2.value:F4}");
             }
             {
-                var selector = new TimeSelector(new[] { TimeReference.CLOSEST_APPROACH });
+                var selector = new TimeSelector([TimeReference.CLOSEST_APPROACH]);
                 selector._currentTimeRef = 0;
                 bool threw = false;
                 try { selector.ComputeManeuverTime(OrbitAdapter.TryToOrbitView(g2!, celestialMgr, tick, out OrbitView ovS) ? ovS : default,

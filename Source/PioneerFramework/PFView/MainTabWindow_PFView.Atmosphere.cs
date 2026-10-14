@@ -25,7 +25,7 @@ namespace PioneerFramework
     public partial class MainTabWindow_PFView
     {
         /// <summary>深空底色（无大气时的"天空盒"）。`EnsureResources` 也用它。</summary>
-        private static readonly Color SpaceBackdropColor = new Color(0.005f, 0.005f, 0.03f);
+        private static readonly Color SpaceBackdropColor = new(0.005f, 0.005f, 0.03f);
 
         /// <summary>
         /// 本帧**不画壳**的天体 id（-1 = 都画）。规则（用户 2026-10-10）：
@@ -47,10 +47,10 @@ namespace PioneerFramework
         /// <summary>壳的网格（受光半球；静态资源，与 `sphereMeshLOD*` 同寿；不随窗口销毁）。</summary>
         private static Mesh? atmosphereDayCapMesh;
         /// <summary>昼侧壳材质（键 = bodyId）。</summary>
-        private readonly Dictionary<int, Material> shellMaterials = new Dictionary<int, Material>();
+        private readonly Dictionary<int, Material> shellMaterials = new();
         /// <summary>夜侧壳材质（同上；只差一层更淡的 alpha —— 用户口径"半透明壳覆盖全球"）。</summary>
-        private readonly Dictionary<int, Material> shellNightMaterials = new Dictionary<int, Material>();
-        private readonly HashSet<int> shellLogged = new HashSet<int>();
+        private readonly Dictionary<int, Material> shellNightMaterials = new();
+        private readonly HashSet<int> shellLogged = new();
 
         /// <summary>
         /// 每帧一次：算出"相机在哪颗天体的气里、气有多浓"，写进 `skyAlpha/skyColor` 并更新天空盒颜色。
@@ -134,14 +134,8 @@ namespace PioneerFramework
                         renderCamera != null ? renderCamera.nearClipPlane : 0.01f);
                     float shellOffset = b != null ? (float)(b.atmosphereThickness * 0.5) * MetersToView : 0f;
                     float margin = deltaZ > 1e-6f && shellOffset > 0f ? shellOffset / deltaZ : float.MaxValue;
-                    Log.Message(string.Format(
-                        "[PFView·大气] body={0} 相机 h={1:F1} km｜日照 {2:F2} ⇒ 天空 α={3:P1}（物体雾 {4:P1}）· 壳半径 ×{5:F3}（= R + {6:F0} km）· 深度 δz≈{7:F1} km（余量 ×{8:F1}）",
-                        b != null ? b.defName : bestBody.ToString(), bestAltKm, bestSunlit,
-                        bestAlpha, bestAlpha * PFViewAtmosphere.ObjectHazeFactor,
-                        b != null ? PFViewAtmosphere.ShellRadiusFactor(b.radius, b.atmosphereThickness) : 1f,
-                        b != null ? b.atmosphereThickness * 0.5 / 1000.0 : 0.0,
-                        deltaZ * 10f / 1000f,          // view 单位 → 米（×10）→ km
-                        margin));
+                    Log.Message($"[PFView·大气] body={(b != null ? b.defName : bestBody.ToString())} 相机 h={bestAltKm:F1} km｜日照 {bestSunlit:F2} ⇒ 天空 α={bestAlpha:P1}（物体雾 {bestAlpha * PFViewAtmosphere.ObjectHazeFactor:P1}）· 壳半径 ×{(b != null ? PFViewAtmosphere.ShellRadiusFactor(b.radius, b.atmosphereThickness) : 1f):F3}（= R + {(b != null ? b.atmosphereThickness * 0.5 / 1000.0 : 0.0):F0} km）· 深度 δz≈{deltaZ * 10f / 1000f:F1} km（余量 ×{// view 单位 → 米（×10）→ km
+                        margin:F1}）");
                 }
             }
         }
@@ -209,9 +203,7 @@ namespace PioneerFramework
             cache[body.bodyId] = mat;
 
             if (!night && shellLogged.Add(body.bodyId))
-                Log.Message(string.Format("[PFView·大气壳] body={0} shader={1}（昼 alpha {2:F2} / 夜 alpha {3:F2}）· 覆盖全球的两半球",
-                    body.defName, mat.shader != null ? mat.shader.name : "?",
-                    PFViewAtmosphere.ShellAlpha, PFViewAtmosphere.NightShellAlpha));
+                Log.Message($"[PFView·大气壳] body={body.defName} shader={(mat.shader != null ? mat.shader.name : "?")}（昼 alpha {PFViewAtmosphere.ShellAlpha:F2} / 夜 alpha {PFViewAtmosphere.NightShellAlpha:F2}）· 覆盖全球的两半球");
             return mat;
         }
 

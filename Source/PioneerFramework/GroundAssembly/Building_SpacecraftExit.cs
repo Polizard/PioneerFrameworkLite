@@ -11,10 +11,10 @@ namespace PioneerFramework.GroundAssembly
     {
         public override string EnterString => "返回地面";
 
-        public override Map GetOtherMap()
+        public override Map? GetOtherMap()
         {
-            SpacecraftMapParent spacecraft = Map?.Parent as SpacecraftMapParent;
-            SpacecraftBridge bridge = spacecraft?.GroundBridge;
+            SpacecraftMapParent? spacecraft = Map?.Parent as SpacecraftMapParent;
+            SpacecraftBridge? bridge = spacecraft?.GroundBridge;
             if (bridge == null || !bridge.Valid)
                 return null;
 
@@ -23,8 +23,8 @@ namespace PioneerFramework.GroundAssembly
 
         public override bool IsEnterable(out string reason)
         {
-            SpacecraftMapParent spacecraft = Map?.Parent as SpacecraftMapParent;
-            SpacecraftBridge bridge = spacecraft?.GroundBridge;
+            SpacecraftMapParent? spacecraft = Map?.Parent as SpacecraftMapParent;
+            SpacecraftBridge? bridge = spacecraft?.GroundBridge;
 
             if (spacecraft == null || spacecraft.state != SpacecraftState.Ground)
             {
@@ -57,8 +57,8 @@ namespace PioneerFramework.GroundAssembly
 
         public override IntVec3 GetDestinationLocation()
         {
-            SpacecraftMapParent spacecraft = Map?.Parent as SpacecraftMapParent;
-            SpacecraftBridge bridge = spacecraft?.GroundBridge;
+            SpacecraftMapParent? spacecraft = Map?.Parent as SpacecraftMapParent;
+            SpacecraftBridge? bridge = spacecraft?.GroundBridge;
             return bridge?.groundCell ?? IntVec3.Invalid;
         }
     }

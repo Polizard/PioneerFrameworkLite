@@ -14,9 +14,9 @@ namespace PioneerFramework.GroundAssembly.Patches
     {
         private class State
         {
-            public RocketDesignSpec Spec;
+            public RocketDesignSpec? Spec;
             public IntVec3 Pos;
-            public Map Map;
+            public Map? Map;
         }
 
         private static void Prefix(Frame __instance, out State __state)
@@ -43,7 +43,7 @@ namespace PioneerFramework.GroundAssembly.Patches
             if (built == null)
                 return;
 
-            Building pad = __state.Map.thingGrid.ThingsListAt(__state.Pos)
+            Building? pad = __state.Map.thingGrid.ThingsListAt(__state.Pos)
                 .OfType<Building>()
                 .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
             pad?.TryGetComp<CompAssemblyPad>()?.NotifyRocketCompleted(built);

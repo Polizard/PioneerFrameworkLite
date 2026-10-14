@@ -12,10 +12,10 @@ namespace PioneerFramework.GroundAssembly
     {
         public override string EnterString => "登上火箭";
 
-        public override Map GetOtherMap()
+        public override Map? GetOtherMap()
         {
             CompUmbilicalTower tower = GetComp<CompUmbilicalTower>();
-            SpacecraftMapParent spacecraft = tower?.EnsureSpacecraftMap();
+            SpacecraftMapParent? spacecraft = tower?.EnsureSpacecraftMap();
             return spacecraft?.Map;
         }
 
@@ -31,8 +31,8 @@ namespace PioneerFramework.GroundAssembly
                 return false;
 
             CompUmbilicalTower tower = GetComp<CompUmbilicalTower>();
-            ThingWithComps pad = tower?.AssemblyPad;
-            CompAssemblyPad padComp = pad?.TryGetComp<CompAssemblyPad>();
+            ThingWithComps? pad = tower?.AssemblyPad;
+            CompAssemblyPad? padComp = pad?.TryGetComp<CompAssemblyPad>();
             if (padComp == null || padComp.State != LaunchPadState.Completed)
             {
                 reason = "当前发射台没有已完工火箭。";

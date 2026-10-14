@@ -11,7 +11,7 @@ namespace PioneerFramework.Launch
     public class Dialog_RocketLaunch : Window
     {
         private readonly Thing rocket;
-        private RocketLaunchContext context;
+        private RocketLaunchContext context = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         private RocketLaunchMode selectedMode;
 
         public Dialog_RocketLaunch(Thing rocket)

@@ -21,7 +21,7 @@ namespace PioneerFramework
         /// ② 本语义有 `PropagationEquivalenceTests` 的**负向对照**钉住（"薄化不该把它丢掉"）⇒ 动它才是违规。</summary>
         private static double ResolveGM(double mu) => double.IsNaN(mu) ? GM : mu;
 
-        #region 轨道要素计算
+        // ── 轨道要素计算 ──
 
         /// <summary>
         /// 计算轨道能量 (m²/s²)，负值 = 束缚轨道。
@@ -70,9 +70,8 @@ namespace PioneerFramework
         //   · `GetArgumentOfPeriapsis` 零调用点，且它**只给象限不满的解**（对 `cos` 反余弦、丢掉符号
         //     ⇒ 第二/三象限的 ω 被折叠到第一象限）—— 正是《大修计划》§11.2 列为 PARTIAL 的那条。
         //     移植权威是 `Astro.KeplerianFromStateVectors(...).argp`（`OrbitView.argumentOfPeriapsis` 走它）。
-        #endregion
 
-        #region 轨道点生成
+        // ── 轨道点生成 ──
 
         // 【V1 已删 2026-09-18】`GetTrueAnomaly(DVector3, DVector3, double)` 零调用点 ⇒ 删。**
         // ⚠ 它正是那个**带已知缺陷**的副本：`cos ν = (e⃗·r⃗)/(e·r)` 在圆轨上分子分母同为舍入噪声
@@ -80,9 +79,8 @@ namespace PioneerFramework
         //   `MechJebLibPortTests.CircularOrbitPropagation_IsExact_AndHyperbolicIsNoLongerANoOp`）。
         //   移植权威是 `Astro.TrueAnomalyFromStateVectors` / `OrbitView.trueAnomaly`。
 
-        #endregion
 
-        #region 远/近心点 (Pe/Ap)
+        // ── 远/近心点 (Pe/Ap) ──
 
         /// <summary>
         /// 计算近心点距离 (m)。Pe = a·(1-e)
@@ -157,9 +155,8 @@ namespace PioneerFramework
             return ov.NextApoapsisTime(0.0);
         }
 
-        #endregion
 
-        #region 升/降交点 (AN/DN) 与轨道倾角
+        // ── 升/降交点 (AN/DN) 与轨道倾角 ──
 
         // 【V2 已删 2026-09-18】本段原先有 `GetInclination` / `GetNodePositions` / `GetLongitudeOfAscendingNode`
         // —— 三者都是「参考法向由调用方传」的口径（默认 `DVector3.up` = 游戏世界 +Y），
@@ -167,9 +164,8 @@ namespace PioneerFramework
         //   · `GetInclination`     → `OrbitView.FromGameStateVectors(...).inclination`（ManeuverPlanner 的手册规划器）
         //   · `GetNodePositions`   → `OrbitView.Ascending/DescendingNodePositionEquatorial`（调试标记；`OrbitView` 原先只有交点时刻、没有位置，那处缺口已补）
         //   · `GetLongitudeOfAscendingNode` → 零调用点，直接删（`OrbitView.LAN` 是权威）
-        #endregion
 
-        #region 轨道点生成
+        // ── 轨道点生成 ──
 
         /// <summary>
         /// 生成轨道路径点 (世界空间，单位：米)。
@@ -246,9 +242,8 @@ namespace PioneerFramework
             return true;
         }
 
-        #endregion
 
-        #region 时间传播 (Kepler)
+        // ── 时间传播 (Kepler) ──
 
         // 【V1 已删 2026-09-18】`MeanMotion` 零调用点 ⇒ 删；`Astro.MeanMotion(mu, sma)` 是同一算式的移植权威。
         // 它原先挂在『周期』那一族（§14.3）名下 —— 删掉的就是「同一条算式的又一份」。
@@ -284,9 +279,8 @@ namespace PioneerFramework
         public static DVector3 GetVelocityAtTimeDelta(DVector3 posMeters, DVector3 velMeters, double deltaSeconds, double mu)
             => OrbitView.Propagate(posMeters, velMeters, ResolveGM(mu), deltaSeconds).vel;
 
-        #endregion
 
-        #region 机动计算
+        // ── 机动计算 ──
 
         /// <summary>
         /// 分解 dV 到世界空间向量。
@@ -326,6 +320,5 @@ namespace PioneerFramework
             return GetOrbitPoints(nodePosMeters, newVel, numPoints, mu);
         }
 
-        #endregion
     }
 }

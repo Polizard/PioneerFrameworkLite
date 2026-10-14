@@ -33,7 +33,7 @@ namespace PioneerFramework.GroundAssembly
         }
 
         /// <summary>获取本火箭关联的口袋地图；不存在返回 null。</summary>
-        public Map GetPocketMap()
+        public Map? GetPocketMap()
         {
             if (pocketMapId < 0)
                 return null;
@@ -57,8 +57,8 @@ namespace PioneerFramework.GroundAssembly
         /// <summary>把地面地图上的自由殖民者装入舱内口袋地图（调试用）。</summary>
         public int LoadColonistsFromGround()
         {
-            Map source = parent?.Map;
-            Map dest = GetPocketMap();
+            Map? source = parent?.Map;
+            Map? dest = GetPocketMap();
             if (source == null || dest == null || source == dest)
                 return 0;
 
@@ -83,8 +83,8 @@ namespace PioneerFramework.GroundAssembly
         /// <summary>把舱内口袋地图中的自由殖民者卸回地面地图（调试用）。</summary>
         public int UnloadColonistsToGround()
         {
-            Map source = GetPocketMap();
-            Map dest = parent?.Map;
+            Map? source = GetPocketMap();
+            Map? dest = parent?.Map;
             if (source == null || dest == null || source == dest)
                 return 0;
 

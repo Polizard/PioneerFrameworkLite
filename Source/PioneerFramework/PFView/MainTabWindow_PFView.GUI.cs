@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -430,7 +430,7 @@ namespace PioneerFramework
             float azimuth = Mathf.Atan2((float)n.x, (float)n.z) * Mathf.Rad2Deg;
             if (azimuth < 0f) azimuth += 360f;
             float elevation = Mathf.Asin(Mathf.Clamp((float)n.y, -1f, 1f)) * Mathf.Rad2Deg;
-            return string.Format("方位 {0:F0}° / 仰角 {1:F0}°", azimuth, elevation);
+            return $"方位 {azimuth:F0}° / 仰角 {elevation:F0}°";
         }
 
         /// <summary>获取编队在行星系相对坐标下的当前位置（与 CombatManager 开火基准一致）。</summary>
@@ -478,13 +478,7 @@ namespace PioneerFramework
             target.CurrentOrbit.velocitySystem = (SystemVec3)shooterVel;
             target.OrbitDirty = true;
 
-            Log.Message(string.Format(
-                "[PFView] 传送 G{0} → G{1} 前方1km | shooter circular={2} pos=({3:F0},{4:F0},{5:F0}) vel=({6:F0},{7:F0},{8:F0}) | target circular={9} pos=({10:F0},{11:F0},{12:F0}) vel=({13:F0},{14:F0},{15:F0})",
-                target.GroupId, shooter.GroupId,
-                shooter.IsCircularOrbit, shooterPos.x, shooterPos.y, shooterPos.z,
-                shooterVel.x, shooterVel.y, shooterVel.z,
-                target.IsCircularOrbit, target.CurrentOrbit.positionSystem.x, target.CurrentOrbit.positionSystem.y, target.CurrentOrbit.positionSystem.z,
-                target.CurrentOrbit.velocitySystem.x, target.CurrentOrbit.velocitySystem.y, target.CurrentOrbit.velocitySystem.z));
+            Log.Message($"[PFView] 传送 G{target.GroupId} → G{shooter.GroupId} 前方1km | shooter circular={shooter.IsCircularOrbit} pos=({shooterPos.x:F0},{shooterPos.y:F0},{shooterPos.z:F0}) vel=({shooterVel.x:F0},{shooterVel.y:F0},{shooterVel.z:F0}) | target circular={target.IsCircularOrbit} pos=({target.CurrentOrbit.positionSystem.x:F0},{target.CurrentOrbit.positionSystem.y:F0},{target.CurrentOrbit.positionSystem.z:F0}) vel=({target.CurrentOrbit.velocitySystem.x:F0},{target.CurrentOrbit.velocitySystem.y:F0},{target.CurrentOrbit.velocitySystem.z:F0})");
         }
 
         private void AdjustTargetSpeed(double dv)
@@ -505,7 +499,7 @@ namespace PioneerFramework
             target.pendingImpulse += toShooter * dv;
             target.OrbitDirty = true;
 
-            Log.Message(string.Format("[PFView] G{0} 速度沿射向 G{1} 方向调整 {2:+#;-#;0} m/s", target.GroupId, shooter.GroupId, dv));
+            Log.Message($"[PFView] G{target.GroupId} 速度沿射向 G{shooter.GroupId} 方向调整 {dv:+#;-#;0} m/s");
         }
 
         /// <summary>部署一对 100m 间距的交火测试船（敌对 faction），绕当前系统天体 500km 轨道。</summary>
@@ -534,8 +528,7 @@ namespace PioneerFramework
             targetGroupId = gidB;
             InitCameraForCurrentBody();
 
-            Log.Message(string.Format("[PFView] 部署交火测试对: G{0}(f0) vs G{1}(f1) 间距200m @ {2:F0}km 轨道",
-                gidA, gidB, orbitRadius / 1000.0));
+            Log.Message($"[PFView] 部署交火测试对: G{gidA}(f0) vs G{gidB}(f1) 间距200m @ {orbitRadius / 1000.0:F0}km 轨道");
         }
 
         /// <summary>创建单 part 测试船（Lite 裁剪：无 Ship3D 蓝本，直接构造唯一 part 盒体）。</summary>
@@ -563,8 +556,7 @@ namespace PioneerFramework
             entity.SetRotation(Quaternion.identity);
             entity.SetParts(new List<SpacePart>
             {
-                new SpacePart
-                {
+                new() {
                     partId = 1,
                     defName = "PF_TestShip",
                     positionShip = DVector3.zero,

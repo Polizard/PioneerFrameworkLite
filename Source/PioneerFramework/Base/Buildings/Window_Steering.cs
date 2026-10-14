@@ -20,10 +20,10 @@ namespace PioneerFramework
     /// </summary>
     public class Window_Steering : Window
     {
-        public override Vector2 InitialSize => new Vector2(372f, 470f);
+        public override Vector2 InitialSize => new(372f, 470f);
 
         private const float RowH = 24f;
-        private static readonly Color bgColor = new Color(0.05f, 0.05f, 0.08f, 0.55f);
+        private static readonly Color bgColor = new(0.05f, 0.05f, 0.08f, 0.55f);
 
         public Window_Steering(bool absorbAroundWindow = true)
         {
@@ -112,22 +112,18 @@ namespace PioneerFramework
             Text.Font = GameFont.Tiny;
             float w = (float)group.angularVelocity.magnitude;
             Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH),
-                string.Format("角速度: {0:F2} °/s  姿态(欧拉): ({1:F0}, {2:F0}, {3:F0})",
-                    w * Mathf.Rad2Deg,
-                    group.CurrentOrbit.rotation.eulerAngles.x,
-                    group.CurrentOrbit.rotation.eulerAngles.y,
-                    group.CurrentOrbit.rotation.eulerAngles.z));
+                $"角速度: {w * Mathf.Rad2Deg:F2} °/s  姿态(欧拉): ({group.CurrentOrbit.rotation.eulerAngles.x:F0}, {group.CurrentOrbit.rotation.eulerAngles.y:F0}, {group.CurrentOrbit.rotation.eulerAngles.z:F0})");
             y += RowH - 2f;
         }
 
         private void DrawAxisThrusts(Rect inRect, ref float y, SpaceMapComp mapComp)
         {
             Text.Font = GameFont.Tiny;
-            string[] names = { "F 前", "B 后", "L 左", "R 右", "U 上", "D 下" };
+            string[] names = ["F 前", "B 后", "L 左", "R 右", "U 上", "D 下"];
             for (int i = 0; i < 6; i++)
             {
                 Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH),
-                    string.Format("{0}: {1:F0} kN", names[i], mapComp.GetAxisTotalThrust(i) / 1000f));
+                    $"{names[i]}: {mapComp.GetAxisTotalThrust(i) / 1000f:F0} kN");
                 y += RowH - 4f;
             }
         }
@@ -136,13 +132,13 @@ namespace PioneerFramework
         {
             Text.Font = GameFont.Tiny;
             Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH),
-                string.Format("动量轮限速: {0:F1} °/s", SpaceEntityGroup.DefaultMaxAngularRate * Mathf.Rad2Deg));
+                $"动量轮限速: {SpaceEntityGroup.DefaultMaxAngularRate * Mathf.Rad2Deg:F1} °/s");
             y += RowH - 2f;
         }
 
         private void DrawMainAxisSelector(Rect inRect, ref float y, SpaceMapComp mapComp)
         {
-            string[] names = { "自动", "F 前", "B 后", "L 左", "R 右", "U 上", "D 下" };
+            string[] names = ["自动", "F 前", "B 后", "L 左", "R 右", "U 上", "D 下"];
             float bw = 44f, gap = 6f;
             for (int i = 0; i < names.Length; i++)
             {
@@ -186,7 +182,7 @@ namespace PioneerFramework
 
         private void DrawSasButtons(Rect inRect, ref float y)
         {
-            string[] names = { "关", "顺向", "逆向", "法向", "反法向", "径外", "径内" };
+            string[] names = ["关", "顺向", "逆向", "法向", "反法向", "径外", "径内"];
             float bw = 46f, gap = 6f;
             for (int i = 0; i < names.Length; i++)
             {
@@ -240,7 +236,7 @@ namespace PioneerFramework
             }
         }
 
-        private SpaceMapComp GetCurrentMapComp()
+        private SpaceMapComp? GetCurrentMapComp()
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             var group = spaceGame != null ? spaceGame.GetGroupById(SteeringController.GroupId) : null;

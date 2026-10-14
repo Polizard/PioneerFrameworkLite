@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
 using UnityEngine;
@@ -78,8 +78,7 @@ namespace PioneerFramework
                 if (unit != null) launched++;
             }
 
-            FinishDeploy(string.Format("EVA 测试：{0}/{1} 兵已起飞 → 站 G{2}（{3:F0}km）",
-                launched, soldiers.Count, env.enemyGroup.GroupId, distanceMeters / 1000.0), env);
+            FinishDeploy($"EVA 测试：{launched}/{soldiers.Count} 兵已起飞 → 站 G{env.enemyGroup.GroupId}（{distanceMeters / 1000.0:F0}km）", env);
         }
 
         /// <summary>穿梭机测试：母船放穿梭机 + passengerCount 名乘客 → LaunchShuttle。</summary>
@@ -118,9 +117,7 @@ namespace PioneerFramework
             var unit = boarding.LaunchShuttle(shuttle, passengers, env.enemyGroup.GroupId,
                 env.enemyEntity.Parts[0].partId, offsets[0], birthPos, velOffset);
 
-            FinishDeploy(string.Format("穿梭机测试：Shuttle{0} {1} 名乘客已起飞 → 站 G{2}（{3:F0}km）",
-                unit != null ? unit.shuttleId : -1, passengers.Count, env.enemyGroup.GroupId,
-                distanceMeters / 1000.0), env);
+            FinishDeploy($"穿梭机测试：Shuttle{(unit != null ? unit.shuttleId : -1)} {passengers.Count} 名乘客已起飞 → 站 G{env.enemyGroup.GroupId}（{distanceMeters / 1000.0:F0}km）", env);
         }
 
         /// <summary>
@@ -142,8 +139,7 @@ namespace PioneerFramework
             var unit = boarding.LaunchEva(soldier, env.enemyGroup.GroupId,
                 env.enemyEntity.Parts[0].partId, offsets[0], dirToTarget * -80.0);
 
-            FinishDeploy(string.Format("高速撞击测试：Unit{0} 以 80m/s 冲 G{1}（期望碰撞爆炸，接舷分支不误消费）",
-                unit != null ? unit.id : -1, env.enemyGroup.GroupId), env);
+            FinishDeploy($"高速撞击测试：Unit{(unit != null ? unit.id : -1)} 以 80m/s 冲 G{env.enemyGroup.GroupId}（期望碰撞爆炸，接舷分支不误消费）", env);
         }
 
         // ════════════════════════════════════════════
@@ -152,12 +148,12 @@ namespace PioneerFramework
 
         private class TestEnv
         {
-            public SpaceEntity playerEntity;
-            public SpaceEntityGroup playerGroup;
-            public Map playerMap;
-            public SpaceEntity enemyEntity;
-            public SpaceEntityGroup enemyGroup;
-            public Map enemyMap;
+            public SpaceEntity playerEntity = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+            public SpaceEntityGroup playerGroup = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+            public Map playerMap = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+            public SpaceEntity enemyEntity = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+            public SpaceEntityGroup enemyGroup = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+            public Map enemyMap = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         }
 
         /// <summary>部署双站测试环境：母船（圆轨）+ 目标站（共轨 distanceMeters 外，敌对 faction）。</summary>
@@ -198,7 +194,7 @@ namespace PioneerFramework
             };
         }
 
-        private static (SpaceEntity entity, SpaceEntityGroup group, Map map) CreateStation(
+        private static (SpaceEntity? entity, SpaceEntityGroup? group, Map? map) CreateStation(
             SpaceGameComp spaceGame, int factionId, double altitudeMeters, string name)
         {
             double earthRadius = SpaceConstants.PlanetRadiusMeters;
@@ -211,7 +207,7 @@ namespace PioneerFramework
             return CreateStationAt(spaceGame, factionId, new DVector3(x, 0, z), name);
         }
 
-        private static (SpaceEntity entity, SpaceEntityGroup group, Map map) CreateStationAt(
+        private static (SpaceEntity? entity, SpaceEntityGroup? group, Map? map) CreateStationAt(
             SpaceGameComp spaceGame, int factionId, DVector3 pos, string name)
         {
             int groupId = spaceGame.AllocGroupId();

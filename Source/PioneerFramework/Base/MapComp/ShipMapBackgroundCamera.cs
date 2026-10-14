@@ -66,14 +66,14 @@ namespace PioneerFramework
         /// 值 = 绕局部 +X 转 +90° 的四元数（受管构造，不碰 ECall）：前(0,0,1)→(0,−1,0)、上(0,1,0)→(0,0,1)、右不变。
         /// `internal` 是为了让 `ShipMapBackgroundCameraTests` 钉住这三条映射（改反了当场红）。
         /// </summary>
-        internal static readonly Quaternion DeckUndersideRotation = new Quaternion(0.707106781f, 0f, 0f, 0.707106781f);
+        internal static readonly Quaternion DeckUndersideRotation = new(0.707106781f, 0f, 0f, 0.707106781f);
 
         // ── 每帧解析"这张图的船"的缓存。两条纪律都踩在点上：
         //    ① 不许每帧裸 `GetComponent`（[M1]/[O4]）⇒ 组件走 `GameComponentRef`（跨局自动失效），
         //       图→车主实体的映射只在"当前图"变化时解析一次；
         //    ② **不许被静态字段扣住旧局**：换局（新游戏/读档/回主菜单）时立刻把 Map 引用松手，
         //       否则一张图连同全部 Thing 会跟着静态缓存活到进程结束。──
-        private static readonly GameComponentRef<SpaceGameComp> spaceGameRef = new GameComponentRef<SpaceGameComp>();
+        private static readonly GameComponentRef<SpaceGameComp> spaceGameRef = new();
 
         private static Game? cachedGame;
         private static Map? cachedMap;

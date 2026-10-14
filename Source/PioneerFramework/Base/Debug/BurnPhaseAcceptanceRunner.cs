@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using RimWorld;
@@ -51,7 +51,7 @@ namespace PioneerFramework
             public double E, A, DA, Applied;
         }
 
-        private static readonly List<Arm> arms = new List<Arm>();
+        private static readonly List<Arm> arms = new();
         private static bool pending;
         private static int stagedTick;                     // 登记时刻（真实 tick）——超时判据用
         /// <summary>等真实 tick 上限（见 LiveBurn 里同名字段的理由：不许永久静默）。</summary>
@@ -65,15 +65,15 @@ namespace PioneerFramework
 
             arms.Clear();
             double mu = SpaceConstants.PrimaryGravitationalParameter;
-            CelestialBodyDef earth = mgr.GetBodyById(EARTH_BODY_ID);
+            CelestialBodyDef? earth = mgr.GetBodyById(EARTH_BODY_ID);
             if (earth != null && earth.gravitationalParameter > 0.0) mu = earth.gravitationalParameter;
 
             var sb = new StringBuilder();
             sb.Append("[相位三点] ═══ 3 条船：同轨同节点，只差点火相位（−4s / 0s / 自动）═══");
-            double[] shifts = { -4.0, 0.0, double.NaN };
+            double[] shifts = [-4.0, 0.0, double.NaN];
             for (int i = 0; i < shifts.Length; i++)
             {
-                string nm = double.IsNaN(shifts[i]) ? "P3自动" : ("P" + (i + 1) + "强制" + shifts[i].ToString("+0;-0") + "s");
+                string nm = double.IsNaN(shifts[i]) ? "P3自动" : ("P" + (i + 1) + "强制" + $"{shifts[i]:+0;-0}" + "s");
                 double phi = 0.7 * i;   // φ 各异 ⇒ 不共点
                 var pos = new DVector3(R0 * Math.Cos(phi), 0.0, R0 * Math.Sin(phi));
                 double v = Math.Sqrt(1.3) * Math.Sqrt(mu / R0);
@@ -106,7 +106,7 @@ namespace PioneerFramework
                     NodeTick = nodes[0].ut, ExpectedSma = ov.Radius(nodes[0].ut)
                 });
                 sb.Append("\n  ").Append(nm.PadRight(10)).Append(" G").Append(g.GroupId)
-                  .Append("  节点=").Append(nodes[0].ut.ToString("F0"));
+                  .Append("  节点=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{nodes[0].ut:F0}");
             }
             sb.Append("\n  ⇒ 烧完自动出表（每行含 点火偏移 与 模型预测 e）");
             Log.Message(sb.ToString());
@@ -144,9 +144,7 @@ namespace PioneerFramework
             {
                 int n = 0;
                 foreach (var a in arms) if (!a.Captured) n++;
-                Log.Message(string.Format(
-                    "[相位三点] **UNCOVERED**：{0} 真实 tick 内仍有 {1} 条手臂没跑完 ⇒ 下面按**已捕获**的手臂汇总",
-                    TimeoutRealTicks, n));
+                Log.Message($"[相位三点] **UNCOVERED**：{TimeoutRealTicks} 真实 tick 内仍有 {n} 条手臂没跑完 ⇒ 下面按**已捕获**的手臂汇总");
                 pending = false;
                 Report();
                 return;
@@ -165,9 +163,9 @@ namespace PioneerFramework
             {
                 string pred = double.IsNaN(a.ForcedShift) ? "见 [对照·相位] 行"
                     : (a.ForcedShift < -3.0 ? "lag 前 1.474E-3" : "lag 前 5.960E-4");
-                sb.Append("\n  ").Append(a.Name.PadRight(10)).Append(" ").Append(a.E.ToString("E3"))
-                  .Append("  ").Append(a.DA.ToString("+0.00;-0.00;0.00").PadLeft(9))
-                  .Append("  ").Append(a.Applied.ToString("F1")).Append("   ").Append(pred);
+                sb.Append("\n  ").Append(a.Name.PadRight(10)).Append(' ').Append(System.Globalization.CultureInfo.CurrentCulture, $"{a.E:E3}")
+                  .Append("  ").Append($"{a.DA:+0.00;-0.00;0.00}".PadLeft(9))
+                  .Append("  ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{a.Applied:F1}").Append("   ").Append(pred);
             }
             sb.Append("\n  ⇒ 判读：P1 明显大于 P2 ⇒ 相位是残差的控制量（B2.2 弧补偿为解）✓；");
             sb.Append("\n          P3 的 实测/预测 ≤2 ⇒ 模型=执行器 ✓；三点差不多 ⇒ 撤回「相位=残差」✗");

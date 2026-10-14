@@ -36,7 +36,7 @@ namespace PioneerFramework
         private Vector2 paramScroll = Vector2.zero;
 
         /// <summary>各参数的编辑缓冲（按 `sel` 变化重建，避免每帧格式化把玩家正在敲的字冲掉）。</summary>
-        private readonly List<string> buffers = new List<string>();
+        private readonly List<string> buffers = new();
         private int buffersFor = -1;
 
         private List<PlanNode>? nodes;
@@ -50,9 +50,9 @@ namespace PioneerFramework
         private const float ListWidth = 200f;
         private const float RowH = 28f;
 
-        private static readonly Color PanelBg = new Color(0.09f, 0.12f, 0.16f, 0.92f);
-        private static readonly Color PanelBgAlt = new Color(0.115f, 0.145f, 0.185f, 0.92f);
-        private static readonly Color SelectedBg = new Color(0.18f, 0.42f, 0.55f, 0.85f);
+        private static readonly Color PanelBg = new(0.09f, 0.12f, 0.16f, 0.92f);
+        private static readonly Color PanelBgAlt = new(0.115f, 0.145f, 0.185f, 0.92f);
+        private static readonly Color SelectedBg = new(0.18f, 0.42f, 0.55f, 0.85f);
 
         public Window_PlanEditor(SpaceEntityGroup targetGroup)
         {
@@ -64,7 +64,7 @@ namespace PioneerFramework
             draggable = true;
         }
 
-        public override Vector2 InitialSize => new Vector2(780f, 560f);
+        public override Vector2 InitialSize => new(780f, 560f);
 
         private Operation Sel => ops[sel];
 
@@ -75,7 +75,7 @@ namespace PioneerFramework
             buffers.Clear();
             if (ops.Length == 0) return;
             foreach (PlanParam p in Sel.GetParams())
-                buffers.Add(p.Get().ToString("0.###"));
+                buffers.Add($"{p.Get():0.###}");
             nodes = null;
             status = "";
         }
@@ -196,7 +196,7 @@ namespace PioneerFramework
                 cy += 30f;
 
                 Widgets.Label(new Rect(0f, cy, 120f, 22f), "提前（秒）");
-                string lead = ts.LeadTime.Val.ToString("0.###");
+                string lead = $"{ts.LeadTime.Val:0.###}";
                 string leadNew = Widgets.TextField(new Rect(124f, cy, 110f, 22f), lead);
                 if (leadNew != lead && double.TryParse(leadNew, out double lv))
                 {
@@ -289,8 +289,8 @@ namespace PioneerFramework
                     sb.Append("计划 ").Append(nodes.Count).Append(" 条");
                     for (int i = 0; i < nodes.Count && i < 4; i++)
                         sb.Append("\n  #").Append(i + 1)
-                          .Append("  t=").Append(nodes[i].ut.ToString("F0")).Append("s")
-                          .Append("  |Δv|=").Append(nodes[i].dV.magnitude.ToString("F2")).Append(" m/s");
+                          .Append("  t=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{nodes[i].ut:F0}").Append('s')
+                          .Append("  |Δv|=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{nodes[i].dV.magnitude:F2}").Append(" m/s");
                     if (regime.HasValue) sb.Append("\n  区制：").Append(regime.Value.Describe());
                     Widgets.Label(new Rect(0f, cy, content.width, 100f), sb.ToString());
                     cy += 104f;

@@ -20,7 +20,7 @@ namespace PioneerFramework.GroundAssembly
                 return false;
             }
 
-            RocketRecoveryDef recovery = FindRecoveryForReturned(returnedRocket.def);
+            RocketRecoveryDef? recovery = FindRecoveryForReturned(returnedRocket.def);
             if (recovery == null)
             {
                 failReason = "RebuildFrameConvertFailed".Translate();
@@ -28,14 +28,14 @@ namespace PioneerFramework.GroundAssembly
             }
 
             ThingDef rocketDef = recovery.launchedRocketDef ?? DefDatabase<ThingDef>.GetNamedSilentFail(recovery.defName);
-            ThingDef frameDef = recovery.frameDef ?? rocketDef?.frameDef;
+            ThingDef? frameDef = recovery.frameDef ?? rocketDef?.frameDef;
             if (rocketDef == null || frameDef == null)
             {
                 failReason = "RebuildFrameTargetDefMissing".Translate(rocketDef?.defName ?? recovery.defName);
                 return false;
             }
 
-            Frame frame = ThingMaker.MakeThing(frameDef) as Frame;
+            Frame? frame = ThingMaker.MakeThing(frameDef) as Frame;
             if (frame == null)
             {
                 failReason = "RebuildFrameConvertFailed".Translate();
@@ -55,7 +55,7 @@ namespace PioneerFramework.GroundAssembly
             return true;
         }
 
-        private static RocketRecoveryDef FindRecoveryForReturned(ThingDef returnedDef)
+        private static RocketRecoveryDef? FindRecoveryForReturned(ThingDef returnedDef)
         {
             if (returnedDef == null)
                 return null;

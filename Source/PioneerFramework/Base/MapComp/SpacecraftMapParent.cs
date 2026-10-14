@@ -20,13 +20,13 @@ namespace PioneerFramework
     public class SpacecraftMapParent : MapParent
     {
         /// <summary>创建时记录的地面/母地图，仅用于相机/上下文，不表示从属关系。</summary>
-        public Map sourceMap;
+        public Map sourceMap = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>本地图使用的生成器。</summary>
-        public MapGeneratorDef mapGenerator;
+        public MapGeneratorDef mapGenerator = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>所属航天器唯一 ID。</summary>
-        public string spacecraftId;
+        public string spacecraftId = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>当前状态：未起飞 / 在轨。</summary>
         public SpacecraftState state;
@@ -35,10 +35,10 @@ namespace PioneerFramework
         public bool IsPlayerHome;
 
         /// <summary>地面桥（脐带塔）数据；未绑定时为 null。</summary>
-        public SpacecraftBridge GroundBridge;
+        public SpacecraftBridge GroundBridge = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>未来对接端口数据。</summary>
-        public List<DockingPort> DockingPorts = new List<DockingPort>();
+        public List<DockingPort> DockingPorts = new();
 
         public override MapGeneratorDef MapGeneratorDef => mapGenerator ?? base.MapGeneratorDef;
 

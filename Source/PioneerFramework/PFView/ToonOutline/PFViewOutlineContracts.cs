@@ -55,7 +55,7 @@ namespace PioneerFramework.PFView
         /// <param name="message">Optional diagnostic detail.</param>
         public PFViewOutlineStatus(
             PFViewOutlineStatusCode code,
-            string message = null)
+            string? message = null)
         {
             Code = code;
             Message = message ?? string.Empty;
@@ -87,7 +87,7 @@ namespace PioneerFramework.PFView
         /// Gets enabled, opaque-black, two-pixel outline settings.
         /// </summary>
         public static PFViewOutlineSettings Default =>
-            new PFViewOutlineSettings(true, 2, Color.black);
+            new(true, 2, Color.black);
 
         /// <summary>
         /// Creates per-frame outline settings and clamps the requested width

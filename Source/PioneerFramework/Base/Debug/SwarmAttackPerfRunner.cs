@@ -103,9 +103,7 @@ namespace PioneerFramework
             stage = Stage.Baseline;
             stepsInStage = 0;
             lastTs = lastStepTs = System.Diagnostics.Stopwatch.GetTimestamp();
-            Log.Message(string.Format(
-                "[来袭·实测] 开始：基线 {0} 步 → 铺 2×({1} 舰 + {2} 弹) = {3} 组 → 稳定 {4} 步 → 计量 {5} 步 → 自动清场｜当前世界 {6} 组",
-                BaselineSteps, ships, missiles, 2 * (ships + missiles), SettleSteps, MeasureSteps, groupCountBefore));
+            Log.Message($"[来袭·实测] 开始：基线 {BaselineSteps} 步 → 铺 2×({ships} 舰 + {missiles} 弹) = {2 * (ships + missiles)} 组 → 稳定 {SettleSteps} 步 → 计量 {MeasureSteps} 步 → 自动清场｜当前世界 {groupCountBefore} 组");
         }
 
         /// <summary>中止：清场 + 回 Idle。</summary>
@@ -113,7 +111,7 @@ namespace PioneerFramework
         {
             if (!Running) return;
             int n = PflTestKit.CleanupSince();
-            Log.Message(string.Format("[来袭·实测] 手动中止，已清 {0} 组", n));
+            Log.Message($"[来袭·实测] 手动中止，已清 {n} 组");
             stage = Stage.Idle;
         }
 
@@ -162,9 +160,7 @@ namespace PioneerFramework
                     {
                         if (++overBudgetStreak >= 2)
                         {
-                            Log.Warning(string.Format(
-                                "[来袭·实测] **保险丝熔断**：连续两步整步周期 > {0:F0} ms（实测 {1:F1} ms）⇒ 立刻清场（2040 组把这一步拖得太狠，先收场再看读数）",
-                                EmergencyStepMs, periodMs));
+                            Log.Warning($"[来袭·实测] **保险丝熔断**：连续两步整步周期 > {EmergencyStepMs:F0} ms（实测 {periodMs:F1} ms）⇒ 立刻清场（2040 组把这一步拖得太狠，先收场再看读数）");
                             Finish(aborted: true);
                             return;
                         }
@@ -185,7 +181,7 @@ namespace PioneerFramework
             extraClock = PerfProbe.ExtraClockReport();
             int destroyed = PflTestKit.CleanupSince();
             stage = Stage.Idle;
-            Log.Message(string.Format("[来袭·实测] 清场完成：销毁 {0} 组", destroyed));
+            Log.Message($"[来袭·实测] 清场完成：销毁 {destroyed} 组");
             Report(aborted);
         }
 
@@ -251,7 +247,7 @@ namespace PioneerFramework
                     if (SpawnMissile(sg, bodyId, faction, pos, vel)) spawned++;
                 }
             }
-            Log.Message(string.Format("[来袭·实测] 铺场完成：{0} 组（两侧阵营 {1} / {2}）", spawned, playerFaction, enemyNote));
+            Log.Message($"[来袭·实测] 铺场完成：{spawned} 组（两侧阵营 {playerFaction} / {enemyNote}）");
         }
 
         /// <summary>来袭体：小尺寸、单部件、无推进、匿踪闸门开（[N3] 的导弹口径）。</summary>
@@ -313,23 +309,15 @@ namespace PioneerFramework
         private static void Report(bool aborted)
         {
             int groups = 2 * (shipsPerSide + missilesPerSide);
-            Log.Message(string.Format(
-                "[来袭·实测] 想定 2×({0} 舰 + {1} 弹) = {2} 组｜世界组数 {3} → {4}（可动 {5}）",
-                shipsPerSide, missilesPerSide, groups,
-                groupCountBefore, groupCountAfter, CountMovable(Current.Game?.GetComponent<SpaceGameComp>())));
-            Log.Message(string.Format("[来袭·实测·基线] 整步周期 p50 {0:F1} ms / max {1:F1}（含全部消费者）｜物理步：{2}",
-                Pct(basePeriods, baseN, 0.50), Max(basePeriods, baseN), baselineClock));
-            Log.Message(string.Format("[来袭·实测·来袭] 整步周期 p50 {0:F1} ms / max {1:F1}（含全部消费者）｜物理步：{2}",
-                Pct(measPeriods, measN, 0.50), Max(measPeriods, measN), swarmClock));
+            Log.Message($"[来袭·实测] 想定 2×({shipsPerSide} 舰 + {missilesPerSide} 弹) = {groups} 组｜世界组数 {groupCountBefore} → {groupCountAfter}（可动 {CountMovable(Current.Game?.GetComponent<SpaceGameComp>())}）");
+            Log.Message($"[来袭·实测·基线] 整步周期 p50 {Pct(basePeriods, baseN, 0.50):F1} ms / max {Max(basePeriods, baseN):F1}（含全部消费者）｜物理步：{baselineClock}");
+            Log.Message($"[来袭·实测·来袭] 整步周期 p50 {Pct(measPeriods, measN, 0.50):F1} ms / max {Max(measPeriods, measN):F1}（含全部消费者）｜物理步：{swarmClock}");
             // 整 tick 钟（2026-10-02）：把"物理步"与"本组件整 tick"分开 ⇒ 剩余的整步周期才好归因
             //（实测教训：2040 组那轮物理步 72 ms、整步周期 701 ms，差值当时无处可查）。
-            Log.Message(string.Format("[来袭·实测·来袭] 整 tick 钟：{0}（物理步钟只圈 `UpdateAllMovements`，本钟圈整个 `GameComponentTick`）",
-                tickClock));
-            Log.Message(string.Format("[来袭·实测·来袭] 块/消费者钟：{0}", extraClock));
+            Log.Message($"[来袭·实测·来袭] 整 tick 钟：{tickClock}（物理步钟只圈 `UpdateAllMovements`，本钟圈整个 `GameComponentTick`）");
+            Log.Message($"[来袭·实测·来袭] 块/消费者钟：{extraClock}");
             double p50Base = Pct(basePeriods, baseN, 0.50), p50Swarm = Pct(measPeriods, measN, 0.50);
-            Log.Message(string.Format(
-                "[来袭·实测] 增量：整步周期 {0:+0.0;-0.0;0} ms（{1:F1} → {2:F1}）｜下限 33.4 ms/步 = Normal 档 2 tick{3}",
-                p50Swarm - p50Base, p50Base, p50Swarm, aborted ? "｜**本轮被保险丝中止**（读数仍有效，但计量段不完整）" : ""));
+            Log.Message($"[来袭·实测] 增量：整步周期 {p50Swarm - p50Base:+0.0;-0.0;0} ms（{p50Base:F1} → {p50Swarm:F1}）｜下限 33.4 ms/步 = Normal 档 2 tick{(aborted ? "｜**本轮被保险丝中止**（读数仍有效，但计量段不完整）" : "")}");
             Log.Message("[来袭·实测] 不含：导弹末制导 / 开火命中 / 渲染（登记为下一档）");
         }
 

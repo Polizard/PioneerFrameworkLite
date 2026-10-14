@@ -10,7 +10,7 @@ namespace PioneerFramework.Components
     public static class ComponentRegistry
     {
         private static readonly Dictionary<string, Func<PartComponentData>> factories =
-            new Dictionary<string, Func<PartComponentData>>();
+            new();
 
         /// <summary>注册组件类型。TypeId 默认取类名。</summary>
         public static void Register<T>() where T : PartComponentData, new()
@@ -20,7 +20,7 @@ namespace PioneerFramework.Components
         }
 
         /// <summary>按 TypeId 实例化组件；未注册返回 null。</summary>
-        public static PartComponentData Create(string typeId)
+        public static PartComponentData? Create(string typeId)
         {
             if (!factories.TryGetValue(typeId, out var factory))
                 return null;

@@ -105,17 +105,11 @@ namespace PioneerFramework
         /// </summary>
         public static void DiscQuadGeometry(out Vector3[] verts, out Vector2[] uvs, out int[] tris)
         {
-            verts = new[]
-            {
-                new Vector3(-0.5f, -0.5f, 0f), new Vector3(0.5f, -0.5f, 0f),
-                new Vector3(-0.5f, 0.5f, 0f),  new Vector3(0.5f, 0.5f, 0f),
-            };
-            uvs = new[]
-            {
-                new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f),
-            };
+            verts = [new Vector3(-0.5f, -0.5f, 0f), new Vector3(0.5f, -0.5f, 0f),
+                new Vector3(-0.5f, 0.5f, 0f),  new Vector3(0.5f, 0.5f, 0f),];
+            uvs = [new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f),];
             // 前三个 = 正面（法线 −Z）；后三个 = 同一片的反面（法线 +Z）⇒ 无论哪套绕序被剔除，都还看得见
-            tris = new[] { 0, 2, 1, 2, 3, 1, 0, 1, 2, 2, 1, 3 };
+            tris = [0, 2, 1, 2, 3, 1, 0, 1, 2, 2, 1, 3];
         }
 
         /// <summary>

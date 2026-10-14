@@ -104,7 +104,11 @@ namespace PioneerFramework
             }
         }
 
-        private static readonly object _discoveryLock = new object();
+        // ⚠ 保持 `object`（2026-10-14 试过 `System.Threading.Lock`，闸门当场拦住）：**本文件也链进
+        // net48 的 `MechJebLibTest`**（它是 MJ 移植面的一部分）⇒ `Lock` 在 net48 不存在，要用就得上
+        // `#if` 双路径 —— 而本锁在**冷路径**（类型发现只发生一次），零收益不值得那条 `#if`
+        // （计划红线：主线树无 `#if`）。判过不接，见 `数学核心NET10优化计划` 的 M4。
+        private static readonly object _discoveryLock = new();
 
         /// <summary>发现到的类型表。**只在 `_discoveryLock` 里构建、一次性发布**（引用赋值是原子的），
         /// 这样并发调用者要么看到 null、要么看到完整数组，看不到"半个列表"。见 `GetAvailableOperations`。</summary>
@@ -197,7 +201,7 @@ namespace PioneerFramework
         /// 否则界面上看不到参数（有 `PlanParamTests` 机械地兜这件事）。</summary>
         public virtual IReadOnlyList<PlanParam> GetParams() => EmptyParams;
 
-        private static readonly PlanParam[] EmptyParams = new PlanParam[0];
+        private static readonly PlanParam[] EmptyParams = [];
 
         /// <summary>本操作的时间选择器（没有则 `null`）。</summary>
         public virtual TimeSelector? GetTimeSelector() => null;

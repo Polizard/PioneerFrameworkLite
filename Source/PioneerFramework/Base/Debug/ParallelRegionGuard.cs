@@ -66,9 +66,9 @@ namespace PioneerFramework
         // ⚠ 计入总量与分档的都是**原子聚合**（可交换）⇒ 按三分档属于"允许在相位里做"的那一档
         //   （与它要抓的"共享容器写 / 决策读-改-写"不是一回事）。
         private static readonly ConcurrentDictionary<string, SiteCount> writesBySite =
-            new ConcurrentDictionary<string, SiteCount>();
+            new();
         private static readonly ConcurrentDictionary<string, SiteCount> lookupsBySite =
-            new ConcurrentDictionary<string, SiteCount>();
+            new();
 
         /// <summary>按站点取读数（验收结论用）。调用方在开工前 `ResetSiteTally()` ⇒ 这里就是本场景的增量。
         /// 字符串按字典遍历序拼接（量少，不需要稳定序）。</summary>
@@ -86,8 +86,8 @@ namespace PioneerFramework
             {
                 long n = Interlocked.Read(ref kv.Value.n);
                 if (n == 0) continue;
-                if (sb.Length > 0) sb.Append("｜");
-                sb.Append(tag).Append("×").Append(n).Append(' ').Append(kv.Key);
+                if (sb.Length > 0) sb.Append('｜');
+                sb.Append(tag).Append('×').Append(n).Append(' ').Append(kv.Key);
             }
         }
 
@@ -170,10 +170,10 @@ namespace PioneerFramework
 
             PflTestKit.Check(PflTestKit.Kind.Invariant, inWrites >= 8 && inLookups >= 8,
                 "正对照：相位里的共享写 / 全局查找**都必须**被报出（否则守卫是个从不触发的摆设）",
-                string.Format("相位内增量 写={0} 查={1}（各应 ≥ 8 = 8 个并行迭代各一次）", inWrites, inLookups));
+                $"相位内增量 写={inWrites} 查={inLookups}（各应 ≥ 8 = 8 个并行迭代各一次）");
             PflTestKit.Check(PflTestKit.Kind.Invariant, outWrites == 0 && outLookups == 0,
                 "负对照：相位外的调用**不许**被报出（否则它会对正常路径误报，很快被无视）",
-                string.Format("相位外增量 写={0} 查={1}（都应为 0）", outWrites, outLookups));
+                $"相位外增量 写={outWrites} 查={outLookups}（都应为 0）");
             PflTestKit.End();
         }
     }

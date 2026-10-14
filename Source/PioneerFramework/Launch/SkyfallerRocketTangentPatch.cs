@@ -13,12 +13,12 @@ namespace PioneerFramework.Launch
     [HarmonyPatch]
     internal static class SkyfallerRocketTangentPatch
     {
-        private static MethodBase TargetMethod()
+        private static MethodInfo TargetMethod()
         {
             return AccessTools.Method(
                 typeof(Skyfaller),
                 "GetDrawPositionAndRotation",
-                new[] { typeof(Vector3).MakeByRefType(), typeof(float).MakeByRefType() });
+                [typeof(Vector3).MakeByRefType(), typeof(float).MakeByRefType()]);
         }
 
         private static void Postfix(Skyfaller __instance, ref Vector3 drawLoc, ref float extraRotation)

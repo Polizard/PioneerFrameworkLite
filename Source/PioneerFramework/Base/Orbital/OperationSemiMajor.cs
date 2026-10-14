@@ -19,10 +19,7 @@ namespace PioneerFramework
 
         public OperationSemiMajor()
         {
-            _planParams = new[]
-            {
-                    new PlanParam("新半长轴", "km", () => NewSma.Val / 1000.0, v => NewSma.Val = v * 1000.0),
-            };
+            _planParams = [new PlanParam("新半长轴", "km", () => NewSma.Val / 1000.0, v => NewSma.Val = v * 1000.0),];
         }
 
         public override IReadOnlyList<PlanParam> GetParams() => _planParams;
@@ -31,12 +28,12 @@ namespace PioneerFramework
 
 
         /// <summary>新半长轴（m；显示的 ÷1000）。⚠ 上游**不加**中心天体半径——它是绝对半长轴，不是高度。</summary>
-        public EditableDoubleMult NewSma = new EditableDoubleMult(800000, 1000);
+        public EditableDoubleMult NewSma = new(800000, 1000);
 
         private static readonly TimeReference[] _timeReferences =
-            { TimeReference.APOAPSIS, TimeReference.PERIAPSIS, TimeReference.X_FROM_NOW, TimeReference.ALTITUDE };
+            [TimeReference.APOAPSIS, TimeReference.PERIAPSIS, TimeReference.X_FROM_NOW, TimeReference.ALTITUDE];
 
-        public readonly TimeSelector TimeSelector = new TimeSelector(_timeReferences);
+        public readonly TimeSelector TimeSelector = new(_timeReferences);
 
         public override void DoParametersGUI(OrbitView o, double universalTime, ITargetView target) =>
             TimeSelector.DoChooseTimeGUI();
@@ -57,7 +54,7 @@ namespace PioneerFramework
             DVector3 deltaV =
                 OrbitalManeuverCalculator.DeltaVForSemiMajorAxis(o, ut, NewSma);
 
-            return new List<PlanNode> { new PlanNode(deltaV, ut) };
+            return new List<PlanNode> { new(deltaV, ut) };
         }
     }
 }

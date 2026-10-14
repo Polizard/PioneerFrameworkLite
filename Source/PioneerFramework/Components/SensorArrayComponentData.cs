@@ -37,22 +37,22 @@ namespace PioneerFramework.Components
         public float passiveRangeMeters = 500000f;
 
         /// <summary>抗压制（无量纲，≥0）：压制效力除以 `1 + ecmResist`。</summary>
-        public float ecmResist = 0f;
+        public float ecmResist ;
 
         /// <summary>抗欺骗（无量纲，≥0）：大于欺骗强度时**该观测者**识破假接触。</summary>
-        public float eccmResist = 0f;
+        public float eccmResist ;
 
         /// <summary>记忆时长（s，物理秒轴）：观测者的接触在"最后一次刷新"之后还能活多久（[V3] 的 T）。
         /// 0 = 未设 ⇒ 用 `DetectionCore.DefaultMemorySeconds`（待定标）。与灵敏度同属**观测者**属性。</summary>
-        public float memorySeconds = 0f;
+        public float memorySeconds ;
 
         /// <summary>**主动增益加成**（≥0，2026-10-01 随主动雷达槽位一起加）：有效探测距离倍率 = `1 + Σ`。
         /// 部件级默认 0 = 无增益（"装了也不主动"），要主动得显式给值（与建筑级同语义）。</summary>
-        public float activeGainBonus = 0f;
+        public float activeGainBonus ;
 
         /// <summary>**主动开机时的信号增量**（S_REF 倍数，≥0）：加在 `SignalModel.ActivePingMultiplier` 基准之上。
         /// 部件级默认 0（= 开机只付基准代价），装上雷达阵列才付设备那一份。</summary>
-        public float activeRadiation = 0f;
+        public float activeRadiation ;
 
         static SensorArrayComponentData()
         {

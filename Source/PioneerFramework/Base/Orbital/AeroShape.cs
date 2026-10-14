@@ -63,7 +63,7 @@ namespace PioneerFramework
 
         /// <summary>三轴相等的退化数据（球 / 近球火箭 / 悬浮平台；也为"任意姿态逐位一致"提供样本）。</summary>
         public static AeroShape Isotropic(double cdA, double referenceLength = 0.0)
-            => new AeroShape(cdA, cdA, cdA, referenceLength);
+            => new(cdA, cdA, cdA, referenceLength);
 
         /// <summary>
         /// **盒模型生产者**（无 Map 的默认导出）：面积 = 垂直于该轴的两个尺寸之积。

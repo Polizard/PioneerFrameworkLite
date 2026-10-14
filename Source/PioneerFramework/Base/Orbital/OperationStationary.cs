@@ -33,10 +33,7 @@ namespace PioneerFramework
 
         public OperationStationary()
         {
-            _planParams = new[]
-            {
-                    new PlanParam("目标地面经度", "°", () => NewLongitude.Val, v => NewLongitude.Val = v),
-            };
+            _planParams = [new PlanParam("目标地面经度", "°", () => NewLongitude.Val, v => NewLongitude.Val = v),];
         }
 
         public override IReadOnlyList<PlanParam> GetParams() => _planParams;
@@ -72,7 +69,7 @@ namespace PioneerFramework
             (V3 dv1, double ut1, V3 dv2, double ut2) = OrbitalManeuverCalculator.DeltaVAndTimeForHohmannTransfer(
                 o, targOrbit, universalTime, lagTime: 0.0, fixedTime: false, coplanar: false);
 
-            return new List<PlanNode> { new PlanNode(dv1, ut1), new PlanNode(dv2, ut2) };
+            return new List<PlanNode> { new(dv1, ut1), new(dv2, ut2) };
         }
     }
 }

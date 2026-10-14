@@ -36,7 +36,7 @@ namespace PioneerFramework
                 return;
             }
 
-            SpaceEntityGroup g = spaceGame.GetGroupById(SpaceGroupVisualManager.GetSelectedGroupId());
+            SpaceEntityGroup? g = spaceGame.GetGroupById(SpaceGroupVisualManager.GetSelectedGroupId());   // 契约改真（2026-10-15）：查不到为 null
             if (g == null)
             {
                 Messages.Message("先在世界上选中一个编队", MessageTypeDefOf.RejectInput);
@@ -61,11 +61,11 @@ namespace PioneerFramework
             sb.Append("[OrbitAdapter 端到端] G").Append(g.GroupId)
               .Append(g.IsCircularOrbit ? " 圆轨模式" : " 自由飞行")
               .Append(" bodyId=").Append(g.CelestialBodyId)
-              .Append(" tick=").Append(tick.ToString("F0"))
+              .Append(" tick=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{tick:F0}")
               .Append("\n  机动前：").Append(ov.ToString())
-              .Append("\n     e=").Append(ov.eccentricity.ToString("E3"))
-              .Append("  a=").Append((ov.semiMajorAxis / 1000.0).ToString("F0")).Append("km")
-              .Append("  T=").Append(ov.period.ToString("F0")).Append("s");
+              .Append("\n     e=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{ov.eccentricity:E3}")
+              .Append("  a=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(ov.semiMajorAxis / 1000.0):F0}").Append("km")
+              .Append("  T=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{ov.period:F0}").Append('s');
 
             if (nodes == null)
             {
@@ -79,10 +79,10 @@ namespace PioneerFramework
             PlanNode first = nodes[0];
             OrbitView predicted = OrbitAdapter.ApplyForPreview(ov, first);
             sb.Append("\n  计划：").Append(nodes.Count).Append(" 条")
-              .Append("  t=").Append(first.ut.ToString("F0")).Append("s")
-              .Append("  |Δv|=").Append(first.dV.magnitude.ToString("F2")).Append("m/s")
-              .Append("\n  机动后（预测）：e=").Append(predicted.eccentricity.ToString("E3"))
-              .Append("  a=").Append((predicted.semiMajorAxis / 1000.0).ToString("F0")).Append("km")
+              .Append("  t=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{first.ut:F0}").Append('s')
+              .Append("  |Δv|=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{first.dV.magnitude:F2}").Append("m/s")
+              .Append("\n  机动后（预测）：e=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{predicted.eccentricity:E3}")
+              .Append("  a=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(predicted.semiMajorAxis / 1000.0):F0}").Append("km")
               .Append("  （判据：e 应 ≈ 0，a 应 = 那一刻的半径）");
 
             if (!OrbitAdapter.TryQueuePlan(g, ov, nodes, out string reason, out string summary))

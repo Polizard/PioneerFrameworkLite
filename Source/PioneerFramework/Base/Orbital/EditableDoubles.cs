@@ -119,7 +119,7 @@ namespace PioneerFramework
     {
         public EditableDouble(double val) : base(val) { }
 
-        public static implicit operator EditableDouble(double x) => new EditableDouble(x);
+        public static implicit operator EditableDouble(double x) => new(x);
     }
 
     /// <summary>

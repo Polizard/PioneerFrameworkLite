@@ -40,22 +40,22 @@ namespace PioneerFramework
         public SensorManager(Game game) { }
 
         // ── 组件引用缓存（同 CombatManager/AVM 的写法；GetComponent 是组件表线性扫描）──
-        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new GameComponentRef<SpaceGameComp>();
+        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new();
 
         // ── 每阵营一份视图 ──
-        private Dictionary<int, FactionPicture> pictures = new Dictionary<int, FactionPicture>();
+        private Dictionary<int, FactionPicture> pictures = new();
 
         // ── 每步复用缓冲（物理步上跑 ⇒ 零分配；不新建 HashSet/List）──
-        private readonly List<SpaceEntityGroup> observersScratch = new List<SpaceEntityGroup>();
-        private readonly List<SpaceEntityGroup> stealthScratch = new List<SpaceEntityGroup>();
-        private readonly List<SpaceEntityGroup> jammersScratch = new List<SpaceEntityGroup>();   // [E3] 干扰机（开机且有强度）
+        private readonly List<SpaceEntityGroup> observersScratch = new();
+        private readonly List<SpaceEntityGroup> stealthScratch = new();
+        private readonly List<SpaceEntityGroup> jammersScratch = new();   // [E3] 干扰机（开机且有强度）
 
         /// <summary>
         /// **dev 真值开关**（用户 2026-10-02 要求）：开启后**绘制与点击绕过认知层**，直接看到真实的棋子。
         /// 调试/量测用（对比"认知层挡掉了什么"）；**不是玩法机制**——不落盘、不影响判定、不影响战斗，
         /// 只改"画不画 / 点不点得到"。默认关闭；调试页签「80 调试日志」有勾选框。
         /// </summary>
-        public static bool DebugShowGroundTruth = false;
+        public static bool DebugShowGroundTruth ;
 
         /// <summary>
         /// **该阵营此刻能不能看见这条 group** —— 绘制 / 点击 / 列表的**统一准入判据**（[V3] 的第一批消费者）。
@@ -110,7 +110,7 @@ namespace PioneerFramework
             public double factorNoJam;
         }
 
-        private readonly Dictionary<int, JamInfo> jamByObserver = new Dictionary<int, JamInfo>();
+        private readonly Dictionary<int, JamInfo> jamByObserver = new();
 
         /// <summary>只读快照：某编队当步的受扰情况；无条目 = 本步没吃到干扰。</summary>
         public bool TryGetJamInfo(int groupId, out JamInfo info) => jamByObserver.TryGetValue(groupId, out info);
@@ -121,9 +121,9 @@ namespace PioneerFramework
         //     （DRFM 语义：对方静默聆听时骗不了它）；
         //   · **识破 = 深层提示**：观测者 `eccmResist > 欺骗强度` ⇒ 该接触仍然出现，但打上 `isDecoy = true`
         //     （"技术够高才看得到这是假的"，§11.5/§11.10）——不把它删掉，因为融合"取更真"要看得见它。
-        private Dictionary<int, DecoyRecord> decoys = new Dictionary<int, DecoyRecord>();
+        private Dictionary<int, DecoyRecord> decoys = new();
         private int nextDecoyId = 1;
-        private readonly List<int> decoyScratch = new List<int>();
+        private readonly List<int> decoyScratch = new();
 
         /// <summary>**注入一条假接触**（[E5]；生产者 = 决策侧 / 诱饵武器，尚未接线）。返回 decoyId。</summary>
         public int InjectDecoy(int ownerFactionId, DVector3 position, DVector3 velocity,
@@ -587,7 +587,7 @@ namespace PioneerFramework
         public sealed class FactionPicture : IExposable
         {
             // 顺序 = 插入顺序（**不是**优先级顺序）；胜负判据在 `Submit`，与枚举顺序无关。
-            public List<ContactRecord> tracks = new List<ContactRecord>();
+            public List<ContactRecord> tracks = new();
 
             public void ExposeData()
             {

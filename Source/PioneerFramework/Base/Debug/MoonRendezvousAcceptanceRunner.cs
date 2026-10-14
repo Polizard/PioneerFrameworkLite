@@ -65,12 +65,7 @@ namespace PioneerFramework
             if (shipPeriodSeconds > 1.0) _shipPeriod = shipPeriodSeconds;
             _armRealTime = UnityEngine.Time.realtimeSinceStartup;
             _nextProgressRealTime = _armRealTime + _nextProgressSeconds;
-            Log.Message(string.Format(
-                "[绕月交会验收] 自动判定已武装：G{0} → G{1}｜模拟截止 t={2:F0}（4 个月球绕地周期）" +
-                "｜**墙钟截止 {3:F0}s（真实）**·每 {4:F0}s 一行进度（进度里 `圈` 指**船的绕月周期 {5:F0}s**）" +
-                "｜出结果会自动打结论，不必掐点",
-                chaserId, targetId, deadlineTick,
-                WallDeadlineSeconds, _nextProgressSeconds, _shipPeriod));
+            Log.Message($"[绕月交会验收] 自动判定已武装：G{chaserId} → G{targetId}｜模拟截止 t={deadlineTick:F0}（4 个月球绕地周期）｜**墙钟截止 {WallDeadlineSeconds:F0}s（真实）**·每 {_nextProgressSeconds:F0}s 一行进度（进度里 `圈` 指**船的绕月周期 {_shipPeriod:F0}s**）｜出结果会自动打结论，不必掐点");
         }
 
         /// <summary>每物理步调用（只做几次字典查表，开销可忽略）。</summary>
@@ -84,10 +79,7 @@ namespace PioneerFramework
             if (chaser == null || target == null)
             {
                 _armed = false;
-                Log.Message(string.Format(
-                    "\n══ 绕月交会验收 · **自动结论** ══\n  **FAIL**：G{0} / G{1} 有一方已不存在（撞毁会销毁实体）" +
-                    "⇒ 看 `[Collision] … CRASHED into 月球`｜t={2:F0}（起飞后 {3:F0} s）",
-                    _chaserId, _targetId, physicsTick, physicsTick - _startTick));
+                Log.Message($"\n══ 绕月交会验收 · **自动结论** ══\n  **FAIL**：G{_chaserId} / G{_targetId} 有一方已不存在（撞毁会销毁实体）⇒ 看 `[Collision] … CRASHED into 月球`｜t={physicsTick:F0}（起飞后 {physicsTick - _startTick:F0} s）");
                 return;
             }
 
@@ -97,11 +89,7 @@ namespace PioneerFramework
             {
                 _armed = false;
                 DVector3 dV = target.velocityBody - chaser.velocityBody;
-                Log.Message(string.Format(
-                    "\n══ 绕月交会验收 · **自动结论** ══\n  **PASS**：到达判据成立（`IsRendezvousGoalMet`）" +
-                    "｜距离 {0:F1} m｜相对速度 {1:F3} m/s｜沿轨相位差 {2:F1}°｜t={3:F0}（起飞后 {4:F0} s ≈ {5:F2} 圈，船的绕月周期 {6:F0}s）",
-                    (target.positionBody - chaser.positionBody).magnitude, dV.magnitude, phaseErrDeg,
-                    physicsTick, physicsTick - _startTick, (physicsTick - _startTick) / _shipPeriod, _shipPeriod));
+                Log.Message($"\n══ 绕月交会验收 · **自动结论** ══\n  **PASS**：到达判据成立（`IsRendezvousGoalMet`）｜距离 {(target.positionBody - chaser.positionBody).magnitude:F1} m｜相对速度 {dV.magnitude:F3} m/s｜沿轨相位差 {phaseErrDeg:F1}°｜t={physicsTick:F0}（起飞后 {physicsTick - _startTick:F0} s ≈ {(physicsTick - _startTick) / _shipPeriod:F2} 圈，船的绕月周期 {_shipPeriod:F0}s）");
                 return;
             }
 
@@ -124,27 +112,17 @@ namespace PioneerFramework
                     var pm = next.Value;
                     double dvMag = Math.Sqrt(pm.radialDV * pm.radialDV + pm.tangentialDV * pm.tangentialDV
                                              + pm.normalDV * pm.normalDV);
-                    nextTxt = string.Format("下一发 T-{0:F0}s（Δv {1:F1} m/s，共 {2} 发在队）",
-                        pm.executeTick - physicsTick, dvMag, chaser.plannedManeuvers.Count);
+                    nextTxt = $"下一发 T-{pm.executeTick - physicsTick:F0}s（Δv {dvMag:F1} m/s，共 {chaser.plannedManeuvers.Count} 发在队）";
                 }
                 else
                 {
-                    nextTxt = string.Format("队列空（等下一次规划；历史共 {0} 发）", chaser.plannedManeuvers.Count);
+                    nextTxt = $"队列空（等下一次规划；历史共 {chaser.plannedManeuvers.Count} 发）";
                 }
                 // 相位读数走**游戏自己的唯一求值口**同口径（`RendezvousGoal.SignedPhaseDeg`，+ = 目标在前）
                 double phaseDeg = RendezvousGoal.SignedPhaseDeg(chaser.positionBody, chaser.velocityBody, target.positionBody);
                 var ovC = OrbitView.FromStateVectors(chaser.positionBody, chaser.velocityBody, mu, 0.0, DVector3.up, 1_500_000.0);
                 var ovT = OrbitView.FromStateVectors(target.positionBody, target.velocityBody, mu, 0.0, DVector3.up, 1_500_000.0);
-                Log.Message(string.Format(
-                    "[绕月交会验收·进度] 已跑 真实 {0:F0}s / 模拟 {1:F0}s（船绕 {2:F2} 圈）｜距离 {3:F0} km｜相对速度 {4:F2} m/s" +
-                    "｜相位 {5:F1}°（+ 目标在前）｜**{6}**｜G{7} a={8:F0}km e={9:F4}｜G{10} a={11:F0}km e={12:F4}｜**阶梯在位={13}**",
-                    realNow - _armRealTime, simElapsed, simElapsed / _shipPeriod,
-                    (target.positionBody - chaser.positionBody).magnitude / 1000.0,
-                    (target.velocityBody - chaser.velocityBody).magnitude,
-                    phaseDeg, nextTxt,
-                    chaser.GroupId, ovC.semiMajorAxis / 1000.0, ovC.eccentricity,
-                    target.GroupId, ovT.semiMajorAxis / 1000.0, ovT.eccentricity,
-                    chaser.ladderOwnsFarField));
+                Log.Message($"[绕月交会验收·进度] 已跑 真实 {realNow - _armRealTime:F0}s / 模拟 {simElapsed:F0}s（船绕 {simElapsed / _shipPeriod:F2} 圈）｜距离 {(target.positionBody - chaser.positionBody).magnitude / 1000.0:F0} km｜相对速度 {(target.velocityBody - chaser.velocityBody).magnitude:F2} m/s｜相位 {phaseDeg:F1}°（+ 目标在前）｜**{nextTxt}**｜G{chaser.GroupId} a={ovC.semiMajorAxis / 1000.0:F0}km e={ovC.eccentricity:F4}｜G{target.GroupId} a={ovT.semiMajorAxis / 1000.0:F0}km e={ovT.eccentricity:F4}｜**阶梯在位={chaser.ladderOwnsFarField}**");
             }
 
             bool wallOut = realNow - _armRealTime >= WallDeadlineSeconds;
@@ -153,16 +131,7 @@ namespace PioneerFramework
                 _armed = false;
                 var ovC = OrbitView.FromStateVectors(chaser.positionBody, chaser.velocityBody, mu, 0.0, DVector3.up, 1_500_000.0);
                 var ovT = OrbitView.FromStateVectors(target.positionBody, target.velocityBody, mu, 0.0, DVector3.up, 1_500_000.0);
-                Log.Message(string.Format(
-                    "\n══ 绕月交会验收 · **自动结论** ══\n  **未达（超时）**：到截止时刻仍未收口" +
-                    "｜距离 {0:F0} m｜相对速度 {1:F2} m/s｜G{2} 要素 a={3:F0}km e={4:F4}｜G{5} 要素 a={6:F0}km e={7:F4}" +
-                    "｜**阶梯在位={8}**｜t={9:F0}（起飞后 {10:F0} s ≈ {11:F2} 圈，船的绕月周期 {12:F0}s）",
-                    (target.positionBody - chaser.positionBody).magnitude,
-                    (target.velocityBody - chaser.velocityBody).magnitude,
-                    chaser.GroupId, ovC.semiMajorAxis / 1000.0, ovC.eccentricity,
-                    target.GroupId, ovT.semiMajorAxis / 1000.0, ovT.eccentricity,
-                    chaser.ladderOwnsFarField, physicsTick, physicsTick - _startTick,
-                    (physicsTick - _startTick) / _shipPeriod, _shipPeriod));
+                Log.Message($"\n══ 绕月交会验收 · **自动结论** ══\n  **未达（超时）**：到截止时刻仍未收口｜距离 {(target.positionBody - chaser.positionBody).magnitude:F0} m｜相对速度 {(target.velocityBody - chaser.velocityBody).magnitude:F2} m/s｜G{chaser.GroupId} 要素 a={ovC.semiMajorAxis / 1000.0:F0}km e={ovC.eccentricity:F4}｜G{target.GroupId} 要素 a={ovT.semiMajorAxis / 1000.0:F0}km e={ovT.eccentricity:F4}｜**阶梯在位={chaser.ladderOwnsFarField}**｜t={physicsTick:F0}（起飞后 {physicsTick - _startTick:F0} s ≈ {(physicsTick - _startTick) / _shipPeriod:F2} 圈，船的绕月周期 {_shipPeriod:F0}s）");
             }
         }
 
@@ -211,39 +180,28 @@ namespace PioneerFramework
             double rSelf = chaser.positionBody.magnitude, rTgt = target.positionBody.magnitude;
             bool alive = IsFinite(chaser.positionBody) && IsFinite(chaser.velocityBody)
                       && IsFinite(target.positionBody) && IsFinite(target.velocityBody);
-            sb.Append(string.Format("\n  ① 两船都活着：{0}｜G{1} r={2:F0}km v={3:F1}｜G{4} r={5:F0}km v={6:F1}",
-                alive ? "✓" : "✗", chaser.GroupId, rSelf / 1000.0, chaser.velocityBody.magnitude,
-                target.GroupId, rTgt / 1000.0, target.velocityBody.magnitude));
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n  ① 两船都活着：{(alive ? "✓" : "✗")}｜G{chaser.GroupId} r={rSelf / 1000.0:F0}km v={chaser.velocityBody.magnitude:F1}｜G{target.GroupId} r={rTgt / 1000.0:F0}km v={target.velocityBody.magnitude:F1}");
 
             // ── ② 到达判据（游戏自己的唯一求值口）──
             bool met = chaser.IsRendezvousGoalMet(target, mu, out double phaseErrDeg);
             DVector3 dR = target.positionBody - chaser.positionBody;
             DVector3 dV = target.velocityBody - chaser.velocityBody;
-            sb.Append(string.Format("\n  ② 到达判据（`IsRendezvousGoalMet`）：{0}｜距离 {1:F0} m｜相对速度 {2:F2} m/s｜" +
-                                    "沿轨相位差 {3:F1}°｜目标={4}",
-                met ? "✓" : "✗", dR.magnitude, dV.magnitude, phaseErrDeg,
-                chaser.EffectiveRendezvousGoal.ToString()));
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n  ② 到达判据（`IsRendezvousGoalMet`）：{(met ? "✓" : "✗")}｜距离 {dR.magnitude:F0} m｜相对速度 {dV.magnitude:F2} m/s｜沿轨相位差 {phaseErrDeg:F1}°｜目标={chaser.EffectiveRendezvousGoal.ToString()}");
 
             // ── ③ 阶梯在位（"跑的是 MJ 路径"，不抓日志）──
-            sb.Append(string.Format("\n  ③ 阶梯在位（`ladderOwnsFarField`）：{0}",
-                chaser.ladderOwnsFarField ? "✓" : "✗（若为 ✗：这条不是阶梯在管，读数不可用于验证阶梯）"));
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n  ③ 阶梯在位（`ladderOwnsFarField`）：{(chaser.ladderOwnsFarField ? "✓" : "✗（若为 ✗：这条不是阶梯在管，读数不可用于验证阶梯）")}");
 
             // ── 读数（绕月要素：判"有没有被非物理地换过状态"）──
             var ovSelf = OrbitView.FromStateVectors(chaser.positionBody, chaser.velocityBody, mu, 0.0,
                 DVector3.up, 1_500_000.0);
             var ovTgt = OrbitView.FromStateVectors(target.positionBody, target.velocityBody, mu, 0.0,
                 DVector3.up, 1_500_000.0);
-            sb.Append(string.Format("\n  读数：圆轨模式 G{0}={1} / G{2}={3}｜G{4} 要素 a={5:F0}km e={6:F4} PeR={7:F0}km ApR={8:F0}km｜" +
-                                    "G{9} 要素 a={10:F0}km e={11:F4} PeR={12:F0}km ApR={13:F0}km（μ月={14:E2}）",
-                chaser.GroupId, chaser.IsCircularOrbit, target.GroupId, target.IsCircularOrbit,
-                chaser.GroupId, ovSelf.semiMajorAxis / 1000.0, ovSelf.eccentricity, ovSelf.PeR / 1000.0, ovSelf.ApR / 1000.0,
-                target.GroupId, ovTgt.semiMajorAxis / 1000.0, ovTgt.eccentricity, ovTgt.PeR / 1000.0, ovTgt.ApR / 1000.0, mu));
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n  读数：圆轨模式 G{chaser.GroupId}={chaser.IsCircularOrbit} / G{target.GroupId}={target.IsCircularOrbit}｜G{chaser.GroupId} 要素 a={ovSelf.semiMajorAxis / 1000.0:F0}km e={ovSelf.eccentricity:F4} PeR={ovSelf.PeR / 1000.0:F0}km ApR={ovSelf.ApR / 1000.0:F0}km｜G{target.GroupId} 要素 a={ovTgt.semiMajorAxis / 1000.0:F0}km e={ovTgt.eccentricity:F4} PeR={ovTgt.PeR / 1000.0:F0}km ApR={ovTgt.ApR / 1000.0:F0}km（μ月={mu:E2}）");
             // 月球半径 1500 km ⇒ PeR < 1560 km 就是"掠月/要撞"的量级，直接标出来
             if (ovSelf.PeR / 1000.0 < 1560.0 || ovTgt.PeR / 1000.0 < 1560.0)
                 sb.Append("\n  ⛔ **近月点已低于月面 +60 km** ⇒ 这一对已经有撞月风险（本行就是给绕月 bug 用的判据）");
 
-            sb.Append(string.Format("\n  ═══ 总判定：{0} ═══",
-                (alive && met && chaser.ladderOwnsFarField) ? "PASS（三条全过）" : "FAIL / 未达"));
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n  ═══ 总判定：{((alive && met && chaser.ladderOwnsFarField) ? "PASS（三条全过）" : "FAIL / 未达")} ═══");
             Log.Message(sb.ToString());
         }
 

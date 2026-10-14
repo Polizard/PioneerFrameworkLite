@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
@@ -36,7 +36,7 @@ namespace PioneerFramework
     public static class PerfProbe
     {
         /// <summary>总开关（Gizmo 切换）。关闭时全部探针零开销。</summary>
-        public static bool Enabled = false;
+        public static bool Enabled ;
 
         /// <summary>影子校验开关：关掉后只统计计数与"无变更重建"等结构性异常，不做重算比对。</summary>
         public static bool ShadowChecks = true;
@@ -85,16 +85,16 @@ namespace PioneerFramework
         public static int GoodingMaxIter;
 
         private static int nextSummaryTick;
-        private static readonly Dictionary<string, long> mismatchByTag = new Dictionary<string, long>();
-        private static readonly Dictionary<int, AggState> aggLast = new Dictionary<int, AggState>();
+        private static readonly Dictionary<string, long> mismatchByTag = new();
+        private static readonly Dictionary<int, AggState> aggLast = new();
         private static readonly Dictionary<int, (object buffer, SpaceEntityGroup group)> sliceBufferByGroup
-            = new Dictionary<int, (object buffer, SpaceEntityGroup group)>();
+            = new();
 
         /// <summary>观察到的 groupId 复用次数（id 分配"扫 max+1"的后果）——信息量，非缺陷。</summary>
         public static long GroupIdReuseObserved;
-        private static readonly Dictionary<object, int> sliceGroupByBuffer = new Dictionary<object, int>();
-        private static readonly Dictionary<int, long> destroyedSeen = new Dictionary<int, long>();
-        private static readonly Dictionary<string, int> compShadowCounter = new Dictionary<string, int>();
+        private static readonly Dictionary<object, int> sliceGroupByBuffer = new();
+        private static readonly Dictionary<int, long> destroyedSeen = new();
+        private static readonly Dictionary<string, int> compShadowCounter = new();
         private static int rotInvShadowCounter;
 
         private struct AggState
@@ -205,8 +205,7 @@ namespace PioneerFramework
                     if (liveCount <= lastResultsLength)
                     {
                         StepScratchIdentityChange++;
-                        Mismatch("每步scratch", string.Format(
-                            "physicsResults 数组在容量足够（{0} ≥ 本步 {1}）时仍被重新分配", lastResultsLength, liveCount));
+                        Mismatch("每步scratch", $"physicsResults 数组在容量足够（{lastResultsLength} ≥ 本步 {liveCount}）时仍被重新分配");
                     }
                     else
                     {
@@ -230,7 +229,7 @@ namespace PioneerFramework
         public static void GroupsToCheckConsume(int count, int liveCount)
         {
             if (count > liveCount)
-                Mismatch("待检查集合", string.Format("本步消费 {0} 个 id > 本步结果数 {1}（清空失效或残留陈旧 id）", count, liveCount));
+                Mismatch("待检查集合", $"本步消费 {count} 个 id > 本步结果数 {liveCount}（清空失效或残留陈旧 id）");
         }
 
         /// <summary>组级燃烧切片缓冲：校验"每组独占且身份恒定"，并统计复用次数。</summary>
@@ -371,8 +370,7 @@ namespace PioneerFramework
             double d = (cached - fresh).magnitude;
             if (d <= 0.0) return;
             Interlocked.Increment(ref BodyParentCacheShadowMismatch);
-            Mismatch("天体局部缓存", string.Format(
-                "天体{0} {1} 命中值≠重算值 Δ={2:E3} m（t={3:F3}）——缓存陈旧？", bodyId, what, d, tick));
+            Mismatch("天体局部缓存", $"天体{bodyId} {what} 命中值≠重算值 Δ={d:E3} m（t={tick:F3}）——缓存陈旧？");
         }
 
         public static void DestroyedConsume(int groupId, int tick)
@@ -568,13 +566,9 @@ namespace PioneerFramework
 
             if (localGravity <= 1e-9) return;
             if (ratio < 1e-4)
-                Mismatch("引力场子天体域", string.Format(
-                    "差分近零（{0:P4}）：子天体周围未带上根天体贡献 —— A0 未生效？差分={1:E3} 局部={2:F3} m/s²",
-                    ratio, diffMagnitude, localGravity));
+                Mismatch("引力场子天体域", $"差分近零（{ratio:P4}）：子天体周围未带上根天体贡献 —— A0 未生效？差分={diffMagnitude:E3} 局部={localGravity:F3} m/s²");
             else if (ratio > 0.03)
-                Mismatch("引力场子天体域", string.Format(
-                    "差分为全量级（{0:P4}，潮汐应 0.1%–0.6%）：走了『全量和』错路 差分={1:E3} 局部={2:F3} m/s²",
-                    ratio, diffMagnitude, localGravity));
+                Mismatch("引力场子天体域", $"差分为全量级（{ratio:P4}，潮汐应 0.1%–0.6%）：走了『全量和』错路 差分={diffMagnitude:E3} 局部={localGravity:F3} m/s²");
         }
 
         /// <summary>
@@ -598,9 +592,7 @@ namespace PioneerFramework
             if (expected < 4.0) return;   // 段数太少，统计无意义
 
             if (projRebuilds > expected * 1.5 + 4.0)
-                Mismatch("射弹引力段", string.Format(
-                    "P{0} 段重建过频：{1} 段 / 应 ≈{2:F0} 段（飞行 {3:F1}s / 段长 {4:F1}s）—— 段长没生效？",
-                    projId, projRebuilds, expected, elapsedSeconds, segmentLength));
+                Mismatch("射弹引力段", $"P{projId} 段重建过频：{projRebuilds} 段 / 应 ≈{expected:F0} 段（飞行 {elapsedSeconds:F1}s / 段长 {segmentLength:F1}s）—— 段长没生效？");
         }
 
         /// <summary>
@@ -642,9 +634,7 @@ namespace PioneerFramework
             WarheadSegments++;
 
             if (accelRatio > 0.0 && (accelRatio < 0.2 || accelRatio > 5.0))
-                Mismatch("弹头引力", string.Format(
-                    "引力偏离主导项 {0:F1}×（应在 0.2–5×）：|a|={1:F3} m/s² 指向行星中心余弦={2:F3}",
-                    accelRatio, accelMagnitude, towardCenterCos));
+                Mismatch("弹头引力", $"引力偏离主导项 {accelRatio:F1}×（应在 0.2–5×）：|a|={accelMagnitude:F3} m/s² 指向行星中心余弦={towardCenterCos:F3}");
 
             if ((++warheadLogCounter % 4) != 1) return;
             Log.Message($"[性能探针][弹头引力] |a|={accelMagnitude:F3} m/s²（主导项 {accelRatio:F2}×）" +
@@ -670,8 +660,7 @@ namespace PioneerFramework
             if (leakCount <= 0) return;
             EntityRegistryLeaks += leakCount;
             EntityRegistrySample = sample;
-            Mismatch("实体注册表", string.Format(
-                "{0} 个实体不属于任何存活组（离群未注销 → 泄漏）：{1}", leakCount, sample));
+            Mismatch("实体注册表", $"{leakCount} 个实体不属于任何存活组（离群未注销 → 泄漏）：{sample}");
         }
 
         // ════════ 第 25 条：每物理步墙钟 ════════
@@ -715,8 +704,7 @@ namespace PioneerFramework
         public static string TickClockReport()
             => _tickClocks <= 0
                 ? "未采样"
-                : string.Format("tick 数={0} 平均={1:F1}µs/tick 最慢={2:F1}µs",
-                    _tickClocks, ToMicros(_tickTicksTotal) / (double)_tickClocks, ToMicros(_tickTicksMax));
+                : $"tick 数={_tickClocks} 平均={ToMicros(_tickTicksTotal) / (double)_tickClocks:F1}µs/tick 最慢={ToMicros(_tickTicksMax):F1}µs";
 
         // ── 命名分段钟（2026-10-02 第二轮）：把"整 tick"再切成"物理步块 / 碰撞·战斗 / AVM"──
         // 逼出它的读数：2040 组时整 tick = 192.8 ms，而物理步只有几 ms ⇒ 必须能把钱花在哪一块指认出来，
@@ -728,7 +716,7 @@ namespace PioneerFramework
         private static readonly long[] _extraTicks = new long[4];
         private static readonly long[] _extraCounts = new long[4];
         private static readonly long[] _extraMax = new long[4];
-        private static readonly string[] _extraNames = { "整步块", "碰撞·战斗", "AVM", "认知层" };
+        private static readonly string[] _extraNames = ["整步块", "碰撞·战斗", "AVM", "认知层"];
         /// <summary>分段计时开始（与 <see cref="TickClockStart" /> 同族；纳秒级）。</summary>
         public static long ExtraClockStart() => System.Diagnostics.Stopwatch.GetTimestamp();
         public static void ExtraClockEnd(int slot, long start)
@@ -750,10 +738,8 @@ namespace PioneerFramework
             for (int i = 0; i < _extraTicks.Length; i++)
             {
                 if (_extraCounts[i] <= 0) continue;
-                if (sb.Length > 0) sb.Append("｜");
-                sb.Append(string.Format("{0}：{1} 次 平均={2:F1}µs 最慢={3:F1}µs",
-                    _extraNames[i], _extraCounts[i],
-                    ToMicros(_extraTicks[i]) / (double)_extraCounts[i], ToMicros(_extraMax[i])));
+                if (sb.Length > 0) sb.Append('｜');
+                sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"{_extraNames[i]}：{_extraCounts[i]} 次 平均={ToMicros(_extraTicks[i]) / (double)_extraCounts[i]:F1}µs 最慢={ToMicros(_extraMax[i]):F1}µs");
             }
             return sb.Length > 0 ? sb.ToString() : "未采样";
         }
@@ -869,28 +855,8 @@ namespace PioneerFramework
                 long apColUs = ApplySubDelta(ApplySubCollision);
                 long apTsUs = ApplySubDelta(ApplySubTimeScale);
                 long apManUs = ApplySubDelta(ApplySubManeuver);
-                Log.Message(string.Format(
-                    "[步耗时·尖峰] 本步={0:F0}µs（第{1}步 / t={2}）｜**阶段**：操舵={3:F0} 冲量={4:F0} 组物理={5:F0} 主循环应用={6:F0} 引导={7:F0}"
-                    + "｜子段：引力场={8:F0}µs 采样{9}｜解析源表={10:F1}｜预取建表={11:F1}"
-                    + "｜**残差={12:F0}µs**｜GC 本步={13}/{14}/{15}｜步均={16:F1}µs"
-                    + "｜**本步CPU={17:F0}µs**｜**墙钟−CPU={18:F0}µs**{19}"
-                    + "｜**apply细分**：燃烧/工质={20:F0} 碰撞={21:F0} 时标={22:F0} 机动={23:F0} **余={24:F0}**"
-                    + "｜**块①细分**：诊断日志={25:F0} 工质账={26:F0} 探针/验收={27:F0} **余={28:F0}**",
-                    us, StepClocks, tickNow,
-                    ToMicros(PhaseDelta(PhaseSteer)), ToMicros(PhaseDelta(PhaseImpulse)), ToMicros(PhaseDelta(PhaseGroupPhysics)),
-                    ToMicros(PhaseDelta(PhaseApply)), ToMicros(PhaseDelta(PhaseGuidance)),
-                    ToMicros(grav), segs, ToMicros(seg), ToMicros(pf),
-                    us - ToMicros(grav) - ToMicros(seg) - ToMicros(pf),
-                    g0 - _spikeLastGc0, g1 - _spikeLastGc1, g2 - _spikeLastGc2,
-                    StepClocks > 0 ? ToMicros(StepTicksTotal) / StepClocks : 0.0,
-                    cpuOk ? cpuUs : -1.0, cpuOk ? us - cpuUs : -1.0,
-                    cpuOk ? "" : "（CPU 栏不可用）",
-                    ToMicros(apBurnUs), ToMicros(apColUs), ToMicros(apTsUs), ToMicros(apManUs),
-                    ToMicros(PhaseDelta(PhaseApply) - apBurnUs - apColUs - apTsUs - apManUs),
-                    ToMicros(ApplySubDelta(ApplySubBurnDiag)), ToMicros(ApplySubDelta(ApplySubBurnFuel)),
-                    ToMicros(ApplySubDelta(ApplySubBurnProbe)),
-                    ToMicros(apBurnUs - ApplySubDelta(ApplySubBurnDiag) - ApplySubDelta(ApplySubBurnFuel)
-                             - ApplySubDelta(ApplySubBurnProbe))));
+                Log.Message($"[步耗时·尖峰] 本步={us:F0}µs（第{StepClocks}步 / t={tickNow}）｜**阶段**：操舵={ToMicros(PhaseDelta(PhaseSteer)):F0} 冲量={ToMicros(PhaseDelta(PhaseImpulse)):F0} 组物理={ToMicros(PhaseDelta(PhaseGroupPhysics)):F0} 主循环应用={ToMicros(PhaseDelta(PhaseApply)):F0} 引导={ToMicros(PhaseDelta(PhaseGuidance)):F0}｜子段：引力场={ToMicros(grav):F0}µs 采样{segs}｜解析源表={ToMicros(seg):F1}｜预取建表={ToMicros(pf):F1}｜**残差={us - ToMicros(grav) - ToMicros(seg) - ToMicros(pf):F0}µs**｜GC 本步={g0 - _spikeLastGc0}/{g1 - _spikeLastGc1}/{g2 - _spikeLastGc2}｜步均={(StepClocks > 0 ? ToMicros(StepTicksTotal) / StepClocks : 0.0):F1}µs｜**本步CPU={(cpuOk ? cpuUs : -1.0):F0}µs**｜**墙钟−CPU={(cpuOk ? us - cpuUs : -1.0):F0}µs**{(cpuOk ? "" : "（CPU 栏不可用）")}｜**apply细分**：燃烧/工质={ToMicros(apBurnUs):F0} 碰撞={ToMicros(apColUs):F0} 时标={ToMicros(apTsUs):F0} 机动={ToMicros(apManUs):F0} **余={ToMicros(PhaseDelta(PhaseApply) - apBurnUs - apColUs - apTsUs - apManUs):F0}**｜**块①细分**：诊断日志={ToMicros(ApplySubDelta(ApplySubBurnDiag)):F0} 工质账={ToMicros(ApplySubDelta(ApplySubBurnFuel)):F0} 探针/验收={ToMicros(ApplySubDelta(ApplySubBurnProbe)):F0} **余={ToMicros(apBurnUs - ApplySubDelta(ApplySubBurnDiag) - ApplySubDelta(ApplySubBurnFuel)
+                             - ApplySubDelta(ApplySubBurnProbe)):F0}**");
                 _spikeLastGc0 = g0; _spikeLastGc1 = g1; _spikeLastGc2 = g2;
             }
 
@@ -916,7 +882,7 @@ namespace PioneerFramework
         //   尖峰行就能直接指认。**只在主线程**（阶段边界都在主线程；并行体内部的计时另有 GravityClock）。
         public const int PhaseSteer = 0, PhaseImpulse = 1, PhaseGroupPhysics = 2, PhaseApply = 3, PhaseGuidance = 4, PhaseCount = 5;
         private static readonly long[] _phaseTicks = new long[PhaseCount];
-        private static readonly string[] _phaseNames = { "操舵", "冲量", "组物理", "主循环应用", "引导" };
+        private static readonly string[] _phaseNames = ["操舵", "冲量", "组物理", "主循环应用", "引导"];
 
         // ── apply 段**内部**细分（2026-10-01 第二轮）：apply 是五阶段里最大的一个（~830 行）──
         // 背景：本轮实测 apply 有 **~490 tick 周期**的 5–7 ms 尖峰、一次 **108 ms**（GC=0、
@@ -1034,14 +1000,7 @@ namespace PioneerFramework
             double scShare = avg > 0.0 ? scPerStep / avg : 0.0;
             // S-a 拆两格：预取建表（主线程）/ 相位填充（相位里每群每步）
             double pfPerStep = ToMicros(PrefetchBuildTicksTotal) / StepClocks;
-            return string.Format(
-                "步数={0} 平均={1:F1}µs/步 最慢={2:F1}µs（第{3}步 / t={4}）｜引力场段={5:F1}µs/步 占整步={6:P1}（采样 {7:F1} 段/步）｜**解析源表**={8:F2}µs/步（每群每步；占整步={9:P1}）｜**预取建表**={10:F2}µs/步（{11} 段）｜S-a 预取 {12} 张 / **用上 {13} 次** / 退回 {14} 次｜**尖峰(>{15:F0}µs)**：{16} 步 / 合计 {17:F0}µs",
-                StepClocks, avg, max, StepTicksMaxAtStep, StepTicksMaxAtTick, gravPerStep, share, segPerStep,
-                scPerStep, scShare,
-                pfPerStep, PrefetchBuildSegments,
-                CelestialBodyManager.DebugSourcesPrefetched, CelestialBodyManager.DebugSourcesHits,
-                CelestialBodyManager.DebugSourcesFallback,
-                StepSpikeThresholdUs, _spikeStepsWindow, _spikeUsWindow);
+            return $"步数={StepClocks} 平均={avg:F1}µs/步 最慢={max:F1}µs（第{StepTicksMaxAtStep}步 / t={StepTicksMaxAtTick}）｜引力场段={gravPerStep:F1}µs/步 占整步={share:P1}（采样 {segPerStep:F1} 段/步）｜**解析源表**={scPerStep:F2}µs/步（每群每步；占整步={scShare:P1}）｜**预取建表**={pfPerStep:F2}µs/步（{PrefetchBuildSegments} 段）｜S-a 预取 {CelestialBodyManager.DebugSourcesPrefetched} 张 / **用上 {CelestialBodyManager.DebugSourcesHits} 次** / 退回 {CelestialBodyManager.DebugSourcesFallback} 次｜**尖峰(>{StepSpikeThresholdUs:F0}µs)**：{_spikeStepsWindow} 步 / 合计 {_spikeUsWindow:F0}µs";
         }
 
         /// <summary>打印步钟读数并清零（供调试菜单按钮用；不依赖 `Enabled`）。</summary>
@@ -1069,35 +1028,35 @@ namespace PioneerFramework
             GoodingMaxIter = Gooding.DebugMaxSeriesIter;
 
             var sb = new StringBuilder();
-            sb.Append($"[性能探针] t={tick} 判据=下列 mismatch/miss 全 0");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"[性能探针] t={tick} 判据=下列 mismatch/miss 全 0");
 
-            sb.Append($"\n①聚合器 reused={AggReused} rebuilt(首次={AggRebuiltFirst} 实体集={AggRebuiltEntitySet} 推进={AggRebuiltPropulsion} 无变更={AggRebuiltNoChange}) 影子={AggShadowChecked} 不一致={AggShadowMismatch}");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n①聚合器 reused={AggReused} rebuilt(首次={AggRebuiltFirst} 实体集={AggRebuiltEntitySet} 推进={AggRebuiltPropulsion} 无变更={AggRebuiltNoChange}) 影子={AggShadowChecked} 不一致={AggShadowMismatch}");
 
-            sb.Append($"\n②③④scratch 步校验={StepScratchChecked} 身份变化={StepScratchIdentityChange} 扩容={StepScratchRegrown} 陈旧尾跳过={StepScratchStaleTail} 切片检查={SliceBufferChecks} 切片共用={SliceBufferShared} 别名错={SliceAliasMismatch} 待销毁遗留={DestroyedLeftover} 重复销毁={DestroyedDoubleDestroy} 待检查遗留={GroupsToCheckLeftoverTotal}（正常稳态） 接触解算={ContactsResolved}");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n②③④scratch 步校验={StepScratchChecked} 身份变化={StepScratchIdentityChange} 扩容={StepScratchRegrown} 陈旧尾跳过={StepScratchStaleTail} 切片检查={SliceBufferChecks} 切片共用={SliceBufferShared} 别名错={SliceAliasMismatch} 待销毁遗留={DestroyedLeftover} 重复销毁={DestroyedDoubleDestroy} 待检查遗留={GroupsToCheckLeftoverTotal}（正常稳态） 接触解算={ContactsResolved}");
 
-            sb.Append($"\n⑤⑭组件缓存 命中={CompRefHits} 实查={CompRefMissResolved} 未注册={CompRefMissNull} 换局={CompRefGameSwitched} 影子={CompRefShadowChecked} 不一致={CompRefShadowMismatch}");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n⑤⑭组件缓存 命中={CompRefHits} 实查={CompRefMissResolved} 未注册={CompRefMissNull} 换局={CompRefGameSwitched} 影子={CompRefShadowChecked} 不一致={CompRefShadowMismatch}");
 
             // P49 读数：对筛漏斗（只量不改）。三个数一起看才说明问题：
             //   候选 →(扫掠盒)→ 命中 →(同 volley 排除)→ 真判定。
             // "同 volley / 命中" 的比值高 ⇒ 把排除提到几何前是净赚（省掉那次盒测试）。
             sb.Append($"\nP49 对筛漏斗 候选={PairCandidates} 过扫掠盒={PairSweptHit} 同volley={PairSameVolley}"
-                + $"（同volley/过盒={(PairSweptHit > 0 ? (100.0 * PairSameVolley / PairSweptHit).ToString("F1") + "%" : "n/a")}）");
+                + $"（同volley/过盒={(PairSweptHit > 0 ? $"{(100.0 * PairSameVolley / PairSweptHit):F1}" + "%" : "n/a")}）");
 
-            sb.Append($"\n⑮爆炸网格 查询={ExplGridQueries} 网格候选={ExplGridCandidates} 旧扫候选={ExplOldScanCandidates} 仅旧扫有={ExplOldOnlyNoPartInRange} 漏伤={ExplMissedWithPartInRange} 影子={ExplShadowChecked}");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n⑮爆炸网格 查询={ExplGridQueries} 网格候选={ExplGridCandidates} 旧扫候选={ExplOldScanCandidates} 仅旧扫有={ExplOldOnlyNoPartInRange} 漏伤={ExplMissedWithPartInRange} 影子={ExplShadowChecked}");
 
-            sb.Append($"\n⑯逆四元数 命中={RotInvHits} 未命中={RotInvMisses} 影子={RotInvShadowChecked} 不一致={RotInvShadowMismatch}");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n⑯逆四元数 命中={RotInvHits} 未命中={RotInvMisses} 影子={RotInvShadowChecked} 不一致={RotInvShadowMismatch}");
 
-            sb.Append($"\n⑲Gooding 调用={GoodingCalls} 迭代上限命中={GoodingCapHits} 实测最大迭代={GoodingMaxIter}(上限 {Gooding.MAX_SERIES_ITER})");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n⑲Gooding 调用={GoodingCalls} 迭代上限命中={GoodingCapHits} 实测最大迭代={GoodingMaxIter}(上限 {Gooding.MAX_SERIES_ITER})");
 
             string subBody = GravitySubBodyProbes > 0
                 ? $"{GravitySubBodyLastRatio:P3}（范围 {GravitySubBodyMinRatio:P3}–{GravitySubBodyMaxRatio:P3}，差分={GravitySubBodyLastDiff:F4} 局部={GravitySubBodyLastLocal:F3} m/s²）"
                 : "未采样";
-            sb.Append($"\n㉑引力场(A0) 根域影子={GravityRootChecked} 不一致={GravityRootMismatch}｜子天体域差分={GravitySubBodyProbes} 次，差分/局部引力={subBody}");
-            sb.Append($"\n㉓id 复用观察={GroupIdReuseObserved} 次（id 分配「扫 max+1」的后果；计划 A5a 的根因，非缺陷）");
-            sb.Append($"\n㉒射弹引力段(A2) 段重建={ProjectileSegments} / 步={ProjectileSteps}（预期 ≈步数/120）｜弹头建段={WarheadSegments} 次 最近 |a|={WarheadAccel:F3} m/s²（主导项 {WarheadAccelRatio:F2}×，应 0.2–5×）指向行星中心余弦={WarheadTowardCenterCos:F3}");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n㉑引力场(A0) 根域影子={GravityRootChecked} 不一致={GravityRootMismatch}｜子天体域差分={GravitySubBodyProbes} 次，差分/局部引力={subBody}");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n㉓id 复用观察={GroupIdReuseObserved} 次（id 分配「扫 max+1」的后果；计划 A5a 的根因，非缺陷）");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n㉒射弹引力段(A2) 段重建={ProjectileSegments} / 步={ProjectileSteps}（预期 ≈步数/120）｜弹头建段={WarheadSegments} 次 最近 |a|={WarheadAccel:F3} m/s²（主导项 {WarheadAccelRatio:F2}×，应 0.2–5×）指向行星中心余弦={WarheadTowardCenterCos:F3}");
 
-            sb.Append($"\n㉔天体局部缓存(第24条) 命中={BodyParentCacheHits} 未命中={BodyParentCacheMisses}（未命中应 ≈ 子天体数×步数，不是 ×组数；命中/未命中 ≈ 组数−1）影子={BodyParentCacheShadowChecked} 不一致={BodyParentCacheShadowMismatch}");
-            sb.Append($"\n㉖每物理步墙钟(第25条) {StepClockReport()}");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n㉔天体局部缓存(第24条) 命中={BodyParentCacheHits} 未命中={BodyParentCacheMisses}（未命中应 ≈ 子天体数×步数，不是 ×组数；命中/未命中 ≈ 组数−1）影子={BodyParentCacheShadowChecked} 不一致={BodyParentCacheShadowMismatch}");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n㉖每物理步墙钟(第25条) {StepClockReport()}");
 
             Log.Message(sb.ToString());
         }

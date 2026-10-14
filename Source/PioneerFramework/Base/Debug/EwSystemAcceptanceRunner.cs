@@ -36,23 +36,22 @@ namespace PioneerFramework
         }
 
         private static readonly Seg[] Segments =
-        {
-            new Seg { label = "① [V7] 能力面：建筑级投影 / W1 开机 / 波束三模式 / 打伤 / 摧毁",
+        [new() { label = "① [V7] 能力面：建筑级投影 / W1 开机 / 波束三模式 / 打伤 / 摧毁",
                       start = SensorProjectionAcceptanceRunner.Run,
                       busy = () => SensorProjectionAcceptanceRunner.Running },
-            new Seg { label = "② [V3] 认知层：点亮 / 影子 / 失联 / 恢复 + 两个读入口",
+            new() { label = "② [V3] 认知层：点亮 / 影子 / 失联 / 恢复 + 两个读入口",
                       start = SensorCognitionAcceptanceRunner.Run,
                       busy = () => SensorCognitionAcceptanceRunner.Running },
-            new Seg { label = "③ [V3] 消费面：视野对账（绘制/点击准入 = 认知层可见集）",
+            new() { label = "③ [V3] 消费面：视野对账（绘制/点击准入 = 认知层可见集）",
                       start = SensorCognitionAcceptanceRunner.CheckViewReconciliation,
                       busy = () => false },
-            new Seg { label = "④ [E3]/[N6] EW 浅层：干扰抬阈值 / 烧穿 / 干扰机自暴露 / 开火揭示",
+            new() { label = "④ [E3]/[N6] EW 浅层：干扰抬阈值 / 烧穿 / 干扰机自暴露 / 开火揭示",
                       start = SensorCognitionAcceptanceRunner.CheckJammingAndReveal,
                       busy = () => false },
-            new Seg { label = "⑤ [E5] 假目标：依赖对方开机 / 识破 = 深层提示 / 标记单调 / 生命期",
+            new() { label = "⑤ [E5] 假目标：依赖对方开机 / 识破 = 深层提示 / 标记单调 / 生命期",
                       start = SensorCognitionAcceptanceRunner.CheckDecoys,
                       busy = () => false },
-        };
+        ];
 
         private const int MaxWaitSteps = 3000;    // 保险丝：单段最多等这么多物理步（≈100 分钟游戏时间）
         private static bool running;
@@ -74,8 +73,7 @@ namespace PioneerFramework
             index = 0;
             waitSteps = 0;
             harvest.Clear();
-            Log.Message(string.Format("[EW 总控] 开始：依次跑 {0} 段（①投影/能力面 → ②认知层 → ③视野对账 → ④干扰与揭示 → ⑤假目标），每段跑完自动清场，最后给合并结论。",
-                Segments.Length));
+            Log.Message($"[EW 总控] 开始：依次跑 {Segments.Length} 段（①投影/能力面 → ②认知层 → ③视野对账 → ④干扰与揭示 → ⑤假目标），每段跑完自动清场，最后给合并结论。");
             Segments[0].start();
         }
 
@@ -88,7 +86,7 @@ namespace PioneerFramework
             {
                 if (++waitSteps > MaxWaitSteps)
                 {
-                    harvest.Add(string.Format("✗ {0}：等超时（{1} 步）⇒ 中止本段", cur.label, MaxWaitSteps));
+                    harvest.Add($"✗ {cur.label}：等超时（{MaxWaitSteps} 步）⇒ 中止本段");
                     Advance();
                 }
                 return;
@@ -120,11 +118,10 @@ namespace PioneerFramework
                 if (hard) bad++; else unchk++;
             }
             totalChecks += n; totalBad += bad; totalUnchecked += unchk;
-            harvest.Add(string.Format("{0} ⇒ {1}｜判据 {2} 条｜未过 {3}｜UNCHECKED {4}",
-                Segments[index].label, c.state, n, bad, unchk));
+            harvest.Add($"{Segments[index].label} ⇒ {c.state}｜判据 {n} 条｜未过 {bad}｜UNCHECKED {unchk}");
         }
 
-        private static readonly List<string> harvest = new List<string>();
+        private static readonly List<string> harvest = new();
         private static long totalChecks, totalBad, totalUnchecked;
 
         private static void Finish()
@@ -132,8 +129,7 @@ namespace PioneerFramework
             running = false;
             var sb = new StringBuilder("[EW 总控·结论] 五段跑完（每段已自动清场）：");
             for (int i = 0; i < harvest.Count; i++) sb.Append("\n  ").Append(harvest[i]);
-            sb.Append(string.Format("\n  ⇒ **合计判据 {0} 条｜未过 {1} 条｜UNCHECKED {2} 条**（未过里的 UNCHECKED = 登记的手动项，不是失败）",
-                totalChecks, totalBad, totalUnchecked));
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"\n  ⇒ **合计判据 {totalChecks} 条｜未过 {totalBad} 条｜UNCHECKED {totalUnchecked} 条**（未过里的 UNCHECKED = 登记的手动项，不是失败）");
             sb.Append("\n  注：①的「存档往返」是手动项 ⇒ 请用单件按钮「传感器/雷达投影验收」跑一遍并做存档往返。");
             Log.Message(sb.ToString());
         }

@@ -26,7 +26,7 @@ namespace PioneerFramework.Components
         /// 深拷贝（模板 → 运行时）。默认走 Write/Read 二进制通道；
         /// 子类有非二进制字段时可覆写。
         /// </summary>
-        public virtual PartComponentData Clone()
+        public virtual PartComponentData? Clone()
         {
             var dst = ComponentRegistry.Create(TypeId);
             if (dst == null) return null;

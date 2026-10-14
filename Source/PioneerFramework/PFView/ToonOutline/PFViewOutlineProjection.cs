@@ -18,10 +18,7 @@ namespace PioneerFramework.PFView
         /// </summary>
         internal static Matrix4x4 GetForCommandBuffer(Camera camera)
         {
-            if (camera == null)
-            {
-                throw new ArgumentNullException(nameof(camera));
-            }
+            ArgumentNullException.ThrowIfNull(camera);
 
             return camera.projectionMatrix;
         }

@@ -16,13 +16,13 @@ namespace PioneerFramework
 
         // 滑块值
         private float maneuverTimeDeltaSeconds = 60f;
-        private float radialDV = 0f;
-        private float tangentialDV = 0f;
-        private float normalDV = 0f;
+        private float radialDV ;
+        private float tangentialDV ;
+        private float normalDV ;
         /// <summary>预测时间（秒），用于标记轨迹上的未来位置和同系统卫星位置。</summary>
         private float predictionTimeSeconds = PredictionTimeDefault;
 
-        private List<OrbitSegment> orbitSegments;
+        private List<OrbitSegment> orbitSegments = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         private double currentPe;
         private double currentAp;
@@ -31,7 +31,7 @@ namespace PioneerFramework
         private double postAp;
         private double dVTotal;
 
-        private bool previewComputed = false;
+        private bool previewComputed ;
         private bool previewDirty = true;
 
         /// <summary>规划发起时中心天体的世界坐标偏移（用于冻结预览参考系）。</summary>
@@ -75,15 +75,15 @@ namespace PioneerFramework
         /// </summary>
         public class OrbitSegment
         {
-            public List<DVector3> pointsMeters;       // 点列（米）
-            public List<Vector3> pointsUnity;        // 点列（Unity 单位）
+            public List<DVector3> pointsMeters = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;       // 点列（米）
+            public List<Vector3> pointsUnity = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;        // 点列（Unity 单位）
             public bool isPostManeuver;
             public DVector3? nodePositionMeters;
             public Color color;
-            public string label;
+            public string label = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         }
 
-        #region 静态访问 (供 SpaceGroupVisualManager 绘图用)
+        // ── 静态访问 (供 SpaceGroupVisualManager 绘图用) ──
 
         public static ManeuverPlanner ActivePlanner { get; private set; }
         public static bool HasPlanner => ActivePlanner != null;
@@ -118,7 +118,6 @@ namespace PioneerFramework
             }
         }
 
-        #endregion
 
         public ManeuverPlanner(SpaceEntityGroup targetGroup)
         {
@@ -153,20 +152,20 @@ namespace PioneerFramework
             RebuildOrbitPreview();
         }
 
-        public override Vector2 InitialSize => new Vector2(WindowWidth, WindowHeight);
+        public override Vector2 InitialSize => new(WindowWidth, WindowHeight);
 
         public override void DoWindowContents(Rect inRect)
         {
             Text.Font = GameFont.Medium;
             Widgets.Label(new Rect(0f, 0f, inRect.width, 30f),
-                string.Format("机动规划 - Group {0}", group.GroupId));
+                $"机动规划 - Group {group.GroupId}");
             Text.Font = GameFont.Small;
 
             float y = 35f;
 
             // 时间滑块
             Widgets.Label(new Rect(0f, y, LabelWidth, SliderHeight),
-                string.Format("机动时间: {0:F0}s", maneuverTimeDeltaSeconds));
+                $"机动时间: {maneuverTimeDeltaSeconds:F0}s");
             y += SliderHeight;
             float newTime = Widgets.HorizontalSlider(
                 new Rect(0f, y, inRect.width, SliderHeight),
@@ -194,7 +193,7 @@ namespace PioneerFramework
 
             // 预测时间滑块
             Widgets.Label(new Rect(0f, y, inRect.width, SliderHeight),
-                string.Format("预测 t: {0:F0}s", predictionTimeSeconds));
+                $"预测 t: {predictionTimeSeconds:F0}s");
             y += SliderHeight;
             float newPrediction = Widgets.HorizontalSlider(
                 new Rect(0f, y, inRect.width, SliderHeight),
@@ -207,7 +206,7 @@ namespace PioneerFramework
 
             // 径向 dV
             Widgets.Label(new Rect(0f, y, LabelWidth, SliderHeight),
-                string.Format("径向 (R): {0:F0} m/s", radialDV));
+                $"径向 (R): {radialDV:F0} m/s");
             y += SliderHeight;
             float newRadial = Widgets.HorizontalSlider(
                 new Rect(0f, y, inRect.width, SliderHeight),
@@ -217,7 +216,7 @@ namespace PioneerFramework
 
             // 切向 dV
             Widgets.Label(new Rect(0f, y, LabelWidth, SliderHeight),
-                string.Format("切向 (T): {0:F0} m/s", tangentialDV));
+                $"切向 (T): {tangentialDV:F0} m/s");
             y += SliderHeight;
             float newTangential = Widgets.HorizontalSlider(
                 new Rect(0f, y, inRect.width, SliderHeight),
@@ -227,7 +226,7 @@ namespace PioneerFramework
 
             // 法向 dV
             Widgets.Label(new Rect(0f, y, LabelWidth, SliderHeight),
-                string.Format("法向 (N): {0:F0} m/s", normalDV));
+                $"法向 (N): {normalDV:F0} m/s");
             y += SliderHeight;
             float newNormal = Widgets.HorizontalSlider(
                 new Rect(0f, y, inRect.width, SliderHeight),
@@ -241,12 +240,10 @@ namespace PioneerFramework
             // 轨道要素显示
             y += 4f;
             Widgets.Label(new Rect(0f, y, inRect.width, LabelHeight),
-                string.Format("当前: Pe={0:F0}km Ap={1:F0}km 倾角={2:F1}°",
-                    currentPe / 1000.0, currentAp / 1000.0, currentInclination * Mathf.Rad2Deg));
+                $"当前: Pe={currentPe / 1000.0:F0}km Ap={currentAp / 1000.0:F0}km 倾角={currentInclination * Mathf.Rad2Deg:F1}°");
             y += LabelHeight;
             Widgets.Label(new Rect(0f, y, inRect.width, LabelHeight),
-                string.Format("机动后: Pe={0:F0}km Ap={1:F0}km |dV|={2:F1} m/s",
-                    postPe / 1000.0, postAp / 1000.0, dVTotal));
+                $"机动后: Pe={postPe / 1000.0:F0}km Ap={postAp / 1000.0:F0}km |dV|={dVTotal:F1} m/s");
             y += LabelHeight + 4f;
 
             // 确认按钮
@@ -290,8 +287,8 @@ namespace PioneerFramework
         {
             float btnY = y;
             // 快速预设：±10, ±100
-            string[] labels = new string[] { "-100", "-10", "+10", "+100" };
-            float[] values = new float[] { -100f, -10f, 10f, 100f };
+            string[] labels = ["-100", "-10", "+10", "+100"];
+            float[] values = [-100f, -10f, 10f, 100f];
             for (int i = 0; i < 4; i++)
             {
                 float bx = i * (PresetButtonWidth + 4f);
@@ -478,8 +475,8 @@ namespace PioneerFramework
             return points;
         }
 
-        private List<GravitySource> previewSourcesScratch;
-        private List<GravitySource> systemSourcesScratch;
+        private List<GravitySource> previewSourcesScratch = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private List<GravitySource> systemSourcesScratch = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>
         /// 把该行星系全部天体填成**中心天体局部系**的源（位置/速度均减去中心天体的系统系位置/速度）。
@@ -654,7 +651,7 @@ namespace PioneerFramework
 
             // 保存 OrbitKeeping 状态（ExitCircularOrbit 会清空白名单），确保执行时仍保持
             bool hadOK = group.HasOrbitKeeping;
-            HashSet<int> savedOK = group.orbitKeepingWhitelist != null
+            HashSet<int>? savedOK = group.orbitKeepingWhitelist != null
                 ? new HashSet<int>(group.orbitKeepingWhitelist) : null;
 
             if (group.IsCircularOrbit)
@@ -671,8 +668,7 @@ namespace PioneerFramework
             double radDV, tanDV, normDV;
             OrbitMath.DeltaVSystemToComponents(group.positionBody, group.velocityBody, dV, out radDV, out tanDV, out normDV);
 
-            Log.Message(string.Format("[ManeuverPlanner] Group {0} plan localFrame: bodyId={1} |pos|={2:F0}km |vel|={3:F1} m/s |dV|={4:F1} m/s",
-                group.GroupId, group.CelestialBodyId, group.positionBody.magnitude / 1000.0, group.velocityBody.magnitude, dV.magnitude));
+            Log.Message($"[ManeuverPlanner] Group {group.GroupId} plan localFrame: bodyId={group.CelestialBodyId} |pos|={group.positionBody.magnitude / 1000.0:F0}km |vel|={group.velocityBody.magnitude:F1} m/s |dV|={dV.magnitude:F1} m/s");
 
             // 为预览缓存生成中心天体参考系的轨道点
             double centralGM;
@@ -697,9 +693,7 @@ namespace PioneerFramework
             };
 
             spaceGame.QueueGroupManeuver(group.GroupId, maneuver);
-            Log.Message(string.Format("[ManeuverPlanner] Confirmed maneuver for Group {0}: " +
-                "R={1:F1} T={2:F1} N={3:F1} dt={4:F0}s",
-                group.GroupId, radDV, tanDV, normDV, maneuverTimeDeltaSeconds));
+            Log.Message($"[ManeuverPlanner] Confirmed maneuver for Group {group.GroupId}: R={radDV:F1} T={tanDV:F1} N={normDV:F1} dt={maneuverTimeDeltaSeconds:F0}s");
 
             Close();
         }

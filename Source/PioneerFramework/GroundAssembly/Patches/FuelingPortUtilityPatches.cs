@@ -10,7 +10,7 @@ namespace PioneerFramework.GroundAssembly.Patches
     /// </summary>
     public static class FuelingPortUtilityPatches
     {
-        [HarmonyPatch(typeof(FuelingPortUtility), "GetFuelingPortCell", new[] { typeof(Building) })]
+        [HarmonyPatch(typeof(FuelingPortUtility), "GetFuelingPortCell", [typeof(Building)])]
         public static class GetFuelingPortCell_Building_Patch
         {
             public static bool Prefix(Building podLauncher, ref IntVec3 __result)
@@ -25,7 +25,7 @@ namespace PioneerFramework.GroundAssembly.Patches
             }
         }
 
-        [HarmonyPatch(typeof(FuelingPortUtility), "GetFuelingPortCell", new[] { typeof(IntVec3), typeof(Rot4) })]
+        [HarmonyPatch(typeof(FuelingPortUtility), "GetFuelingPortCell", [typeof(IntVec3), typeof(Rot4)])]
         public static class GetFuelingPortCell_IntVec3Rot4_Patch
         {
             public static void Postfix(IntVec3 center, Rot4 rot, ref IntVec3 __result)
@@ -34,7 +34,7 @@ namespace PioneerFramework.GroundAssembly.Patches
                 if (map == null)
                     return;
 
-                Building pad = map.thingGrid.ThingsListAt(center)
+                Building? pad = map.thingGrid.ThingsListAt(center)
                     .OfType<Building>()
                     .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
                 if (pad != null)

@@ -34,7 +34,7 @@ namespace PioneerFramework
                 : RocketLaunchController.ProbeInterval > 0 ? 2 : 0;
         }
 
-        public override Vector2 InitialSize => new Vector2(WindowWidth, WindowHeight);
+        public override Vector2 InitialSize => new(WindowWidth, WindowHeight);
 
         public override void DoWindowContents(Rect inRect)
         {
@@ -50,8 +50,7 @@ namespace PioneerFramework
             Text.Font = GameFont.Small;
             if (ctrl != null)
                 Widgets.Label(new Rect(0, y, inRect.width, 22f),
-                    string.Format("统计：活动爬升 {0} ｜ 结算历史 {1} 条",
-                        ctrl.ActiveLaunches.Count, ctrl.RecentLog.Count));
+                    $"统计：活动爬升 {ctrl.ActiveLaunches.Count} ｜ 结算历史 {ctrl.RecentLog.Count} 条");
             else
                 Widgets.Label(new Rect(0, y, inRect.width, 22f), "RocketLaunchController 未找到");
             y += 28f;
@@ -65,10 +64,7 @@ namespace PioneerFramework
                 Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
                 if (wasPaused)
                     Log.Message("[LaunchTest] 检测到暂停，已自动解除（TimeSpeed.Normal）");
-                Log.Message(string.Format("[LaunchTest] 将从当前地图起飞：CurrentMap={0} (uid {1}, tile {2})",
-                    Find.CurrentMap != null ? Find.CurrentMap.info.parent?.def?.defName ?? "?" : "null",
-                    Find.CurrentMap != null ? Find.CurrentMap.uniqueID : -1,
-                    Find.CurrentMap != null ? Find.CurrentMap.Tile : -1));
+                Log.Message($"[LaunchTest] 将从当前地图起飞：CurrentMap={(Find.CurrentMap != null ? Find.CurrentMap.info.parent?.def?.defName ?? "?" : "null")} (uid {(Find.CurrentMap != null ? Find.CurrentMap.uniqueID : -1)}, tile {(Find.CurrentMap != null ? Find.CurrentMap.Tile : -1)})");
                 int gid = LaunchTestScenarios.RunAscentTest(Find.CurrentMap, 0.0, 0.0);
                 if (gid > 0)
                     OpenViewerFor(gid);
@@ -106,7 +102,7 @@ namespace PioneerFramework
 
             Widgets.Label(new Rect(0, y, inRect.width, 22f), "状态探针间隔（[RocketLaunch探针] 日志）：");
             y += 22f;
-            string[] labels = { "关闭", "30 tick", "60 tick", "120 tick" };
+            string[] labels = ["关闭", "30 tick", "60 tick", "120 tick"];
             for (int i = 0; i < labels.Length; i++)
             {
                 bool sel = probeOption == i;
@@ -132,9 +128,7 @@ namespace PioneerFramework
                 {
                     var p = ctrl.ProbeState(st);
                     Widgets.Label(new Rect(0, ly, content.width, 20f),
-                        string.Format("G{0} alt={1:F0}km r={2:F0}km v={3:F1}m/s vRad={4:F1} |dv|={5:F1}m/s 燃={6:F0}kg 烧={7} 到达={8}",
-                            p.groupId, (p.r - st.ToParams().planetRadius) / 1000.0, p.r / 1000.0, p.vMag, p.vRad,
-                            p.dvMag, p.fuelKg, p.burning ? "on" : "off", p.arrived));
+                        $"G{p.groupId} alt={(p.r - st.ToParams().planetRadius) / 1000.0:F0}km r={p.r / 1000.0:F0}km v={p.vMag:F1}m/s vRad={p.vRad:F1} |dv|={p.dvMag:F1}m/s 燃={p.fuelKg:F0}kg 烧={(p.burning ? "on" : "off")} 到达={p.arrived}");
                     ly += 22f;
                 }
                 Widgets.EndScrollView();
@@ -166,7 +160,7 @@ namespace PioneerFramework
                 {
                     var e = ctrl.RecentLog[i];
                     Widgets.Label(new Rect(0, ly, content.width, 18f),
-                        string.Format("t{0} G{1} [{2}] {3}", e.tick, e.groupId, e.outcome, e.detail));
+                        $"t{e.tick} G{e.groupId} [{e.outcome}] {e.detail}");
                     ly += 20f;
                 }
                 Widgets.EndScrollView();
@@ -201,7 +195,7 @@ namespace PioneerFramework
         }
 
         /// <summary>验证所有 Orbited 记录对应的群组实体仍在轨：重力和位置一致、速度快于第一宇宙速度、轨道能量为束缚态。</summary>
-        private void VerifyOrbits(SpaceGameComp spaceGame)
+        private void VerifyOrbits(SpaceGameComp? spaceGame)
         {
             if (spaceGame == null)
             {
@@ -216,7 +210,7 @@ namespace PioneerFramework
                 var g = spaceGame.GetGroupById(e.groupId);
                 if (g == null || !g.IsActive)
                 {
-                    Log.Message(string.Format("[LaunchTest] 验证失败：G{0} 已销毁/失联", e.groupId));
+                    Log.Message($"[LaunchTest] 验证失败：G{e.groupId} 已销毁/失联");
                     failed++;
                     continue;
                 }
@@ -232,13 +226,10 @@ namespace PioneerFramework
                 bool bound = energy < 0.0 && r > gm * (1e-3);      // 束缚椭圆/圆
                 bool speedOk = bound && v > vCirc * 0.95 && v < vEsc * 0.98;
 
-                Log.Message(string.Format(
-                    "[LaunchTest] 验证 G{0}：r={1:F0}km v={2:F1}m/s（vC={3:F1} vEsc={4:F1}）能量={5:F1} → {6}",
-                    e.groupId, r / 1000.0, v, vCirc, vEsc, energy / 1e6,
-                    (bound && speedOk) ? "在轨 ✅" : "异常 ❌"));
+                Log.Message($"[LaunchTest] 验证 G{e.groupId}：r={r / 1000.0:F0}km v={v:F1}m/s（vC={vCirc:F1} vEsc={vEsc:F1}）能量={energy / 1e6:F1} → {((bound && speedOk) ? "在轨 ✅" : "异常 ❌")}");
                 if (bound && speedOk) verified++; else failed++;
             }
-            Messages.Message(string.Format("入轨验证：通过 {0} ｜ 异常 {1}", verified, failed),
+            Messages.Message($"入轨验证：通过 {verified} ｜ 异常 {failed}",
                 failed > 0 ? MessageTypeDefOf.RejectInput : MessageTypeDefOf.TaskCompletion);
         }
     }

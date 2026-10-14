@@ -10,7 +10,7 @@ namespace PioneerFramework
     /// </summary>
     public static class SpacecraftMapRegistry
     {
-        private static readonly List<SpacecraftMapParent> maps = new List<SpacecraftMapParent>();
+        private static readonly List<SpacecraftMapParent> maps = new();
 
         public static IReadOnlyList<SpacecraftMapParent> All => maps;
 
@@ -27,14 +27,14 @@ namespace PioneerFramework
                 maps.Remove(map);
         }
 
-        public static SpacecraftMapParent GetByMapId(int mapId)
+        public static SpacecraftMapParent? GetByMapId(int mapId)
         {
             if (mapId < 0)
                 return null;
             return maps.FirstOrDefault(m => m.Map != null && m.Map.uniqueID == mapId);
         }
 
-        public static SpacecraftMapParent GetBySpacecraftId(string spacecraftId)
+        public static SpacecraftMapParent? GetBySpacecraftId(string? spacecraftId)   // 契约改真：实现本就容忍 null（IsNullOrEmpty）
         {
             if (string.IsNullOrEmpty(spacecraftId))
                 return null;

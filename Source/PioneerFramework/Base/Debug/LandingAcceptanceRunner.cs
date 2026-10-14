@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using PioneerFramework.Launch;   // GetSurfaceState（layer↔天体、tile↔固连位置、星下点反查）
@@ -47,7 +47,7 @@ namespace PioneerFramework
         // ── 异步段状态（撞击事件）──
         private static bool impactPending;
         private static int impactStartTick;
-        private static readonly List<int> impactGroups = new List<int>();
+        private static readonly List<int> impactGroups = new();
 
         // ══════════════════════════════════════════════════════════════════════════
         //  同步段：报价 / 各种拒绝 / 执行
@@ -85,7 +85,7 @@ namespace PioneerFramework
             ExecuteCase(sg, mgr, eShip, EARTH_BODY_ID, tick, DebugShipSpawner.LastEarthProbeTile);   // 会销毁编队 ⇒ 放最后
 
             int cleared = PflTestKit.CleanupSince();
-            if (cleared > 0) PflTestKit.Note(string.Format("本段清场销毁了 {0} 个探针编队", cleared));
+            if (cleared > 0) PflTestKit.Note($"本段清场销毁了 {cleared} 个探针编队");
         }
 
         private static void QuoteCase(SpaceGameComp sg, CelestialBodyManager mgr, SpaceEntityGroup g,
@@ -96,7 +96,7 @@ namespace PioneerFramework
             var body = mgr.GetBodyById(bodyId);
             if (layer == null || body == null)
             {
-                PflTestKit.Unchecked("前置", string.Format("天体 {0} 缺地表网格或 Def", bodyId));
+                PflTestKit.Unchecked("前置", $"天体 {bodyId} 缺地表网格或 Def");
                 return;
             }
 
@@ -105,22 +105,19 @@ namespace PioneerFramework
                 out var q, out var est, out var bodyName, out var spot, out var reason);
 
             PflTestKit.Check(PflTestKit.Kind.Value, ok, "船正对的 tile 必须可落（探针工质充裕）",
-                string.Format("tile={0}｜{1}", tile, reason));
+                $"tile={tile}｜{reason}");
             if (!ok) { PflTestKit.End(); return; }
 
             PflTestKit.Check(PflTestKit.Kind.Value, q.deltaV >= lo && q.deltaV <= hi,
-                string.Format("Δv 落进登记区间 [{0:F0}, {1:F0}] m/s（量级判据）", lo, hi),
-                string.Format("Δv={0:F1} m/s｜{1}｜工质 {2:F1} kg｜正对 tile={3}",
-                    q.deltaV, spot, est.RequiredPropellant, tile));
+                $"Δv 落进登记区间 [{lo:F0}, {hi:F0}] m/s（量级判据）",
+                $"Δv={q.deltaV:F1} m/s｜{spot}｜工质 {est.RequiredPropellant:F1} kg｜正对 tile={tile}");
             PflTestKit.Check(PflTestKit.Kind.Value, q.surfaceDistance <= 1000.0,
                 "地表距离 ≈ 0（船就摆在这个 tile 正上方；1 km 的宽容是给『径向偏移不影响角度』留的）",
-                string.Format("{0:F2} m", q.surfaceDistance));
+                $"{q.surfaceDistance:F2} m");
             PflTestKit.Check(PflTestKit.Kind.Invariant,
                 Math.Abs(q.maxDistance - LandingQuote.MaxSurfaceDistance(body.radius)) < 1e-6,
                 "距离门与纯核同值（查接线有没有传错天体半径）",
-                string.Format("报价门 {0:F0} km／纯核 {1:F0} km（R={2:F0} km）",
-                    q.maxDistance / 1000.0, LandingQuote.MaxSurfaceDistance(body.radius) / 1000.0,
-                    body.radius / 1000.0));
+                $"报价门 {q.maxDistance / 1000.0:F0} km／纯核 {LandingQuote.MaxSurfaceDistance(body.radius) / 1000.0:F0} km（R={body.radius / 1000.0:F0} km）");
             PflTestKit.End();
         }
 
@@ -133,7 +130,7 @@ namespace PioneerFramework
             var body = mgr.GetBodyById(bodyId);
             if (layer == null || body == null)
             {
-                PflTestKit.Unchecked("前置", string.Format("天体 {0} 缺地表网格或 Def", bodyId));
+                PflTestKit.Unchecked("前置", $"天体 {bodyId} 缺地表网格或 Def");
                 return;
             }
 
@@ -143,7 +140,7 @@ namespace PioneerFramework
 
             // 读数（**不**在这里判）：真对跖点应有 dot ≈ −1。网格偏心时它会明显偏大 ——
             // 那属于"网格↔方向"这一环的问题，由「星下点反查」用例统一判定，不在这里重复计红。
-            PflTestKit.Note(string.Format("对跖点方向点积 {0:F4}（应 ≈ −1）｜tile={1}", bestDot, tile));
+            PflTestKit.Note($"对跖点方向点积 {bestDot:F4}（应 ≈ −1）｜tile={tile}");
             PflTestKit.Check(PflTestKit.Kind.Contract, !ok,
                 "离星下点最远的 tile 必须被拒（距离门）", ok ? "**却通过了**" : reason);
             if (!ok)
@@ -151,8 +148,7 @@ namespace PioneerFramework
                 // 拒的**原因必须是距离门**（不是"没工质/天体没地表"这类别的拒绝 ⇒ 否则这条判据会假绿）
                 PflTestKit.Check(PflTestKit.Kind.Value, q.surfaceDistance > q.maxDistance,
                     "拒因 = 地表距离超过门（不是别的分支）",
-                    string.Format("地表 {0:F0} km > 门 {1:F0} km（tile={2}）",
-                        q.surfaceDistance / 1000.0, q.maxDistance / 1000.0, tile));
+                    $"地表 {q.surfaceDistance / 1000.0:F0} km > 门 {q.maxDistance / 1000.0:F0} km（tile={tile}）");
             }
             PflTestKit.End();
         }
@@ -181,7 +177,7 @@ namespace PioneerFramework
                 "月球层上的 tile 在地球上必须被拒（否则落点会静默落到月球）", reason);
             PflTestKit.Check(PflTestKit.Kind.Value, control,
                 "**对照**：同一个 tile 配正确的层必须可落",
-                string.Format("tile={0}｜错配被拒={1}｜同层可落={2}", tile, !mismatched, control));
+                $"tile={tile}｜错配被拒={!mismatched}｜同层可落={control}");
             PflTestKit.End();
         }
 
@@ -206,10 +202,10 @@ namespace PioneerFramework
                 out _, out _, out _, out _, out _);
 
             PflTestKit.Check(PflTestKit.Kind.Contract, !over,
-                string.Format("tile = TilesCount（{0}）必须被拒", layer.TilesCount), overReason);
+                $"tile = TilesCount（{layer.TilesCount}）必须被拒", overReason);
             PflTestKit.Check(PflTestKit.Kind.Contract, !under, "tile = -1（未选点）必须被拒", underReason);
             PflTestKit.Check(PflTestKit.Kind.Value, control, "**对照**：合法 tile 仍可落",
-                string.Format("对照 tile={0}", valid));
+                $"对照 tile={valid}");
             PflTestKit.End();
         }
 
@@ -237,8 +233,7 @@ namespace PioneerFramework
             if (target < 0)
             {
                 PflTestKit.Unchecked("缺表面天体",
-                    string.Format("本存档枚举到 {0} 个天体、其中 {1} 个有地表、**0 个无地表** ⇒ 这条分支没有被走到过（不是通过）",
-                        bodies != null ? bodies.Count : 0, withSurface));
+                    $"本存档枚举到 {(bodies != null ? bodies.Count : 0)} 个天体、其中 {withSurface} 个有地表、**0 个无地表** ⇒ 这条分支没有被走到过（不是通过）");
                 return;
             }
 
@@ -247,7 +242,7 @@ namespace PioneerFramework
                 out _, out var reason);
 
             PflTestKit.Check(PflTestKit.Kind.Contract, !ok,
-                string.Format("无地表的 `{0}`（bodyId={1}）必须被拒", targetName, target), reason);
+                $"无地表的 `{targetName}`（bodyId={target}）必须被拒", reason);
             PflTestKit.Check(PflTestKit.Kind.Coverage, !string.IsNullOrEmpty(bodyName),
                 "拒绝信息里带得出天体名（不是空串）", bodyName);
             PflTestKit.End();
@@ -286,13 +281,13 @@ namespace PioneerFramework
                 out var q, out _, out var bodyName, out var spot, out var reason);
             PflTestKit.Check(PflTestKit.Kind.Value, ok,
                 "反查出来的 tile 应当**可落**（它理应是离星下点最近的格）",
-                string.Format("tile={0}｜{1}｜{2}", tile, reason, diag));
+                $"tile={tile}｜{reason}｜{diag}");
             if (ok)
             {
                 // 半个 tile 的角距在星体尺度上只有几 km；给 200 km 是"即使很宽松也必须 ≈0"的量级门。
                 PflTestKit.Check(PflTestKit.Kind.Invariant, q.surfaceDistance <= 200_000.0,
                     "星下点反查的地表距离必须 ≈ 0（数学上必然 ⇒ 不成立即『网格↔方向』这一环有问题）",
-                    string.Format("地表 {0:F0} km｜tile={1}｜{2}｜{3}", q.surfaceDistance / 1000.0, tile, spot, diag));
+                    $"地表 {q.surfaceDistance / 1000.0:F0} km｜tile={tile}｜{spot}｜{diag}");
             }
             PflTestKit.End();
         }
@@ -333,11 +328,7 @@ namespace PioneerFramework
                 if (lat > latMax) latMax = lat;
             }
             Vector3 axis = sumDir.normalized;
-            return string.Format("网格诊断：n={0}｜|c| {1:F3}..{2:F3}（均 {3:F3}／layer.Radius={4:F3}）" +
-                "｜|Σû|/n={5:F4}（≈0=球心在原点）｜dot(û,û₀) {6:F3}..{7:F3}｜近 û₀ 的 tile≈{8}" +
-                "｜游戏纬度覆盖 {9:F1}°..{10:F1}°｜帽轴 û=( {11:F3}, {12:F3}, {13:F3} )",
-                n, minR, maxR, sumR / n, layer.Radius, sumDir.magnitude / n, minDot, maxDot, near0,
-                latMin, latMax, axis.x, axis.y, axis.z);
+            return $"网格诊断：n={n}｜|c| {minR:F3}..{maxR:F3}（均 {sumR / n:F3}／layer.Radius={layer.Radius:F3}）｜|Σû|/n={sumDir.magnitude / n:F4}（≈0=球心在原点）｜dot(û,û₀) {minDot:F3}..{maxDot:F3}｜近 û₀ 的 tile≈{near0}｜游戏纬度覆盖 {latMin:F1}°..{latMax:F1}°｜帽轴 û=( {axis.x:F3}, {axis.y:F3}, {axis.z:F3} )";
         }
 
         /// <summary>执行三件事：**消息 + 扣料 + 销毁**（用户 2026-09-22 的原话就这三件）。</summary>
@@ -372,27 +363,27 @@ namespace PioneerFramework
             PflTestKit.Check(PflTestKit.Kind.Value, ok, "降落指令被接受", landReason);
             PflTestKit.Check(PflTestKit.Kind.Invariant, gone,
                 "① 编队已销毁（落点不再留在场上）",
-                string.Format("G{0} {1}", groupId, gone ? "已销毁" : "**仍在场上**"));
+                $"G{groupId} {(gone ? "已销毁" : "**仍在场上**")}");
             PflTestKit.Check(PflTestKit.Kind.Value, sg.lastLandingConsumedKg > 0.0,
                 "② 工质真的扣了（> 0 kg）",
-                string.Format("实扣 {0:F1} kg／报价预测 {1:F1} kg", sg.lastLandingConsumedKg, est.RequiredPropellant));
+                $"实扣 {sg.lastLandingConsumedKg:F1} kg／报价预测 {est.RequiredPropellant:F1} kg");
             PflTestKit.Check(PflTestKit.Kind.Invariant,
                 sg.lastLandingConsumedKg <= est.RequiredPropellant * 1.0001,
                 "② 实扣不许超过火箭方程的需求（截断只能更少）",
-                string.Format("实扣 {0:F1} ≤ 需 {1:F1}", sg.lastLandingConsumedKg, est.RequiredPropellant));
+                $"实扣 {sg.lastLandingConsumedKg:F1} ≤ 需 {est.RequiredPropellant:F1}");
             PflTestKit.Check(PflTestKit.Kind.Invariant,
                 Math.Abs(sg.lastLandingQuotedDeltaV - q.deltaV) <= Math.Max(1e-6, q.deltaV * 1e-6),
                 "② 读数记录的价 = 本次报价（同一趟）",
-                string.Format("记 {0:F3} ／ 报 {1:F3} m/s", sg.lastLandingQuotedDeltaV, q.deltaV));
+                $"记 {sg.lastLandingQuotedDeltaV:F3} ／ 报 {q.deltaV:F3} m/s");
 
             // ③ 消息（玩家可见那条）：落在**归档**里（`Messages.Message(..., historical: true)` 的收口），
             //    不是"我们打了日志所以玩家看到了"。
             string? archived = FindArchivedMessage(tickMark, "着陆于" + bodyName);
             PflTestKit.Check(PflTestKit.Kind.Value, archived != null,
                 "③ 玩家可见消息出现（归档里能查到）",
-                archived ?? string.Format("归档里没有『着陆于{0}』（tick ≥ {1}）", bodyName, tickMark));
+                archived ?? $"归档里没有『着陆于{bodyName}』（tick ≥ {tickMark}）");
             if (archived != null)
-                PflTestKit.Note(string.Format("消息原文：{0}｜报价 {1:F1} m/s（{2}）", archived, q.deltaV, spot));
+                PflTestKit.Note($"消息原文：{archived}｜报价 {q.deltaV:F1} m/s（{spot}）");
             PflTestKit.End();
         }
 
@@ -416,7 +407,7 @@ namespace PioneerFramework
             {
                 PflTestKit.Begin(ImpactCaseName, Category);
                 PflTestKit.Unchecked("探针未摆出",
-                    string.Format("只拿到 {0} 颗（天体 Def 缺失？）", impactGroups.Count));
+                    $"只拿到 {impactGroups.Count} 颗（天体 Def 缺失？）");
                 impactGroups.Clear();
                 return;
             }
@@ -426,7 +417,7 @@ namespace PioneerFramework
             // 超时由本类自己判（消息更具体）；给框架一个更宽的后备，防"本类的 Tick 没被驱动"时卡住登记表。
             PflTestKit.Begin(ImpactCaseName, Category, ImpactTimeoutTicks + 120);
             PflTestKit.Check(PflTestKit.Kind.Coverage, true, "两颗探针已摆出（赤道 20 m/s / 北纬30° 300 m/s）",
-                string.Format("G{0}（预期着陆）、G{1}（预期坠毁）", impactGroups[0], impactGroups[1]));
+                $"G{impactGroups[0]}（预期着陆）、G{impactGroups[1]}（预期坠毁）");
         }
 
         /// <summary>由 `SpaceGameComp.GameComponentTick` 每真实 tick 调用（空闲时第一行就返回）。</summary>
@@ -464,8 +455,7 @@ namespace PioneerFramework
                 for (int i = 0; i < impactGroups.Count; i++)
                     if (sg.GetGroupById(impactGroups[i]) != null) sg.DestroyGroup(impactGroups[i]);
                 PflTestKit.UncoveredCase(ImpactCaseName,
-                    string.Format("{0} tick 内没等到撞击（G{1} 在场上={2}、G{3} 在场上={4}）",
-                        ImpactTimeoutTicks, impactGroups[0], !aGone, impactGroups[1], !bGone));
+                    $"{ImpactTimeoutTicks} tick 内没等到撞击（G{impactGroups[0]} 在场上={!aGone}、G{impactGroups[1]} 在场上={!bGone}）");
                 return;
             }
 
@@ -476,15 +466,14 @@ namespace PioneerFramework
 
             PflTestKit.Check(PflTestKit.Kind.Invariant, aGone && bGone,
                 "两颗都被撞击事件收走（不是留在场上）",
-                string.Format("G{0} {1}｜G{2} {3}", impactGroups[0], aGone ? "已销毁" : "仍在",
-                    impactGroups[1], bGone ? "已销毁" : "仍在"));
+                $"G{impactGroups[0]} {(aGone ? "已销毁" : "仍在")}｜G{impactGroups[1]} {(bGone ? "已销毁" : "仍在")}");
             PflTestKit.Check(PflTestKit.Kind.Value, landLog != null,
                 "20 m/s 那颗走**着陆**分支（接地速度 ≤ 100）", landLog ?? "日志里没有 LANDED 行");
             PflTestKit.Check(PflTestKit.Kind.Value, crashLog != null,
                 "300 m/s 那颗走**坠毁**分支（接地速度 > 100）", crashLog ?? "日志里没有 CRASHED 行");
             PflTestKit.Check(PflTestKit.Kind.Value, landMsg != null && crashMsg != null,
                 "两条玩家可见消息都在（着陆 + 坠毁）",
-                string.Format("着陆『{0}』｜坠毁『{1}』", landMsg ?? "无", crashMsg ?? "无"));
+                $"着陆『{(landMsg ?? "无")}』｜坠毁『{(crashMsg ?? "无")}』");
             // ⚠ 这里的比对对象必须是**落点经纬度**那一段，不是整行 —— 整行必然不同（组 id 就不同），
             //   那样的判据恒真、名不副实（自查抓到的第一版就是这个错）。
             string landSpot = SpotOf(landLog);
@@ -492,7 +481,7 @@ namespace PioneerFramework
             PflTestKit.Check(PflTestKit.Kind.Value,
                 landSpot != "?" && crashSpot != "?" && !string.Equals(landSpot, crashSpot, StringComparison.Ordinal),
                 "两个落点的经纬度不同（防『经纬度恒为 0,0』或两句互换）",
-                string.Format("着陆落点『{0}』／坠毁落点『{1}』", landSpot, crashSpot));
+                $"着陆落点『{landSpot}』／坠毁落点『{crashSpot}』");
             PflTestKit.End();
         }
 

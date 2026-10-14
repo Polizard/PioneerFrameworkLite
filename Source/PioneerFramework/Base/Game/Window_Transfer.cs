@@ -33,8 +33,8 @@ namespace PioneerFramework
         private const float MapSize = 340f;      // 地块图边长（像素）
         private const int LayerRing = 3;         // 以星下点为心的环数（3 ⇒ 7×7 地块）
         private const double GeoRefreshSeconds = 0.4;   // 星下点反查（线性扫描）刷新节拍
-        private static readonly Color MapBg = new Color(0.03f, 0.04f, 0.06f, 1f);
-        private static readonly Color GridLine = new Color(0f, 0f, 0f, 0.55f);
+        private static readonly Color MapBg = new(0.03f, 0.04f, 0.06f, 1f);
+        private static readonly Color GridLine = new(0f, 0f, 0f, 0.55f);
 
         /// <summary>一块地格（缓存：画它只需要这些）。</summary>
         private struct TileCell
@@ -47,7 +47,7 @@ namespace PioneerFramework
         }
 
         private readonly int groupId;
-        private readonly List<TileCell> patch = new List<TileCell>();
+        private readonly List<TileCell> patch = new();
         private PlanetLayer? patchLayer;          // 换天体（换层）⇒ 缓存必须重建（同 id ≠ 同地块）
         private int patchCenterTile = -1;
         private string? mapUnavailable;           // 地图画不出来时的**具体原因**（画在界面上 + 日志一行）
@@ -87,7 +87,7 @@ namespace PioneerFramework
 
         // ⚠ `Window.Margin = 18`（原版）：`DoWindowContents` 收到的是**扣掉边距的内矩形**
         // ⇒ 窗口尺寸必须把两边边距与标题也算进去，否则地图会被窗口裁掉。
-        public override Vector2 InitialSize => new Vector2(MapSize + 320f + 36f, MapSize + 30f + 36f);
+        public override Vector2 InitialSize => new(MapSize + 320f + 36f, MapSize + 30f + 36f);
 
         // ══════════════════════════════════════════════════════════════
         //  几何刷新（节拍与投影）
@@ -145,7 +145,7 @@ namespace PioneerFramework
             if (!seeded && shipAltKm > 0.01f)
             {
                 seeded = true;
-                altitudeKm = shipAltKm.ToString("F1");
+                altitudeKm = $"{shipAltKm:F1}";
             }
         }
 
@@ -154,8 +154,7 @@ namespace PioneerFramework
         {
             if (unavailableLogged) return;
             unavailableLogged = true;
-            Log.Warning(string.Format("[控制台] 地块图不可用：{0}（船 φ={1:F2}° λ={2:F2}° 高度 {3:F1} km）",
-                mapUnavailable, shipLatDeg, shipLonDeg, shipAltKm));
+            Log.Warning($"[控制台] 地块图不可用：{mapUnavailable}（船 φ={shipLatDeg:F2}° λ={shipLonDeg:F2}° 高度 {shipAltKm:F1} km）");
         }
 
         /// <summary>以星下点为心，BFS 取 `LayerRing` 环地块（含材质/经纬度缓存）。</summary>
@@ -225,16 +224,11 @@ namespace PioneerFramework
                 if (bad > 0)
                 {
                     patch.Clear();
-                    mapUnavailable = string.Format(
-                        "地块经纬度读到 NaN（{0}/{1} 格）：层={2} TilesCount={3}",
-                        bad, all.Count, patchLayer?.Def?.defName, patchLayer?.TilesCount ?? -1);
+                    mapUnavailable = $"地块经纬度读到 NaN（{bad}/{all.Count} 格）：层={(patchLayer?.Def?.defName)} TilesCount={(patchLayer?.TilesCount ?? -1)}";
                     LogUnavailable();
                     return;
                 }
-                Log.Message(string.Format(
-                    "[控制台] 地块图：层={0}｜中心格 {1}｜共 {2} 格（有贴图 {3}）｜船 φ={4:F2}° λ={5:F2}° 高度 {6:F1} km｜每格≈{7:F0} km",
-                    patchLayer?.Def?.defName, patchCenterTile, patch.Count,
-                    CountTextured(), shipLatDeg, shipLonDeg, shipAltKm, tileKm));
+                Log.Message($"[控制台] 地块图：层={(patchLayer?.Def?.defName)}｜中心格 {patchCenterTile}｜共 {patch.Count} 格（有贴图 {CountTextured()}）｜船 φ={shipLatDeg:F2}° λ={shipLonDeg:F2}° 高度 {shipAltKm:F1} km｜每格≈{tileKm:F0} km");
             }
         }
 
@@ -408,7 +402,7 @@ namespace PioneerFramework
 
             // 比例尺（写在地图上，不用玩家猜）
             Widgets.Label(new Rect(mapRect.x + 4f, mapRect.yMax - 20f, mapRect.width - 8f, 20f),
-                string.Format("每格 ≈ {0:F0} km｜本船星下点居中（{1}×{1} 格）", tileKm, 2 * LayerRing + 1));
+                $"每格 ≈ {tileKm:F0} km｜本船星下点居中（{2 * LayerRing + 1}×{2 * LayerRing + 1} 格）");
         }
 
         private void DrawSide(Rect r, SpaceGameComp spaceGame, SpaceEntityGroup group,
@@ -417,11 +411,9 @@ namespace PioneerFramework
             float x = r.x, w = r.width, y = r.y + 30f;
             const float RowH = 22f;
 
-            Widgets.Label(new Rect(x, y, w, RowH), string.Format("星下点：地块 {0}（φ {1:F1}° λ {2:F1}°）",
-                shipTile, shipLatDeg, shipLonDeg));
+            Widgets.Label(new Rect(x, y, w, RowH), $"星下点：地块 {shipTile}（φ {shipLatDeg:F1}° λ {shipLonDeg:F1}°）");
             y += RowH;
-            Widgets.Label(new Rect(x, y, w, RowH), string.Format("高度 {0:F1} km｜地速 {1:F0} m/s｜{2}",
-                shipAltKm, shipGroundSpeed, hasHeading ? ("航向 " + shipHeadingDeg.ToString("F0") + "°") : "原地（共转）"));
+            Widgets.Label(new Rect(x, y, w, RowH), $"高度 {shipAltKm:F1} km｜地速 {shipGroundSpeed:F0} m/s｜{(hasHeading ? ("航向 " + $"{shipHeadingDeg:F0}" + "°") : "原地（共转）")}");
             y += RowH + 4f;
 
             // ── 推进读数（口径唯一出处 = GetGroupEnduranceReport）──
@@ -436,8 +428,8 @@ namespace PioneerFramework
                 var net = report[i];
                 string nm = (net.propellant != null ? net.propellant.label : "?");
                 string v = net.environmentDependent
-                    ? string.Format("全推续航 {0:F0} s（ṁ {1:F1} kg/s）", net.enduranceSeconds, net.massFlow)
-                    : string.Format("料 {0:F0} kg", net.propellantMass);
+                    ? $"全推续航 {net.enduranceSeconds:F0} s（ṁ {net.massFlow:F1} kg/s）"
+                    : $"料 {net.propellantMass:F0} kg";
                 Widgets.Label(new Rect(x, y, w, RowH), nm + "：" + v);
                 y += RowH;
             }
@@ -445,7 +437,7 @@ namespace PioneerFramework
 
             // ── 目的地（地块图上点选）──
             Widgets.Label(new Rect(x, y, w, RowH), destTile >= 0
-                ? string.Format("目的地：地块 {0}｜面距 {1:F0} km", destTile, SurfaceDistanceKm(layer, destTile, mgr, group))
+                ? $"目的地：地块 {destTile}｜面距 {SurfaceDistanceKm(layer, destTile, mgr, group):F0} km"
                 : "目的地：在地块图上点一下");
             y += RowH;
             Widgets.Label(new Rect(x, y + 3f, 54f, RowH), "高度 km");
@@ -502,14 +494,12 @@ namespace PioneerFramework
             if (busy)
             {
                 double u = AnalyticTransferCore.Progress(physicsTick - group.transferStartTick, group.transferDuration);
-                Widgets.Label(new Rect(x, y, w, RowH), string.Format("搬运中：Δv {0:F0} m/s｜时长 {1:F0} s｜进度 {2:P0}",
-                    group.transferDvTotal, group.transferDuration, u));
+                Widgets.Label(new Rect(x, y, w, RowH), $"搬运中：Δv {group.transferDvTotal:F0} m/s｜时长 {group.transferDuration:F0} s｜进度 {u:P0}");
                 y += RowH;
             }
             else if (group.transferArrivalErrorMeters > 0.0)
             {
-                Widgets.Label(new Rect(x, y, w, RowH), string.Format("上次到达落位误差：{0:F1} m",
-                    group.transferArrivalErrorMeters));
+                Widgets.Label(new Rect(x, y, w, RowH), $"上次到达落位误差：{group.transferArrivalErrorMeters:F1} m");
                 y += RowH;
             }
 

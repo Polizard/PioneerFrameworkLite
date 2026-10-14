@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using MechJebLib.Functions;
@@ -31,9 +31,8 @@ namespace PioneerFramework
         private const double R0 = 7_000_000.0;
 
         /// <summary>操作名 → 参数值（**显示单位**，按 `GetParams()` 的顺序）。</summary>
-        private static readonly Dictionary<string, double[]> ParamTable = new Dictionary<string, double[]>
-        {
-            { "圆化轨道", new double[0] },
+        private static readonly Dictionary<string, double[]> ParamTable = new() {
+            { "圆化轨道", Array.Empty<double>() },
             { "改近/远心点", new[] { 10000.0, 5000.0 } },    // 远心点高度 / 近心点高度（km）
             { "改倾角", new[] { 45.0 } },                     // 度
             { "改远心点", new[] { 12000.0 } },               // 高度 km（当前远心高度 8000）
@@ -44,7 +43,7 @@ namespace PioneerFramework
             { "改升交点经度", new[] { 123.0 } },              // 度
             { "改拱点地面经度（下一圈）", new[] { 77.0 } },   // 度
             { "静止轨道（同步）", new[] { 45.0 } },            // 度
-            { "对齐速度", new double[0] },                    // 目标 = 自己 ⇒ 期望 Δv ≈ 0
+            { "对齐速度", Array.Empty<double>() },                    // 目标 = 自己 ⇒ 期望 Δv ≈ 0
         };
 
         // 最近一次的判据数与结果（供统一入口收进结论；`Run()` 里是局部量，末尾回填）
@@ -65,7 +64,7 @@ namespace PioneerFramework
                 checks++;
                 if (!ok) failures++;
                 sb.Append("\n  ").Append(ok ? "✓" : "✗ **FAIL**").Append(' ').Append(label);
-                if (!string.IsNullOrEmpty(detail)) sb.Append("｜").Append(detail);
+                if (!string.IsNullOrEmpty(detail)) sb.Append('｜').Append(detail);
             }
 
             sb.Append("[规划器验收] ═══ P1-8 一键验收（参数描述 → 计算 → 入队）═══");
@@ -101,9 +100,9 @@ namespace PioneerFramework
             }
 
             sb.Append("\n  受控轨道：G").Append(g.GroupId)
-              .Append(" 倾角 30° 椭圆 e=0.3｜mu=").Append(mu.ToString("E3"))
-              .Append(" R0=").Append((R0 / 1000.0).ToString("F0")).Append("km")
-              .Append(" tick=").Append(tick.ToString("F0"));
+              .Append(" 倾角 30° 椭圆 e=0.3｜mu=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{mu:E3}")
+              .Append(" R0=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(R0 / 1000.0):F0}").Append("km")
+              .Append(" tick=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{tick:F0}");
 
             if (!OrbitAdapter.TryToOrbitView(g, celestialMgr, tick, out OrbitView ov))
             {
@@ -179,8 +178,8 @@ namespace PioneerFramework
                 }
 
                 Check(shapeOk, $"{name}：产出的节点可入队",
-                    $"{nodes.Count} 条｜最大 |Δv|={maxDv.ToString("F2")} m/s" +
-                    (nodes.Count > 0 ? $"｜首次 t={nodes[0].ut.ToString("F0")}s" : ""));
+                    $"{nodes.Count} 条｜最大 |Δv|={$"{maxDv:F2}"} m/s" +
+                    (nodes.Count > 0 ? $"｜首次 t={$"{nodes[0].ut:F0}"}s" : ""));
 
                 if (name == "对齐速度")
                     Check(maxDv < 1e-6, "对齐速度（目标=自己）应当几乎不用烧", $"最大 |Δv|={maxDv:E3} m/s");

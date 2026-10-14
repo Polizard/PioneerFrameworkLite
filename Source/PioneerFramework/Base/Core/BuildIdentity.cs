@@ -30,7 +30,7 @@ namespace PioneerFramework
                 var loc = string.IsNullOrEmpty(asm.Location) ? null : asm.Location;
                 string built = "?";
                 if (loc != null && System.IO.File.Exists(loc))
-                    built = System.IO.File.GetLastWriteTime(loc).ToString("yyyy-MM-dd HH:mm:ss");
+                    built = $"{System.IO.File.GetLastWriteTime(loc):yyyy-MM-dd HH:mm:ss}";
                 Log.Message(string.Format(
                     // ⚠ 2026-09-28 更正标签：这里原打"交会新律={2}"，而那套自制远场律已于 2026-09-22 作废
                     //   （远场段 + 5% CW 终端整段删除）。该开关现在 gate 的是"阶梯引导 vs 旧巡航 Lambert 路径"

@@ -41,10 +41,7 @@ namespace PioneerFramework
 
         public OperationLan()
         {
-            _planParams = new[]
-            {
-                    new PlanParam("新升交点经度", "°", () => NewLAN.Val, v => NewLAN.Val = v),
-            };
+            _planParams = [new PlanParam("新升交点经度", "°", () => NewLAN.Val, v => NewLAN.Val = v),];
         }
 
         public override IReadOnlyList<PlanParam> GetParams() => _planParams;
@@ -56,9 +53,9 @@ namespace PioneerFramework
         public readonly EditableDoubleMult NewLAN = new EditableDouble(0);
 
         private static readonly TimeReference[] _timeReferences =
-            { TimeReference.APOAPSIS, TimeReference.PERIAPSIS, TimeReference.X_FROM_NOW };
+            [TimeReference.APOAPSIS, TimeReference.PERIAPSIS, TimeReference.X_FROM_NOW];
 
-        public readonly TimeSelector TimeSelector = new TimeSelector(_timeReferences);
+        public readonly TimeSelector TimeSelector = new(_timeReferences);
 
         public override void DoParametersGUI(OrbitView o, double universalTime, ITargetView target) =>
             TimeSelector.DoChooseTimeGUI();
@@ -74,7 +71,7 @@ namespace PioneerFramework
             double ut = TimeSelector.ComputeManeuverTime(o, universalTime, target);
             DVector3 dV = OrbitalManeuverCalculator.DeltaVToShiftLAN(o, ut, NewLAN.Val);
 
-            return new List<PlanNode> { new PlanNode(dV, ut) };
+            return new List<PlanNode> { new(dV, ut) };
         }
     }
 }

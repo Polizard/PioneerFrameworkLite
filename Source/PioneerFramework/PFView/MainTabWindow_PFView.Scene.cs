@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -44,6 +44,13 @@ namespace PioneerFramework
             //   若它随时间漂 ⇒ 说明"原版权威的相位"与"地表自转的相位"用了两把尺子（那才是下一步要查的）。
         }
 
+        /// <summary>把当前太阳口径写进某材质（`renderMat` 本体与它的克隆们共用；2026-10-14）。</summary>
+        private static void ApplySunUniforms(Material m, Vector3 toSun, Color sunColor)
+        {
+            m.SetVector("_SunDir", new Vector4(toSun.x, toSun.y, toSun.z, 0f));
+            m.SetVector("_SunColor", new Vector4(sunColor.r, sunColor.g, sunColor.b, 1f));
+        }
+
         private void UpdateLighting(CelestialBodyManager mgr, double tick, DVector3 origin)
         {
             if (sunLight == null) return;
@@ -52,26 +59,36 @@ namespace PioneerFramework
             Vector3 toSunInertial = SunDirectionInView(mgr, tick);          // 惯性系（读数判据看这一支）
             Vector3 toSun = viewFrameRot * toSunInertial;                   // 视图参考系（固连档下太阳随自转"走"= 正确）
             // 方向光的 `forward` = 光**传播**方向 = 太阳→天体 = −toSun
-            sunLight.transform.forward = -toSun;
+            // 2026-10-13（P2-a）：1.7 的 UnityStubs 里 `Transform.forward` 只读（无 set_forward）
+            // ⇒ 改用 rotation=LookRotation（与"设 forward"同义；上向量取 Vector3.up 即原默认）。
+            sunLight.transform.rotation = Quaternion.LookRotation(-toSun, Vector3.up);
+
+            // 2026-10-13（P2-c）：同一个太阳方向喂给 PFLit（视图系单位向量，与网格法线同系）；
+            // 1.6 的 Standard 忽略未知属性 ⇒ 两版本共用这一行。
+            // 2026-10-14（亮度）：1.6 的 Standard 吃方向光的 intensity（`sunLight.intensity = 5f`，见 EnsureResources）；
+            // PFLit 不走引擎光照 ⇒ 把"颜色 × 强度"显式折进 `_SunColor`（恢复 1.6 的亮面口径）。
+            if (renderMat != null)
+            {
+                // ⚠ 2026-10-14：不再乘 `intensity`——`intensity = 5f` 是 1.6 Standard 的旧口径；
+                //   PFLit 已改为**照抄原版世界地表**的昼夜色模型（白天 = 满亮度）⇒ `_SunColor` 只传灯色。
+                Color sc = sunLight.color;
+                ApplySunUniforms(renderMat, toSun, sc);
+
+                // ⚠ 2026-10-14（"阳光还是太弱"的真根因）：`NewSurfaceMaterial` 是 `new Material(renderMat)` 的**克隆**，
+                //   克隆只在创建那一刻拷值 ⇒ 行星/补丁材质**收不到** renderMat 的每帧刷新（停在 1× 的旧口径）。
+                //   这里把缓存的地表材质逐个一起刷新（天体数个，成本可忽略）。
+                foreach (var m in patchMaterials.Values) if (m != null) ApplySunUniforms(m, toSun, sc);
+                foreach (var m in baseSphereMaterials.Values) if (m != null) ApplySunUniforms(m, toSun, sc);
+            }
 
             if (tick - lastSunLogTick > 300.0)
             {
                 lastSunLogTick = tick;
                 Vector3 fixedDir = GenCelestial.CurSunPositionInWorldSpace();
-                Log.Message(string.Format("[PFView·太阳] 固连方向 ({0:F2},{1:F2},{2:F2}) → 惯性 toSun ({3:F2},{4:F2},{5:F2})（惯性系应随时间基本不变）｜参考系={6}｜light.forward ({7:F2},{8:F2},{9:F2})",
-                    fixedDir.x, fixedDir.y, fixedDir.z, toSunInertial.x, toSunInertial.y, toSunInertial.z,
-                    viewFrameIsFixed ? "固连" : "惯性",
-                    -toSun.x, -toSun.y, -toSun.z));
-                Log.Message(string.Format(
-                    "[PFView·太阳盘] 角半径 {0:F2}°（直径 {1:F2}°）⇒ 屏高 {2}px / FOV {3:F0}° 下直径 ≈ {4:F0} px｜画序：星空({5}) → 太阳盘({6}) → 场景(2000+)｜{7}｜{8}",
-                    sunDiscAngularRadiusDeg, sunDiscAngularRadiusDeg * 2f,
-                    renderCamera != null ? renderCamera.pixelHeight : 0,
-                    renderCamera != null ? renderCamera.fieldOfView : 45f,
-                    PFViewSunDisc.DiameterPixels(sunDiscAngularRadiusDeg,
+                Log.Message($"[PFView·太阳] 固连方向 ({fixedDir.x:F2},{fixedDir.y:F2},{fixedDir.z:F2}) → 惯性 toSun ({toSunInertial.x:F2},{toSunInertial.y:F2},{toSunInertial.z:F2})（惯性系应随时间基本不变）｜参考系={(viewFrameIsFixed ? "固连" : "惯性")}｜light.forward ({-toSun.x:F2},{-toSun.y:F2},{-toSun.z:F2})");
+                Log.Message($"[PFView·太阳盘] 角半径 {sunDiscAngularRadiusDeg:F2}°（直径 {sunDiscAngularRadiusDeg * 2f:F2}°）⇒ 屏高 {(renderCamera != null ? renderCamera.pixelHeight : 0)}px / FOV {(renderCamera != null ? renderCamera.fieldOfView : 45f):F0}° 下直径 ≈ {PFViewSunDisc.DiameterPixels(sunDiscAngularRadiusDeg,
                         renderCamera != null ? renderCamera.fieldOfView : 45f,
-                        renderCamera != null ? renderCamera.pixelHeight : 1080),
-                    (int)UnityEngine.Rendering.RenderQueue.Background, SunDiscRenderQueue,
-                    SunInViewNote(mgr, tick, origin), SunDiscDrawNote()));
+                        renderCamera != null ? renderCamera.pixelHeight : 1080):F0} px｜画序：星空({(int)UnityEngine.Rendering.RenderQueue.Background}) → 太阳盘({SunDiscRenderQueue}) → 场景(2000+)｜{SunInViewNote(mgr, tick, origin)}｜{SunDiscDrawNote()}");
             }
         }
 
@@ -303,9 +320,7 @@ namespace PioneerFramework
                 else if (noPatchLogged.Add(body.bodyId))
                 {
                     // 没补丁 = 这颗天体的"地表"就是**基底球**（背景 biome 平铺），不是烘焙地形 —— 说明白，别让它像"渲染坏了"
-                    Log.Message(string.Format(
-                        "[PFView·地表] body={0} **没有烘焙补丁** ⇒ 现在画的这一层是基底球（背景 biome 平铺），不是烘焙地形；去调试页签烤一次即得",
-                        body.defName));
+                    Log.Message($"[PFView·地表] body={body.defName} **没有烘焙补丁** ⇒ 现在画的这一层是基底球（背景 biome 平铺），不是烘焙地形；去调试页签烤一次即得");
                 }
 
                 // 自转/换系自检（限频）：拿"船下地块"比"我画的方向"与 mod 的权威 tile→ECI
@@ -327,11 +342,11 @@ namespace PioneerFramework
         }
 
         private readonly System.Collections.Generic.Dictionary<int, long> lastAlignCheckTick =
-            new System.Collections.Generic.Dictionary<int, long>();
+            new();
 
         /// <summary>"这颗天体没有烘焙补丁"只说一次（免得每帧刷屏）。</summary>
         private readonly System.Collections.Generic.HashSet<int> noPatchLogged =
-            new System.Collections.Generic.HashSet<int>();
+            new();
 
         /// <summary>
         /// **自转/换系自检**（限频：每天体每 60 物理秒一次）：拿某一个地块比两边 ——
@@ -375,14 +390,11 @@ namespace PioneerFramework
                 if (t >= 0)
                 {
                     Vector2 ll = layer.LongLatOf(t);
-                    shipInfo = string.Format("｜船下地块={0}（φ{1:F1}° λ{2:F1}°）", t, ll.y, ll.x);
+                    shipInfo = $"｜船下地块={t}（φ{ll.y:F1}° λ{ll.x:F1}°）";
                 }
             }
 
-            Log.Message(string.Format(
-                "[PFView·自转] body={0} 相位 {1:F1}°（{2:F2}°/分钟·物理秒）{3}｜网格×自转 对 权威(tile→ECI) 差 {4:F2} km{5}",
-                body.defName, angleDeg, degPerMinute, shipInfo, errKm,
-                errKm > 1.0 ? "  ⚠ > 1 km ⇒ 自转/换系错了" : "  ✓"));
+            Log.Message($"[PFView·自转] body={body.defName} 相位 {angleDeg:F1}°（{degPerMinute:F2}°/分钟·物理秒）{shipInfo}｜网格×自转 对 权威(tile→ECI) 差 {errKm:F2} km{(errKm > 1.0 ? "  ⚠ > 1 km ⇒ 自转/换系错了" : "  ✓")}");
         }
 
         /// <summary>天体球体渲染（三渲二：Toon Shader 内置轮廓线 + 二分阴影，不可用时回退）</summary>
@@ -501,11 +513,7 @@ namespace PioneerFramework
             if (dbgFrames < 300) return;
 
             double mean = dbgSumStep / (dbgFrames - 1);
-            Log.Message(string.Format(
-                "[PFView·抖动] G{0} 圆轨={1} 距离 {2:F0} km｜帧 {3}｜tick 推进 {4:F2}（{5:F3}/帧）｜停顿帧 {6}｜帧间位移 平均 {7:F3} 最大 {8:F3} 单位（比 {9:F1}×）",
-                g.GroupId, g.IsCircularOrbit ? "是" : "否", distUnits * 0.01f, dbgFrames,
-                dbgTickAdvance, dbgTickAdvance / (dbgFrames - 1), dbgStallFrames,
-                mean, dbgMaxStep, mean > 1e-9 ? dbgMaxStep / mean : 0.0));
+            Log.Message($"[PFView·抖动] G{g.GroupId} 圆轨={(g.IsCircularOrbit ? "是" : "否")} 距离 {distUnits * 0.01f:F0} km｜帧 {dbgFrames}｜tick 推进 {dbgTickAdvance:F2}（{dbgTickAdvance / (dbgFrames - 1):F3}/帧）｜停顿帧 {dbgStallFrames}｜帧间位移 平均 {mean:F3} 最大 {dbgMaxStep:F3} 单位（比 {(mean > 1e-9 ? dbgMaxStep / mean : 0.0):F1}×）");
             dbgFrames = 0; dbgSumStep = 0.0; dbgMaxStep = 0.0; dbgTickAdvance = 0.0; dbgStallFrames = 0;
         }
 
@@ -640,8 +648,7 @@ namespace PioneerFramework
                     if (jump > expectedStep * 1.5 + 1.0 && Find.TickManager.TicksGame - debugJumpLogTick >= 60)
                     {
                         debugJumpLogTick = Find.TickManager.TicksGame;
-                        Log.Message(string.Format("[射弹渲染检测] proj={0} 帧间跳变 {1:F0}m（预期步进 {2:F0}m）→ 疑似折线/闪现",
-                            proj.id, jump, expectedStep));
+                        Log.Message($"[射弹渲染检测] proj={proj.id} 帧间跳变 {jump:F0}m（预期步进 {expectedStep:F0}m）→ 疑似折线/闪现");
                     }
                 }
                 debugLastProjRender[proj.id] = renderPos;
@@ -705,53 +712,8 @@ namespace PioneerFramework
 #endif
         }
 
-        private void OnPostRender(ScriptableRenderContext context, Camera cam)
-        {
-            if (cam != renderCamera) return;
-            DrawOrbitLinesGL();
-        }
-
-        private void DrawOrbitLinesGL()
-        {
-            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            if (mgr == null) return;
-
-            int tick = cachedRenderTick;
-            DVector3 origin = GetRenderOrigin();
-            var bodyDef = mgr.GetBodyById(currentSystemBodyId);
-            if (bodyDef == null) return;
-
-            GL.PushMatrix();
-            renderMat.SetPass(0);
-            GL.Begin(GL.LINES);
-            GL.Color(new Color(0f, 0.5f, 0.3f, 0.4f));
-
-            var toDraw = new List<CelestialBodyDef>();
-            if (bodyDef.HasOrbit) toDraw.Add(bodyDef);
-            foreach (var m in bodyDef.moonBodies) toDraw.Add(m);
-
-            foreach (var body in toDraw)
-            {
-                var pts = mgr.GetOrbitPathUnity(body.bodyId, tick, 72);
-                if (pts == null || pts.Count < 2) continue;
-
-                for (int i = 0; i < pts.Count; i++)
-                {
-                    int j = (i + 1) % pts.Count;
-                    Vector3 a = AbsToView(new DVector3(
-                        pts[i].x * SpaceConstants.MetersPerUnit,
-                        pts[i].y * SpaceConstants.MetersPerUnit,
-                        pts[i].z * SpaceConstants.MetersPerUnit), origin);
-                    Vector3 b = AbsToView(new DVector3(
-                        pts[j].x * SpaceConstants.MetersPerUnit,
-                        pts[j].y * SpaceConstants.MetersPerUnit,
-                        pts[j].z * SpaceConstants.MetersPerUnit), origin);
-                    GL.Vertex(a); GL.Vertex(b);
-                }
-            }
-
-            GL.End();
-            GL.PopMatrix();
-        }
+        // 轨道线已删（2026-10-14，用户："轨道线本来就是不需要存在的东西吧？"——判过不接，见 1.7 计划台账 #14）。
+        // 历史：1.6 = GL 立即模式 + RenderPipelineManager 后置钩子；1.7 试过 mesh ribbon（平面环 + 双面）。
+        // 若要恢复：git 历史里有两版实现（GL 版与平面 mesh 版）。
     }
 }

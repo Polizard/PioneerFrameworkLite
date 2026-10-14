@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
-    <LangVersion>12.0</LangVersion>
+    <!-- 2026-10-14（主线切 net10）：与主工程同步。 -->
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
@@ -11,52 +12,28 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
-    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PioneerFramework\PioneerFramework.csproj" />
   </ItemGroup>
 
+  <!-- 2026-10-14：引用换游戏根三件 + Harmony 3（同主工程；路径见 Source/Directory.Build.props） -->
   <ItemGroup>
-    <Reference Include="netstandard">
-      <HintPath>..\PioneerFramework\Libs\RimWorld\netstandard.dll</HintPath>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(Rw17Dir)\Assembly-CSharp.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="UnityStubs">
+      <HintPath>$(Rw17Dir)\UnityStubs.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Waylith">
+      <HintPath>$(Rw17Dir)\Waylith.dll</HintPath>
       <Private>true</Private>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>..\PioneerFramework\Libs\0Harmony\0Harmony.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="Assembly-CSharp">
-      <HintPath>..\PioneerFramework\Libs\RimWorld\Assembly-CSharp.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="UnityEngine">
-      <HintPath>..\PioneerFramework\Libs\Unity\UnityEngine.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="UnityEngine.CoreModule">
-      <HintPath>..\PioneerFramework\Libs\Unity\UnityEngine.CoreModule.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="UnityEngine.AssetBundleModule">
-      <HintPath>..\PioneerFramework\Libs\Unity\UnityEngine.AssetBundleModule.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="UnityEngine.IMGUIModule">
-      <HintPath>..\PioneerFramework\Libs\Unity\UnityEngine.IMGUIModule.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="UnityEngine.InputLegacyModule">
-      <HintPath>..\PioneerFramework\Libs\Unity\UnityEngine.InputLegacyModule.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="UnityEngine.TextRenderingModule">
-      <HintPath>..\PioneerFramework\Libs\Unity\UnityEngine.TextRenderingModule.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>..\PioneerFramework\Libs\Unity\UnityEngine.PhysicsModule.dll</HintPath>
+      <HintPath>$(Harmony17Dir)\0Harmony.dll</HintPath>
       <Private>true</Private>
     </Reference>
   </ItemGroup>

@@ -56,7 +56,7 @@ namespace PioneerFramework.PFView
         internal const string CompositeShaderName =
             "Hidden/PioneerFramework/PFView/OutlineComposite";
 
-        private AssetBundle assetBundle;
+        private AssetBundle? assetBundle;   // 契约改真（2026-10-15 手清）：清理路径会归零（约 430 行），可空
         private PFViewOutlineShaderSet shaderSet;
         private readonly bool ownsAssetBundle;
         private bool disposed;
@@ -144,7 +144,7 @@ namespace PioneerFramework.PFView
                 return false;
             }
 
-            AssetBundle loadedBundle = null;
+            AssetBundle? loadedBundle = null;
             try
             {
                 loadedBundle = AssetBundle.LoadFromFile(bundlePath);
@@ -226,7 +226,7 @@ namespace PioneerFramework.PFView
                         return PFViewLoadedBundleLookupResult.NotRetained;
                     }
 
-                    string identityFailure = null;
+                    string? identityFailure = null;
                     foreach (AssetBundle bundle in
                         mod.assetBundles.loadedAssetBundles)
                     {
@@ -372,7 +372,7 @@ namespace PioneerFramework.PFView
                     nameof(bundleName));
             }
 
-            string assemblyDirectory = Path.GetDirectoryName(
+            string? assemblyDirectory = Path.GetDirectoryName(
                 Path.GetFullPath(assemblyLocation));
             if (string.IsNullOrWhiteSpace(assemblyDirectory))
             {
@@ -426,7 +426,7 @@ namespace PioneerFramework.PFView
             disposed = true;
             shaderSet = default;
 
-            AssetBundle bundleToUnload = assetBundle;
+            AssetBundle? bundleToUnload = assetBundle;
             assetBundle = null;
             if (ownsAssetBundle &&
                 !ReferenceEquals(bundleToUnload, null))
@@ -444,7 +444,7 @@ namespace PioneerFramework.PFView
                 FindShader(shaders, CompositeShaderName));
         }
 
-        private static Shader FindShader(
+        private static Shader? FindShader(
             Shader[] shaders,
             string shaderName)
         {

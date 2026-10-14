@@ -41,7 +41,7 @@ namespace PioneerFramework
         public const float PartOutlineWidth = 0.02f;
 
         /// <summary>零件盒体颜色（船体素色；明暗由场景方向光给，本类不表态光从哪来）。</summary>
-        public static readonly Color PartColor = new Color(0.3f, 0.6f, 1.0f);
+        public static readonly Color PartColor = new(0.3f, 0.6f, 1.0f);
 
         /// <summary>
         /// 单个零件的**视图变换**（纯算术：headless 可测 —— 「零件矩阵组装」判据的落点）：
@@ -105,7 +105,7 @@ namespace PioneerFramework
         public const float HeadingBarMinWidth = 0.05f;
 
         /// <summary>朝向棒颜色（黄）：它就是"主推轴指向哪边"的读数。</summary>
-        public static readonly Color HeadingBarColor = new Color(1f, 0.75f, 0.15f, 1f);
+        public static readonly Color HeadingBarColor = new(1f, 0.75f, 0.15f, 1f);
 
         /// <summary>
         /// 朝向指示棒：从 `centerViewPos` 沿 `dir` 画一根细棒（中心 = 位置 + dir × 长/2）。
@@ -136,12 +136,11 @@ namespace PioneerFramework
 
         /// <summary>浮雕三档颜色（索引 = 分类：0 空位 / 1 结构梁 / 2 舱室 / 3 装甲）。</summary>
         public static readonly Color[] ReliefColors =
-        {
-            new Color(0f, 0f, 0f, 0f),
-            new Color(0.55f, 0.58f, 0.62f),   // 结构梁：中性灰
-            new Color(0.78f, 0.82f, 0.86f),   // 舱室：亮钢
-            new Color(0.34f, 0.38f, 0.44f),   // 装甲：深板岩
-        };
+        [new(0f, 0f, 0f, 0f),
+            new(0.55f, 0.58f, 0.62f),   // 结构梁：中性灰
+            new(0.78f, 0.82f, 0.86f),   // 舱室：亮钢
+            new(0.34f, 0.38f, 0.44f),   // 装甲：深板岩
+        ];
 
         /// <summary>浮雕矩阵：网格顶点以**格**为单位（1 格 = 1 米）⇒ 缩放 = metersToView × scale（"放大部件"同比）。</summary>
         public static Matrix4x4 ReliefMatrix(Vector3 viewPos, Quaternion rotation, float metersToView, float scale)

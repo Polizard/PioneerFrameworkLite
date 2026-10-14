@@ -35,10 +35,10 @@ namespace PioneerFramework
         public TimeReference TimeReference => _allowedTimeRef[_currentTimeRef];
 
         /// <summary>"从现在起 N 秒"用的时长。</summary>
-        public readonly EditableTime LeadTime = new EditableTime(0);
+        public readonly EditableTime LeadTime = new(0);
 
         /// <summary>`ALTITUDE` 分支用的高度。</summary>
-        public readonly EditableDoubleMult CircularizeAltitude = new EditableDoubleMult(150000, 1000);
+        public readonly EditableDoubleMult CircularizeAltitude = new(150000, 1000);
 
         /// <summary>供 UI 显示的名字（与 `_allowedTimeRef` 同序）。上游用 `Localizer`，见类注释 ②。</summary>
         public string[] TimeRefNames { get; }
@@ -53,26 +53,25 @@ namespace PioneerFramework
         }
 
         private static string NameOf(TimeReference r)
-        {
-            switch (r)
-            {
-                case TimeReference.COMPUTED: return "计算值";
-                case TimeReference.APOAPSIS: return "远心点";
-                case TimeReference.PERIAPSIS: return "近心点";
-                case TimeReference.CLOSEST_APPROACH: return "最近接近";
-                case TimeReference.EQ_ASCENDING: return "赤道升交点";
-                case TimeReference.EQ_DESCENDING: return "赤道降交点";
-                case TimeReference.REL_ASCENDING: return "相对升交点";
-                case TimeReference.REL_DESCENDING: return "相对降交点";
-                case TimeReference.X_FROM_NOW: return "从现在起";
-                case TimeReference.ALTITUDE: return "到达高度";
-                case TimeReference.EQ_NEAREST_AD: return "最近的赤道交点";
-                case TimeReference.EQ_HIGHEST_AD: return "较快的赤道交点";
-                case TimeReference.REL_NEAREST_AD: return "最近的相对交点";
-                case TimeReference.REL_HIGHEST_AD: return "较快的相对交点";
-                default: return r.ToString();
-            }
-        }
+        
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              => r switch
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              {
+            TimeReference.COMPUTED => "计算值",
+            TimeReference.APOAPSIS => "远心点",
+            TimeReference.PERIAPSIS => "近心点",
+            TimeReference.CLOSEST_APPROACH => "最近接近",
+            TimeReference.EQ_ASCENDING => "赤道升交点",
+            TimeReference.EQ_DESCENDING => "赤道降交点",
+            TimeReference.REL_ASCENDING => "相对升交点",
+            TimeReference.REL_DESCENDING => "相对降交点",
+            TimeReference.X_FROM_NOW => "从现在起",
+            TimeReference.ALTITUDE => "到达高度",
+            TimeReference.EQ_NEAREST_AD => "最近的赤道交点",
+            TimeReference.EQ_HIGHEST_AD => "较快的赤道交点",
+            TimeReference.REL_NEAREST_AD => "最近的相对交点",
+            TimeReference.REL_HIGHEST_AD => "较快的相对交点",
+            _ => r.ToString(),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              };
 
         /// <summary>画时间选择区。**空实现**——GUI 在我们的 UI 层（见类注释 ①）。</summary>
         public void DoChooseTimeGUI() { }

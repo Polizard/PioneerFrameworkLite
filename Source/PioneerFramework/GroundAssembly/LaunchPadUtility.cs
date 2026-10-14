@@ -51,7 +51,7 @@ namespace PioneerFramework.GroundAssembly
         }
 
         /// <summary>获取指定火箭 Def 对应的回收配置；没有则返回 null。</summary>
-        public static RocketRecoveryDef RocketRecoveryDefFor(ThingDef rocketDef)
+        public static RocketRecoveryDef? RocketRecoveryDefFor(ThingDef rocketDef)
         {
             if (rocketDef == null)
                 return null;

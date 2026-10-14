@@ -1,23 +1,27 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
-    <LangVersion>12.0</LangVersion>
+    <!-- 2026-10-14（大规模现代化 · 主线切 net10）：1.7 线 = net10.0。
+         1.6 线冻结在 legacy/1.6/Source/（其 net48 DLL 与已部署字节均不受影响）。 -->
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <RootNamespace>PioneerFramework</RootNamespace>
     <AssemblyName>PioneerFrameworkLite</AssemblyName>
     <!--
-      输出路径**按配置分离**（D2，2026-09-14）：
-      · Release → `1.6/Assemblies/`（交付物；CI 用哈希校验它必须等于固定 SDK 的 Release 构建结果）；
+      输出路径**按配置分离**（D2，2026-09-14；**2026-10-13 树分家**）：
+      本树 = **1.7 主线**；1.6 线冻结在 `legacy/1.6/Source/`（权威副本 = tag `1.6-final`），
+      仓库根 `1.6/Assemblies/` 的交付物**从此只读**（本树任何配置都不再写它）。
+      · Release → `1.7/Assemblies/`（交付物；CI 用哈希校验它必须等于固定 SDK 的 Release 构建结果）；
       · Debug   → 项目内 `bin/`（被 .gitignore 忽略），**结构上不可能**碰到已提交的 DLL。
       旧写法两配置共用 `1.6/Assemblies/`：任何 Debug 构建（含 `dotnet test`）都会把已提交的 Release
-      DLL 覆盖成 Debug 版 → 仓库被污染、CI 哈希断言变红、`1.6/Assemblies/*.pdb` 残留；
+      DLL 覆盖成 Debug 版 → 仓库被污染、CI 哈希断言变红、`*.pdb` 残留；
       当时只能靠"把重建 DLL 的步骤放到脚本最后"+ 文档警告来兜（2026-09-14 实测：一次普通 Debug
       构建就把已提交 DLL 的哈希改掉了）。
       要在**游戏内跑 Debug 版**（带行号的 .pdb）时显式指定输出目录即可（opt-in，不是默认）：
-        dotnet build Source/PioneerFramework/PioneerFramework.csproj -c Debug -p:OutputPath=../../1.6/Assemblies/
+        dotnet build Source/PioneerFramework/PioneerFramework.csproj -c Debug -p:OutputPath=../../1.7/Assemblies/
     -->
-    <OutputPath Condition="'$(Configuration)' == 'Release'">..\..\1.6\Assemblies\</OutputPath>
+    <OutputPath Condition="'$(Configuration)' == 'Release'">..\..\1.7\Assemblies\</OutputPath>
     <OutputPath Condition="'$(Configuration)' != 'Release'">bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
@@ -32,51 +36,25 @@
     <PathMap>$(MSBuildProjectDirectory)=PioneerFramework</PathMap>
   </PropertyGroup>
 
+  <!--
+    2026-10-14（主线切 net10）：引用从 `Libs/`（1.6/Unity 2022 时代）换成**游戏根的 1.7 程序集**
+    （`Assembly-CSharp` / `UnityStubs` / `Waylith`）+ 工坊 Harmony 3（路径见 `Source/Directory.Build.props`）。
+  -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Reference Include="0Harmony">
-      <HintPath>Libs\0Harmony\0Harmony.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>Libs\RimWorld\Assembly-CSharp.dll</HintPath>
+      <HintPath>$(Rw17Dir)\Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="UnityEngine">
-      <HintPath>Libs\Unity\UnityEngine.dll</HintPath>
+    <Reference Include="UnityStubs">
+      <HintPath>$(Rw17Dir)\UnityStubs.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="UnityEngine.CoreModule">
-      <HintPath>Libs\Unity\UnityEngine.CoreModule.dll</HintPath>
+    <Reference Include="Waylith">
+      <HintPath>$(Rw17Dir)\Waylith.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <!-- 2026-10-10（烘焙落盘）：PNG 编解码 = ImageConversion.EncodeToPNG / LoadImage（扩展方法在这个模块里）。
-         与其余 Unity 模块同源（都是从游戏 Managed/ 取出，Private=false 不随包分发）。 -->
-    <Reference Include="UnityEngine.ImageConversionModule">
-      <HintPath>Libs\Unity\UnityEngine.ImageConversionModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.AssetBundleModule">
-      <HintPath>Libs\Unity\UnityEngine.AssetBundleModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.IMGUIModule">
-      <HintPath>Libs\Unity\UnityEngine.IMGUIModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.InputLegacyModule">
-      <HintPath>Libs\Unity\UnityEngine.InputLegacyModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.TextRenderingModule">
-      <HintPath>Libs\Unity\UnityEngine.TextRenderingModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>Libs\Unity\UnityEngine.PhysicsModule.dll</HintPath>
+    <Reference Include="0Harmony">
+      <HintPath>$(Harmony17Dir)\0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

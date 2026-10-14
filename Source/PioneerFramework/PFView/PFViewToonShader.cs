@@ -43,21 +43,14 @@ namespace PioneerFramework
         internal static string? Failure => failure;
 
         private static string? BundleNameFor(RuntimePlatform platform)
-        {
-            switch (platform)
-            {
-                case RuntimePlatform.WindowsPlayer:
-                case RuntimePlatform.WindowsEditor:
-                    return "pfview_toon_win";
-                case RuntimePlatform.LinuxPlayer:
-                    return "pfview_toon_linux";
-                case RuntimePlatform.OSXPlayer:
-                case RuntimePlatform.OSXEditor:
-                    return "pfview_toon_mac";
-                default:
-                    return null;
-            }
-        }
+        
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       => platform switch
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       {
+            RuntimePlatform.WindowsPlayer or RuntimePlatform.WindowsEditor => "pfview_toon_win",
+            RuntimePlatform.LinuxPlayer => "pfview_toon_linux",
+            RuntimePlatform.OSXPlayer or RuntimePlatform.OSXEditor => "pfview_toon_mac",
+            _ => null,
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       };
 
         private static Shader? Resolve()
         {

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using RimWorld;
 using Verse;
 
@@ -27,7 +27,7 @@ namespace PioneerFramework
     /// </summary>
     public static class FactionResolver
     {
-        private static readonly Dictionary<int, Faction> cache = new Dictionary<int, Faction>();
+        private static readonly Dictionary<int, Faction> cache = new();
         private static int lastWarnTick = int.MinValue;
         private const int WarnIntervalTicks = 3600;   // 60 s（1 s = 60 tick）
 
@@ -81,10 +81,7 @@ namespace PioneerFramework
                 if (ShouldWarn(nowTick, lastWarnTick, WarnIntervalTicks))
                 {
                     lastWarnTick = nowTick;
-                    Log.Warning(string.Format(
-                        "[FactionResolver] 阵营解析失败（{0}→{1}｜{2}→{3}）⇒ 按敌对处理；累计 {4} 次",
-                        factionIdA, a == null ? "未找到" : a.Name,
-                        factionIdB, b == null ? "未找到" : b.Name, UnresolvedCount));
+                    Log.Warning($"[FactionResolver] 阵营解析失败（{factionIdA}→{(a == null ? "未找到" : a.Name)}｜{factionIdB}→{(b == null ? "未找到" : b.Name)}）⇒ 按敌对处理；累计 {UnresolvedCount} 次");
                 }
                 return true;
             }
@@ -125,10 +122,7 @@ namespace PioneerFramework
                 ? hostile.Name + "(" + hostileId + ")"
                 : "**一个都没有** —— 调试场景会拿到 -1（不再造假 id）";
 
-            Log.Message(string.Format(
-                "[V12·阵营] 玩家={0}｜调试用敌对阵营={1}｜阵营总数={2}（可见 {3}）｜**解析失败累计 {4} 次**",
-                playerTxt, hostileTxt, CountOf(fm != null ? fm.AllFactions : null),
-                CountOf(fm != null ? fm.AllFactionsVisible : null), UnresolvedCount));
+            Log.Message($"[V12·阵营] 玩家={playerTxt}｜调试用敌对阵营={hostileTxt}｜阵营总数={CountOf(fm != null ? fm.AllFactions : null)}（可见 {CountOf(fm != null ? fm.AllFactionsVisible : null)}）｜**解析失败累计 {UnresolvedCount} 次**");
         }
 
         private static int CountOf(IEnumerable<Faction>? seq)

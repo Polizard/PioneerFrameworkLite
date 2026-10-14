@@ -20,7 +20,7 @@ namespace PioneerFramework
         private readonly SpaceGameComp spaceGame;
         private readonly int sourceStamp;
 
-        private List<PropellantNetwork> cachedNetworks = new List<PropellantNetwork>();
+        private List<PropellantNetwork> cachedNetworks = new();
         private bool dirty = true;
 
         /// <param name="sourceStamp">构建时的实体集+推进指纹（见 SpaceEntityGroup.cachedPropulsionStamp）。</param>

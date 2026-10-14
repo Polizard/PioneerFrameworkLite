@@ -22,7 +22,7 @@ namespace PioneerFramework.GroundAssembly
             if (!LaunchPadUtility.IsReturnedBooster(building.def))
                 return false;
 
-            Building launchpad = FindLaunchpad(building);
+            Building? launchpad = FindLaunchpad(building);
             if (launchpad == null || !LaunchPadUtility.IsAssemblyPad(launchpad.def))
                 return false;
 
@@ -52,7 +52,7 @@ namespace PioneerFramework.GroundAssembly
             if (returnedBuilding.Map.designationManager.DesignationOn(returnedBuilding, PFLaunchDefOf.PF_DesignateRebuildRocket) == null)
                 return null!;
 
-            Building launchpad = FindLaunchpad(returnedBuilding);
+            Building? launchpad = FindLaunchpad(returnedBuilding);
             if (launchpad == null)
                 return null!;
 
@@ -63,7 +63,7 @@ namespace PioneerFramework.GroundAssembly
             return JobMaker.MakeJob(jobDef, returnedBuilding, launchpad);
         }
 
-        private static Building FindLaunchpad(Building returnedBooster)
+        private static Building? FindLaunchpad(Building returnedBooster)
         {
             if (returnedBooster?.Map == null)
                 return null;

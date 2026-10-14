@@ -29,14 +29,14 @@ namespace PioneerFramework
     /// </summary>
     public static class SensorAmbushDemo
     {
-        private static readonly List<int> spawned = new List<int>();
+        private static readonly List<int> spawned = new();
         private static int playerShipId = -1, playerMissileId = -1, enemyShipId = -1;
         private static int enemyMissileNearId = -1, enemyPingDemoId = -1, enemyBurnDemoId = -1;
         private static int observerGroupId = -1;                 // 我方那条装传感器的船（= 观测者）
         private static int enemyJammerId = -1;                   // 敌方干扰机（[E3]；开机后把观测者按住）
         private static bool ownJamOn;                            // 我方干扰机开关（部件级效力，同一条判据通道）
         private static bool jamOn;
-        private static readonly List<int> demoDecoys = new List<int>();   // [E5] 本演示注入的假接触
+        private static readonly List<int> demoDecoys = new();   // [E5] 本演示注入的假接触
         private static int playerFaction = -1, enemyFaction = -1;
         private static bool pingOn;                              // B 的开机开关当前状态
         private static bool burnOn;                              // C 的点火开关当前状态
@@ -150,10 +150,7 @@ namespace PioneerFramework
             pingOn = false;
             burnOn = false;
             jamOn = false;
-            Log.Message(string.Format(
-                "[来袭演示] 已布置 {0} 组（我方阵营 {1} / 敌方 {2}）⇒ **世界视图里应当只看得到：我方船 + 我方弹 + 敌船 + 敌近弹**；" +
-                "那两枚远弹（1.5 Mm / 3 Mm）**看不见**，点「开机/点火」让它们现身。想看全的：勾「显示真实棋子（绕过认知层 · dev）」。",
-                spawned.Count, playerFaction, enemyFaction));
+            Log.Message($"[来袭演示] 已布置 {spawned.Count} 组（我方阵营 {playerFaction} / 敌方 {enemyFaction}）⇒ **世界视图里应当只看得到：我方船 + 我方弹 + 敌船 + 敌近弹**；那两枚远弹（1.5 Mm / 3 Mm）**看不见**，点「开机/点火」让它们现身。想看全的：勾「显示真实棋子（绕过认知层 · dev）」。");
             PrintRoster();
         }
 
@@ -166,7 +163,7 @@ namespace PioneerFramework
             enemyMissileNearId = enemyPingDemoId = enemyBurnDemoId = observerGroupId = enemyJammerId = -1;
             pingOn = burnOn = jamOn = ownJamOn = false;
             demoDecoys.Clear();
-            Log.Message(string.Format("[来袭演示] 已清场：销毁 {0} 组", n));
+            Log.Message($"[来袭演示] 已清场：销毁 {n} 组");
         }
 
         // ═══════════════════════════════════════════════════════════════════
@@ -180,8 +177,7 @@ namespace PioneerFramework
             if (g == null) { Log.Message("[来袭演示] 敌弹 B 不在（先「布置」）"); return; }
             pingOn = !pingOn;
             g.ActivePingEnabled = pingOn;       // 属性 setter 自带失效钩子
-            Log.Message(string.Format("[来袭演示] 敌弹 B 开机 = {0}｜它的 S = {1:F3} ⇒ 我方有效距离 ≈ {2:F0} km（它距我方 1,500 km）",
-                pingOn, g.SignalStrength, EffectiveRangeKm(g)));
+            Log.Message($"[来袭演示] 敌弹 B 开机 = {pingOn}｜它的 S = {g.SignalStrength:F3} ⇒ 我方有效距离 ≈ {EffectiveRangeKm(g):F0} km（它距我方 1,500 km）");
             PrintRoster();
         }
 
@@ -202,10 +198,7 @@ namespace PioneerFramework
             int id = sensor.InjectDecoy(enemyFaction, pos, obs.CurrentOrbit.velocitySystem.v,
                 signalStrength: 2f, lifetimeSeconds: 120.0, apparentRadius: 20f);
             demoDecoys.Add(id);
-            Log.Message(string.Format(
-                "[来袭演示] 敌方投出诱饵 #{0}（距我方 300 km，欺骗强度 2.0，生命期 120 s）｜我方观测者抗欺骗 = {1:F1} ⇒ {2}｜它**没有真值对应物**——勾 dev 真值开关也看不到它，只能靠识破标记分辨",
-                id, obs.DetectTech.eccmResist,
-                obs.DetectTech.eccmResist > 2f ? "**会打上识破标记（深层提示）**" : "看不出是假的（当成真目标）"));
+            Log.Message($"[来袭演示] 敌方投出诱饵 #{id}（距我方 300 km，欺骗强度 2.0，生命期 120 s）｜我方观测者抗欺骗 = {obs.DetectTech.eccmResist:F1} ⇒ {(obs.DetectTech.eccmResist > 2f ? "**会打上识破标记（深层提示）**" : "看不出是假的（当成真目标）")}｜它**没有真值对应物**——勾 dev 真值开关也看不到它，只能靠识破标记分辨");
             PrintRoster();
         }
 
@@ -217,7 +210,7 @@ namespace PioneerFramework
             int n = 0;
             for (int i = 0; i < demoDecoys.Count; i++) if (sensor.RemoveDecoy(demoDecoys[i])) n++;
             demoDecoys.Clear();
-            Log.Message(string.Format("[来袭演示] 已清掉 {0} 条假接触", n));
+            Log.Message($"[来袭演示] 已清掉 {n} 条假接触");
             PrintRoster();
         }
 
@@ -243,8 +236,7 @@ namespace PioneerFramework
             }
             ownJamOn = !ownJamOn;
             g.JammingEnabled = ownJamOn;
-            Log.Message(string.Format("[来袭演示] **我方**干扰机开机 = {0}｜本站 JamStrength = {1:F2}｜我方信号 S = {2:F3}（开机即暴露）" +
-                "⇒ 敌方观测方的阈值被抬高（效果与敌方干扰我方对称）", ownJamOn, g.JamStrength, g.SignalStrength));
+            Log.Message($"[来袭演示] **我方**干扰机开机 = {ownJamOn}｜本站 JamStrength = {g.JamStrength:F2}｜我方信号 S = {g.SignalStrength:F3}（开机即暴露）⇒ 敌方观测方的阈值被抬高（效果与敌方干扰我方对称）");
         }
 
         /// <summary>切换敌方**干扰机**（[E3]）：开机 ⇒ 抬高我方阈值 ⇒ 连 240 km 的近弹也被按住。</summary>
@@ -254,9 +246,7 @@ namespace PioneerFramework
             if (g == null) { Log.Message("[来袭演示] 干扰机不在（先「布置」）"); return; }
             jamOn = !jamOn;
             g.JammingEnabled = jamOn;
-            Log.Message(string.Format("[来袭演示] 敌方干扰机开机 = {0}｜它自己的 S = {1:F3}（干扰必须辐射 ⇒ 开机即更响）｜" +
-                "此时**我方近弹会被按住**：接触不再刷新 ⇒ 先变**影子**（仍可打最后已知位置），记忆窗口（本演示 6 s）" +
-                "过后**失联**、从图上消失。公开组与我方单位不受影响（走的不是探测那条路）。", jamOn, g.SignalStrength));
+            Log.Message($"[来袭演示] 敌方干扰机开机 = {jamOn}｜它自己的 S = {g.SignalStrength:F3}（干扰必须辐射 ⇒ 开机即更响）｜此时**我方近弹会被按住**：接触不再刷新 ⇒ 先变**影子**（仍可打最后已知位置），记忆窗口（本演示 6 s）过后**失联**、从图上消失。公开组与我方单位不受影响（走的不是探测那条路）。");
             PrintRoster();
         }
 
@@ -268,8 +258,7 @@ namespace PioneerFramework
             burnOn = !burnOn;
             g.HasActiveBurn = burnOn;           // ⚠ public 字段：生产里只有 StartBurn/EndBurn 挂钩
             g.InvalidateSignal();               // ⇒ 场景里必须显式置脏（本库既有教训）
-            Log.Message(string.Format("[来袭演示] 敌弹 C 点火 = {0}｜它的 S = {1:F3} ⇒ 我方有效距离 ≈ {2:F0} km（它距我方 3,000 km）",
-                burnOn, g.SignalStrength, EffectiveRangeKm(g)));
+            Log.Message($"[来袭演示] 敌弹 C 点火 = {burnOn}｜它的 S = {g.SignalStrength:F3} ⇒ 我方有效距离 ≈ {EffectiveRangeKm(g):F0} km（它距我方 3,000 km）");
             PrintRoster();
         }
 
@@ -285,10 +274,10 @@ namespace PioneerFramework
 
             var obs = Group(observerGroupId);
             var sb = new System.Text.StringBuilder();
-            sb.Append("[来袭演示·花名册] 我方观测者灵 ").Append(obs != null ? (obs.DetectTech.sensitivityMeters / 1000f).ToString("F0") : "?")
+            sb.Append("[来袭演示·花名册] 我方观测者灵 ").Append(obs != null ? $"{(obs.DetectTech.sensitivityMeters / 1000f):F0}" : "?")
               .Append(" km｜dev 真值开关 ").Append(SensorManager.DebugShowGroundTruth ? "开" : "关");
-            string[] names = { "我方船（观测者）", "我方匿踪弹", "敌船（公开）", "敌近弹 A", "敌远弹 B（开机演示）", "敌远弹 C（点火演示）", "敌干扰机（E3）" };
-            int[] ids = { playerShipId, playerMissileId, enemyShipId, enemyMissileNearId, enemyPingDemoId, enemyBurnDemoId, enemyJammerId };
+            string[] names = ["我方船（观测者）", "我方匿踪弹", "敌船（公开）", "敌近弹 A", "敌远弹 B（开机演示）", "敌远弹 C（点火演示）", "敌干扰机（E3）"];
+            int[] ids = [playerShipId, playerMissileId, enemyShipId, enemyMissileNearId, enemyPingDemoId, enemyBurnDemoId, enemyJammerId];
             for (int i = 0; i < ids.Length; i++)
             {
                 var g = Group(ids[i]);
@@ -305,9 +294,9 @@ namespace PioneerFramework
                 else if (phase == TrackPhase.Shadow) { state = "影子"; why = "断刷新（被干扰/信号掉了）但记忆窗口未满 ⇒ **仍可用**（可打最后已知位置）"; }
                 else { state = "不可见"; why = "没探到（或记忆已过期）"; }
                 sb.Append("\n  ").Append(names[i]).Append("：G").Append(g.GroupId)
-                  .Append("｜距 ").Append(distKm < 0 ? "?" : distKm.ToString("F0")).Append(" km")
-                  .Append("｜S=").Append(g.SignalStrength.ToString("F3"))
-                  .Append("｜**").Append(state).Append("**（").Append(why).Append("）");
+                  .Append("｜距 ").Append(distKm < 0 ? "?" : $"{distKm:F0}").Append(" km")
+                  .Append("｜S=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{g.SignalStrength:F3}")
+                  .Append("｜**").Append(state).Append("**（").Append(why).Append('）');
             }
             // [E5] 假接触（诱饵）：**不在世界棋子列表里** ⇒ 单列一段（它们只活在认知层）
             if (demoDecoys.Count > 0)
@@ -321,7 +310,7 @@ namespace PioneerFramework
                     {
                         n++;
                         sb.Append("\n  【假接触】诱饵 #").Append(buf[i].decoyId)
-                          .Append("｜").Append(buf[i].isDecoy ? "**已识破（深层提示）**" : "当真目标显示（未识破）");
+                          .Append('｜').Append(buf[i].isDecoy ? "**已识破（深层提示）**" : "当真目标显示（未识破）");
                     }
                 if (n == 0) sb.Append("\n  【假接触】本步没有被照到（观测者开机才有回波 ⇒ 欺骗依赖对方开机）");
             }
@@ -331,7 +320,7 @@ namespace PioneerFramework
 
         // ═══════════════════════════════════════════════════════════════════
 
-        private static readonly List<Contact> visibleScratchRoster = new List<Contact>();
+        private static readonly List<Contact> visibleScratchRoster = new();
 
         private static double EffectiveRangeKm(SpaceEntityGroup target)
         {

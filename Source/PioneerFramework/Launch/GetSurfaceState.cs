@@ -95,7 +95,7 @@ namespace PioneerFramework.Launch
         /// 匹配规则与 CelestialBodyLayerManager 一致：planetLayerDefName 优先，否则用 body.defName。
         /// 无表面 / 未创建 layer 返回 null。
         /// </summary>
-        public static PlanetLayer GetLayerForBody(CelestialBodyManager? mgr, int bodyId)
+        public static PlanetLayer? GetLayerForBody(CelestialBodyManager? mgr, int bodyId)
         {
             var body = mgr?.GetBodyById(bodyId);
             if (body == null || !body.hasSurface) return null;

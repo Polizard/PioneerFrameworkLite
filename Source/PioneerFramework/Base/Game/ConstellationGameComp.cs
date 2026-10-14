@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using PioneerFramework.Launch;
 using RimWorld;
 using RimWorld.Planet;
@@ -38,7 +38,7 @@ namespace PioneerFramework
     {
         public int ConstellationId;
         public string? Name;
-        public List<ConstellationMember> Members = new List<ConstellationMember>();
+        public List<ConstellationMember> Members = new();
 
         public void ExposeData()
         {
@@ -73,14 +73,14 @@ namespace PioneerFramework
         private const int EARTH_BODY_ID = 1;
 
         // ── 核心数据 ──
-        private List<Constellation> constellations = new List<Constellation>();
+        private List<Constellation> constellations = new();
 
         /// <summary>星座 id 单调计数器（A5a 统一；≤0 = 未初始化 → 首次分配时播种）。</summary>
         private int nextConstellationId;
         /// <summary>派生索引：groupId → 星座 id 集（多归属）。由成员表全量推导，读档后惰性重建。</summary>
-        private readonly ConstellationIndex index = new ConstellationIndex();
+        private readonly ConstellationIndex index = new();
         /// <summary>据点 → 锚点 group 登记表（WorldObject.ID → groupId）：防重复创建 + 惰性回收。</summary>
-        private readonly Dictionary<int, int> settlementToAnchor = new Dictionary<int, int>();
+        private readonly Dictionary<int, int> settlementToAnchor = new();
 
         /// <summary>惰性就绪标记：false 时首次使用会重建索引 + 校验悬挂引用（读档后 groups 可能尚未就绪）。</summary>
         private bool indexesReady;
@@ -88,17 +88,17 @@ namespace PioneerFramework
         private bool gameReady;
 
         // 性能第 5 条：每次 API 调用都要取，按 Game 缓存（GameComponentRef 跨档自动失效）
-        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new GameComponentRef<SpaceGameComp>();
+        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new();
         /// <summary>当前已订阅 GroupDestroyed 的宿主（防重复订阅；换档自动改订）。</summary>
         private SpaceGameComp? subscribedComp;
 
         /// <summary>锚点回收收集区（收集-执行两段式：不在迭代成员表时改集合）。</summary>
-        private readonly List<int> anchorsToReleaseScratch = new List<int>();
+        private readonly List<int> anchorsToReleaseScratch = new();
         /// <summary>存活世界物体 id 集合缓存（惰性回收用；一次扫表、整轮复用）。</summary>
-        private readonly HashSet<int> liveWorldObjectScratch = new HashSet<int>();
+        private readonly HashSet<int> liveWorldObjectScratch = new();
 
         /// <summary>详细日志开关（默认关；Debug 菜单「PFL 测试」页签切换）。</summary>
-        public static bool DebugDetailedConstellation = false;
+        public static bool DebugDetailedConstellation ;
 
         public ConstellationGameComp(Game game) { }
 
@@ -175,12 +175,11 @@ namespace PioneerFramework
             }
 
             if (dangling > 0)
-                Log.Warning(string.Format("[星座] 读档校验：{0} 个悬挂成员引用已移除（群组不存在）", dangling));
+                Log.Warning($"[星座] 读档校验：{dangling} 个悬挂成员引用已移除（群组不存在）");
             if (duplicates > 0)
-                Log.Warning(string.Format("[星座] 读档校验：{0} 个重复成员已移除（同星座内 groupId 重复）", duplicates));
+                Log.Warning($"[星座] 读档校验：{duplicates} 个重复成员已移除（同星座内 groupId 重复）");
             if (DebugDetailedConstellation)
-                Log.Message(string.Format("[星座] 派生数据重建完成：{0} 星座 / {1} 有归属群组 / {2} 锚点登记",
-                    constellations.Count, index.GroupCount, settlementToAnchor.Count));
+                Log.Message($"[星座] 派生数据重建完成：{constellations.Count} 星座 / {index.GroupCount} 有归属群组 / {settlementToAnchor.Count} 锚点登记");
         }
 
         private void RebuildReverseIndex()
@@ -227,10 +226,10 @@ namespace PioneerFramework
             constellations.Add(new Constellation
             {
                 ConstellationId = id,
-                Name = string.IsNullOrEmpty(name) ? string.Format("星座{0}", id) : name
+                Name = string.IsNullOrEmpty(name) ? $"星座{id}" : name
             });
             if (DebugDetailedConstellation)
-                Log.Message(string.Format("[星座] 创建 C{0}「{1}」", id, name));
+                Log.Message($"[星座] 创建 C{id}「{name}」");
             return id;
         }
 
@@ -254,7 +253,7 @@ namespace PioneerFramework
                     MaybeReleaseAnchor(sg, affected[i]);
 
             if (DebugDetailedConstellation)
-                Log.Message(string.Format("[星座] 删除 C{0}「{1}」，摘除 {2} 成员", constellationId, c.Name, affected.Count));
+                Log.Message($"[星座] 删除 C{constellationId}「{c.Name}」，摘除 {affected.Count} 成员");
             return true;
         }
 
@@ -316,8 +315,7 @@ namespace PioneerFramework
             if (result != ConstellationAddResult.Ok)
             {
                 if (DebugDetailedConstellation)
-                    Log.Message(string.Format("[星座] 入编拒绝（{0}）：C{1} ← G{2}",
-                        result, constellationId, groupId));
+                    Log.Message($"[星座] 入编拒绝（{result}）：C{constellationId} ← G{groupId}");
                 return result;
             }
 
@@ -325,8 +323,7 @@ namespace PioneerFramework
             c.Members.Add(new ConstellationMember { groupId = groupId, slotIndex = -1 });
             index.Add(groupId, constellationId);
             if (DebugDetailedConstellation)
-                Log.Message(string.Format("[星座] 入编 C{0}「{1}」← G{2}（{3}）",
-                    constellationId, c.Name, groupId, g != null && g.IsSurfaceAnchor ? "锚点" : "圆轨"));
+                Log.Message($"[星座] 入编 C{constellationId}「{c.Name}」← G{groupId}（{(g != null && g.IsSurfaceAnchor ? "锚点" : "圆轨")}）");
             return ConstellationAddResult.Ok;
         }
 
@@ -341,13 +338,13 @@ namespace PioneerFramework
             // 先验星座再建锚点：星座 id 拼错时不留下一只"无人认领"的锚点 group
             if (GetConstellation(constellationId) == null)
             {
-                Log.Warning(string.Format("[星座] 据点入编失败：星座 C{0} 不存在", constellationId));
+                Log.Warning($"[星座] 据点入编失败：星座 C{constellationId} 不存在");
                 return false;
             }
             var settlement = ResolveSettlement(worldObjectId);
             if (settlement == null)
             {
-                Log.Warning(string.Format("[星座] 据点入编失败：世界物体 {0} 不存在（或已摧毁）", worldObjectId));
+                Log.Warning($"[星座] 据点入编失败：世界物体 {worldObjectId} 不存在（或已摧毁）");
                 return false;
             }
             int anchorId = EnsureAnchorGroup(settlement);
@@ -369,7 +366,7 @@ namespace PioneerFramework
             index.Remove(groupId, constellationId);
             if (sg != null) MaybeReleaseAnchor(sg, groupId);
             if (DebugDetailedConstellation)
-                Log.Message(string.Format("[星座] 摘除 C{0}「{1}」→ G{2}", constellationId, c.Name, groupId));
+                Log.Message($"[星座] 摘除 C{constellationId}「{c.Name}」→ G{groupId}");
             return true;
         }
 
@@ -390,7 +387,7 @@ namespace PioneerFramework
             return c != null ? (IReadOnlyList<ConstellationMember>)c.Members : EmptyMembers;
         }
 
-        private static readonly List<ConstellationMember> EmptyMembers = new List<ConstellationMember>();
+        private static readonly List<ConstellationMember> EmptyMembers = new();
 
         // ════════════════════════════════════════════════════════════
         //  M3 生命周期联动（触发器：被销毁）
@@ -413,7 +410,7 @@ namespace PioneerFramework
                 settlementToAnchor.Remove(g.anchorWorldObjectId);
 
             if (removed && DebugDetailedConstellation)
-                Log.Message(string.Format("[星座] 收尸：G{0} 已从全部所属星座摘除", groupId));
+                Log.Message($"[星座] 收尸：G{groupId} 已从全部所属星座摘除");
         }
 
         /// <summary>把群组从所有所属星座摘除。索引未就绪时退回全量扫描（罕见路径）。</summary>
@@ -459,7 +456,7 @@ namespace PioneerFramework
             if (g == null || !g.IsSurfaceAnchor) return false;
             if (!index.IsUnreferenced(groupId))
             {
-                Log.Warning(string.Format("[星座] 锚点 G{0} 仍被星座引用，拒绝释放", groupId));
+                Log.Warning($"[星座] 锚点 G{groupId} 仍被星座引用，拒绝释放");
                 return false;
             }
             ReleaseAnchorGroupInternal(sg, groupId);
@@ -472,7 +469,7 @@ namespace PioneerFramework
             if (g == null) return;
             if (g.anchorWorldObjectId >= 0) settlementToAnchor.Remove(g.anchorWorldObjectId);
             if (DebugDetailedConstellation)
-                Log.Message(string.Format("[星座] 释放锚点 G{0}（据点 {1}）", groupId, g.anchorWorldObjectId));
+                Log.Message($"[星座] 释放锚点 G{groupId}（据点 {g.anchorWorldObjectId}）");
             sg.DestroyGroup(groupId, "星座收尸（成员退出）"); // 唯一收尸链路：GroupDestroyed → OnGroupDestroyed（幂等，不会回环）
         }
 
@@ -514,11 +511,7 @@ namespace PioneerFramework
             sg.RegisterGroup(group);
             settlementToAnchor[settlement.ID] = group.GroupId;
 
-            Log.Message(string.Format("[星座] 创建锚点 G{0}：据点「{1}」(wo{2}) body={3} tile={4} pos=({5:F0},{6:F0},{7:F0})km |pos|={8:F0}km",
-                group.GroupId, settlement.Label, settlement.ID, bodyId, tile.tileId,
-                group.CurrentOrbit.positionSystem.x / 1000.0, group.CurrentOrbit.positionSystem.y / 1000.0,
-                group.CurrentOrbit.positionSystem.z / 1000.0,
-                group.CurrentOrbit.positionSystem.magnitude / 1000.0)); // 根行星锚点：|pos| 应等于 R_body（系统系原点在地球）
+            Log.Message($"[星座] 创建锚点 G{group.GroupId}：据点「{settlement.Label}」(wo{settlement.ID}) body={bodyId} tile={tile.tileId} pos=({group.CurrentOrbit.positionSystem.x / 1000.0:F0},{group.CurrentOrbit.positionSystem.y / 1000.0:F0},{group.CurrentOrbit.positionSystem.z / 1000.0:F0})km |pos|={group.CurrentOrbit.positionSystem.magnitude / 1000.0:F0}km"); // 根行星锚点：|pos| 应等于 R_body（系统系原点在地球）
             return group.GroupId;
         }
 
@@ -648,8 +641,7 @@ namespace PioneerFramework
                     c.Members.RemoveAt(i);
                     index.Remove(groupId, c.ConstellationId);
                     anchorsToReleaseScratch.Add(groupId);
-                    Log.Message(string.Format("[星座] 据点 wo{0} 已摧毁 → 摘除成员并回收锚点 G{1}",
-                        g.anchorWorldObjectId, groupId));
+                    Log.Message($"[星座] 据点 wo{g.anchorWorldObjectId} 已摧毁 → 摘除成员并回收锚点 G{groupId}");
                 }
             }
 

@@ -15,10 +15,7 @@ namespace PioneerFramework
 
         public OperationEccentricity()
         {
-            _planParams = new[]
-            {
-                    new PlanParam("新偏心率", "", () => NewEcc.Val, v => NewEcc.Val = v),
-            };
+            _planParams = [new PlanParam("新偏心率", "", () => NewEcc.Val, v => NewEcc.Val = v),];
         }
 
         public override IReadOnlyList<PlanParam> GetParams() => _planParams;
@@ -29,9 +26,9 @@ namespace PioneerFramework
         public readonly EditableDoubleMult NewEcc = new EditableDouble(0);
 
         private static readonly TimeReference[] _timeReferences =
-            { TimeReference.APOAPSIS, TimeReference.PERIAPSIS, TimeReference.X_FROM_NOW, TimeReference.ALTITUDE };
+            [TimeReference.APOAPSIS, TimeReference.PERIAPSIS, TimeReference.X_FROM_NOW, TimeReference.ALTITUDE];
 
-        public readonly TimeSelector TimeSelector = new TimeSelector(_timeReferences);
+        public readonly TimeSelector TimeSelector = new(_timeReferences);
 
         public override void DoParametersGUI(OrbitView o, double universalTime, ITargetView target) =>
             TimeSelector.DoChooseTimeGUI();
@@ -41,7 +38,7 @@ namespace PioneerFramework
             double ut = TimeSelector.ComputeManeuverTime(o, universalTime, target);
             DVector3 deltaV = OrbitalManeuverCalculator.DeltaVToChangeEccentricity(o, ut, NewEcc);
 
-            return new List<PlanNode> { new PlanNode(deltaV, ut) };
+            return new List<PlanNode> { new(deltaV, ut) };
         }
     }
 }

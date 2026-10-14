@@ -254,7 +254,7 @@ namespace PioneerFramework
         public static double ApproachTimeSeconds(double dx, double dy, double dz, double accel, double maxClosingSpeed)
         {
             if (!(accel > 0.0) || !(maxClosingSpeed > 0.0)) return 0.0;
-            double[] d = { Math.Abs(dx), Math.Abs(dy), Math.Abs(dz) };
+            double[] d = [Math.Abs(dx), Math.Abs(dy), Math.Abs(dz)];
             double tof = 0.0;
             for (int i = 0; i < 3; i++)
             {

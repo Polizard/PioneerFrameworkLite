@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
 namespace PioneerFramework
 {
@@ -74,7 +74,7 @@ namespace PioneerFramework
     /// </summary>
     public class ConstellationIndex
     {
-        private readonly Dictionary<int, HashSet<int>> byGroup = new Dictionary<int, HashSet<int>>();
+        private readonly Dictionary<int, HashSet<int>> byGroup = new();
 
         /// <summary>索引覆盖的群组数（= 至少属于一个星座的群组数）。</summary>
         public int GroupCount => byGroup.Count;
@@ -109,6 +109,6 @@ namespace PioneerFramework
         public IReadOnlyCollection<int> Of(int groupId)
             => byGroup.TryGetValue(groupId, out var set) ? set : EmptySet;
 
-        private static readonly HashSet<int> EmptySet = new HashSet<int>();
+        private static readonly HashSet<int> EmptySet = new();
     }
 }

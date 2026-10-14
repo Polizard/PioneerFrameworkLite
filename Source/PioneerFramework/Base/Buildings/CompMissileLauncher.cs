@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using RimWorld;
@@ -33,7 +33,7 @@ namespace PioneerFramework
     /// </summary>
     public class CompMissileLauncher : ThingComp
     {
-        private WeaponInstance weapon;
+        private WeaponInstance weapon = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>
         /// 武器 Def 指向的 MissileDef（供 UI 显示与发射口径引用）。
@@ -51,8 +51,8 @@ namespace PioneerFramework
         }
 
         /// <summary>仅用于读 C# 默认值（Def 缺失时的 UI 兜底）；不注册进 DefDatabase，不参与玩法。</summary>
-        private static readonly MissileDef FallbackMissileDef = new MissileDef();
-        private SpaceEntityGroup target;
+        private static readonly MissileDef FallbackMissileDef = new();
+        private SpaceEntityGroup? target;
         // ⚠ [N]（用户裁定"删分配、留执行"，2026-10-02 S3b 落地）：**"自动索敌取最近敌对"已删除**。
         //   目标来源只剩"被指定"（`manualTargetGroupId`，序列化的**意图**）；没有指定 ⇒ **不开火**。
         //   开火时机（`autoFire`）是**执行**，保留：指定了目标之后要不要立刻打，是玩家的战术开关。
@@ -63,8 +63,8 @@ namespace PioneerFramework
         private int nextScanTick;
 
         // 性能第 14 条：CompTick 每建筑每 tick 都要取 SpaceGameComp，按 Game 缓存
-        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new GameComponentRef<SpaceGameComp>();
-        private readonly GameComponentRef<SensorManager> sensorMgrRef = new GameComponentRef<SensorManager>();   // [V3] 认知层
+        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new();
+        private readonly GameComponentRef<SensorManager> sensorMgrRef = new();   // [V3] 认知层
 
         // ── 精确打击点（§10 弹着偏置，2026-09-07）：瞄准目标地图指定格，本发射器释放的导弹终末撞该格 ──
         private int preciseStrikeGroupId = -1;
@@ -72,7 +72,7 @@ namespace PioneerFramework
         /// <summary>格 → 目标船体局部米（y=0；导弹制导每步随目标旋转换算世界瞄准点；持久化）。</summary>
         private DVector3 preciseAimOffsetShip;
         /// <summary>目标地图上的选格红色标记（瞬态，不持久化）。</summary>
-        private Mote preciseStrikeMarker;
+        private Mote preciseStrikeMarker = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         public WeaponInstance Weapon => weapon;
         public SpaceEntityGroup CurrentTarget => target;
@@ -120,7 +120,7 @@ namespace PioneerFramework
             var def = DefDatabase<WeaponDef>.GetNamedSilentFail(Props.weaponDefName);
             if (def == null)
             {
-                Log.Error(string.Format("[导弹发射器] 武器 Def '{0}' 未找到", Props.weaponDefName));
+                Log.Error($"[导弹发射器] 武器 Def '{Props.weaponDefName}' 未找到");
                 return;
             }
             weapon = new WeaponInstance { def = def };
@@ -170,7 +170,7 @@ namespace PioneerFramework
 
         // ── 索敌 ──
 
-        private SpaceEntityGroup AcquireTarget(SpaceGameComp sg)
+        private SpaceEntityGroup? AcquireTarget(SpaceGameComp sg)
         {
             var cm = GetCombatManager();
             var myGroup = GetMyGroup();
@@ -180,8 +180,7 @@ namespace PioneerFramework
             // 恰好掩盖"武器未初始化/Def 未找到"这类配置错误，让发射器看起来"能用但从不命中"）。
             if (weapon?.def == null)
             {
-                Log.Error(string.Format("[导弹发射器] 武器 Def 缺失（{0}），本组件不参与交战检索",
-                    Props?.weaponDefName ?? "?"));
+                Log.Error($"[导弹发射器] 武器 Def 缺失（{(Props?.weaponDefName ?? "?")}），本组件不参与交战检索");
                 return null;
             }
             float range = weapon.def.orbitalEngageRange;
@@ -247,7 +246,7 @@ namespace PioneerFramework
                     int tgtId = target.GroupId;
                     var cm = GetCombatManager();
                     double d = cm != null ? (cm.GetGroupPos(target) - cm.GetGroupPos(myGroup)).magnitude / 1000.0 : 0.0;
-                    options.Add(new FloatMenuOption(string.Format("全体撞击当前目标 G{0}（{1:F0}km）", tgtId, d),
+                    options.Add(new FloatMenuOption($"全体撞击当前目标 G{tgtId}（{d:F0}km）",
                         () => avm.CommandAll(myGroup.GroupId, AutonomousVehicleManager.MissionType.Attack, tgtId)));
                 }
                 else
@@ -284,20 +283,20 @@ namespace PioneerFramework
             var g = sg.GetGroupById(groupId);
             if (g == null || !g.IsActive || !IsHostile(g, myGroup))
             {
-                Log.Warning(string.Format("[导弹发射器] 手动目标 G{0} 无效（不存在/失活/非敌对）", groupId));
+                Log.Warning($"[导弹发射器] 手动目标 G{groupId} 无效（不存在/失活/非敌对）");
                 return false;
             }
             manualTargetGroupId = groupId;
             target = g;
             SyncFollowerTargets(groupId);
-            Log.Message(string.Format("[导弹发射器] 手动锁定目标 G{0}", groupId));
+            Log.Message($"[导弹发射器] 手动锁定目标 G{groupId}");
             return true;
         }
 
         /// <summary>出膛发射：出膛点 = 炮口射线 ∩ 本船 AABB 六面（F2 几何）→ FireFromMapBuilding
         /// （Missile 分支：出生点外推、继承速度、Mission=Following）。发射成本 = 武器 ammo（Fire 链扣）。
         /// 弹着偏置：仅当目标 = 精确打击点目标时携带（换目标后新导弹回退瞄船心）。</summary>
-        private void TryFire(SpaceEntityGroup tgt)
+        private void TryFire(SpaceEntityGroup? tgt)
         {
             if (tgt == null || weapon == null) return;
             var cm = GetCombatManager();
@@ -323,13 +322,9 @@ namespace PioneerFramework
                 ? preciseAimOffsetShip
                 : DVector3.zero;
             cm.FireFromMapBuilding(myGroup.GroupId, weapon, exitSystem, targetPos, targetVel, tgt.GroupId, aimOffset, EffectiveVolleyCount());
-            Log.Message(string.Format(
-                "[导弹发射器] G{0}→G{1} 出膛 面={2} 距离={3:F1}km 冷却={4} N={5}{6}",
-                myGroup.GroupId, tgt.GroupId, exitFace,
-                (targetPos - myPos).magnitude / 1000.0, weapon.cooldownRemaining, EffectiveVolleyCount(),
-                aimOffset != DVector3.zero
-                    ? string.Format(" 弹着偏置=({0:F1},0,{1:F1})m", aimOffset.x, aimOffset.z)
-                    : ""));
+            Log.Message($"[导弹发射器] G{myGroup.GroupId}→G{tgt.GroupId} 出膛 面={exitFace} 距离={(targetPos - myPos).magnitude / 1000.0:F1}km 冷却={weapon.cooldownRemaining} N={EffectiveVolleyCount()}{(aimOffset != DVector3.zero
+                    ? $" 弹着偏置=({aimOffset.x:F1},0,{aimOffset.z:F1})m"
+                    : "")}");
         }
 
         // ── 精确打击：点选目标地图一格为打击落点（§10；镜像定位机精确炮击，CompMapDesignator 同构）──
@@ -341,7 +336,7 @@ namespace PioneerFramework
             var myGroup = GetMyGroup();
             if (sg == null || myGroup == null) return;
 
-            SpaceEntityGroup t = null;
+            SpaceEntityGroup? t = null;
             if (manualTargetGroupId >= 0)
                 t = sg.GetGroupById(manualTargetGroupId);
             if (t == null) t = target;
@@ -372,7 +367,7 @@ namespace PioneerFramework
                 double d = (cm.GetGroupPos(g) - myPos).magnitude;
                 string suffix = sensor != null ? sensor.PlayerPhaseSuffix(g) : "";   // 影子期标注
                 var captured = g;
-                options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）{2}", g.GroupId, d / 1000.0, suffix),
+                options.Add(new FloatMenuOption($"Group {g.GroupId}（{d / 1000.0:F0} km）{suffix}",
                     () => BeginPrecisionPick(captured)));
             }
             if (options.Count == 0)
@@ -419,10 +414,8 @@ namespace PioneerFramework
             preciseAimOffsetShip = new DVector3(local.x, 0f, local.z); // 目标局部米（y=0 甲板层）
             DestroyPreciseStrikeMarker();
             EnsurePreciseStrikeMarker();
-            Log.Message(string.Format(
-                "[精确打击] 发射器设定弹着点: G{0} 格=({1},{2}) 局部偏移=({3:F1},0,{4:F1})m",
-                groupId, cell.x, cell.z, local.x, local.z));
-            Messages.Message(string.Format("精确打击点已设置: G{0} ({1},{2})", groupId, cell.x, cell.z),
+            Log.Message($"[精确打击] 发射器设定弹着点: G{groupId} 格=({cell.x},{cell.z}) 局部偏移=({local.x:F1},0,{local.z:F1})m");
+            Messages.Message($"精确打击点已设置: G{groupId} ({cell.x},{cell.z})",
                 MessageTypeDefOf.TaskCompletion);
         }
 
@@ -505,7 +498,7 @@ namespace PioneerFramework
                     n =>
                     {
                         volleyCount = n;
-                        Log.Message(string.Format("[导弹发射器] 齐射数量 → {0}", n));
+                        Log.Message($"[导弹发射器] 齐射数量 → {n}");
                     },
                     safetySpacing: ResolvedMissileDef.safetySpacingMeters,
                     arraySideLimit: ResolvedMissileDef.arraySideLimitMeters,
@@ -524,7 +517,7 @@ namespace PioneerFramework
             yield return new Command_Action
             {
                 defaultLabel = HasPreciseStrike
-                    ? string.Format("精确打击: G{0} ({1},{2})", preciseStrikeGroupId, preciseStrikeCell.x, preciseStrikeCell.z)
+                    ? $"精确打击: G{preciseStrikeGroupId} ({preciseStrikeCell.x},{preciseStrikeCell.z})"
                     : "设置精确打击点",
                 defaultDesc = HasPreciseStrike
                     ? "已瞄准该目标地图指定格（重设：跳转目标地图后点选新格；清除后恢复瞄船心）。在飞导弹保持释放时的落点，仅对新发射的导弹生效。"
@@ -584,7 +577,7 @@ namespace PioneerFramework
                 double d = (cm.GetGroupPos(g) - myPos).magnitude;
                 string suffix = sensor != null ? sensor.PlayerPhaseSuffix(g) : "";
                 var captured = g;
-                options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）{2}", g.GroupId, d / 1000.0, suffix), () =>
+                options.Add(new FloatMenuOption($"Group {g.GroupId}（{d / 1000.0:F0} km）{suffix}", () =>
                 {
                     SetManualTarget(captured.GroupId);
                 }));
@@ -596,14 +589,14 @@ namespace PioneerFramework
 
         // ── 本船链路：Map → ownerEntity → Group（与定位机同构）──
 
-        private SpaceEntityGroup GetMyGroup()
+        private SpaceEntityGroup? GetMyGroup()
         {
             var entity = GetMyEntity();
             if (entity == null) return null;
             return Current.Game?.GetComponent<SpaceGameComp>()?.GetGroupById(entity.GroupId);
         }
 
-        private SpaceEntity GetMyEntity()
+        private SpaceEntity? GetMyEntity()
         {
             if (parent.Map == null) return null;
             var mapComp = parent.Map.GetComponent<SpaceMapComp>();
@@ -613,7 +606,7 @@ namespace PioneerFramework
 
         /// <summary>取 group 中第一个带 Map 的实体（空间站/带图船本体；无 Map 目标如导弹/无人机返回 null）。
         /// 精确打击点选格/标记/偏置换算都要求目标有地图。</summary>
-        private SpaceEntity GetMapEntity(SpaceEntityGroup g)
+        private SpaceEntity? GetMapEntity(SpaceEntityGroup? g)
         {
             if (g == null) return null;
             var sg = Current.Game?.GetComponent<SpaceGameComp>();
@@ -667,7 +660,7 @@ namespace PioneerFramework
             absorbInputAroundWindow = false;
         }
 
-        public override Vector2 InitialSize => new Vector2(400f, 170f);
+        public override Vector2 InitialSize => new(400f, 170f);
 
         public override void DoWindowContents(Rect inRect)
         {
@@ -677,7 +670,7 @@ namespace PioneerFramework
 
             int n = Mathf.RoundToInt(sliderVal);
             Widgets.Label(new Rect(0, 40, inRect.width, 22f),
-                string.Format("当前：{0} 枚 —— N 枚同群编队巡航（每枚自带满罐，群级推进按 N 源同步），终末解离逐枚撞击。", n));
+                $"当前：{n} 枚 —— N 枚同群编队巡航（每枚自带满罐，群级推进按 N 源同步），终末解离逐枚撞击。");
             sliderVal = Widgets.HorizontalSlider(new Rect(0, 72, inRect.width - 20f, 26f), sliderVal, MinN, MaxN, false);
             sliderVal = Mathf.RoundToInt(sliderVal); // 吸附整数
 
@@ -687,8 +680,7 @@ namespace PioneerFramework
             Widgets.Label(new Rect(0, 100, inRect.width, 22f),
                 n == 1
                     ? "单发模式（同旧版逐发）"
-                    : string.Format("弹群深度队列：{0} 枚沿航向排开，间距 {1:F0}m，总长 {2:F0}m（超总长上限 {3:F0}km 时压间距，下限 = 爆炸冲量半径）",
-                        n, spacing, (n - 1) * spacing, arraySideLimit / 1000f));
+                    : $"弹群深度队列：{n} 枚沿航向排开，间距 {spacing:F0}m，总长 {(n - 1) * spacing:F0}m（超总长上限 {arraySideLimit / 1000f:F0}km 时压间距，下限 = 爆炸冲量半径）");
             Text.Font = GameFont.Small;
 
             if (Widgets.ButtonText(new Rect(0, 132, 110f, 28f), "确定"))

@@ -85,20 +85,19 @@ namespace PioneerFramework
 
         /// <summary>本子阶段的预算（物理秒；只给进度读数用）。</summary>
         private static double BudgetOf(Phase p)
-        {
-            switch (p)
-            {
-                case Phase.Intake: return IntakeTicks;
-                case Phase.HoverPhysical: return HoverPhysicalTicks;
-                case Phase.HoverAnalytic: return HoverAnalyticTicks;
-                case Phase.HoverBack: return HoverBackTicks;
-                case Phase.HoverDrain: return HoverDrainTicks;
-                case Phase.HoverTakeover: return HoverTakeoverTicks;
-                case Phase.MapAero: return MapAeroTicks;
-                case Phase.Transfer: return TransferTicks;
-                default: return 0.0;
-            }
-        }
+        
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      => p switch
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      {
+            Phase.Intake => IntakeTicks,
+            Phase.HoverPhysical => HoverPhysicalTicks,
+            Phase.HoverAnalytic => HoverAnalyticTicks,
+            Phase.HoverBack => HoverBackTicks,
+            Phase.HoverDrain => HoverDrainTicks,
+            Phase.HoverTakeover => HoverTakeoverTicks,
+            Phase.MapAero => MapAeroTicks,
+            Phase.Transfer => TransferTicks,
+            _ => 0.0,
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      };
 
         private static double PhysTick()
         {
@@ -181,8 +180,7 @@ namespace PioneerFramework
                 if (thrDef == null || tankDef == null || intakeDef == null || airDef == null)
                 {
                     PflTestKit.CheckUnchecked("有 Map 三件套",
-                        string.Format("Def 缺失：推进器={0} 空气罐={1} 进气道={2} 空气工质={3}",
-                            thrDef != null, tankDef != null, intakeDef != null, airDef != null));
+                        $"Def 缺失：推进器={thrDef != null} 空气罐={tankDef != null} 进气道={intakeDef != null} 空气工质={airDef != null}");
                 }
                 else
                 {
@@ -192,7 +190,7 @@ namespace PioneerFramework
 
                     PflTestKit.Check(PflTestKit.Kind.Value, thr != null && thr.densityExponent > 0f,
                         "吸气式发动机：密度指数 a > 0（推力随 ρ 走；火箭是 0）",
-                        thr == null ? "没有推进器 comp" : "a=" + thr.densityExponent.ToString("F2"));
+                        thr == null ? "没有推进器 comp" : "a=" + $"{thr.densityExponent:F2}");
                     PflTestKit.Check(PflTestKit.Kind.Value,
                         thr?.gasIntakes != null && thr.gasIntakes.Count == 1
                         && thr.gasIntakes[0]?.propellant == airDef
@@ -201,11 +199,11 @@ namespace PioneerFramework
                     PflTestKit.Check(PflTestKit.Kind.Value,
                         tank != null && tank.propellantDefName == StandardPropulsion.IntakeAirDefName && tank.capacity > 0f,
                         "空气罐：装的是空气工质且容量 > 0（容量按工质分账）",
-                        tank == null ? "没有储罐 comp" : (tank.propellantDefName + " / " + tank.capacity.ToString("F0") + " kg"));
+                        tank == null ? "没有储罐 comp" : (tank.propellantDefName + " / " + $"{tank.capacity:F0}" + " kg"));
                     PflTestKit.Check(PflTestKit.Kind.Value,
                         intake != null && intake.intakeArea > 0f && intake.coefficient > 0f,
                         "进气道：面积 > 0 且系数 > 0（没有它 ⇒ 一点不充）",
-                        intake == null ? "没有进气道 comp" : ("A=" + intake.intakeArea.ToString("F0") + " m²·k=" + intake.coefficient.ToString("F2")));
+                        intake == null ? "没有进气道 comp" : ("A=" + $"{intake.intakeArea:F0}" + " m²·k=" + $"{intake.coefficient:F2}"));
                 }
             }
             PflTestKit.End();
@@ -223,7 +221,7 @@ namespace PioneerFramework
                 {
                     double h = 30_000.0;                                  // 30 km：ρ 明显非零
                     double rho = body.Atmosphere.IsActive ? body.Atmosphere.Density(h) : 0.0;
-                    PflTestKit.Check(PflTestKit.Kind.Value, rho > 0.0, "前置：30 km 处 ρ > 0", "ρ=" + rho.ToString("F5"));
+                    PflTestKit.Check(PflTestKit.Kind.Value, rho > 0.0, "前置：30 km 处 ρ > 0", "ρ=" + $"{rho:F5}");
                     var posC = new DVector3(body.radius + h, 0, 0);
                     var velC = DVector3.Cross(posC, DVector3.up).normalized
                                * Math.Sqrt(SpaceConstants.PrimaryGravitationalParameter / posC.magnitude);
@@ -261,7 +259,7 @@ namespace PioneerFramework
             return tsm != null && tsm.IsInCombatAction();
         }
 
-        private static readonly GameComponentRef<TimeScaleManager> tsmRef = new GameComponentRef<TimeScaleManager>();
+        private static readonly GameComponentRef<TimeScaleManager> tsmRef = new();
 
         /// <summary>起异步段：铺两艘试验船，顺序推进六个子阶段。</summary>
         public static void Stage()
@@ -305,8 +303,7 @@ namespace PioneerFramework
 
             stageStartTick = (int)PhysTick();
             stage = Phase.Intake;
-            Log.Message(string.Format("[大气判据] 开工：吸气式试验机 G{0}；后续自动推进（物理时间压缩 ⇒ 整段约几秒真实时间）",
-                intakeGroupId));
+            Log.Message($"[大气判据] 开工：吸气式试验机 G{intakeGroupId}；后续自动推进（物理时间压缩 ⇒ 整段约几秒真实时间）");
         }
 
         /// <summary>每物理步推进一次（由 `SpaceGameComp` 调；空闲时第一行返回）。</summary>
@@ -354,8 +351,7 @@ namespace PioneerFramework
             if (t - lastProgressTick >= 30.0)
             {
                 lastProgressTick = t;
-                Log.Message(string.Format("[大气判据] …仍在 {0}（已等 {1:F0} / 预算 {2:F0} 物理秒）",
-                    stage, elapsed, BudgetOf(stage)));
+                Log.Message($"[大气判据] …仍在 {stage}（已等 {elapsed:F0} / 预算 {BudgetOf(stage):F0} 物理秒）");
             }
 
             switch (stage)
@@ -402,7 +398,7 @@ namespace PioneerFramework
             }
             // ① 充填：空罐起飞 ⇒ 现在必须有料（`k·A·ρ·|v_air|` 那条路真在跑）
             PflTestKit.Check(PflTestKit.Kind.Value, air > 20.0,
-                "进气充填：空罐起飞约 30 物理秒后，空气罐应进料（>20 kg）", "空气 " + air.ToString("F1") + " kg");
+                "进气充填：空罐起飞约 30 物理秒后，空气罐应进料（>20 kg）", "空气 " + $"{air:F1}" + " kg");
             // ② 包线：30 km 处燃烧推力必须**显著低于真空标称** ve·ṁ（φ = ρ/ρ₀ ≈ 0.02）
             bool nominal = false; double fMeasured = 0.0, fNominal = 0.0;
             foreach (int eid in g.GetEntityIds())
@@ -423,8 +419,8 @@ namespace PioneerFramework
             else
                 PflTestKit.Check(PflTestKit.Kind.Value, fMeasured > 0.0 && fMeasured < fNominal * 0.35,
                     "包线：30 km 处实测推力应远低于真空标称（<35% ⇒ φ 真在起作用）",
-                    "实测 " + (fMeasured / 1000.0).ToString("F1") + " kN ↔ 标称 " + (fNominal / 1000.0).ToString("F1") + " kN");
-            PflTestKit.Note("（氢燃料余量 " + fuel.ToString("F0") + " kg —— 仅供人读，不作判据）");
+                    "实测 " + $"{(fMeasured / 1000.0):F1}" + " kN ↔ 标称 " + $"{(fNominal / 1000.0):F1}" + " kN");
+            PflTestKit.Note("（氢燃料余量 " + $"{fuel:F0}" + " kg —— 仅供人读，不作判据）");
             StartHover(spaceGame);
         }
 
@@ -468,10 +464,10 @@ namespace PioneerFramework
             double fuel = src != null ? src.TotalPropellantMass : 0.0;
 
             PflTestKit.Check(PflTestKit.Kind.Value, Math.Abs(altErr) < 25.0,
-                "物理档：高度差应收敛到十米级", "高度差 " + altErr.ToString("F1") + " m");
+                "物理档：高度差应收敛到十米级", "高度差 " + $"{altErr:F1}" + " m");
             PflTestKit.Check(PflTestKit.Kind.Value, fuel > 0.0 && fuel < RunnerFuelKg * 0.95,
                 "物理档：燃料应在按保持耗料下走（至少烧掉 5%）",
-                "余料 " + fuel.ToString("F0") + " / 起步 " + RunnerFuelKg.ToString("F0") + " kg");
+                "余料 " + $"{fuel:F0}" + " / 起步 " + $"{RunnerFuelKg:F0}" + " kg");
 
             // 记录定点，供"切档不重锁"判据
             latBefore = g.hoverLatRad; lonBefore = g.hoverLonRad0; altBefore = g.hoverAltitudeMeters;
@@ -508,13 +504,12 @@ namespace PioneerFramework
 
             // ④a **位置被钉死**（定点解析的招牌）
             PflTestKit.Check(PflTestKit.Kind.Value, posErr < 1.0,
-                "解析档：位置必须**钉死在定点**（<1 m；物理档的抖幅在米级）", "位置误差 " + posErr.ToString("F3") + " m");
+                "解析档：位置必须**钉死在定点**（<1 m；物理档的抖幅在米级）", "位置误差 " + $"{posErr:F3}" + " m");
             // ④b **定点未被重锁**（切档不该把船按到"现在的位置"上）
             PflTestKit.Check(PflTestKit.Kind.Invariant,
                 Math.Abs(g.hoverLatRad - latBefore) < 1e-12 && Math.Abs(g.hoverAltitudeMeters - altBefore) < 1e-9,
                 "切档不重锁定点（λ0/高度逐位不变）",
-                string.Format("λ0 {0:F9}/{1:F9}｜高 {2:F1}/{3:F1}", g.hoverLonRad0, lonBefore,
-                    g.hoverAltitudeMeters, altBefore));
+                $"λ0 {g.hoverLonRad0:F9}/{lonBefore:F9}｜高 {g.hoverAltitudeMeters:F1}/{altBefore:F1}");
             // ④c **两档账单一致**：解析档实测 kg/s ↔ m·g/ve
             var src = spaceGame.GetGroupPropulsionSource(g);
             double fuelNow = src != null ? src.TotalPropellantMass : 0.0;
@@ -537,8 +532,8 @@ namespace PioneerFramework
             double ratio = rateExpected > 0.0 ? rateMeasured / rateExpected : 0.0;
             PflTestKit.Check(PflTestKit.Kind.Value, ratio > 0.75 && ratio < 1.25,
                 "两档账单一致：解析档实测耗料率 ≈ m·g/ve（±25%）",
-                "实测 " + rateMeasured.ToString("F2") + " ↔ 期望 " + rateExpected.ToString("F2") + " kg/s（比 "
-                + ratio.ToString("F2") + "）");
+                "实测 " + $"{rateMeasured:F2}" + " ↔ 期望 " + $"{rateExpected:F2}" + " kg/s（比 "
+                + $"{ratio:F2}" + "）");
 
             bool back = spaceGame.SwitchHoverTier(g, false);
             PflTestKit.Check(PflTestKit.Kind.Value, back, "切回物理档：应接受");
@@ -560,9 +555,9 @@ namespace PioneerFramework
             double r = g.CurrentOrbit.positionSystem.v.magnitude;
             double altErr = r - (SpaceConstants.PlanetRadiusMeters + g.hoverAltitudeMeters);
             PflTestKit.Check(PflTestKit.Kind.Value, Math.Abs(altErr) < 40.0,
-                "回到物理档后仍在守住（高度差 <40 m）", "高度差 " + altErr.ToString("F1") + " m");
+                "回到物理档后仍在守住（高度差 <40 m）", "高度差 " + $"{altErr:F1}" + " m");
             PflTestKit.Check(PflTestKit.Kind.Invariant, Math.Abs(g.hoverAltitudeMeters - altBefore) < 1e-9,
-                "两次切档都没动定点（高度逐位不变）", "高 " + g.hoverAltitudeMeters.ToString("F1"));
+                "两次切档都没动定点（高度逐位不变）", "高 " + $"{g.hoverAltitudeMeters:F1}");
 
             DebugShipSpawner.DrainHoverFuel(60.0);   // 抽空 ⇒ 看"料尽 ⇒ 显式退出"
             Next(Phase.HoverDrain, "抽空 ⇒ 等「料尽 ⇒ 显式退出」");
@@ -682,7 +677,7 @@ namespace PioneerFramework
                 double air0 = mapCompNeg != null ? mapCompNeg.GetPropellantMass(airDef) : 0.0;
                 PflTestKit.Check(PflTestKit.Kind.Value, air0 <= 0.001,
                     "有 Map 侧负对照：**大气之外（ρ=0）⇒ 不进气**（气罐应仍是 0）",
-                    "空气 " + air0.ToString("F3") + " kg");
+                    "空气 " + $"{air0:F3}" + " kg");
 
                 // 给空速：共转速度 + **500 m/s 顺行** ⇒ v_air = 500（进气道开始工作）
                 //   ⚠ 不在这儿起燃烧：这座站 60 km 处包线 φ≈6e-4，出了力也顶不住重力 ⇒ 只会加速坠落；
@@ -702,7 +697,7 @@ namespace PioneerFramework
             double air = mapComp.GetPropellantMass(airDef);
             PflTestKit.Check(PflTestKit.Kind.Value, air > 20.0,
                 "有 Map 侧：给了 500 m/s 空气相对速度后，进气道把空气灌进来（>20 kg）",
-                "空气 " + air.ToString("F1") + " kg（负对照时是 0）");
+                "空气 " + $"{air:F1}" + " kg（负对照时是 0）");
 
             // ── 最后一站：[A8] 点到点**解析搬运**（计划稿的"两档账单一致"的实测面）──
             // **[A8] 大气层内的航渡**（用户 2026-10-07 纠正：巡航不是轨道搬家）：30 km 高度、两点间约 500 km 弧线
@@ -812,7 +807,7 @@ namespace PioneerFramework
             double posErr = g.transferArrivalErrorMeters;
             PflTestKit.Check(PflTestKit.Kind.Value, posErr < 200.0,
                 "解析搬运（大气层内航渡）：到达即落在目标点附近（<200 m；此后物理立刻接管）",
-                "位置误差 " + posErr.ToString("F1") + " m");
+                "位置误差 " + $"{posErr:F1}" + " m");
 
             // **[模式互斥·到达侧] 起搬前在悬着 ⇒ 到点必须**恢复悬浮**（2026-10-07 用户实测"一搬就坠毁"：
             //   不恢复的话，大气层里搬完就开始掉 —— 30 km 掉到地面、撞地 339.7 m/s ⇒ 坠毁 + 地图销毁）。
@@ -829,8 +824,8 @@ namespace PioneerFramework
             double ratio = transferDvTotal > 0.0 ? dvBilled / transferDvTotal : 0.0;
             PflTestKit.Check(PflTestKit.Kind.Value, ratio > 0.75 && ratio < 1.25,
                 "解析搬运：账单 = Δv 总额（ve·ln(m0/m1) / Δv_total 在 ±25%）",
-                "账单 " + dvBilled.ToString("F1") + " ↔ 指令 " + transferDvTotal.ToString("F1") + " m/s（比 "
-                + ratio.ToString("F2") + "）｜料 " + transferFuel0.ToString("F0") + " → " + fuel1.ToString("F0") + " kg");
+                "账单 " + $"{dvBilled:F1}" + " ↔ 指令 " + $"{transferDvTotal:F1}" + " m/s（比 "
+                + $"{ratio:F2}" + "）｜料 " + $"{transferFuel0:F0}" + " → " + $"{fuel1:F0}" + " kg");
             Finish();
 
             bool mass0Ok() => transferMass0 > 0.0;

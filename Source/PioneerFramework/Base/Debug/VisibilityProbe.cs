@@ -43,13 +43,13 @@ namespace PioneerFramework
                   .Append(" F").Append(g.FactionId)
                   .Append(g.IsStealth ? " 匿踪" : " 公开")
                   .Append(g.ActivePingEnabled ? " 主动" : " 被动")
-                  .Append(" · 灵").Append((g.DetectTech.sensitivityMeters / 1000f).ToString("F0")).Append("km")
-                  .Append(" 抗压").Append(g.DetectTech.ecmResist.ToString("F1"))
-                  .Append(" 抗骗").Append(g.DetectTech.eccmResist.ToString("F1"))
+                  .Append(" · 灵").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(g.DetectTech.sensitivityMeters / 1000f):F0}").Append("km")
+                  .Append(" 抗压").Append(System.Globalization.CultureInfo.CurrentCulture, $"{g.DetectTech.ecmResist:F1}")
+                  .Append(" 抗骗").Append(System.Globalization.CultureInfo.CurrentCulture, $"{g.DetectTech.eccmResist:F1}")
                   // [V8] 信号强度：**会有非零值**（尺寸项对任何有实体的组都 > 0）⇒ 这是 [V1] 里
                   // 第一个"真能验出来"的往返判据（不像 DetectTech 全 0 那么空洞）。
                   // 点火前后应有跃升（burning 项 ×20 量级）——冷发射 profile 的第一次游戏内可观测。
-                  .Append(" S=").Append(g.SignalStrength.ToString("F3"));
+                  .Append(" S=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{g.SignalStrength:F3}");
             }
             sb.Append("\n  合计 ").Append(total).Append(" 组，其中匿踪 ").Append(stealth).Append(" 组");
             Log.Message(sb.ToString());

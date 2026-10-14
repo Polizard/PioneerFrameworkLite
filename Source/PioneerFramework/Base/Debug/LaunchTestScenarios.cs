@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Verse;
@@ -44,7 +44,7 @@ namespace PioneerFramework
             var prop = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Chemical");
             return new List<PropulsionData>
             {
-                new PropulsionData { propellant = prop, ve = TestVe, massFlow = TestMassFlow, mass = TestFuelKg, capacity = TestCapacityKg }
+                new() { propellant = prop, ve = TestVe, massFlow = TestMassFlow, mass = TestFuelKg, capacity = TestCapacityKg }
             };
         }
 
@@ -74,7 +74,7 @@ namespace PioneerFramework
                 var longLat = Find.WorldGrid.LongLatOf(map.Tile);
                 latRad = longLat.y * Mathf.Deg2Rad;
                 lonRad0 = longLat.x * Mathf.Deg2Rad;
-                launchSrcDesc = string.Format("当前Map(uid{0}, tile {1})", map.uniqueID, map.Tile);
+                launchSrcDesc = $"当前Map(uid{map.uniqueID}, tile {map.Tile})";
             }
             var surface = GetSurfaceState.SurfaceState(radius, latRad, lonRad0, omega, physicsTick);
             var birth = GetSurfaceState.SurfaceStateAbove(surface, TestLaunchAltitude);
@@ -139,11 +139,7 @@ namespace PioneerFramework
             }
 
             var stats = spaceGame.GetGroupDeltaV(group);
-            Log.Message(string.Format(
-                "[RocketLaunchTest] 爬升测试火箭已部署：出生={0} φ={1:F1}° λ0={2:F1}° 位=({3:F0},{4:F0},{5:F0})km 速={6:F1}m/s R={7:F0}km 目标R={8:F0}km ΔV余={9:F0}m/s",
-                launchSrcDesc, latRad * Mathf.Rad2Deg, lonRad0 * Mathf.Rad2Deg,
-                pos.x / 1000.0, pos.y / 1000.0, pos.z / 1000.0, vel.magnitude,
-                pos.magnitude / 1000.0, (radius + 500000.0) / 1000.0, stats.remainingDv));
+            Log.Message($"[RocketLaunchTest] 爬升测试火箭已部署：出生={launchSrcDesc} φ={latRad * Mathf.Rad2Deg:F1}° λ0={lonRad0 * Mathf.Rad2Deg:F1}° 位=({pos.x / 1000.0:F0},{pos.y / 1000.0:F0},{pos.z / 1000.0:F0})km 速={vel.magnitude:F1}m/s R={pos.magnitude / 1000.0:F0}km 目标R={(radius + 500000.0) / 1000.0:F0}km ΔV余={stats.remainingDv:F0}m/s");
             Messages.Message("爬升测试火箭已起飞，爬升段制导开始。", MessageTypeDefOf.TaskCompletion, false);
             return groupId;
         }

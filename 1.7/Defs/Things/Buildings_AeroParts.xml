@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!--
+    大气推进三件套（[A3]/[A4]/[A5] 有 Map 侧接线，2026-10-07）：
+      · 进气道     —— 按 `k·A_进气·ρ(h)·|v_air|` 自动把空气灌进"空气罐"（罐满即停；抽干/高空会熄火）
+      · 空气罐     —— 就是普通储罐，只是装 `PF_Propellant_IntakeAir`（容量按工质分账，2026-10-07 起）
+      · 吸气式发动机 —— 推进器 Def 填 `densityExponent`（推力正比 ρ）+ `gasIntakes`（15:1 抽空气）
+    三者与无 Map 侧**语义完全一致**（同一份唯一算式）；火箭那几台推进器**零改动**（a=0 且无配比 ⇒ 不入表）。
+    ⚠ 进气要 `|v_air| > 0`：**悬停（空气相对速度≈0）与真空里都不进气** ⇒ 喷气 = 巡航/助推，悬浮 = RCS 的活。
+  -->
+
+  <!-- ═══ 空气罐 ═══ -->
+  <ThingDef>
+    <defName>PF_Building_Tank_IntakeAir</defName>
+    <label>空气罐</label>
+    <description>为吸气式发动机储备空气。飞行中由进气道自动充填（充填量 ∝ 进气面积 × 空气密度 × 空速），罐满即停。</description>
+    <category>Building</category>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/Production/FermentingBarrel</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>Standable</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>300</MaxHitPoints>
+      <Flammability>0.02</Flammability>
+      <Mass>250</Mass>
+      <Beauty>-5</Beauty>
+      <WorkToBuild>400</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>100</Steel>
+    </costList>
+    <designationCategory>PF_Aero</designationCategory>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_PropellantTank">
+        <propellantDefName>PF_Propellant_IntakeAir</propellantDefName>
+        <capacity>2000</capacity>
+      </li>
+    </comps>
+  </ThingDef>
+
+  <!-- ═══ 进气道 ═══ -->
+  <ThingDef>
+    <defName>PF_Building_IntakeAir</defName>
+    <label>进气道</label>
+    <description>把大气里的空气压进本船的空气罐。充填速率 = 系数 × 进气面积 × 空气密度 × 空速 —— 悬停（空气相对速度≈0）与真空里都不进气。</description>
+    <category>Building</category>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/Production/FermentingBarrel</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>Standable</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>200</MaxHitPoints>
+      <Flammability>0.05</Flammability>
+      <Mass>120</Mass>
+      <Beauty>-5</Beauty>
+      <WorkToBuild>300</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>60</Steel>
+    </costList>
+    <designationCategory>PF_Aero</designationCategory>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_IntakeAir">
+        <intakeArea>6</intakeArea>
+        <coefficient>1</coefficient>
+      </li>
+    </comps>
+  </ThingDef>
+
+  <!-- ═══ 吸气式发动机 ═══ -->
+  <ThingDef>
+    <defName>PF_Building_Thruster_AirBreathing</defName>
+    <label>吸气式发动机</label>
+    <description>烧液氢、抽空气（15:1）的吸气式发动机：推力正比空气密度（升空即衰减），空气抽干或飞进真空会熄火 —— 熄火期间不耗燃料。适合大气内巡航与助推，不能入轨。</description>
+    <category>Building</category>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/Production/FermentingBarrel</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>Standable</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>300</MaxHitPoints>
+      <Flammability>0.1</Flammability>
+      <Mass>400</Mass>
+      <Beauty>-10</Beauty>
+      <WorkToBuild>800</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>180</Steel>
+    </costList>
+    <designationCategory>PF_Aero</designationCategory>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_Thruster">
+        <propellantDefName>PF_Propellant_Hydrogen</propellantDefName>
+        <!-- [A4] 标准吸气式档：ve 30000（同离子档）× ṁ 5 ⇒ 同油耗 3.33× 化学档推力 -->
+        <exhaustVelocity>30000</exhaustVelocity>
+        <massFlowRate>5</massFlowRate>
+        <!-- [A4] 推力 ∝ ρ（火箭填 0 = 退化；缺省就是 0） -->
+        <densityExponent>1</densityExponent>
+        <!-- [A5] 每 1 kg 液氢抽 15 kg 空气（KSP 形状）；抽不到 ⇒ 熄火且燃料不扣 -->
+        <gasIntakes>
+          <li>
+            <propellant>PF_Propellant_IntakeAir</propellant>
+            <perUnitRatio>15</perUnitRatio>
+          </li>
+        </gasIntakes>
+      </li>
+    </comps>
+  </ThingDef>
+</Defs>

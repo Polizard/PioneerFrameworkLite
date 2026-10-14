@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Emit;
@@ -17,13 +17,13 @@ namespace PioneerFramework
 
         // ── 组件引用缓存（[M1]/[O4]：每帧路径不许裸 `GetComponent`——那是组件表线性扫描）──
         // 与 `GameComponentRef` 的既有用法一致：按 Game 缓存、换局/读档自动失效、未命中不写缓存。
-        private static readonly GameComponentRef<SensorManager> sensorMgrRef = new GameComponentRef<SensorManager>();
+        private static readonly GameComponentRef<SensorManager> sensorMgrRef = new();
 
         /// <summary>现有 RimWorld 世界对应的天体（地球）ID</summary>
         private const int EARTH_BODY_ID = 1;
 
         private static int selectedGroupId = -1;
-        private static bool isFollowing = false;
+        private static bool isFollowing ;
         private static float followLerpSpeed = 5f;
         private static float lastFollowTime;
 
@@ -53,14 +53,14 @@ namespace PioneerFramework
         private const float OrbitMarkerAlphaFar = 0.3f;
 
         // 轨道线色彩常量
-        private static readonly Color OrbitColorCurrentOrbit = new Color(0.25f, 0.9f, 1f, 0.6f);       // 当前轨道：青色
-        private static readonly Color OrbitColorPostManeuver = new Color(1f, 0.7f, 0.1f, 0.6f);       // 机动后轨道：橙黄
-        private static readonly Color OrbitColorTransfer = new Color(0f, 1f, 0.5f, 0.6f);             // 转移轨道：亮绿
-        private static readonly Color OrbitColorTarget = new Color(1f, 0.3f, 0.3f, 0.7f);             // 目标轨道：红色
-        private static readonly Color MarkerColorPeriapsis = new Color(0f, 1f, 0f, 0.9f);             // Pe：绿色
-        private static readonly Color MarkerColorApoapsis = new Color(1f, 0.2f, 0.2f, 0.9f);          // Ap：红色
-        private static readonly Color MarkerColorAn = new Color(1f, 1f, 0f, 0.8f);                    // AN：黄色
-        private static readonly Color MarkerColorDn = new Color(0.7f, 0.3f, 1f, 0.8f);                // DN：紫色
+        private static readonly Color OrbitColorCurrentOrbit = new(0.25f, 0.9f, 1f, 0.6f);       // 当前轨道：青色
+        private static readonly Color OrbitColorPostManeuver = new(1f, 0.7f, 0.1f, 0.6f);       // 机动后轨道：橙黄
+        private static readonly Color OrbitColorTransfer = new(0f, 1f, 0.5f, 0.6f);             // 转移轨道：亮绿
+        private static readonly Color OrbitColorTarget = new(1f, 0.3f, 0.3f, 0.7f);             // 目标轨道：红色
+        private static readonly Color MarkerColorPeriapsis = new(0f, 1f, 0f, 0.9f);             // Pe：绿色
+        private static readonly Color MarkerColorApoapsis = new(1f, 0.2f, 0.2f, 0.9f);          // Ap：红色
+        private static readonly Color MarkerColorAn = new(1f, 1f, 0f, 0.8f);                    // AN：黄色
+        private static readonly Color MarkerColorDn = new(0.7f, 0.3f, 1f, 0.8f);                // DN：紫色
 
         // GUI 面板
         private const float PanelWidth = 320f;
@@ -71,15 +71,15 @@ namespace PioneerFramework
         private const float ApproachSectionHeight = 112f; // 近距离接近区附加高度
 
         // 面板配色（与机动队列窗口一致）
-        private static readonly Color CyanColor = new Color(0.25f, 0.9f, 1f, 0.9f);
-        private static readonly Color WarnColor = new Color(1f, 0.42f, 0.3f, 0.95f);
-        private static readonly Color OkColor = new Color(0.35f, 1f, 0.55f, 0.95f);
-        private static readonly Color DimColor = new Color(0.6f, 0.66f, 0.72f, 1f);
+        private static readonly Color CyanColor = new(0.25f, 0.9f, 1f, 0.9f);
+        private static readonly Color WarnColor = new(1f, 0.42f, 0.3f, 0.95f);
+        private static readonly Color OkColor = new(0.35f, 1f, 0.55f, 0.95f);
+        private static readonly Color DimColor = new(0.6f, 0.66f, 0.72f, 1f);
         /// <summary>普通按钮的统一灰色（未特别着色按钮）。</summary>
-        private static readonly Color GrayButton = new Color(0.46f, 0.49f, 0.53f, 1f);
+        private static readonly Color GrayButton = new(0.46f, 0.49f, 0.53f, 1f);
 
         /// <summary>赤道经度标记 90°E 的颜色（0° 那枚复用 `CyanColor`）。</summary>
-        private static readonly Color EquatorLon90Color = new Color(1f, 0.6f, 0.15f, 0.9f);
+        private static readonly Color EquatorLon90Color = new(1f, 0.6f, 0.15f, 0.9f);
 
         /// <summary>预创建的球体网格，用于天体球体渲染（赤道经度标记也用它）。</summary>
         private static Mesh sphereMesh;
@@ -138,7 +138,7 @@ namespace PioneerFramework
             }
         }
 
-        #region Harmony 补丁方法
+        // ── Harmony 补丁方法 ──
 
         // ★ 每帧耗时探针（2026-09-20）：整步墙钟测的是**物理步**（实测 0.2 ms/步 ⇒ 不是"卡"的原因 ✗），
         //   而"一直卡"的代价在**每帧**的渲染/UI 这一侧 —— 这一侧此前**从未量过**。
@@ -221,10 +221,7 @@ namespace PioneerFramework
                 if (Prefs.DevMode && frameUs > SpikeThresholdUs && _spikeLinesThisWindow < SpikeMaxLinesPerWindow)
                 {
                     _spikeLinesThisWindow++;
-                    Log.Message(string.Format(
-                        "[帧耗时·尖峰] 本帧={0:F0}µs｜draw call={1}（球{2}/图标{3}/轨道点{4}/标记{5}/发射点{6}）｜GC 本帧={7}/{8}/{9}｜轨道线={10} 条",
-                        frameUs, _dcFrameTotal, _dcFrame[DcSphere], _dcFrame[DcIcon], _dcFrame[DcOrbitPoint],
-                        _dcFrame[DcMarker], _dcFrame[DcLaunch], _gc0, _gc1, _gc2, _frameOrbitPathsThisFrame));
+                    Log.Message($"[帧耗时·尖峰] 本帧={frameUs:F0}µs｜draw call={_dcFrameTotal}（球{_dcFrame[DcSphere]}/图标{_dcFrame[DcIcon]}/轨道点{_dcFrame[DcOrbitPoint]}/标记{_dcFrame[DcMarker]}/发射点{_dcFrame[DcLaunch]}）｜GC 本帧={_gc0}/{_gc1}/{_gc2}｜轨道线={_frameOrbitPathsThisFrame} 条");
                 }
 
                 _dcFrameTotal = 0;
@@ -490,8 +487,7 @@ namespace PioneerFramework
                     {
                         double toUs = 1e6 / System.Diagnostics.Stopwatch.Frequency;   // µs
                         // ⚠ 2026-09-23 同上改 µs（这一条原来恒印 `平均=0.00 ms/帧`，最慢才有值）
-                        Log.Message(string.Format("[帧耗时·GUI] 帧数={0} 平均={1:F1}µs/帧 最慢={2:F1}µs",
-                            _guiClocks, _guiTicksTotal * toUs / _guiClocks, _guiTicksMax * toUs));
+                        Log.Message($"[帧耗时·GUI] 帧数={_guiClocks} 平均={_guiTicksTotal * toUs / _guiClocks:F1}µs/帧 最慢={_guiTicksMax * toUs:F1}µs");
                     }
                     _guiClocks = 0; _guiTicksTotal = 0; _guiTicksMax = 0;
                 }
@@ -626,9 +622,8 @@ namespace PioneerFramework
                 Find.WorldCamera.farClipPlane = 200000f;
         }
 
-        #endregion
 
-        #region 核心辅助函数（单位转换关键）
+        // ── 核心辅助函数（单位转换关键） ──
 
         /// <summary>本帧的物理时刻（**保留 double**）：渲染与物理必须同一 tick —— int 化在 1/60× 流速下
         /// 会让天体位置每 60 真实 tick 跳 1 秒（PFView `:1003-1008` 的实测结论）。</summary>
@@ -808,7 +803,7 @@ namespace PioneerFramework
         //   ⇒ 声明成非空会让 nullable 分析报 CS8618/CS8601（新增警告 = 0 是硬线）。
         private static HashSet<int>? earthSystemBodyIds;              // 地球系天体 id 集（建一次）
         private static CelestialBodyManager? earthSystemBodyIdsMgr;   // 建它时的管理器（换局 ⇒ 重建）
-        private static readonly List<Vector3> previewPtsScratch = new List<Vector3>();  // 预览轨道点（复用）
+        private static readonly List<Vector3> previewPtsScratch = new();  // 预览轨道点（复用）
 
         /// <summary>`src` 逐点乘 `scale` 填进 `dst`（替代 `ConvertAll`：**不分配**，`dst` 复用）。
         /// 只在渲染路径用 ⇒ `dst` 一定是本帧刚清空/刚填满的。</summary>
@@ -939,7 +934,7 @@ namespace PioneerFramework
         /// <summary>
         /// 绘制单个轨道标记点（Pe/Ap/AN/DN 通用）。
         /// </summary>
-        private static void DrawOrbitMarker(Vector3 viewPos, Color color, float size, Camera cam, string label = null)
+        private static void DrawOrbitMarker(Vector3 viewPos, Color color, float size, Camera cam, string? label = null)
         {
             if (!IsViewPosVisible(viewPos, 1f)) return;
 
@@ -958,18 +953,17 @@ namespace PioneerFramework
             Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
         }
 
-        #endregion
 
-        #region [V-2] 认知层可视化（影子 / 假接触 / 波束锥）
+        // ── [V-2] 认知层可视化（影子 / 假接触 / 波束锥） ──
 
-        private static readonly List<Contact> cognitionContactBuf = new List<Contact>();
-        private static readonly List<Vector3> cognitionPointBuf = new List<Vector3>();
+        private static readonly List<Contact> cognitionContactBuf = new();
+        private static readonly List<Vector3> cognitionPointBuf = new();
         private static readonly DVector3[] coneRimScratch = new DVector3[24];
 
-        private static readonly Color ShadowColor = new Color(0.78f, 0.78f, 0.82f, 0.85f);      // 影子：灰白
-        private static readonly Color DecoyColor = new Color(0.95f, 0.55f, 0.35f, 0.9f);        // 假接触（未识破）
-        private static readonly Color DecoySpottedColor = new Color(0.6f, 0.32f, 0.32f, 0.9f);  // 已识破
-        private static readonly Color BeamColor = new Color(0.35f, 0.95f, 1f, 0.8f);            // 波束锥（2026-10-11：α 0.45→0.8，原值在行星底图上太淡 = "看不见"的一半原因）
+        private static readonly Color ShadowColor = new(0.78f, 0.78f, 0.82f, 0.85f);      // 影子：灰白
+        private static readonly Color DecoyColor = new(0.95f, 0.55f, 0.35f, 0.9f);        // 假接触（未识破）
+        private static readonly Color DecoySpottedColor = new(0.6f, 0.32f, 0.32f, 0.9f);  // 已识破
+        private static readonly Color BeamColor = new(0.35f, 0.95f, 1f, 0.8f);            // 波束锥（2026-10-11：α 0.45→0.8，原值在行星底图上太淡 = "看不见"的一半原因）
 
         /// <summary>
         /// [V-2] 认知层可视化：影子接触（σ 圈）/ 假接触（识破换标记）/ 雷达波束锥。
@@ -1050,8 +1044,7 @@ namespace PioneerFramework
                     if (perGroup == null)
                     {
                         var rc = g.RadarCap;
-                        perGroup = string.Format("G{0} 半锥角 {1:F1}° · 距离 {2:F0} km · 锥点 {3}/视可见 {4} · 点径 {5:F1} 单位",
-                            g.GroupId, rc.beamHalfAngleDeg, rc.beamRangeMeters / 1000f, p, v, dotSize);
+                        perGroup = $"G{g.GroupId} 半锥角 {rc.beamHalfAngleDeg:F1}° · 距离 {rc.beamRangeMeters / 1000f:F0} km · 锥点 {p}/视可见 {v} · 点径 {dotSize:F1} 单位";
                     }
                 }
                 else if (blockReason == null) blockReason = why;
@@ -1061,11 +1054,7 @@ namespace PioneerFramework
             double interval = pingGroups > 0 ? 60.0 : 300.0;
             if (now - lastBeamConeLogTick < interval) return;
             lastBeamConeLogTick = now;
-            Log.Message(string.Format(
-                "[波束锥] 开机编队 {0}（命中\"选中或我方\" {1}）⇒ 绘制 {2}｜锥点 {3}/视可见 {4}{5}{6}",
-                pingGroups, matched, drew, pts, visPts,
-                blockReason != null ? "｜未画原因：" + blockReason : "",
-                perGroup != null ? "｜" + perGroup : ""));
+            Log.Message($"[波束锥] 开机编队 {pingGroups}（命中\"选中或我方\" {matched}）⇒ 绘制 {drew}｜锥点 {pts}/视可见 {visPts}{(blockReason != null ? "｜未画原因：" + blockReason : "")}{(perGroup != null ? "｜" + perGroup : "")}");
         }
 
         /// <summary>
@@ -1080,14 +1069,12 @@ namespace PioneerFramework
             var rc = g.RadarCap;
             if (rc.beamRangeMeters <= 0f || rc.beamHalfAngleDeg <= 0f)
             {
-                blockReason = string.Format("G{0} 的 RadarCap 为空（半锥角 {1:F1}° / 距离 {2:F0} km）"
-                    + "——本船没有主动雷达建筑，或建筑投影还没跑",
-                    g.GroupId, rc.beamHalfAngleDeg, rc.beamRangeMeters / 1000f);
+                blockReason = $"G{g.GroupId} 的 RadarCap 为空（半锥角 {rc.beamHalfAngleDeg:F1}° / 距离 {rc.beamRangeMeters / 1000f:F0} km）——本船没有主动雷达建筑，或建筑投影还没跑";
                 return false;
             }
 
             DVector3 dir = g.RadarBoresight(now);
-            if (dir.sqrMagnitude < 1e-9) { blockReason = string.Format("G{0} 的 RadarBoresight 退化（零向量）", g.GroupId); return false; }
+            if (dir.sqrMagnitude < 1e-9) { blockReason = $"G{g.GroupId} 的 RadarBoresight 退化（零向量）"; return false; }
             dir = dir.normalized;
 
             DVector3 apex = g.IsCircularOrbit ? g.GetCircularPositionAtTick(now) : g.CurrentOrbit.positionSystem.v;
@@ -1132,11 +1119,9 @@ namespace PioneerFramework
             points = cognitionPointBuf.Count;
             visiblePoints = DrawMarkerPoints(cognitionPointBuf, BeamColor, dotSize, cam);
             if (!apexOnScreen)
-                blockReason = string.Format("G{0} 锥顶**在屏幕外**（视口 {1:F2},{2:F2}）——把镜头转向本船再看",
-                    g.GroupId, vpApex.x, vpApex.y);
+                blockReason = $"G{g.GroupId} 锥顶**在屏幕外**（视口 {vpApex.x:F2},{vpApex.y:F2}）——把镜头转向本船再看";
             else if (visiblePoints == 0)
-                blockReason = string.Format("G{0} 锥顶在屏内（视口 {1:F2},{2:F2}）但 {3} 个点**全部被行星剔除**——换个角度看",
-                    g.GroupId, vpApex.x, vpApex.y, points);
+                blockReason = $"G{g.GroupId} 锥顶在屏内（视口 {vpApex.x:F2},{vpApex.y:F2}）但 {points} 个点**全部被行星剔除**——换个角度看";
             return true;
         }
 
@@ -1195,9 +1180,8 @@ namespace PioneerFramework
             DrawMarkerPoints(cognitionPointBuf, ShadowColor, 1.0f, cam);
         }
 
-        #endregion
 
-        #region GUI 交互
+        // ── GUI 交互 ──
 
         private static void HandleInput(SpaceGameComp spaceGame)
         {
@@ -1206,7 +1190,7 @@ namespace PioneerFramework
             if (MouseIsOverPanel()) return;
 
             Vector2 mousePos = Event.current.mousePosition;
-            SpaceEntityGroup clickedGroup = null;
+            SpaceEntityGroup? clickedGroup = null;
             float minDist = 20f;
             var sensor = sensorMgrRef.Get();          // 点击与绘制**同一准入判据**（否则会点到看不见的棋子）
             foreach (var group in spaceGame.GetAllGroups())
@@ -1351,7 +1335,7 @@ namespace PioneerFramework
             Text.Font = GameFont.Medium;
             GUI.color = statusColor;
             Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, 28f),
-                string.Format("Group {0}", group.GroupId));
+                $"Group {group.GroupId}");
             GUI.color = Color.white;
 
             string typeInfo = group.HasGravityWell ? "引力源" : (group.IsMovable ? "可移动" : "静态");
@@ -1362,12 +1346,7 @@ namespace PioneerFramework
             Text.Font = GameFont.Tiny;
             GUI.color = DimColor;
             Widgets.Label(new Rect(panel.x + 12f, y + 30f, panel.width - 24f, 18f),
-                string.Format("{0} · {1} · {2} · {3}{4} · 灵{5:F0}km/抗压{6:F1}/抗骗{7:F1} · S={8:F3}",
-                    typeInfo, orbitInfo, status, group.IsStealth ? "匿踪" : "公开",
-                    group.ActivePingEnabled ? "/主动" : "/被动",
-                    group.DetectTech.sensitivityMeters / 1000f,
-                    group.DetectTech.ecmResist, group.DetectTech.eccmResist,
-                    group.SignalStrength));
+                $"{typeInfo} · {orbitInfo} · {status} · {(group.IsStealth ? "匿踪" : "公开")}{(group.ActivePingEnabled ? "/主动" : "/被动")} · 灵{group.DetectTech.sensitivityMeters / 1000f:F0}km/抗压{group.DetectTech.ecmResist:F1}/抗骗{group.DetectTech.eccmResist:F1} · S={group.SignalStrength:F3}");
             GUI.color = Color.white;
             Text.Font = GameFont.Small;
             y += 54f;
@@ -1408,14 +1387,14 @@ namespace PioneerFramework
                 var ph = sensor.ContactPhaseOf(fid, group.GroupId);
                 phase = ph == TrackPhase.Live ? "实况" : ph == TrackPhase.Shadow ? "影子" : "无接触";
                 if (sensor.TryGetContact(fid, group.GroupId, out Contact c) && c.positionSigma > 0.5)
-                    sigma = string.Format(" σ={0:F1}km", c.positionSigma / 1000.0);
+                    sigma = $" σ={c.positionSigma / 1000.0:F1}km";
             }
 
             string jam = "";
             if (sensor.TryGetJamInfo(group.GroupId, out SensorManager.JamInfo ji) && ji.jam > 0.0)
             {
                 double ratio = ji.factorNoJam > 0.0 ? ji.factorWithJam / ji.factorNoJam : 1.0;
-                jam = string.Format(" · 受扰 J={0:F2} 灵敏度{1:P0}", ji.jam, ratio);
+                jam = $" · 受扰 J={ji.jam:F2} 灵敏度{ratio:P0}";
             }
 
             // 主动雷达/波束读数（[E2]/B1，2026-10-11）：**"看不见波束锥"要能一眼分流** ——
@@ -1424,12 +1403,10 @@ namespace PioneerFramework
             if (group.ActivePingEnabled || group.RadarCap.beamHalfAngleDeg > 0f)
             {
                 var rc = group.RadarCap;
-                beam = string.Format(" · 波束 {0:F0}°/{1:F0}km{2}",
-                    rc.beamHalfAngleDeg, rc.beamRangeMeters / 1000f,
-                    group.ActivePingEnabled ? "（开机）" : "");
+                beam = $" · 波束 {rc.beamHalfAngleDeg:F0}°/{rc.beamRangeMeters / 1000f:F0}km{(group.ActivePingEnabled ? "（开机）" : "")}";
             }
 
-            return string.Format("认知: {0}{1}{2}{3}", phase, sigma, jam, beam);
+            return $"认知: {phase}{sigma}{jam}{beam}";
         }
 
         private static void DrawPanelInfo(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)
@@ -1442,8 +1419,8 @@ namespace PioneerFramework
                 var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
                 var body = mgr?.GetBodyById(group.CelestialBodyId);
                 centerInfo += body != null
-                    ? string.Format("{0}(ID={1})", body.label, group.CelestialBodyId)
-                    : string.Format("ID={0}", group.CelestialBodyId);
+                    ? $"{body.label}(ID={group.CelestialBodyId})"
+                    : $"ID={group.CelestialBodyId}";
             }
             else
             {
@@ -1465,29 +1442,29 @@ namespace PioneerFramework
             Widgets.Label(new Rect(panel.x + 12f, y, leftW, rowH), centerInfo);
             GUI.color = DimColor;
             Widgets.Label(new Rect(rightX, y, panel.width * 0.5f - 12f, rowH),
-                string.Format("距中心 {0:F0} km", radiusKm));
+                $"距中心 {radiusKm:F0} km");
             GUI.color = Color.white;
             y += rowH;
 
             // 行2：速度 | 位置
             Widgets.Label(new Rect(panel.x + 12f, y, leftW, rowH),
-                string.Format("速度 {0:F0} m/s", speed));
+                $"速度 {speed:F0} m/s");
             GUI.color = DimColor;
             Widgets.Label(new Rect(rightX, y, panel.width * 0.5f - 12f, rowH),
-                string.Format("({0:F0},{1:F0},{2:F0})", pos.x / 1000.0, pos.y / 1000.0, pos.z / 1000.0));
+                $"({pos.x / 1000.0:F0},{pos.y / 1000.0:F0},{pos.z / 1000.0:F0})");
             GUI.color = Color.white;
             y += rowH;
 
             // 行3：剩余 dV
             GUI.color = remainingDv > 0f ? Color.white : DimColor;
             Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
-                string.Format("剩余 dV: {0:F0} / 最大 {1:F0} m/s", remainingDv, maxDv));
+                $"剩余 dV: {remainingDv:F0} / 最大 {maxDv:F0} m/s");
             GUI.color = Color.white;
             y += rowH;
 
             // 行4：工质
             Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
-                string.Format("工质: {0:F0} / {1:F0} kg", propMass, propCap));
+                $"工质: {propMass:F0} / {propCap:F0} kg");
             y += rowH + 12f;
         }
 
@@ -1508,8 +1485,7 @@ namespace PioneerFramework
 
             Text.Font = GameFont.Tiny;
             Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, 18f),
-                string.Format("已消耗 dV: {0:F1} / {1:F1} m/s ({2:P0}) · 工质 {3:F1} kg",
-                    applied, planned, frac, group.burnConsumedPropellant));
+                $"已消耗 dV: {applied:F1} / {planned:F1} m/s ({frac:P0}) · 工质 {group.burnConsumedPropellant:F1} kg");
             Text.Font = GameFont.Small;
             y += 24f;
 
@@ -1531,13 +1507,13 @@ namespace PioneerFramework
 
             var target = spaceGame.GetGroupById(group.rendezvousTargetId);
             string targetLabel = target != null
-                ? string.Format("Group {0}", group.rendezvousTargetId)
-                : string.Format("Group {0}（已消失）", group.rendezvousTargetId);
+                ? $"Group {group.rendezvousTargetId}"
+                : $"Group {group.rendezvousTargetId}（已消失）";
             double now = TimeScaleManager.GetPhysicsTickSafe();
 
             float rowH = 21f;
             Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
-                string.Format("目标: {0}", targetLabel));
+                $"目标: {targetLabel}");
             y += rowH;
 
             if (SpaceGameComp.UseNewRendezvousLaw)
@@ -1547,7 +1523,7 @@ namespace PioneerFramework
                 //   ⚠ 旧律的"变轨段/相位段"与"本段剩 X/Y h"**已退役**（用户："相位让我们的 MJ 接管"）：
                 //     那两处读的状态（`rendezvousLaw*`）只有旧入口会写 ⇒ 新路上它们恒为初值 = **撒谎读数**。
                 Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
-                    string.Format("状态: {0}", group.rendezvousArmed ? "引导中" : "待命"));
+                    $"状态: {(group.rendezvousArmed ? "引导中" : "待命")}");
                 y += rowH;
 
                 double aSelf = double.NaN, aTgt = double.NaN, phaseDeg = double.NaN, distKm = double.NaN, rel = double.NaN;
@@ -1571,15 +1547,11 @@ namespace PioneerFramework
                 {
                     double remainA = (aTgt - aSelf) / 1000.0;
                     Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
-                        string.Format("半长轴 {0:F0} / {1:F0} km（{2}{3:F0} km）",
-                            aSelf / 1000.0, aTgt / 1000.0,
-                            System.Math.Abs(remainA) < 1.0 ? "已对齐" : (remainA > 0 ? "待升 " : "待降 "),
-                            System.Math.Abs(remainA)));
+                        $"半长轴 {aSelf / 1000.0:F0} / {aTgt / 1000.0:F0} km（{(System.Math.Abs(remainA) < 1.0 ? "已对齐" : (remainA > 0 ? "待升 " : "待降 "))}{System.Math.Abs(remainA):F0} km）");
                 }
                 y += rowH;
                 Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
-                    string.Format("沿轨相位差 {0:F1}°（+ = 目标在前）· 距离 {1:F0} km · 相对速度 {2:F1} m/s",
-                        phaseDeg, distKm, rel));
+                    $"沿轨相位差 {phaseDeg:F1}°（+ = 目标在前）· 距离 {distKm:F0} km · 相对速度 {rel:F1} m/s");
                 GUI.color = Color.white;
                 y += rowH + 6f;
             }
@@ -1589,12 +1561,12 @@ namespace PioneerFramework
                 string state = group.rendezvousArmed ? "引导中" : "待命（等待出发段点火）";
                 double remain = group.rendezvousArrivalTick - now;
                 Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
-                    string.Format("状态: {0}", state));
+                    $"状态: {state}");
                 y += rowH;
                 GUI.color = DimColor;
                 Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
                     remain > 0
-                        ? string.Format("距到达约 {0:F0} 秒（{1:F1} 分钟）", remain, remain / 60.0)
+                        ? $"距到达约 {remain:F0} 秒（{remain / 60.0:F1} 分钟）"
                         : "已过到达时刻");
                 GUI.color = Color.white;
                 y += rowH + 6f;
@@ -1614,8 +1586,8 @@ namespace PioneerFramework
 
             var target = spaceGame.GetGroupById(group.ApproachTargetId);
             string targetLabel = target != null
-                ? string.Format("Group {0}", group.ApproachTargetId)
-                : string.Format("Group {0}（已消失）", group.ApproachTargetId);
+                ? $"Group {group.ApproachTargetId}"
+                : $"Group {group.ApproachTargetId}（已消失）";
             double dist = double.NaN, relvel = double.NaN;
             if (target != null)
             {
@@ -1627,14 +1599,14 @@ namespace PioneerFramework
 
             float rowH = 21f;
             Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
-                string.Format("目标: {0}", targetLabel));
+                $"目标: {targetLabel}");
             y += rowH;
 
             GUI.color = DimColor;
             Widgets.Label(new Rect(panel.x + 12f, y, panel.width - 24f, rowH),
                 double.IsNaN(dist)
                     ? "距离 / 相对速度: --"
-                    : string.Format("距离 {0:F0} m · 相对速度 {1:F1} m/s", dist, relvel));
+                    : $"距离 {dist:F0} m · 相对速度 {relvel:F1} m/s");
             GUI.color = Color.white;
             y += rowH + 6f;
 
@@ -1718,7 +1690,7 @@ namespace PioneerFramework
 
             // 行4：近距离接近（目标选择 FloatMenu；接近中点击可重新选择/换目标）
             string approachLabel = group.HasApproachGuidance
-                ? string.Format("近距离接近中 → G{0}", group.ApproachTargetId)
+                ? $"近距离接近中 → G{group.ApproachTargetId}"
                 : "近距离接近";
             if (Widgets.ButtonText(new Rect(leftX, y, panel.width - 24f, rowH), approachLabel))
             {
@@ -1736,14 +1708,13 @@ namespace PioneerFramework
                     foreach (var c in candidates)
                     {
                         int capturedId = c.GroupId;
-                        options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）",
-                            c.GroupId, (c.positionBody - group.positionBody).magnitude / 1000.0), () =>
+                        options.Add(new FloatMenuOption($"Group {c.GroupId}（{(c.positionBody - group.positionBody).magnitude / 1000.0:F0} km）", () =>
                         {
                             var sg = Current.Game?.GetComponent<SpaceGameComp>();
                             if (sg == null) return;
                             var grp = sg.GetGroupById(selectedGroupId); // 面板当前选中群组（最新引用）
                             if (grp == null) return;
-                            HashSet<PropellantDef> nets = grp.currentNetwork != null
+                            HashSet<PropellantDef>? nets = grp.currentNetwork != null
                                 ? new HashSet<PropellantDef> { grp.currentNetwork } : null;
                             grp.RegisterApproachGuidance(capturedId, nets);
                         }));
@@ -1755,7 +1726,7 @@ namespace PioneerFramework
 
             // 行5：机动队列（全宽）
             string queueLabel = group.plannedManeuvers.Count > 0
-                ? string.Format("机动队列 ({0})", group.plannedManeuvers.Count)
+                ? $"机动队列 ({group.plannedManeuvers.Count})"
                 : "机动队列 (0)";
             if (Widgets.ButtonText(new Rect(leftX, y, panel.width - 24f, rowH), queueLabel))
                 Find.WindowStack.Add(new ManeuverQueueWindow(group));
@@ -1804,7 +1775,7 @@ namespace PioneerFramework
                 float progress = spaceGame.ActiveRestoreOperation.Progress;
                 Widgets.FillableBar(progressRect, progress, Texture2D.linearGrayTexture, Texture2D.whiteTexture, false);
                 Text.Anchor = TextAnchor.MiddleCenter;
-                Widgets.Label(progressRect, string.Format("取出中 {0:P0}", progress));
+                Widgets.Label(progressRect, $"取出中 {progress:P0}");
                 Text.Anchor = TextAnchor.UpperLeft;
             }
             else if (spaceGame.ActiveArchiveOperation != null && spaceGame.ActiveArchiveOperation.TargetEntity == mapEntity)
@@ -1813,7 +1784,7 @@ namespace PioneerFramework
                 float progress = spaceGame.ActiveArchiveOperation.Progress;
                 Widgets.FillableBar(progressRect, progress, Texture2D.linearGrayTexture, Texture2D.whiteTexture, false);
                 Text.Anchor = TextAnchor.MiddleCenter;
-                Widgets.Label(progressRect, string.Format("封存中 {0:P0}", progress));
+                Widgets.Label(progressRect, $"封存中 {progress:P0}");
                 Text.Anchor = TextAnchor.UpperLeft;
             }
             else if (mapEntity.IsMapArchived)
@@ -1839,7 +1810,7 @@ namespace PioneerFramework
         /// <summary>
         /// 获取 group 中关联地图的 SpaceEntity（用于地图操作）。
         /// </summary>
-        private static SpaceEntity GetMapEntityForGroup(SpaceEntityGroup group)
+        private static SpaceEntity? GetMapEntityForGroup(SpaceEntityGroup group)
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return null;
@@ -1854,6 +1825,5 @@ namespace PioneerFramework
             return null;
         }
 
-        #endregion
     }
 }

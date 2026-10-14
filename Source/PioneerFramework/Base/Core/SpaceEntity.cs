@@ -29,15 +29,15 @@ namespace PioneerFramework
             set => factionId = value;
         }
 
-        public bool CanInteract = false;
+        public bool CanInteract ;
         public bool IsSelectable = true;
-        public bool HasMap = false;
-        public bool IsMapArchived = false;  // 地图已被封存到磁盘
+        public bool HasMap ;
+        public bool IsMapArchived ;  // 地图已被封存到磁盘
         public bool IsMovable = true;
         public bool IsAffectedByGravity = true;
         public bool IsCollidable = true;
 
-        public DVector3 BoundsSize = new DVector3(5000.0, 3000.0, 5000.0);
+        public DVector3 BoundsSize = new(5000.0, 3000.0, 5000.0);
 
         /// <summary>
         /// AABB 半边长 = BoundsSize × 0.5（真实尺寸）。
@@ -176,7 +176,7 @@ namespace PioneerFramework
         /// 实体推进源：优先 Map 建筑（SpaceMapComp）；无 Map 时回退自带推进数据（PropulsionData）。
         /// 与 group 级 burn 的解析规则（GetGroupPropulsionSource）保持一致。
         /// </summary>
-        private IPropulsionSource GetPropulsionSource()
+        private IPropulsionSource? GetPropulsionSource()
         {
             var mc = GetMapComp();
             if (mc != null) return mc;
@@ -184,7 +184,7 @@ namespace PioneerFramework
         }
 
         /// <summary>实体 → 所属地图的 SpaceMapComp（无 Map 时返回 null）。</summary>
-        private SpaceMapComp GetMapComp()
+        private SpaceMapComp? GetMapComp()
         {
             if (MapId < 0) return null;
             var sg = Current.Game?.GetComponent<SpaceGameComp>();
@@ -200,7 +200,7 @@ namespace PioneerFramework
         public int MapId = -1;
 
         // ── 部件系统（单 part 化：载具至多一个 part，导弹等无 Map part 也走此列表）──
-        private List<SpacePart> parts = new List<SpacePart>();
+        private List<SpacePart> parts = new();
         public IReadOnlyList<SpacePart> Parts => parts;
 
         // ── 实体级 stats 缓存（kg 等，Parts / 组件变更时置脏）──
@@ -265,7 +265,7 @@ namespace PioneerFramework
         // ── 无 Map 实体的自带推进数据（IPropulsionSource）──
         // 导弹/载荷等纯物理实体没有内部地图，引擎参数与工质直接挂在实体上。
         // 有 Map 的实体忽略此数据：burn/机动估算统一走 SpaceMapComp（见 GetPropulsionSource）。
-        public List<PropulsionData> propulsion = new List<PropulsionData>();
+        public List<PropulsionData> propulsion = new();
         public bool HasPropulsionData => propulsion.Count > 0;
 
         // ── 无 Map 主推方向型（D15，可选）──
@@ -276,7 +276,7 @@ namespace PioneerFramework
         public bool HasMainAxis => mainAxisShip.HasValue && mainAxisShip.Value.sqrMagnitude > 1e-12;
 
         // 运行时缓存（并行物理线程只读；propulsion 变更时重建）
-        private List<PropellantNetwork> cachedPropulsionNetworks = new List<PropellantNetwork>();
+        private List<PropellantNetwork> cachedPropulsionNetworks = new();
         private bool propulsionDirty = true;
         private double totalPropulsionMass;      // ⚠ double：见 PropulsionData.mass 的说明（累加量不许用 float）
         private double totalPropulsionCapacity;
@@ -591,7 +591,7 @@ namespace PioneerFramework
     public class GasIntake
     {
         /// <summary>被抽走的工质（通常 = `PF_Propellant_IntakeAir`）。缺席 = 本项不生效（注册端会跳过）。</summary>
-        public PropellantDef? propellant;
+        public PropellantDef? propellant = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>每单位主工质的抽取比（kg/kg，>0）。0 或负 = 本项不生效。</summary>
         public float perUnitRatio = 1f;

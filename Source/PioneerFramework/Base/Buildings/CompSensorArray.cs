@@ -13,13 +13,13 @@ namespace PioneerFramework
         public float passiveRangeMeters = 5_000_000f;
 
         /// <summary>记忆时长（s，物理秒轴）：观测者的记忆窗口 T（[V3]）。0 = 未设 ⇒ 用 `DetectionCore.DefaultMemorySeconds`。</summary>
-        public float memorySeconds = 0f;
+        public float memorySeconds ;
 
         /// <summary>抗压制（无量纲，≥0）。</summary>
-        public float ecmResist = 0f;
+        public float ecmResist ;
 
         /// <summary>抗欺骗（无量纲，≥0）。</summary>
-        public float eccmResist = 0f;
+        public float eccmResist ;
 
         public CompProperties_SensorArray()
         {

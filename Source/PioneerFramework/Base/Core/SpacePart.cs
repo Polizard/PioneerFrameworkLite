@@ -16,7 +16,7 @@ namespace PioneerFramework
     public class SpacePart : IExposable
     {
         public int partId;
-        public string defName;
+        public string defName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         public DVector3 positionShip;    // 相对 Entity 原点（物理米）
         public DVector3 boundsSizeShip;  // AABB 尺寸（物理米）
         public float hp = 100f;
@@ -32,10 +32,10 @@ namespace PioneerFramework
         public int linkedMapId = -1;
 
         /// <summary>组件实例数据（序列化落盘）。功能判定一律走组件，不再依赖几何形状。</summary>
-        public List<PartComponentData> components = new List<PartComponentData>();
+        public List<PartComponentData> components = new();
 
         // 舱室类型缓存（不序列化）
-        [Unsaved] private RoomTypeDef cachedRoomTypeDef;
+        [Unsaved] private RoomTypeDef cachedRoomTypeDef = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;
 
         // ── 部件级 stats 热缓存（不序列化）──
         private ShipStats cachedStats;
@@ -52,7 +52,7 @@ namespace PioneerFramework
         // ════════════════════════════════════════════
 
         /// <summary>获取指定类型组件；不存在返回 null。</summary>
-        public T GetComponent<T>() where T : PartComponentData
+        public T? GetComponent<T>() where T : PartComponentData
         {
             for (int i = 0; i < components.Count; i++)
             {
@@ -162,7 +162,7 @@ namespace PioneerFramework
                 if (room == null) return null;
                 if (cachedRoomTypeDef == null && !string.IsNullOrEmpty(room.roomTypeDefName))
                     cachedRoomTypeDef = DefDatabase<RoomTypeDef>.GetNamedSilentFail(room.roomTypeDefName);
-                return cachedRoomTypeDef;
+                return cachedRoomTypeDef = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
             }
         }
 

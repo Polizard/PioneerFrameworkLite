@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using PioneerFramework.Combat;
 using Verse;
@@ -52,10 +52,10 @@ namespace PioneerFramework
         private static int nextProgressLogTick;
 
 
-        private static readonly List<string> passes = new List<string>();
-        private static readonly List<string> uncovered = new List<string>();
+        private static readonly List<string> passes = new();
+        private static readonly List<string> uncovered = new();
         /// <summary>值判据失败（"跑到了但数不对"）——与"未覆盖"不同，这类直接判 FAIL。</summary>
-        private static readonly List<string> failures = new List<string>();
+        private static readonly List<string> failures = new();
 
         // 阶段起点计数（增量 = 该阶段是否真走到目标代码路径）
         private static long bAggReused, bRotInv, bCompRefHit, bExplQuery, bSliceChecks, bContacts;
@@ -154,12 +154,12 @@ namespace PioneerFramework
         public static IReadOnlyList<string> Uncovered => uncovered;
 
         /// <summary>上一阶段进入时的组 id 快照：用于阶段间清场（见 CleanupSinceLastStageEntry）。</summary>
-        private static readonly HashSet<int> groupIdsAtLastEntry = new HashSet<int>();
+        private static readonly HashSet<int> groupIdsAtLastEntry = new();
 
         /// <summary>场景方法会自行打开这些"逐 tick 详细日志"开关且**从不关闭**（首轮验收实测
         /// [弹群接触] 刷了 2.5 万行、把结论埋掉）→ 阶段间强制关掉，结论时恢复玩家原值。</summary>
         private static bool savedDetailedCombat, savedDetailedCollision, savedDetailedGuidance;
-        private static readonly List<int> doomedGroupIds = new List<int>();
+        private static readonly List<int> doomedGroupIds = new();
         private static int batteryPassed, batteryFailed;
 
         public static bool Running => stage != Stage.Idle;
@@ -186,21 +186,20 @@ namespace PioneerFramework
         private static int CurTick => Find.TickManager?.TicksGame ?? 0;
 
         private static string StageName(Stage s)
-        {
-            switch (s)
-            {
-                case Stage.Volley: return "1/8 弹群齐射→解离→弹头AoE（⑮）";
-                case Stage.MergedBurn: return "2/8 合并态弹群燃烧（①聚合器）";
-                case Stage.Turret: return "3/8 炮塔对射（⑤⑯）";
-                case Stage.Collision: return "4/8 无Map碰撞（接触解算）";
-                case Stage.Thrust: return "5/8 主推轴向+RCS 燃烧（②③）";
-                case Stage.GravityLunar: return "6/8 月球系引力场（A0：子天体域差分）";
-                case Stage.WarheadGravity: return "7/8 弹头引力（A2：建段）";
-                case Stage.MissedWarhead: return "8/8 漏靶弹头（A2：段内插值 + 引力弯曲）";
-                case Stage.Verdict: return "出结论";
-                default: return s.ToString();
-            }
-        }
+        
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            => s switch
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            {
+            Stage.Volley => "1/8 弹群齐射→解离→弹头AoE（⑮）",
+            Stage.MergedBurn => "2/8 合并态弹群燃烧（①聚合器）",
+            Stage.Turret => "3/8 炮塔对射（⑤⑯）",
+            Stage.Collision => "4/8 无Map碰撞（接触解算）",
+            Stage.Thrust => "5/8 主推轴向+RCS 燃烧（②③）",
+            Stage.GravityLunar => "6/8 月球系引力场（A0：子天体域差分）",
+            Stage.WarheadGravity => "7/8 弹头引力（A2：建段）",
+            Stage.MissedWarhead => "8/8 漏靶弹头（A2：段内插值 + 引力弯曲）",
+            Stage.Verdict => "出结论",
+            _ => s.ToString(),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            };
 
         /// <summary>一键启动：开探针 → 依次跑 5 个已验证场景 → 自动出结论。
         /// 入口：Debug 菜单 →「PFL 测试」页签 / 旧调试建筑的兼容 Gizmo。</summary>
@@ -244,7 +243,7 @@ namespace PioneerFramework
                 GravityFieldSelfTest.Run();
                 batteryPassed = GravityFieldSelfTest.LastPassed;
                 batteryFailed = GravityFieldSelfTest.LastFailed;
-                batterySummary = string.Format("引力自检电池：通过 {0} / 失败 {1}", batteryPassed, batteryFailed);
+                batterySummary = $"引力自检电池：通过 {batteryPassed} / 失败 {batteryFailed}";
                 foreach (var f in GravityFieldSelfTest.LastFailures) failures.Add("[电池] " + f);
             }
             else
@@ -260,8 +259,7 @@ namespace PioneerFramework
                 + "任何 [性能探针][不一致] 红字 = 真实缺陷。");
             Log.Message("[验收] 提示：不想等满 8 阶段（尤其阶段 4 无Map碰撞要等船漂到接触）可随时点「■ 中止验收」——"
                 + "它会**立即打印结论与全部计数**；每 600 tick 也会打一行进度含累计计数，所以中途关游戏也能看到数据。");
-            Log.Message(string.Format("[验收] 起始组数={0}（结论里对比，用于确认场景确实部署了）｜勾选：电池{1}，阶段 {2}/{3}",
-                GroupCount(), batteryEnabled ? "开" : "关", SelectedStageCount, PHASE_COUNT));
+            Log.Message($"[验收] 起始组数={GroupCount()}（结论里对比，用于确认场景确实部署了）｜勾选：电池{(batteryEnabled ? "开" : "关")}，阶段 {SelectedStageCount}/{PHASE_COUNT}");
             foreach (var skipped in SkippedStageLabels()) Log.Message("[验收] 已跳过：" + skipped);
 
             if (!EnterNextEnabledStage(0)) PrintVerdict();   // 一个阶段都没勾 → 直接出结论
@@ -401,8 +399,7 @@ namespace PioneerFramework
             AutonomousVehicleManager.DebugDetailedGuidance = false;
 
             if (doomedGroupIds.Count > 0)
-                Log.Message(string.Format("[验收] 阶段间清场：销毁上一阶段残留组 {0} 个（验收自造，不动玩家资产）；"
-                    + "详细场景日志已关", doomedGroupIds.Count));
+                Log.Message($"[验收] 阶段间清场：销毁上一阶段残留组 {doomedGroupIds.Count} 个（验收自造，不动玩家资产）；详细场景日志已关");
         }
 
         /// <summary>由 SpaceGameComp.GameComponentTick 每 tick 驱动。</summary>
@@ -417,17 +414,7 @@ namespace PioneerFramework
             {
                 nextProgressLogTick = CurTick + 600;
                 // 累计量也一并打印：这样即使半途关游戏（没跑到结论），也能看出各条是否真被走到
-                Log.Message(string.Format("[验收] 进行中：{0} t+{1}/{2} 本阶段增量：①{3} ⑯{4} ⑤{5} ⑮{6} ③{7} 接触{8}"
-                    + "｜累计：①reused={9} ⑯命中={10} ⑤命中={11} ⑮网格={12} ⑦空武器表={13} ⑩省查找={14} ⑧天体位={15}/{16}"
-                    + "｜㉔局部位={17}/{18} ㉖{19}",
-                    StageName(stage), CurTick - stageStartTick, PHASE_TIMEOUT_TICKS,
-                    PerfProbe.AggReused - bAggReused, PerfProbe.RotInvHits - bRotInv,
-                    PerfProbe.CompRefHits - bCompRefHit, PerfProbe.ExplGridQueries - bExplQuery,
-                    PerfProbe.SliceBufferChecks - bSliceChecks, PerfProbe.ContactsResolved - bContacts,
-                    PerfProbe.AggReused, PerfProbe.RotInvHits, PerfProbe.CompRefHits, PerfProbe.ExplGridQueries,
-                    PerfProbe.EmptyWeaponListHits, PerfProbe.RecordLookupsAvoided,
-                    PerfProbe.BodyPosHits, PerfProbe.BodyPosMisses,
-                    PerfProbe.BodyParentCacheHits, PerfProbe.BodyParentCacheMisses, PerfProbe.StepClockReport()));
+                Log.Message($"[验收] 进行中：{StageName(stage)} t+{CurTick - stageStartTick}/{PHASE_TIMEOUT_TICKS} 本阶段增量：①{PerfProbe.AggReused - bAggReused} ⑯{PerfProbe.RotInvHits - bRotInv} ⑤{PerfProbe.CompRefHits - bCompRefHit} ⑮{PerfProbe.ExplGridQueries - bExplQuery} ③{PerfProbe.SliceBufferChecks - bSliceChecks} 接触{PerfProbe.ContactsResolved - bContacts}｜累计：①reused={PerfProbe.AggReused} ⑯命中={PerfProbe.RotInvHits} ⑤命中={PerfProbe.CompRefHits} ⑮网格={PerfProbe.ExplGridQueries} ⑦空武器表={PerfProbe.EmptyWeaponListHits} ⑩省查找={PerfProbe.RecordLookupsAvoided} ⑧天体位={PerfProbe.BodyPosHits}/{PerfProbe.BodyPosMisses}｜㉔局部位={PerfProbe.BodyParentCacheHits}/{PerfProbe.BodyParentCacheMisses} ㉖{PerfProbe.StepClockReport()}");
             }
 
             switch (stage)
@@ -437,8 +424,7 @@ namespace PioneerFramework
                     // 曾把 ⑯（逆四元数，只在射弹/激光命中几何里调用）写进本阶段，导致阶段永不满足——教训记于此。
                     if (PerfProbe.ExplGridQueries > bExplQuery)
                     {
-                        Pass(string.Format("⑮ 弹群命中 → 弹头 AoE 走细网格 +{0} 次（漏伤判据见硬指标；附本阶段 ①聚合器 reused+{1}）",
-                            PerfProbe.ExplGridQueries - bExplQuery, PerfProbe.AggReused - bAggReused));
+                        Pass($"⑮ 弹群命中 → 弹头 AoE 走细网格 +{PerfProbe.ExplGridQueries - bExplQuery} 次（漏伤判据见硬指标；附本阶段 ①聚合器 reused+{PerfProbe.AggReused - bAggReused}）");
                         AdvanceTo(Stage.Volley);
                     }
                     else if (timedOut) TimeoutStage("未观测到『弹头 AoE 走网格』（导弹可能未命中）");
@@ -447,8 +433,7 @@ namespace PioneerFramework
                 case Stage.MergedBurn:
                     if (PerfProbe.AggReused > bAggReused)
                     {
-                        Pass(string.Format("① 合并态弹群（多实体组 N=8）群级燃烧走聚合器缓存 reused+{0}",
-                            PerfProbe.AggReused - bAggReused));
+                        Pass($"① 合并态弹群（多实体组 N=8）群级燃烧走聚合器缓存 reused+{PerfProbe.AggReused - bAggReused}");
                         AdvanceTo(Stage.MergedBurn);
                     }
                     else if (timedOut) TimeoutStage("未观测到『聚合器缓存命中』（合并态弹群可能未燃起来或已解离）");
@@ -457,8 +442,7 @@ namespace PioneerFramework
                 case Stage.Turret:
                     if (PerfProbe.CompRefHits > bCompRefHit && PerfProbe.RotInvHits > bRotInv)
                     {
-                        Pass(string.Format("⑤⑯ 对射：组件缓存命中+{0}，命中几何走逆四元数缓存 +{1}",
-                            PerfProbe.CompRefHits - bCompRefHit, PerfProbe.RotInvHits - bRotInv));
+                        Pass($"⑤⑯ 对射：组件缓存命中+{PerfProbe.CompRefHits - bCompRefHit}，命中几何走逆四元数缓存 +{PerfProbe.RotInvHits - bRotInv}");
                         AdvanceTo(Stage.Turret);
                     }
                     else if (timedOut) TimeoutStage("未观测到『组件缓存命中 + 命中几何缓存命中』（炮塔可能未开火）");
@@ -468,8 +452,7 @@ namespace PioneerFramework
                     // 该场景是低速靠近（25~30 m/s，低于爆炸阈值）→ 判据用"接触解算"，不要求爆炸
                     if (PerfProbe.ContactsResolved > bContacts)
                     {
-                        Pass(string.Format("②④ 接触解算 +{0} 次（碰撞链跑到 SeparatePositions；"
-                            + "爆炸走网格由上一阶段已覆盖）", PerfProbe.ContactsResolved - bContacts));
+                        Pass($"②④ 接触解算 +{PerfProbe.ContactsResolved - bContacts} 次（碰撞链跑到 SeparatePositions；爆炸走网格由上一阶段已覆盖）");
                         AdvanceTo(Stage.Collision);
                     }
                     else if (timedOut) TimeoutStage("未观测到『接触解算』（三条船可能未接触）");
@@ -478,8 +461,7 @@ namespace PioneerFramework
                 case Stage.Thrust:
                     if (PerfProbe.SliceBufferChecks > bSliceChecks)
                     {
-                        Pass(string.Format("②③ 燃烧路径走到组级 scratch 复用检查 +{0} 次（物理步 scratch 身份/别名见硬指标）",
-                            PerfProbe.SliceBufferChecks - bSliceChecks));
+                        Pass($"②③ 燃烧路径走到组级 scratch 复用检查 +{PerfProbe.SliceBufferChecks - bSliceChecks} 次（物理步 scratch 身份/别名见硬指标）");
                         AdvanceTo(Stage.Thrust);
                     }
                     else if (timedOut) TimeoutStage("未观测到『组级燃烧切片复用』（可能未点火）");
@@ -490,17 +472,12 @@ namespace PioneerFramework
                     // 这里额外把实测比值打进结论，便于人不看日志也能判断。
                     if (PerfProbe.GravitySubBodyProbes > bGravitySubBody)
                     {
-                        Pass(string.Format("A0 月球系：子天体域差分采样 +{0} 次，差分/局部引力 = {1:P4}（范围 {2:P4}–{3:P4}）"
-                            + "｜判读：0=旧行为(错) 0.1%–0.6%=潮汐(对) ~7%=全量和(错)",
-                            PerfProbe.GravitySubBodyProbes - bGravitySubBody,
-                            PerfProbe.GravitySubBodyLastRatio,
-                            PerfProbe.GravitySubBodyMinRatio, PerfProbe.GravitySubBodyMaxRatio));
+                        Pass($"A0 月球系：子天体域差分采样 +{PerfProbe.GravitySubBodyProbes - bGravitySubBody} 次，差分/局部引力 = {PerfProbe.GravitySubBodyLastRatio:P4}（范围 {PerfProbe.GravitySubBodyMinRatio:P4}–{PerfProbe.GravitySubBodyMaxRatio:P4}）｜判读：0=旧行为(错) 0.1%–0.6%=潮汐(对) ~7%=全量和(错)");
 
                         if (PerfProbe.GravitySubBodyLastRatio < 1e-4 || PerfProbe.GravitySubBodyLastRatio > 0.03)
                             MarkStageFailed("差分比值不在潮汐带");
                         if (PerfProbe.GravitySubBodyLastRatio < 1e-4 || PerfProbe.GravitySubBodyLastRatio > 0.03)
-                            failures.Add(string.Format("A0 月球域差分比值 {0:P4} 不在潮汐带 0.01%–3%（0=旧行为 / ~7%=全量和）",
-                                PerfProbe.GravitySubBodyLastRatio));
+                            failures.Add($"A0 月球域差分比值 {PerfProbe.GravitySubBodyLastRatio:P4} 不在潮汐带 0.01%–3%（0=旧行为 / ~7%=全量和）");
 
                         AdvanceTo(Stage.GravityLunar);
                     }
@@ -511,16 +488,12 @@ namespace PioneerFramework
                     if (PerfProbe.WarheadSegments > bWarheadSegments)
                     {
                         double ratio = PerfProbe.WarheadAccelRatio;
-                        Pass(string.Format("A2 弹头引力：建段 +{0} 次，|a|={1:F3} m/s²（主导项 μ/r² 的 {2:F2}×，应 0.2–5×）"
-                            + " 指向行星中心余弦={3:F3}｜射弹段：重建 {4} / 步 {5}",
-                            PerfProbe.WarheadSegments - bWarheadSegments, PerfProbe.WarheadAccel, ratio,
-                            PerfProbe.WarheadTowardCenterCos,
-                            PerfProbe.ProjectileSegments, PerfProbe.ProjectileSteps));
+                        Pass($"A2 弹头引力：建段 +{PerfProbe.WarheadSegments - bWarheadSegments} 次，|a|={PerfProbe.WarheadAccel:F3} m/s²（主导项 μ/r² 的 {ratio:F2}×，应 0.2–5×） 指向行星中心余弦={PerfProbe.WarheadTowardCenterCos:F3}｜射弹段：重建 {PerfProbe.ProjectileSegments} / 步 {PerfProbe.ProjectileSteps}");
 
                         if (ratio > 0.0 && (ratio < 0.2 || ratio > 5.0))
                             MarkStageFailed("弹头引力偏离主导项");
                         if (ratio > 0.0 && (ratio < 0.2 || ratio > 5.0))
-                            failures.Add(string.Format("A2 弹头引力偏离主导项 {0:F1}×（应 0.2–5×；~100× = 参考系混用的旧伪值）", ratio));
+                            failures.Add($"A2 弹头引力偏离主导项 {ratio:F1}×（应 0.2–5×；~100× = 参考系混用的旧伪值）");
                         // 「段重建频率」不在这里判：**唯一判据在探针里**（PerfProbe.NoteProjectileStep，
                         // 按弹、按物理时间、且要求期望段数 ≥4 才下结论）。
                         // 2026-09-14 教训：此处曾留一条"全局 段/步 > 1/60 即过频"的粗糙判据，
@@ -537,19 +510,12 @@ namespace PioneerFramework
                     // 「㉔弯曲采样=0 次」即为证据）。拿到样本 ⇒ 段内插值飞行已跨多段、且能做定量判读。
                     if (PerfProbe.FreeFlightBends > bFreeFlightBends)
                     {
-                        Pass(string.Format("A2 漏靶弹头：段重建 +{0} 次｜㉔弯曲采样 +{1} 次 最近 实际/½|a|t²={2:F2}×"
-                            + "（实际 {3:F1} m / 理论 {4:F1} m；<1 = 引力没真加上 / >>1 = 参考系错或每段丢一步）",
-                            PerfProbe.ProjectileSegments - bProjSegments,
-                            PerfProbe.FreeFlightBends - bFreeFlightBends,
-                            PerfProbe.FreeFlightLastRatio,
-                            PerfProbe.FreeFlightLastLinear, PerfProbe.FreeFlightLastExpected));
+                        Pass($"A2 漏靶弹头：段重建 +{PerfProbe.ProjectileSegments - bProjSegments} 次｜㉔弯曲采样 +{PerfProbe.FreeFlightBends - bFreeFlightBends} 次 最近 实际/½|a|t²={PerfProbe.FreeFlightLastRatio:F2}×（实际 {PerfProbe.FreeFlightLastLinear:F1} m / 理论 {PerfProbe.FreeFlightLastExpected:F1} m；<1 = 引力没真加上 / >>1 = 参考系错或每段丢一步）");
 
                         // 修好"段起点时刻"后该比值应精确到 <1%（圆轨上 ½|a|t² 是严格解）；留 0.8–1.3 的余量
                         if (PerfProbe.FreeFlightBends > 0
                             && (PerfProbe.FreeFlightLastRatio < 0.8 || PerfProbe.FreeFlightLastRatio > 1.3))
-                            failures.Add(string.Format(
-                                "A2 引力弯曲量 {0:F2}× 不在 0.8–1.3×（<1 = 引力没真加上 / >>1 = 参考系错 / 每段丢一步运动也会偏）",
-                                PerfProbe.FreeFlightLastRatio));
+                            failures.Add($"A2 引力弯曲量 {PerfProbe.FreeFlightLastRatio:F2}× 不在 0.8–1.3×（<1 = 引力没真加上 / >>1 = 参考系错 / 每段丢一步运动也会偏）");
 
                         AdvanceTo(Stage.MissedWarhead);
                     }
@@ -576,7 +542,7 @@ namespace PioneerFramework
                 outcomes[toIdx] = StageOutcome.Uncovered;
                 outcomeNotes[toIdx] = why;
             }
-            uncovered.Add(StageName(stage) + "：" + why + string.Format("（超时 {0} tick）", PHASE_TIMEOUT_TICKS));
+            uncovered.Add(StageName(stage) + "：" + why + $"（超时 {PHASE_TIMEOUT_TICKS} tick）");
             Log.Warning("[验收] " + StageName(stage) + " 未覆盖——" + why + "。继续下一阶段。");
             switch (stage)
             {
@@ -641,21 +607,13 @@ namespace PioneerFramework
             var skippedLabels = SkippedStageLabels();
 
             Log.Message("[验收] ═══════════ 性能优化验收结论 ═══════════");
-            Log.Message(string.Format("[验收] 硬指标（不变式）：{0}",
-                hard.Count == 0 ? "全部为 0 ✓" : hard.Count + " 项非 0 ✗"));
+            Log.Message($"[验收] 硬指标（不变式）：{(hard.Count == 0 ? "全部为 0 ✓" : hard.Count + " 项非 0 ✗")}");
             foreach (var h in hard) Log.Error("[验收] 硬指标失败：" + h);
 
             // 被跳过的阶段要显示"跳过"，不能和"跑了但没拿到证据"混为一谈
-            Log.Message(string.Format("[验收] 覆盖度 {0}/{1}（勾选阶段）：弹群AoE⑮{2} 合并态聚合器①{3} 对射⑤⑯{4} 碰撞{5} 燃烧②③{6}"
-                + " 月球域A0{7} 弹头A2{8} 漏靶A2{9}",
-                covered, selectedTotal,
-                CoverLabel(0, volleyCovered), CoverLabel(1, mergedCovered),
-                CoverLabel(2, turretCovered), CoverLabel(3, collisionCovered),
-                CoverLabel(4, thrustCovered), CoverLabel(5, lunarCovered),
-                CoverLabel(6, warheadCovered), CoverLabel(7, missedCovered)));
+            Log.Message($"[验收] 覆盖度 {covered}/{selectedTotal}（勾选阶段）：弹群AoE⑮{CoverLabel(0, volleyCovered)} 合并态聚合器①{CoverLabel(1, mergedCovered)} 对射⑤⑯{CoverLabel(2, turretCovered)} 碰撞{CoverLabel(3, collisionCovered)} 燃烧②③{CoverLabel(4, thrustCovered)} 月球域A0{CoverLabel(5, lunarCovered)} 弹头A2{CoverLabel(6, warheadCovered)} 漏靶A2{CoverLabel(7, missedCovered)}");
             if (skippedLabels.Count > 0)
-                Log.Message(string.Format("[验收] 已跳过 {0} 个阶段（取消勾选）：{1}",
-                    skippedLabels.Count, string.Join("；", skippedLabels.ToArray())));
+                Log.Message($"[验收] 已跳过 {skippedLabels.Count} 个阶段（取消勾选）：{string.Join("；", skippedLabels.ToArray())}");
             Log.Message("[验收] ⑲Gooding：不在游戏内触发退化几何，由纯测试强制覆盖"
                 + "（GoodingTests：180 组几何扫描确认上限不误杀 + NaN 必抛不挂死）");
             foreach (var u in uncovered) Log.Warning("[验收] 未覆盖：" + u);
@@ -663,57 +621,36 @@ namespace PioneerFramework
             // ── 优化是否真的生效（而不是退化成每次都重建 / 完全没走缓存）──
             long rebuilt = PerfProbe.AggRebuiltFirst + PerfProbe.AggRebuiltEntitySet
                 + PerfProbe.AggRebuiltPropulsion + PerfProbe.AggRebuiltNoChange;
-            Log.Message(string.Format("[验收] 生效证据：①聚合器 reused={0} / rebuilt={1}（reused 应远大于 rebuilt）；"
-                + "⑤组件缓存 命中={2} / 实查={3}；⑯逆四元数 命中={4} / 未命中={5}；⑮爆炸网格查询={6}",
-                PerfProbe.AggReused, rebuilt, PerfProbe.CompRefHits, PerfProbe.CompRefMissResolved,
-                PerfProbe.RotInvHits, PerfProbe.RotInvMisses, PerfProbe.ExplGridQueries));
-            Log.Message(string.Format("[验收] 中低优先批（7/8/10 条）生效证据：⑦共享空武器表命中={0}（= 省下的空 List 分配）；"
-                + "⑩扫掠早退省下 GetRecord={1} 次；⑧天体位置记忆化 命中={2} / 未命中={3}（命中 = 省下的递归父链 + 每级 Cos/Sin）",
-                PerfProbe.EmptyWeaponListHits, PerfProbe.RecordLookupsAvoided, PerfProbe.BodyPosHits, PerfProbe.BodyPosMisses));
-            Log.Message(string.Format("[验收] ㉔天体**局部**缓存（第 24 条，服务 A0 引力场）：命中={0} / 未命中={1}"
-                + "（未命中应 ≈ 天体数×步数，命中/未命中应 ≈ 组数−1）｜影子比对={2} 不一致={3}（不一致恒 0 = 缓存没给陈旧值）",
-                PerfProbe.BodyParentCacheHits, PerfProbe.BodyParentCacheMisses,
-                PerfProbe.BodyParentCacheShadowChecked, PerfProbe.BodyParentCacheShadowMismatch));
-            Log.Message(string.Format("[验收] ㉖每物理步墙钟（第 25 条；比较前后请用同一固定场景，绝对值随机器/场景变）：{0}",
-                PerfProbe.StepClockReport()));
-            Log.Message(string.Format("[验收] ② 物理步 scratch 校验={0} 次、接触解算={1} 次（前者 >0 = 每物理步都在校验容器复用；"
-                + "后者 >0 = 碰撞链真的解算到接触）", PerfProbe.StepScratchChecked, PerfProbe.ContactsResolved));
-            Log.Message(string.Format("[验收] ⑮网格 vs 旧扫候选：网格={0} 旧扫={1} 仅旧扫有={2}（旧球筛 100km 余量差异，非漏伤）",
-                PerfProbe.ExplGridCandidates, PerfProbe.ExplOldScanCandidates, PerfProbe.ExplOldOnlyNoPartInRange));
-            Log.Message(string.Format("[验收] ⑲Gooding 调用={0} 触顶={1} 实测最大迭代={2}/{3}（另有纯测试护栏）",
-                Gooding.DebugTlambCalls, Gooding.DebugSeriesCapHits, Gooding.DebugMaxSeriesIter, Gooding.MAX_SERIES_ITER));
-            Log.Message(string.Format("[验收] ㉕实体注册表：检查={0} 次 泄漏={1}（应恒 0）",
-                PerfProbe.EntityRegistryChecks, PerfProbe.EntityRegistryLeaks));
-Log.Message(string.Format("[验收] 组数：结束={0}｜id 复用观察={1} 次（信息量：现在应为 0——A5a 已改为持久单调计数器）", GroupCount(), PerfProbe.GroupIdReuseObserved));
+            Log.Message($"[验收] 生效证据：①聚合器 reused={PerfProbe.AggReused} / rebuilt={rebuilt}（reused 应远大于 rebuilt）；⑤组件缓存 命中={PerfProbe.CompRefHits} / 实查={PerfProbe.CompRefMissResolved}；⑯逆四元数 命中={PerfProbe.RotInvHits} / 未命中={PerfProbe.RotInvMisses}；⑮爆炸网格查询={PerfProbe.ExplGridQueries}");
+            Log.Message($"[验收] 中低优先批（7/8/10 条）生效证据：⑦共享空武器表命中={PerfProbe.EmptyWeaponListHits}（= 省下的空 List 分配）；⑩扫掠早退省下 GetRecord={PerfProbe.RecordLookupsAvoided} 次；⑧天体位置记忆化 命中={PerfProbe.BodyPosHits} / 未命中={PerfProbe.BodyPosMisses}（命中 = 省下的递归父链 + 每级 Cos/Sin）");
+            Log.Message($"[验收] ㉔天体**局部**缓存（第 24 条，服务 A0 引力场）：命中={PerfProbe.BodyParentCacheHits} / 未命中={PerfProbe.BodyParentCacheMisses}（未命中应 ≈ 天体数×步数，命中/未命中应 ≈ 组数−1）｜影子比对={PerfProbe.BodyParentCacheShadowChecked} 不一致={PerfProbe.BodyParentCacheShadowMismatch}（不一致恒 0 = 缓存没给陈旧值）");
+            Log.Message($"[验收] ㉖每物理步墙钟（第 25 条；比较前后请用同一固定场景，绝对值随机器/场景变）：{PerfProbe.StepClockReport()}");
+            Log.Message($"[验收] ② 物理步 scratch 校验={PerfProbe.StepScratchChecked} 次、接触解算={PerfProbe.ContactsResolved} 次（前者 >0 = 每物理步都在校验容器复用；后者 >0 = 碰撞链真的解算到接触）");
+            Log.Message($"[验收] ⑮网格 vs 旧扫候选：网格={PerfProbe.ExplGridCandidates} 旧扫={PerfProbe.ExplOldScanCandidates} 仅旧扫有={PerfProbe.ExplOldOnlyNoPartInRange}（旧球筛 100km 余量差异，非漏伤）");
+            Log.Message($"[验收] ⑲Gooding 调用={Gooding.DebugTlambCalls} 触顶={Gooding.DebugSeriesCapHits} 实测最大迭代={Gooding.DebugMaxSeriesIter}/{Gooding.MAX_SERIES_ITER}（另有纯测试护栏）");
+            Log.Message($"[验收] ㉕实体注册表：检查={PerfProbe.EntityRegistryChecks} 次 泄漏={PerfProbe.EntityRegistryLeaks}（应恒 0）");
+Log.Message($"[验收] 组数：结束={GroupCount()}｜id 复用观察={PerfProbe.GroupIdReuseObserved} 次（信息量：现在应为 0——A5a 已改为持久单调计数器）");
 
             // 完整探针汇总（所有计数，便于逐项核对）；恢复常规限频
             PerfProbe.SummaryIntervalTicks = 300;
             PerfProbe.LogSummaryNow();
 
             string verdict = hard.Count > 0 || failures.Count > 0
-                ? string.Format("FAIL（不变式破坏 {0} 项 / 值判据失败 {1} 项，看上面红字）", hard.Count, failures.Count)
+                ? $"FAIL（不变式破坏 {hard.Count} 项 / 值判据失败 {failures.Count} 项，看上面红字）"
                 : selectedTotal == 0
                     ? "PASS（只跑了电池，未勾选任何阶段）"
                     : covered == selectedTotal
-                        ? string.Format("PASS（硬指标全 0，{0}/{0} 勾选阶段覆盖）", selectedTotal)
-                        : string.Format("PARTIAL（硬指标与值判据全过，覆盖 {0}/{1} 勾选阶段——未覆盖项请重跑对应场景或延长观察）",
-                            covered, selectedTotal);
+                        ? $"PASS（硬指标全 0，{selectedTotal}/{selectedTotal} 勾选阶段覆盖）"
+                        : $"PARTIAL（硬指标与值判据全过，覆盖 {covered}/{selectedTotal} 勾选阶段——未覆盖项请重跑对应场景或延长观察）";
 
             // ── 即时电池 + 引力场读数（值判据，与覆盖度分开报）──
             Log.Message("[验收] ═══════════ 引力场 / 制导参数（A0/A1/A2）═══════════");
-            Log.Message(string.Format("[验收] {0}（明细见上方 [引力自检] 段落）", batterySummary ?? "引力自检电池未运行"));
-            Log.Message(string.Format("[验收] ㉑引力场：根域影子 检查={0} 不一致={1}｜子天体域差分={2} 次，最近比值={3:P4}（范围 {4:P4}–{5:P4}）"
-                + "｜判读 0=旧行为(错) 0.1%–0.6%=潮汐(对) ~7%=全量和(错)",
-                PerfProbe.GravityRootChecked, PerfProbe.GravityRootMismatch,
-                PerfProbe.GravitySubBodyProbes, PerfProbe.GravitySubBodyLastRatio,
-                PerfProbe.GravitySubBodyMinRatio, PerfProbe.GravitySubBodyMaxRatio));
-            Log.Message(string.Format("[验收] ㉒弹头引力(A2)：建段 {0} 次 最近 |a|={1:F3} m/s²（主导项 {2:F2}×，应 0.2–5×；~100× = 参考系混用旧伪值）"
-                + " 指向行星中心余弦={3:F3}｜射弹段：重建={4} / 步={5}（预期 ≈1/120）",
-                PerfProbe.WarheadSegments, PerfProbe.WarheadAccel, PerfProbe.WarheadAccelRatio,
-                PerfProbe.WarheadTowardCenterCos, PerfProbe.ProjectileSegments, PerfProbe.ProjectileSteps));
+            Log.Message($"[验收] {(batterySummary ?? "引力自检电池未运行")}（明细见上方 [引力自检] 段落）");
+            Log.Message($"[验收] ㉑引力场：根域影子 检查={PerfProbe.GravityRootChecked} 不一致={PerfProbe.GravityRootMismatch}｜子天体域差分={PerfProbe.GravitySubBodyProbes} 次，最近比值={PerfProbe.GravitySubBodyLastRatio:P4}（范围 {PerfProbe.GravitySubBodyMinRatio:P4}–{PerfProbe.GravitySubBodyMaxRatio:P4}）｜判读 0=旧行为(错) 0.1%–0.6%=潮汐(对) ~7%=全量和(错)");
+            Log.Message($"[验收] ㉒弹头引力(A2)：建段 {PerfProbe.WarheadSegments} 次 最近 |a|={PerfProbe.WarheadAccel:F3} m/s²（主导项 {PerfProbe.WarheadAccelRatio:F2}×，应 0.2–5×；~100× = 参考系混用旧伪值） 指向行星中心余弦={PerfProbe.WarheadTowardCenterCos:F3}｜射弹段：重建={PerfProbe.ProjectileSegments} / 步={PerfProbe.ProjectileSteps}（预期 ≈1/120）");
             if (failures.Count > 0)
             {
-                Log.Error(string.Format("[验收] 值判据失败 {0} 项：", failures.Count));
+                Log.Error($"[验收] 值判据失败 {failures.Count} 项：");
                 foreach (var f in failures) Log.Error("[验收] 值判据失败：" + f);
             }
             else
@@ -765,9 +702,7 @@ Log.Message(string.Format("[验收] 组数：结束={0}｜id 复用观察={1} �
                 executeTick = execTick,
                 active = true
             });
-            Log.Message(string.Format(
-                "[验收] 合并态弹群 G{0}：Loiter={1} + 已排 ΔV=10 切向机动（physicsTick+30）→ 等群级燃烧查聚合器",
-                gid, ok));
+            Log.Message($"[验收] 合并态弹群 G{gid}：Loiter={ok} + 已排 ΔV=10 切向机动（physicsTick+30）→ 等群级燃烧查聚合器");
         }
 
         /// <summary>取最新登记的"未解离弹群"（logicalCount&gt;1 且未 volleySplit）。</summary>
@@ -792,7 +727,7 @@ Log.Message(string.Format("[验收] 组数：结束={0}｜id 复用观察={1} �
         private static bool Covered(string prefix)
         {
             for (int i = 0; i < passes.Count; i++)
-                if (passes[i].StartsWith(prefix)) return true;
+                if (passes[i].StartsWith(prefix, System.StringComparison.Ordinal)) return true;
             return false;
         }
 

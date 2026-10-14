@@ -24,6 +24,12 @@
   -->
 
   <PropertyGroup>
+    <!-- 2026-10-14（主线切 net10 的**例外**）：本工程留在 net48 ——
+         它的 6248 条期望是**上游 net48/Mono 口径**校准的（浮点转字符串/末位精度在 .NET Core 3.0 起有差异，
+         实测 net10 上 7/6248 红、全是 ulp/格式类）；而生产运行时（Waylith CLR）明确**模仿 Mono 的
+         字符串/格式化行为** ⇒ **net48 口径仍是对生产最忠实的判据**。移植面源码现在也能在 net10 编
+         （CS0121 二义已治：5 处限定到 `Statics.*` + StaticTests 同步）。若将来要 net10 口径的移植面
+         验收 = **换口径 + 全量重基线**（另立台账；不是软化测试）。 -->
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12</LangVersion>
     <Nullable>enable</Nullable>

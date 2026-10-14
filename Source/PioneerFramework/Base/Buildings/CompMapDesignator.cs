@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 using Verse;
 using RimWorld;
@@ -25,7 +25,7 @@ namespace PioneerFramework
     /// <summary>定位机 → 炮塔的绑定记录（整体式，无上下之分）。</summary>
     public class TurretBinding : IExposable
     {
-        public Thing turret;
+        public Thing turret = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         public void ExposeData()
         {
@@ -41,18 +41,18 @@ namespace PioneerFramework
     /// </summary>
     public class CompMapDesignator : ThingComp
     {
-        private List<TurretBinding> boundMounts = new List<TurretBinding>();
+        private List<TurretBinding> boundMounts = new();
         private int manualTargetGroupId = -1;
-        private readonly GameComponentRef<SensorManager> sensorMgrRef = new GameComponentRef<SensorManager>();   // [V3] 认知层
+        private readonly GameComponentRef<SensorManager> sensorMgrRef = new();   // [V3] 认知层
         private int cooldownTicks;
         private bool autoFire = true;
         private int nextScanTick;
-        private SpaceEntityGroup currentTarget;
+        private SpaceEntityGroup? currentTarget;
         // 精确炮击：瞄准目标船 Map 指定格对应的世界点（偏移船心），参考 SOS2but2D preciseTargetCell
         private int preciseStrikeGroupId = -1;
         private IntVec3 preciseStrikeCell = IntVec3.Invalid;
         // 测试用：目标格上的红色标记 Mote（生命周期随精确炮击点）
-        private Mote preciseStrikeMarker;
+        private Mote preciseStrikeMarker = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         public CompProperties_MapDesignator Props => (CompProperties_MapDesignator)props;
         public bool AutoFire => autoFire;
@@ -118,7 +118,7 @@ namespace PioneerFramework
         /// 目标来源 = **被指定**（[N]：删掉"没分配我打谁那我打谁"的自动分配，2026-10-02 S3b）。
         /// 没有指定 ⇒ 返回 null ⇒ **不开火**；并**开火前过认知层**（`CanEngage`，与视图同一条判据）。
         /// </summary>
-        private SpaceEntityGroup AcquireTarget()
+        private SpaceEntityGroup? AcquireTarget()
         {
             var sg = Current.Game?.GetComponent<SpaceGameComp>();
             var t = sg?.GetGroupById(manualTargetGroupId);
@@ -169,14 +169,14 @@ namespace PioneerFramework
 
         // ── 本船链路：Map → ownerEntity → Group ──
 
-        private SpaceEntityGroup GetMyGroup()
+        private SpaceEntityGroup? GetMyGroup()
         {
             var entity = GetMyEntity();
             if (entity == null) return null;
             return Current.Game?.GetComponent<SpaceGameComp>()?.GetGroupById(entity.GroupId);
         }
 
-        private SpaceEntity GetMyEntity()
+        private SpaceEntity? GetMyEntity()
         {
             if (parent.Map == null) return null;
             var mapComp = parent.Map.GetComponent<SpaceMapComp>();
@@ -208,7 +208,7 @@ namespace PioneerFramework
         }
 
         /// <summary>取目标 group 中第一个带 Map 的实体（空间站本体；无 Map 目标如导弹/无人机返回 null）。</summary>
-        private SpaceEntity GetTargetEntity(SpaceEntityGroup target)
+        private SpaceEntity? GetTargetEntity(SpaceEntityGroup? target)
         {
             if (target == null) return null;
             var sg = Current.Game?.GetComponent<SpaceGameComp>();
@@ -283,22 +283,13 @@ namespace PioneerFramework
             {
                 DVector3 centerPos = cm.GetGroupPos(target);
                 DVector3 offset = targetPos - centerPos;
-                Log.Message(string.Format(
-                    "[精确炮击] G{0} 瞄准格=({1},{2}) 偏移船心=({3:F0},{4:F0},{5:F0})m 世界瞄准点=({6:F0},{7:F0},{8:F0})m",
-                    target.GroupId, preciseStrikeCell.x, preciseStrikeCell.z,
-                    offset.x, offset.y, offset.z,
-                    targetPos.x, targetPos.y, targetPos.z));
+                Log.Message($"[精确炮击] G{target.GroupId} 瞄准格=({preciseStrikeCell.x},{preciseStrikeCell.z}) 偏移船心=({offset.x:F0},{offset.y:F0},{offset.z:F0})m 世界瞄准点=({targetPos.x:F0},{targetPos.y:F0},{targetPos.z:F0})m");
             }
 
             // 齐射详情（详细日志）：目标状态 + 绑定炮塔数，一次齐射一行
             if (CombatManager.DebugDetailedCombat)
             {
-                Log.Message(string.Format(
-                    "[齐射详情] G{0} 目标G{1} 距离={2:F1}km 目标位置=({3:F0},{4:F0},{5:F0}) 目标速度=({6:F0},{7:F0},{8:F0}) 绑定炮塔={9} 冷却={10} TicksGame={11}",
-                    myGroup.GroupId, target.GroupId, (targetPos - myPos).magnitude / 1000.0,
-                    targetPos.x, targetPos.y, targetPos.z,
-                    targetVel.x, targetVel.y, targetVel.z,
-                    boundMounts.Count, cooldownTicks, Find.TickManager.TicksGame));
+                Log.Message($"[齐射详情] G{myGroup.GroupId} 目标G{target.GroupId} 距离={(targetPos - myPos).magnitude / 1000.0:F1}km 目标位置=({targetPos.x:F0},{targetPos.y:F0},{targetPos.z:F0}) 目标速度=({targetVel.x:F0},{targetVel.y:F0},{targetVel.z:F0}) 绑定炮塔={boundMounts.Count} 冷却={cooldownTicks} TicksGame={Find.TickManager.TicksGame}");
             }
 
             bool anyFired = false;
@@ -326,28 +317,13 @@ namespace PioneerFramework
                 // 炮塔详情（详细日志）：射线输入 + 出射距离（验证六面求交的几何输入）
                 if (CombatManager.DebugDetailedCombat)
                 {
-                    Log.Message(string.Format(
-                        "[炮塔详情] G{0}→G{1} 炮口局部=({2:F1},{3:F1},{4:F1}) 目标局部=({5:F1},{6:F1},{7:F1}) dirShip=({8:F3},{9:F3},{10:F3}) AABB半长=({11:F1},{12:F1},{13:F1}) 出射距离={14:F2}m",
-                        myGroup.GroupId, target.GroupId,
-                        muzzleShip.x, muzzleShip.y, muzzleShip.z,
-                        targetShip.x, targetShip.y, targetShip.z,
-                        dirShip.x, dirShip.y, dirShip.z,
-                        half.x, half.y, half.z,
-                        (exitShip - muzzleShip).magnitude));
+                    Log.Message($"[炮塔详情] G{myGroup.GroupId}→G{target.GroupId} 炮口局部=({muzzleShip.x:F1},{muzzleShip.y:F1},{muzzleShip.z:F1}) 目标局部=({targetShip.x:F1},{targetShip.y:F1},{targetShip.z:F1}) dirShip=({dirShip.x:F3},{dirShip.y:F3},{dirShip.z:F3}) AABB半长=({half.x:F1},{half.y:F1},{half.z:F1}) 出射距离={(exitShip - muzzleShip).magnitude:F2}m");
                 }
 
                 cm.FireFromMapBuilding(myGroup.GroupId, mount.weapon, exitSystem, targetPos, targetVel, target.GroupId);
 
                 // 出膛诊断日志：验证六面出膛（射界解除 + 碰撞点准确）+ 目标距离与武器状态
-                Log.Message(string.Format(
-                    "[炮塔出膛] G{0}→G{1} 炮塔({2},{3}) 面={4}(0x- 1x+ 2y- 3y+ 4z- 5z+) 局部=({5:F1},{6:F1},{7:F1})m 世界=({8:F0},{9:F0},{10:F0})m 距离={11:F1}km 冷却={12} 过热={13} 弹={14}",
-                    myGroup.GroupId, target.GroupId,
-                    binding.turret.Position.x, binding.turret.Position.z,
-                    exitFace,
-                    exitShip.x, exitShip.y, exitShip.z,
-                    exitSystem.x, exitSystem.y, exitSystem.z,
-                    (targetPos - myPos).magnitude / 1000.0,
-                    mount.weapon.cooldownRemaining, mount.weapon.isOverheated, mount.weapon.ammo));
+                Log.Message($"[炮塔出膛] G{myGroup.GroupId}→G{target.GroupId} 炮塔({binding.turret.Position.x},{binding.turret.Position.z}) 面={exitFace}(0x- 1x+ 2y- 3y+ 4z- 5z+) 局部=({exitShip.x:F1},{exitShip.y:F1},{exitShip.z:F1})m 世界=({exitSystem.x:F0},{exitSystem.y:F0},{exitSystem.z:F0})m 距离={(targetPos - myPos).magnitude / 1000.0:F1}km 冷却={mount.weapon.cooldownRemaining} 过热={mount.weapon.isOverheated} 弹={mount.weapon.ammo}");
 
                 // Map 出膛视觉弹：从炮塔格飞向出膛点映射格（纯视觉叙事，不伤害己方建筑）
                 SpawnMuzzleShell(parent.Map, muzzleShip, exitShip);
@@ -405,11 +381,7 @@ namespace PioneerFramework
             if (CombatManager.DebugDetailedCombat)
             {
                 IntVec3 s0 = start.ToIntVec3();
-                Log.Message(string.Format(
-                    "[出膛视觉弹] G起格=({0},{1})y={2:F0} 止格=({3},{4})y={5:F0} 距离={6:F1}m 时长={7}tick({8:F2}s) 速度={9:F1}/tick visualOnly",
-                    s0.x, s0.z, start.y,
-                    cell.x, cell.z, end.y,
-                    dist, ticks, ticks / 60f, speed));
+                Log.Message($"[出膛视觉弹] G起格=({s0.x},{s0.z})y={start.y:F0} 止格=({cell.x},{cell.z})y={end.y:F0} 距离={dist:F1}m 时长={ticks}tick({ticks / 60f:F2}s) 速度={speed:F1}/tick visualOnly");
             }
         }
 
@@ -448,7 +420,7 @@ namespace PioneerFramework
 
         // ── 绑定 ──
 
-        public bool RegisterTurret(Thing turret)
+        public bool RegisterTurret(Thing? turret)
         {
             if (turret == null || turret.Destroyed) return false;
             foreach (var b in boundMounts)
@@ -499,7 +471,7 @@ namespace PioneerFramework
             yield return new Command_Action
             {
                 defaultLabel = HasPreciseStrike
-                    ? string.Format("精确炮击: G{0} ({1},{2})", preciseStrikeGroupId, preciseStrikeCell.x, preciseStrikeCell.z)
+                    ? $"精确炮击: G{preciseStrikeGroupId} ({preciseStrikeCell.x},{preciseStrikeCell.z})"
                     : "设置精确炮击点",
                 defaultDesc = HasPreciseStrike
                     ? "已瞄准敌舰指定格（重设：跳转目标地图后点选新格）。"
@@ -568,7 +540,7 @@ namespace PioneerFramework
                 double d = (cm.GetGroupPos(g) - myPos).magnitude;
                 string suffix = sensor != null ? sensor.PlayerPhaseSuffix(g) : "";
                 var captured = g;
-                options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）{2}", g.GroupId, d / 1000.0, suffix), () =>
+                options.Add(new FloatMenuOption($"Group {g.GroupId}（{d / 1000.0:F0} km）{suffix}", () =>
                 {
                     manualTargetGroupId = captured.GroupId;
                 }));
@@ -587,7 +559,7 @@ namespace PioneerFramework
             var myGroup = GetMyGroup();
             if (sg == null || myGroup == null) return;
 
-            SpaceEntityGroup target = null;
+            SpaceEntityGroup? target = null;
             if (manualTargetGroupId >= 0)
                 target = sg.GetGroupById(manualTargetGroupId);
             if (target == null) target = currentTarget;
@@ -618,7 +590,7 @@ namespace PioneerFramework
                 double d = (cm.GetGroupPos(g) - myPos).magnitude;
                 string suffix = sensor != null ? sensor.PlayerPhaseSuffix(g) : "";
                 var captured = g;
-                options.Add(new FloatMenuOption(string.Format("Group {0}（{1:F0} km）{2}", g.GroupId, d / 1000.0, suffix),
+                options.Add(new FloatMenuOption($"Group {g.GroupId}（{d / 1000.0:F0} km）{suffix}",
                     () => BeginPrecisionPick(captured)));
             }
             if (options.Count == 0)
@@ -655,9 +627,8 @@ namespace PioneerFramework
                 preciseStrikeGroupId = capturedGroupId;
                 preciseStrikeCell = targ.Cell;
                 Vector3 local = MapCoordMapper.MapCellToShip(capturedMap, targ.Cell);
-                Log.Message(string.Format("[精确炮击] 定位机设定目标点: G{0} 格=({1},{2}) 局部偏移=({3:F1},0,{4:F1})m",
-                    capturedGroupId, targ.Cell.x, targ.Cell.z, local.x, local.z));
-                Messages.Message(string.Format("精确炮击点已设置: G{0} ({1},{2})", capturedGroupId, targ.Cell.x, targ.Cell.z),
+                Log.Message($"[精确炮击] 定位机设定目标点: G{capturedGroupId} 格=({targ.Cell.x},{targ.Cell.z}) 局部偏移=({local.x:F1},0,{local.z:F1})m");
+                Messages.Message($"精确炮击点已设置: G{capturedGroupId} ({targ.Cell.x},{targ.Cell.z})",
                     MessageTypeDefOf.TaskCompletion);
             }, null, null, null, true);
         }

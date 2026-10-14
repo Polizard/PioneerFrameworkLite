@@ -38,7 +38,7 @@ namespace PioneerFramework
         // 索引 = 分类（0 不用）：1 结构梁 / 2 舱室 / 3 装甲。
         // 结构梁 = 薄片（±1，用户 2026-10-02）；装甲 = 满船体（±5）；舱室居中。
         // ⚠ 三档**颜色**与描边宽是"画"的口径 ⇒ 已移到 `ShipModelRenderer.ReliefColors` / `ReliefOutlineWidth`（D-1）。
-        private static readonly float[] ReliefHalfHeights = { 0f, 1f, 4.5f, HullHalfThickness };
+        private static readonly float[] ReliefHalfHeights = [0f, 1f, 4.5f, HullHalfThickness];
 
         private class ReliefMeshSet
         {
@@ -46,8 +46,8 @@ namespace PioneerFramework
             public Mesh?[] Meshes = new Mesh?[MapReliefPlan.Armor + 1];   // 索引 = 分类（0 空位）
         }
 
-        private readonly Dictionary<int, ReliefMeshSet> reliefMeshes = new Dictionary<int, ReliefMeshSet>();
-        private readonly HashSet<int> reliefLoggedMaps = new HashSet<int>();   // 首次构建时打一行分类普查（游戏内验收用）
+        private readonly Dictionary<int, ReliefMeshSet> reliefMeshes = new();
+        private readonly HashSet<int> reliefLoggedMaps = new();   // 首次构建时打一行分类普查（游戏内验收用）
 
         /// <summary>
         /// 画本实体的地图浮雕。返回 true = 已画（调用方跳过 part 盒体）；false = 画不了（调用方回退）。
@@ -57,7 +57,7 @@ namespace PioneerFramework
             if (!debugMapRelief || entity == null || entity.MapId < 0 || entity.IsMapArchived)
                 return false;
 
-            Map map = SpaceMapGenerator.GetEntityMap(entity);
+            Map? map = SpaceMapGenerator.GetEntityMap(entity);
             if (map == null)
                 return false;
 
@@ -127,9 +127,7 @@ namespace PioneerFramework
                     else if (cl == MapReliefPlan.Cabin) n2++;
                     else if (cl == MapReliefPlan.Armor) n3++;
                 }
-                Log.Message(string.Format(
-                    "[PFView] 地图浮雕 Map={0} {1}x{2}：结构梁 {3} 格 / 舱室 {4} 格 / 装甲 {5} 格，盒体 {6}（梁{7}/舱{8}/装{9}）",
-                    map.uniqueID, map.Size.x, map.Size.z, n1, n2, n3, boxes.Count, counts[1], counts[2], counts[3]));
+                Log.Message($"[PFView] 地图浮雕 Map={map.uniqueID} {map.Size.x}x{map.Size.z}：结构梁 {n1} 格 / 舱室 {n2} 格 / 装甲 {n3} 格，盒体 {boxes.Count}（梁{counts[1]}/舱{counts[2]}/装{counts[3]}）");
             }
             return set;
         }
@@ -156,7 +154,7 @@ namespace PioneerFramework
             reliefDeadBuf.Clear();
         }
 
-        private readonly List<int> reliefDeadBuf = new List<int>();
+        private readonly List<int> reliefDeadBuf = new();
 
         private static void DestroyReliefMeshSet(ReliefMeshSet set)
         {
@@ -180,21 +178,19 @@ namespace PioneerFramework
         // 六面四角顺序（索引进 8 角表）与三角形模式：**逐字照抄** BuildCubeMesh 那个已验证的立方体网格
         // ——面朝外的绕序不能凭感觉推（推反了面就被背面剔除掉，画面上是"缺面"）。
         private static readonly int[][] ReliefFaceCorners =
-        {
-            new[] { 0, 1, 2, 3 },   // -Z
-            new[] { 4, 5, 6, 7 },   // +Z
-            new[] { 0, 1, 5, 4 },   // -Y
-            new[] { 2, 3, 7, 6 },   // +Y
-            new[] { 1, 2, 6, 5 },   // +X
-            new[] { 3, 0, 4, 7 },   // -X
-        };
+        [[0, 1, 2, 3],   // -Z
+            [4, 5, 6, 7],   // +Z
+            [0, 1, 5, 4],   // -Y
+            [2, 3, 7, 6],   // +Y
+            [1, 2, 6, 5],   // +X
+            [3, 0, 4, 7],   // -X
+        ];
 
         private static readonly Vector3[] ReliefFaceNormals =
-        {
-            new Vector3(0f, 0f, -1f), new Vector3(0f, 0f, 1f),
-            new Vector3(0f, -1f, 0f), new Vector3(0f, 1f, 0f),
-            new Vector3(1f, 0f, 0f), new Vector3(-1f, 0f, 0f),
-        };
+        [new(0f, 0f, -1f), new(0f, 0f, 1f),
+            new(0f, -1f, 0f), new(0f, 1f, 0f),
+            new(1f, 0f, 0f), new(-1f, 0f, 0f),
+        ];
 
         /// <summary>
         /// 盒体清单 → 一个 Mesh（24 顶点/盒：每个面独立四角 ⇒ 法线硬边，方块看起来是方块而不是揉过的球）。

@@ -23,13 +23,13 @@ namespace PioneerFramework.Launch
     /// </summary>
     public class RocketLaunchContext
     {
-        public Thing Rocket;
-        public Building Pad;
-        public CompAssemblyPad PadComp;
-        public RocketDesignSpec Spec;
-        public Map PocketMap;
-        public CompLaunchable VanillaLaunchable;
-        public CompRocketPocketMap PocketMapComp;
+        public Thing Rocket = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public Building Pad = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public CompAssemblyPad PadComp = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public RocketDesignSpec? Spec;
+        public Map? PocketMap;
+        public CompLaunchable VanillaLaunchable = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public CompRocketPocketMap PocketMapComp = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
     }
 
     /// <summary>
@@ -165,7 +165,7 @@ namespace PioneerFramework.Launch
             }
 
             TryGetLaunchContext(rocket, out var ctx);
-            RocketDesignSpec spec = ctx?.PadComp?.Design;
+            RocketDesignSpec? spec = ctx?.PadComp?.Design;
             if (spec == null || string.IsNullOrEmpty(spec.rocketDefName))
             {
                 bool recoverable = rocket.def != null

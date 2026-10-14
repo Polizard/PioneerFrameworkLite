@@ -18,34 +18,34 @@ namespace PioneerFramework
     public class Window_SpaceBattleView3D : Window
     {
         private readonly SpaceEntityGroup observerGroup;
-        private CelestialBodyManager celestialManager;
-        private SpaceGameComp spaceGame;
+        private CelestialBodyManager? celestialManager;
+        private SpaceGameComp? spaceGame;
 
         // ── 3D 渲染资源 ──
-        private Camera renderCamera;
-        private RenderTexture renderTexture;
-        private GameObject cameraObject;
-        private GameObject sceneRoot;
-        private Light sunLight;
-        private Light fillLight;
+        private Camera renderCamera = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+private RenderTexture? renderTexture;   // 契约改真（2026-10-15 手清）：清理归零（1060+ 行），消费方本就 null 守卫
+private GameObject? cameraObject;   // 契约改真（2026-10-15 手清）：清理归零（1060+ 行），消费方本就 null 守卫
+private GameObject? sceneRoot;   // 契约改真（2026-10-15 手清）：清理归零（1060+ 行），消费方本就 null 守卫
+        private Light sunLight = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private Light fillLight = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         // ── 场景对象 ──
-        private GameObject observerShipContainer;        // 观察者飞船的容器（含设计部件或长方体）
-        private readonly Dictionary<int, GameObject> otherShipContainers = new Dictionary<int, GameObject>();
+private GameObject? observerShipContainer;   // 契约改真（2026-10-15 手清）：清理归零（1060+ 行），消费方本就 null 守卫
+        private readonly Dictionary<int, GameObject> otherShipContainers = new();
 
         // ── 本行星系天体 ──
-        private readonly Dictionary<int, GameObject> sameSystemBodyObjects = new Dictionary<int, GameObject>();
-        private HashSet<int> sameSystemBodyIds = new HashSet<int>();
+        private readonly Dictionary<int, GameObject> sameSystemBodyObjects = new();
+        private HashSet<int> sameSystemBodyIds = new();
 
         // ── 非本行星系天体（圆片）──
-        private readonly Dictionary<int, GameObject> billboardObjects = new Dictionary<int, GameObject>();
-        private GameObject sunBillboardObject;
-        private GameObject sunBillboardGlowObject;
+        private readonly Dictionary<int, GameObject> billboardObjects = new();
+private GameObject? sunBillboardObject;   // 契约改真（2026-10-15 手清）：清理归零（1060+ 行），消费方本就 null 守卫
+private GameObject? sunBillboardGlowObject;   // 契约改真（2026-10-15 手清）：清理归零（1060+ 行），消费方本就 null 守卫
 
         // ── 射弹视觉（3D 场景中的小球，池化管理）──
-        private readonly List<GameObject> projectileObjects = new List<GameObject>();
-        private GameObject projectileContainer;
-        private Material projectileMat;
+        private readonly List<GameObject> projectileObjects = new();
+        private GameObject projectileContainer = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private Material projectileMat = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         // ── 相机控制 ──
         private Vector3 observerPosUnity;
@@ -55,10 +55,10 @@ namespace PioneerFramework
 
         // ── 缓存 ──
         private int lastUpdateTick = -1;
-        private Dictionary<int, Vector3> bodyPositionsUnity;
+        private Dictionary<int, Vector3> bodyPositionsUnity = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         // ── 殖民地位置标记（天地映射检测用：玩家殖民地在行星表面的 ECI 位置）──
-        private GameObject colonyMarkerObject;
+private GameObject? colonyMarkerObject;   // 契约改真（2026-10-15 手清）：清理归零（1060+ 行），消费方本就 null 守卫
         private bool colonyMarkerLogged;
 
         // ── 飞船参数（无设计数据的回退长方体尺寸）──
@@ -76,13 +76,13 @@ namespace PioneerFramework
         private const float BillboardMinSize = 2f;
 
         // ── 材质 ──
-        private static Material shipMat;
-        private static Material otherShipMat;
-        private static Material starMat;
-        private static Material planetMat;
-        private static Material moonMat;
-        private static Material billboardMat;
-        private static Material designerCubeMat;
+        private static Material shipMat = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private static Material otherShipMat = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private static Material starMat = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private static Material planetMat = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private static Material moonMat = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private static Material billboardMat = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private static Material designerCubeMat = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         static Window_SpaceBattleView3D()
         {
@@ -106,7 +106,7 @@ namespace PioneerFramework
             absorbInputAroundWindow = true;
             resizeable = true;
             draggable = true;
-            optionalTitle = string.Format("太空战视角 — Group {0}", group.GroupId);
+            optionalTitle = $"太空战视角 — Group {group.GroupId}";
 
             lookYaw = 0f;
             lookPitch = 0f;
@@ -116,7 +116,7 @@ namespace PioneerFramework
             ComputeSameSystemBodyIds();
         }
 
-        public override Vector2 InitialSize => new Vector2(1100f, 750f);
+        public override Vector2 InitialSize => new(1100f, 750f);
 
         // ════════════════════════════════════════════════
         //  渲染资源
@@ -214,8 +214,10 @@ namespace PioneerFramework
                 color = color
             };
             mat.SetFloat("_Mode", 3);
-            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            // 1.7 的 UnityStubs 无 `UnityEngine.Rendering.BlendMode` 枚举 ⇒ 直接用 Unity 约定数值
+            //（SrcAlpha=5 / OneMinusSrcAlpha=10；与 UnityStubs 内部混合映射表的取值一致）。
+            mat.SetInt("_SrcBlend", 5);
+            mat.SetInt("_DstBlend", 10);
             mat.SetInt("_ZWrite", 0);
             mat.DisableKeyword("_ALPHATEST_ON");
             mat.EnableKeyword("_ALPHABLEND_ON");
@@ -429,7 +431,7 @@ namespace PioneerFramework
         /// </summary>
         private void SyncObserverShip()
         {
-            SpaceEntity observerEntity = GetFirstEntity(observerGroup);
+            SpaceEntity? observerEntity = GetFirstEntity(observerGroup);
 
             if (observerShipContainer != null)
             {
@@ -499,7 +501,7 @@ namespace PioneerFramework
                     container.transform.SetParent(sceneRoot.transform);
                     otherShipContainers[g.GroupId] = container;
 
-                    SpaceEntity entity = GetFirstEntity(g);
+                    SpaceEntity? entity = GetFirstEntity(g);
 
                     if (entity != null && entity.Parts.Count > 0)
                     {
@@ -576,7 +578,7 @@ namespace PioneerFramework
             }
         }
 
-        private static SpaceEntity GetFirstEntity(SpaceEntityGroup group)
+        private static SpaceEntity? GetFirstEntity(SpaceEntityGroup group)
         {
             if (group == null) return null;
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
@@ -676,10 +678,7 @@ namespace PioneerFramework
             {
                 colonyMarkerLogged = true;
                 double observerDistM = (observerPosUnity - markPos).magnitude / toUnity;
-                Log.Message(string.Format(
-                    "[ColonyMarker] 玩家殖民地标记 ECI=({0:F0},{1:F0},{2:F0})km (φ={3:F1}° λ0={4:F1}°) 距观察者(火箭)={5:F0}km",
-                    surf.pos.x / 1000.0, surf.pos.y / 1000.0, surf.pos.z / 1000.0,
-                    latRad * Mathf.Rad2Deg, lonRad0 * Mathf.Rad2Deg, observerDistM / 1000.0));
+                Log.Message($"[ColonyMarker] 玩家殖民地标记 ECI=({surf.pos.x / 1000.0:F0},{surf.pos.y / 1000.0:F0},{surf.pos.z / 1000.0:F0})km (φ={latRad * Mathf.Rad2Deg:F1}° λ0={lonRad0 * Mathf.Rad2Deg:F1}°) 距观察者(火箭)={observerDistM / 1000.0:F0}km");
             }
         }
 
@@ -848,8 +847,8 @@ namespace PioneerFramework
                 color = new Color(1f, 0.8f, 0.3f, 0.12f)
             };
             gm.material.SetFloat("_Mode", 3);
-            gm.material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            gm.material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            gm.material.SetInt("_SrcBlend", 5);   // Unity BlendMode.SrcAlpha（1.7 UnityStubs 无该枚举）
+            gm.material.SetInt("_DstBlend", 10);  // Unity BlendMode.OneMinusSrcAlpha
             gm.material.SetInt("_ZWrite", 0);
             gm.material.DisableKeyword("_ALPHATEST_ON");
             gm.material.EnableKeyword("_ALPHABLEND_ON");
@@ -983,26 +982,24 @@ namespace PioneerFramework
 
             Text.Font = GameFont.Medium;
             Widgets.Label(new Rect(rect.x, rect.y, rect.width, 24f),
-                string.Format("Group {0} 视角", observerGroup.GroupId));
+                $"Group {observerGroup.GroupId} 视角");
             Text.Font = GameFont.Small;
 
             float y = rect.y + 30f;
             float lineHeight = 20f;
 
             // 飞船部件信息（Lite 裁剪：无 Ship3D 设计数据，仅显示部件数）
-            SpaceEntity observerEntity = GetFirstEntity(observerGroup);
+            SpaceEntity? observerEntity = GetFirstEntity(observerGroup);
             Widgets.Label(new Rect(rect.x, y, rect.width, lineHeight),
-                string.Format("部件数: {0}", observerEntity?.Parts.Count ?? 0));
+                $"部件数: {(observerEntity?.Parts.Count ?? 0)}");
             y += lineHeight;
 
             y += 4f;
             Widgets.Label(new Rect(rect.x, y, rect.width, lineHeight),
-                string.Format("位置: ({0:F0}, {1:F0}, {2:F0})",
-                    observerPosUnity.x, observerPosUnity.y, observerPosUnity.z));
+                $"位置: ({observerPosUnity.x:F0}, {observerPosUnity.y:F0}, {observerPosUnity.z:F0})");
             y += lineHeight;
             Widgets.Label(new Rect(rect.x, y, rect.width, lineHeight),
-                string.Format("朝向: ({0:F2}, {1:F2}, {2:F2})",
-                    forwardDirection.x, forwardDirection.y, forwardDirection.z));
+                $"朝向: ({forwardDirection.x:F2}, {forwardDirection.y:F2}, {forwardDirection.z:F2})");
             y += lineHeight + 4f;
 
             Widgets.Label(new Rect(rect.x, y, rect.width, 22f), "--- 本行星系天体 (3D球体) ---");
@@ -1026,7 +1023,7 @@ namespace PioneerFramework
                     foreach (var body in sameSystemBodies)
                     {
                         Widgets.Label(new Rect(4f, ly, viewPortRect.width - 8f, lineHeight),
-                            string.Format("● {0} ({1})", body.label, body.bodyType));
+                            $"● {body.label} ({body.bodyType})");
                         ly += lineHeight;
                     }
 
@@ -1037,7 +1034,7 @@ namespace PioneerFramework
                     foreach (var body in otherBodies)
                     {
                         Widgets.Label(new Rect(4f, ly, viewPortRect.width - 8f, lineHeight),
-                            string.Format("○ {0} ({1})", body.label, body.bodyType));
+                            $"○ {body.label} ({body.bodyType})");
                         ly += lineHeight;
                     }
 

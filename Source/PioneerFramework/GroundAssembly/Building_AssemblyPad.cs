@@ -18,13 +18,13 @@ namespace PioneerFramework.GroundAssembly
                 return;
             }
 
-            MapComponent_LaunchBlastFX fx = Map.components.OfType<MapComponent_LaunchBlastFX>().FirstOrDefault();
+            MapComponent_LaunchBlastFX? fx = Map.components.OfType<MapComponent_LaunchBlastFX>().FirstOrDefault();
             fx?.ScheduleBlast(this);
 
             // 原版 TransportPod 发射完成后，同步复位统一发射台状态。
             GetComp<CompAssemblyPad>()?.NotifyLaunched();
 
-            ThingDef launchedDef = launchable?.parent?.def;
+            ThingDef? launchedDef = launchable?.parent?.def;
             if (launchedDef != null)
             {
                 RocketBoosterReturnUtility.TrySpawnReturnedBooster(this, launchedDef);

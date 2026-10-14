@@ -25,10 +25,10 @@ namespace PioneerFramework
     {
         // ── 视觉旋钮 ──
         /// <summary>昼面标记色（中性、偏暗——白天城市从太空看本来就很淡）。</summary>
-        private static readonly Color SettlementDayColor = new Color(0.88f, 0.88f, 0.92f, 0.70f);
+        private static readonly Color SettlementDayColor = new(0.88f, 0.88f, 0.92f, 0.70f);
         /// <summary>夜面城市灯光色（定色暖黄）——**科技差走"面积/密度/亮度"三轴**（用户 2026-10-12 口径），
         /// 不靠色温（先前那版琥珀↔冷白的插值已按口径收掉）。</summary>
-        private static readonly Color SettlementNightColor = new Color(1.00f, 0.80f, 0.45f);
+        private static readonly Color SettlementNightColor = new(1.00f, 0.80f, 0.45f);
 
         /// <summary>工具条上的 A/B 勾选（默认开）。</summary>
         private bool debugSettlements = true;
@@ -36,7 +36,7 @@ namespace PioneerFramework
         private static Mesh? settlementMesh;
         private static Material? settlementMat;
         private static readonly Texture2D?[] settlementTexByTech = new Texture2D?[8];   // 索引 = (int)TechLevel
-        private static readonly MaterialPropertyBlock settlementBlock = new MaterialPropertyBlock();
+        private static readonly MaterialPropertyBlock settlementBlock = new();
 
         private double lastSettlementLogTick = double.MinValue;
         private int lastSettlementLogCount = -1;
@@ -116,10 +116,7 @@ namespace PioneerFramework
             if (shown == lastSettlementLogCount && tick - lastSettlementLogTick < 300.0) return;
             lastSettlementLogCount = shown;
             lastSettlementLogTick = tick;
-            Log.Message(string.Format(
-                "[PFView·定居点] body={0} 定居点 {1} 座（夜面 {2} 座亮灯）｜标记 {3:F0} 视图单位（{4:F0} km）｜科技强度 {5:F2}~{6:F2}（覆盖/密度/亮度三轴）",
-                body.defName, shown, night, sizeViewUnits, sizeViewUnits / MetersToView / 1000f,
-                techMax < 0f ? 0f : techMin, techMax < 0f ? 0f : techMax));
+            Log.Message($"[PFView·定居点] body={body.defName} 定居点 {shown} 座（夜面 {night} 座亮灯）｜标记 {sizeViewUnits:F0} 视图单位（{sizeViewUnits / MetersToView / 1000f:F0} km）｜科技强度 {(techMax < 0f ? 0f : techMin):F2}~{(techMax < 0f ? 0f : techMax):F2}（覆盖/密度/亮度三轴）");
         }
 
         /// <summary>标记网格 = 太阳圆片那套**带 UV 的双面四边形**（quadMesh 没 UV，径向贴图会整片透明）。</summary>

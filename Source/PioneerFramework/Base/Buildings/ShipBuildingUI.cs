@@ -19,18 +19,18 @@ namespace PioneerFramework
         /// 建筑 → 所属编队（唯一归属链：地图 `SpaceMapComp.ownerEntityId` → 实体 → `entity.GroupId` → group）。
         /// 任一环缺失 ⇒ null（调用方自己决定"没有归属"时怎么办）。
         /// </summary>
-        public static SpaceEntityGroup GetOwnerGroup(Thing building)
+        public static SpaceEntityGroup? GetOwnerGroup(Thing building)   // 契约改真（2026-10-15）：查不到返回 null（原 null! 是谎）
         {
             // ⚠ `null!`：返回类型保持非空（与全库同款写法，调用方自查）——"取不到 ⇒ null"是本方法的**正当结果**，
             //   不给它加可空标注（那会沿着调用链一路传染）。见 GameComponentRef / GroupPropulsionAggregator 的先例。
-            if (building == null || building.Map == null) return null!;
+            if (building == null || building.Map == null) return null;
             var mapComp = building.Map.GetComponent<SpaceMapComp>();
-            if (mapComp == null || mapComp.ownerEntityId < 0) return null!;
+            if (mapComp == null || mapComp.ownerEntityId < 0) return null;
 
             var sg = Current.Game?.GetComponent<SpaceGameComp>();
-            if (sg == null) return null!;
+            if (sg == null) return null;
             var entity = sg.GetEntityById(mapComp.ownerEntityId);
-            if (entity == null || entity.GroupId < 0) return null!;
+            if (entity == null || entity.GroupId < 0) return null;
             return sg.GetGroupById(entity.GroupId);
         }
 

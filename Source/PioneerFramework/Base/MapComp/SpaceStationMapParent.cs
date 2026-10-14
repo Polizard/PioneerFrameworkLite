@@ -36,7 +36,7 @@ namespace PioneerFramework
                 icon = TexCommand.Install,
                 action = delegate
                 {
-                    Map anchor = SpaceMapGenerator.GetAnchorMap();
+                    Map? anchor = SpaceMapGenerator.GetAnchorMap();
                     if (anchor != null)
                         SpaceMapGenerator.EnterPocketMap(anchor);
                     else

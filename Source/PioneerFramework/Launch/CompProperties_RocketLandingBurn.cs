@@ -15,7 +15,7 @@ namespace PioneerFramework.Launch
         public float engineBackset = 2.6f;
 
         /// <summary>喷口锚点在高度轴上的额外偏移（米），默认 0。</summary>
-        public float engineAnchorAltitudeOffset = 0f;
+        public float engineAnchorAltitudeOffset ;
 
         public FleckDef flameFleck = null!;
 

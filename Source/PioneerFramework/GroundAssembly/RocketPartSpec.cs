@@ -10,16 +10,16 @@ namespace PioneerFramework.GroundAssembly
     public class RocketPartSpec : IExposable
     {
         /// <summary>Part 的 DefName / 模板 ID，由 DMS:NF 型号定义填充。</summary>
-        public string defName;
+        public string defName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>Part 类型，例如 thruster / tank / stage / payload-mount。</summary>
-        public string category;
+        public string category = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>数量。框架施工代表这些 Part 被一起建造。</summary>
         public int quantity = 1;
 
         /// <summary>安装位置描述。首发只做保存和透传，后续可用于自定义布局。</summary>
-        public string installPosition;
+        public string installPosition = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         public void ExposeData()
         {

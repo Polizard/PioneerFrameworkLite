@@ -35,7 +35,7 @@ namespace PioneerFramework
         // ── 线 ──
 
         /// <summary>细边框（半透明白，无彩色）。</summary>
-        internal static readonly Color Border = new Color(1f, 1f, 1f, 0.10f);
+        internal static readonly Color Border = new(1f, 1f, 1f, 0.10f);
 
         /// <summary>网格线（坐标环 / 背景格）。</summary>
         internal static readonly Color Grid = G(0x24);

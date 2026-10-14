@@ -22,7 +22,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.100
+          dotnet-version: 10.0.401
           cache: true
           cache-dependency-path: |
             Source/PioneerFramework/PioneerFramework.csproj
@@ -49,7 +49,7 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File tools/verify-deterministic.ps1
 
-      - name: Verify committed DLL consistency
+      - name: Verify committed DLL consistency (1.7 deliverable)
         shell: pwsh
         run: pwsh -NoProfile -File tools/check-committed-dll.ps1
 
@@ -67,20 +67,9 @@ jobs:
       - name: Validate XML / DefOf / localization
         run: python tools/validate_config.py
 
-      - name: Verify committed runtime assets
+      # 2026-10-13 (tree split): the frozen 1.6 package is guarded by a HASH-PINNED script
+      # (tools/check-frozen-1.6.ps1) instead of an asset-presence list; the 1.7 deliverable is
+      # covered by "Verify committed DLL consistency" above (now pointing at 1.7/Assemblies).
+      - name: Verify frozen 1.6 line
         shell: pwsh
-        run: |
-          $required = @(
-            "1.6/Assemblies/PioneerFrameworkLite.dll",
-            "1.6/AssetBundles/pfview_outline_win",
-            "1.6/AssetBundles/pfview_outline_mac",
-            "1.6/AssetBundles/pfview_outline_linux",
-            "Shaders/PFView_OutlineMask.shader",
-            "Shaders/PFView_OutlineDilate.shader",
-            "Shaders/PFView_OutlineComposite.shader"
-          )
-          foreach ($path in $required) {
-            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-              throw "Required committed asset is missing: $path"
-            }
-          }
+        run: pwsh -NoProfile -File tools/check-frozen-1.6.ps1

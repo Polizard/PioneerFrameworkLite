@@ -44,24 +44,20 @@ namespace PioneerFramework
 
         /// <summary>该用固连系吗。`Auto` 档按相机高度与阈值判；显式档直接生效（对比/调试用）。</summary>
         public static bool UseFixedFrame(PFViewFrameMode mode, double cameraAltitudeMeters, double atmosphereThicknessMeters)
-        {
-            switch (mode)
+            => mode switch
             {
-                case PFViewFrameMode.Fixed: return true;
-                case PFViewFrameMode.Inertial: return false;
-                default: return cameraAltitudeMeters < FixedThresholdMeters(atmosphereThicknessMeters);
-            }
-        }
+            PFViewFrameMode.Fixed => true,
+            PFViewFrameMode.Inertial => false,
+            _ => cameraAltitudeMeters < FixedThresholdMeters(atmosphereThicknessMeters),
+            };
 
         /// <summary>档位名（UI 与读数共用一份词）。</summary>
         public static string ModeName(PFViewFrameMode mode)
-        {
-            switch (mode)
+            => mode switch
             {
-                case PFViewFrameMode.Inertial: return "惯性";
-                case PFViewFrameMode.Fixed: return "固连";
-                default: return "自动";
-            }
-        }
+            PFViewFrameMode.Inertial => "惯性",
+            PFViewFrameMode.Fixed => "固连",
+            _ => "自动",
+            };
     }
 }

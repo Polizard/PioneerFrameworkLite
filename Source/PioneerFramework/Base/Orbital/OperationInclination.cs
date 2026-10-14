@@ -40,10 +40,7 @@ namespace PioneerFramework
 
         public OperationInclination()
         {
-            _planParams = new[]
-            {
-                    new PlanParam("新倾角", "°", () => NewInc.Val, v => NewInc.Val = v),
-            };
+            _planParams = [new PlanParam("新倾角", "°", () => NewInc.Val, v => NewInc.Val = v),];
         }
 
         public override IReadOnlyList<PlanParam> GetParams() => _planParams;
@@ -58,12 +55,11 @@ namespace PioneerFramework
         public readonly EditableDoubleMult NewInc = new EditableDouble(0);
 
         private static readonly TimeReference[] _timeReferences =
-        {
-            TimeReference.EQ_HIGHEST_AD, TimeReference.EQ_NEAREST_AD,
+        [TimeReference.EQ_HIGHEST_AD, TimeReference.EQ_NEAREST_AD,
             TimeReference.EQ_ASCENDING, TimeReference.EQ_DESCENDING, TimeReference.X_FROM_NOW,
-        };
+        ];
 
-        public readonly TimeSelector TimeSelector = new TimeSelector(_timeReferences);
+        public readonly TimeSelector TimeSelector = new(_timeReferences);
 
         public override void DoParametersGUI(OrbitView o, double universalTime, ITargetView target) =>
             TimeSelector.DoChooseTimeGUI();
@@ -78,7 +74,7 @@ namespace PioneerFramework
 
             DVector3 deltaV = OrbitalManeuverCalculator.DeltaVToChangeInclination(o, ut, newIncRad);
 
-            return new List<PlanNode> { new PlanNode(deltaV, ut) };
+            return new List<PlanNode> { new(deltaV, ut) };
         }
     }
 }

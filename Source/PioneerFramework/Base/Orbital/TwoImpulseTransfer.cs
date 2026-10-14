@@ -97,7 +97,9 @@ namespace MechJebLib.Maneuvers
             int n = x0.Length;
             double[] x = new double[n];
             for (int i = 0; i < n; i++)
-                x[i] = Clamp(x0[i], lo[i], hi[i]);
+                // net10 的 System.Math 也有 Clamp（net48 没有）⇒ 与 `using static Statics` 二义；
+                // 显式限定到 MJ 的 Statics（= net48 上的既有绑定，行为不变）。
+                x[i] = Statics.Clamp(x0[i], lo[i], hi[i]);
 
             fBest = f(x);
 
@@ -113,7 +115,7 @@ namespace MechJebLib.Maneuvers
                 {
                     for (int d = 0; d < 2; d++)
                     {
-                        double trial = Clamp(x[i] + (d == 0 ? s[i] : -s[i]), lo[i], hi[i]);
+                        double trial = Statics.Clamp(x[i] + (d == 0 ? s[i] : -s[i]), lo[i], hi[i]);
                         if (trial == x[i]) continue;
 
                         double old = x[i];
@@ -243,14 +245,14 @@ namespace MechJebLib.Maneuvers
                     (lo[i], hi[i]) = (hi[i], lo[i]);
 
             // 步长：盒子的 1/8 是常用尺度；`tt` 用与 `ttguess` 相关的尺度（它的盒子可能很宽）
-            double[] step = { (hi[0] - lo[0]) / 8.0, Math.Max(ttguess / 4.0, (hi[1] - lo[1]) / 16.0), (hi[2] - lo[2]) / 8.0 };
-            double[] tol = { (hi[0] - lo[0]) * 1e-6, Math.Max(ttguess, hi[1] - lo[1]) * 1e-6, (hi[2] - lo[2]) * 1e-6 };
+            double[] step = [(hi[0] - lo[0]) / 8.0, Math.Max(ttguess / 4.0, (hi[1] - lo[1]) / 16.0), (hi[2] - lo[2]) / 8.0];
+            double[] tol = [(hi[0] - lo[0]) * 1e-6, Math.Max(ttguess, hi[1] - lo[1]) * 1e-6, (hi[2] - lo[2]) * 1e-6];
 
             // ── 多起点：`tt` 的分支（Hohmann 高/低转移）+ `dt` 的相位（synodic 的分数）＋ `offset` 的对侧 ──
-            double[] ttSeeds = { ttguess, 1.5 * ttguess, 0.6 * ttguess };
+            double[] ttSeeds = [ttguess, 1.5 * ttguess, 0.6 * ttguess];
             // ⚠ 种子必须**与盒子同尺度**（用封顶后的）：否则近同轨时种子落在盒外、被 Clamp 拉回同一点
             //   ⇒ "多起点"退化成单起点，反而更容易卡在局部极小 ✗
-            double[] dtSeeds = { dtguess, dtguess + 0.25 * synodicCapped, dtguess + 0.5 * synodicCapped, dtguess + 0.75 * synodicCapped };
+            double[] dtSeeds = [dtguess, dtguess + 0.25 * synodicCapped, dtguess + 0.5 * synodicCapped, dtguess + 0.75 * synodicCapped];
 
             // ── 批7 #1（2026-09-30）：12 个起点**各自独立**（只共享只读的 `args`/`objective` 输入）⇒ 并行 ──
             //   归约走 `ParallelOps.MinIndex`（**按下标严格取最小、并列取小下标**）——与原先"先到先得"
@@ -262,7 +264,7 @@ namespace MechJebLib.Maneuvers
             ParallelOps.For(nSeeds, 5e-4, k =>
             {
                 // 下标映射与串行**同序**（外层 ttSeed、内层 dtSeed）——并列时选谁就靠这个顺序
-                double[] seed = { dtSeeds[k % nDtSeeds], ttSeeds[k / nDtSeeds], offsetGuess };
+                double[] seed = [dtSeeds[k % nDtSeeds], ttSeeds[k / nDtSeeds], offsetGuess];
                 // ⚠ `CompassSearch` 内部的 try/catch **留在工作体内**：抛到 `Parallel.For` 外会变成
                 //    `AggregateException`（改控制流），见 §17.4 #1 的告警
                 seedX[k] = CompassSearch(objective, seed, lo, hi, step, tol[1], 60, out double fx);

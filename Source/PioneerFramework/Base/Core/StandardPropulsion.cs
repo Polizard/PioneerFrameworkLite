@@ -41,8 +41,7 @@ namespace PioneerFramework
         /// <summary>化学档主网：满罐（`mass == capacity`）的 `PropulsionData`。</summary>
         public static PropulsionData Chemical(PropellantDef propellant, double massKg,
             float ve = StandardVe, float massFlow = StandardMassFlow)
-            => new PropulsionData
-            {
+            => new() {
                 propellant = propellant,
                 ve = ve,
                 massFlow = massFlow,
@@ -70,7 +69,7 @@ namespace PioneerFramework
             {
                 d.gasIntakes = new List<GasIntake>
                 {
-                    new GasIntake { propellant = airDef, perUnitRatio = AirBreathingAirPerFuel },
+                    new() { propellant = airDef, perUnitRatio = AirBreathingAirPerFuel },
                 };
             }
             return d;
@@ -81,8 +80,7 @@ namespace PioneerFramework
         /// 由进气道（<see cref="Intake"/>）充填、被吸气式引擎按配比抽干。
         /// </summary>
         public static PropulsionData AirTank(PropellantDef airDef, double capacityKg, double fillKg = 0.0)
-            => new PropulsionData
-            {
+            => new() {
                 propellant = airDef,
                 ve = 0f,
                 massFlow = 0f,
@@ -92,6 +90,6 @@ namespace PioneerFramework
 
         /// <summary>进气道部件（面积 m² × 系数 k；缺省 k = 1）。</summary>
         public static IntakeComponentData Intake(float areaM2, float coefficient = 1f)
-            => new IntakeComponentData { intakeArea = areaM2, coefficient = coefficient };
+            => new() { intakeArea = areaM2, coefficient = coefficient };
     }
 }

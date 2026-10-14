@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace PioneerFramework
 {
@@ -34,7 +36,9 @@ namespace PioneerFramework
     {
         /// <summary>
         /// 单体引力的加速度与急动度（共享原语：全库唯一的引力算式副本）。
+        /// `AggressiveInlining`：热路径逐源调用（每步每群），调用开销与参数搬运占比可观 ⇒ 让 JIT 内联进循环。
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void BodyAccelJerkCore(
             double scX, double scY, double scZ,
             double scVx, double scVy, double scVz,
@@ -121,22 +125,22 @@ namespace PioneerFramework
             double ax = 0.0, ay = 0.0, az = 0.0;
             double jx = 0.0, jy = 0.0, jz = 0.0;
 
-            if (sources != null)
+            // Span 视图直读：免"逐源整结构体拷贝"（`GravitySource` 7 个 double）。`AsSpan(null)` = 空 span，
+            // 与原 `sources != null` 判断同路；值语义、算式、累加顺序全不变（逐位同结果）。
+            var span = CollectionsMarshal.AsSpan(sources);
+            for (int i = 0; i < span.Length; i++)
             {
-                for (int i = 0; i < sources.Count; i++)
-                {
-                    var s = sources[i];
-                    if (ignoredBodyIds != null && ContainsId(ignoredBodyIds, s.bodyId)) continue;
-                    BodyAccelJerkCore(
-                        pos.x, pos.y, pos.z, vel.x, vel.y, vel.z,
-                        s.position.x, s.position.y, s.position.z,
-                        s.velocity.x, s.velocity.y, s.velocity.z,
-                        s.mu,
-                        out double bx, out double by, out double bz,
-                        out double bjx, out double bjy, out double bjz);
-                    ax += bx; ay += by; az += bz;
-                    jx += bjx; jy += bjy; jz += bjz;
-                }
+                ref readonly GravitySource s = ref span[i];
+                if (ignoredBodyIds != null && ContainsId(ignoredBodyIds, s.bodyId)) continue;
+                BodyAccelJerkCore(
+                    pos.x, pos.y, pos.z, vel.x, vel.y, vel.z,
+                    s.position.x, s.position.y, s.position.z,
+                    s.velocity.x, s.velocity.y, s.velocity.z,
+                    s.mu,
+                    out double bx, out double by, out double bz,
+                    out double bjx, out double bjy, out double bjz);
+                ax += bx; ay += by; az += bz;
+                jx += bjx; jy += bjy; jz += bjz;
             }
 
             acceleration = new DVector3(ax, ay, az);
@@ -170,31 +174,30 @@ namespace PioneerFramework
             double ax = 0.0, ay = 0.0, az = 0.0;
             double jx = 0.0, jy = 0.0, jz = 0.0;
 
-            if (sources != null)
+            // Span 视图直读（同 `FieldAccelJerk` 的掩码重载）：免逐源结构体拷贝。
+            var span = CollectionsMarshal.AsSpan(sources);
+            for (int i = 0; i < span.Length; i++)
             {
-                for (int i = 0; i < sources.Count; i++)
-                {
-                    var s = sources[i];
+                ref readonly GravitySource s = ref span[i];
 
-                    BodyAccelJerkCore(
-                        pos.x, pos.y, pos.z, vel.x, vel.y, vel.z,
-                        s.position.x, s.position.y, s.position.z,
-                        s.velocity.x, s.velocity.y, s.velocity.z,
-                        s.mu,
-                        out double bx, out double by, out double bz,
-                        out double bjx, out double bjy, out double bjz);
+                BodyAccelJerkCore(
+                    pos.x, pos.y, pos.z, vel.x, vel.y, vel.z,
+                    s.position.x, s.position.y, s.position.z,
+                    s.velocity.x, s.velocity.y, s.velocity.z,
+                    s.mu,
+                    out double bx, out double by, out double bz,
+                    out double bjx, out double bjy, out double bjz);
 
-                    BodyAccelJerkCore(
-                        refPos.x, refPos.y, refPos.z, refVel.x, refVel.y, refVel.z,
-                        s.position.x, s.position.y, s.position.z,
-                        s.velocity.x, s.velocity.y, s.velocity.z,
-                        s.mu,
-                        out double rx, out double ry, out double rz,
-                        out double rjx, out double rjy, out double rjz);
+                BodyAccelJerkCore(
+                    refPos.x, refPos.y, refPos.z, refVel.x, refVel.y, refVel.z,
+                    s.position.x, s.position.y, s.position.z,
+                    s.velocity.x, s.velocity.y, s.velocity.z,
+                    s.mu,
+                    out double rx, out double ry, out double rz,
+                    out double rjx, out double rjy, out double rjz);
 
-                    ax += bx - rx; ay += by - ry; az += bz - rz;
-                    jx += bjx - rjx; jy += bjy - rjy; jz += bjz - rjz;
-                }
+                ax += bx - rx; ay += by - ry; az += bz - rz;
+                jx += bjx - rjx; jy += bjy - rjy; jz += bjz - rjz;
             }
 
             acceleration = new DVector3(ax, ay, az);

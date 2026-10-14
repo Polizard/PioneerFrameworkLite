@@ -18,8 +18,8 @@ namespace PioneerFramework.GroundAssembly
     /// </summary>
     public class CompUmbilicalTower : ThingComp
     {
-        private ThingWithComps assemblyPad;
-        private SpacecraftBridge bridge;
+        private ThingWithComps assemblyPad = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private SpacecraftBridge bridge = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         public ThingWithComps AssemblyPad => assemblyPad;
 
@@ -32,17 +32,17 @@ namespace PioneerFramework.GroundAssembly
 
         public void RebindExistingSpacecraftMap()
         {
-            SpacecraftMapParent existing = SpacecraftMapRegistry.GetBySpacecraftId(assemblyPad?.ThingID);
+            SpacecraftMapParent? existing = SpacecraftMapRegistry.GetBySpacecraftId(assemblyPad?.ThingID);
             if (existing != null)
                 RebindBridge(existing);
         }
 
-        public SpacecraftMapParent EnsureSpacecraftMap()
+        public SpacecraftMapParent? EnsureSpacecraftMap()
         {
             if (assemblyPad == null || assemblyPad.Map == null)
                 return null;
 
-            SpacecraftMapParent existing = SpacecraftMapRegistry.GetBySpacecraftId(assemblyPad.ThingID);
+            SpacecraftMapParent? existing = SpacecraftMapRegistry.GetBySpacecraftId(assemblyPad.ThingID);
             if (existing != null)
             {
                 RebindBridge(existing);
@@ -64,7 +64,7 @@ namespace PioneerFramework.GroundAssembly
             if (map == null)
                 return null;
 
-            SpacecraftMapParent spacecraft = map.Parent as SpacecraftMapParent;
+            SpacecraftMapParent? spacecraft = map.Parent as SpacecraftMapParent;
             if (spacecraft == null)
                 return null;
 
@@ -109,7 +109,7 @@ namespace PioneerFramework.GroundAssembly
                 ThingDef exitDef = DefDatabase<ThingDef>.GetNamedSilentFail("PF_Building_Rocket_CabinExit");
                 if (exitDef != null)
                 {
-                    Building_SpacecraftExit exit = spacecraft.Map.listerThings.ThingsOfDef(exitDef)
+                    Building_SpacecraftExit? exit = spacecraft.Map.listerThings.ThingsOfDef(exitDef)
                         .OfType<Building_SpacecraftExit>()
                         .FirstOrDefault();
                     if (exit != null)

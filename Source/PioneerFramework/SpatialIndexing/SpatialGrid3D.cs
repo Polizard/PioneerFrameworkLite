@@ -8,7 +8,7 @@ namespace PioneerFramework
     {
         public class RoughCell
         {
-            private readonly HashSet<T> entities = new HashSet<T>();
+            private readonly HashSet<T> entities = new();
 
             public double minX, maxX;
             public double minY, maxY;
@@ -99,8 +99,7 @@ namespace PioneerFramework
             }
             else
             {
-                Log.Warning(string.Format("Update: entity {0} not found in old cell ({1},{2},{3})",
-                    entity.EntityId, oldCoord.cx, oldCoord.cy, oldCoord.cz));
+                Log.Warning($"Update: entity {entity.EntityId} not found in old cell ({oldCoord.cx},{oldCoord.cy},{oldCoord.cz})");
             }
 
             var newRCell = GetOrCreateCell(newCoord);

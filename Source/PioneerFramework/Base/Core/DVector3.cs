@@ -30,7 +30,7 @@ namespace PioneerFramework
         public double y;
         public double z;
 
-        #region 构造函数
+        // ── 构造函数 ──
 
         public DVector3(double x, double y, double z)
         {
@@ -53,9 +53,8 @@ namespace PioneerFramework
             z = 0.0;
         }
 
-        #endregion
 
-        #region 分量别名 / 索引器 / 整组写（来自上游 V3）
+        // ── 分量别名 / 索引器 / 整组写（来自上游 V3） ──
 
         public double roll
         {
@@ -112,9 +111,8 @@ namespace PioneerFramework
             z = nz;
         }
 
-        #endregion
 
-        #region 常量
+        // ── 常量 ──
 
         public static DVector3 zero { get; } = new DVector3(0.0, 0.0, 0.0);
 
@@ -169,9 +167,8 @@ namespace PioneerFramework
 
         public static DVector3 zaxis { get; } = new DVector3(0, 0, 1);
 
-        #endregion
 
-        #region 属性
+        // ── 属性 ──
 
         public double magnitude
         {
@@ -253,67 +250,65 @@ namespace PioneerFramework
         }
 
         /// <summary>交换 y/z（上游语义）。</summary>
-        public DVector3 xzy => new DVector3(this[0], this[2], this[1]);
+        public DVector3 xzy => new(this[0], this[2], this[1]);
 
-        #endregion
 
-        #region 运算符
+        // ── 运算符 ──
 
-        public static DVector3 operator +(DVector3 a, DVector3 b) => new DVector3(a.x + b.x, a.y + b.y, a.z + b.z);
-        public static DVector3 operator -(DVector3 a, DVector3 b) => new DVector3(a.x - b.x, a.y - b.y, a.z - b.z);
-        public static DVector3 operator -(DVector3 a) => new DVector3(-a.x, -a.y, -a.z);
+        public static DVector3 operator +(DVector3 a, DVector3 b) => new(a.x + b.x, a.y + b.y, a.z + b.z);
+        public static DVector3 operator -(DVector3 a, DVector3 b) => new(a.x - b.x, a.y - b.y, a.z - b.z);
+        public static DVector3 operator -(DVector3 a) => new(-a.x, -a.y, -a.z);
 
-        public static DVector3 operator *(DVector3 a, double d) => new DVector3(a.x * d, a.y * d, a.z * d);
-        public static DVector3 operator *(double d, DVector3 a) => new DVector3(a.x * d, a.y * d, a.z * d);
-        public static DVector3 operator *(DVector3 a, float f) => new DVector3(a.x * f, a.y * f, a.z * f);
-        public static DVector3 operator *(float f, DVector3 a) => new DVector3(a.x * f, a.y * f, a.z * f);
+        public static DVector3 operator *(DVector3 a, double d) => new(a.x * d, a.y * d, a.z * d);
+        public static DVector3 operator *(double d, DVector3 a) => new(a.x * d, a.y * d, a.z * d);
+        public static DVector3 operator *(DVector3 a, float f) => new(a.x * f, a.y * f, a.z * f);
+        public static DVector3 operator *(float f, DVector3 a) => new(a.x * f, a.y * f, a.z * f);
 
         /// <summary>**逐分量**乘（上游 V3 语义；不是点积、不是标量乘）。</summary>
-        public static DVector3 operator *(DVector3 a, DVector3 b) => new DVector3(a.x * b.x, a.y * b.y, a.z * b.z);
+        public static DVector3 operator *(DVector3 a, DVector3 b) => new(a.x * b.x, a.y * b.y, a.z * b.z);
 
-        public static DVector3 operator /(DVector3 a, double d) => new DVector3(a.x / d, a.y / d, a.z / d);
-        public static DVector3 operator /(DVector3 a, float f) => new DVector3(a.x / f, a.y / f, a.z / f);
+        public static DVector3 operator /(DVector3 a, double d) => new(a.x / d, a.y / d, a.z / d);
+        public static DVector3 operator /(DVector3 a, float f) => new(a.x / f, a.y / f, a.z / f);
 
         /// <summary>**逐分量**除（上游 V3 语义）。</summary>
-        public static DVector3 operator /(DVector3 a, DVector3 b) => new DVector3(a.x / b.x, a.y / b.y, a.z / b.z);
+        public static DVector3 operator /(DVector3 a, DVector3 b) => new(a.x / b.x, a.y / b.y, a.z / b.z);
 
         /// <summary>标量 ÷ 向量（逐分量；上游 V3 语义）。</summary>
-        public static DVector3 operator /(double d, DVector3 a) => new DVector3(d / a.x, d / a.y, d / a.z);
+        public static DVector3 operator /(double d, DVector3 a) => new(d / a.x, d / a.y, d / a.z);
 
         public static bool operator ==(DVector3 a, DVector3 b) => a.x == b.x && a.y == b.y && a.z == b.z;
         public static bool operator !=(DVector3 a, DVector3 b) => !(a == b);
 
         // 与 Unity Vector3 互转
 #if !PURE_MATH
-        public static explicit operator Vector3(DVector3 v) => new Vector3((float)v.x, (float)v.y, (float)v.z);
-        public static explicit operator DVector3(Vector3 v) => new DVector3(v.x, v.y, v.z);
+        public static explicit operator Vector3(DVector3 v) => new((float)v.x, (float)v.y, (float)v.z);
+        public static explicit operator DVector3(Vector3 v) => new(v.x, v.y, v.z);
 #endif
 
-        #endregion
 
-        #region 静态方法
+        // ── 静态方法 ──
 
         public static double Dot(DVector3 a, DVector3 b) => a.x * b.x + a.y * b.y + a.z * b.z;
 
-        public static DVector3 Cross(DVector3 a, DVector3 b) => new DVector3(
+        public static DVector3 Cross(DVector3 a, DVector3 b) => new(
             a.y * b.z - a.z * b.y,
             a.z * b.x - a.x * b.z,
             a.x * b.y - a.y * b.x);
 
-        public static DVector3 Scale(DVector3 a, DVector3 b) => new DVector3(a.x * b.x, a.y * b.y, a.z * b.z);
+        public static DVector3 Scale(DVector3 a, DVector3 b) => new(a.x * b.x, a.y * b.y, a.z * b.z);
 
-        public static DVector3 Divide(DVector3 a, DVector3 b) => new DVector3(a.x / b.x, a.y / b.y, a.z / b.z);
+        public static DVector3 Divide(DVector3 a, DVector3 b) => new(a.x / b.x, a.y / b.y, a.z / b.z);
 
-        public static DVector3 Abs(DVector3 a) => new DVector3(Math.Abs(a.x), Math.Abs(a.y), Math.Abs(a.z));
+        public static DVector3 Abs(DVector3 a) => new(Math.Abs(a.x), Math.Abs(a.y), Math.Abs(a.z));
 
-        public static DVector3 Sign(DVector3 a) => new DVector3(Math.Sign(a.x), Math.Sign(a.y), Math.Sign(a.z));
+        public static DVector3 Sign(DVector3 a) => new(Math.Sign(a.x), Math.Sign(a.y), Math.Sign(a.z));
 
-        public static DVector3 Sqrt(DVector3 a) => new DVector3(Math.Sqrt(a.x), Math.Sqrt(a.y), Math.Sqrt(a.z));
+        public static DVector3 Sqrt(DVector3 a) => new(Math.Sqrt(a.x), Math.Sqrt(a.y), Math.Sqrt(a.z));
 
-        public static DVector3 Max(DVector3 a, DVector3 b) => new DVector3(
+        public static DVector3 Max(DVector3 a, DVector3 b) => new(
             Math.Max(a.x, b.x), Math.Max(a.y, b.y), Math.Max(a.z, b.z));
 
-        public static DVector3 Min(DVector3 a, DVector3 b) => new DVector3(
+        public static DVector3 Min(DVector3 a, DVector3 b) => new(
             Math.Min(a.x, b.x), Math.Min(a.y, b.y), Math.Min(a.z, b.z));
 
         public static double Distance(DVector3 a, DVector3 b) => (a - b).magnitude;
@@ -449,7 +444,7 @@ namespace PioneerFramework
         }
 
         /// <summary>外积（列矢构造矩阵；上游语义）。</summary>
-        public static M3 Outer(DVector3 v1, DVector3 v2) => new M3(v1 * v2.x, v1 * v2.y, v1 * v2.z);
+        public static M3 Outer(DVector3 v1, DVector3 v2) => new(v1 * v2.x, v1 * v2.y, v1 * v2.z);
 
         /// <summary>就地正交化 `normal` 与 `tangent`（上游语义：三个断言只在 Debug 生效）。</summary>
         public static void OrthoNormalize(ref DVector3 normal, ref DVector3 tangent)
@@ -492,9 +487,8 @@ namespace PioneerFramework
         }
 #endif
 
-        #endregion
 
-        #region 实例方法
+        // ── 实例方法 ──
 
         /// <summary>就地单位化。**上游语义**（批5 U2 采用）：`norm > 0` 才除、且**赋值 `this`** ⇒ **NaN → zero**。</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -551,7 +545,7 @@ namespace PioneerFramework
             other[i + 2, j] = this[2];
         }
 
-        public static DVector3 CopyFromIndices(IList<double> array, (int, int, int) indices) => new DVector3(array[indices.Item1], array[indices.Item2], array[indices.Item3]);
+        public static DVector3 CopyFromIndices(IList<double> array, (int, int, int) indices) => new(array[indices.Item1], array[indices.Item2], array[indices.Item3]);
 
         public void CopyToIndices(IList<double> array, (int, int, int) indices)
         {
@@ -560,9 +554,8 @@ namespace PioneerFramework
             array[indices.Item3] = this[2];
         }
 
-        #endregion
 
-        #region IEquatable / 覆盖
+        // ── IEquatable / 覆盖 ──
 
         /// <summary>**上游语义**（批5 U2 采用）：按位比较分量 ⇒ **NaN 判相等**（与 `operator ==` 不同！）。
         /// 理由：`EqualityHashingTests` 断言 `NaN.Equals(NaN)`，而字典/哈希容器要的就是这个语义。</summary>
@@ -594,20 +587,19 @@ namespace PioneerFramework
                 $"[{x.ToString(format, formatProvider)}, {y.ToString(format, formatProvider)}, {z.ToString(format, formatProvider)}]";
         }
 
-        #endregion
 
 #if !PURE_MATH
-        #region 序列化辅助
+        // ── 序列化辅助 ──
 
         /// <summary>
         /// 从 Vector3 显式转换（保持 double 精度）。
         /// </summary>
-        public static DVector3 FromVector3(Vector3 v) => new DVector3(v.x, v.y, v.z);
+        public static DVector3 FromVector3(Vector3 v) => new(v.x, v.y, v.z);
 
         /// <summary>
         /// 转 Unity Vector3（精度损失）。
         /// </summary>
-        public Vector3 ToVector3() => new Vector3((float)x, (float)y, (float)z);
+        public Vector3 ToVector3() => new((float)x, (float)y, (float)z);
 
         /// <summary>
         /// 用 Scribe_Values 序列化 DVector3 为三个 double 分量。
@@ -642,7 +634,6 @@ namespace PioneerFramework
                 value = hasValue ? new DVector3(x, y, z) : (DVector3?)null;
         }
 
-        #endregion
 #endif
     }
 
@@ -661,11 +652,11 @@ namespace PioneerFramework
             this.x = x; this.y = y; this.z = z; this.w = w;
         }
 
-        public static readonly DQuaternion identity = new DQuaternion(0, 0, 0, 1);
+        public static readonly DQuaternion identity = new(0, 0, 0, 1);
 
 #if !PURE_MATH
-        public static explicit operator Quaternion(DQuaternion q) => new Quaternion((float)q.x, (float)q.y, (float)q.z, (float)q.w);
-        public static explicit operator DQuaternion(Quaternion q) => new DQuaternion(q.x, q.y, q.z, q.w);
+        public static explicit operator Quaternion(DQuaternion q) => new((float)q.x, (float)q.y, (float)q.z, (float)q.w);
+        public static explicit operator DQuaternion(Quaternion q) => new(q.x, q.y, q.z, q.w);
 #endif
 
         public bool Equals(DQuaternion other) => x == other.x && y == other.y && z == other.z && w == other.w;
@@ -679,15 +670,15 @@ namespace PioneerFramework
             hash = hash * 31 + w.GetHashCode();
             return hash;
         }
-        public override string ToString() => string.Format("({0:F4}, {1:F4}, {2:F4}, {3:F4})", x, y, z, w);
+        public override string ToString() => $"({x:F4}, {y:F4}, {z:F4}, {w:F4})";
 
-        public static DQuaternion operator *(DQuaternion a, DQuaternion b) => new DQuaternion(
+        public static DQuaternion operator *(DQuaternion a, DQuaternion b) => new(
             a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
             a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
             a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
             a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z);
 
-        public static DQuaternion Inverse(DQuaternion q) => new DQuaternion(-q.x, -q.y, -q.z, q.w);
+        public static DQuaternion Inverse(DQuaternion q) => new(-q.x, -q.y, -q.z, q.w);
 
         /// <summary>
         /// 从角度/轴构造。
@@ -704,8 +695,8 @@ namespace PioneerFramework
         /// 从 Unity Quaternion 显式转换。
         /// </summary>
 #if !PURE_MATH
-        public static DQuaternion FromQuaternion(Quaternion q) => new DQuaternion(q.x, q.y, q.z, q.w);
-        public Quaternion ToQuaternion() => new Quaternion((float)x, (float)y, (float)z, (float)w);
+        public static DQuaternion FromQuaternion(Quaternion q) => new(q.x, q.y, q.z, q.w);
+        public Quaternion ToQuaternion() => new((float)x, (float)y, (float)z, (float)w);
 #endif
     }
 }

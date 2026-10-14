@@ -25,26 +25,26 @@ namespace PioneerFramework
         private const string ARCHIVE_EXTENSION = ".pfmap";
 
         // Scribe 反射缓存（懒加载，避免静态初始化时 Assembly 未就绪）
-        private static FieldInfo _saverField;
-        private static FieldInfo _loaderField;
-        private static FieldInfo _curXmlParentField;
+        private static FieldInfo? _saverField;
+        private static FieldInfo? _loaderField;
+        private static FieldInfo? _curXmlParentField;
 
-        private static FieldInfo SaverField =>
+        private static FieldInfo? SaverField =>   // 契约改真（2026-10-15）：GetField 找不到时为 null
             _saverField ??= typeof(Scribe).GetField("saver",
                 BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
 
-        private static FieldInfo LoaderField =>
+        private static FieldInfo? LoaderField =>   // 契约改真（2026-10-15）
             _loaderField ??= typeof(Scribe).GetField("loader",
                 BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
 
-        private static FieldInfo CurXmlParentField =>
+        private static FieldInfo? CurXmlParentField =>   // 契约改真（2026-10-15）
             _curXmlParentField ??= typeof(ScribeLoader).GetField("curXmlParent",
                 BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
         // Scribe 静态状态：封存/取出会临时替换 Scribe.saver/loader；
         // 结束后必须恢复原始实例，否则后续正常存档/读档会因 null 而 NRE。
-        private static ScribeSaver originalScribeSaver;
-        private static ScribeLoader originalScribeLoader;
+        private static ScribeSaver? originalScribeSaver;   // 契约改真（2026-10-15 手清）：清理归零（614 行）
+        private static ScribeLoader? originalScribeLoader;   // 契约改真（2026-10-15 手清）
 
         // ═══════════════════════════════════════════════
         //  公共接口
@@ -68,7 +68,7 @@ namespace PioneerFramework
         /// 读取封存数据并初始化取档操作（多 tick 异步）。
         /// 返回准备好的 MapRestoreOperation，由 SpaceGameComp.Tick() 驱动。
         /// </summary>
-        public static MapRestoreOperation BeginRestoreMap(SpaceEntity entity)
+        public static MapRestoreOperation? BeginRestoreMap(SpaceEntity entity)
         {
             if (entity == null || entity.MapId < 0)
             {
@@ -79,7 +79,7 @@ namespace PioneerFramework
             string filePath = GetArchivePath(entity.MapId);
             if (!File.Exists(filePath))
             {
-                Log.Error(string.Format("[MapArchive] Archive file not found: {0}", filePath));
+                Log.Error($"[MapArchive] Archive file not found: {filePath}");
                 return null;
             }
 
@@ -120,8 +120,7 @@ namespace PioneerFramework
             ApplyTerrain(map, terrainRecords);
             ApplyCompressedThings(map, compressedData);
 
-            Log.Message(string.Format("[MapArchive] Restore initiated for map {0}: {1} buildings, size {2}x{3}",
-                entity.MapId, buildingRecords.Count, mapWidth, mapHeight));
+            Log.Message($"[MapArchive] Restore initiated for map {entity.MapId}: {buildingRecords.Count} buildings, size {mapWidth}x{mapHeight}");
 
             return op;
         }
@@ -134,7 +133,7 @@ namespace PioneerFramework
         /// 开始封存操作（Phase 0：收集建筑 + 压缩物 + 地形，1 tick）。
         /// 返回 MapArchiveOperation，后续由 SpaceGameComp 多 tick 驱动。
         /// </summary>
-        public static MapArchiveOperation BeginArchiveMap(Map map, SpaceEntity entity)
+        public static MapArchiveOperation? BeginArchiveMap(Map map, SpaceEntity entity)
         {
             if (map == null || entity == null)
             {
@@ -179,8 +178,7 @@ namespace PioneerFramework
                 Phase = 1
             };
 
-            Log.Message(string.Format("[MapArchive] Archive initiated for map {0}: {1} buildings",
-                map.uniqueID, buildings.Count));
+            Log.Message($"[MapArchive] Archive initiated for map {map.uniqueID}: {buildings.Count} buildings");
 
             return op;
         }
@@ -235,8 +233,7 @@ namespace PioneerFramework
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning(string.Format("[MapArchive] Failed to serialize building {0}: {1}",
-                        building.def.shortHash, ex.Message));
+                    Log.Warning($"[MapArchive] Failed to serialize building {building.def.shortHash}: {ex.Message}");
                 }
             }
 
@@ -266,8 +263,7 @@ namespace PioneerFramework
             if (File.Exists(op.TempFilePath))
                 File.Delete(op.TempFilePath);
 
-            Log.Message(string.Format("[MapArchive] Archived map {0} to {1} ({2} buildings, {3} terrains)",
-                mapId, op.ArchiveFilePath, op.BuildingRecords.Count, op.TerrainRecords.Count));
+            Log.Message($"[MapArchive] Archived map {mapId} to {op.ArchiveFilePath} ({op.BuildingRecords.Count} buildings, {op.TerrainRecords.Count} terrains)");
             Messages.Message("地图已封存。", MessageTypeDefOf.SilentInput, false);
         }
 
@@ -322,7 +318,7 @@ namespace PioneerFramework
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning(string.Format("[MapArchive] Failed to spawn compressed thing {0}: {1}", def.defName, ex.Message));
+                    Log.Warning($"[MapArchive] Failed to spawn compressed thing {def.defName}: {ex.Message}");
                 }
             }
         }
@@ -365,8 +361,7 @@ namespace PioneerFramework
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning(string.Format("[MapArchive] Failed to spawn building {0}: {1}",
-                        record.defShortHash, ex.Message));
+                    Log.Warning($"[MapArchive] Failed to spawn building {record.defShortHash}: {ex.Message}");
                 }
             }
 
@@ -378,15 +373,15 @@ namespace PioneerFramework
         {
             if (!hashToDef.TryGetValue(record.defShortHash, out var thingDef))
             {
-                Log.Warning(string.Format("[MapArchive] Unknown def hash: {0}", record.defShortHash));
+                Log.Warning($"[MapArchive] Unknown def hash: {record.defShortHash}");
                 return;
             }
 
             // Stuff
-            ThingDef stuffDef = null;
+            ThingDef? stuffDef = null;
             if (record.stuffShortHash != 0 && !hashToDef.TryGetValue(record.stuffShortHash, out stuffDef))
             {
-                Log.Warning(string.Format("[MapArchive] Unknown stuff hash: {0}", record.stuffShortHash));
+                Log.Warning($"[MapArchive] Unknown stuff hash: {record.stuffShortHash}");
             }
 
             // 创建 Thing
@@ -511,12 +506,12 @@ namespace PioneerFramework
         /// </summary>
         private static byte[] SerializeCompData(ThingComp comp, string tmpPath)
         {
-            if (comp == null) return Array.Empty<byte>();
+            if (comp == null) return [];
 
             if (Scribe.mode != LoadSaveMode.Inactive)
             {
                 Log.Error("[MapArchive] Cannot serialize comp - Scribe is active (save/load in progress)");
-                return Array.Empty<byte>();
+                return [];
             }
 
             try
@@ -532,9 +527,8 @@ namespace PioneerFramework
             }
             catch (Exception ex)
             {
-                Log.Warning(string.Format("[MapArchive] Failed to serialize comp {0}: {1}",
-                    comp.GetType().Name, ex.Message));
-                return Array.Empty<byte>();
+                Log.Warning($"[MapArchive] Failed to serialize comp {comp.GetType().Name}: {ex.Message}");
+                return [];
             }
             finally
             {
@@ -582,8 +576,7 @@ namespace PioneerFramework
             }
             catch (Exception ex)
             {
-                Log.Warning(string.Format("[MapArchive] Failed to deserialize comp {0}: {1}",
-                    comp.GetType().Name, ex.Message));
+                Log.Warning($"[MapArchive] Failed to deserialize comp {comp.GetType().Name}: {ex.Message}");
             }
             finally
             {
@@ -631,15 +624,15 @@ namespace PioneerFramework
     /// </summary>
     public class MapArchiveOperation
     {
-        public SpaceEntity TargetEntity;
-        public Map SourceMap;
-        public byte[] CompressedData;
-        public List<TerrainRecord> TerrainRecords;
-        public List<BuildingRecord> BuildingRecords = new List<BuildingRecord>();
-        public List<Building> BuildingsToProcess;
+        public SpaceEntity TargetEntity = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public Map SourceMap = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public byte[] CompressedData = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public List<TerrainRecord> TerrainRecords = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public List<BuildingRecord> BuildingRecords = new();
+        public List<Building> BuildingsToProcess = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         public int CurrentBuildingIndex;
-        public string TempFilePath;
-        public string ArchiveFilePath;
+        public string TempFilePath = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public string ArchiveFilePath = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         public int Phase; // 0=collect, 1=serialize comps, 2=write+destroy
         public const int BATCH_SIZE = 8;
 
@@ -660,8 +653,8 @@ namespace PioneerFramework
     public class MapRestoreOperation
     {
         public SpaceEntity TargetEntity;
-        public Map NewMap;
-        public List<BuildingRecord> BuildingRecords;
+        public Map NewMap = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public List<BuildingRecord> BuildingRecords = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         public List<TerrainRecord> TerrainRecords;
         public byte[] CompressedData;
         public int MapWidth;
@@ -671,8 +664,8 @@ namespace PioneerFramework
         public const int BATCH_SIZE = 6;
         public string ArchiveFilePath;
 
-        internal Dictionary<ushort, ThingDef> _hashToDef;
-        internal Dictionary<int, Faction> _factionCache;
+        internal Dictionary<ushort, ThingDef> _hashToDef = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        internal Dictionary<int, Faction> _factionCache = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         public float Progress
         {

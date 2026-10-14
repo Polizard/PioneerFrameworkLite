@@ -116,8 +116,8 @@ namespace PioneerFramework.GroundAssembly.Patches
         [StaticConstructorOnStartup]
         public static class DrawGhost_Patch
         {
-            private static readonly Color ValidColor = new Color(0.2f, 1f, 0.2f, 0.5f);
-            private static readonly Color InvalidColor = new Color(1f, 0.2f, 0.2f, 0.5f);
+            private static readonly Color ValidColor = new(0.2f, 1f, 0.2f, 0.5f);
+            private static readonly Color InvalidColor = new(1f, 0.2f, 0.2f, 0.5f);
             private static readonly Material FuelingPortCellMaterial =
                 MaterialPool.MatFrom("UI/Overlays/FuelingPort", ShaderDatabase.Transparent);
 
@@ -145,7 +145,7 @@ namespace PioneerFramework.GroundAssembly.Patches
                     }
                 }
 
-                Building launchpad = null;
+                Building? launchpad = null;
                 List<Thing> things = map.thingGrid.ThingsListAt(center);
                 for (int i = 0; i < things.Count; i++)
                 {

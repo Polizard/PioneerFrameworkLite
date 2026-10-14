@@ -10,8 +10,8 @@ namespace PioneerFramework.GroundAssembly.Patches
     /// </summary>
     public static class PlaceWorker_NotUnderRoof_DrawGhost_Patch
     {
-        private static readonly Color ValidCenterColor = new Color(0f, 1f, 0.2f, 0.6f);
-        private static readonly Color InvalidCenterColor = new Color(1f, 0.2f, 0.2f, 0.6f);
+        private static readonly Color ValidCenterColor = new(0f, 1f, 0.2f, 0.6f);
+        private static readonly Color InvalidCenterColor = new(1f, 0.2f, 0.2f, 0.6f);
 
         [HarmonyPatch(typeof(PlaceWorker), "DrawGhost")]
         public static class PlaceWorker_DrawGhost_Patch
@@ -27,7 +27,7 @@ namespace PioneerFramework.GroundAssembly.Patches
                 if (Find.CurrentMap == null)
                     return;
 
-                Building launchpad = null;
+                Building? launchpad = null;
                 foreach (Thing t in Find.CurrentMap.thingGrid.ThingsListAt(center))
                 {
                     if (t is Building b && LaunchPadUtility.IsAssemblyPad(b.def))

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- PioneerFramework 自写 shader（2026-10-13，1.7 迁移 P2-c）。
+       背景：1.7 换引擎后 `Shader.Find("Standard")` = null（引擎注册表无 Standard），
+       PFView 主材质改由本 shader 承担；GLSL 在载入文件夹 `1.7/Shaders/` 下（引擎自动收集，
+       见 `Verse.ShaderDefRegistry.RegisterShaderDirectories`），运行时支持热重载。
+       约束（引擎现况）：uniform ≤512B、storage ≤8、无关键字变体；混合/队列按引擎映射。 -->
+  <ShaderDef>
+    <defName>PFLit</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PFLit.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PFLit.frag.glsl</fragmentShaderFileName>
+      <depthWrite>true</depthWrite>
+      <renderQueue>2000</renderQueue>
+      <!-- 2026-10-14：**改为 true（= 引擎默认）**。上一稿抄地图类 shader 写了 false——错：
+           地图 shader 自算 UV 不需要 ST 修正；我们走 `_MainTex_ST` 采样（Unity 贴图底朝上 ⇒ 需要 V 翻正），
+           false 会把这个翻正关掉 ⇒ 补丁在球面上呈"左右反"（本模 V 轴=东西向），且 6×3 平铺也丢失。
+           证据链：`Waylith/Rendering/MaterialBindingResolver.ResolveTextureST`（flipV ⇒ y=1-y, w=-w）。 -->
+      <flipTextureST>true</flipTextureST>
+    </shaderProgram>
+  </ShaderDef>
+</Defs>

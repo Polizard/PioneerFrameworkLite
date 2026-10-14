@@ -6,9 +6,9 @@ namespace PioneerFramework
     /// <summary>Save-persistent success and recovery-failure record for explicit transfer IDs.</summary>
     public sealed class ShipSurfaceTransferLedger : GameComponent
     {
-        private List<string> completed = new List<string>();
-        private List<string> blocked = new List<string>();
-        private readonly HashSet<string> active = new HashSet<string>();
+        private List<string> completed = new();
+        private List<string> blocked = new();
+        private readonly HashSet<string> active = new();
 
         public ShipSurfaceTransferLedger(Game game) { }
 

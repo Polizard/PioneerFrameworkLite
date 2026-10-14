@@ -211,7 +211,7 @@ namespace PioneerFramework
                 });
 
                 sb.Append(sb.Length > 0 ? "；" : "")
-                  .Append($"t={node.ut:F0}s |Δv|={node.dV.magnitude:F2}m/s（R/T/N {rad:F2}/{tan:F2}/{norm:F2}）");
+                  .Append(System.Globalization.CultureInfo.CurrentCulture, $"t={node.ut:F0}s |Δv|={node.dV.magnitude:F2}m/s（R/T/N {rad:F2}/{tan:F2}/{norm:F2}）");
             }
 
             foreach (SpaceEntityGroup.PlannedManeuver m in prepared)
@@ -310,7 +310,7 @@ namespace PioneerFramework
             (V3 dv1, double ut1, V3 dv2, double ut2) = OrbitalManeuverCalculator.DeltaVAndTimeForHohmannTransfer(
                 ovFrom, ovTo, departure, lagTime: 0.0, fixedTime: false, coplanar: true);
 
-            nodes = new List<PlanNode> { new PlanNode(dv1, ut1), new PlanNode(dv2, ut2) };
+            nodes = new List<PlanNode> { new(dv1, ut1), new(dv2, ut2) };
             reason = $"相位窗口 τ={tau:F0}s（{tau / 60.0:F1} 分）｜t_tof={tof:F0}s";
             return true;
         }

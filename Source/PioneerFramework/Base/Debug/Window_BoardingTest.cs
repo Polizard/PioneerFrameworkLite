@@ -33,7 +33,7 @@ namespace PioneerFramework
                 : BoardingManager.ProbeInterval > 0 ? 2 : 0;
         }
 
-        public override Vector2 InitialSize => new Vector2(WindowWidth, WindowHeight);
+        public override Vector2 InitialSize => new(WindowWidth, WindowHeight);
 
         public override void DoWindowContents(Rect inRect)
         {
@@ -48,9 +48,7 @@ namespace PioneerFramework
             Text.Font = GameFont.Small;
             if (boarding != null)
                 Widgets.Label(new Rect(0, y, inRect.width, 22f),
-                    string.Format("统计：发射 {0} ｜ 着陆 {1} ｜ 失败/击毁 {2} ｜ 飞行中 {3}",
-                        boarding.TotalLaunched, boarding.TotalLanded, boarding.TotalDestroyed,
-                        boarding.Units.Count(u => u.state == BoardingState.Flying)));
+                    $"统计：发射 {boarding.TotalLaunched} ｜ 着陆 {boarding.TotalLanded} ｜ 失败/击毁 {boarding.TotalDestroyed} ｜ 飞行中 {(boarding.Units.Count(u => u.state == BoardingState.Flying))}");
             else
                 Widgets.Label(new Rect(0, y, inRect.width, 22f), "BoardingManager 未找到");
             y += 28f;
@@ -82,7 +80,7 @@ namespace PioneerFramework
 
             Widgets.Label(new Rect(0, y, inRect.width, 22f), "状态探针间隔（[Boarding探针] 日志）：");
             y += 22f;
-            string[] labels = { "关闭", "30 tick", "60 tick", "120 tick" };
+            string[] labels = ["关闭", "30 tick", "60 tick", "120 tick"];
             for (int i = 0; i < labels.Length; i++)
             {
                 bool sel = probeOption == i;
@@ -111,10 +109,7 @@ namespace PioneerFramework
                         ? (u.members.Count > 0 && u.members[0].pawn != null ? u.members[0].pawn.LabelShort : "?")
                         : u.members.Count + " 乘客";
                     Widgets.Label(new Rect(0, ly, content.width, 20f),
-                        string.Format("U{0} {1} [{2}] {3} ｜ dist={4:F0}m relv={5:F1}m/s 引导={6} 位=({7:F0},{8:F0},{9:F0})km",
-                            u.id, u.type == VesselType.Eva ? "EVA" : "穿梭机", u.state, member,
-                            st.distToAim, st.relVel, st.guidanceActive ? "on" : "off",
-                            st.unitPos.x / 1000.0, st.unitPos.y / 1000.0, st.unitPos.z / 1000.0));
+                        $"U{u.id} {(u.type == VesselType.Eva ? "EVA" : "穿梭机")} [{u.state}] {member} ｜ dist={st.distToAim:F0}m relv={st.relVel:F1}m/s 引导={(st.guidanceActive ? "on" : "off")} 位=({st.unitPos.x / 1000.0:F0},{st.unitPos.y / 1000.0:F0},{st.unitPos.z / 1000.0:F0})km");
                     ly += 22f;
                 }
                 Widgets.EndScrollView();
@@ -146,9 +141,7 @@ namespace PioneerFramework
                 {
                     var r = boarding.RecentResults[i];
                     Widgets.Label(new Rect(0, ly, content.width, 18f),
-                        string.Format("t{0} U{1} {2} [{3}] {4}（{5} 成员）",
-                            r.tick, r.unitId, r.type == VesselType.Eva ? "EVA" : "穿梭机",
-                            r.outcome, r.detail, r.memberCount));
+                        $"t{r.tick} U{r.unitId} {(r.type == VesselType.Eva ? "EVA" : "穿梭机")} [{r.outcome}] {r.detail}（{r.memberCount} 成员）");
                     ly += 20f;
                 }
                 Widgets.EndScrollView();
@@ -180,25 +173,23 @@ namespace PioneerFramework
                 {
                     if (p == null || p.Destroyed)
                     {
-                        Log.Message(string.Format("[BoardingTest] 验证失败：U{0} 成员已死亡/销毁", r.unitId));
+                        Log.Message($"[BoardingTest] 验证失败：U{r.unitId} 成员已死亡/销毁");
                         failed++;
                         continue;
                     }
                     if (p.Spawned && p.Map != null)
                     {
-                        Log.Message(string.Format("[BoardingTest] 验证通过：U{0} 成员 {1} 已登陆 Map {2} 格 {3}",
-                            r.unitId, p.LabelShort, p.Map.uniqueID, p.Position));
+                        Log.Message($"[BoardingTest] 验证通过：U{r.unitId} 成员 {p.LabelShort} 已登陆 Map {p.Map.uniqueID} 格 {p.Position}");
                         verified++;
                     }
                     else
                     {
-                        Log.Message(string.Format("[BoardingTest] 验证失败：U{0} 成员 {1} 未 Spawn（Spawned={2}）",
-                            r.unitId, p.LabelShort, p.Spawned));
+                        Log.Message($"[BoardingTest] 验证失败：U{r.unitId} 成员 {p.LabelShort} 未 Spawn（Spawned={p.Spawned}）");
                         failed++;
                     }
                 }
             }
-            Messages.Message(string.Format("着陆验证：通过 {0} ｜ 失败 {1}", verified, failed),
+            Messages.Message($"着陆验证：通过 {verified} ｜ 失败 {failed}",
                 failed > 0 ? MessageTypeDefOf.RejectInput : MessageTypeDefOf.TaskCompletion);
         }
     }

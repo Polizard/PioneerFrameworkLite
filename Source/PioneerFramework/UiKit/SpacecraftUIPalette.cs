@@ -21,7 +21,7 @@ namespace PioneerFramework.UiKit
         internal static readonly Color ColHeaderBg = HexRgb("#1C222C");
 
         /// <summary>侧栏背景 — 半透明深蓝灰。</summary>
-        internal static readonly Color ColSidebarBg = new Color(0.07f, 0.09f, 0.12f, 0.92f);
+        internal static readonly Color ColSidebarBg = new(0.07f, 0.09f, 0.12f, 0.92f);
 
         /// <summary>面板背景 — 深暖灰（卡片、列表项底色）。</summary>
         internal static readonly Color SpecPanelBg = HexRgb("#151A22");
@@ -33,7 +33,7 @@ namespace PioneerFramework.UiKit
         internal static readonly Color SpecPanelBgHover = HexRgb("#1A2029");
 
         /// <summary>边框 — 半透明白（卡片边、分割线）。</summary>
-        internal static readonly Color ColBorder = new Color(1f, 1f, 1f, 0.08f);
+        internal static readonly Color ColBorder = new(1f, 1f, 1f, 0.08f);
 
         /// <summary>分割线 — 暖灰。</summary>
         internal static readonly Color SpecDivider = HexRgb("#2E343D");
@@ -70,7 +70,7 @@ namespace PioneerFramework.UiKit
         internal static readonly Color SpecColdCyanHover = HexRgb("#4A9A8A");
 
         /// <summary>冷青禁用。</summary>
-        internal static readonly Color SpecColdCyanDisabled = new Color(58f / 255f, 138f / 255f, 122f / 255f, 0.35f);
+        internal static readonly Color SpecColdCyanDisabled = new(58f / 255f, 138f / 255f, 122f / 255f, 0.35f);
 
         /// <summary>军绿 — 已完工状态、施工进度。</summary>
         internal static readonly Color SpecAccentMilitary = HexRgb("#6B8E5A");

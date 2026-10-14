@@ -16,13 +16,13 @@ namespace PioneerFramework
     /// </summary>
     public sealed class RuntimePlanetLayerSpec
     {
-        public string DefName { get; set; }
+        public string DefName { get; set; } = null!;   // null!：注册/绑定填充（N2 可空族家规，2026-10-15 补）
 
-        public string Label { get; set; }
+        public string Label { get; set; } = null!;   // null!：注册/绑定填充（N2 可空族家规，2026-10-15 补）
 
-        public string Description { get; set; }
+        public string Description { get; set; } = null!;   // null!：注册/绑定填充（N2 可空族家规，2026-10-15 补）
 
-        public string BackgroundBiomeDefName { get; set; }
+        public string BackgroundBiomeDefName { get; set; } = null!;   // null!：注册/绑定填充（N2 可空族家规，2026-10-15 补）
 
         public float Radius { get; set; }
 
@@ -40,19 +40,19 @@ namespace PioneerFramework
 
         public float BackgroundWorldCameraParallaxDistancePer100Cells { get; set; }
 
-        public Type LayerType { get; set; }
+        public Type LayerType { get; set; } = null!;   // null!：注册/绑定填充（N2 可空族家规，2026-10-15 补）
 
-        public Type TileType { get; set; }
+        public Type TileType { get; set; } = null!;   // null!：注册/绑定填充（N2 可空族家规，2026-10-15 补）
 
-        public string ElevationString { get; set; }
+        public string ElevationString { get; set; } = null!;   // null!：注册/绑定填充（N2 可空族家规，2026-10-15 补）
 
-        public string GerundLabel { get; set; }
+        public string GerundLabel { get; set; } = null!;   // null!：注册/绑定填充（N2 可空族家规，2026-10-15 补）
 
-        public string ViewGizmoTooltip { get; set; }
+        public string ViewGizmoTooltip { get; set; } = null!;   // null!：注册/绑定填充（N2 可空族家规，2026-10-15 补）
 
-        public string ViewGizmoTexPath { get; set; }
+        public string ViewGizmoTexPath { get; set; } = null!;   // null!：注册/绑定填充（N2 可空族家规，2026-10-15 补）
 
-        public ModContentPack ModContentPack { get; set; }
+        public ModContentPack ModContentPack { get; set; } = null!;   // null!：注册/绑定填充（N2 可空族家规，2026-10-15 补）
 
         public List<string> WorldGenStepDefNames { get; set; } = new List<string>();
 
@@ -142,7 +142,7 @@ namespace PioneerFramework
         private static readonly FieldInfo WorldTabsField =
             AccessTools.Field(typeof(PlanetLayerDef), "worldTabs");
 
-        public static bool ValidateSpec(RuntimePlanetLayerSpec spec, out string error)
+        public static bool ValidateSpec(RuntimePlanetLayerSpec? spec, out string? error)
         {
             if (spec == null)
             {
@@ -220,10 +220,10 @@ namespace PioneerFramework
         /// 存档会按 DefName 恢复引用，因此相同存档必须始终使用相同描述。
         /// </summary>
         public static PlanetLayerDef EnsureDefinition(
-            RuntimePlanetLayerSpec spec,
+            RuntimePlanetLayerSpec? spec,
             bool hotReload = false)
         {
-            if (!ValidateSpec(spec, out string error))
+            if (!ValidateSpec(spec, out string? error))
             {
                 throw new ArgumentException(error, nameof(spec));
             }
@@ -284,7 +284,7 @@ namespace PioneerFramework
             return layerDef;
         }
 
-        public static PlanetLayer FindByDefName(string defName)
+        public static PlanetLayer? FindByDefName(string? defName)
         {
             if (string.IsNullOrWhiteSpace(defName) || Find.WorldGrid == null)
             {
@@ -317,7 +317,7 @@ namespace PioneerFramework
                 throw new InvalidOperationException("WorldGrid is not available.");
             }
 
-            PlanetLayer existing = FindByDefName(spec?.DefName);
+            PlanetLayer? existing = FindByDefName(spec?.DefName);
             if (existing != null)
             {
                 return existing;
@@ -416,7 +416,7 @@ namespace PioneerFramework
                 return false;
             }
 
-            List<WorldObject> worldObjects =
+            List<WorldObject>? worldObjects =
                 Find.WorldObjects?.AllWorldObjectsOnLayer(layer);
             if (!allowContentDestruction &&
                 worldObjects != null &&
@@ -496,7 +496,7 @@ namespace PioneerFramework
 
         private static void DestroyLayerWorldObjects(PlanetLayer layer)
         {
-            List<WorldObject> worldObjects =
+            List<WorldObject>? worldObjects =
                 Find.WorldObjects?.AllWorldObjectsOnLayer(layer);
             if (worldObjects == null || worldObjects.Count == 0)
             {
@@ -511,7 +511,7 @@ namespace PioneerFramework
                 }
             }
 
-            List<WorldObject> remainingWorldObjects =
+            List<WorldObject>? remainingWorldObjects =
                 Find.WorldObjects?.AllWorldObjectsOnLayer(layer);
             if (remainingWorldObjects != null &&
                 remainingWorldObjects.Count > 0)

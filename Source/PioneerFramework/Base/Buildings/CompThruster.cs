@@ -12,7 +12,7 @@ namespace PioneerFramework
     public class CompProperties_Thruster : CompProperties
     {
         /// <summary>消耗的工质 Def 名。</summary>
-        public string propellantDefName;
+        public string propellantDefName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>排气速度 ve（m/s）。由引擎/推进器决定。</summary>
         public float exhaustVelocity = 9000f;

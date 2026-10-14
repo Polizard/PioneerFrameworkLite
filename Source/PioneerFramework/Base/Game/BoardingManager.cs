@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
 using UnityEngine;
@@ -28,7 +28,7 @@ namespace PioneerFramework
     /// </summary>
     public class BoardingMember : IExposable
     {
-        public Pawn pawn;
+        public Pawn pawn = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         public void ExposeData()
         {
@@ -47,7 +47,7 @@ namespace PioneerFramework
         public VesselType type;
         public int groupId = -1;      // 临时 3D 物理 group
         public int entityId = -1;     // 临时 3D 实体
-        public List<BoardingMember> members = new List<BoardingMember>();
+        public List<BoardingMember> members = new();
         public int targetGroupId = -1;
         public int targetPartId = -1;
         public DVector3 landingOffsetShip;  // 落点 = 目标空间站局部系 3D 偏移（格 → 米）
@@ -55,8 +55,8 @@ namespace PioneerFramework
         public BoardingState state = BoardingState.Flying;
 
         // 运行时懒解析缓存（不序列化）
-        [Unsaved] public SpaceEntityGroup ResolvedGroup;
-        [Unsaved] public SpaceEntity ResolvedEntity;
+        [Unsaved] public SpaceEntityGroup? ResolvedGroup = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;
+        [Unsaved] public SpaceEntity? ResolvedEntity = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;
         /// <summary>降落窗口提示日志节流（真实 tick，不序列化）。</summary>
         [Unsaved] public int LoggedWindowEntryTick = -1;
 
@@ -111,16 +111,16 @@ namespace PioneerFramework
         /// <summary>引导修正死区（m/s）：低于此值不烧。</summary>
         public const double GuidanceDeadband = 0.5;
 
-        private List<BoardingUnit> units = new List<BoardingUnit>();
+        private List<BoardingUnit> units = new();
         private int nextBoardingId = 1;
         private int nextShuttleId = 1;
 
         // ── 调试/测试 ──
         /// <summary>详细日志开关（每物理步的引导/窗口状态）。测试面板可勾选。</summary>
-        public static bool DebugDetailedBoarding = false;
+        public static bool DebugDetailedBoarding ;
         /// <summary>状态探针间隔（真实 tick）。0 = 关闭探针日志；&gt;0 时每间隔打印全部飞行单位状态。</summary>
-        public static int ProbeInterval = 0;
-        private int probeNextTick = 0;
+        public static int ProbeInterval ;
+        private int probeNextTick ;
 
         // ── 累计统计（不序列化，测试面板/日志用）──
         /// <summary>累计发射数（EVA 兵逐兵计数 / 穿梭机整机计数）。</summary>
@@ -137,13 +137,13 @@ namespace PioneerFramework
             public VesselType type;
             public BoardingState outcome;
             public int tick;
-            public string detail;
+            public string detail = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
             public int memberCount;
-            public List<Pawn> memberPawns;
+            public List<Pawn> memberPawns = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         }
 
         /// <summary>最近结算记录（最多保留 20 条）。</summary>
-        public readonly List<BoardingResultRecord> RecentResults = new List<BoardingResultRecord>();
+        public readonly List<BoardingResultRecord> RecentResults = new();
 
         private void RecordResult(BoardingUnit unit, BoardingState outcome, string detail)
         {
@@ -170,7 +170,7 @@ namespace PioneerFramework
         public BoardingManager(Game game) { }
 
         // 性能第 5 条：接舷每物理步每单位都要取，按 Game 缓存
-        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new GameComponentRef<SpaceGameComp>();
+        private readonly GameComponentRef<SpaceGameComp> spaceGameRef = new();
         private SpaceGameComp SpaceGame => spaceGameRef.Get();
 
         public IReadOnlyList<BoardingUnit> Units => units;
@@ -203,9 +203,9 @@ namespace PioneerFramework
                     {
                         var st = GetStatus(unit);
                         sb.Append(" | U").Append(unit.id).Append(unit.type == VesselType.Eva ? "EVA" : "SHL")
-                          .Append(" ").Append(unit.state)
-                          .Append(" dist=").Append(st.distToAim.ToString("F0"))
-                          .Append("m relv=").Append(st.relVel.ToString("F1"))
+                          .Append(' ').Append(unit.state)
+                          .Append(" dist=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{st.distToAim:F0}")
+                          .Append("m relv=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{st.relVel:F1}")
                           .Append(" guid=").Append(st.guidanceActive ? "on" : "off")
                           .Append(st.partDestroyed ? " [击毁]" : "");
                     }
@@ -219,7 +219,7 @@ namespace PioneerFramework
                 if (!ResolveUnit(unit))
                 {
                     // group/entity 已消失且非正常结算 → 成员按死亡处理
-                    Log.Message(string.Format("[Boarding] Unit {0} ({1}) 3D 对象已消失，按击毁结算", unit.id, unit.type));
+                    Log.Message($"[Boarding] Unit {unit.id} ({unit.type}) 3D 对象已消失，按击毁结算");
                     KillMembers(unit, "3D 对象消失");
                     units.RemoveAt(i);
                     continue;
@@ -241,9 +241,7 @@ namespace PioneerFramework
                 unit.ResolvedGroup = SpaceGame?.GetGroupById(unit.groupId);
                 unit.ResolvedEntity = SpaceGame?.GetEntityById(unit.entityId);
                 if (DebugDetailedBoarding)
-                    Log.Message(string.Format("[Boarding] Unit {0} 懒解析 group={1}({2}) entity={3}({4})",
-                        unit.id, unit.groupId, unit.ResolvedGroup != null ? "ok" : "缺失",
-                        unit.entityId, unit.ResolvedEntity != null ? "ok" : "缺失"));
+                    Log.Message($"[Boarding] Unit {unit.id} 懒解析 group={unit.groupId}({(unit.ResolvedGroup != null ? "ok" : "缺失")}) entity={unit.entityId}({(unit.ResolvedEntity != null ? "ok" : "缺失")})");
             }
             return unit.ResolvedGroup != null && unit.ResolvedEntity != null;
         }
@@ -256,7 +254,7 @@ namespace PioneerFramework
             // 目标空间站已消失 → 放弃任务（成员送回：EVA 回母船不可行，按失败处理）
             if (target == null)
             {
-                Log.Message(string.Format("[Boarding] Unit {0} 目标空间站 {1} 已消失，任务取消", unit.id, unit.targetGroupId));
+                Log.Message($"[Boarding] Unit {unit.id} 目标空间站 {unit.targetGroupId} 已消失，任务取消");
                 KillMembers(unit, "目标空间站消失");
                 SpaceGame?.DestroyGroup(unit.groupId, "登船拆除（临时实体）"); // 同步销毁临时 3D 实体，防孤儿幽灵船
                 unit.state = BoardingState.Destroyed;
@@ -268,7 +266,7 @@ namespace PioneerFramework
             {
                 if (part.isDestroyed)
                 {
-                    Log.Message(string.Format("[Boarding] Unit {0} ({1}) 飞行中被击毁", unit.id, unit.type));
+                    Log.Message($"[Boarding] Unit {unit.id} ({unit.type}) 飞行中被击毁");
                     KillMembers(unit, "跳帮单位被击毁");
                     SpaceGame?.DestroyGroup(unit.groupId, "登船拆除（临时实体）");
                     unit.state = BoardingState.Destroyed;
@@ -290,24 +288,19 @@ namespace PioneerFramework
             double relVel = (unitVel - targetVel).magnitude;
 
             if (DebugDetailedBoarding)
-                Log.Message(string.Format("[Boarding] Unit {0} ({1}) 状态 dist落点={2:F0}m relv={3:F1}m/s aim=({4:F0},{5:F0},{6:F0})km 位=({7:F0},{8:F0},{9:F0})km",
-                    unit.id, unit.type, dist, relVel,
-                    aim.x / 1000.0, aim.y / 1000.0, aim.z / 1000.0,
-                    groupPos.x / 1000.0, groupPos.y / 1000.0, groupPos.z / 1000.0));
+                Log.Message($"[Boarding] Unit {unit.id} ({unit.type}) 状态 dist落点={dist:F0}m relv={relVel:F1}m/s aim=({aim.x / 1000.0:F0},{aim.y / 1000.0:F0},{aim.z / 1000.0:F0})km 位=({groupPos.x / 1000.0:F0},{groupPos.y / 1000.0:F0},{groupPos.z / 1000.0:F0})km");
 
             // 进入降落窗口但相对速度仍高：提示等待消速（每单位最多打一次，避免刷屏）
             if (dist < LandingDistanceThreshold && relVel >= LandingRelVelThreshold
                 && unit.LoggedWindowEntryTick != Find.TickManager.TicksGame)
             {
                 unit.LoggedWindowEntryTick = Find.TickManager.TicksGame;
-                Log.Message(string.Format("[Boarding] Unit {0} ({1}) 已进入降落窗口 dist={2:F0}m（&lt;{3}），等待消速 relv={4:F1}m/s（&lt;{5}）",
-                    unit.id, unit.type, dist, LandingDistanceThreshold, relVel, LandingRelVelThreshold));
+                Log.Message($"[Boarding] Unit {unit.id} ({unit.type}) 已进入降落窗口 dist={dist:F0}m（&lt;{LandingDistanceThreshold}），等待消速 relv={relVel:F1}m/s（&lt;{LandingRelVelThreshold}）");
             }
 
             if (BoardingMath.InLandingWindow(dist, relVel, LandingDistanceThreshold, LandingRelVelThreshold))
             {
-                Log.Message(string.Format("[Boarding] Unit {0} ({1}) 降落判定通过 dist={2:F0}m relvel={3:F1}m/s",
-                    unit.id, unit.type, dist, relVel));
+                Log.Message($"[Boarding] Unit {unit.id} ({unit.type}) 降落判定通过 dist={dist:F0}m relvel={relVel:F1}m/s");
                 Land(unit, target);
                 return;
             }
@@ -321,8 +314,7 @@ namespace PioneerFramework
             {
                 group.StartBurn(dv);
                 if (DebugDetailedBoarding)
-                    Log.Message(string.Format("[Boarding] Unit {0} 持续引导 dv={1:F1}m/s 收拢={2:F1}m/s",
-                        unit.id, dv.magnitude, approachSpeed));
+                    Log.Message($"[Boarding] Unit {unit.id} 持续引导 dv={dv.magnitude:F1}m/s 收拢={approachSpeed:F1}m/s");
             }
         }
 
@@ -336,7 +328,7 @@ namespace PioneerFramework
         /// </summary>
         /// <param name="initialVelocityOffset">初始速度偏移（m/s，测试用：模拟高速接近/偏离共轨）。null = 共轨起飞。</param>
         /// <param name="initialPositionOffset">初始位置偏移（m，相对母船原点，测试用：多兵分散出生避免 AABB 重叠互撞）。null = 母船原点。</param>
-        public BoardingUnit LaunchEva(Pawn pawn, int targetGroupId, int targetPartId, DVector3 landingOffsetShip,
+        public BoardingUnit? LaunchEva(Pawn pawn, int targetGroupId, int targetPartId, DVector3 landingOffsetShip,
             DVector3? initialVelocityOffset = null, DVector3? initialPositionOffset = null)
         {
             if (pawn == null || pawn.Destroyed) return null;
@@ -375,12 +367,7 @@ namespace PioneerFramework
 
             DVector3 startPos = GetGroupPos(group);
             DVector3 startVel = GetGroupVelocity(group);
-            Log.Message(string.Format("[Boarding] EVA 起飞 Unit {0} 兵 {1} → 站 G{2}/Part{3} 参考系 body{4} " +
-                "落点({5:F0},{6:F1},{7:F0})m 初位({8:F0},{9:F0},{10:F0})km 初速({11:F1},{12:F1},{13:F1})m/s",
-                id, pawn.LabelShort, targetGroupId, targetPartId, group.CelestialBodyId,
-                landingOffsetShip.x, landingOffsetShip.y, landingOffsetShip.z,
-                startPos.x / 1000.0, startPos.y / 1000.0, startPos.z / 1000.0,
-                startVel.x, startVel.y, startVel.z));
+            Log.Message($"[Boarding] EVA 起飞 Unit {id} 兵 {pawn.LabelShort} → 站 G{targetGroupId}/Part{targetPartId} 参考系 body{group.CelestialBodyId} 落点({landingOffsetShip.x:F0},{landingOffsetShip.y:F1},{landingOffsetShip.z:F0})m 初位({startPos.x / 1000.0:F0},{startPos.y / 1000.0:F0},{startPos.z / 1000.0:F0})km 初速({startVel.x:F1},{startVel.y:F1},{startVel.z:F1})m/s");
             return unit;
         }
 
@@ -388,7 +375,7 @@ namespace PioneerFramework
         /// 穿梭机起飞：停靠 Thing（ShuttleId）→ 乘客上船(DeSpawn) → 销毁 Thing →
         /// 临时 3D 实体（继承 ShuttleId）+ 接近引导。
         /// </summary>
-        public BoardingUnit LaunchShuttle(Thing shuttleThing, List<Pawn> passengers,
+        public BoardingUnit? LaunchShuttle(Thing shuttleThing, List<Pawn> passengers,
             int targetGroupId, int targetPartId, DVector3 landingOffsetShip,
             DVector3? initialPositionOffset = null, DVector3? initialVelocityOffset = null)
         {
@@ -444,9 +431,7 @@ namespace PioneerFramework
             units.Add(unit);
             TotalLaunched++;
 
-            Log.Message(string.Format("[Boarding] 穿梭机起飞 Unit {0} Shuttle{1} 乘客 {2} 名 → 站 G{3} 落点({4:F0},{5:F1},{6:F0})m",
-                id, shuttleId, unit.members.Count, targetGroupId,
-                landingOffsetShip.x, landingOffsetShip.y, landingOffsetShip.z));
+            Log.Message($"[Boarding] 穿梭机起飞 Unit {id} Shuttle{shuttleId} 乘客 {unit.members.Count} 名 → 站 G{targetGroupId} 落点({landingOffsetShip.x:F0},{landingOffsetShip.y:F1},{landingOffsetShip.z:F0})m");
             return unit;
         }
 
@@ -461,10 +446,10 @@ namespace PioneerFramework
 
             // 目标空间站内部 Map
             var targetEntity = ResolveTargetEntity(unit);
-            Map targetMap = targetEntity != null ? SpaceMapGenerator.GetEntityMap(targetEntity) : null;
+            Map? targetMap = targetEntity != null ? SpaceMapGenerator.GetEntityMap(targetEntity) : null;
             if (targetMap == null)
             {
-                Log.Message(string.Format("[Boarding] Unit {0} 目标空间站内部 Map 不可用，降落失败", unit.id));
+                Log.Message($"[Boarding] Unit {unit.id} 目标空间站内部 Map 不可用，降落失败");
                 KillMembers(unit, "目标站内部 Map 不可用");
                 spaceGame.DestroyGroup(unit.groupId, "登船拆除（临时实体）"); // 同步销毁临时 3D 实体，防孤儿幽灵船
                 unit.state = BoardingState.Destroyed;
@@ -496,8 +481,7 @@ namespace PioneerFramework
                 var dock = thing.TryGetComp<CompShuttleDock>();
                 if (dock != null)
                     dock.shuttleId = unit.shuttleId;
-                Log.Message(string.Format("[Boarding] 穿梭机 Unit {0} 降落 → 站 Map {1} Shuttle{2} 停靠格 {3}",
-                    unit.id, targetMap.uniqueID, unit.shuttleId, footCell));
+                Log.Message($"[Boarding] 穿梭机 Unit {unit.id} 降落 → 站 Map {targetMap.uniqueID} Shuttle{unit.shuttleId} 停靠格 {footCell}");
             }
 
             // 乘客/单兵下船：Spawn 到落点附近可站立格（落点可能点在建筑上，统一校验）
@@ -506,8 +490,7 @@ namespace PioneerFramework
                 if (m.pawn == null || m.pawn.Destroyed) continue;
                 IntVec3 spawnCell = FindWalkableNear(targetMap, cell);
                 GenSpawn.Spawn(m.pawn, spawnCell, targetMap, Rot4.North, WipeMode.Vanish, false);
-                Log.Message(string.Format("[Boarding] 单位 {0} 成员 {1} 已登陆站 Map {2} 格 {3}",
-                    unit.id, m.pawn.LabelShort, targetMap.uniqueID, spawnCell));
+                Log.Message($"[Boarding] 单位 {unit.id} 成员 {m.pawn.LabelShort} 已登陆站 Map {targetMap.uniqueID} 格 {spawnCell}");
             }
 
             // 销毁临时 3D 实体/group，注销飞行记录
@@ -515,8 +498,7 @@ namespace PioneerFramework
             unit.state = BoardingState.Landed;
             TotalLanded++;
             RecordResult(unit, BoardingState.Landed, "着陆完成");
-            Log.Message(string.Format("[Boarding] Unit {0} ({1}) 着陆完成，已销毁 3D 实体，成员转入目标站 Map",
-                unit.id, unit.type));
+            Log.Message($"[Boarding] Unit {unit.id} ({unit.type}) 着陆完成，已销毁 3D 实体，成员转入目标站 Map");
         }
 
         // ════════════════════════════════════════════
@@ -532,7 +514,7 @@ namespace PioneerFramework
         {
             if (vRel >= ContactConsumeRelVel) return false;
 
-            BoardingUnit unit = FindUnitByGroup(a.GroupId);
+            BoardingUnit? unit = FindUnitByGroup(a.GroupId);
             SpaceEntityGroup unitGroup = a;
             if (unit == null)
             {
@@ -549,12 +531,11 @@ namespace PioneerFramework
             double dist = (GetGroupPos(unitGroup) - GetAimPointSystem(unit)).magnitude;
             bool consumed = dist < LandingDistanceThreshold;
             if (consumed)
-                Log.Message(string.Format("[Boarding] 接舷消费 G{0}(Unit{1}) vs G{2} vRel={3:F1}m/s dist落点={4:F0}m",
-                    unitGroup.GroupId, unit.id, a.GroupId == unitGroup.GroupId ? b.GroupId : a.GroupId, vRel, dist));
+                Log.Message($"[Boarding] 接舷消费 G{unitGroup.GroupId}(Unit{unit.id}) vs G{(a.GroupId == unitGroup.GroupId ? b.GroupId : a.GroupId)} vRel={vRel:F1}m/s dist落点={dist:F0}m");
             return consumed;
         }
 
-        public BoardingUnit FindUnitByGroup(int groupId)
+        public BoardingUnit? FindUnitByGroup(int groupId)
         {
             for (int i = 0; i < units.Count; i++)
                 if (units[i].groupId == groupId)
@@ -603,7 +584,7 @@ namespace PioneerFramework
         // ════════════════════════════════════════════
 
         /// <summary>pawn/thing 所在 Map → 母船（ownerEntity + 其 group）。</summary>
-        private (SpaceEntity entity, SpaceEntityGroup group) ResolveMothership(Map map)
+        private (SpaceEntity? entity, SpaceEntityGroup? group) ResolveMothership(Map map)
         {
             var spaceGame = SpaceGame;
             if (spaceGame == null || map == null) return (null, null);
@@ -615,12 +596,12 @@ namespace PioneerFramework
             return (entity, group);
         }
 
-        private SpaceEntityGroup ResolveTargetGroup(BoardingUnit unit)
+        private SpaceEntityGroup? ResolveTargetGroup(BoardingUnit unit)
         {
             return SpaceGame?.GetGroupById(unit.targetGroupId);
         }
 
-        private SpaceEntity ResolveTargetEntity(BoardingUnit unit)
+        private SpaceEntity? ResolveTargetEntity(BoardingUnit unit)
         {
             var target = ResolveTargetGroup(unit);
             if (target == null) return null;
@@ -644,14 +625,14 @@ namespace PioneerFramework
         }
 
         /// <summary>与 CombatManager.GetGroupPos 同基准：圆轨解析位置 / 非圆轨 CurrentOrbit.positionSystem。</summary>
-        private static DVector3 GetGroupPos(SpaceEntityGroup group)
+        private static DVector3 GetGroupPos(SpaceEntityGroup? group)
         {
             if (group.IsCircularOrbit)
                 return group.GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe());
             return group.CurrentOrbit.positionSystem.v;
         }
 
-        private static DVector3 GetGroupVelocity(SpaceEntityGroup group)
+        private static DVector3 GetGroupVelocity(SpaceEntityGroup? group)
         {
             if (group.IsCircularOrbit)
                 return group.GetCircularVelocityAtTick(TimeScaleManager.GetPhysicsTickSafe());
@@ -725,7 +706,7 @@ namespace PioneerFramework
             var prop = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Hydrogen");
             return new List<PropulsionData>
             {
-                new PropulsionData { propellant = prop, ve = 2200f, massFlow = 1.5f, mass = 300f, capacity = 300f }
+                new() { propellant = prop, ve = 2200f, massFlow = 1.5f, mass = 300f, capacity = 300f }
             };
         }
 
@@ -735,7 +716,7 @@ namespace PioneerFramework
             var prop = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Hydrogen");
             return new List<PropulsionData>
             {
-                new PropulsionData { propellant = prop, ve = 3500f, massFlow = 40f, mass = 8000f, capacity = 8000f }
+                new() { propellant = prop, ve = 3500f, massFlow = 40f, mass = 8000f, capacity = 8000f }
             };
         }
 
@@ -750,7 +731,7 @@ namespace PioneerFramework
                 if (m.pawn.Spawned)
                     m.pawn.DeSpawn();
                 m.pawn.Kill(new DamageInfo(DamageDefOf.Crush, 99999f));
-                Log.Message(string.Format("[Boarding] 成员 {0} 死亡（原因：{1}）", m.pawn.LabelShort, cause));
+                Log.Message($"[Boarding] 成员 {m.pawn.LabelShort} 死亡（原因：{cause}）");
             }
             unit.members.Clear();
         }

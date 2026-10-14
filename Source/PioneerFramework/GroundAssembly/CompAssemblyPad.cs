@@ -31,9 +31,9 @@ namespace PioneerFramework.GroundAssembly
     {
         private LaunchPadState state;
 
-        private RocketDesignSpec design;
+        private RocketDesignSpec? design;   // 契约改真（2026-10-15 手清）：清理路径归零（66/67/160 行），可空；Scribe 补齐
 
-        private Thing builtRocket;
+        private Thing? builtRocket;   // 契约改真（2026-10-15 手清）：清理路径归零（66/160 行），可空；Scribe 补齐
 
         private int pocketMapId = -1;
 
@@ -41,7 +41,7 @@ namespace PioneerFramework.GroundAssembly
 
         public LaunchPadState State => state;
 
-        public RocketDesignSpec Design => design;
+        public RocketDesignSpec? Design => design;
 
         public int PocketMapId => pocketMapId;
 
@@ -49,7 +49,7 @@ namespace PioneerFramework.GroundAssembly
         public RocketLaunchMode LaunchMode => launchMode;
 
         /// <summary>当前已完工/关联的火箭 Building；未完工或空闲时为 null。</summary>
-        public Thing BuiltRocket => builtRocket;
+        public Thing? BuiltRocket => builtRocket;
 
         public void SetLaunchMode(RocketLaunchMode mode)
         {
@@ -78,7 +78,7 @@ namespace PioneerFramework.GroundAssembly
         }
 
         /// <summary>发射台当前关联的火箭舱内口袋地图（可能尚未生成）。</summary>
-        public Map GetPocketMap()
+        public Map? GetPocketMap()
         {
             if (pocketMapId < 0)
                 return null;
@@ -135,7 +135,7 @@ namespace PioneerFramework.GroundAssembly
 
         private IntVec3 FindUmbilicalTowerCell()
         {
-            Map map = parent?.Map;
+            Map? map = parent?.Map;
             if (map == null)
                 return IntVec3.Invalid;
 

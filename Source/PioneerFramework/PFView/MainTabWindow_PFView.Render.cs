@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -24,9 +24,19 @@ namespace PioneerFramework
             cubeMesh = BuildCubeMesh();
             quadMesh = BuildQuadMesh();
 
-            renderMat = new Material(Shader.Find("Standard")) { color = Color.white };
+            // 2026-10-13（P2-c）：1.6 用 Standard；1.7 上 `Find("Standard")`=null ⇒ 用自写 GLSL `PFLit`
+            // （`1.7/Defs/ShaderDefs` + `1.7/Shaders/*.glsl`）。运行期择一，两版本都不改行为。
+            Shader renderShader = Shader.Find("PFLit");
+            if (renderShader == null) renderShader = Shader.Find("Standard");
+            renderMat = new Material(renderShader) { color = Color.white };
+            // 2026-10-14：PFLit 会采样 `_MainTex` ⇒ 无贴图的材质（船/射弹/轨道线）必须给**白底**，
+            // 否则采到引擎的未绑定默认值（原版约定 `@default = black`）⇒ 整片发黑。
+            // Standard 时代"无贴图=白"是隐式的，这里显式补上（两版本都无害）。
+            renderMat.mainTexture = Texture2D.whiteTexture;
+            // 下面两行只有 1.6 的 Standard 会用（PFLit 没有这两个 uniform；写未知属性无害）
             renderMat.SetFloat("_Glossiness", 0f);
             renderMat.SetFloat("_Metallic", 0f);    // 纯漫反射，依赖方向光产生明暗
+            renderMat.SetVector("_SunDir", new Vector4(1f, 0f, 0f, 0f));   // 每帧由 UpdateLighting 刷新；此处兜底
 
             matBlock = new MaterialPropertyBlock();
         }
@@ -73,11 +83,9 @@ namespace PioneerFramework
         private static Mesh BuildQuadMesh()
         {
             var m = new Mesh();
-            m.vertices = new[] {
-                new Vector3(-0.5f, -0.5f, 0), new Vector3(0.5f, -0.5f, 0),
-                new Vector3(-0.5f, 0.5f, 0), new Vector3(0.5f, 0.5f, 0)
-            };
-            m.triangles = new[] { 0, 2, 1, 2, 3, 1 };
+            m.vertices = [new Vector3(-0.5f, -0.5f, 0), new Vector3(0.5f, -0.5f, 0),
+                new Vector3(-0.5f, 0.5f, 0), new Vector3(0.5f, 0.5f, 0)];
+            m.triangles = [0, 2, 1, 2, 3, 1];
             m.RecalculateNormals();
             return m;
         }
@@ -86,20 +94,17 @@ namespace PioneerFramework
         private static Mesh BuildCubeMesh()
         {
             var m = new Mesh();
-            m.vertices = new[] {
-                new Vector3(-0.5f, -0.5f, -0.5f), new Vector3(0.5f, -0.5f, -0.5f),
+            m.vertices = [new Vector3(-0.5f, -0.5f, -0.5f), new Vector3(0.5f, -0.5f, -0.5f),
                 new Vector3(0.5f, 0.5f, -0.5f), new Vector3(-0.5f, 0.5f, -0.5f),
                 new Vector3(-0.5f, -0.5f, 0.5f), new Vector3(0.5f, -0.5f, 0.5f),
-                new Vector3(0.5f, 0.5f, 0.5f), new Vector3(-0.5f, 0.5f, 0.5f)
-            };
-            m.triangles = new[] {
-                0, 2, 1, 0, 3, 2,       // -Z
+                new Vector3(0.5f, 0.5f, 0.5f), new Vector3(-0.5f, 0.5f, 0.5f)];
+            m.triangles = [0, 2, 1, 0, 3, 2,       // -Z
                 4, 5, 6, 4, 6, 7,       // +Z
                 0, 1, 5, 0, 5, 4,       // -Y
                 2, 3, 7, 2, 7, 6,       // +Y
                 1, 2, 6, 1, 6, 5,       // +X
                 3, 0, 4, 3, 4, 7        // -X
-            };
+            ];
             m.RecalculateNormals();
             return m;
         }
@@ -349,12 +354,7 @@ namespace PioneerFramework
             if (tick - lastFrameLogTick > 300.0)
             {
                 lastFrameLogTick = tick;
-                Log.Message(string.Format(
-                    "[PFView·参考系] {0}｜相机 h={1:F1} km（阈值 {2:F0} km = max(厚度/2, 100 km)）｜body={3}",
-                    viewFrameIsFixed ? "固连系（地面静止）" : "惯性系",
-                    altMeters / 1000.0,
-                    PFViewFrameCore.FixedThresholdMeters(thickness) / 1000.0,
-                    def != null ? def.defName : "?"));
+                Log.Message($"[PFView·参考系] {(viewFrameIsFixed ? "固连系（地面静止）" : "惯性系")}｜相机 h={altMeters / 1000.0:F1} km（阈值 {PFViewFrameCore.FixedThresholdMeters(thickness) / 1000.0:F0} km = max(厚度/2, 100 km)）｜body={(def != null ? def.defName : "?")}");
             }
         }
 

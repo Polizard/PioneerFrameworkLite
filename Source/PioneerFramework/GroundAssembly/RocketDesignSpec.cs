@@ -35,13 +35,13 @@ namespace PioneerFramework.GroundAssembly
         public float fuelAmount;
 
         /// <summary>Part 配置。</summary>
-        public List<RocketPartSpec> parts = new List<RocketPartSpec>();
+        public List<RocketPartSpec> parts = new();
 
         /// <summary>载荷配置。</summary>
-        public List<RocketPayloadSpec> payloads = new List<RocketPayloadSpec>();
+        public List<RocketPayloadSpec> payloads = new();
 
         /// <summary>对接口预留。首发只保存字符串标记，不实现拼接。</summary>
-        public List<string> dockingPorts = new List<string>();
+        public List<string> dockingPorts = new();
 
         public void ExposeData()
         {

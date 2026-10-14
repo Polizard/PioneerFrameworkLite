@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using RimWorld;
@@ -38,14 +38,14 @@ namespace PioneerFramework
             public double E, A, DA, Inc, Argp, Applied;
         }
 
-        private static readonly List<Arm> arms = new List<Arm>();
+        private static readonly List<Arm> arms = new();
         private static bool pending;
         private static int stagedTick;                     // 登记时刻（真实 tick）——超时判据用
         /// <summary>等真实 tick 上限（见 LiveBurn 里同名字段的理由：不许永久静默）。</summary>
         private const int TimeoutRealTicks = 60000;
 
-        private static readonly double[] Orbits = { 7_000_000.0, 6_600_000.0, 8_500_000.0, 7_800_000.0 };
-        private static readonly string[] Variants = { "A基准", "C冻结方向", "D全油门", "B无轨道保持" };
+        private static readonly double[] Orbits = [7_000_000.0, 6_600_000.0, 8_500_000.0, 7_800_000.0];
+        private static readonly string[] Variants = ["A基准", "C冻结方向", "D全油门", "B无轨道保持"];
 
         public static void Stage()
         {
@@ -56,7 +56,7 @@ namespace PioneerFramework
             arms.Clear();
             BurnAB.Reset();
             double mu = SpaceConstants.PrimaryGravitationalParameter;
-            CelestialBodyDef earth = mgr.GetBodyById(EARTH_BODY_ID);
+            CelestialBodyDef? earth = mgr.GetBodyById(EARTH_BODY_ID);
             if (earth != null && earth.gravitationalParameter > 0.0) mu = earth.gravitationalParameter;
 
             var sb = new StringBuilder();
@@ -93,11 +93,11 @@ namespace PioneerFramework
 
             var g = DebugShipSpawner.CreateNoMapShipGroup(sg, EARTH_BODY_ID, pos, vel,
                 out int _, overThrust: true, circularOrbit: false);
-            if (g == null) { sb.Append("\n  ").Append(variant).Append(" @").Append((r0 / 1000).ToString("F0")).Append("：铺船失败"); return; }
+            if (g == null) { sb.Append("\n  ").Append(variant).Append(" @").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(r0 / 1000):F0}").Append("：铺船失败"); return; }
 
-            if (variant.StartsWith("C")) g.abFreezeDirection = true;
-            if (variant.StartsWith("B")) g.HasOrbitKeeping = false;
-            if (variant.StartsWith("D")) g.abFullThrottle = true;
+            if (variant.StartsWith('C')) g.abFreezeDirection = true;
+            if (variant.StartsWith('B')) g.HasOrbitKeeping = false;
+            if (variant.StartsWith('D')) g.abFullThrottle = true;
             // ⚠ **矩阵一律关掉闭环微调**（B2.2-b）：微调会按构造把残差收掉（e → ~1e-5），
             //   而这张矩阵存在的意义正是**看各政策各自留下多少残差** ⇒ 开着它 = 把要测的信号抹平。
             //   微调的效果由「真飞验收」那条船（默认开）单独测。
@@ -122,8 +122,8 @@ namespace PioneerFramework
                 Variant = variant, R0 = r0, Lead = lead, GroupId = g.GroupId,
                 NodeTick = nodes[0].ut, ExpectedSma = ov.Radius(nodes[0].ut)
             });
-            sb.Append("\n  ").Append(variant.PadRight(10)).Append(" r₀=").Append((r0 / 1000).ToString("F0"))
-              .Append("km  G").Append(g.GroupId).Append("  节点=").Append(nodes[0].ut.ToString("F0"));
+            sb.Append("\n  ").Append(variant.PadRight(10)).Append(" r₀=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{(r0 / 1000):F0}")
+              .Append("km  G").Append(g.GroupId).Append("  节点=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{nodes[0].ut:F0}");
         }
 
         /// <summary>每物理步：每条船**各自**烧完并过节点就抓一次单（避免读取时刻不同带来差异）。</summary>
@@ -159,10 +159,8 @@ namespace PioneerFramework
                 var miss = new StringBuilder();
                 foreach (var a in arms)
                     if (!a.Captured)
-                        miss.Append(' ').Append(a.Variant).Append('@').Append((a.R0 / 1e3).ToString("F0")).Append("km");
-                Log.Message(string.Format(
-                    "[燃烧 A/B] **UNCOVERED**：{0} 真实 tick 内仍有手臂没跑完（{1}）⇒ 下面按**已捕获**的手臂汇总",
-                    TimeoutRealTicks, miss.Length > 0 ? miss.ToString().Trim() : "见列"));
+                        miss.Append(' ').Append(a.Variant).Append('@').Append(System.Globalization.CultureInfo.CurrentCulture, $"{(a.R0 / 1e3):F0}").Append("km");
+                Log.Message($"[燃烧 A/B] **UNCOVERED**：{TimeoutRealTicks} 真实 tick 内仍有手臂没跑完（{(miss.Length > 0 ? miss.ToString().Trim() : "见列")}）⇒ 下面按**已捕获**的手臂汇总");
                 pending = false;
                 Report();
                 return;
@@ -178,11 +176,11 @@ namespace PioneerFramework
             sb.Append("[矩阵对照] ═══ 表（按轨道分行）═══");
             sb.Append("\n  变体         r₀(km)  e          Δa(km)     i(°)     argp(°)   已烧");
             foreach (var a in arms)
-                sb.Append("\n  ").Append(a.Variant.PadRight(11)).Append(" ").Append((a.R0 / 1000).ToString("F0").PadLeft(5))
-                  .Append("  ").Append(a.E.ToString("E3")).Append("  ")
-                  .Append(a.DA.ToString("+0.00;-0.00;0.00").PadLeft(8)).Append("  ")
-                  .Append(a.Inc.ToString("F4")).Append("  ").Append(a.Argp.ToString("F1").PadLeft(7))
-                  .Append("  ").Append(a.Applied.ToString("F1"));
+                sb.Append("\n  ").Append(a.Variant.PadRight(11)).Append(' ').Append($"{(a.R0 / 1000):F0}".PadLeft(5))
+                  .Append("  ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{a.E:E3}").Append("  ")
+                  .Append($"{a.DA:+0.00;-0.00;0.00}".PadLeft(8)).Append("  ")
+                  .Append(System.Globalization.CultureInfo.CurrentCulture, $"{a.Inc:F4}").Append("  ").Append($"{a.Argp:F1}".PadLeft(7))
+                  .Append("  ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{a.Applied:F1}");
 
             // 按变体汇总（中位数：对轨道取中位 ⇒ 不被某条轨道牵着走）
             sb.Append("\n\n  ── 按变体汇总（中位数）──");
@@ -193,9 +191,9 @@ namespace PioneerFramework
                 if (es.Count == 0) continue;
                 es.Sort(); das.Sort();
                 sb.Append("\n  ").Append(v.PadRight(12)).Append(" n=").Append(es.Count)
-                  .Append("  e 中位=").Append(es[es.Count / 2].ToString("E3"))
+                  .Append("  e 中位=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{es[es.Count / 2]:E3}")
                
-                  .Append("  Δa 中位=").Append(das[das.Count / 2].ToString("+0.00;-0.00;0.00"));
+                  .Append("  Δa 中位=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{das[das.Count / 2]:+0.00;-0.00;0.00}");
             }
             sb.Append("\n  ⇒ 判据：①「A基准(重复)」与「A基准」之差 = 噪声地板，变体效应必须明显大于它；");
             sb.Append("\n          ② C 在 4 条轨道上一致优于 A ⇒ 方向律定罪；③ B 一致差于 A ⇒ 轨道保持/二体维持那条被量化 ✓");

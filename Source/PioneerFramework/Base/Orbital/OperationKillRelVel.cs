@@ -24,9 +24,9 @@ namespace PioneerFramework
 
 
         private static readonly TimeReference[] _timeReferences =
-            { TimeReference.CLOSEST_APPROACH, TimeReference.X_FROM_NOW };
+            [TimeReference.CLOSEST_APPROACH, TimeReference.X_FROM_NOW];
 
-        public readonly TimeSelector TimeSelector = new TimeSelector(_timeReferences);
+        public readonly TimeSelector TimeSelector = new(_timeReferences);
 
         public override void DoParametersGUI(OrbitView o, double universalTime, ITargetView target) =>
             TimeSelector.DoChooseTimeGUI();
@@ -44,7 +44,7 @@ namespace PioneerFramework
 
             DVector3 dV = OrbitalManeuverCalculator.DeltaVToMatchVelocities(o, ut, targetOrbit);
 
-            return new List<PlanNode> { new PlanNode(dV, ut) };
+            return new List<PlanNode> { new(dV, ut) };
         }
     }
 }

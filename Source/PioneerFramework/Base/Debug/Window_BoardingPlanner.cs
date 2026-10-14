@@ -12,11 +12,11 @@ namespace PioneerFramework
     /// </summary>
     public class BoardingPlannerMarker : MapComponent
     {
-        public readonly List<IntVec3> cells = new List<IntVec3>();
+        public readonly List<IntVec3> cells = new();
         public IntVec3 currentCell = IntVec3.Invalid;
 
-        private static readonly Color ColorAssigned = new Color(0.2f, 1f, 0.4f, 0.85f);
-        private static readonly Color ColorCurrent = new Color(1f, 0.85f, 0.2f, 0.9f);
+        private static readonly Color ColorAssigned = new(0.2f, 1f, 0.4f, 0.85f);
+        private static readonly Color ColorCurrent = new(1f, 0.85f, 0.2f, 0.9f);
 
         public BoardingPlannerMarker(Map map) : base(map) { }
 
@@ -40,8 +40,8 @@ namespace PioneerFramework
     {
         private class PlannerUnit
         {
-            public Pawn pawn;        // 非空 = EVA 单兵
-            public Thing shuttle;    // 非空 = 穿梭机
+            public Pawn pawn = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;        // 非空 = EVA 单兵
+            public Thing shuttle = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;    // 非空 = 穿梭机
             public DVector3? offset; // 落点局部系偏移（格 → 米）
 
             public string Label => pawn != null
@@ -49,25 +49,25 @@ namespace PioneerFramework
                 : "穿梭机 Shuttle" + (shuttle?.TryGetComp<CompShuttleDock>()?.shuttleId ?? -1);
         }
 
-        private List<Pawn> candidatePawns = new List<Pawn>();
-        private List<Thing> candidateShuttles = new List<Thing>();
-        private readonly HashSet<Pawn> selectedPawns = new HashSet<Pawn>();
-        private readonly HashSet<Thing> selectedShuttles = new HashSet<Thing>();
+        private List<Pawn> candidatePawns = new();
+        private List<Thing> candidateShuttles = new();
+        private readonly HashSet<Pawn> selectedPawns = new();
+        private readonly HashSet<Thing> selectedShuttles = new();
 
-        private List<SpaceEntityGroup> targetStations = new List<SpaceEntityGroup>();
+        private List<SpaceEntityGroup> targetStations = new();
         private int targetIndex = -1;
 
-        private List<PlannerUnit> units;  // 进入选落点阶段时冻结的单位列表
+        private List<PlannerUnit> units = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;  // 进入选落点阶段时冻结的单位列表
         private bool picking;
         private int pickingIndex;
-        private Map pickingMap;
+        private Map pickingMap = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         private bool departed;
 
         private const float WindowWidth = 520f;
         private const float WindowHeight = 620f;
 
-        public Window_BoardingPlanner(Pawn preselectPawn = null, List<Thing> preselectShuttles = null)
+        public Window_BoardingPlanner(Pawn? preselectPawn = null, List<Thing>? preselectShuttles = null)
         {
             forcePause = true;
             closeOnAccept = false;
@@ -82,7 +82,7 @@ namespace PioneerFramework
                     selectedShuttles.Add(s);
         }
 
-        public override Vector2 InitialSize => new Vector2(WindowWidth, WindowHeight);
+        public override Vector2 InitialSize => new(WindowWidth, WindowHeight);
 
         public override void PreOpen()
         {
@@ -182,7 +182,7 @@ namespace PioneerFramework
                 if (e != null)
                     name = SpaceMapGenerator.GetEntityMap(e)?.GetComponent<SpaceMapComp>()?.StationName ?? "站";
                 if (Widgets.RadioButtonLabeled(new Rect(4, y, inRect.width - 8, 22f),
-                    string.Format("G{0} · {1}", g.GroupId, name), i == targetIndex))
+                    $"G{g.GroupId} · {name}", i == targetIndex))
                     targetIndex = i;
                 y += 22f;
             }
@@ -239,7 +239,7 @@ namespace PioneerFramework
         {
             Text.Font = GameFont.Medium;
             Widgets.Label(new Rect(0, y, inRect.width, 26f),
-                string.Format("为「{0}」选择落点（{1}/{2}）", units[pickingIndex].Label, pickingIndex + 1, units.Count));
+                $"为「{units[pickingIndex].Label}」选择落点（{pickingIndex + 1}/{units.Count}）");
             y += 30f;
             Text.Font = GameFont.Small;
             Widgets.Label(new Rect(0, y, inRect.width, 40f),
@@ -267,9 +267,7 @@ namespace PioneerFramework
             {
                 units[pickingIndex].offset = (DVector3)MapCoordMapper.MapCellToShip(pickingMap, hover);
                 marker.cells.Add(hover);
-                Log.Message(string.Format("[Boarding] {0} 落点格 {1} 偏移({2:F1},{3:F1},{4:F1})m",
-                    units[pickingIndex].Label, hover, units[pickingIndex].offset.Value.x,
-                    units[pickingIndex].offset.Value.y, units[pickingIndex].offset.Value.z));
+                Log.Message($"[Boarding] {units[pickingIndex].Label} 落点格 {hover} 偏移({units[pickingIndex].offset.Value.x:F1},{units[pickingIndex].offset.Value.y:F1},{units[pickingIndex].offset.Value.z:F1})m");
                 pickingIndex++;
                 if (pickingIndex >= units.Count)
                 {
@@ -350,7 +348,7 @@ namespace PioneerFramework
             Close();
         }
 
-        private static SpaceEntity FirstStationEntity(SpaceEntityGroup g)
+        private static SpaceEntity? FirstStationEntity(SpaceEntityGroup g)
         {
             var sg = Current.Game?.GetComponent<SpaceGameComp>();
             if (sg == null) return null;

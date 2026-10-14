@@ -26,8 +26,7 @@ namespace PioneerFramework
         public double radialGain;
         public double tanGain;
 
-        public LaunchGuidanceParams ToParams() => new LaunchGuidanceParams
-        {
+        public LaunchGuidanceParams ToParams() => new() {
             rTarget = rTarget,
             tau = tau,
             vRadMax = vRadMax,
@@ -89,10 +88,10 @@ namespace PioneerFramework
     public class RocketLaunchController : GameComponent
     {
         /// <summary>详细日志开关（每物理步引导状态）。默认关，避免长时间爬升刷屏。</summary>
-        public static bool DebugDetailedLaunch = false;
+        public static bool DebugDetailedLaunch ;
         /// <summary>状态探针间隔（真实 tick）。0 = 关闭探针日志；&gt;0 时每间隔打印全部活动爬升状态。</summary>
-        public static int ProbeInterval = 0;
-        private int probeNextTick = 0;
+        public static int ProbeInterval ;
+        private int probeNextTick ;
 
         /// <summary>爬升状态探针（测试面板/探针日志共用，不序列化）。</summary>
         public struct LaunchProbe
@@ -135,8 +134,8 @@ namespace PioneerFramework
 
         private const int MaxLogEntries = 20;
 
-        private List<RocketLaunchState> activeLaunches = new List<RocketLaunchState>();
-        private List<LaunchLogEntry> recentLog = new List<LaunchLogEntry>();
+        private List<RocketLaunchState> activeLaunches = new();
+        private List<LaunchLogEntry> recentLog = new();
 
         public RocketLaunchController(Game game) { }
 
@@ -199,8 +198,7 @@ namespace PioneerFramework
 
             double gm = SpaceGame?.GetBodyGM(bodyId) ?? 0.0;
             double vC = prms.rTarget > 0.0 && gm > 0.0 ? System.Math.Sqrt(gm / prms.rTarget) : 0.0;
-            Log.Message(string.Format("[RocketLaunch] 爬升段开始: group={0} body={1} rTarget={2:F0}km vC={3:F1}m/s",
-                group.GroupId, bodyId, prms.rTarget / 1000.0, vC));
+            Log.Message($"[RocketLaunch] 爬升段开始: group={group.GroupId} body={bodyId} rTarget={prms.rTarget / 1000.0:F0}km vC={vC:F1}m/s");
             return true;
         }
 
@@ -225,10 +223,7 @@ namespace PioneerFramework
                 if (members[i].bodyId != bodyId) mask.Add(members[i].bodyId);
             if (!group.SetGravityMask(mask)) return;   // 闩锁拒绝（或空掩码）
 
-            Log.Message(string.Format(
-                "[RocketLaunch][A6] 进大气档：group={0} 引力源 {1} → {2}（掩码 {3} 项：{4}）· 高度 {5:F0} km",
-                group.GroupId, members.Count, members.Count - mask.Count, mask.Count,
-                string.Join(",", mask), altitude / 1000.0));
+            Log.Message($"[RocketLaunch][A6] 进大气档：group={group.GroupId} 引力源 {members.Count} → {members.Count - mask.Count}（掩码 {mask.Count} 项：{string.Join(",", mask)}）· 高度 {altitude / 1000.0:F0} km");
         }
 
         /// <summary>
@@ -242,9 +237,7 @@ namespace PioneerFramework
             if (IsInSignificantAir(group, st)) return false;
 
             if (!group.RestoreFullGravityField()) return false;
-            Log.Message(string.Format(
-                "[RocketLaunch][A6] 出气动区：group={0} 恢复全场引力（单向闩锁置位）· 高度 {1:F0} km",
-                group.GroupId, AltitudeKm(group, st)));
+            Log.Message($"[RocketLaunch][A6] 出气动区：group={group.GroupId} 恢复全场引力（单向闩锁置位）· 高度 {AltitudeKm(group, st):F0} km");
             return true;
         }
 
@@ -302,10 +295,8 @@ namespace PioneerFramework
             group.exemptPlanetCollision = false;
             group.aeroAlignToAirflow = false;
             AddLog(Find.TickManager.TicksGame, st.groupId, "Destroyed",
-                string.Format("爬升失败：r={0:F0} km 落到地表以下（撤豁免，交回撞击判据）", r / 1000.0));
-            Log.Message(string.Format(
-                "[RocketLaunch] group={0} 爬升失败退出：r={1:F0} km < 天体半径 {2:F0} km ⇒ 撤豁免/撤指向，交回撞击判据",
-                group.GroupId, r / 1000.0, body.radius / 1000.0));
+                $"爬升失败：r={r / 1000.0:F0} km 落到地表以下（撤豁免，交回撞击判据）");
+            Log.Message($"[RocketLaunch] group={group.GroupId} 爬升失败退出：r={r / 1000.0:F0} km < 天体半径 {body.radius / 1000.0:F0} km ⇒ 撤豁免/撤指向，交回撞击判据");
             return true;
         }
 
@@ -329,9 +320,7 @@ namespace PioneerFramework
                 for (int i = 0; i < activeLaunches.Count; i++)
                 {
                     var p = ProbeState(activeLaunches[i]);
-                    Log.Message(string.Format(
-                        "[RocketLaunch探针] t={0} group={1} r={2:F0}km ΔR={3:F0}m v={4:F1}m/s vRad={5:F1} |dv|={6:F1}m/s 燃={7:F0}kg 烧={8} 到达={9}",
-                        tick, p.groupId, p.r / 1000.0, p.deltaR, p.vMag, p.vRad, p.dvMag, p.fuelKg, p.burning ? "on" : "off", p.arrived));
+                    Log.Message($"[RocketLaunch探针] t={tick} group={p.groupId} r={p.r / 1000.0:F0}km ΔR={p.deltaR:F0}m v={p.vMag:F1}m/s vRad={p.vRad:F1} |dv|={p.dvMag:F1}m/s 燃={p.fuelKg:F0}kg 烧={(p.burning ? "on" : "off")} 到达={p.arrived}");
                 }
             }
 
@@ -374,10 +363,7 @@ namespace PioneerFramework
                     var p = group.CurrentOrbit.positionSystem.v;
                     double alt = p.magnitude - prms.planetRadius;
                     double vRad = DVector3.Dot(group.CurrentOrbit.velocitySystem.v, p.normalized);
-                    Log.Message(string.Format(
-                        "[RocketLaunch] group={0} t={1} alt={2:F0}km r={3:F0}km v={4:F1}m/s vRad={5:F1} |dv|={6:F1} arrived={7}",
-                        group.GroupId, Find.TickManager.TicksGame, alt / 1000.0, p.magnitude / 1000.0,
-                        group.CurrentOrbit.velocitySystem.magnitude, vRad, step.dv.magnitude, step.arrived));
+                    Log.Message($"[RocketLaunch] group={group.GroupId} t={Find.TickManager.TicksGame} alt={alt / 1000.0:F0}km r={p.magnitude / 1000.0:F0}km v={group.CurrentOrbit.velocitySystem.magnitude:F1}m/s vRad={vRad:F1} |dv|={step.dv.magnitude:F1} arrived={step.arrived}");
                 }
 
                 if (step.arrived)
@@ -389,14 +375,14 @@ namespace PioneerFramework
                     if (spaceGame.BeginCircularize(group, st.bodyId))
                     {
                         AddLog(Find.TickManager.TicksGame, st.groupId, "Orbited",
-                            string.Format("爬升完成 r={0:F0}km → 进入圆轨化", group.CurrentOrbit.positionSystem.magnitude / 1000.0));
-                        Log.Message(string.Format("[RocketLaunch] group={0} 爬升完成，进入圆轨化机动", group.GroupId));
+                            $"爬升完成 r={group.CurrentOrbit.positionSystem.magnitude / 1000.0:F0}km → 进入圆轨化");
+                        Log.Message($"[RocketLaunch] group={group.GroupId} 爬升完成，进入圆轨化机动");
                     }
                     else
                     {
                         AddLog(Find.TickManager.TicksGame, st.groupId, "CircularizeFailed",
                             "到达窗口但圆轨化失败，保持正常轨道");
-                        Log.Message(string.Format("[RocketLaunch] group={0} 到达窗口但圆轨化失败，保持正常轨道", group.GroupId));
+                        Log.Message($"[RocketLaunch] group={group.GroupId} 到达窗口但圆轨化失败，保持正常轨道");
                     }
                     activeLaunches.RemoveAt(i);
                     continue;

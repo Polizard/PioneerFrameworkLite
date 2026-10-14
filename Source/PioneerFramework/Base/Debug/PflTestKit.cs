@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
@@ -73,7 +73,7 @@ namespace PioneerFramework
             public readonly string category;
             /// <summary>0 = 同步即时段（无超时）；&gt;0 = 异步段，超过这么多真实 tick 未结束 ⇒ UNCOVERED。</summary>
             public readonly int timeoutTicks;
-            public readonly List<CheckResult> checks = new List<CheckResult>();
+            public readonly List<CheckResult> checks = new();
             public int startedTick;
             public bool finished;
             public string? note;
@@ -95,8 +95,8 @@ namespace PioneerFramework
         }
 
         // ── 登记表（窗口/结论块读它；不再各 runner 各持一份静态量）──
-        public static readonly List<Case> Cases = new List<Case>();
-        private static readonly List<int> snapshotGroups = new List<int>();
+        public static readonly List<Case> Cases = new();
+        private static readonly List<int> snapshotGroups = new();
         private static Case? current;
 
         /// <summary>本次会话累计：跑了多少 / 通过 / 失败 / 未覆盖 / 无法断言 / 跳过。</summary>
@@ -120,9 +120,7 @@ namespace PioneerFramework
         {
             if (current != null && !current.finished)
             {
-                Log.Warning(string.Format(
-                    "[测试框架] 用例「{0}」还没结算，就被新用例「{1}」顶掉了 ⇒ 它永远不会结算（异步段只能用最后一个登记的；见 Begin 注释）",
-                    current.name, name));
+                Log.Warning($"[测试框架] 用例「{current.name}」还没结算，就被新用例「{name}」顶掉了 ⇒ 它永远不会结算（异步段只能用最后一个登记的；见 Begin 注释）");
             }
             current = new Case(name, category ?? "", timeoutTicks);
             current.startedTick = Find.TickManager?.TicksGame ?? 0;
@@ -209,13 +207,10 @@ namespace PioneerFramework
                 }
                 bad++;
                 if (bad > 2) continue;   // 一行里最多列两条明细
-                sb.Append("｜").Append(ch.label);
+                sb.Append('｜').Append(ch.label);
                 if (!string.IsNullOrEmpty(ch.detail)) sb.Append('：').Append(ch.detail);
             }
-            Log.Message(string.Format("[测试框架] 用例「{0}」结算：{1}（判据 {2} 条，未过 {3} 条）{4}{5}{6}",
-                c.name, tag, c.checks.Count, bad,
-                string.IsNullOrEmpty(c.note) ? "" : "｜" + c.note, sb.ToString(),
-                reads.Length > 0 ? "｜读数：" + reads : ""));
+            Log.Message($"[测试框架] 用例「{c.name}」结算：{tag}（判据 {c.checks.Count} 条，未过 {bad} 条）{(string.IsNullOrEmpty(c.note) ? "" : "｜" + c.note)}{sb.ToString()}{(reads.Length > 0 ? "｜读数：" + reads : "")}");
         }
 
         /// <summary>记一条判据（用例内）。</summary>
@@ -223,7 +218,7 @@ namespace PioneerFramework
         {
             if (current == null)
             {
-                Log.Warning(string.Format("[测试框架] 判据「{0}」落在没有用例的地方（忘了 Begin？）", label));
+                Log.Warning($"[测试框架] 判据「{label}」落在没有用例的地方（忘了 Begin？）");
                 return;
             }
             current.checks.Add(new CheckResult(kind, ok, label, detail));
@@ -290,14 +285,13 @@ namespace PioneerFramework
             if (now - current.startedTick - lastHeartbeatTicks >= 600)
             {
                 lastHeartbeatTicks = now - current.startedTick;
-                Log.Message(string.Format("[测试框架·心跳] 异步用例「{0}」仍在跑：已 {1} tick / 超时 {2}",
-                    current.name, now - current.startedTick, current.timeoutTicks));
+                Log.Message($"[测试框架·心跳] 异步用例「{current.name}」仍在跑：已 {now - current.startedTick} tick / 超时 {current.timeoutTicks}");
             }
 
             if (now - current.startedTick > current.timeoutTicks)
             {
                 current.checks.Add(new CheckResult(Kind.Coverage, false, current.name,
-                    string.Format("超时（{0} tick 内没拿到证据）", current.timeoutTicks)));
+                    $"超时（{current.timeoutTicks} tick 内没拿到证据）"));
                 current.finished = true;
                 current.state = State.Uncovered;
                 Uncovered++; Total++;
@@ -372,12 +366,9 @@ namespace PioneerFramework
                     else if (ch.kind == Kind.Value) { valTotal++; if (!ch.ok) valBad++; }
                 }
             }
-            sb.Append(string.Format("[测试框架] 硬指标（不变式）：{0} 条，破坏 {1} 条{2}\n",
-                invTotal, invBad, invBad == 0 ? " ✓" : " ✗"));
-            sb.Append(string.Format("[测试框架] 值判据：{0} 条，出界 {1} 条{2}\n",
-                valTotal, valBad, valBad == 0 ? " ✓" : " ✗"));
-            sb.Append(string.Format("[测试框架] 覆盖度：通过 {0}/{1}（未覆盖 {2}）\n",
-                Passed + UncheckedCount, Total, Uncovered));
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"[测试框架] 硬指标（不变式）：{invTotal} 条，破坏 {invBad} 条{(invBad == 0 ? " ✓" : " ✗")}\n");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"[测试框架] 值判据：{valTotal} 条，出界 {valBad} 条{(valBad == 0 ? " ✓" : " ✗")}\n");
+            sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"[测试框架] 覆盖度：通过 {Passed + UncheckedCount}/{Total}（未覆盖 {Uncovered}）\n");
             sb.Append("[测试框架] 覆盖 x/y 明细（未通过者）：\n");
 
             bool anyBad = false;
@@ -390,14 +381,14 @@ namespace PioneerFramework
                 //   不是"验不了"）—— 混在一起会让人以为这一条今天做了结论。它结算时会自己打一行「用例…结算」。
                 sb.Append("  · [").Append(c.finished ? c.state.ToString() : "WAITING（异步段未结算）")
                   .Append("] ").Append(c.name);
-                if (!string.IsNullOrEmpty(c.note)) sb.Append("｜").Append(c.note);
+                if (!string.IsNullOrEmpty(c.note)) sb.Append('｜').Append(c.note);
                 sb.Append('\n');
                 for (int j = 0; j < c.checks.Count; j++)
                 {
                     var ch = c.checks[j];
                     if (ch.ok) continue;
                     sb.Append("      - ").Append(ch.kind).Append('：').Append(ch.label);
-                    if (!string.IsNullOrEmpty(ch.detail)) sb.Append("（").Append(ch.detail).Append('）');
+                    if (!string.IsNullOrEmpty(ch.detail)) sb.Append('（').Append(ch.detail).Append('）');
                     sb.Append('\n');
                 }
             }
@@ -413,11 +404,11 @@ namespace PioneerFramework
                 for (int j = 0; j < c.checks.Count; j++)
                 {
                     var ch = c.checks[j];
-                    if (ch.label != null && ch.label.StartsWith("UNCHECKED（登记）"))
+                    if (ch.label != null && ch.label.StartsWith("UNCHECKED（登记）", System.StringComparison.Ordinal))
                     {
                         anyUncheckedItem = true;
-                        sb.Append("  · ").Append(c.name).Append("｜").Append(ch.label)
-                          .Append("：").Append(ch.detail).Append('\n');
+                        sb.Append("  · ").Append(c.name).Append('｜').Append(ch.label)
+                          .Append('：').Append(ch.detail).Append('\n');
                     }
                 }
             }
@@ -433,8 +424,7 @@ namespace PioneerFramework
         //  （`PerfAcceptanceRunner` 曾在验收器里手工补过一份，这里收口）。
         // ══════════════════════════════════════════════════════════════════════════
         private static readonly (Type type, string field)[] DetailedSwitches =
-        {
-            (typeof(CombatManager), "DebugDetailedCombat"),
+        [(typeof(CombatManager), "DebugDetailedCombat"),
             (typeof(CombatManager), "DebugDetailedCollision"),
             (typeof(CombatManager), "DebugProjectileProbeInterval"),
             (typeof(SpaceGameComp), "DebugDetailedSteering"),
@@ -443,7 +433,7 @@ namespace PioneerFramework
             (typeof(BoardingManager), "DebugDetailedBoarding"),
             (typeof(RocketLaunchController), "DebugDetailedLaunch"),
             (typeof(ConstellationGameComp), "DebugDetailedConstellation"),
-        };
+        ];
 
         /// <summary>
         /// 作用域内可随意开关详细日志；**离开作用域时全部还原**。

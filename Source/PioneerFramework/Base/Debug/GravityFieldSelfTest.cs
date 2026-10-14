@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using PioneerFramework.Combat;
@@ -29,8 +29,8 @@ namespace PioneerFramework
 
         private static int passed;
         private static int failed;
-        private static readonly List<string> failures = new List<string>();
-        private static readonly StringBuilder log = new StringBuilder();
+        private static readonly List<string> failures = new();
+        private static readonly StringBuilder log = new();
 
         public static int LastPassed => passed;
         public static int LastFailed => failed;
@@ -61,7 +61,7 @@ namespace PioneerFramework
             OrbitKeepingChecks(mgr, tick);
             GuidanceParamChecks();
 
-            log.AppendLine(string.Format("[引力自检] ═══ 结果：通过 {0} 项，失败 {1} 项 ═══", passed, failed));
+            log.AppendLine(System.Globalization.CultureInfo.CurrentCulture, $"[引力自检] ═══ 结果：通过 {passed} 项，失败 {failed} 项 ═══");
             if (failed == 0)
                 Log.Message(log.ToString());
             else
@@ -85,7 +85,7 @@ namespace PioneerFramework
 
             var earthMembers = mgr.GetSystemMembers(EARTH_BODY_ID);
             Check(earthMembers.Count == 2, "地球系成员数 = 2（Earth + Moon）",
-                string.Format("实际 {0}：{1}", earthMembers.Count, Names(earthMembers)));
+                $"实际 {earthMembers.Count}：{Names(earthMembers)}");
             Check(earthMembers.Count > 0 && earthMembers[0].bodyId == EARTH_BODY_ID,
                 "地球系成员首位是根（Earth 在原点语义）",
                 earthMembers.Count > 0 ? "首位 bodyId=" + earthMembers[0].bodyId : "空表");
@@ -93,7 +93,7 @@ namespace PioneerFramework
             var moonMembers = mgr.GetSystemMembers(MOON_BODY_ID);
             Check(SameSet(moonMembers, earthMembers),
                 "月球与地球**同系**（GetSystemMembers(Moon) == GetSystemMembers(Earth)）",
-                string.Format("月球视角 {0} / 地球视角 {1}", Names(moonMembers), Names(earthMembers)));
+                $"月球视角 {Names(moonMembers)} / 地球视角 {Names(earthMembers)}");
 
             var unknown = mgr.GetSystemMembers(-1);
             Check(unknown.Count == 0, "未知天体 id(-1) 返回空表（不抛异常）",
@@ -113,9 +113,9 @@ namespace PioneerFramework
             var root = sources[0];
             Check(root.bodyId == EARTH_BODY_ID && root.position.magnitude < 1e-6 && root.velocity.magnitude < 1e-9,
                 "根源在原点且速度为零（钉住语义）",
-                string.Format("bodyId={0} |pos|={1:E2} |vel|={2:E2}", root.bodyId, root.position.magnitude, root.velocity.magnitude));
+                $"bodyId={root.bodyId} |pos|={root.position.magnitude:E2} |vel|={root.velocity.magnitude:E2}");
             Check(Math.Abs(root.mu - earth.gravitationalParameter) < 1e-6,
-                "根源 GM == 地球 Def GM", string.Format("{0:E6} vs {1:E6}", root.mu, earth.gravitationalParameter));
+                "根源 GM == 地球 Def GM", $"{root.mu:E6} vs {earth.gravitationalParameter:E6}");
 
             bool foundMoon = false;
             for (int i = 1; i < sources.Count; i++)
@@ -131,12 +131,11 @@ namespace PioneerFramework
 
                 // 1 层层级（父=根）时，"沿父链累加"必须退化为"取该天体的父系局部位置"
                 Check(dPos < 1.0, "月球源位置 == GetBodyPositionParent(Moon)（父链累加正确）",
-                    string.Format("Δ={0:F3} m（源={1:F0}km 期望={2:F0}km）",
-                        dPos, s.position.magnitude / 1000.0, expectPos.magnitude / 1000.0));
+                    $"Δ={dPos:F3} m（源={s.position.magnitude / 1000.0:F0}km 期望={expectPos.magnitude / 1000.0:F0}km）");
                 Check(dVel < 1e-3, "月球源速度 == GetBodyVelocityParent(Moon)",
-                    string.Format("Δ={0:E3} m/s", dVel));
+                    $"Δ={dVel:E3} m/s");
                 Check(Math.Abs(s.mu - moon.gravitationalParameter) < 1e-6,
-                    "月球源 GM == 月球 Def GM", string.Format("{0:E6} vs {1:E6}", s.mu, moon.gravitationalParameter));
+                    "月球源 GM == 月球 Def GM", $"{s.mu:E6} vs {moon.gravitationalParameter:E6}");
             }
             Check(foundMoon, "地球系源含月球", foundMoon ? "已含" : "缺失");
 
@@ -184,7 +183,7 @@ namespace PioneerFramework
             NBodyIntegrator.FieldAccelJerk(probe, probeVel, subset, out var subAcc, out var subJerk);
             double shadowDiff = (fullAcc - subAcc).magnitude;
             Check(shadowDiff < 1e-9, "根域影子：全域场 == 根+直接子天体场（当前数据无孙天体）",
-                string.Format("Δ={0:E3} m/s²（全域 {1} 源 / 子集 {2} 源）", shadowDiff, all.Count, subset.Count));
+                $"Δ={shadowDiff:E3} m/s²（全域 {all.Count} 源 / 子集 {subset.Count} 源）");
 
             // ── 场 == Σ 单体项（逐项累加一致性）──
             DVector3 sumAcc = DVector3.zero, sumJerk = DVector3.zero;
@@ -197,7 +196,7 @@ namespace PioneerFramework
             }
             Check((fullAcc - sumAcc).magnitude < 1e-9 && (fullJerk - sumJerk).magnitude < 1e-12,
                 "场 == Σ 各天体二体项（acc 与 jerk 同时成立）",
-                string.Format("Δacc={0:E3} Δjerk={1:E3}", (fullAcc - sumAcc).magnitude, (fullJerk - sumJerk).magnitude));
+                $"Δacc={(fullAcc - sumAcc).magnitude:E3} Δjerk={(fullJerk - sumJerk).magnitude:E3}");
 
             // ── 线性恒等式：差分(A,B) == 场(A) − 场(B) ──
             NBodyIntegrator.FieldAccelJerk(DVector3.zero, DVector3.zero, all, out var atOrigin, out _);
@@ -205,7 +204,7 @@ namespace PioneerFramework
                 out var diffAcc, out _);
             Check((diffAcc - (fullAcc - atOrigin)).magnitude < 1e-9,
                 "差分 == 场(探针) − 场(参考点)（线性恒等式）",
-                string.Format("Δ={0:E3} m/s²", (diffAcc - (fullAcc - atOrigin)).magnitude));
+                $"Δ={(diffAcc - (fullAcc - atOrigin)).magnitude:E3} m/s²");
 
             // ── 月球域：差分(潮汐) 量级与方向 —— **可分辨判据** ──
             var onlyMoon = new List<GravitySource>();
@@ -220,11 +219,11 @@ namespace PioneerFramework
             double ratio = localMag > 1e-9 ? tidal.magnitude / localMag : 0.0;
 
             Check(ratio > 1e-4, "月球域差分 ≠ 0（未退化为旧『只算月球』行为）",
-                string.Format("比值 {0:P4}", ratio));
+                $"比值 {ratio:P4}");
             Check(ratio < 0.03, "月球域差分是潮汐而非全量（未走『全量和』错路）",
-                string.Format("比值 {0:P4}（潮汐预期 0.1%–0.6%，全量错路 ~6.8%）", ratio));
+                $"比值 {ratio:P4}（潮汐预期 0.1%–0.6%，全量错路 ~6.8%）");
             Check(ratio > 1e-4 && ratio < 0.03, "月球域差分落在潮汐带 0.01%–3%（实测预期 0.3%–0.6%）",
-                string.Format("实测 {0:P4}；差分={1:E3} m/s² 局部={2:F3} m/s²", ratio, tidal.magnitude, localMag));
+                $"实测 {ratio:P4}；差分={tidal.magnitude:E3} m/s² 局部={localMag:F3} m/s²");
 
             // 解析潮汐对照：用**精确闭式** −μ_e·[r/|r|³ − r_m/|r_m|³]（地球在原点）。
             // 不要用一阶线性化 μ_e/d³·(3(r̂·ρ)r̂−ρ)：ρ/d ≈ 4% 时线性化本身偏 ~6%，会假报失败
@@ -238,8 +237,7 @@ namespace PioneerFramework
                     * (probe / (p2 * probe.magnitude) - moonPos / d3));
                 double anaErr = (tidal - analytic).magnitude / Math.Max(analytic.magnitude, 1e-12);
                 Check(anaErr < 1e-4, "月球域差分 == 精确闭式潮汐 −μ_e·[r/|r|³ − r_m/|r_m|³]（误差 <0.01%）",
-                    string.Format("相对误差 {0:P4}（差分={1:E6} 闭式={2:E6} m/s²）",
-                        anaErr, tidal.magnitude, analytic.magnitude));
+                    $"相对误差 {anaErr:P4}（差分={tidal.magnitude:E6} 闭式={analytic.magnitude:E6} m/s²）");
             }
 
             // 根域对照：地球系里"非白名单天体"的贡献应是月球**全量**（= 旧实现数字）
@@ -248,7 +246,7 @@ namespace PioneerFramework
             double rootRatio = moonFull.magnitude > 1e-9 ? moonFull.magnitude / localMag : 0.0;
             Check(rootRatio > 0.5 && rootRatio < 2.0,
                 "地球系：月球贡献 = 月球全量（根域语义与旧实现一致）",
-                string.Format("全量/局部 = {0:F2}（应为 ~1 量级，而非 ~0.5%）", rootRatio));
+                $"全量/局部 = {rootRatio:F2}（应为 ~1 量级，而非 ~0.5%）");
         }
 
         // ───────────────────────── 三、轨道保持 ─────────────────────────
@@ -282,8 +280,7 @@ namespace PioneerFramework
             double ratioMoon = localMoon.magnitude > 1e-9 ? cancelMoon.magnitude / localMoon.magnitude : 0.0;
             Check(ratioMoon > 1e-4 && ratioMoon < 0.03,
                 "月球域轨道保持：抵消量 = 潮汐（0.01%–3%），非 0（旧）也非全量（错路）",
-                string.Format("实测 {0:P4}（抵消={1:E3} 局部={2:F3} m/s²）",
-                    ratioMoon, cancelMoon.magnitude, localMoon.magnitude));
+                $"实测 {ratioMoon:P4}（抵消={cancelMoon.magnitude:E3} 局部={localMoon.magnitude:F3} m/s²）");
 
             // 地球域：白名单={Earth} → 要抵消的是月球全量（与旧实现数字一致）
             var onlyEarth = new List<GravitySource>();
@@ -298,14 +295,13 @@ namespace PioneerFramework
             double dEarth = (cancelEarth - moonFull).magnitude;
             Check(dEarth < 1e-12,
                 "地球域轨道保持：抵消量 == 月球全量（与旧实现逐位一致）",
-                string.Format("Δ={0:E3} m/s²（抵消={1:E3} 月球全量={2:E3}）",
-                    dEarth, cancelEarth.magnitude, moonFull.magnitude));
+                $"Δ={dEarth:E3} m/s²（抵消={cancelEarth.magnitude:E3} 月球全量={moonFull.magnitude:E3}）");
 
             // 全白名单：无扰动需抵消 → 抵消量必须为 0
             NBodyIntegrator.FieldAccelJerk(probeEarth, DVector3.zero, all, out var keptAll, out _);
             Check((fullE - keptAll).magnitude < 1e-12,
                 "白名单=全部天体时抵消量为 0（无扰动需抵消）",
-                string.Format("Δ={0:E3} m/s²", (fullE - keptAll).magnitude));
+                $"Δ={(fullE - keptAll).magnitude:E3} m/s²");
         }
 
         // ───────────────────────── 四、A1 制导参数 ─────────────────────────
@@ -327,12 +323,12 @@ namespace PioneerFramework
             double launchDeadband = LaunchGuidanceParams.CreateDefault(SpaceConstants.PlanetRadiusMeters).deadband;
             Check(Math.Abs(expect.deadband - launchDeadband) < 1e-9,
                 "导弹死区 == 发射制导死区约定（同项目单一口径）",
-                string.Format("导弹 {0} / 发射 {1}", expect.deadband, launchDeadband));
+                $"导弹 {expect.deadband} / 发射 {launchDeadband}");
             Check(Math.Abs(expect.deadband - 0.5) < 1e-9,
-                "死区 = 0.5（意图值；曾漂成 1.0）", string.Format("实际 {0}", expect.deadband));
+                "死区 = 0.5（意图值；曾漂成 1.0）", $"实际 {expect.deadband}");
             Check(Math.Abs(expect.lateralAccel - 80.082645) < 1e-4,
                 "横向加速度 = 推力/湿质量 ≈ 80.0826（曾漂成硬编码 83.0）",
-                string.Format("实际 {0:F6}", expect.lateralAccel));
+                $"实际 {expect.lateralAccel:F6}");
         }
 
         /// <summary>
@@ -355,13 +351,7 @@ namespace PioneerFramework
                 && Near(got.lostMarginMeters, expect.lostMarginMeters);
 
             Check(ok, defName + " 的 GuidanceParams 与单一来源逐字段一致",
-                ok ? "一致" : string.Format(
-                    "不一致：gain {0:R}/{1:R} thr {2:R}/{3:R} cruise {4:R}/{5:R} boost {6:R}/{7:R} dead {8:R}/{9:R} latAccel {10:R}/{11:R} turn {12:R}/{13:R} margin {14:R}/{15:R} lost {16:R}/{17:R}",
-                    got.lateralGain, expect.lateralGain, got.closingThreshold, expect.closingThreshold,
-                    got.cruiseClosing, expect.cruiseClosing, got.boostMax, expect.boostMax,
-                    got.deadband, expect.deadband, got.lateralAccel, expect.lateralAccel,
-                    got.turnRateRad, expect.turnRateRad, got.timeMargin, expect.timeMargin,
-                    got.lostMarginMeters, expect.lostMarginMeters));
+                ok ? "一致" : $"不一致：gain {got.lateralGain:R}/{expect.lateralGain:R} thr {got.closingThreshold:R}/{expect.closingThreshold:R} cruise {got.cruiseClosing:R}/{expect.cruiseClosing:R} boost {got.boostMax:R}/{expect.boostMax:R} dead {got.deadband:R}/{expect.deadband:R} latAccel {got.lateralAccel:R}/{expect.lateralAccel:R} turn {got.turnRateRad:R}/{expect.turnRateRad:R} margin {got.timeMargin:R}/{expect.timeMargin:R} lost {got.lostMarginMeters:R}/{expect.lostMarginMeters:R}");
         }
 
         // ───────────────────────── 工具 ─────────────────────────
@@ -375,12 +365,12 @@ namespace PioneerFramework
             if (ok)
             {
                 passed++;
-                log.AppendLine(string.Format("  ✓ {0}｜{1}", label, detail));
+                log.AppendLine(System.Globalization.CultureInfo.CurrentCulture, $"  ✓ {label}｜{detail}");
             }
             else
             {
                 failed++;
-                string line = string.Format("{0}｜期望：{1}", label, detail);
+                string line = $"{label}｜期望：{detail}";
                 failures.Add(line);
                 log.AppendLine("  ✗ " + line);
             }
@@ -391,7 +381,7 @@ namespace PioneerFramework
             var sb = new StringBuilder();
             for (int i = 0; i < list.Count; i++)
             {
-                if (i > 0) sb.Append(",");
+                if (i > 0) sb.Append(',');
                 sb.Append(list[i].defName);
             }
             return sb.ToString();

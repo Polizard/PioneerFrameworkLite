@@ -68,7 +68,7 @@ namespace PioneerFramework.GroundAssembly
             draggable = true;
         }
 
-        public override Vector2 InitialSize => new Vector2(760f, 606f);
+        public override Vector2 InitialSize => new(760f, 606f);
 
         public override void DoWindowContents(Rect inRect)
         {
@@ -158,12 +158,12 @@ namespace PioneerFramework.GroundAssembly
         {
             var tabs = new List<TabRecord>
             {
-                new TabRecord("总览", () => currentTab = Tab.Overview,      () => currentTab == Tab.Overview),
-                new TabRecord("设计", () => currentTab = Tab.Design,       () => currentTab == Tab.Design),
-                new TabRecord("施工", () => currentTab = Tab.Construction, () => currentTab == Tab.Construction),
-                new TabRecord("舱内", () => currentTab = Tab.Cabin,        () => currentTab == Tab.Cabin),
-                new TabRecord("发射", () => currentTab = Tab.Launch,       () => currentTab == Tab.Launch),
-                new TabRecord("轨迹", () => currentTab = Tab.Trajectory,    () => currentTab == Tab.Trajectory),
+                new("总览", () => currentTab = Tab.Overview,      () => currentTab == Tab.Overview),
+                new("设计", () => currentTab = Tab.Design,       () => currentTab == Tab.Design),
+                new("施工", () => currentTab = Tab.Construction, () => currentTab == Tab.Construction),
+                new("舱内", () => currentTab = Tab.Cabin,        () => currentTab == Tab.Cabin),
+                new("发射", () => currentTab = Tab.Launch,       () => currentTab == Tab.Launch),
+                new("轨迹", () => currentTab = Tab.Trajectory,    () => currentTab == Tab.Trajectory),
             };
             TabDrawer.DrawTabs(rect, tabs);
             DrawCurrentTabAccentLine(rect);

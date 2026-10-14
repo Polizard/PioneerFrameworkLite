@@ -26,17 +26,17 @@ namespace PioneerFramework
         private const float WindowHeight = 540f;   // 竖长条，避免接近正方形
 
         // ── 视觉风格 ──
-        private static readonly Color PanelBg = new Color(0.055f, 0.075f, 0.10f, 0.95f);
-        private static readonly Color SectionBg = new Color(0.09f, 0.12f, 0.16f, 0.92f);
-        private static readonly Color SectionBgAlt = new Color(0.115f, 0.145f, 0.185f, 0.92f);
-        private static readonly Color AccentCyan = new Color(0.25f, 0.9f, 1f, 0.9f);
-        private static readonly Color AccentWarn = new Color(1f, 0.42f, 0.3f, 0.95f);
-        private static readonly Color AccentOk = new Color(0.35f, 1f, 0.55f, 0.95f);
-        private static readonly Color TextDim = new Color(0.60f, 0.66f, 0.72f, 1f);
-        private static readonly Color BarBg = new Color(0.02f, 0.03f, 0.05f, 0.85f);
-        private static readonly Color RowBorder = new Color(0.25f, 0.3f, 0.35f, 0.55f);
+        private static readonly Color PanelBg = new(0.055f, 0.075f, 0.10f, 0.95f);
+        private static readonly Color SectionBg = new(0.09f, 0.12f, 0.16f, 0.92f);
+        private static readonly Color SectionBgAlt = new(0.115f, 0.145f, 0.185f, 0.92f);
+        private static readonly Color AccentCyan = new(0.25f, 0.9f, 1f, 0.9f);
+        private static readonly Color AccentWarn = new(1f, 0.42f, 0.3f, 0.95f);
+        private static readonly Color AccentOk = new(0.35f, 1f, 0.55f, 0.95f);
+        private static readonly Color TextDim = new(0.60f, 0.66f, 0.72f, 1f);
+        private static readonly Color BarBg = new(0.02f, 0.03f, 0.05f, 0.85f);
+        private static readonly Color RowBorder = new(0.25f, 0.3f, 0.35f, 0.55f);
         /// <summary>普通按钮的统一灰色（未特别着色按钮）。</summary>
-        private static readonly Color GrayButton = new Color(0.46f, 0.49f, 0.53f, 1f);
+        private static readonly Color GrayButton = new(0.46f, 0.49f, 0.53f, 1f);
 
         public ManeuverQueueWindow(SpaceEntityGroup targetGroup)
         {
@@ -48,7 +48,7 @@ namespace PioneerFramework
             draggable = true;
         }
 
-        public override Vector2 InitialSize => new Vector2(WindowWidth, WindowHeight);
+        public override Vector2 InitialSize => new(WindowWidth, WindowHeight);
 
         public override void DoWindowContents(Rect inRect)
         {
@@ -88,9 +88,9 @@ namespace PioneerFramework
                 : group.plannedManeuvers.Count > 0 ? "待执行"
                 : group.HasRendezvousGuidance
                     ? (group.rendezvousIsApproach
-                        ? string.Format("接近中 → G{0}", group.ApproachTargetId)
+                        ? $"接近中 → G{group.ApproachTargetId}"
                         : (group.rendezvousArmed
-                            ? string.Format("交会引导中 → G{0}", group.rendezvousTargetId)
+                            ? $"交会引导中 → G{group.rendezvousTargetId}"
                             : "交会引导待命"))
                     : "空闲";
             Color statusColor = group.HasActiveBurn ? AccentWarn
@@ -101,12 +101,12 @@ namespace PioneerFramework
             Text.Font = GameFont.Medium;
             GUI.color = statusColor;
             Widgets.Label(new Rect(header.x + 16f, header.y + 4f, 380f, 26f),
-                string.Format("机动队列 — Group {0}", group.GroupId));
+                $"机动队列 — Group {group.GroupId}");
             GUI.color = Color.white;
             Text.Font = GameFont.Tiny;
             GUI.color = TextDim;
             Widgets.Label(new Rect(header.x + 16f, header.yMax - 22f, 400f, 18f),
-                string.Format("共 {0} 段机动 · 状态: {1}", group.plannedManeuvers.Count, status));
+                $"共 {group.plannedManeuvers.Count} 段机动 · 状态: {status}");
             GUI.color = Color.white;
             Text.Font = GameFont.Small;
 
@@ -116,8 +116,7 @@ namespace PioneerFramework
                 group.rendezvousIsApproach ? "取消接近" : "取消交会引导"))
             {
                 group.ClearRendezvousGuidance();
-                Messages.Message(string.Format("Group {0} {1}已取消", group.GroupId,
-                    group.rendezvousIsApproach ? "接近引导" : "交会引导"), MessageTypeDefOf.TaskCompletion);
+                Messages.Message($"Group {group.GroupId} {(group.rendezvousIsApproach ? "接近引导" : "交会引导")}已取消", MessageTypeDefOf.TaskCompletion);
             }
 
             y = header.yMax;
@@ -127,7 +126,7 @@ namespace PioneerFramework
         //  Burn 执行区（dV 进度条 + 紧急终止）
         // ════════════════════════════════════
 
-        private void DrawBurnSection(Rect inRect, ref float y, SpaceGameComp sg)
+        private void DrawBurnSection(Rect inRect, ref float y, SpaceGameComp? sg)
         {
             Rect section = new Rect(4f, y, inRect.width - 8f, 130f);
             Widgets.DrawBoxSolid(section, SectionBg);
@@ -154,10 +153,10 @@ namespace PioneerFramework
             Text.Font = GameFont.Tiny;
             GUI.color = Color.white;
             Widgets.Label(new Rect(barRect.x, barRect.yMax + 7f, barRect.width * 0.55f, 16f),
-                string.Format("已消耗 dV: {0:F1} / {1:F1} m/s  ({2:P0})", applied, planned, frac));
+                $"已消耗 dV: {applied:F1} / {planned:F1} m/s  ({frac:P0})");
             GUI.color = TextDim;
             Widgets.Label(new Rect(barRect.x + barRect.width * 0.55f, barRect.yMax + 7f, barRect.width * 0.45f, 16f),
-                string.Format("工质已耗: {0:F1} kg", group.burnConsumedPropellant));
+                $"工质已耗: {group.burnConsumedPropellant:F1} kg");
             GUI.color = Color.white;
             Text.Font = GameFont.Small;
 
@@ -192,9 +191,9 @@ namespace PioneerFramework
         //  当前网络区
         // ════════════════════════════════════
 
-        private void DrawNetworkSection(Rect inRect, ref float y, SpaceGameComp sg)
+        private void DrawNetworkSection(Rect inRect, ref float y, SpaceGameComp? sg)
         {
-            IPropulsionSource src = sg != null ? sg.GetGroupPropulsionSource(group) : null;
+            IPropulsionSource? src = sg != null ? sg.GetGroupPropulsionSource(group) : null;
 
             Rect section = new Rect(4f, y, inRect.width - 8f, 80f);
             Widgets.DrawBoxSolid(section, SectionBg);
@@ -249,7 +248,7 @@ namespace PioneerFramework
         //  机动列表（逐行取消 + burn 估算）
         // ════════════════════════════════════
 
-        private void DrawQueueList(Rect inRect, ref float y, SpaceGameComp sg)
+        private void DrawQueueList(Rect inRect, ref float y, SpaceGameComp? sg)
         {
             int count = group.plannedManeuvers.Count;
 
@@ -257,7 +256,7 @@ namespace PioneerFramework
             Widgets.DrawBoxSolid(titleRect, SectionBg);
             Widgets.DrawBoxSolid(new Rect(titleRect.x, titleRect.y, 3f, titleRect.height), AccentCyan);
             Widgets.Label(new Rect(titleRect.x + 12f, titleRect.y + 3f, titleRect.width - 24f, 18f),
-                string.Format("机动规划队列（{0} 段）", count));
+                $"机动规划队列（{count} 段）");
             y += 28f;
 
             if (count == 0)
@@ -311,24 +310,24 @@ namespace PioneerFramework
         }
 
         private void DrawQueueEntry(Rect entry, int index, SpaceEntityGroup.PlannedManeuver pm,
-            int currentTick, float dryMass, SpaceGameComp sg)
+            int currentTick, float dryMass, SpaceGameComp? sg)
         {
             int remainingTicks = pm.executeTick - currentTick;
 
             // burn 估算（按本条机动的网络配置）——提前算好用于显示点火时刻（燃烧居中：点火 = 节点 − 半程燃烧）
             float dvMag = Mathf.Sqrt(pm.radialDV * pm.radialDV + pm.tangentialDV * pm.tangentialDV + pm.normalDV * pm.normalDV);
-            IPropulsionSource src = sg != null ? sg.GetGroupPropulsionSource(group) : null;
+            IPropulsionSource? src = sg != null ? sg.GetGroupPropulsionSource(group) : null;
             var est = BurnCalculator.Estimate(dvMag, dryMass, src, src != null ? src.Networks : null, pm.useNetworks);
 
             string timeStr;
             if (est.Feasible && est.BurnSeconds > 0f)
             {
                 int ignitionRemaining = remainingTicks - Mathf.RoundToInt(est.BurnSeconds / 2f);
-                timeStr = ignitionRemaining > 0 ? string.Format("点火 T-{0}s", ignitionRemaining) : "点火在即";
+                timeStr = ignitionRemaining > 0 ? $"点火 T-{ignitionRemaining}s" : "点火在即";
             }
             else
             {
-                timeStr = remainingTicks > 0 ? string.Format("T-{0}s", remainingTicks) : "已到期";
+                timeStr = remainingTicks > 0 ? $"T-{remainingTicks}s" : "已到期";
             }
             string statusStr = pm.active ? "待执行" : "已取消";
             string netLabel = pm.useNetworks == null
@@ -360,7 +359,7 @@ namespace PioneerFramework
             Widgets.Label(new Rect(line1X + 100f, entry.y + 8f, 110f, 20f), timeStr);
             GUI.color = TextDim;
             Widgets.Label(new Rect(line1X + 220f, entry.y + 8f, entry.width - 220f - 146f, 20f),
-                string.Format("网络: {0}", netLabel));
+                $"网络: {netLabel}");
             GUI.color = Color.white;
 
             // 取消此节点及以后
@@ -378,8 +377,7 @@ namespace PioneerFramework
             // 行2：dV 分量
             GUI.color = Color.white;
             Widgets.Label(new Rect(line1X, entry.y + 38f, entry.width - line1X - 10f, 18f),
-                string.Format("  径向 {0,7:F0}   切向 {1,7:F0}   法向 {2,7:F0}  m/s",
-                    pm.radialDV, pm.tangentialDV, pm.normalDV));
+                $"  径向 {pm.radialDV,7:F0}   切向 {pm.tangentialDV,7:F0}   法向 {pm.normalDV,7:F0}  m/s");
 
             // 行3：burn 估算（est 已在函数开头计算）
             Rect estRect = new Rect(line1X, entry.y + 62f, entry.width - line1X - 10f, 20f);
@@ -393,12 +391,11 @@ namespace PioneerFramework
                     foreach (var ne in est.Networks)
                     {
                         if (!ne.IsReserve || ne.Propellant == null) continue;
-                        reserve += string.Format("　备「{0}」{1:F0} kg", ne.Propellant.label, ne.Available);
+                        reserve += $"　备「{ne.Propellant.label}」{ne.Available:F0} kg";
                     }
                 }
                 Widgets.Label(estRect,
-                    string.Format("  需工质 {0:F0} kg · 燃烧 {1:F0} s · 最大可达 ΔV {2:F0} m/s{3}",
-                        est.RequiredPropellant, est.BurnSeconds, est.MaxDeltaV, reserve));
+                    $"  需工质 {est.RequiredPropellant:F0} kg · 燃烧 {est.BurnSeconds:F0} s · 最大可达 ΔV {est.MaxDeltaV:F0} m/s{reserve}");
                 GUI.color = Color.white;
             }
             else if (est.Networks == null || est.Networks.Count == 0)
@@ -413,12 +410,10 @@ namespace PioneerFramework
                 NetworkEstimate badNet = est.Networks.Find(ne => !ne.Feasible);
                 if (badNet.Propellant != null)
                     Widgets.Label(estRect,
-                        string.Format("  工质不足：网络「{0}」需 {1:F0} kg（当前 {2:F0}）",
-                            badNet.Propellant.label, badNet.RequiredPropellant, badNet.Available));
+                        $"  工质不足：网络「{badNet.Propellant.label}」需 {badNet.RequiredPropellant:F0} kg（当前 {badNet.Available:F0}）");
                 else
                     Widgets.Label(estRect,
-                        string.Format("  工质不足：总需 {0:F0} kg · 最大可达 ΔV {1:F0} m/s",
-                            est.RequiredPropellant, est.MaxDeltaV));
+                        $"  工质不足：总需 {est.RequiredPropellant:F0} kg · 最大可达 ΔV {est.MaxDeltaV:F0} m/s");
                 GUI.color = Color.white;
             }
         }

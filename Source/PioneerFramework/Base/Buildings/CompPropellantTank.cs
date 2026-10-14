@@ -11,13 +11,13 @@ namespace PioneerFramework
     public class CompProperties_PropellantTank : CompProperties
     {
         /// <summary>本储罐储存的工质 Def 名（运行时解析为 PropellantDef）。</summary>
-        public string propellantDefName;
+        public string propellantDefName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>容量（kg）。</summary>
         public float capacity = 1000f;
 
         /// <summary>新建（非读档）时的初始存量（kg），默认 0 = 空罐。</summary>
-        public float startStoredMass = 0f;
+        public float startStoredMass ;
 
         public CompProperties_PropellantTank()
         {
@@ -38,7 +38,7 @@ namespace PioneerFramework
         /// 用于「差值同步」：burn 等外部消耗只扣 mapComp 聚合向量，储罐建筑本地
         /// 存量需要逐 tick 追上向量，才能让地图上的储罐液面真实下降。
         /// </summary>
-        private static readonly Dictionary<Map, List<CompPropellantTank>> tanksByMap = new Dictionary<Map, List<CompPropellantTank>>();
+        private static readonly Dictionary<Map, List<CompPropellantTank>> tanksByMap = new();
 
         public CompProperties_PropellantTank Props => (CompProperties_PropellantTank)props;
 
@@ -113,8 +113,8 @@ namespace PioneerFramework
         /// </summary>
         // P51 分组用的复用容器（**每 tick 调用** ⇒ 不许每 tick 分配）：D 与 T 都是玩家可建的量。
         private static readonly Dictionary<PropellantDef, List<int>> _groupScratch =
-            new Dictionary<PropellantDef, List<int>>();
-        private static readonly List<PropellantDef> _leaderOrder = new List<PropellantDef>();
+            new();
+        private static readonly List<PropellantDef> _leaderOrder = new();
 
         public static void TickDifferenceSync(Map map)
         {
@@ -236,11 +236,11 @@ namespace PioneerFramework
         public override string CompInspectStringExtra()
         {
             string defName = PropellantDef != null ? PropellantDef.label : (Props.propellantDefName ?? "无工质");
-            return "工质: " + defName + "  " + storedMass.ToString("0.#") + " / " + Capacity.ToString("0.#") + " kg";
+            return "工质: " + defName + "  " + $"{storedMass:0.#}" + " / " + $"{Capacity:0.#}" + " kg";
         }
 
         /// <summary>把质量增减同步到所属地图的 SpaceMapComp 工质向量。</summary>
-        private void RegisterToMap(float delta, Map map = null)
+        private void RegisterToMap(float delta, Map? map = null)
         {
             if (delta == 0f || PropellantDef == null) return;
             var m = map ?? parent.Map;

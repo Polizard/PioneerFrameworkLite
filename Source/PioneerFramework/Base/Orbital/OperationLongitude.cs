@@ -30,10 +30,7 @@ namespace PioneerFramework
 
         public OperationLongitude()
         {
-            _planParams = new[]
-            {
-                    new PlanParam("目标地面经度", "°", () => NewLongitude.Val, v => NewLongitude.Val = v),
-            };
+            _planParams = [new PlanParam("目标地面经度", "°", () => NewLongitude.Val, v => NewLongitude.Val = v),];
         }
 
         public override IReadOnlyList<PlanParam> GetParams() => _planParams;
@@ -45,9 +42,9 @@ namespace PioneerFramework
         public readonly EditableDoubleMult NewLongitude = new EditableDouble(0);
 
         private static readonly TimeReference[] _timeReferences =
-            { TimeReference.APOAPSIS, TimeReference.PERIAPSIS };
+            [TimeReference.APOAPSIS, TimeReference.PERIAPSIS];
 
-        public readonly TimeSelector TimeSelector = new TimeSelector(_timeReferences);
+        public readonly TimeSelector TimeSelector = new(_timeReferences);
 
         public override void DoParametersGUI(OrbitView o, double universalTime, ITargetView target) =>
             TimeSelector.DoChooseTimeGUI();
@@ -68,7 +65,7 @@ namespace PioneerFramework
                                    $"超出天体影响范围（约 {o.soiRadiusApprox / 1000.0:F0} km）。";
             }
 
-            return new List<PlanNode> { new PlanNode(dV, ut) };
+            return new List<PlanNode> { new(dV, ut) };
         }
     }
 }

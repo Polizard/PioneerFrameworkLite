@@ -46,6 +46,14 @@ namespace PioneerFramework
             AddAction("PFView·烘焙天体地表补丁（只烘有地块的区域 + 山/河/路；手动选天体；结果落旁挂文件，不自动烘）", "20 视图/表现", 60,
                 BakeSurfaceMenu, null);
 
+            // PFView 截图（2026-10-14）：把"只能看"的问题（西瓜纹/亮度）落成 PNG ⇒ 离线可判、可以拿图说事
+            AddAction("PFView 截图 → PNG（落 SaveDataFolder/PFView_shots；PFView 需处于打开状态）", "20 视图/表现", 59,
+                delegate
+                {
+                    string? p = MainTabWindow_PFView.CaptureToPng();
+                    Log.Message(p != null ? "[PFView·截图] 已写出：" + p : "[PFView·截图] 失败：PFView 未打开或无 RT");
+                }, null);
+
             AddAction("传感器/雷达投影验收（[V7]：站 + 两座建筑 → 投影 / W1 开机 / 打伤 / 摧毁 / 往返）", "00 验收", 34,
                 SensorProjectionAcceptanceRunner.Run, null);
             // S1（2026-09-23）：统一判定框架的首两个用例 —— 把"只打印数字"的探针变成有判据的用例
@@ -351,9 +359,9 @@ namespace PioneerFramework
                         if (e == null) continue;
                         var agg = e.AggregatedStats;                 // 触发实体级懒聚合
                         sb.Append("\n  E").Append(eid)
-                          .Append(" 实体聚合：灵 ").Append(agg.sensorRange.ToString("F0")).Append(" m")
-                          .Append("｜抗压 ").Append(agg.ecmResist.ToString("F2"))
-                          .Append("｜抗骗 ").Append(agg.eccmResist.ToString("F2"));
+                          .Append(" 实体聚合：灵 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{agg.sensorRange:F0}").Append(" m")
+                          .Append("｜抗压 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{agg.ecmResist:F2}")
+                          .Append("｜抗骗 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{agg.eccmResist:F2}");
                         foreach (var part in e.Parts)
                         {
                             if (part.isDestroyed) continue;
@@ -362,10 +370,10 @@ namespace PioneerFramework
                         }
                     }
                     var dt = g.DetectTech;                            // 编队级**派生量**（与 SignalStrength 同趟重算）
-                    sb.Append("\n  **编队派生 DetectTech**：灵 ").Append(dt.sensitivityMeters.ToString("F0")).Append(" m")
-                      .Append("｜抗压 ").Append(dt.ecmResist.ToString("F2"))
-                      .Append("｜抗骗 ").Append(dt.eccmResist.ToString("F2"))
-                      .Append("｜信号 S=").Append(g.SignalStrength.ToString("F3"));
+                    sb.Append("\n  **编队派生 DetectTech**：灵 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{dt.sensitivityMeters:F0}").Append(" m")
+                      .Append("｜抗压 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{dt.ecmResist:F2}")
+                      .Append("｜抗骗 ").Append(System.Globalization.CultureInfo.CurrentCulture, $"{dt.eccmResist:F2}")
+                      .Append("｜信号 S=").Append(System.Globalization.CultureInfo.CurrentCulture, $"{g.SignalStrength:F3}");
                     Log.Message(sb.ToString());
                 }, null);
             AddCheckbox("详细星座日志（入编/收尸/锚点）", "80 调试日志", 60, typeof(ConstellationGameComp), "DebugDetailedConstellation");
@@ -436,8 +444,8 @@ namespace PioneerFramework
                 var b = body;
                 var layer = GetSurfaceState.GetLayerForBody(mgr, b.bodyId);
                 string label = layer == null
-                    ? string.Format("{0}（{1}；无地表层，不可烤）", b.defName, b.bodyType)
-                    : string.Format("{0}（{1}；层格 {2}）", b.defName, b.bodyType, layer.TilesCount);
+                    ? $"{b.defName}（{b.bodyType}；无地表层，不可烤）"
+                    : $"{b.defName}（{b.bodyType}；层格 {layer.TilesCount}）";
                 options.Add(new FloatMenuOption(label, delegate
                 {
                     PFViewSurfaceBake.TryBake(b, layer, Find.World.info.Seed, out string? msg);
@@ -464,8 +472,7 @@ namespace PioneerFramework
             var fi = type.GetField(fieldName, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
             if (fi == null || fi.FieldType != typeof(bool))
             {
-                Log.Error(string.Format("[PFL] 调试页签：{0}.{1} 不是可用的 static bool 字段，节点「{2}」已跳过",
-                    type.Name, fieldName, label));
+                Log.Error($"[PFL] 调试页签：{type.Name}.{fieldName} 不是可用的 static bool 字段，节点「{label}」已跳过");
                 return null;
             }
 

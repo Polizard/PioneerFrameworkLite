@@ -14,11 +14,8 @@ namespace PioneerFramework
 
         public OperationResonantOrbit()
         {
-            _planParams = new[]
-            {
-                    new PlanParam("共振比·分子", "", () => ResonanceNumerator.Val, v => ResonanceNumerator.Val = (int)System.Math.Round(v)),
-                    new PlanParam("共振比·分母", "", () => ResonanceDenominator.Val, v => ResonanceDenominator.Val = (int)System.Math.Round(v)),
-            };
+            _planParams = [new PlanParam("共振比·分子", "", () => ResonanceNumerator.Val, v => ResonanceNumerator.Val = (int)System.Math.Round(v)),
+                    new PlanParam("共振比·分母", "", () => ResonanceDenominator.Val, v => ResonanceDenominator.Val = (int)System.Math.Round(v)),];
         }
 
         public override IReadOnlyList<PlanParam> GetParams() => _planParams;
@@ -26,13 +23,13 @@ namespace PioneerFramework
         public override TimeSelector? GetTimeSelector() => TimeSelector;
 
 
-        public EditableInt ResonanceNumerator = new EditableInt(2);
-        public EditableInt ResonanceDenominator = new EditableInt(3);
+        public EditableInt ResonanceNumerator = new(2);
+        public EditableInt ResonanceDenominator = new(3);
 
         private static readonly TimeReference[] _timeReferences =
-            { TimeReference.APOAPSIS, TimeReference.PERIAPSIS, TimeReference.X_FROM_NOW, TimeReference.ALTITUDE };
+            [TimeReference.APOAPSIS, TimeReference.PERIAPSIS, TimeReference.X_FROM_NOW, TimeReference.ALTITUDE];
 
-        public readonly TimeSelector TimeSelector = new TimeSelector(_timeReferences);
+        public readonly TimeSelector TimeSelector = new(_timeReferences);
 
         public override void DoParametersGUI(OrbitView o, double universalTime, ITargetView target) =>
             TimeSelector.DoChooseTimeGUI();
@@ -53,7 +50,7 @@ namespace PioneerFramework
             if (dV.sqrMagnitude <= 0.0)
                 throw new OperationException("该共振比在此轨道上不可行（无解，或所需机动为零）。");
 
-            return new List<PlanNode> { new PlanNode(dV, ut) };
+            return new List<PlanNode> { new(dV, ut) };
         }
     }
 }

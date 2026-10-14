@@ -65,7 +65,7 @@ namespace PioneerFramework.Launch
                 if (mapComp.Networks == null || mapComp.Networks.Count == 0)
                     errors.Add("未安装推进器：至少需要 1 个推进器。");
                 if (mapComp.TotalPropellantMass <= 0.001f)
-                    errors.Add(string.Format("燃料不足：当前工质 {0:0.#} kg。", mapComp.TotalPropellantMass));
+                    errors.Add($"燃料不足：当前工质 {mapComp.TotalPropellantMass:0.#} kg。");
             }
 
             if (!debug)
@@ -112,10 +112,10 @@ namespace PioneerFramework.Launch
                     // 兼容 DMS:NF 尚未挂 PFL Comp、但命名已表达控制台语义的正式 Def。
                     string defName = building.def?.defName ?? string.Empty;
                     string label = building.def?.label ?? string.Empty;
-                    if (defName.IndexOf("Console", System.StringComparison.OrdinalIgnoreCase) >= 0
-                        || defName.IndexOf("Control", System.StringComparison.OrdinalIgnoreCase) >= 0
-                        || label.IndexOf("控制台", System.StringComparison.Ordinal) >= 0
-                        || label.IndexOf("操作台", System.StringComparison.Ordinal) >= 0)
+                    if (defName.Contains("Console", System.StringComparison.OrdinalIgnoreCase)
+                        || defName.Contains("Control", System.StringComparison.OrdinalIgnoreCase)
+                        || label.Contains("控制台", System.StringComparison.Ordinal)
+                        || label.Contains("操作台", System.StringComparison.Ordinal))
                     {
                         return true;
                     }

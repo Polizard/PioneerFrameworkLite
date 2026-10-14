@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- 舱室内部生成步骤：地板 + 边界墙 + 解锁迷雾 -->
+  <GenStepDef>
+    <defName>PF_RoomShell</defName>
+    <order>1000</order>
+    <genStep Class="PioneerFramework.GenStep_RoomShell" />
+  </GenStepDef>
+
+  <!-- 舱室口袋地图生成器（地板+墙的室内壳，无屋顶/照明） -->
+  <MapGeneratorDef>
+    <defName>PF_RoomPocket</defName>
+    <label>ship room pocket</label>
+    <defaultUnderGridTerrain>Concrete</defaultUnderGridTerrain>
+    <disableCallAid>true</disableCallAid>
+    <disableMapClippers>true</disableMapClippers>
+    <genSteps>
+      <li>PF_RoomShell</li>
+    </genSteps>
+    <ignoreAreaRevealedLetter>true</ignoreAreaRevealedLetter>
+    <pocketMapProperties>
+      <biome>Orbit</biome>
+      <temperature>20</temperature>
+      <destroyOnParentMapAbandoned>false</destroyOnParentMapAbandoned>
+      <preventPrisonerEscape>false</preventPrisonerEscape>
+      <canLaunchGravship>false</canLaunchGravship>
+    </pocketMapProperties>
+    <renderWorld>true</renderWorld>
+  </MapGeneratorDef>
+</Defs>

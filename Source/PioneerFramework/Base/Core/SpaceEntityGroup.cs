@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 using Verse;
 using RimWorld;
@@ -39,7 +40,7 @@ namespace PioneerFramework
         public bool IsActive = true;
         public bool IsMovable = true;
         public bool IsCollidable = true;
-        public bool HasGravityWell = false;
+        public bool HasGravityWell ;
 
         /// <summary>
         /// 匿踪闸门（[V1]）：false = **公开坐标**（应答机语义，对所有阵营可见、不做任何探测计算）；
@@ -53,7 +54,7 @@ namespace PioneerFramework
         /// 准入判据（§1.8 [O5]）：它是"关于这艘船的客观事实"（是否在广播）⇒ 属真值层。
         /// ⚠ **目前尚无消费方**——认知层 [V3] 才读它，这是地基步骤的正常状态。
         /// </summary>
-        public bool IsStealth = false;
+        public bool IsStealth ;
 
         /// <summary>
         /// 侦测技术三分量（[V1] / W2）：灵敏度 / 抗压制 / 抗欺骗（见 `SensorTech`）。
@@ -230,7 +231,7 @@ namespace PioneerFramework
         }
 
         private RadarAim radarAim = RadarAim.Scan;
-        private DVector3 radarManualDir = new DVector3(1, 0, 0);
+        private DVector3 radarManualDir = new(1, 0, 0);
         private int radarTrackGroupId = -1;
 
         /// <summary>波束指向模式（默认**扫掠**；AI 一旦指定交战对象由 [V10] 转跟踪 —— 与"选择"管道同拍）。</summary>
@@ -274,7 +275,7 @@ namespace PioneerFramework
 
         /// <summary>赤道面（pole +Y）内的单位方向：相位从 +X 起、绕 +Y 顺行。</summary>
         private static DVector3 EquatorialDir(double phaseRad)
-            => new DVector3(System.Math.Cos(phaseRad), 0.0, System.Math.Sin(phaseRad));
+            => new(System.Math.Cos(phaseRad), 0.0, System.Math.Sin(phaseRad));
 
         /// <summary>
         /// **波束判据**（[V7]，消费者 = [V3] 认知层）：目标（系统系位置）是否落在**本组波束内**
@@ -393,7 +394,7 @@ namespace PioneerFramework
         public OrbitState CurrentOrbit;
         public bool OrbitDirty = true;
 
-        private HashSet<int> entityIds = new HashSet<int>();
+        private HashSet<int> entityIds = new();
 
         /// <summary>实体集版本：AddEntity/RemoveEntity 实际变更时自增（不序列化）。
         /// 供群级推进源缓存判陈旧（见 SpaceGameComp.GetGroupPropulsionSource）。</summary>
@@ -407,14 +408,14 @@ namespace PioneerFramework
 
         /// <summary>燃烧切片 scratch（第 3 条：每物理步复用，免每步 new List）。
         /// 物理并行区内由本组唯一迭代独占写入，主线程在同一步消费其引用快照后不再保留。</summary>
-        internal readonly List<ThrustSlice> thrustSliceScratch = new List<ThrustSlice>();
+        internal readonly List<ThrustSlice> thrustSliceScratch = new();
 
         // ── 圆轨模式 ──
-        public bool IsCircularOrbit = false;
-        public double circularRadius = 0.0;          // 轨道半径 (m)
-        public double circularAngularVelocity = 0.0; // 角速度 (rad/s)
-        public double circularStartAngle = 0.0;      // 角度偏移 (进入时 = 0，兼容旧存档保留)
-        public double circularStartTick = 0;           // 进入圆轨时的物理 Tick (physicsTick)
+        public bool IsCircularOrbit ;
+        public double circularRadius ;          // 轨道半径 (m)
+        public double circularAngularVelocity ; // 角速度 (rad/s)
+        public double circularStartAngle ;      // 角度偏移 (进入时 = 0，兼容旧存档保留)
+        public double circularStartTick ;           // 进入圆轨时的物理 Tick (physicsTick)
         public DVector3 circularOrbitNormal = DVector3.up;  // 轨道平面法线 (序列化)
         public DVector3 circularRadialRef = DVector3.right; // 进入圆轨时的径向参考方向 (角度0)
         /// <summary>圆轨的中心天体 ID。-1 表示沿用 CelestialBodyId（旧存档兼容）。</summary>
@@ -422,7 +423,7 @@ namespace PioneerFramework
 
         // ── 圆轨进入的两段式机动状态（第一段 burn 完成后由 SpaceGameComp 结算第二段）──
         /// <summary>是否有等待 burn 完成后结算的圆轨进入请求（BeginCircularize 置位）。</summary>
-        public bool HasPendingCircularize = false;
+        public bool HasPendingCircularize ;
         /// <summary>待结算圆轨的中心天体 ID。</summary>
         public int pendingCircularizeBodyId = -1;
 
@@ -448,7 +449,7 @@ namespace PioneerFramework
         /// 初速 ~524 m/s &gt; 安全着陆阈值 10 m/s，会被 CheckPlanetCollision 首步误毁）。
         /// 仅爬升段置 true，入轨时清除。
         /// </summary>
-        public bool exemptPlanetCollision = false;
+        public bool exemptPlanetCollision ;
 
         // ── 地表锚点（星座组网：为地表据点合成的不动 group，见《星座组网系统设计-20260828.md》§5 D11）──
         /// <summary>
@@ -457,7 +458,7 @@ namespace PioneerFramework
         /// 也不出现在任何「遍历 groups 的飞船消费方」（渲染 / 索敌 / 目标列表）视野内；
         /// <see cref="SpaceGameComp.GetGridForGroup"/> 另有 IsSurfaceAnchor 短路，使其根本不进空间索引。
         /// </summary>
-        public bool IsSurfaceAnchor = false;
+        public bool IsSurfaceAnchor ;
         /// <summary>锚点对应的原版世界物体 ID（Settlement.ID）；非锚点 = -1。据点被摧毁时据此惰性回收。</summary>
         public int anchorWorldObjectId = -1;
 
@@ -477,9 +478,9 @@ namespace PioneerFramework
 
         // ── 轨道保持 (OrbitKeeping) ──
         /// <summary>是否启用轨道保持模式（选择性抵消非白名单天体的引力，消耗 dV）。</summary>
-        public bool HasOrbitKeeping = false;
+        public bool HasOrbitKeeping ;
         /// <summary>不抵消的天体 ID 白名单。null 或空 = 未启用过滤。</summary>
-        public HashSet<int> orbitKeepingWhitelist;
+        public HashSet<int>? orbitKeepingWhitelist;
 
         // ── 引力掩码 + 单向闩锁（[A6]，2026-10-06，计划稿 §2.5/D6）──
         /// <summary>
@@ -530,7 +531,7 @@ namespace PioneerFramework
 
         // ── 主动燃烧（缓释 dV） ──
         /// <summary>是否有正在执行的主动燃烧。</summary>
-        public bool HasActiveBurn = false;
+        public bool HasActiveBurn ;
         /// <summary>燃烧方向单位向量（**系统系**；S1 命名：系标记进名字，见计划稿 §11.2）。</summary>
         public DVector3 burnDirectionSystem;
         /// <summary>本次燃烧剩余 dV (m/s)。</summary>
@@ -689,19 +690,19 @@ namespace PioneerFramework
         /// 机动燃烧策略：启用的工质网络（键 = 工质 Def）。null/空 = 全启用。
         /// 玩家可在机动队列 UI 调整；burn 只烧启用网络。
         /// </summary>
-        public HashSet<PropellantDef> burnEnabledNetworks;
+        public HashSet<PropellantDef> burnEnabledNetworks = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>
         /// 空间站「当前网络」（单选）：此后加入的机动都继承此单一网络（null = 全启用）。
         /// 在机动队列窗口顶部切换。
         /// </summary>
-        public PropellantDef currentNetwork;
+        public PropellantDef currentNetwork = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         // 机动规划队列（顺序执行）
-        public List<PlannedManeuver> plannedManeuvers = new List<PlannedManeuver>();
+        public List<PlannedManeuver> plannedManeuvers = new();
 
         // 战斗模式缓存（用于插值）
-        public PhysicsStateCache CombatCache;
+        public PhysicsStateCache CombatCache = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         // ── Combat 插值渲染位置（仅渲染层读取；物理检测一律用 CurrentOrbit.position）──
         private DVector3 renderedPosition;
@@ -794,7 +795,7 @@ namespace PioneerFramework
             /// 本次机动使用的工质网络（键 = 工质 Def）。null/空 = 全启用。
             /// 规划机动时选择，执行 burn 只烧这些网络。
             /// </summary>
-            public HashSet<PropellantDef> useNetworks;
+            public HashSet<PropellantDef>? useNetworks;
 
             /// <summary>规划时刻算好的世界系 dV 向量（节点帧）。执行时直接用作惯性方向，
             /// 避免在点火时刻用实际状态换算产生的帧旋转误差（MechJeb 同款）。零 = 未设置（退回分量换算）。</summary>
@@ -879,11 +880,9 @@ namespace PioneerFramework
                 {
                     intent = string.IsNullOrEmpty(intentName)
                         ? null
-                        : new PlanIntent
-                        {
-                            operationName = intentName!,
-                            paramValues = intentValues != null ? intentValues.ToArray() : new double[0],
-                            paramLabels = intentLabels != null ? intentLabels.ToArray() : new string[0],
+                        : new PlanIntent { operationName = intentName!,
+                            paramValues = intentValues != null ? intentValues.ToArray() : [],
+                            paramLabels = intentLabels != null ? intentLabels.ToArray() : [],
                             timeRefIndex = intentTimeRef,
                             leadTime = intentLead,
                             circularizeAltitude = intentAlt,
@@ -927,7 +926,7 @@ namespace PioneerFramework
         public HashSet<int> GetEntityIds() => entityIds;
 
         /// <summary>取 group 任一实体所属地图的 SpaceMapComp（无 Map 实体 / 未关联时返回 null）。</summary>
-        public SpaceMapComp GetLinkedMapComp()
+        public SpaceMapComp? GetLinkedMapComp()
         {
             // R5（2026-09-26）：改用缓存引用 —— 本方法在相位里被 `GetMainThrustAxisSystem`/
             // `GetGroupPropulsionSource` 调用（每组每步 ≥1 次），原来每次都做一次组件表线性扫描。
@@ -955,7 +954,7 @@ namespace PioneerFramework
             return null;
         }
 
-        #region 机动队列管理
+        // ── 机动队列管理 ──
 
         /// <summary>
         /// 向队列末尾添加一个机动规划。新机动自动继承空间站「当前网络」配置
@@ -1047,7 +1046,7 @@ namespace PioneerFramework
         public void BeginLadderPlanEpoch() => ladderPlanEpoch++;
 
         /// <summary>把「当前网络」继承到新机动；null = 全启用。</summary>
-        private HashSet<PropellantDef> InheritNetworks()
+        private HashSet<PropellantDef>? InheritNetworks()
         {
             if (currentNetwork == null)
                 return null;
@@ -1139,9 +1138,8 @@ namespace PioneerFramework
             return false;
         }
 
-        #endregion
 
-        #region 主动燃烧 (Active Burn)
+        // ── 主动燃烧 (Active Burn) ──
 
         // ── 姿态控制（魔法动量轮）──
         /// <summary>角速度（rad/s，魔法动量轮直设；每物理步积分到 CurrentOrbit.rotation）。</summary>
@@ -1289,7 +1287,7 @@ namespace PioneerFramework
         /// **微调是我们自己的东西，上游没有** ⇒ 它属于“最后总修缮”阶段的补充，
         /// 在移植验收完成前**不该在流程里**（否则又是“两套机制互相插队” ✗）。
         /// 对照实验/将来接回时显式置 true ✓。</summary>
-        public bool trimEnabled = false;
+        public bool trimEnabled ;
         /// <summary>本次机动是否已经微调过（**每次机动最多一次**：二次微调要靠它收敛 ⇒ 先不做，避免自激）。</summary>
         public bool trimFired;
         /// <summary>上次微调的 Δv 大小（诊断；`StartBurn` 复位）。</summary>
@@ -1415,9 +1413,8 @@ namespace PioneerFramework
             envelopeRoutedOffLogged = false; // [A4] 包线归零读数复位（同上）
         }
 
-        #endregion
 
-        #region 轨道保持 (OrbitKeeping)
+        // ── 轨道保持 (OrbitKeeping) ──
 
         /// <summary>
         /// 进入轨道保持模式。
@@ -1443,16 +1440,15 @@ namespace PioneerFramework
             }
         }
 
-        #endregion
 
-        #region 交会引导 (Rendezvous Guidance)
+        // ── 交会引导 (Rendezvous Guidance) ──
 
         /// <summary>交会引导状态已登记（精确交会模式）。<see cref="rendezvousArmed"/> 为 false 时表示等待出发段执行。</summary>
-        public bool HasRendezvousGuidance = false;
+        public bool HasRendezvousGuidance ;
         /// <summary>出发段已点火执行，引导生效（闭环修正开始）。false = 等待出发段。</summary>
-        public bool rendezvousArmed = false;
+        public bool rendezvousArmed ;
         /// <summary>引导为"近距离接近"模式（动态到达时刻、无出发段）。true 时绕开出发段与固定到达时刻逻辑。</summary>
-        public bool rendezvousIsApproach = false;
+        public bool rendezvousIsApproach ;
         /// <summary>目标群 ID。</summary>
         public int rendezvousTargetId = -1;
         /// <summary>
@@ -1465,7 +1461,7 @@ namespace PioneerFramework
         /// <summary>转移方向（ShortWay/LongWay）。</summary>
         public bool rendezvousPrograde = true;
         /// <summary>引导修正烧使用的工质网络（继承出发机动；null = 全启用）。</summary>
-        public HashSet<PropellantDef> rendezvousUseNetworks;
+        public HashSet<PropellantDef>? rendezvousUseNetworks;
         /// <summary>上次引导检查的 physicsTick（节流用，不序列化；载入后首次检查立即进行即可）。</summary>
         public double rendezvousLastCheckTick = double.NegativeInfinity;
 
@@ -1594,7 +1590,7 @@ namespace PioneerFramework
         ///   这是 `PlanLeg` 那条"**模式必须按段决定、一段内固定**"教训的**上一层**版本
         ///   （那里是形状/相位两通道互相抵消，这里是两套机制互相插队）。
         /// </summary>
-        public bool ladderOwnsFarField = false;
+        public bool ladderOwnsFarField ;
         /// <summary>上次引导修正烧开始的 physicsTick（冷却用，不序列化）。</summary>
         public double rendezvousLastBurnTick = double.NegativeInfinity;
 
@@ -1604,7 +1600,7 @@ namespace PioneerFramework
         /// </summary>
         public bool terminalLawEnabled = true;
         /// <summary>终端律**是否已接管**（运行期、**粘滞**；进入/退出都在引导里判定并打日志）。</summary>
-        public bool terminalMode = false;
+        public bool terminalMode ;
         /// <summary>终端律的下一次重算式 physicsTick —— 终端要的是**密**闭环，不受 `ladderMinReplanSeconds` 节流。</summary>
         public double terminalNextTick = double.NegativeInfinity;
 
@@ -1653,9 +1649,8 @@ namespace PioneerFramework
             terminalNextTick = double.NegativeInfinity;
         }
 
-        #endregion
 
-        #region 近距离接近 (Close-Range Approach)
+        // ── 近距离接近 (Close-Range Approach) ──
 
         /// <summary>是否处于近距离接近模式（交会引导的特化：动态到达时刻、无出发段）。</summary>
         public bool HasApproachGuidance => HasRendezvousGuidance && rendezvousIsApproach;
@@ -1695,7 +1690,6 @@ namespace PioneerFramework
         /// <summary>清除接近引导（等价清除交会引导）。</summary>
         public void ClearApproachGuidance() => ClearRendezvousGuidance();
 
-        #endregion
 
         /// <summary>
         /// 获取中心天体在**系统系**中的位置偏移（批6 S3-3c：返回类型改成 <see cref="SystemVec3" />，
@@ -1801,7 +1795,7 @@ namespace PioneerFramework
             double r = pos.magnitude;
             if (r < 0.01)
             {
-                Log.Warning(string.Format("SpaceEntityGroup {0}: Cannot enter circular orbit at near-zero radius.", GroupId));
+                Log.Warning($"SpaceEntityGroup {GroupId}: Cannot enter circular orbit at near-zero radius.");
                 return;
             }
 
@@ -1809,8 +1803,7 @@ namespace PioneerFramework
             var centralDefForRadius = celestialMgr?.GetBodyById(centralBodyId);
             if (centralDefForRadius != null && centralDefForRadius.radius > 0.0 && r < centralDefForRadius.radius)
             {
-                Log.Warning(string.Format("SpaceEntityGroup {0}: Cannot enter circular orbit around body {1}: orbit radius {2:F0} km < body radius {3:F0} km.",
-                    GroupId, centralBodyId, r / 1000.0, centralDefForRadius.radius / 1000.0));
+                Log.Warning($"SpaceEntityGroup {GroupId}: Cannot enter circular orbit around body {centralBodyId}: orbit radius {r / 1000.0:F0} km < body radius {centralDefForRadius.radius / 1000.0:F0} km.");
                 return;
             }
 
@@ -1822,9 +1815,7 @@ namespace PioneerFramework
             if (centralDefForRadius != null
                 && centralDefForRadius.Atmosphere.IsInsideAtmosphere(r - centralDefForRadius.radius))
             {
-                Log.Warning(string.Format(
-                    "SpaceEntityGroup {0}: Refusing analytic circular orbit around body {1} at r={2:F0} km — inside the atmosphere (analytic rail ignores drag). [A6]",
-                    GroupId, centralBodyId, r / 1000.0));
+                Log.Warning($"SpaceEntityGroup {GroupId}: Refusing analytic circular orbit around body {centralBodyId} at r={r / 1000.0:F0} km — inside the atmosphere (analytic rail ignores drag). [A6]");
                 return;
             }
 
@@ -1869,8 +1860,7 @@ namespace PioneerFramework
             DVector3 circularVel = tangentDir * v_tan;
 
             // 批6 S3-3d：`positionBody`/`velocityBody` 现在是**现算属性**（见其文档）⇒ 不再在这里写副本
-            Log.Message(string.Format("[Orbit] Group {0} EnterCircularOrbit: body={1} r={2:F0}km |localPos|={3:F0}km |localVel|={4:F1} m/s",
-                GroupId, centralBodyId, r / 1000.0, positionBody.magnitude / 1000.0, velocityBody.magnitude));
+            Log.Message($"[Orbit] Group {GroupId} EnterCircularOrbit: body={centralBodyId} r={r / 1000.0:F0}km |localPos|={positionBody.magnitude / 1000.0:F0}km |localVel|={velocityBody.magnitude:F1} m/s");
 
             // 如果中心天体不是行星，加回其轨道速度（转回地球参考系）
             if (celestialMgr != null)
@@ -2111,7 +2101,7 @@ namespace PioneerFramework
             if (Scribe.mode == LoadSaveMode.LoadingVars && HasOrbitKeeping && orbitKeepingWhitelist == null)
                 orbitKeepingWhitelist = new HashSet<int>();
             // Scribe 不支持直接序列化 HashSet<int>，转 List<int>
-            List<int> whitelistList = null;
+            List<int>? whitelistList = null;
             if (Scribe.mode == LoadSaveMode.Saving)
                 whitelistList = orbitKeepingWhitelist != null ? new List<int>(orbitKeepingWhitelist) : new List<int>();
             Scribe_Collections.Look(ref whitelistList, "orbitKeepingWhitelist", LookMode.Value);

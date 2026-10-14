@@ -29,8 +29,8 @@ namespace PioneerFramework
         private const int PatchSectors = 128;
 
         // ── 基底球材质：**帽外 / 无补丁**的那部分由它顶上 ──
-        private readonly Dictionary<int, Material> baseSphereMaterials = new Dictionary<int, Material>();
-        private readonly HashSet<int> baseSphereLogged = new HashSet<int>();
+        private readonly Dictionary<int, Material> baseSphereMaterials = new();
+        private readonly HashSet<int> baseSphereLogged = new();
 
         private Material? GetBaseSphereMaterial(CelestialBodyDef body, PlanetLayer? layer)
         {
@@ -52,8 +52,7 @@ namespace PioneerFramework
                 var flatTex = GetFlatColorTexture(body);
                 if (flatTex == null) return null;
                 mat = NewSurfaceMaterial(flatTex);
-                baseLabel = string.Format("Def.baseSphereColor 显示色 ({0:F2},{1:F2},{2:F2}) → 1×1 贴图（与补丁同款材质）",
-                    body.baseSphereColor.r, body.baseSphereColor.g, body.baseSphereColor.b);
+                baseLabel = $"Def.baseSphereColor 显示色 ({body.baseSphereColor.r:F2},{body.baseSphereColor.g:F2},{body.baseSphereColor.b:F2}) → 1×1 贴图（与补丁同款材质）";
             }
             else
             {
@@ -62,26 +61,31 @@ namespace PioneerFramework
                 if (tex == null) return null;         // 取不到 ⇒ 调用方照旧走纯色
                 mat = NewSurfaceMaterial(tex);
                 mat.mainTextureScale = new Vector2(6f, 3f);   // 世界贴图按 6×3 平铺
-                baseLabel = string.Format("水 biome 贴图 {0}（6×3 平铺，sRGB={1}）｜{2}", tex.name, tex.isDataSRGB, texLabel);
+                baseLabel = $"水 biome 贴图 {tex.name}（6×3 平铺）｜{texLabel}";
             }
             baseSphereMaterials[body.bodyId] = mat;
 
             if (baseSphereLogged.Add(body.bodyId))
-                Log.Message(string.Format("[PFView·基底球] body={0} 口径 = {1}｜activeColorSpace={2}",
-                    body.defName, baseLabel, QualitySettings.activeColorSpace));
+                Log.Message($"[PFView·基底球] body={body.defName} 口径 = {baseLabel}｜activeColorSpace={QualitySettings.activeColorSpace}");
             return mat;
         }
 
         // ── 数据区补丁（烘焙产出）：材质 + 网格，按 `PFViewSurfaceBake.Version` 失效 ──
-        private readonly Dictionary<int, Material> patchMaterials = new Dictionary<int, Material>();
-        private readonly Dictionary<int, Mesh> patchMeshes = new Dictionary<int, Mesh>();
-        private readonly HashSet<int> patchLogged = new HashSet<int>();
+        private readonly Dictionary<int, Material> patchMaterials = new();
+        private readonly Dictionary<int, Mesh> patchMeshes = new();
+        private readonly HashSet<int> patchLogged = new();
         private int patchVersion = -1;
 
         /// <summary>
         /// 取该天体的补丁（网格 + 材质）。没有烘焙补丁 ⇒ false（调用方只画基底球）。
         /// ⚠ `layer` 必需：球冠是从 layer 的格心反推的（旁挂 PNG 里没有球冠信息）。
         /// </summary>
+        // 注（2026-10-13）：下面两条日志原带 `sRGB={tex.isDataSRGB}` 读数，**已删**——
+        // 该属性在 1.6 声明于 `Texture`、1.7 的 UnityStubs 声明于 `Texture2D`（首轮实测每帧 2307 次
+        // MissingMethodException）；它只喂日志、且 1.7 上给出的值本身不可信（UnityStubs 默认 False）
+        // ⇒ **诊断串不引入任何新机制，直接不读**（反射方案已被否决：为一条日志不值得）。
+        // 真要这个读数：等主线切 net10（编译目标换成 UnityStubs）后按普通属性读即可。
+
         private bool TryGetSurfacePatch(CelestialBodyDef body, PlanetLayer? layer, out Mesh? mesh, out Material? mat)
         {
             mesh = null;
@@ -114,8 +118,7 @@ namespace PioneerFramework
             patchMaterials[body.bodyId] = newMat;
 
             if (patchLogged.Add(body.bodyId))
-                Log.Message(string.Format("[PFView·补丁] body={0} 球冠半角 {1:F1}° · 网格 {2} 环×{3} 扇 · 贴图 {4}×{4} · sRGB={5}",
-                    body.defName, thetaMaxRad * Mathf.Rad2Deg, PatchRings, PatchSectors, tex.width, tex.isDataSRGB));
+                Log.Message($"[PFView·补丁] body={body.defName} 球冠半角 {thetaMaxRad * Mathf.Rad2Deg:F1}° · 网格 {PatchRings} 环×{PatchSectors} 扇 · 贴图 {tex.width}×{tex.width}");
             mesh = newMesh;
             mat = newMat;
             return true;
@@ -202,13 +205,16 @@ namespace PioneerFramework
         /// ⚠ 我们的贴图是**世界地图色**（不是反照率贴图；洋面贴图约 (0.23,0.28,0.35) 远亮于真实洋面 0.06）
         /// ⇒ 这里做的是"把整体拉回物理量级"的标定，不是逐表面反照率重建；想更暗就再乘一个系数。
         /// </summary>
-        private const float SurfaceReflectance = 0.20f;
+        /// ⚠ 2026-10-14：**0.20 → 1.00**。旧值 0.20 是 1.6 时代与"方向光强度 5"配套的配方
+        /// （乘积 = 1.0）；PFLit 已改为**照抄原版世界地表的昼夜色模型**（白天 = 贴图满亮度）
+        /// ⇒ 乘积应直接 = 1.0（配 1.0 后：补丁贴图、基底球 1×1 贴图、烘焙清屏色三者同口径）。
+        private const float SurfaceReflectance = 1.00f;
 
         /// <summary>
         /// 绘制基底球时传给 `DrawCelestialSphere` 的 tint。**它会被写进 MaterialPropertyBlock 覆盖 `_Color`** ⇒
         /// 必须与 `SurfaceReflectance` 同值（覆盖 = 材料值 ⇒ 两条路才一致）。做成常量而不是就地写白，是为了防止再漂。
         /// </summary>
-        private static readonly Color SurfaceTint = new Color(SurfaceReflectance, SurfaceReflectance, SurfaceReflectance, 1f);
+        private static readonly Color SurfaceTint = new(SurfaceReflectance, SurfaceReflectance, SurfaceReflectance, 1f);
 
         /// <summary>
         /// 夜面余辉（自发光）的强度。原来是 0.55（那时没有大气，夜面死黑只能靠自发光顶）；
@@ -218,7 +224,7 @@ namespace PioneerFramework
         private const float SurfaceNightEmission = 0.05f;
 
         /// <summary>Def 纯色基底球用的 **1×1 sRGB 贴图**缓存（运行时创建 ⇒ 与材质同一条清理纪律）。</summary>
-        private readonly Dictionary<int, Texture2D> flatColorTextures = new Dictionary<int, Texture2D>();
+        private readonly Dictionary<int, Texture2D> flatColorTextures = new();
 
         /// <summary>
         /// 把 Def 的 `baseSphereColor`（**显示色**）烘成一张 1×1 贴图：写进去的就是这些字节，
@@ -264,6 +270,10 @@ namespace PioneerFramework
                 mat.SetTexture("_EmissionMap", tex);
                 mat.SetColor("_EmissionColor", new Color(SurfaceNightEmission, SurfaceNightEmission, SurfaceNightEmission));
             }
+            // 2026-10-14：PFLit 的自发光槽（与上面 Standard 的 `_EmissionColor/_EmissionMap` 同口径：
+            // 贴图当自发光图、系数 = SurfaceNightEmission ⇒ 夜面不是纯黑，1.6 观感）
+            if (mat.HasProperty("_Emission"))
+                mat.SetVector("_Emission", new Vector4(SurfaceNightEmission, SurfaceNightEmission, SurfaceNightEmission, 1f));
             return mat;
         }
 

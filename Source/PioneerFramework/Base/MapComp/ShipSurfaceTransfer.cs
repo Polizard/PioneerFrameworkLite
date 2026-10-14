@@ -44,12 +44,9 @@ namespace PioneerFramework
         public int ThingCount { get; }
 
         // These systems have no snapshot/restore contract in this first version.
-        private static readonly IReadOnlyList<string> categories = Array.AsReadOnly(new[]
-        {
-            "zones and storage settings", "gas", "room temperature", "power connections",
+        private static readonly IReadOnlyList<string> categories = Array.AsReadOnly(["zones and storage settings", "gas", "room temperature", "power connections",
             "map and bridge bindings", "motes and projectiles",
-            "effects triggered by third-party spawn callbacks"
-        });
+            "effects triggered by third-party spawn callbacks"]);
         public IReadOnlyList<string> UncheckedCategories => categories;
 
         internal ShipSurfaceTransferReport(ShipSurfaceTransferStatus status, string message,
@@ -94,8 +91,8 @@ namespace PioneerFramework
             internal Map TargetMap = null!;
             internal ShipSurfaceTransferLedger Ledger = null!;
             internal string OperationId = null!;
-            internal readonly List<CellSnapshot> Cells = new List<CellSnapshot>();
-            internal readonly List<ThingSnapshot> Things = new List<ThingSnapshot>();
+            internal readonly List<CellSnapshot> Cells = new();
+            internal readonly List<ThingSnapshot> Things = new();
         }
 
         /// <summary>Read-only preflight. TryTransfer repeats it because maps can change between calls.</summary>
@@ -305,7 +302,7 @@ namespace PioneerFramework
             : thing.def.category == ThingCategory.Building ? 0 : 1;
 
         private static ShipSurfaceTransferReport Reject(string message) =>
-            new ShipSurfaceTransferReport(ShipSurfaceTransferStatus.Rejected, message);
+            new(ShipSurfaceTransferStatus.Rejected, message);
 
         private static void RestoreThingProperties(ThingSnapshot entry)
         {

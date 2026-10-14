@@ -1,0 +1,37 @@
+<Project>
+  <!--
+    1.7 mainline shared defaults (2026-10-13 modernization, stage N0).
+    Scope: projects under Source/ ONLY. The frozen 1.6 tree lives in legacy/1.6/Source/ and keeps
+    its original settings untouched (it is not covered by this file).
+    Rule for this first pass: CENTRALIZE ONLY, change no effective setting (each project's own
+    PropertyGroup still wins over these defaults).
+  -->
+  <PropertyGroup>
+    <LangVersion Condition="'$(LangVersion)' == ''">latest</LangVersion>
+    <Nullable Condition="'$(Nullable)' == ''">enable</Nullable>
+    <Deterministic>true</Deterministic>
+    <!-- 语句/算法现代化批（2026-10-14）：IDE 系列规则要在命令行构建里报出来就必须开它
+         （默认 IDE 诊断只在 IDE 里显示）⇒ 配合 .editorconfig 里临时升为 warning 的 IDE0090/0300/0301/0305/0063。 -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <!--
+    2026-10-14（N1 工具链地板）：net10 目标上 SDK 分析器自动生效；把档位显式钉到 Recommended
+    （比 Default 多一圈"真实债"，但比 All 少一大圈吹毛求疵）。与上游/RimWorld 惯例冲突的三条
+    （CA1051/CA1707/CA2211）在 `Source/.editorconfig` 里**写明理由后关闭**。
+    存量告警=基线（不 NoWarn，保持可见；N2/N3 顺手条逐文件清）。
+  -->
+  <PropertyGroup>
+    <AnalysisMode>Recommended</AnalysisMode>
+  </PropertyGroup>
+
+  <!--
+    2026-10-14（大规模现代化 · 主线切 net10）：游戏程序集与 Harmony 3 的路径，所有 1.7 线工程共用。
+    `-p:Rw17Dir=…` / `-p:Harmony17Dir=…` 可覆盖（换安装位置时不必改文件）。
+    ⛔ 1.6 线不受影响：它冻结在 legacy/1.6/Source/（不在本 props 覆盖范围）。
+  -->
+  <PropertyGroup>
+    <Rw17Dir Condition="'$(Rw17Dir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\RimWorld</Rw17Dir>
+    <Harmony17Dir Condition="'$(Harmony17Dir)' == ''">C:\Program Files (x86)\Steam\steamapps\workshop\content\294100\2009463077\1.7\Assemblies</Harmony17Dir>
+  </PropertyGroup>
+</Project>

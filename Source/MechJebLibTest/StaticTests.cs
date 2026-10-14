@@ -50,8 +50,11 @@ namespace MechJebLibTest
         [Fact]
         public void ClampTest()
         {
-            Clamp(-2.0, 0, 1).ShouldEqual(0);
-            Clamp(2.0, 0, 1).ShouldEqual(1);
+            // 2026-10-14（主线切 net10）：`Math.Clamp` 在 net10 上存在 ⇒ 与 `Statics.Clamp` 二义（CS0121），
+            // 显式限定到 MJ 的 Statics（= 本测试要验的那个实现；与生产侧 1.7 计划台账 #8 同一处修法）。
+            // 本文件只有 `using static ...Statics;`（没有 `using MechJebLib.Utils;`）⇒ 用全名。
+            MechJebLib.Utils.Statics.Clamp(-2.0, 0, 1).ShouldEqual(0);
+            MechJebLib.Utils.Statics.Clamp(2.0, 0, 1).ShouldEqual(1);
         }
 
         [Fact]

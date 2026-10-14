@@ -30,18 +30,18 @@ namespace PioneerFramework.PFView
 
         private readonly IPFViewOutlineShaderProvider shaderProvider;
         private readonly List<DrawCommand> drawCommands =
-            new List<DrawCommand>();
+            new();
 
-        private Camera camera;
-        private RenderTexture destination;
+        private Camera camera = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private RenderTexture destination = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         private PFViewOutlineSettings settings;
         private Matrix4x4 viewMatrix;
         private Matrix4x4 projectionMatrix;
 
-        private CommandBuffer commandBuffer;
-        private Material maskMaterial;
-        private Material dilateMaterial;
-        private Material compositeMaterial;
+        private CommandBuffer commandBuffer = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private Material maskMaterial = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private Material dilateMaterial = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private Material compositeMaterial = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         private PFViewOutlineShaderSet shaderSet;
 
         private int maskId;
@@ -425,9 +425,14 @@ namespace PioneerFramework.PFView
                 FilterMode.Point,
                 maskFormat);
 
+            // 1.7 的 CommandBuffer 只有 5 参 SetRenderTarget（2 参形式缺）⇒ 显式给存取动作：
+            // color/depth 均 Load→Store；紧随其后的 ClearRenderTarget 会清颜色，语义不变。
             commandBuffer.SetRenderTarget(
                 new RenderTargetIdentifier(maskId),
-                new RenderTargetIdentifier(destination));
+                RenderBufferLoadAction.Load,
+                RenderBufferStoreAction.Store,
+                RenderBufferLoadAction.Load,
+                RenderBufferStoreAction.Store);
             commandBuffer.ClearRenderTarget(
                 false,
                 true,
@@ -443,7 +448,9 @@ namespace PioneerFramework.PFView
                     0);
             }
 
-            commandBuffer.SetGlobalInt(
+            // 1.7 的 CommandBuffer 缺 SetGlobalInt ⇒ 用同语义的 Shader 静态全局
+            //（在 CB 构建处立即写入，本次 CB 执行前即生效；本渲染器每帧重建 CB，等价）。
+            Shader.SetGlobalInt(
                 radiusId,
                 settings.WidthPixels);
             commandBuffer.Blit(
@@ -459,7 +466,8 @@ namespace PioneerFramework.PFView
             commandBuffer.SetGlobalTexture(
                 originalMaskId,
                 new RenderTargetIdentifier(maskId));
-            commandBuffer.SetGlobalColor(
+            // 同 `SetGlobalInt`：1.7 的 CB 缺 SetGlobalColor ⇒ Shader 静态全局（语义等价，见上）
+            Shader.SetGlobalColor(
                 outlineColorId,
                 settings.Color);
             commandBuffer.Blit(
@@ -537,7 +545,7 @@ namespace PioneerFramework.PFView
 
         private void SetStatus(
             PFViewOutlineStatusCode code,
-            string message = null)
+            string? message = null)
         {
             status = new PFViewOutlineStatus(code, message);
         }

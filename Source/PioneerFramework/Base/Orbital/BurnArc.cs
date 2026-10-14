@@ -41,7 +41,10 @@ namespace PioneerFramework
         /// · 成本 **1/3.7**（单次预测 180.5 → 49.4 µs）⇒ 7 档扫描 1.07 → ~0.29 ms。
         /// ⇒ 2026-09-30 取 **100**。
         /// ⚠ `internal`（而不是 `private`）**只为可测**：判据要读它，免得测试里再抄一份常数（抄了必然走岔）。</summary>
-        internal const int Steps = 100;
+        /// · **50 步（2026-10-15）：精度账（net10 实测）Δe 1.43e-13 = 判别余量的 1.2e-10（长燃 LEO）/ 9.9e-16（月球）**；
+        ///   相位 argmin 在 400/200/100/50 四档下 7 组几何全同（2026-09-30 台架 + net10 判据复跑）；成本再减半。
+        ///   （同轮另判：泰勒 V2 判过不接——等效成本下比 RK4 精度差 ~5 个数量级，见总纲批 E。）
+        internal const int Steps = 50;
 
         /// <summary>一条燃烧弧的预测结果。</summary>
         public readonly struct Result

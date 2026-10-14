@@ -9,10 +9,10 @@ namespace PioneerFramework.GroundAssembly
     public class RocketPayloadSpec : IExposable
     {
         /// <summary>载荷 DefName，由 DMS:NF 内容层定义。</summary>
-        public string defName;
+        public string defName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>载荷类型/安装位标识。</summary>
-        public string installPosition;
+        public string installPosition = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         /// <summary>数量。</summary>
         public int quantity = 1;

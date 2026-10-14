@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using RimWorld;
 using UnityEngine;
 using Verse;
@@ -22,14 +22,14 @@ namespace PioneerFramework
         private const int PHASE_TIMEOUT = 900;  // 每阶段超时（real tick）
 
         private static Phase phase = Phase.Idle;
-        private static SpaceEntityGroup group;
-        private static SpaceMapComp mapComp;
-        private static CompPropellantTank tank;
-        private static CompThruster thruster;
+        private static SpaceEntityGroup group = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private static SpaceMapComp mapComp = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private static CompPropellantTank? tank;
+        private static CompThruster thruster = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         private static DVector3 startVelVec;
         private static int phaseStartTick;
-        private static readonly List<string> passes = new List<string>();
-        private static readonly List<string> failures = new List<string>();
+        private static readonly List<string> passes = new();
+        private static readonly List<string> failures = new();
 
         /// <summary>启动一次自动化测试（部署空间站 → 规划机动 → 状态机自动断言）。</summary>
         public static void Run()
@@ -120,12 +120,12 @@ namespace PioneerFramework
                     if (now - phaseStartTick >= 6)
                     {
                         if (group.pendingImpulse.sqrMagnitude > 1e-9)
-                            Fail("burn 结束后 pendingImpulse 未清零 (|imp|=" + group.pendingImpulse.magnitude.ToString("F3") + ")");
+                            Fail("burn 结束后 pendingImpulse 未清零 (|imp|=" + $"{group.pendingImpulse.magnitude:F3}" + ")");
                         else
                             Pass("物理步首已应用合冲量并清零 pendingImpulse");
 
                         if (group.remainingBurnDV > 1e-6)
-                            Fail("remainingBurnDV 未归零: " + group.remainingBurnDV.ToString("F2"));
+                            Fail("remainingBurnDV 未归零: " + $"{group.remainingBurnDV:F2}");
                         else
                             Pass("remainingBurnDV 归零");
 
@@ -140,24 +140,25 @@ namespace PioneerFramework
                             dvMass = ve * System.Math.Log(group.burnStartMass
                                 / System.Math.Max(group.burnStartMass - group.burnConsumedPropellant, 1.0));
                         }
-                        Log.Message(string.Format("[ArchTest] burn 对账: |Δv_vec|={0:F2} m/s  实际ΔV(质量)={1:F2} m/s  消耗工质={2:F1} kg",
-                            dvVec, dvMass, group.burnConsumedPropellant));
+                        Log.Message($"[ArchTest] burn 对账: |Δv_vec|={dvVec:F2} m/s  实际ΔV(质量)={dvMass:F2} m/s  消耗工质={group.burnConsumedPropellant:F1} kg");
                         if (dvMass > 0.0 && (dvVec < 0.5 * dvMass || dvVec > 1.5 * dvMass))
-                            Fail(string.Format("burn 冲量未正确施加: |Δv_vec|={0:F2} 与质量口径 {1:F2} 偏差过大", dvVec, dvMass));
+                            Fail($"burn 冲量未正确施加: |Δv_vec|={dvVec:F2} 与质量口径 {dvMass:F2} 偏差过大");
                         else
-                            Pass("burn 冲量已正确施加 |Δv_vec|=" + dvVec.ToString("F2"));
+                            Pass("burn 冲量已正确施加 |Δv_vec|=" + $"{dvVec:F2}");
 
                         // 储罐差值同步（burn 消耗路径）：本地储罐应追平向量
                         double vec = mapComp.GetPropellantMass(thruster.PropellantDef);
-                        float local = tank.StoredMass;
+                        // `tank!`：静态夹具（setup 在 205 行赋值、teardown 在 264 行清空）⇒ 本段内非空由流程保证，
+                        // 编译期证不了；若装配坏了这里会以 NullReferenceException 响亮失败（不是静默）。
+                        float local = tank!.StoredMass;
                         if (System.Math.Abs(local - vec) > 0.5f)
-                            Fail(string.Format("burn 后储罐差值同步不一致: 本地 {0:F1} vs 向量 {1:F1}", local, vec));
+                            Fail($"burn 后储罐差值同步不一致: 本地 {local:F1} vs 向量 {vec:F1}");
                         else
-                            Pass(string.Format("burn 后储罐差值同步一致: 本地 {0:F1} ≈ 向量 {1:F1}", local, vec));
+                            Pass($"burn 后储罐差值同步一致: 本地 {local:F1} ≈ 向量 {vec:F1}");
 
                         // 直接扣向量 100kg（模拟无 burn 的外部消耗），验证差值同步独立路径
                         double drained = mapComp.TryConsumePropellant(thruster.PropellantDef, 100.0);
-                        Log.Message("[ArchTest] 直接扣向量 " + drained.ToString("F1") + " kg，等待储罐追回...");
+                        Log.Message("[ArchTest] 直接扣向量 " + $"{drained:F1}" + " kg，等待储罐追回...");
                         phase = Phase.DrainSync;
                         phaseStartTick = now;
                     }
@@ -167,11 +168,11 @@ namespace PioneerFramework
                     if (now - phaseStartTick >= 10)
                     {
                         double vec = mapComp.GetPropellantMass(thruster.PropellantDef);
-                        float local = tank.StoredMass;
+                        float local = tank!.StoredMass;
                         if (System.Math.Abs(local - vec) > 0.5f)
-                            Fail(string.Format("外部扣减后差值同步未追回: 本地 {0:F1} vs 向量 {1:F1}", local, vec));
+                            Fail($"外部扣减后差值同步未追回: 本地 {local:F1} vs 向量 {vec:F1}");
                         else
-                            Pass(string.Format("外部扣减后储罐追回: 本地 {0:F1} ≈ 向量 {1:F1}", local, vec));
+                            Pass($"外部扣减后储罐追回: 本地 {local:F1} ≈ 向量 {vec:F1}");
                         Finish();
                     }
                     break;
@@ -190,7 +191,7 @@ namespace PioneerFramework
                 new DVector3(orbitRadius, 0, 0), mapWidth: 60, mapHeight: 60, stationName: "架构验证站");
             if (entity == null) return false;
 
-            group = spaceGame.GetGroupById(groupId);
+            group = spaceGame.GetGroupById(groupId)!;   // 凭据（2026-10-15）：groupId 由本测试刚铺场，查得到；查不到=装配坏了，此处应响亮失败
             if (group == null) return false;
             group.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
 
@@ -223,12 +224,11 @@ namespace PioneerFramework
             }
 
             tank.TryFill(tank.Capacity);
-            Log.Message(string.Format("[ArchTest] 部署完成: 氢罐 {0:F0}kg，向量 {1:F0}kg，ve={2:F0} m/s",
-                tank.StoredMass, mapComp.GetPropellantMass(thruster.PropellantDef), thruster.Ve));
+            Log.Message($"[ArchTest] 部署完成: 氢罐 {tank.StoredMass:F0}kg，向量 {mapComp.GetPropellantMass(thruster.PropellantDef):F0}kg，ve={thruster.Ve:F0} m/s");
             return true;
         }
 
-        private static Thing PlaceBuilding(Map map, string defName, IntVec3 cell, Rot4 rot = default)
+        private static Thing? PlaceBuilding(Map map, string defName, IntVec3 cell, Rot4 rot = default)
         {
             var def = DefDatabase<ThingDef>.GetNamedSilentFail(defName);
             if (def == null)
@@ -286,7 +286,7 @@ namespace PioneerFramework
 
         private static void Finish()
         {
-            Log.Message(string.Format("[ArchTest] ═══ 汇总: PASS={0} FAIL={1} ═══", passes.Count, failures.Count));
+            Log.Message($"[ArchTest] ═══ 汇总: PASS={passes.Count} FAIL={failures.Count} ═══");
             if (failures.Count == 0)
                 phase = Phase.Done;
         }

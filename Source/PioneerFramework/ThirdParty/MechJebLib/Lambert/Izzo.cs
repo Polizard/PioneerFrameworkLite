@@ -195,7 +195,8 @@ namespace MechJebLib.Maths
 
             if (x > 1)
                 // Hyperbolic motion. The hyperbolic sine is bijective.
-                return Asinh((y - x * ll) * Sqrt(x * x - 1));
+                // 2026-10-13: net10 的 System.Math 也有 Asinh ⇒ 限定到 MJ 的 Statics（net48 既有绑定）。
+                return Statics.Asinh((y - x * ll) * Sqrt(x * x - 1));
 
             // Parabolic motion
             return 0.0;

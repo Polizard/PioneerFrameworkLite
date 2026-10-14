@@ -32,7 +32,7 @@ namespace PioneerFramework
 
         private bool parametersValid;
         private bool solutionValid;
-        private string resultMsg;
+        private string resultMsg = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         private double departureDV;
         private double arrivalDV;
@@ -67,13 +67,13 @@ namespace PioneerFramework
             resizeable = true;
         }
 
-        public override Vector2 InitialSize => new Vector2(WindowWidth, WindowHeight);
+        public override Vector2 InitialSize => new(WindowWidth, WindowHeight);
 
         public override void DoWindowContents(Rect inRect)
         {
             Text.Font = GameFont.Medium;
             Widgets.Label(new Rect(0f, 0f, inRect.width, 30f),
-                string.Format("转移到圆轨 - Group {0}", selfGroup.GroupId));
+                $"转移到圆轨 - Group {selfGroup.GroupId}");
             Text.Font = GameFont.Small;
 
             float y = 35f;
@@ -124,13 +124,13 @@ namespace PioneerFramework
             if (solutionValid)
             {
                 Widgets.Label(new Rect(0f, y, inRect.width, LabelHeight),
-                    string.Format("出发 dV: {0:F1} m/s", departureDV));
+                    $"出发 dV: {departureDV:F1} m/s");
                 y += LabelHeight;
                 Widgets.Label(new Rect(0f, y, inRect.width, LabelHeight),
-                    string.Format("到达圆化 dV: {0:F1} m/s", arrivalDV));
+                    $"到达圆化 dV: {arrivalDV:F1} m/s");
                 y += LabelHeight;
                 Widgets.Label(new Rect(0f, y, inRect.width, LabelHeight),
-                    string.Format("总 dV: {0:F1} m/s | 转移: {1:F0}s", totalDV, transferTimeSeconds));
+                    $"总 dV: {totalDV:F1} m/s | 转移: {transferTimeSeconds:F0}s");
                 y += LabelHeight + 4f;
 
                 if (Widgets.ButtonText(new Rect(0f, y, inRect.width, ButtonHeight), "确认转移"))
@@ -296,13 +296,11 @@ namespace PioneerFramework
 
             if (useNormalVectorInput)
             {
-                resultMsg = string.Format("霍曼转移: 总dV={0:F1} m/s, 转移={1:F0}s",
-                    totalDV, transferTimeSeconds);
+                resultMsg = $"霍曼转移: 总dV={totalDV:F1} m/s, 转移={transferTimeSeconds:F0}s";
             }
             else
             {
-                resultMsg = string.Format("霍曼转移: 总dV={0:F1} m/s, 转移={1:F0}s, Δi={2:F1}°",
-                    totalDV, transferTimeSeconds, deltaI * Mathf.Rad2Deg);
+                resultMsg = $"霍曼转移: 总dV={totalDV:F1} m/s, 转移={transferTimeSeconds:F0}s, Δi={deltaI * Mathf.Rad2Deg:F1}°";
             }
         }
 
@@ -340,8 +338,7 @@ namespace PioneerFramework
                 selfGroup.EnterOrbitKeeping(new HashSet<int> { selfGroup.CelestialBodyId });
             }
 
-            Log.Message(string.Format("[OrbitTransfer] Group {0} Hohmann: r={1:F0}km dv1={2:F1} dv2={3:F1} total={4:F1} dt={5:F0}s",
-                selfGroup.GroupId, targetRadiusMeters / 1000.0, departureDV, arrivalDV, totalDV, transferTimeSeconds));
+            Log.Message($"[OrbitTransfer] Group {selfGroup.GroupId} Hohmann: r={targetRadiusMeters / 1000.0:F0}km dv1={departureDV:F1} dv2={arrivalDV:F1} total={totalDV:F1} dt={transferTimeSeconds:F0}s");
 
             Close();
         }
