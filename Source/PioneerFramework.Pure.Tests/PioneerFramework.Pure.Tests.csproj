@@ -1,15 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!--
-      ⚠ 2026-09-18 由 net8.0 改为 net48（用户裁定："不要照顾 Linux/macOS，我们就是面向 Win 系统的"）。
-      理由：**第三方移植物只能在 net48 编译**（`Functions/Angles.cs` 靠 net48 没有 `Math.Asinh/Acosh/Atanh`
-      才写得通，net8 上 CS0121 二义性，见 ThirdParty/MechJebLib/README.md）。
-      而 net48 **就是交付目标** ⇒ 纯测试跑在 net48 上比 net8 更忠实。
-      ⇒ 这个分裂曾挡住三件事（MJStatics 的删除、纯文件里的周期收敛、OrbitMath 整批重复权威收敛）。
-    -->
-    <TargetFramework>net48</TargetFramework>
-    <!-- net48 的默认 LangVersion 是 7.3 ⇒ 必须显式抬到与主工程一致 -->
+    <!-- RimWorld 1.7 uses .NET 10; test the same runtime as the shipped mod. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Keep the language version aligned with the main project. -->
     <LangVersion>12.0</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -21,7 +15,6 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
-    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
     <!-- 移植面 `Functions/Angles.cs` 的 [UsedImplicitly]。本工程无 Unity（那个属性由 UnityEngine.CoreModule 提供）
          ⇒ 必须像上游那样显式引；无 Unity ⇒ 不会 CS0433。与 MechJebLibTest 的同一行同理。 -->
     <PackageReference Include="JetBrains.Annotations" Version="2023.3.0" PrivateAssets="all" />

@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot 'Use-ProjectDotnet.ps1')
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
@@ -14,7 +15,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet build failed with exit code $LASTEXITCODE"
     }
-    Write-Host "PioneerFrameworkLite.dll rebuilt ($Configuration) -> 1.6/Assemblies/PioneerFrameworkLite.dll"
+    Write-Host "PioneerFrameworkLite.dll rebuilt ($Configuration) -> 1.7/Assemblies/PioneerFrameworkLite.dll"
 }
 finally {
     Pop-Location

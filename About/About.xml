@@ -4,7 +4,7 @@
   <packageId>NewFrontierTeam.PioneerFrameworkLite</packageId>
   <author>新边疆团队</author>
   <supportedVersions>
-    <li>1.6</li>
+    <li>1.7</li>
   </supportedVersions>
   <modDependencies>
     <li>

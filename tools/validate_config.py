@@ -2,9 +2,9 @@
 """PioneerFrameworkLite config validation.
 
 Checks:
-- XML under 1.6/Defs and 1.6/Patches is well-formed
+- XML under 1.7/Defs and 1.7/Patches is well-formed
 - every PFDefs [DefOf] field has a matching defName in Defs
-- About.xml declares a valid packageId, supportedVersions 1.6 and Harmony dependency
+- About.xml declares a valid packageId, supportedVersions 1.7 and Harmony dependency
 - committed AssetBundles and Shader sources exist
 - optional Languages Keyed/DefInjected consistency (when Languages/ exists)
 - optional LoadFolders.xml well-formedness (when present)
@@ -24,9 +24,9 @@ def fail(msg):
 
 def main():
     # 1. XML well-formed + collect defNames
-    defs_dir = ROOT / "1.6" / "Defs"
+    defs_dir = ROOT / "1.7" / "Defs"
     if not defs_dir.exists():
-        fail("1.6/Defs directory not found")
+        fail("1.7/Defs directory not found")
     def_names = set()
     xml_roots = []
     for xml_path in sorted(defs_dir.rglob("*.xml")):
@@ -47,7 +47,7 @@ def main():
                         "ends with a numerical digit, which is not allowed on ThingDefs."
                     )
 
-    patches_dir = ROOT / "1.6" / "Patches"
+    patches_dir = ROOT / "1.7" / "Patches"
     if patches_dir.exists():
         for xml_path in sorted(patches_dir.rglob("*.xml")):
             try:
@@ -79,8 +79,8 @@ def main():
     if not package_id or package_id != "NewFrontierTeam.PioneerFrameworkLite":
         fail(f"About.xml packageId must be NewFrontierTeam.PioneerFrameworkLite, got {package_id!r}")
     supported = [li.text for li in about.findall("supportedVersions/li")]
-    if "1.6" not in supported:
-        fail(f"About.xml supportedVersions must include 1.6, got {supported}")
+    if "1.7" not in supported:
+        fail(f"About.xml supportedVersions must include 1.7, got {supported}")
     dependencies = [
         li.findtext("packageId")
         for li in about.findall("modDependencies/li")
@@ -90,10 +90,10 @@ def main():
 
     # 4. Committed runtime assets
     required_assets = [
-        "1.6/Assemblies/PioneerFrameworkLite.dll",
-        "1.6/AssetBundles/pfview_outline_win",
-        "1.6/AssetBundles/pfview_outline_mac",
-        "1.6/AssetBundles/pfview_outline_linux",
+        "1.7/Assemblies/PioneerFrameworkLite.dll",
+        "1.7/AssetBundles/pfview_outline_win",
+        "1.7/AssetBundles/pfview_outline_mac",
+        "1.7/AssetBundles/pfview_outline_linux",
         "Shaders/PFView_OutlineMask.shader",
         "Shaders/PFView_OutlineDilate.shader",
         "Shaders/PFView_OutlineComposite.shader",
@@ -168,7 +168,7 @@ def main():
             fail(f"LoadFolders.xml: XML parse error: {e}")
 
     # 7. Rule 2: every graphicData/texPath must resolve to an actual texture.
-    #    Check PFL 1.6/Textures first. Base-game textures are packed in Unity assets
+    #    Check PFL 1.7/Textures first. Base-game textures are packed in Unity assets
     #    (no loose file on disk), so valid base references are tracked via an allowlist.
     KNOWN_BASE_TEX = {
         # 原版酿造桶贴图（打包在 Unity 资源里，无法用文件系统校验）
@@ -188,7 +188,7 @@ def main():
     }
 
     def texture_file(tex_path):
-        local = ROOT / "1.6" / "Textures" / f"{tex_path}.png"
+        local = ROOT / "1.7" / "Textures" / f"{tex_path}.png"
         if local.is_file():
             return local
         return None
@@ -201,7 +201,7 @@ def main():
                 if texture_file(tex) is None and tex not in KNOWN_BASE_TEX:
                     fail(
                         f"{xml_path.relative_to(ROOT)}: def '{child.findtext('defName')}' "
-                        f"references missing texture '{tex}' (not in 1.6/Textures or "
+                        f"references missing texture '{tex}' (not in 1.7/Textures or "
                         "known base textures)."
                     )
 

@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -22,7 +22,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.100
+          dotnet-version: 10.0.402
           cache: true
           cache-dependency-path: |
             Source/PioneerFramework/PioneerFramework.csproj
@@ -34,6 +34,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Verify RimWorld 1.7 dependencies
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/check-game-dependencies.ps1
 
       - name: Build PioneerFrameworkLite (Debug)
         run: dotnet build Source/PioneerFramework/PioneerFramework.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_debug -p:AppendTargetFrameworkToOutputPath=false
@@ -56,10 +60,10 @@ jobs:
       - name: Run game integration tests
         run: dotnet test Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_test_game -p:AppendTargetFrameworkToOutputPath=false
 
-      - name: Run pure math tests (net48)
+      - name: Run pure math tests (net10.0)
         run: dotnet test Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_test_pure -p:AppendTargetFrameworkToOutputPath=false
 
-      # 第三方移植物（MechJebLib 数值底座）的上游测试套：net48、零 RimWorld/Unity 依赖。
+      # MechJebLib numerical acceptance tests on the same .NET runtime as the game.
       # 详见 Source/PioneerFramework/ThirdParty/MechJebLib/README.md
       - name: Run ported MechJebLib tests
         run: dotnet test Source/MechJebLibTest/MechJebLibTest.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_test_mjl -p:AppendTargetFrameworkToOutputPath=false
@@ -71,10 +75,10 @@ jobs:
         shell: pwsh
         run: |
           $required = @(
-            "1.6/Assemblies/PioneerFrameworkLite.dll",
-            "1.6/AssetBundles/pfview_outline_win",
-            "1.6/AssetBundles/pfview_outline_mac",
-            "1.6/AssetBundles/pfview_outline_linux",
+            "1.7/Assemblies/PioneerFrameworkLite.dll",
+            "1.7/AssetBundles/pfview_outline_win",
+            "1.7/AssetBundles/pfview_outline_mac",
+            "1.7/AssetBundles/pfview_outline_linux",
             "Shaders/PFView_OutlineMask.shader",
             "Shaders/PFView_OutlineDilate.shader",
             "Shaders/PFView_OutlineComposite.shader"

@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: LicenseRef-PD-hp OR Unlicense OR CC0-1.0 OR 0BSD OR MIT-0 OR MIT OR LGPL-2.1+
  */
 
+using System;
 using System.Globalization;
 using MechJebLib.Primitives;
 using Xunit;
@@ -91,9 +92,12 @@ namespace MechJebLibTest.Primitives.V3Tests
             var v = new V3(1.0 / 3.0, 2.0 / 3.0, 4.0 / 3.0);
             string result = v.ToString("R");
 
-            result.ShouldContain("0.33333333333333331");
-            result.ShouldContain("0.66666666666666663");
-            result.ShouldContain("1.3333333333333333");
+            // Modern .NET emits the shortest round-trippable decimal representation.
+            string[] components = result.Trim('[', ']').Split(',');
+            Assert.Equal(3, components.Length);
+            Assert.Equal(v.x, double.Parse(components[0], CultureInfo.InvariantCulture));
+            Assert.Equal(v.y, double.Parse(components[1], CultureInfo.InvariantCulture));
+            Assert.Equal(v.z, double.Parse(components[2], CultureInfo.InvariantCulture));
         }
 
         [Fact]
@@ -107,7 +111,8 @@ namespace MechJebLibTest.Primitives.V3Tests
         private void ToStringWithNumberFormat()
         {
             var v = new V3(1234.5, 6789.25, 10000);
-            v.ToString("N1").ShouldEqual("[1,234.5, 6,789.3, 10,000.0]");
+            // .NET 10 uses midpoint-to-even formatting.
+            v.ToString("N1").ShouldEqual("[1,234.5, 6,789.2, 10,000.0]");
         }
 
         [Fact]
@@ -131,7 +136,7 @@ namespace MechJebLibTest.Primitives.V3Tests
             var germanCulture = new CultureInfo("de-DE");
 
             string result = v.ToString("F2", germanCulture);
-            result.ShouldEqual("[1234,50, 6789,25, 10000,13]");
+            result.ShouldEqual("[1234,50, 6789,25, 10000,12]");
         }
 
         [Fact]
@@ -141,7 +146,7 @@ namespace MechJebLibTest.Primitives.V3Tests
             var frenchCulture = new CultureInfo("fr-FR");
 
             string result = v.ToString("F2", frenchCulture);
-            result.ShouldEqual("[1234,50, 6789,25, 10000,13]");
+            result.ShouldEqual("[1234,50, 6789,25, 10000,12]");
         }
 
         [Fact]
@@ -180,7 +185,7 @@ namespace MechJebLibTest.Primitives.V3Tests
             v.ToString("F2").ShouldEqual("[1.23, 1.24, 1.24]");
 
             var v2 = new V3(1.2345, 1.2355, 1.2365);
-            v2.ToString("F3").ShouldEqual("[1.235, 1.236, 1.237]");
+            v2.ToString("F3").ShouldEqual("[1.234, 1.236, 1.236]");
         }
 
         [Fact]

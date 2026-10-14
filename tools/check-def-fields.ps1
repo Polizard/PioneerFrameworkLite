@@ -1,7 +1,7 @@
 # Guard for a real breakage (2026-09-29): an S1 rename of a C# field silently broke the Def XML binding.
 #
 # WHAT HAPPENED: `MissileDef.mainAxisLocal` -> `mainAxisShip` (a pure rename; build 0 errors, gate 9/9 green),
-# but `1.6/Defs/Combat/MissileDefs.xml` still said `<mainAxisLocal>`. RimWorld's loader then could NOT bind the
+# but `1.7/Defs/Combat/MissileDefs.xml` still said `<mainAxisLocal>`. RimWorld's loader then could NOT bind the
 # field and it stayed at its default (0,0,0). The only red text was in the game log:
 #   `XML error: <mainAxisLocal>(0, 0, -1) doesn't correspond to any field in type MissileDef`
 # and `tools/validate_config.py` had reported "ok" => the gate had NO judge for "C# field name <-> Def element".
@@ -18,7 +18,7 @@
 #
 # Usage (from repo root):
 #   powershell -ExecutionPolicy Bypass -File tools/check-def-fields.ps1
-# Exit code: 0 = clean / 1 = a renamed-away name still appears in 1.6/ XML (printed with file:line).
+# Exit code: 0 = clean / 1 = a renamed-away name still appears in 1.7/ XML (printed with file:line).
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -37,7 +37,7 @@ $retired = @(
     'muzzleLocal', 'dirLocal', 'exitLocal', 'targetLocal'
 )
 
-$xmlFiles = Get-ChildItem -Path (Join-Path $root '1.6') -Recurse -Filter *.xml
+$xmlFiles = Get-ChildItem -Path (Join-Path $root '1.7') -Recurse -Filter *.xml
 # NOTE: names must be REGEX-ESCAPED and word-bounded. Writing "[name]" in a .NET regex means a CHARACTER CLASS
 # (any single char from the set) -- that produced a flood of false positives on the first attempt.
 $retiredRe = @{}
@@ -60,7 +60,7 @@ foreach ($f in $xmlFiles) {
 }
 
 if ($hits -eq 0) {
-    Write-Host ("Def/Patch XML clean: no retired (S1-renamed) name appears in {0} XML files under 1.6/." -f $xmlFiles.Count)
+    Write-Host ("Def/Patch XML clean: no retired (S1-renamed) name appears in {0} XML files under 1.7/." -f $xmlFiles.Count)
     exit 0
 } else {
     Write-Host ("Def/Patch XML FAILED: {0} occurrence(s) of a retired name (XML was left behind by a rename)." -f $hits)

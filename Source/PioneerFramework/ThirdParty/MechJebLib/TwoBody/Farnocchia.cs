@@ -226,7 +226,7 @@ namespace MechJebLib.TwoBody
             }
             else if (1 < ecc && ecc <= 1 + delta)
             {
-                F_delta = Acosh((1 + delta) / ecc);
+                F_delta = MechJebLib.Utils.Statics.Acosh((1 + delta) / ecc);
                 n = Math.Sqrt(k * Math.Pow(ecc - 1, 3) / Math.Pow(q, 3));
                 M = n * delta_t;
                 if (Angles.MFromF(F_delta, ecc) <= Math.Abs(M))

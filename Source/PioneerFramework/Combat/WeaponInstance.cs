@@ -44,7 +44,11 @@ namespace PioneerFramework.Combat
             if (!def.turret) return;
 
             float rotationSpeed = def.turretRotationSpeed * 0.01745f;
-            turretRotation = Quaternion.RotateTowards(turretRotation, targetRotation, rotationSpeed);
+            // UnityStubs omits RotateTowards; retain its angle-limited slerp semantics.
+            float angle = Quaternion.Angle(turretRotation, targetRotation);
+            turretRotation = angle == 0f
+                ? targetRotation
+                : Quaternion.SlerpUnclamped(turretRotation, targetRotation, Mathf.Min(1f, rotationSpeed / angle));
         }
 
         public bool CanFire()

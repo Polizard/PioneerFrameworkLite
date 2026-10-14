@@ -219,7 +219,6 @@ namespace PioneerFramework
         {
             base.PostOpen();
             EnsureResources();
-            RenderPipelineManager.endCameraRendering += OnPostRender;
         }
 
         public override void WindowUpdate()
@@ -268,7 +267,6 @@ namespace PioneerFramework
 
         public override void PreClose()
         {
-            RenderPipelineManager.endCameraRendering -= OnPostRender;
             CleanupResources();
             base.PreClose();
         }

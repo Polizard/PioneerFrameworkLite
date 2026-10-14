@@ -265,6 +265,14 @@ namespace PioneerFramework.PFView
                 return false;
             }
 
+            if (typeof(CommandBuffer).Assembly.GetName().Name == "UnityStubs")
+            {
+                SetStatus(
+                    PFViewOutlineStatusCode.UnsupportedShaders,
+                    "RimWorld 1.7 UnityStubs CommandBuffer is not implemented. The reserved outline renderer requires a Waylith backend.");
+                return false;
+            }
+
             shadersResolved = true;
             SetStatus(PFViewOutlineStatusCode.Uninitialized);
             return true;
@@ -392,6 +400,11 @@ namespace PioneerFramework.PFView
 
         private void RecordCommands()
         {
+#if NET10_0_OR_GREATER
+            // Keep the original Unity recording path for reference; never report a
+            // successful composite through Waylith's no-op CommandBuffer methods.
+            throw new NotSupportedException("UnityStubs CommandBuffer cannot execute the reserved outline pass.");
+#else
             RenderTextureFormat maskFormat =
                 SystemInfo.SupportsRenderTextureFormat(
                     RenderTextureFormat.R8)
@@ -471,6 +484,7 @@ namespace PioneerFramework.PFView
             commandBuffer.ReleaseTemporaryRT(dilatedId);
             commandBuffer.ReleaseTemporaryRT(horizontalDistanceId);
             commandBuffer.ReleaseTemporaryRT(maskId);
+#endif
         }
 
         private void InitializePropertyIds()

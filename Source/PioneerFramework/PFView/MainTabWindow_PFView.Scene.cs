@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -36,7 +36,7 @@ namespace PioneerFramework
                 (float)planetPosAbs.z).normalized;
 
             if (lightDir.sqrMagnitude > 0.001f)
-                sunLight.transform.forward = lightDir;
+                sunLight.transform.rotation = Quaternion.LookRotation(lightDir);
         }
 
         // ════════════════════════════════════════════════════
@@ -48,11 +48,12 @@ namespace PioneerFramework
             if (renderCamera == null || renderTexture == null) return;
 
             double tick = TimeScaleManager.GetPhysicsTickSafe();
-            cachedRenderTick = (int)Math.Round(tick); // int 缓存仅作 OnPostRender 轨道线采样/键，天体位置一律用 double tick
+            cachedRenderTick = (int)Math.Round(tick); // 轨道线采样缓存；天体位置使用 double tick
             DVector3 origin = GetRenderOrigin(tick);
 
             UpdateLighting(mgr, tick, origin);
             DrawAllObjects(origin, mgr, tick);
+            DrawOrbitLines();
 
             renderCamera.Render();
         }
@@ -491,13 +492,7 @@ namespace PioneerFramework
 #endif
         }
 
-        private void OnPostRender(ScriptableRenderContext context, Camera cam)
-        {
-            if (cam != renderCamera) return;
-            DrawOrbitLinesGL();
-        }
-
-        private void DrawOrbitLinesGL()
+        private void DrawOrbitLines()
         {
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (mgr == null) return;
@@ -507,10 +502,10 @@ namespace PioneerFramework
             var bodyDef = mgr.GetBodyById(currentSystemBodyId);
             if (bodyDef == null) return;
 
-            GL.PushMatrix();
-            renderMat.SetPass(0);
-            GL.Begin(GL.LINES);
-            GL.Color(new Color(0f, 0.5f, 0.3f, 0.4f));
+            // UnityStubs GL is a 2D GUI API. Submit these 3D segments through the
+            // same mesh path as the scene's ships, captured by Camera.Render.
+            if (cubeMesh == null || renderMat == null || matBlock == null) return;
+            matBlock.SetColor("_Color", new Color(0f, 0.5f, 0.3f, 0.4f));
 
             var toDraw = new List<CelestialBodyDef>();
             if (bodyDef.HasOrbit) toDraw.Add(bodyDef);
@@ -532,12 +527,18 @@ namespace PioneerFramework
                         pts[j].x * SpaceConstants.MetersPerUnit,
                         pts[j].y * SpaceConstants.MetersPerUnit,
                         pts[j].z * SpaceConstants.MetersPerUnit), origin);
-                    GL.Vertex(a); GL.Vertex(b);
+                    Vector3 midpoint = (a + b) * 0.5f;
+                    float depth = Mathf.Max(renderCamera.nearClipPlane,
+                        Vector3.Dot(midpoint - renderCamera.transform.position, renderCamera.transform.forward));
+                    float width = renderCamera.orthographic
+                        ? 2f * renderCamera.orthographicSize / Mathf.Max(1, renderCamera.pixelHeight)
+                        : 2f * depth * Mathf.Tan(renderCamera.fieldOfView * Mathf.Deg2Rad * 0.5f) / Mathf.Max(1, renderCamera.pixelHeight);
+                    if (PFViewOrbitLineGeometry.TryBuildMatrix(a, b, width, out Matrix4x4 matrix))
+                        Graphics.DrawMesh(cubeMesh, matrix, renderMat, SceneLayer, renderCamera, 0, matBlock);
                 }
             }
 
-            GL.End();
-            GL.PopMatrix();
         }
+
     }
 }

@@ -1,4 +1,4 @@
-# Check whether committed 1.6/Assemblies/PioneerFrameworkLite.dll matches a fresh Release build.
+# Check whether committed 1.7/Assemblies/PioneerFrameworkLite.dll matches a fresh Release build.
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File tools/check-committed-dll.ps1
 #   powershell -ExecutionPolicy Bypass -File tools/check-committed-dll.ps1 -Configuration Debug
@@ -7,9 +7,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot 'Use-ProjectDotnet.ps1')
 $root = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $env:TEMP "pfl_check"
-$committedDll = Join-Path $root "1.6/Assemblies/PioneerFrameworkLite.dll"
+$committedDll = Join-Path $root "1.7/Assemblies/PioneerFrameworkLite.dll"
 
 # WHY a diagnosis (2026-10-01): a DLL's bytes depend on the *compiler version*, and which SDK this
 # machine uses is decided by global.json's `rollForward` (so it can be NEWER than CI's), while CI pins

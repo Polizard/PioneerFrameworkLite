@@ -214,8 +214,8 @@ namespace PioneerFramework
                 color = color
             };
             mat.SetFloat("_Mode", 3);
-            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            mat.SetInt("_SrcBlend", 5 /* Unity SrcAlpha shader value */);
+            mat.SetInt("_DstBlend", 10 /* Unity OneMinusSrcAlpha shader value */);
             mat.SetInt("_ZWrite", 0);
             mat.DisableKeyword("_ALPHATEST_ON");
             mat.EnableKeyword("_ALPHABLEND_ON");
@@ -848,8 +848,8 @@ namespace PioneerFramework
                 color = new Color(1f, 0.8f, 0.3f, 0.12f)
             };
             gm.material.SetFloat("_Mode", 3);
-            gm.material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            gm.material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            gm.material.SetInt("_SrcBlend", 5 /* Unity SrcAlpha shader value */);
+            gm.material.SetInt("_DstBlend", 10 /* Unity OneMinusSrcAlpha shader value */);
             gm.material.SetInt("_ZWrite", 0);
             gm.material.DisableKeyword("_ALPHATEST_ON");
             gm.material.EnableKeyword("_ALPHABLEND_ON");

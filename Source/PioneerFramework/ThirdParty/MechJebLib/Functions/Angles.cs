@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright Lamont Granquist, Sebastien Gaggini and the MechJeb contributors
  * SPDX-License-Identifier: LicenseRef-PD-hp OR Unlicense OR CC0-1.0 OR 0BSD OR MIT-0 OR MIT OR LGPL-2.1+
  */
@@ -132,7 +132,7 @@ namespace MechJebLib.Functions
             Check.Finite(nu);
             Check.NonNegativeFinite(ecc);
 
-            return 2 * Atanh(Sqrt((ecc - 1) / (ecc + 1)) * Tan(nu / 2));
+            return 2 * MechJebLib.Utils.Statics.Atanh(Sqrt((ecc - 1) / (ecc + 1)) * Tan(nu / 2));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -176,7 +176,7 @@ namespace MechJebLib.Functions
             Check.Finite(M);
             Check.NonNegativeFinite(ecc);
 
-            double F0 = Asinh(M / ecc);
+            double F0 = MechJebLib.Utils.Statics.Asinh(M / ecc);
             return NewtonHyperbolic(F0, M, ecc);
         }
 

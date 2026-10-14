@@ -50,8 +50,8 @@ namespace MechJebLibTest
         [Fact]
         public void ClampTest()
         {
-            Clamp(-2.0, 0, 1).ShouldEqual(0);
-            Clamp(2.0, 0, 1).ShouldEqual(1);
+            MechJebLib.Utils.Statics.Clamp(-2.0, 0, 1).ShouldEqual(0);
+            MechJebLib.Utils.Statics.Clamp(2.0, 0, 1).ShouldEqual(1);
         }
 
         [Fact]

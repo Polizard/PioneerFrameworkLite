@@ -47,7 +47,9 @@ namespace MechJebLib.Maneuvers
             // orbital energy
             double e = -mu / (newPeR + newApR);
             // orbital angular momentum
-            double l = Sqrt(Abs((Powi(e * (newApR - newPeR), 2) - mu * mu) / (2 * e)));
+            // Equivalent h^2 = 2 mu rp ra / (rp + ra), without cancellation
+            // between nearly equal squared energies for very eccentric orbits.
+            double l = Sqrt(Abs(2 * mu * newPeR * (newApR / (newPeR + newApR))));
             // orbital kinetic energy
             double ke = e + mu / rm;
 

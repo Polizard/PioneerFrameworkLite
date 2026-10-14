@@ -18,7 +18,7 @@ Normal build usage:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
         Tools\PFViewShaderBundle\Build-PFViewOutlineBundles.ps1
 
-It publishes these extensionless files to 1.6\AssetBundles:
+It publishes these extensionless files to 1.7\AssetBundles:
 
     pfview_outline_win
     pfview_outline_linux
@@ -230,7 +230,7 @@ try
 
     $bundleOutputRoot = Join-Path `
         $resolvedModRoot `
-        '1.6\AssetBundles'
+        '1.7\AssetBundles'
     $stagedBundleRoot = Join-Path `
         $resolvedProjectRoot `
         'PublishedBundles'

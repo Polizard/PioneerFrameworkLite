@@ -97,7 +97,7 @@ namespace MechJebLib.Maneuvers
             int n = x0.Length;
             double[] x = new double[n];
             for (int i = 0; i < n; i++)
-                x[i] = Clamp(x0[i], lo[i], hi[i]);
+                x[i] = MechJebLib.Utils.Statics.Clamp(x0[i], lo[i], hi[i]);
 
             fBest = f(x);
 
@@ -113,7 +113,7 @@ namespace MechJebLib.Maneuvers
                 {
                     for (int d = 0; d < 2; d++)
                     {
-                        double trial = Clamp(x[i] + (d == 0 ? s[i] : -s[i]), lo[i], hi[i]);
+                        double trial = MechJebLib.Utils.Statics.Clamp(x[i] + (d == 0 ? s[i] : -s[i]), lo[i], hi[i]);
                         if (trial == x[i]) continue;
 
                         double old = x[i];

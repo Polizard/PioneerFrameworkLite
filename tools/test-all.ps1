@@ -1,19 +1,19 @@
-﻿# One-click verification for PioneerFrameworkLite (mirrors .github/workflows/ci.yml locally).
+# One-click verification for PioneerFrameworkLite (mirrors .github/workflows/ci.yml locally).
 #
 # Steps, in this order:
 #   1. Build (Debug, full rebuild)                  -> 0 errors, unique warning count reported
-#   2. Pure math tests (net48)                      -> Source/PioneerFramework.Pure.Tests
-#   3. Game integration tests (net48)               -> Source/PioneerFramework.Tests
-#   3b. Ported MechJebLib tests (net48)             -> Source/MechJebLibTest (third-party 移植面)
+#   2. Pure math tests (net10.0)                      -> Source/PioneerFramework.Pure.Tests
+#   3. Game integration tests (net10.0)               -> Source/PioneerFramework.Tests
+#   3b. Ported MechJebLib tests (net10.0)             -> Source/MechJebLibTest (third-party 移植面)
 #   4. Def/XML validation                           -> python tools/validate_config.py
 #   5. Committed runtime assets present
 #   6. Deterministic Release build                  -> two builds, identical DLL bytes
-#   7. Rebuild committed DLL (Release)              -> restores 1.6/Assemblies/PioneerFrameworkLite.dll
+#   7. Rebuild committed DLL (Release)              -> restores 1.7/Assemblies/PioneerFrameworkLite.dll
 #   8. Verify committed DLL matches Release build
 #
 # WHY the DLL steps are LAST (and WARN-marked when skipped): the DLL is a committed artifact that
 # CI hash-checks, so the script leaves the tree with a *Release* DLL built from the current source.
-# D2(2026-09-14): the old reason -- "OutputPath points at 1.6/Assemblies for BOTH configurations,
+# D2(2026-09-14): the old reason -- "OutputPath points at 1.7/Assemblies for BOTH configurations,
 # so any Debug build (incl. dotnet test) silently overwrites the committed DLL" -- no longer
 # applies: PioneerFramework.csproj now sends Debug output to bin/, so a Debug build cannot touch
 # the committed artifact at all. The ordering is kept so the script still ends in a verified state.
@@ -40,6 +40,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot 'Use-ProjectDotnet.ps1')
 # Force English CLI output: keeps parsing locale-independent and produces the same numbers as CI
 # (which runs on English runners). Also set the console encoding since dotnet emits UTF-8.
 $env:DOTNET_CLI_UI_LANGUAGE = "en"
@@ -147,6 +148,12 @@ function Get-WarningCodes {
     return @($set | Sort-Object)
 }
 
+# -- 0. Bundled game references ----------------------------------------------
+Step "Game dependency identities and SHA256" {
+    & (Join-Path $PSScriptRoot 'check-game-dependencies.ps1')
+    return "RimWorld 1.7 / Harmony 3 reference manifest verified"
+}
+
 # -- 1. Debug build -----------------------------------------------------------
 Step "Build (Debug, full rebuild)" {
     $out = Invoke-Dotnet @("build", "Source/PioneerFramework/PioneerFramework.csproj", "-c", "Debug", "-t:Rebuild", "-v:minimal")
@@ -154,21 +161,21 @@ Step "Build (Debug, full rebuild)" {
 }
 
 # -- 2. Pure math tests -------------------------------------------------------
-Step "Pure math tests (net48)" {
+Step "Pure math tests (net10.0)" {
     $out = Invoke-Dotnet @("test", "Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.csproj", "-v:minimal")
     return (Get-TestSummary $out)
 }
 
 # -- 3. Game integration tests ------------------------------------------------
-Step "Game integration tests (net48)" {
+Step "Game integration tests (net10.0)" {
     $out = Invoke-Dotnet @("test", "Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj", "-v:minimal")
     return (Get-TestSummary $out)
 }
 
 # -- 3b. 第三方移植物：上游 MechJebLib 测试套 ---------------------------------
-# net48、零 RimWorld/Unity 依赖；它验收的是 ThirdParty/MechJebLib/ 下的移植面本身，
+# net10.0、零 RimWorld/Unity 依赖；它验收的是 ThirdParty/MechJebLib/ 下的移植面本身，
 # 而不是我们的代码，所以单独一个桶 —— 红了就能一眼看出是哪一侧的问题。
-Step "Ported MechJebLib tests (net48)" {
+Step "Ported MechJebLib tests (net10.0)" {
     $out = Invoke-Dotnet @("test", "Source/MechJebLibTest/MechJebLibTest.csproj", "-v:minimal")
     return (Get-TestSummary $out)
 }
@@ -198,11 +205,11 @@ Step "Validate Defs/XML (tools/validate_config.py)" {
 
 # -- 4b. Def/Patch XML vs retired (S1-renamed) names ---------------------------
 # WHY this step exists (2026-09-29): renaming the C# field `MissileDef.mainAxisLocal` -> `mainAxisShip`
-# left `<mainAxisLocal>` in `1.6/Defs/Combat/MissileDefs.xml`; RimWorld then could not bind the field and
+# left `<mainAxisLocal>` in `1.7/Defs/Combat/MissileDefs.xml`; RimWorld then could not bind the field and
 # it silently stayed at its default (0,0,0). The build was 0-error, the warning count was at baseline,
 # every other gate step was green, and `validate_config.py` said "ok" -- the only red text was in the
 # game log (`XML error: <mainAxisLocal> ... doesn't correspond to any field in type MissileDef`).
-# This step is the missing judge: no retired name may appear in any XML under 1.6/.
+# This step is the missing judge: no retired name may appear in any XML under 1.7/.
 Step "Def/Patch XML free of retired names (tools/check-def-fields.ps1)" {
     $r = Invoke-Native "powershell" @("-ExecutionPolicy", "Bypass", "-File", "tools/check-def-fields.ps1")
     if ($r.ExitCode -ne 0) {
@@ -228,10 +235,10 @@ Step "Frame-crossing auditor (tools/check-frame-crossing.ps1)" {
 # -- 5. Committed runtime assets ----------------------------------------------
 Step "Committed runtime assets present" {
     $required = @(
-        "1.6/Assemblies/PioneerFrameworkLite.dll",
-        "1.6/AssetBundles/pfview_outline_win",
-        "1.6/AssetBundles/pfview_outline_mac",
-        "1.6/AssetBundles/pfview_outline_linux",
+        "1.7/Assemblies/PioneerFrameworkLite.dll",
+        "1.7/AssetBundles/pfview_outline_win",
+        "1.7/AssetBundles/pfview_outline_mac",
+        "1.7/AssetBundles/pfview_outline_linux",
         "Shaders/PFView_OutlineMask.shader",
         "Shaders/PFView_OutlineDilate.shader",
         "Shaders/PFView_OutlineComposite.shader"
@@ -264,7 +271,7 @@ else {
 Step "Rebuild committed DLL (Release)" {
     $log = & (Join-Path $PSScriptRoot "rebuild-dll.ps1") -Configuration Release 2>&1
     if ($LASTEXITCODE -ne 0) { throw "rebuild-dll.ps1 failed`n$(($log | Select-Object -Last 8) -join "`n")" }
-    return "1.6/Assemblies/PioneerFrameworkLite.dll refreshed"
+    return "1.7/Assemblies/PioneerFrameworkLite.dll refreshed"
 }
 }
 
@@ -281,7 +288,7 @@ Step "Committed DLL matches Release build" {
         if ($committed.Success -and $built.Success) {
             throw "DLL mismatch: committed=$($committed.Groups[1].Value.Substring(0, 16))... built=$($built.Groups[1].Value.Substring(0, 16))... (a Debug build overwrote the committed DLL -> rerun without -NoDllRebuild)"
         }
-        throw "DLL mismatch: the file in 1.6/Assemblies does not match a fresh Release build (a Debug build overwrote it? rerun without -NoDllRebuild)"
+        throw "DLL mismatch: the file in 1.7/Assemblies does not match a fresh Release build (a Debug build overwrote it? rerun without -NoDllRebuild)"
     }
     $m = [regex]::Match($text, '([0-9A-F]{64})')
     if ($m.Success) { return "hash $($m.Groups[1].Value.Substring(0, 16))..." }

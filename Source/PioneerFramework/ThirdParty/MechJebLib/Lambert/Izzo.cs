@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright Lamont Granquist, Sebastien Gaggini and the MechJeb contributors
  * SPDX-License-Identifier: LicenseRef-PD-hp OR Unlicense OR CC0-1.0 OR 0BSD OR MIT-0 OR MIT OR LGPL-2.1+
  */
@@ -195,7 +195,7 @@ namespace MechJebLib.Maths
 
             if (x > 1)
                 // Hyperbolic motion. The hyperbolic sine is bijective.
-                return Asinh((y - x * ll) * Sqrt(x * x - 1));
+                return MechJebLib.Utils.Statics.Asinh((y - x * ll) * Sqrt(x * x - 1));
 
             // Parabolic motion
             return 0.0;

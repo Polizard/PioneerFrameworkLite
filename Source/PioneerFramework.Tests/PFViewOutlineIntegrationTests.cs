@@ -215,14 +215,20 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
-        public void Project_RetainsAssetBundleModuleReference()
+        public void Project_UsesWaylithCompatibilityReferences()
         {
             string project = File.ReadAllText(Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
                 "Source", "PioneerFramework", "PioneerFramework.csproj"));
 
-            Assert.Contains("Include=\"UnityEngine.AssetBundleModule\"", project);
-            Assert.Contains("Libs\\Unity\\UnityEngine.AssetBundleModule.dll", project);
+            Assert.Contains("<TargetFramework>net10.0</TargetFramework>", project);
+            Assert.Contains("GameReferences.props", project);
+            string references = File.ReadAllText(Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory, "Source", "GameReferences.props"));
+            Assert.Contains("RimWorld\\*.dll", references);
+            Assert.DoesNotContain("UnityEngine.AssetBundleModule", references);
+            Assert.NotNull(typeof(AssetBundle).Assembly.GetName());
+            Assert.Equal("UnityStubs", typeof(AssetBundle).Assembly.GetName().Name);
         }
     }
 }

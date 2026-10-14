@@ -77,7 +77,12 @@ namespace MechJebLibTest.MathsTests
             Assert.Equal(Deg2Rad(270), heading, 9);
             (pitch, heading) = Astro.ECIToPitchHeading(new V3(10, 0, -10), new V3(10, 0, -10));
             Assert.Equal(Deg2Rad(90), pitch, 9);
-            Assert.Equal(Deg2Rad(90), heading, 9);
+            // A radial vector has no defined heading. Check its reconstructed direction;
+            // atan2 of zero/roundoff may choose a different heading on modern .NET.
+            Assert.InRange(heading, 0, TAU);
+            V3 radialDirection = Astro.ENUToECI(new V3(10, 0, -10),
+                new V3(Cos(pitch) * Sin(heading), Cos(pitch) * Cos(heading), Sin(pitch)));
+            radialDirection.ShouldEqual(new V3(10, 0, -10).normalized, 1e-14);
             (pitch, heading) = Astro.ECIToPitchHeading(new V3(10, 0, -10), new V3(10, Sqrt(200), -10));
             Assert.Equal(Deg2Rad(45), pitch, 9);
             Assert.Equal(0, heading, 9);

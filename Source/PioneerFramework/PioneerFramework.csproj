@@ -1,23 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
     <LangVersion>12.0</LangVersion>
     <Nullable>enable</Nullable>
     <RootNamespace>PioneerFramework</RootNamespace>
     <AssemblyName>PioneerFrameworkLite</AssemblyName>
-    <!--
-      输出路径**按配置分离**（D2，2026-09-14）：
-      · Release → `1.6/Assemblies/`（交付物；CI 用哈希校验它必须等于固定 SDK 的 Release 构建结果）；
-      · Debug   → 项目内 `bin/`（被 .gitignore 忽略），**结构上不可能**碰到已提交的 DLL。
-      旧写法两配置共用 `1.6/Assemblies/`：任何 Debug 构建（含 `dotnet test`）都会把已提交的 Release
-      DLL 覆盖成 Debug 版 → 仓库被污染、CI 哈希断言变红、`1.6/Assemblies/*.pdb` 残留；
-      当时只能靠"把重建 DLL 的步骤放到脚本最后"+ 文档警告来兜（2026-09-14 实测：一次普通 Debug
-      构建就把已提交 DLL 的哈希改掉了）。
-      要在**游戏内跑 Debug 版**（带行号的 .pdb）时显式指定输出目录即可（opt-in，不是默认）：
-        dotnet build Source/PioneerFramework/PioneerFramework.csproj -c Debug -p:OutputPath=../../1.6/Assemblies/
-    -->
-    <OutputPath Condition="'$(Configuration)' == 'Release'">..\..\1.6\Assemblies\</OutputPath>
+    <!-- Release updates the shipped 1.7 DLL; Debug/test builds remain isolated in bin/. -->
+    <OutputPath Condition="'$(Configuration)' == 'Release'">..\..\1.7\Assemblies\</OutputPath>
     <OutputPath Condition="'$(Configuration)' != 'Release'">bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
@@ -32,47 +24,9 @@
     <PathMap>$(MSBuildProjectDirectory)=PioneerFramework</PathMap>
   </PropertyGroup>
 
+  <Import Project="..\GameReferences.props" />
   <ItemGroup>
-    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Reference Include="0Harmony">
-      <HintPath>Libs\0Harmony\0Harmony.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="Assembly-CSharp">
-      <HintPath>Libs\RimWorld\Assembly-CSharp.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine">
-      <HintPath>Libs\Unity\UnityEngine.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.CoreModule">
-      <HintPath>Libs\Unity\UnityEngine.CoreModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.AssetBundleModule">
-      <HintPath>Libs\Unity\UnityEngine.AssetBundleModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.IMGUIModule">
-      <HintPath>Libs\Unity\UnityEngine.IMGUIModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.InputLegacyModule">
-      <HintPath>Libs\Unity\UnityEngine.InputLegacyModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.TextRenderingModule">
-      <HintPath>Libs\Unity\UnityEngine.TextRenderingModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>Libs\Unity\UnityEngine.PhysicsModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
+    <Compile Include="**\*.cs" Exclude="obj\**;bin\**;.vs\**" />
   </ItemGroup>
 
 

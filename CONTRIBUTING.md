@@ -4,8 +4,8 @@
 
 ## 开发环境
 
-- Windows（RimWorld 1.6 目标为 .NET Framework 4.8）
-- .NET SDK **8.0.100（精确版本 —— `global.json` 为 `rollForward: disable`，装别的版本会直接报错）**
+- Windows（RimWorld 1.7 目标为 .NET 10）
+- .NET SDK **10.0.402（精确版本 —— `global.json` 为 `rollForward: disable`，装别的版本会直接报错）**
 - 推荐 Visual Studio 2022 或 VS Code + C# Dev Kit
 
 ## 常用命令
@@ -22,10 +22,10 @@ powershell -ExecutionPolicy Bypass -File tools/test-all.ps1
 # 构建
 dotnet build Source/PioneerFramework/PioneerFramework.csproj -c Debug
 
-# 运行游戏集成测试（net48）
+# 运行游戏集成测试（net10.0）
 dotnet test Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj
 
-# 运行纯数学测试（net8）
+# 运行纯数学测试（net10.0）
 dotnet test Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.csproj
 
 # 重建并提交 DLL
@@ -52,23 +52,23 @@ powershell -ExecutionPolicy Bypass -File tools/check-committed-dll.ps1
 
 1. 从最新 `master` 创建功能分支。
 2. 小步提交，每个提交只做一件事。
-3. 如果修改了 C#，确保重新生成 `1.6/Assemblies/PioneerFrameworkLite.dll` 并提交。
+3. 如果修改了 C#，确保重新生成 `1.7/Assemblies/PioneerFrameworkLite.dll` 并提交。
 4. 推送分支并创建 Pull Request。
 5. CI 全绿后由维护者 review 合并。
 
 ## DLL 提交约定
 
-`1.6/Assemblies/PioneerFrameworkLite.dll` 是已提交二进制，CI 会校验它必须等于固定 SDK 的 Release 构建结果。
+`1.7/Assemblies/PioneerFrameworkLite.dll` 是已提交二进制，CI 会校验它必须等于固定 SDK 的 Release 构建结果。
 
 ✅ **输出路径按配置分离（2026-09-14 起）**：`PioneerFramework.csproj` 的 `OutputPath` 现在
-Release → `1.6/Assemblies/`、Debug → 项目内 `bin/`（被 `.gitignore` 忽略）。因此
+Release → `1.7/Assemblies/`、Debug → 项目内 `bin/`（被 `.gitignore` 忽略）。因此
 **Debug 构建（含 `dotnet test`）在结构上不可能再覆盖已提交的 DLL**——以前需要靠"最后跑一次
 `rebuild-dll.ps1`"来兜的坑已经不存在了。改完 C# 后仍需重建并提交 Release DLL（那是交付物本身）。
 
 要在**游戏内跑 Debug 版**（带行号的 `.pdb`）时，显式指定输出目录即可（opt-in，不是默认）：
 
 ```powershell
-dotnet build Source/PioneerFramework/PioneerFramework.csproj -c Debug -p:OutputPath=../../1.6/Assemblies/
+dotnet build Source/PioneerFramework/PioneerFramework.csproj -c Debug -p:OutputPath=../../1.7/Assemblies/
 ```
 
 提交 DLL 前请使用：
