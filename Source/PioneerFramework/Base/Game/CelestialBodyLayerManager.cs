@@ -64,9 +64,8 @@ namespace PioneerFramework
             var wg = Find.WorldGrid;
             if (wg == null) return 60000f;
 
-            var layersField = AccessTools.Field(typeof(WorldGrid), "planetLayers");
-            var layers = layersField?.GetValue(wg) as Dictionary<int, PlanetLayer>;
-            if (layers == null) return 60000f;
+            // 2026-10-15 反射清理：改用公开属性 `WorldGrid.PlanetLayers`（1.7 起公开，IReadOnlyDictionary）。
+            var layers = wg.PlanetLayers;
 
             foreach (var kv in layers)
             {
@@ -83,10 +82,8 @@ namespace PioneerFramework
         {
             var wg = Find.WorldGrid;
             if (wg == null) yield break;
-            // 反射访问 planetLayers（private 字典）
-            var layersField = AccessTools.Field(typeof(WorldGrid), "planetLayers");
-            var layers = layersField?.GetValue(wg) as Dictionary<int, PlanetLayer>;
-            if (layers == null) yield break;
+            // 2026-10-15 反射清理：公开属性 `WorldGrid.PlanetLayers`。
+            var layers = wg.PlanetLayers;
 
             foreach (var kv in celestialBodyLayers)
             {
@@ -105,9 +102,10 @@ namespace PioneerFramework
         private bool layersRegistered;
         private bool desertFillAttempted;
 
-        // 第 13 条（2026-09-10）：GameComponentUpdate 是**每帧**调用，而注册失败路径内含反射
-        // （AccessTools.Field）与多条 Log.Message/Warning。若某些存档永远注册不成立，就变成每帧反射 + 日志刷屏。
+        // 第 13 条（2026-09-10）：GameComponentUpdate 是**每帧**调用，而注册失败路径内含字典查询
+        // 与多条 Log.Message/Warning。若某些存档永远注册不成立，就变成每帧查询 + 日志刷屏。
         // 故限频：前 N 次每帧试（覆盖 WorldGrid 刚就绪的启动窗口），之后每 RETRY_TICKS 试一次。
+        // （2026-10-15 反射清理后本文件已无字段反射，限频仍保留——它挡的是日志刷屏。）
         private int layerRegisterAttempts;
         private int nextLayerRegisterAttemptTick;
         private bool layerRegisterSlowLogged;
@@ -140,9 +138,9 @@ namespace PioneerFramework
             // 确保沙漠填充至少执行一次（处理旧存档）——同门控（两者互斥：本块要求 layersRegistered）
             if (!desertFillAttempted && layersRegistered && Find.WorldGrid != null && ShouldAttemptLayerRegister())
             {
-                var layersField = AccessTools.Field(typeof(WorldGrid), "planetLayers");
-                var layers = layersField?.GetValue(Find.WorldGrid) as Dictionary<int, PlanetLayer>;
-                if (layers != null && layers.Count > 0)
+                // 2026-10-15 反射清理：公开属性 `WorldGrid.PlanetLayers`。
+                var layers = Find.WorldGrid.PlanetLayers;
+                if (layers.Count > 0)
                 {
                     //FillCelestialLayersWithDesert(layers);
                     desertFillAttempted = true;
@@ -175,9 +173,9 @@ namespace PioneerFramework
             // 先确保所有天体 layer 已创建并完成世界生成
             EnsureCelestialBodyLayersExist(wg);
 
-            var layersField = AccessTools.Field(typeof(WorldGrid), "planetLayers");
-            var layers = layersField?.GetValue(wg) as Dictionary<int, PlanetLayer>;
-            if (layers == null || layers.Count == 0)
+            // 2026-10-15 反射清理：公开属性 `WorldGrid.PlanetLayers`。
+            var layers = wg.PlanetLayers;
+            if (layers.Count == 0)
             {
                 Log.Warning("[CelestialBodyLayerManager] planetLayers 字典为空，跳过注册");
                 return;
@@ -206,9 +204,8 @@ namespace PioneerFramework
         /// </summary>
         private static void EnsureCelestialBodyLayersExist(WorldGrid wg)
         {
-            var layersField = AccessTools.Field(typeof(WorldGrid), "planetLayers");
-            var layers = layersField?.GetValue(wg) as Dictionary<int, PlanetLayer>;
-            if (layers == null) return;
+            // 2026-10-15 反射清理：公开属性 `WorldGrid.PlanetLayers`。
+            var layers = wg.PlanetLayers;
 
             var allBodies = DefDatabase<CelestialBodyDef>.AllDefsListForReading;
 
@@ -428,15 +425,10 @@ namespace PioneerFramework
         {
             var harmony = new Harmony("PioneerFramework.CelestialBodyLayerManager");
 
-            // 补丁0：PlanetLayer.Visible — 确保非选中的天体 layer 不可见
-            // 防止 Earth 的 Surface layer (radius=100) 在选中 Mars/Moon (radius<100) 时仍然渲染
-            harmony.Patch(AccessTools.PropertyGetter(typeof(PlanetLayer), nameof(PlanetLayer.Visible)),
-                prefix: new HarmonyMethod(typeof(CelestialBodyLayerManager), nameof(PlanetLayer_Visible_Prefix)));
-
-            // 补丁0b：PlanetLayer.Raycastable — 确保非选中的天体 layer 不参与射线检测
-            // 否则 Earth 的大球壳 collider 会挡住射线，导致火星/月球的 tile 无法被点击
-            harmony.Patch(AccessTools.PropertyGetter(typeof(PlanetLayer), nameof(PlanetLayer.Raycastable)),
-                prefix: new HarmonyMethod(typeof(CelestialBodyLayerManager), nameof(PlanetLayer_Raycastable_Prefix)));
+            // 2026-10-15 反射清理 A-3：原先这里还有 `PlanetLayer.Visible` / `PlanetLayer.Raycastable`
+            // 两处**属性 getter** 的 Prefix 补丁 —— 已改为 **def 的 `layerType` 子类**
+            //（`PF_CelestialSurfaceLayer`；原版 `Surface` def 由 `Patches/PlanetLayerDefs_CelestialSurface.xml`
+            // 改指同一类）⇒ 补丁数 6 → 4。
 
             // 补丁1：WorldGrid.RegisterPlanetLayer 创建新 layer 时自动注册天体 layer
             var registerMethod = AccessTools.Method(typeof(WorldGrid), "RegisterPlanetLayer",
@@ -467,44 +459,8 @@ namespace PioneerFramework
             Log.Message("[CelestialBodyLayerManager] Harmony patches applied");
         }
 
-        // ── Prefix: PlanetLayer.Visible ──
-        /// <summary>
-        /// 当选中的是某个天体 layer 时，强制其他天体 layer（包括 Earth 的 Surface）不可见。
-        /// 防止 Earth 的 Sphere(radius=100) 在选中 Mars(70)/Moon(35) 时仍然渲染并覆盖小星球。
-        /// </summary>
-        public static bool PlanetLayer_Visible_Prefix(PlanetLayer __instance, ref bool __result)
-        {
-            var selected = CurrentCelestialBodyLayer;
-            if (selected == null) return true; // 未选中天体 layer，正常行为
-
-            // 如果当前查询的 layer 是另一个已注册的天体 layer，隐藏它
-            if (IsCelestialBodyLayer(__instance) && __instance != selected)
-            {
-                __result = false;
-                return false;
-            }
-
-            return true;
-        }
-
-        // ── Prefix: PlanetLayer.Raycastable ──
-        /// <summary>
-        /// 当选中的是某个天体 layer 时，强制其他天体 layer 不参与射线检测。
-        /// 否则 Earth 的大半径 collider 会先被射线命中，挡住火星/月球的小半径 layer。
-        /// </summary>
-        public static bool PlanetLayer_Raycastable_Prefix(PlanetLayer __instance, ref bool __result)
-        {
-            var selected = CurrentCelestialBodyLayer;
-            if (selected == null) return true;
-
-            if (IsCelestialBodyLayer(__instance) && __instance != selected)
-            {
-                __result = false;
-                return false;
-            }
-
-            return true;
-        }
+        // ──（原 `PlanetLayer.Visible` / `PlanetLayer.Raycastable` 两处 Prefix 已迁入
+        //   `PF_CelestialSurfaceLayer` 的覆写——见该类头注，2026-10-15 反射清理 A-3。）──
 
         // ── Postfix: RegisterPlanetLayer ──
         public static void RegisterPlanetLayer_Postfix(PlanetLayer __result)

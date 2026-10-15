@@ -14,7 +14,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet build failed with exit code $LASTEXITCODE"
     }
-    Write-Host "PioneerFrameworkLite.dll rebuilt ($Configuration) -> 1.6/Assemblies/PioneerFrameworkLite.dll"
+    Write-Host "PioneerFrameworkLite.dll rebuilt ($Configuration) -> 1.7/Assemblies/PioneerFrameworkLite.dll"
 }
 finally {
     Pop-Location

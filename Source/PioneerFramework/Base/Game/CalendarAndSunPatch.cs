@@ -1,5 +1,4 @@
 using System;
-using System.Reflection;
 using HarmonyLib;
 using RimWorld;
 using RimWorld.Planet;
@@ -11,9 +10,6 @@ namespace PioneerFramework
     [StaticConstructorOnStartup]
     public static class CalendarAndSunPatch
     {
-        private static readonly FieldInfo SunLatCurveField;
-        /// <summary>缓存的 CelestialSunGlowPercent 委托，避免每 tick 反射</summary>
-        private static readonly Func<float, int, float, float> CelestialSunGlowPercent = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         static CalendarAndSunPatch()
         {
@@ -44,20 +40,12 @@ namespace PioneerFramework
                 prefix: new HarmonyMethod(typeof(CalendarAndSunPatch), nameof(GenLocalDate_DayPercent_Map_Prefix)));
 
             // 世界地图太阳位置
-            SunLatCurveField = AccessTools.Field(typeof(GenCelestial), "SunOffsetFractionFromLatitudeCurve");
-
             harmony.Patch(AccessTools.Method(typeof(GenCelestial), nameof(GenCelestial.CurSunPositionInWorldSpace)),
                 prefix: new HarmonyMethod(typeof(CalendarAndSunPatch), nameof(CurSunPositionInWorldSpace_Prefix)));
 
-            // 缓存 CelestialSunGlowPercent 为委托，避免每 tick 反射
-            var glowPercentMethod = AccessTools.Method(typeof(GenCelestial), "CelestialSunGlowPercent",
-                [typeof(float), typeof(int), typeof(float)]);
-            if (glowPercentMethod != null)
-            {
-                CelestialSunGlowPercent = (Func<float, int, float, float>)
-                    Delegate.CreateDelegate(typeof(Func<float, int, float, float>), glowPercentMethod);
-            }
-
+            // 2026-10-15 反射清理：原先这里还要 AccessTools.Field 私有曲线 + AccessTools.Method 私有叶子
+            //（CelestialSunGlowPercent）+ Delegate.CreateDelegate——现全部改走**就地移植**的 `PF_SunMath`，
+            // 本类**不再有任何反射**（只剩 Harmony 补丁本身）。
             Log.Message("[PioneerFramework] Patched GenDate and GenCelestial for time scaling");
         }
 
@@ -113,8 +101,8 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 殖民地 Map 光照：绕过 GenDate 链路，直接用天体缩放 ticks 调用 CelestialSunGlowPercent。
-        /// 避免 GenDate_TicksAbs_Prefix 覆盖掉天体自转缩放后的 tick 值。
+        /// 殖民地 Map 光照：绕过 GenDate 链路，直接用天体缩放 ticks 调用**就地移植**的太阳叶子函数
+        /// （<see cref="PF_SunMath.SunGlowPercent"/>）。避免 GenDate_TicksAbs_Prefix 覆盖掉天体自转缩放后的 tick 值。
         /// </summary>
         public static bool CurCelestialSunGlow_Prefix(Map map, ref float __result)
         {
@@ -136,14 +124,11 @@ namespace PioneerFramework
             // 0-based day of year (0~59), matching GenDate.DayOfYear convention
             int dayOfYear = (int)(((Math.Floor(days) % 60.0) + 60.0) % 60.0);
 
-            if (CelestialSunGlowPercent != null)
-            {
-                __result = CelestialSunGlowPercent(longLat.y, dayOfYear, dayPercent);
-            }
-            else
-            {
-                __result = 1f; // fallback：如果反射失败，返回满光照
-            }
+            // 2026-10-15 反射清理：改走就地移植的叶子（PF_SunMath）。
+            // ⚠ 不能改调公开的 `GenCelestial.CelestialSunGlow(Map, int)`——它内部再入
+            //   `GenDate.DayOfYear/DayPercent`，而那两个正是本类打了"时间刻度替换"补丁的方法
+            //   ⇒ 会被二次替换、算出错值（这正是当年要反射拿私有叶子的原因）。
+            __result = PF_SunMath.SunGlowPercent(longLat.y, dayOfYear, dayPercent);
             return false;
         }
 
@@ -188,13 +173,9 @@ namespace PioneerFramework
             // 使用等价于 GenDate.DayOfYear 的连续值（0-60），与 SunPositionUnmodified 兼容
             float dayOfYearF = (float)(((days % 60.0) + 60.0) % 60.0);
 
-            // 复制 SunPositionUnmodified(dayOfYear, dayPercent, (0,0,-1), 0)
-            Vector3 vector = new Vector3(0f, 0f, -1f) * 100f;
-            float cosVal = -Mathf.Cos(dayOfYearF / 60f * Mathf.PI * 2f);
-            var curve = SunLatCurveField?.GetValue(null) as SimpleCurve;
-            vector.y += cosVal * 100f * (curve != null ? curve.Evaluate(0f) : 0f);
-            vector = Quaternion.AngleAxis((dayPercent - 0.5f) * 360f, Vector3.up) * vector;
-            __result = vector.normalized;
+            // 2026-10-15 反射清理：等价于 vanilla `SunPositionUnmodified(dayOfYear, dayPercent, (0,0,-1), 0)`
+            // 的一行调用（曲线与叶子数学都在 PF_SunMath 里就地移植，不再每帧读私有字段）。
+            __result = PF_SunMath.SunPositionUnmodified(dayOfYearF, dayPercent, new Vector3(0f, 0f, -1f), 0f);
             return false;
         }
     }

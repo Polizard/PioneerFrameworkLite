@@ -290,7 +290,7 @@ namespace PioneerFramework
             PflTestKit.Begin(CaseName, Category, CaseTimeoutTicks);
 
             // ① 吸气式试验机（空罐起飞）——充填与包线的证据都在它身上
-            DebugShipSpawner.SpawnAirBreathingTest(openView: false);
+            DebugShipSpawner.SpawnAirBreathingTest(announce: false);
             var groups = spaceGame.GetAllGroups();
             foreach (var g in groups)
             {
@@ -431,7 +431,7 @@ namespace PioneerFramework
             intakeGroupId = -1;
 
             // 料 6000 kg：够"物理 150 + 解析 50 + 回物理 25 + 抽空"整条链（≈16–20 kg/s）
-            DebugShipSpawner.SpawnHoverTest(openView: false, fuelKg: RunnerFuelKg);
+            DebugShipSpawner.SpawnHoverTest(announce: false, fuelKg: RunnerFuelKg);
             hoverGroupId = -1;
             foreach (var g in spaceGame.GetAllGroups())
             {
@@ -572,7 +572,7 @@ namespace PioneerFramework
                 "料尽 ⇒ 悬浮必须**自动退出**（不留'免费档'）", g == null ? "组已销毁" : "hoverActive=" + g.hoverActive);
 
             // 再铺一艘（前一艘已经料尽了）看 [D7 触发①]：**操舵台接管 ⇒ 退出悬浮**
-            DebugShipSpawner.SpawnHoverTest(openView: false, fuelKg: RunnerFuelKg);
+            DebugShipSpawner.SpawnHoverTest(announce: false, fuelKg: RunnerFuelKg);
             hoverGroupId = -1;
             foreach (var gg in spaceGame.GetAllGroups())
             {
@@ -624,7 +624,7 @@ namespace PioneerFramework
 
             // ③ 最后一站：**有 Map 侧飞行中行为**（[A3] 进气道 / 15:1 抽气 / 包线在同一批数据上）
             // ① 负对照船：**大气之外**（150 km，ρ=0）② 正对照船：**大气之内**（60 km，ρ≈6.7e-4）
-            if (!DebugShipSpawner.SpawnMapAeroTest(out int mgNeg, out _, openView: false, altitudeMeters: 150000.0))
+            if (!DebugShipSpawner.SpawnMapAeroTest(out int mgNeg, out _, announce: false, altitudeMeters: 150000.0))
             {
                 PflTestKit.CheckUnchecked("有 Map 侧飞行中（进气道充填）",
                     "没建起试验台（多半是没有殖民地地图）⇒ 这一段判不了");
@@ -632,7 +632,7 @@ namespace PioneerFramework
                 return;
             }
             mapAeroNegGroupId = mgNeg;
-            if (!DebugShipSpawner.SpawnMapAeroTest(out int mg, out _, openView: false, altitudeMeters: 60000.0))
+            if (!DebugShipSpawner.SpawnMapAeroTest(out int mg, out _, announce: false, altitudeMeters: 60000.0))
             {
                 PflTestKit.CheckUnchecked("有 Map 侧飞行中（进气道充填）", "第二艘试验台没建起来");
                 Finish();

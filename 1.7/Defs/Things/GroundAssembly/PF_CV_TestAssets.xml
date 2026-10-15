@@ -55,7 +55,7 @@
       </li>
     </comps>
     <placeWorkers>
-      <li>PlaceWorker_FuelingPort</li>
+      <li>PioneerFramework.GroundAssembly.PF_PlaceWorker_FuelingPort</li>
       <li>PlaceWorker_NotUnderRoof</li>
     </placeWorkers>
     <drawPlaceWorkersWhileSelected>true</drawPlaceWorkersWhileSelected>
@@ -64,6 +64,10 @@
   <!-- CV-1 基础火箭（迁移自 DMS:NF，去除成本/科技依赖） -->
   <ThingDef ParentName="BuildingBase">
     <defName>PF_Building_Rocket_CVOne</defName>
+    <!-- 2026-10-15 反射清理 A-15：蓝图→框架的规格传递改走蓝图子类（见 PF_RocketConstructionFlow.cs） -->
+    <building>
+      <blueprintClass>PioneerFramework.GroundAssembly.PF_Blueprint_Rocket</blueprintClass>
+    </building>
     <dropPodActive>PF_ActivePod_CVOne</dropPodActive>
     <dropPodFaller>PF_Skyfaller_Incoming_CVOne</dropPodFaller>
     <label>CV-1 基础火箭</label>
@@ -93,16 +97,18 @@
         <massCapacity>2000</massCapacity>
       </li>
       <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketPocketMap" />
-      <li Class="CompProperties_Launchable_TransportPod">
+      <li Class="PioneerFramework.Launch.CompProperties_Launchable_PF">
         <activeTransporterDef>PF_ActivePod_CVOne</activeTransporterDef>
         <skyfallerLeaving>PF_Skyfaller_Leaving_CVOne</skyfallerLeaving>
       </li>
+      <!-- 2026-10-15 反射清理 A-15：完工通知改走火箭自己的 comp（替代 Frame.CompleteConstruction 补丁） -->
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketCompletionNotify" />
     </comps>
     <inspectorTabs>
       <li>ITab_ContentsTransporter</li>
     </inspectorTabs>
     <placeWorkers>
-      <li>PlaceWorker_NeedsFuelingPort</li>
+      <li>PioneerFramework.GroundAssembly.PF_PlaceWorker_NeedsFuelingPort</li>
       <li>PlaceWorker_NotUnderRoof</li>
     </placeWorkers>
   </ThingDef>
@@ -110,6 +116,10 @@
   <!-- CV-3 基础火箭（迁移自 DMS:NF，去除成本/科技依赖） -->
   <ThingDef ParentName="BuildingBase">
     <defName>PF_Building_Rocket_CVThree</defName>
+    <!-- 2026-10-15 反射清理 A-15：蓝图→框架的规格传递改走蓝图子类（见 PF_RocketConstructionFlow.cs） -->
+    <building>
+      <blueprintClass>PioneerFramework.GroundAssembly.PF_Blueprint_Rocket</blueprintClass>
+    </building>
     <dropPodActive>PF_ActivePod_CVThree</dropPodActive>
     <dropPodFaller>PF_Skyfaller_Incoming_CVThree</dropPodFaller>
     <label>CV-3 基础火箭</label>
@@ -139,16 +149,18 @@
         <massCapacity>15000</massCapacity>
       </li>
       <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketPocketMap" />
-      <li Class="CompProperties_Launchable_TransportPod">
+      <li Class="PioneerFramework.Launch.CompProperties_Launchable_PF">
         <activeTransporterDef>PF_ActivePod_CVThree</activeTransporterDef>
         <skyfallerLeaving>PF_Skyfaller_Leaving_CVThree</skyfallerLeaving>
       </li>
+      <!-- 2026-10-15 反射清理 A-15：完工通知改走火箭自己的 comp（替代 Frame.CompleteConstruction 补丁） -->
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketCompletionNotify" />
     </comps>
     <inspectorTabs>
       <li>ITab_ContentsTransporter</li>
     </inspectorTabs>
     <placeWorkers>
-      <li>PlaceWorker_NeedsFuelingPort</li>
+      <li>PioneerFramework.GroundAssembly.PF_PlaceWorker_NeedsFuelingPort</li>
       <li>PlaceWorker_NotUnderRoof</li>
     </placeWorkers>
   </ThingDef>
@@ -170,6 +182,7 @@
   <ThingDef ParentName="DropPodIncoming">
     <defName>PF_Skyfaller_Incoming_CVOne</defName>
     <label>CV-1 capsule (incoming)</label>
+    <thingClass>PioneerFramework.Launch.PF_Skyfaller_Incoming</thingClass>
     <graphicData>
       <texPath>Things/Building/SpaceLaunchTechnology/R7ReturnCarbin</texPath>
       <graphicClass>Graphic_Single</graphicClass>
@@ -225,6 +238,7 @@
   <ThingDef ParentName="DropPodIncoming">
     <defName>PF_Skyfaller_Incoming_CVThree</defName>
     <label>CV-3 capsule (incoming)</label>
+    <thingClass>PioneerFramework.Launch.PF_Skyfaller_Incoming</thingClass>
     <graphicData>
       <texPath>Things/Building/SpaceLaunchTechnology/ZQReturnCarbin</texPath>
       <graphicClass>Graphic_Single</graphicClass>

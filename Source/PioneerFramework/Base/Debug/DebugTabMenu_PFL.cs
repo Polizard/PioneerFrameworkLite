@@ -220,7 +220,7 @@ namespace PioneerFramework
                 () => "[A8] 判据 = 两档账单一致：解析档按 `m·g/ve` 记账，物理档真给推力。切到解析档后位置应被" +
                       "**钉死在定点**（高度差恒 0、无锯齿），耗料率应与物理档同量级；料尽会**显式退出**并报一行。");
             AddAction("有 Map 大气三件套（进气道/空气罐/吸气式发动机立在殖民地地图上；停着不进气=负对照）",
-                "06 场景 · 大气(A)", 82, () => DebugShipSpawner.SpawnMapAeroTest(out _, out _, openView: true),
+                "06 场景 · 大气(A)", 82, () => DebugShipSpawner.SpawnMapAeroTest(out _, out _, announce: true),
                 () => "有 Map 侧的飞行中行为：停在地表 v_air≈0 ⇒ **不进气**（负对照）；给它空气相对速度后进气道才工作。" +
                       "跑批器已自动跑这一条（负+正对照），本按钮是手动看建筑用的。");
             AddAction("悬浮·抽空（抽到剩 60 kg：几秒内看「料尽 ⇒ 显式退出 ⇒ 自由落体」）",

@@ -30,18 +30,35 @@ namespace PioneerFramework.GroundAssembly.Patches
         {
             public static void Postfix(IntVec3 center, Rot4 rot, ref IntVec3 __result)
             {
-                Map map = Find.CurrentMap;
-                if (map == null)
-                    return;
+                // 2026-10-15 修：原只用 `Find.CurrentMap` ⇒ 在**非当前地图**上拆台时找不到台
+                //（vanilla 唯一调用者 = `Building.DeSpawn`，它传 Position/Rotation、不带 Map）。
+                // 现在先查当前图（常见路径），找不到再扫其余已载入地图——该重载没有 Map 参数，
+                // 而"格子上有总装台"足以唯一确定；此路径稀有，代价可忽略。
+                Building? pad = FindAssemblyPadAt(Find.CurrentMap, center);
+                if (pad == null)
+                {
+                    foreach (Map m in Find.Maps)
+                    {
+                        if (ReferenceEquals(m, Find.CurrentMap))
+                            continue;
+                        pad = FindAssemblyPadAt(m, center);
+                        if (pad != null)
+                            break;
+                    }
+                }
 
-                Building? pad = map.thingGrid.ThingsListAt(center)
-                    .OfType<Building>()
-                    .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
                 if (pad != null)
                 {
                     __result = pad.OccupiedRect().CenterCell;
                 }
             }
+
+            private static Building? FindAssemblyPadAt(Map? map, IntVec3 center)
+                => map == null
+                    ? null
+                    : map.thingGrid.ThingsListAt(center)
+                        .OfType<Building>()
+                        .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
         }
 
         [HarmonyPatch(typeof(FuelingPortUtility), "FuelingPortGiverAtFuelingPortCell")]

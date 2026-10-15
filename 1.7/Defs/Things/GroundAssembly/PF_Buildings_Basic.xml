@@ -3,6 +3,8 @@
 
   <!-- 离港轨迹抽象父类：迁移自 DMS:NF DMSNF_RocketLeavingBase -->
   <ThingDef Name="PF_RocketLeavingBase" ParentName="DropPodLeaving" Abstract="True">
+    <!-- 2026-10-15 反射清理 A-7：切线朝向从 Harmony 基类补丁改为 def 子类覆写（见 PF_Skyfaller_RocketTangent.cs） -->
+    <thingClass>PioneerFramework.Launch.PF_Skyfaller_Leaving</thingClass>
     <skyfaller>
       <movementType>Decelerate</movementType>
       <reversed>true</reversed>
@@ -166,6 +168,10 @@
 
   <ThingDef ParentName="BuildingBase">
     <defName>PF_Building_Rocket_Basic</defName>
+    <!-- 2026-10-15 反射清理 A-15：蓝图→框架的规格传递改走蓝图子类（见 PF_RocketConstructionFlow.cs） -->
+    <building>
+      <blueprintClass>PioneerFramework.GroundAssembly.PF_Blueprint_Rocket</blueprintClass>
+    </building>
     <label>基础火箭</label>
     <description>PFL 基础不可回收火箭，用于测试地面总装和发射入轨。</description>
     <thingClass>Building</thingClass>
@@ -198,10 +204,12 @@
         <massCapacity>2000</massCapacity>
       </li>
       <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketPocketMap" />
-      <li Class="CompProperties_Launchable_TransportPod">
+      <li Class="PioneerFramework.Launch.CompProperties_Launchable_PF">
         <activeTransporterDef>PF_ActivePod_Basic</activeTransporterDef>
         <skyfallerLeaving>PF_Skyfaller_Leaving_Basic</skyfallerLeaving>
       </li>
+      <!-- 2026-10-15 反射清理 A-15：完工通知改走火箭自己的 comp（替代 Frame.CompleteConstruction 补丁） -->
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketCompletionNotify" />
     </comps>
     <inspectorTabs>
       <li>ITab_ContentsTransporter</li>
@@ -213,6 +221,10 @@
 
   <ThingDef ParentName="BuildingBase">
     <defName>PF_Building_Rocket_Recoverable_Basic</defName>
+    <!-- 2026-10-15 反射清理 A-15：蓝图→框架的规格传递改走蓝图子类（见 PF_RocketConstructionFlow.cs） -->
+    <building>
+      <blueprintClass>PioneerFramework.GroundAssembly.PF_Blueprint_Rocket</blueprintClass>
+    </building>
     <label>基础可回收火箭</label>
     <description>PFL 基础可回收火箭，用于测试发射、第一级回收和重建。</description>
     <thingClass>Building</thingClass>
@@ -245,10 +257,12 @@
         <massCapacity>15000</massCapacity>
       </li>
       <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketPocketMap" />
-      <li Class="CompProperties_Launchable_TransportPod">
+      <li Class="PioneerFramework.Launch.CompProperties_Launchable_PF">
         <activeTransporterDef>PF_ActivePod_Basic</activeTransporterDef>
         <skyfallerLeaving>PF_Skyfaller_Leaving_Recoverable_Basic</skyfallerLeaving>
       </li>
+      <!-- 2026-10-15 反射清理 A-15：完工通知改走火箭自己的 comp（替代 Frame.CompleteConstruction 补丁） -->
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketCompletionNotify" />
     </comps>
     <inspectorTabs>
       <li>ITab_ContentsTransporter</li>

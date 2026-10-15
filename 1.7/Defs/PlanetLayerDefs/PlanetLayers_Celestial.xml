@@ -11,7 +11,8 @@
     <label>月球</label>
     <viewGizmoTooltip>查看月球地表。</viewGizmoTooltip>
     <viewGizmoTexPath>UI/Commands/ViewPlanet</viewGizmoTexPath>
-    <layerType>SurfaceLayer</layerType>
+    <!-- 2026-10-15 反射清理 A-3：原为原版 SurfaceLayer + Visible/Raycastable 两处 Harmony 补丁 ⇒ 改 def 子类 -->
+    <layerType>PioneerFramework.PF_CelestialSurfaceLayer</layerType>
     <tileType>SurfaceTile</tileType>
     <elevationString>{0}m</elevationString>
     <gerundLabel>在月球</gerundLabel>

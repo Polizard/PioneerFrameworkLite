@@ -11,7 +11,7 @@ namespace PioneerFramework
     /// - DeployEvaTest：N 兵 EVA 多点突入（每兵独立落点）
     /// - DeployShuttleTest：母船穿梭机 + 乘客 → LaunchShuttle
     /// - DeployHighSpeedCrashTest：EVA 高速冲目标 → 验证 CombatManager 接舷分支不误消费（应爆炸）
-    /// 每个场景：双空间站（母船 + 共轨目标站）+ 强制 1x + 3D 视角 + 目标站 Map + 详细日志/探针自动开启。
+    /// 每个场景：双空间站（母船 + 共轨目标站）+ 强制 1x + 目标站 Map + 详细日志/探针自动开启。
     /// </summary>
     public static class BoardingTestScenarios
     {
@@ -265,12 +265,11 @@ namespace PioneerFramework
             return g.CurrentOrbit.velocitySystem.v;
         }
 
-        /// <summary>场景收尾：打开 3D 视角 + 跳转目标站 Map + 开启详细日志与探针。</summary>
+        /// <summary>场景收尾：跳转目标站 Map + 开启详细日志与探针。</summary>
         private static void FinishDeploy(string summary, TestEnv env)
         {
             BoardingManager.DebugDetailedBoarding = true;
             BoardingManager.ProbeInterval = 60; // 每秒一条状态探针
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(env.playerGroup));
             SpaceMapGenerator.EnterPocketMap(env.enemyMap);
 
             Log.Message("[BoardingTest] " + summary);

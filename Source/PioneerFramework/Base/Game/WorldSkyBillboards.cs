@@ -1,4 +1,3 @@
-using HarmonyLib;
 using RimWorld;
 using RimWorld.Planet;
 using UnityEngine;
@@ -283,37 +282,88 @@ namespace PioneerFramework
         /// <summary>玩家开关当前值（**未构造设置实例时按默认"开"**）。每帧读，不缓存 ⇒ 设置里改完下一帧生效。</summary>
         internal static bool ReplaceEnabled => PioneerFrameworkLiteMod.Settings?.replaceWorldSky ?? true;
 
-        /// <summary>该层要不要跳过绘制（`IsAssignableFrom` ⇒ 派生类型也算）。**纯逻辑 ⇒ headless 可测**。</summary>
-        internal static bool ShouldSuppress(System.Type? layerType, bool replaceEnabled)
+        /// <summary>
+        /// 原版层类型 → 我们的替代子类（**只换这两层**；其余一律 null = 不动）。**纯逻辑 ⇒ headless 可测**
+        /// （2026-10-15 反射清理 A-14：原为"按类型跳过 Render"的补丁判据，现为"换 def 的 layerType"的判据）。
+        /// </summary>
+        internal static System.Type? ReplacementLayerTypeFor(System.Type? vanillaLayerType)
         {
-            if (!replaceEnabled || layerType == null) return false;
-            return typeof(GlobalDrawLayer_Sun).IsAssignableFrom(layerType)
-                || typeof(GlobalDrawLayer_Stars).IsAssignableFrom(layerType);
+            if (vanillaLayerType == typeof(GlobalDrawLayer_Sun)) return typeof(PF_GlobalDrawLayer_Sun);
+            if (vanillaLayerType == typeof(GlobalDrawLayer_Stars)) return typeof(PF_GlobalDrawLayer_Stars);
+            return null;
         }
 
-        /// <summary>生产入口（按当前玩家开关）。</summary>
-        internal static bool ShouldSuppress(System.Type? layerType) => ShouldSuppress(layerType, ReplaceEnabled);
+        /// <summary>
+        /// 开关"关" ⇒ 原版两层照画（子类 `Visible` 里的那一半）。**纯逻辑 ⇒ headless 可测**。
+        /// 两条腿一个开关：开 = 我们补画 + 原版两层不画；关 = 原版照旧 + 我们不画。
+        /// </summary>
+        internal static bool VanillaLayersVisible(bool replaceEnabled) => !replaceEnabled;
+
+        /// <summary>
+        /// 启动时把两个原版层的 def 类型换成我们的子类（`GlobalWorldDrawLayerDef.worldDrawLayer` 是公开 Type 字段）。
+        /// 每次建层（新世界生成 / 每次读档 `WorldGrid.CreateRequiredLayers`）都会实例化我们的子类；
+        /// 画不画由子类 `Visible` 按开关**动态**决定 ⇒ 运行时开关依旧有效。
+        /// </summary>
+        internal static void SwapVanillaLayerTypes()
+        {
+            foreach (GlobalWorldDrawLayerDef def in DefDatabase<GlobalWorldDrawLayerDef>.AllDefsListForReading)
+            {
+                System.Type? replacement = ReplacementLayerTypeFor(def.worldDrawLayer);
+                if (replacement != null)
+                    def.worldDrawLayer = replacement;
+            }
+        }
     }
 
     /// <summary>
-    /// 把原版那两层挡在 `WorldDrawLayerBase.Render()` 前面（**两层都没有覆写 `Render`** —— 读码核过，
-    /// 所以挂在基类上就能拦住它们；其余层照原样走）。
+    /// 原版太阳层的替代子类（2026-10-15 反射清理 A-14）：开关开 ⇒ 不画（由我们补画，见
+    /// `WorldSunBillboard`），开关关 ⇒ 原版照画。**类必须 public**：引擎用
+    /// `Activator.CreateInstance(def.worldDrawLayer)` 跨程序集实例化。
     /// </summary>
-    [HarmonyPatch(typeof(WorldDrawLayerBase), nameof(WorldDrawLayerBase.Render))]
-    internal static class WorldDrawLayerBase_Render_SuppressVanillaSky
+    public class PF_GlobalDrawLayer_Sun : GlobalDrawLayer_Sun
     {
-        private static bool Prefix(WorldDrawLayerBase __instance)
-            => !VanillaSkySuppression.ShouldSuppress(__instance?.GetType());
+        public override bool Visible =>
+            VanillaSkySuppression.VanillaLayersVisible(VanillaSkySuppression.ReplaceEnabled) && base.Visible;
     }
 
-    /// <summary>世界每帧渲染时补画太阳与星空（世界视图 + renderWorld 地图的背景模式都覆盖）。</summary>
-    [HarmonyPatch(typeof(WorldRenderer), nameof(WorldRenderer.DrawWorldLayers))]
-    internal static class WorldRenderer_DrawWorldLayers_SkyBillboards
+    /// <summary>原版星空层的替代子类（同 <see cref="PF_GlobalDrawLayer_Sun"/>）。</summary>
+    public class PF_GlobalDrawLayer_Stars : GlobalDrawLayer_Stars
     {
-        private static void Postfix()
+        public override bool Visible =>
+            VanillaSkySuppression.VanillaLayersVisible(VanillaSkySuppression.ReplaceEnabled) && base.Visible;
+    }
+
+    /// <summary>
+    /// **我们补画的太阳与星空**（2026-10-15 反射清理 A-14：替代原先挂在
+    /// `WorldRenderer.DrawWorldLayers` 上的 Harmony Postfix）。
+    /// def 驱动（`Defs/WorldDrawLayerDefs/PF_SkyBillboards.xml` 的 `GlobalWorldDrawLayerDef`），
+    /// 绘制主体仍是 `WorldSunBillboard.Draw()` + `WorldStarfield.Draw()`（两者自带"开关关就早退"）；
+    /// 层顺序 = def 载入顺序（本模在 Core 之后）⇒ 在原版两层之后、行星层之前。
+    /// ⚠ 构造 `dirty = false`：本层不批处理（星壳按种子缓存网格、太阳每帧算），没有可"重建"的批网格。
+    /// </summary>
+    public class PF_WorldDrawLayer_SkyBillboards : WorldDrawLayerBase
+    {
+        public PF_WorldDrawLayer_SkyBillboards()
+        {
+            dirty = false;
+        }
+
+        public override bool Visible => VanillaSkySuppression.ReplaceEnabled;
+
+        public override void Render()
         {
             WorldSunBillboard.Draw();
             WorldStarfield.Draw();
+        }
+    }
+
+    /// <summary>启动时执行 A-14 的层类型替换（def 已载入、世界尚未创建/读档 ⇒ 时机正确）。</summary>
+    [StaticConstructorOnStartup]
+    internal static class SkyLayerTypeSwap
+    {
+        static SkyLayerTypeSwap()
+        {
+            VanillaSkySuppression.SwapVanillaLayerTypes();
         }
     }
 }

@@ -18,7 +18,8 @@
 #
 # Usage (from repo root):
 #   powershell -ExecutionPolicy Bypass -File tools/check-def-fields.ps1
-# Exit code: 0 = clean / 1 = a renamed-away name still appears in 1.6/ XML (printed with file:line).
+# Exit code: 0 = clean / 1 = a renamed-away name still appears in a version package XML
+# (1.6/ or 1.7/; printed with file:line).
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -37,7 +38,9 @@ $retired = @(
     'muzzleLocal', 'dirLocal', 'exitLocal', 'targetLocal'
 )
 
-$xmlFiles = Get-ChildItem -Path (Join-Path $root '1.6') -Recurse -Filter *.xml
+# Scan every version package folder that exists (1.6 = frozen, 1.7 = mainline; 2026-10-13 tree split).
+$versionDirs = @('1.6', '1.7') | ForEach-Object { Join-Path $root $_ } | Where-Object { Test-Path -LiteralPath $_ }
+$xmlFiles = $versionDirs | ForEach-Object { Get-ChildItem -Path $_ -Recurse -Filter *.xml -File }
 # NOTE: names must be REGEX-ESCAPED and word-bounded. Writing "[name]" in a .NET regex means a CHARACTER CLASS
 # (any single char from the set) -- that produced a flood of false positives on the first attempt.
 $retiredRe = @{}
@@ -60,7 +63,7 @@ foreach ($f in $xmlFiles) {
 }
 
 if ($hits -eq 0) {
-    Write-Host ("Def/Patch XML clean: no retired (S1-renamed) name appears in {0} XML files under 1.6/." -f $xmlFiles.Count)
+    Write-Host ("Def/Patch XML clean: no retired (S1-renamed) name appears in {0} XML files under version folders (1.6/ + 1.7/)." -f $xmlFiles.Count)
     exit 0
 } else {
     Write-Host ("Def/Patch XML FAILED: {0} occurrence(s) of a retired name (XML was left behind by a rename)." -f $hits)

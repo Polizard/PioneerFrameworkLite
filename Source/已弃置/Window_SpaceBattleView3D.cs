@@ -441,7 +441,8 @@ private GameObject? colonyMarkerObject;   // 契约改真（2026-10-15 手清）
 
             observerShipContainer = new GameObject("ObserverShip");
             observerShipContainer.layer = SceneLayer;
-            observerShipContainer.transform.SetParent(sceneRoot.transform);
+            // sceneRoot 非空凭据：唯一调用点 SyncScene 已在 342 行 sceneRoot == null 早退
+            observerShipContainer.transform.SetParent(sceneRoot!.transform);
 
             if (observerEntity != null && observerEntity.Parts.Count > 0)
             {
@@ -498,7 +499,8 @@ private GameObject? colonyMarkerObject;   // 契约改真（2026-10-15 手清）
                 {
                     container = new GameObject("OtherShip_" + g.GroupId);
                     container.layer = SceneLayer;
-                    container.transform.SetParent(sceneRoot.transform);
+                    // sceneRoot 非空凭据：唯一调用点 SyncScene 已在 342 行 sceneRoot == null 早退
+                    container.transform.SetParent(sceneRoot!.transform);
                     otherShipContainers[g.GroupId] = container;
 
                     SpaceEntity? entity = GetFirstEntity(g);
@@ -712,7 +714,8 @@ private GameObject? colonyMarkerObject;   // 契约改真（2026-10-15 手清）
                     go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     go.name = "SameSystemBody_" + body.defName;
                     go.layer = SceneLayer;
-                    go.transform.SetParent(sceneRoot.transform);
+                    // sceneRoot 非空凭据：唯一调用点 SyncScene 已在 342 行 sceneRoot == null 早退
+                    go.transform.SetParent(sceneRoot!.transform);
                     var collider = go.GetComponent<Collider>();
                     if (collider != null) UnityEngine.Object.Destroy(collider);
 
@@ -769,7 +772,8 @@ private GameObject? colonyMarkerObject;   // 契约改真（2026-10-15 手清）
                         ? new Color(0.7f, 0.7f, 0.7f)
                         : CelestialBodyManager.GetBodyColor(body);
                     billboard = CreateBillboard("Billboard_" + body.defName, color, BillboardMinSize);
-                    billboard.transform.SetParent(sceneRoot.transform);
+                    // sceneRoot 非空凭据：唯一调用点 SyncScene 已在 342 行 sceneRoot == null 早退
+                    billboard.transform.SetParent(sceneRoot!.transform);
                     billboardObjects[bodyId] = billboard;
                 }
 
@@ -834,7 +838,8 @@ private GameObject? colonyMarkerObject;   // 契约改真（2026-10-15 手清）
             };
             mr.material.EnableKeyword("_EMISSION");
             mr.material.SetColor("_EmissionColor", new Color(1f, 0.7f, 0.2f) * 2f);
-            sunBillboardObject.transform.SetParent(sceneRoot.transform);
+            // sceneRoot 非空凭据：唯一调用链起点 SyncScene 已在 342 行 sceneRoot == null 早退（本方法由 SyncSunBillboard 806 行调用）
+            sunBillboardObject.transform.SetParent(sceneRoot!.transform);
 
             sunBillboardGlowObject = GameObject.CreatePrimitive(PrimitiveType.Quad);
             sunBillboardGlowObject.name = "SunBillboardGlow";

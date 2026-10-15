@@ -130,12 +130,10 @@ namespace PioneerFramework
     /// </summary>
     public static class RuntimePlanetLayerService
     {
-        private static readonly FieldInfo ZoomInToLayerField =
-            AccessTools.Field(typeof(PlanetLayer), "zoomInToLayer");
-
-        private static readonly FieldInfo ZoomOutToLayerField =
-            AccessTools.Field(typeof(PlanetLayer), "zoomOutToLayer");
-
+        // 2026-10-15 反射清理：`zoomInToLayer`/`zoomOutToLayer` 在 1.7 是 **public 字段**
+        //（`PlanetLayer.cs:1544/1547`）⇒ 原先两处 FieldInfo 反射已删、改直取。
+        // 仍保留反射的只有 `PlanetLayerDef.worldGenSteps/worldTabs`（1.7 仍为 private、无公开 setter，
+        // 而运行时动态建 def 必须写它们；静态路径走 XML def——见 `PlanetLayers_Celestial.xml`）。
         private static readonly FieldInfo WorldGenStepsField =
             AccessTools.Field(typeof(PlanetLayerDef), "worldGenSteps");
 
@@ -554,11 +552,6 @@ namespace PioneerFramework
             WorldGrid worldGrid,
             PlanetLayer removedLayer)
         {
-            if (ZoomInToLayerField == null && ZoomOutToLayerField == null)
-            {
-                return;
-            }
-
             foreach (PlanetLayer layer in worldGrid.PlanetLayers.Values)
             {
                 if (ReferenceEquals(layer, removedLayer))
@@ -566,20 +559,15 @@ namespace PioneerFramework
                     continue;
                 }
 
-                if (ZoomInToLayerField != null &&
-                    ReferenceEquals(
-                        ZoomInToLayerField.GetValue(layer),
-                        removedLayer))
+                // 2026-10-15 反射清理：1.7 里这两个是 public 字段（PlanetLayer.cs:1544/1547），直取即可。
+                if (ReferenceEquals(layer.zoomInToLayer, removedLayer))
                 {
-                    ZoomInToLayerField.SetValue(layer, null);
+                    layer.zoomInToLayer = null;
                 }
 
-                if (ZoomOutToLayerField != null &&
-                    ReferenceEquals(
-                        ZoomOutToLayerField.GetValue(layer),
-                        removedLayer))
+                if (ReferenceEquals(layer.zoomOutToLayer, removedLayer))
                 {
-                    ZoomOutToLayerField.SetValue(layer, null);
+                    layer.zoomOutToLayer = null;
                 }
             }
         }

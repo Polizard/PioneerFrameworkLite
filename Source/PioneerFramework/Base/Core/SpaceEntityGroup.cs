@@ -690,7 +690,7 @@ namespace PioneerFramework
         /// 机动燃烧策略：启用的工质网络（键 = 工质 Def）。null/空 = 全启用。
         /// 玩家可在机动队列 UI 调整；burn 只烧启用网络。
         /// </summary>
-        public HashSet<PropellantDef> burnEnabledNetworks = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public HashSet<PropellantDef>? burnEnabledNetworks;   // 契约改真（2026-10-15 手清）：文档即"null/空 = 全启用"，全体消费方本就 null 守卫（写入点 4462/5301 传的便是 null）
 
         /// <summary>
         /// 空间站「当前网络」（单选）：此后加入的机动都继承此单一网络（null = 全启用）。

@@ -26,7 +26,9 @@ namespace PioneerFramework
         {
             try
             {
-                var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                // 2026-10-15 反射清理：`typeof(BuildIdentity).Assembly` 与 GetExecutingAssembly() 等价
+                //（本类就在本程序集），且不再需要反射命名空间。
+                var asm = typeof(BuildIdentity).Assembly;
                 var loc = string.IsNullOrEmpty(asm.Location) ? null : asm.Location;
                 string built = "?";
                 if (loc != null && System.IO.File.Exists(loc))

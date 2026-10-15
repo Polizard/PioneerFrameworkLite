@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <!-- 2026-10-15 反射清理 A-3：原版 `Surface`（地球）层的 layerType 换成我们的子类
+       （`PF_CelestialSurfaceLayer`：选中月球时隐藏/停用地球大球壳；未选中天体时行为与原版逐字一致）。
+       纯 XML def 改写，无 Harmony。 -->
+  <Operation Class="PatchOperationReplace">
+    <xpath>/Defs/PlanetLayerDef[defName="Surface"]/layerType</xpath>
+    <value>
+      <layerType>PioneerFramework.PF_CelestialSurfaceLayer</layerType>
+    </value>
+  </Operation>
+</Patch>

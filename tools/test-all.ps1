@@ -6,17 +6,19 @@
 #   3. Game integration tests (net48)               -> Source/PioneerFramework.Tests
 #   3b. Ported MechJebLib tests (net48)             -> Source/MechJebLibTest (third-party 移植面)
 #   4. Def/XML validation                           -> python tools/validate_config.py
-#   5. Committed runtime assets present
+#   5. Frozen 1.6 line intact                        -> tools/check-frozen-1.6.ps1 (hash-pinned; never rebuilt)
 #   6. Deterministic Release build                  -> two builds, identical DLL bytes
-#   7. Rebuild committed DLL (Release)              -> restores 1.6/Assemblies/PioneerFrameworkLite.dll
+#   7. Rebuild committed DLL (Release)              -> restores 1.7/Assemblies/PioneerFrameworkLite.dll
 #   8. Verify committed DLL matches Release build
 #
 # WHY the DLL steps are LAST (and WARN-marked when skipped): the DLL is a committed artifact that
 # CI hash-checks, so the script leaves the tree with a *Release* DLL built from the current source.
-# D2(2026-09-14): the old reason -- "OutputPath points at 1.6/Assemblies for BOTH configurations,
+# D2(2026-09-14): the old reason -- "OutputPath points at 1.7/Assemblies for BOTH configurations,
 # so any Debug build (incl. dotnet test) silently overwrites the committed DLL" -- no longer
 # applies: PioneerFramework.csproj now sends Debug output to bin/, so a Debug build cannot touch
 # the committed artifact at all. The ordering is kept so the script still ends in a verified state.
+# 2026-10-13 (tree split): the committed artifact is now 1.7/Assemblies/...; the frozen 1.6 line is
+# covered by its own hash-pinned guard (step 5) and is NEVER rebuilt by any step here.
 # Use -NoDllRebuild to verify WITHOUT touching the DLL (then the hash check reports repo as-is).
 #
 # Usage:
@@ -154,13 +156,13 @@ Step "Build (Debug, full rebuild)" {
 }
 
 # -- 2. Pure math tests -------------------------------------------------------
-Step "Pure math tests (net48)" {
+Step "Pure math tests (net10)" {
     $out = Invoke-Dotnet @("test", "Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.csproj", "-v:minimal")
     return (Get-TestSummary $out)
 }
 
 # -- 3. Game integration tests ------------------------------------------------
-Step "Game integration tests (net48)" {
+Step "Game integration tests (net10)" {
     $out = Invoke-Dotnet @("test", "Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj", "-v:minimal")
     return (Get-TestSummary $out)
 }
@@ -225,23 +227,16 @@ Step "Frame-crossing auditor (tools/check-frame-crossing.ps1)" {
     return "ok"
 }
 
-# -- 5. Committed runtime assets ----------------------------------------------
-Step "Committed runtime assets present" {
-    $required = @(
-        "1.6/Assemblies/PioneerFrameworkLite.dll",
-        "1.6/AssetBundles/pfview_outline_win",
-        "1.6/AssetBundles/pfview_outline_mac",
-        "1.6/AssetBundles/pfview_outline_linux",
-        "Shaders/PFView_OutlineMask.shader",
-        "Shaders/PFView_OutlineDilate.shader",
-        "Shaders/PFView_OutlineComposite.shader"
-    )
-    $missing = @()
-    foreach ($path in $required) {
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { $missing += $path }
+# -- 5. Frozen 1.6 line -------------------------------------------------------
+# 2026-10-13 (tree split): 1.6 is frozen and never rebuilt. Its integrity -- the hash-pinned
+# deliverable DLL, the frozen bundle/shader assets and the `1.6-final` tag -- is judged by its own
+# script (which Deploy -Version 1.6 and CI also call). Step 8 below covers the 1.7 deliverable.
+Step "Frozen 1.6 line intact (tools/check-frozen-1.6.ps1)" {
+    $r = Invoke-Native "powershell" @("-ExecutionPolicy", "Bypass", "-File", "tools/check-frozen-1.6.ps1")
+    if ($r.ExitCode -ne 0) {
+        throw "check-frozen-1.6.ps1 failed (exit $($r.ExitCode))`n$(($r.Output | Select-Object -Last 10) -join "`n")"
     }
-    if ($missing.Count -gt 0) { throw "missing: $($missing -join ', ')" }
-    return "$($required.Count) files"
+    return "ok"
 }
 
 # -- 6. Deterministic Release build -------------------------------------------
@@ -264,7 +259,7 @@ else {
 Step "Rebuild committed DLL (Release)" {
     $log = & (Join-Path $PSScriptRoot "rebuild-dll.ps1") -Configuration Release 2>&1
     if ($LASTEXITCODE -ne 0) { throw "rebuild-dll.ps1 failed`n$(($log | Select-Object -Last 8) -join "`n")" }
-    return "1.6/Assemblies/PioneerFrameworkLite.dll refreshed"
+    return "1.7/Assemblies/PioneerFrameworkLite.dll refreshed"
 }
 }
 

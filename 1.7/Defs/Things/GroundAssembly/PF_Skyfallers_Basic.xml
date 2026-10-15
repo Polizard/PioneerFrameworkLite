@@ -30,6 +30,7 @@
   <ThingDef ParentName="DropPodIncoming">
     <defName>PF_Skyfaller_Incoming_Basic</defName>
     <label>basic rocket (incoming)</label>
+    <thingClass>PioneerFramework.Launch.PF_Skyfaller_Incoming</thingClass>
     <graphicData>
       <texPath>Things/Building/SpaceLaunchTechnology/R7ReturnCarbin</texPath>
       <graphicClass>Graphic_Single</graphicClass>
@@ -64,6 +65,7 @@
   <ThingDef ParentName="DropPodIncoming">
     <defName>PF_Skyfaller_Incoming_Basic_Booster</defName>
     <label>basic booster (incoming)</label>
+    <thingClass>PioneerFramework.Launch.PF_Skyfaller_Incoming</thingClass>
     <graphicData>
       <texPath>Things/Building/SpaceLaunchTechnology/ZQ_Booster</texPath>
       <graphicClass>Graphic_Single</graphicClass>

@@ -263,7 +263,7 @@ namespace PioneerFramework
         /// ① 基准船 A（无 Map，不旋转）置于同步轨道圆轨；
         /// ② 船 B（40×30×40，绕 Z 旋转 45°）在 A 旁 200m，给朝向 A 的接近速度 → 斜向靠近；
         /// ③ 船 C（20×20×20，绕 Y 旋转 30°）从另一方向接近。
-        /// 部署后自动打开 3D 视角，并挂上「距离探针」：CompTick 每 2 秒打印一次 B/C 相对 A 的距离，
+        /// 部署后挂上「距离探针」：CompTick 每 2 秒打印一次 B/C 相对 A 的距离，
         /// 用于自证物理是否在推进（距离不变=时间未推进；递减=物理正常，等 [ShipCollision]）。
         /// </summary>
         public static void SpawnCollisionTest()
@@ -309,9 +309,6 @@ namespace PioneerFramework
             // 打印部署时刻状态（真实 tick / 物理 tick / 时间档位）
             var tsm = Current.Game?.GetComponent<TimeScaleManager>();
             Log.Message($"[碰撞测试] 场景就绪: realTick={Find.TickManager.TicksGame} physicsTick={(tsm != null ? tsm.GetPhysicsTick() : 0.0):F1} 时间档位={(tsm != null ? tsm.CurrentLevel.ToString() : "N/A")}；B/C 将相对 A 靠近，等待 [ShipCollision]");
-
-            // 打开 3D 视角（默认地图视图看不到太空中的船，容易误以为"没反应"）
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(groupA));
         }
 
         /// <summary>
@@ -415,8 +412,6 @@ namespace PioneerFramework
 
             Log.Message($"[AxialThrustTest] 就绪: G{groupId} E{entityId} 主推轴局部=(0,0,-1) 姿态identity→burnDir=+X(夹角90°) dv=500m/s 主网=H2(ṁ6kg/s F12kN) RCS=肼(ṁ2kg/s F1.8kN) 双罐=H2 2000/肼 300kg；开 [Thrust] 日志观察对准+RCS→主网切换");
 
-            // 打开 3D 视角
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(group));
         }
 
         /// <summary>
@@ -447,11 +442,7 @@ namespace PioneerFramework
             foreach (var p in entity.Parts)
                 Log.Message($"[StationTest] Part {p.partId} linkedMapId={p.linkedMapId}");
 
-            // 打开 3D 视角
-            var view3D = new Window_SpaceBattleView3D(group);
-            Find.WindowStack.Add(view3D);
-
-            Messages.Message($"空间站已创建 (Group {group.GroupId})，Map {entity.MapId}，3D视角已打开。", MessageTypeDefOf.TaskCompletion);
+            Messages.Message($"空间站已创建 (Group {group.GroupId})，Map {entity.MapId}。", MessageTypeDefOf.TaskCompletion);
         }
 
         /// <summary>
@@ -1468,10 +1459,8 @@ namespace PioneerFramework
 
             Log.Message($"[DualEngineTest] 场景就绪: 氢罐 {(hydrogenTank?.StoredMass ?? 0f)}kg / 氙罐 {(xenonTank?.StoredMass ?? 0f)}kg，机动1(核热+50径向) T+600，机动2(离子+30切向) T+1200");
 
-            // 打开机动队列窗口（查看/调整每条机动的网络选择）与 3D 视角
+            // 打开机动队列窗口（查看/调整每条机动的网络选择）
             Find.WindowStack.Add(new ManeuverQueueWindow(group));
-            var view3D = new Window_SpaceBattleView3D(group);
-            Find.WindowStack.Add(view3D);
 
             Messages.Message("双引擎测试场景已部署：核热+离子，两条机动已各自绑定网络（见机动队列）",
                 MessageTypeDefOf.TaskCompletion);
@@ -1495,7 +1484,7 @@ namespace PioneerFramework
         ///
         /// ⚠ 这不是"能不能飞"的判据 —— L1 无升力、无悬浮（[A7] 才做定点保持），它**注定会落**。
         /// </summary>
-        public static void SpawnAirBreathingTest(bool openView = true)
+        public static void SpawnAirBreathingTest(bool announce = true)
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null)
@@ -1579,16 +1568,11 @@ namespace PioneerFramework
             group.StartBurn(tangent * 3000.0);
             SpaceGameComp.DebugDetailedThrust = true;
 
-            if (openView)
+            if (announce)
                 Messages.Message("吸气式试验机已部署（30 km，水平 400 m/s，空罐起飞）——看 [大气·进气] / [大气·包线] 读数",
                     MessageTypeDefOf.TaskCompletion);
             Log.Message($"[吸气式试验机] G{groupId} E{entityId} 高度 {altitude / 1000.0:F0} km｜水平 {400.0:F0} m/s｜干重 8 t｜吸气式 ve={StandardPropulsion.AirBreathingVe:F0} ṁ={StandardPropulsion.StandardMassFlow:F0} a={StandardPropulsion.AirBreathingDensityExponent:F1}｜空气罐 0/500 kg（进气道 12 m²）｜全推续航（满罐）= {AirBreathingCore.FullThrottleEnduranceSeconds(500.0, StandardPropulsion.StandardMassFlow):F0} s｜点火 Δv 3000 m/s（沿当前速度）");
 
-            if (openView)
-            {
-                var view3D = new Window_SpaceBattleView3D(group);
-                Find.WindowStack.Add(view3D);
-            }
         }
 
         /// <summary>
@@ -1609,7 +1593,7 @@ namespace PioneerFramework
         /// ⚠ 本刀口径：悬浮**只走全矢量（RCS）**推力、**不转船体**（主引擎要对准会把船拧歪）；
         ///   RCS 给不出就报"推力不足"（如实报，不偷偷切主网）。玩家向入口（操舵台/PFView）属视觉/交互线，本刀不做。
         /// </summary>
-        public static void SpawnHoverTest(bool openView = true, double fuelKg = 3000.0)
+        public static void SpawnHoverTest(bool announce = true, double fuelKg = 3000.0)
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null)
@@ -1705,7 +1689,7 @@ namespace PioneerFramework
             group.AddEntity(entityId);
 
             bool ok = spaceGame.SetHover(group, true);
-            if (openView)
+            if (announce)
             {
                 Messages.Message(ok
                         ? "悬浮试验机已部署（30 km，−20 m/s，已开悬浮）——看 [悬浮] 读数与高度是否守住"
@@ -1714,11 +1698,6 @@ namespace PioneerFramework
             }
             Log.Message($"[悬浮试验机] G{groupId} E{entityId} 高度 {altitude / 1000.0:F0} km｜−20 m/s 起步｜全重 {(3000.0 + fuelKg) / 1000.0:F1} t｜RCS ve={veUsed:F0} ṁ={mfUsed:F1}（≈{veUsed * mfUsed / 1000f:F0} kN）｜料 {fuelKg:F0} kg（≈{AirBreathingCore.FullThrottleEnduranceSeconds(fuelKg, mfUsed):F0} s 满推续航）｜定点已锁 ⇒ 该看：高度守住 + 上轴朝铅垂；按「悬浮·切档」切解析档（**定点不变**，读数行变成 [悬浮·解析档]）；按「悬浮·抽空」几秒看料尽退出");
 
-            if (openView)
-            {
-                var view3D = new Window_SpaceBattleView3D(group);
-                Find.WindowStack.Add(view3D);
-            }
         }
 
         /// <summary>
@@ -1736,7 +1715,7 @@ namespace PioneerFramework
         /// **无限燃料** = `group.debugInfinitePropellant`（唯一扣减口报告"已扣完"但不动账）——
         /// **不是**把罐加大（那会把重量加上去、反而更吊不动）。
         /// </summary>
-        public static void SpawnEquatorHoverTest(bool openView = true)
+        public static void SpawnEquatorHoverTest()
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
@@ -1806,8 +1785,6 @@ namespace PioneerFramework
                 ok ? MessageTypeDefOf.TaskCompletion : MessageTypeDefOf.RejectInput);
             Log.Message($"[赤道测试船] G{groupId} E{entityId}：{spot}｜质量 {massKg / 1000.0:F0} t｜需 {needN / 1e6:F1} MN（含 1.6× 余量）｜调试引擎 {engines} 台 × {perEngineN / 1e6:F0} MN｜无限燃料=开｜悬浮={(ok ? "物理档" : "未开")}｜（有 Map；站体边长 60×60 m）");
 
-            if (openView)
-                Find.WindowStack.Add(new Window_SpaceBattleView3D(group));
         }
 
         /// <summary>**[A7] 悬浮·关**（把当前所有在悬浮的组都关掉；调试用 —— 玩家向入口在操舵台/PFView 那条线）。</summary>
@@ -1884,7 +1861,7 @@ namespace PioneerFramework
         /// 需要的其实是**空气相对速度**（不用真发射）—— 跑批器直接把群速度改成"共转 + 500 m/s 顺行"即可。
         /// 手动看：地图上会多出三个建筑；停在地表时 v_air≈0 ⇒ **如实不进气**（这是负对照）。
         /// </summary>
-        public static bool SpawnMapAeroTest(out int groupId, out Map? map, bool openView = true,
+        public static bool SpawnMapAeroTest(out int groupId, out Map? map, bool announce = true,
             double altitudeMeters = 60000.0)
         {
             groupId = -1;
@@ -1922,12 +1899,11 @@ namespace PioneerFramework
             }
 
             groupId = group.GroupId;
-            if (openView)
+            if (announce)
             {
                 Messages.Message("有 Map 大气三件套已部署（进气道/空气罐/吸气式发动机）——停在地表 v_air≈0 ⇒ 不进气（负对照）"
                     + "｜**控制台**：选中**操舵台** → 底部 Gizmo「船上控制台」（地块图 + 读数 + 起搬 + 悬浮）",
                     MessageTypeDefOf.TaskCompletion);
-                Find.WindowStack.Add(new Window_SpaceBattleView3D(group));
             }
             return true;
         }
@@ -2065,8 +2041,7 @@ namespace PioneerFramework
                     enemyEntity.SetRotation(enemyGroup.CurrentOrbit.rotation);
             }
 
-            // 4. 打开 3D 视角观察对射，并跳转到玩家空间站地图看炮塔/出膛弹/开火烟雾
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            // 4. 跳转到玩家空间站地图看炮塔/出膛弹/开火烟雾
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
@@ -2131,8 +2106,7 @@ namespace PioneerFramework
             launchComp.SetManualTarget(enemyGroupId);
             launchComp.ManualFire();
 
-            // 4. 打开 3D 视角观察领弹出生，并跳转到玩家空间站地图
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            // 4. 跳转到玩家空间站地图观察领弹出生
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
@@ -2192,8 +2166,7 @@ namespace PioneerFramework
             launchComp.ManualFire();
             autoCmdLauncherGroupId = playerGroup.GroupId; // 导弹出生即自动下令撞击（模拟玩家出膛下令）
 
-            // 4. 打开 3D 视角观察撞击爆炸，并跳转到玩家空间站地图
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            // 4. 跳转到玩家空间站地图观察撞击爆炸
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
@@ -2252,8 +2225,6 @@ namespace PioneerFramework
             launchComp.SetManualTarget(enemyGroupId);
             launchComp.ManualFire();
             autoCmdLauncherGroupId = playerGroup.GroupId; // 导弹出生即自动下令撞击（模拟玩家出膛下令）
-
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
@@ -2313,8 +2284,6 @@ namespace PioneerFramework
             launchComp.SetManualTarget(enemyGroupId);
             launchComp.ManualFire();
             autoCmdLauncherGroupId = playerGroup.GroupId; // 出膛即自动下 Attack（进终末 → 解离）
-
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
@@ -2403,8 +2372,6 @@ namespace PioneerFramework
             DVector3 probeVel = GetGroupVelDebug(enemyGroup) + dirToVolley * 150.0;
             CreateTestMissile("PF_Missile_Standard", "PF_Weapon_MissileLauncher", enemyFactionId,
                 probePos, probeVel, enemyGroup.CelestialBodyId, dirToVolley, volleyGroupId);
-
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
@@ -2460,8 +2427,6 @@ namespace PioneerFramework
             launchComp.SetManualTarget(enemyGroupId);
             launchComp.ManualFire();
             autoCmdLauncherGroupId = playerGroup.GroupId; // 出膛即自动下 Attack
-
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
@@ -2527,8 +2492,6 @@ namespace PioneerFramework
             interceptNextWaveTick = Find.TickManager.TicksGame + 120;
             interceptTestActive = true;
             autoCmdLauncherGroupId = playerGroup.GroupId; // 反导弹出生即自动下令拦截（目标=发射器锁定的敌弹）
-
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
@@ -2723,8 +2686,7 @@ namespace PioneerFramework
                 Log.Message($"[OmniTurretTest] G{enemyGroupIds[0]} 已设精确炮击点 (40,30)：瞄准偏移船心 +10m（看 [精确炮击]/[炮塔出膛]/[贯穿生成] 日志）");
             }
 
-            // 打开 3D 视角 + 跳转玩家地图看 6 发齐射出膛弹
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            // 跳转玩家地图看 6 发齐射出膛弹
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
@@ -2798,8 +2760,7 @@ namespace PioneerFramework
             // 精确炮击点：敌舰地图格 (40,30)（60×60 中心(30,30) → 局部偏移 +10m x），自动切 Manual 锁定目标
             desComp.DebugSetPreciseStrike(enemyGroupId, new IntVec3(40, 0, 30));
 
-            // 打开 3D 视角 + 跳转敌舰地图看红色精确炮击标记
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            // 跳转敌舰地图看红色精确炮击标记
             var enemyEntity = spaceGame.GetEntityById(enemyEntityId);
             if (enemyEntity != null && enemyEntity.MapId >= 0)
             {
@@ -2816,7 +2777,7 @@ namespace PioneerFramework
         /// <summary>
         /// 定向能对射测试场景（2026-08-29）：玩家站定位机 Auto + 激光炮塔，敌对站 20km 赤道面（vRel≈0）。
         /// 验证点（日志链）：[齐射详情] → [炮塔出膛] → [激光发射]（射程 50km）→ [激光命中!]（Part HP 下降）
-        /// → [贯穿生成]（贯通入口→落点格）→ 光束 60 tick 残留（3D 视角）。
+        /// → [贯穿生成]（贯通入口→落点格）→ 光束 60 tick 残留。
         /// </summary>
         public static void SpawnRayTurretTest()
         {
@@ -2861,8 +2822,7 @@ namespace PioneerFramework
             if (enemyGroup != null)
                 enemyGroup.EnterCircularOrbit(Find.TickManager.TicksGame, EARTH_BODY_ID);
 
-            // 3. 打开 3D 视角 + 跳转玩家地图看激光炮塔
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            // 3. 跳转玩家地图看激光炮塔
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
@@ -2924,8 +2884,6 @@ namespace PioneerFramework
             desComp.RegisterTurret(turret);
             turretComp.Mount.boundDesignator = designator;
             desComp.DebugSetManualTarget(farGroupId);
-
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
@@ -2987,8 +2945,7 @@ namespace PioneerFramework
                     enemyEntity.SetRotation(enemyGroup.CurrentOrbit.rotation);
             }
 
-            // 3. 打开 3D 视角 + 跳转玩家地图
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            // 3. 跳转玩家地图
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 
@@ -3067,8 +3024,7 @@ namespace PioneerFramework
                 desComp.DebugSetManualTarget(enemyGroupIds[i]);
             }
 
-            // 3. 打开 3D 视角 + 跳转玩家地图
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(playerGroup));
+            // 3. 跳转玩家地图
             if (playerMap != null)
                 CameraJumper.TryJump(playerMap.Center, playerMap);
 

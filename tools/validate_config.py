@@ -2,10 +2,11 @@
 """PioneerFrameworkLite config validation.
 
 Checks:
-- XML under 1.6/Defs and 1.6/Patches is well-formed
+- XML under every version package folder that exists (1.6/ and/or 1.7/) is well-formed
 - every PFDefs [DefOf] field has a matching defName in Defs
-- About.xml declares a valid packageId, supportedVersions 1.6 and Harmony dependency
-- committed AssetBundles and Shader sources exist
+- About.xml declares a valid packageId, the NEWEST existing version folder in supportedVersions,
+  and the brrainz.harmony dependency
+- committed per-version Assemblies exist (plus the frozen 1.6 bundles / shader sources)
 - CelestialBodyDef XML elements must be declared C# fields (atmosphere-data guard, 2026-10-06)
 - optional Languages Keyed/DefInjected consistency (when Languages/ exists)
 - optional LoadFolders.xml well-formedness (when present)
@@ -17,6 +18,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Version package folders we validate. 2026-10-13 tree split: 1.6 is FROZEN, 1.7 is the mainline;
+# both are validated whenever present, so this script works before and after the 1.7 package lands.
+VERSION_DIRS = [d for d in (ROOT / "1.6", ROOT / "1.7") if d.exists()]
+
 
 def fail(msg):
     print(f"FAIL: {msg}")
@@ -24,37 +29,38 @@ def fail(msg):
 
 
 def main():
-    # 1. XML well-formed + collect defNames
-    defs_dir = ROOT / "1.6" / "Defs"
-    if not defs_dir.exists():
-        fail("1.6/Defs directory not found")
+    # 1. XML well-formed + collect defNames (all existing version package folders)
+    defs_dirs = [v / "Defs" for v in VERSION_DIRS if (v / "Defs").exists()]
+    if not defs_dirs:
+        fail("no <version>/Defs directory found (expected 1.6/Defs and/or 1.7/Defs)")
     def_names = set()
     xml_roots = []
-    for xml_path in sorted(defs_dir.rglob("*.xml")):
-        try:
-            root = ET.parse(xml_path).getroot()
-        except ET.ParseError as e:
-            fail(f"{xml_path.relative_to(ROOT)}: XML parse error: {e}")
-        xml_roots.append((xml_path, root))
-        for child in root:
-            def_name = child.findtext("defName")
-            if def_name:
-                def_name = def_name.strip()
-                def_names.add(def_name)
-                # Rule 1: ThingDef defName must not end with a numerical digit.
-                if child.tag == "ThingDef" and def_name[-1].isdigit():
-                    fail(
-                        f"{xml_path.relative_to(ROOT)}: ThingDef defName '{def_name}' "
-                        "ends with a numerical digit, which is not allowed on ThingDefs."
-                    )
-
-    patches_dir = ROOT / "1.6" / "Patches"
-    if patches_dir.exists():
-        for xml_path in sorted(patches_dir.rglob("*.xml")):
+    for defs_dir in defs_dirs:
+        for xml_path in sorted(defs_dir.rglob("*.xml")):
             try:
-                ET.parse(xml_path)
+                root = ET.parse(xml_path).getroot()
             except ET.ParseError as e:
                 fail(f"{xml_path.relative_to(ROOT)}: XML parse error: {e}")
+            xml_roots.append((xml_path, root))
+            for child in root:
+                def_name = child.findtext("defName")
+                if def_name:
+                    def_name = def_name.strip()
+                    def_names.add(def_name)
+                    # Rule 1: ThingDef defName must not end with a numerical digit.
+                    if child.tag == "ThingDef" and def_name[-1].isdigit():
+                        fail(
+                            f"{xml_path.relative_to(ROOT)}: ThingDef defName '{def_name}' "
+                            "ends with a numerical digit, which is not allowed on ThingDefs."
+                        )
+
+    for patches_dir in (v / "Patches" for v in VERSION_DIRS):
+        if patches_dir.exists():
+            for xml_path in sorted(patches_dir.rglob("*.xml")):
+                try:
+                    ET.parse(xml_path)
+                except ET.ParseError as e:
+                    fail(f"{xml_path.relative_to(ROOT)}: XML parse error: {e}")
 
     # 2. PFDefs fields must exist in Defs
     defof_path = ROOT / "Source" / "PioneerFramework" / "PFDefs.cs"
@@ -80,8 +86,9 @@ def main():
     if not package_id or package_id != "NewFrontierTeam.PioneerFrameworkLite":
         fail(f"About.xml packageId must be NewFrontierTeam.PioneerFrameworkLite, got {package_id!r}")
     supported = [li.text for li in about.findall("supportedVersions/li")]
-    if "1.6" not in supported:
-        fail(f"About.xml supportedVersions must include 1.6, got {supported}")
+    newest = VERSION_DIRS[-1].name  # "1.7" once its package exists, else "1.6"
+    if newest not in supported:
+        fail(f"About.xml supportedVersions must include the newest version folder ({newest}), got {supported}")
     dependencies = [
         li.findtext("packageId")
         for li in about.findall("modDependencies/li")
@@ -89,9 +96,10 @@ def main():
     if "brrainz.harmony" not in dependencies:
         fail(f"About.xml must declare brrainz.harmony dependency, got {dependencies}")
 
-    # 4. Committed runtime assets
-    required_assets = [
-        "1.6/Assemblies/PioneerFrameworkLite.dll",
+    # 4. Committed runtime assets: one Assemblies/DLL per existing version folder,
+    #    plus the frozen 1.6 bundles / shader sources.
+    required_assets = [f"{v.name}/Assemblies/PioneerFrameworkLite.dll" for v in VERSION_DIRS]
+    required_assets += [
         "1.6/AssetBundles/pfview_outline_win",
         "1.6/AssetBundles/pfview_outline_mac",
         "1.6/AssetBundles/pfview_outline_linux",
@@ -189,9 +197,10 @@ def main():
     }
 
     def texture_file(tex_path):
-        local = ROOT / "1.6" / "Textures" / f"{tex_path}.png"
-        if local.is_file():
-            return local
+        for v in VERSION_DIRS:
+            local = v / "Textures" / f"{tex_path}.png"
+            if local.is_file():
+                return local
         return None
 
     for xml_path, root in xml_roots:
@@ -246,9 +255,20 @@ def main():
         "ignoreConfigErrors", "modExtensions",
     }
     COMP_PROPS_BASE_FIELDS = {"compClass"}
+    # ⚠ 2026-10-15（反射清理 A-5）：本库自己的 `CompProperties` 子类若继承 **vanilla 基类**，
+    #   其字段来自 vanilla——本检查只扫 `Source/`（看不到 vanilla）⇒ 按"子类名 → 已知继承字段"登记。
+    #   登记纪律：每条都必须对 1.7 基准核实过字段真在某个基类上（出处写在注释里），否则就是给自己开后门。
+    INHERITED_FIELDS = {
+        # `CompProperties_Launchable_PF : CompProperties_Launchable_TransportPod : CompProperties_Launchable`
+        # ⇒ 出处：`RimWorld/CompProperties_Launchable.cs:25/28`（2026-10-15 核对）
+        "CompProperties_Launchable_PF": {"activeTransporterDef", "skyfallerLeaving"},
+    }
     SIMPLE_DEF_TYPES = {"CelestialBodyDef", "PropellantDef"}
+    # ⚠ 2026-10-14：尾部允许**行尾注释**（`public string x = null!;  // null!：…`）。
+    #   原式要求 `;\s*$` ⇒ "字段行带行尾注释"这类合法声明会被漏收（N2 可空族批加了注释才暴露）。
+    #   判据不放宽：仍是"以 `;` 收尾的字段声明行"，只是允许其后跟注释。
     _field_re = re.compile(
-        r"^\s*public\s+(?:readonly\s+|static\s+|volatile\s+)*[\w\.<>\[\],\?]+\s+(\w+)\s*(?:=[^;{]*)?;\s*$")
+        r"^\s*public\s+(?:readonly\s+|static\s+|volatile\s+)*[\w\.<>\[\],\?]+\s+(\w+)\s*(?:=[^;{]*)?;\s*(?://.*)?$")
 
     def _class_re(type_name):
         return re.compile(r"\b(?:class|struct)\s+" + re.escape(type_name) + r"\b")
@@ -286,7 +306,7 @@ def main():
                 type_name = cls.split(".")[-1]
                 if "CompProperties" not in type_name:
                     continue                      # GenStep 等：基类字段不可枚举 ⇒ 跳过
-                base_fields = COMP_PROPS_BASE_FIELDS
+                base_fields = COMP_PROPS_BASE_FIELDS | INHERITED_FIELDS.get(type_name, set())
             elif node.tag.startswith("PioneerFramework."):
                 type_name = node.tag.split(".")[-1]
                 if type_name not in SIMPLE_DEF_TYPES:

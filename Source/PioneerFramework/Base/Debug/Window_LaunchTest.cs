@@ -65,19 +65,13 @@ namespace PioneerFramework
                 if (wasPaused)
                     Log.Message("[LaunchTest] 检测到暂停，已自动解除（TimeSpeed.Normal）");
                 Log.Message($"[LaunchTest] 将从当前地图起飞：CurrentMap={(Find.CurrentMap != null ? Find.CurrentMap.info.parent?.def?.defName ?? "?" : "null")} (uid {(Find.CurrentMap != null ? Find.CurrentMap.uniqueID : -1)}, tile {(Find.CurrentMap != null ? Find.CurrentMap.Tile : -1)})");
-                int gid = LaunchTestScenarios.RunAscentTest(Find.CurrentMap, 0.0, 0.0);
-                if (gid > 0)
-                    OpenViewerFor(gid);
+                LaunchTestScenarios.RunAscentTest(Find.CurrentMap, 0.0, 0.0);
             }
             if (Widgets.ButtonText(new Rect(bw + 4, y, bw, 30f), "爬升测试（高纬 45°）"))
             {
                 Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
-                int gid = LaunchTestScenarios.RunAscentTest(null, 45.0 * Mathf.Deg2Rad, 0.0);
-                if (gid > 0)
-                {
-                    OpenViewerFor(gid);
-                    Log.Message("[LaunchTest] 提示：高纬入倾斜圆轨（控制律无面外项），用于观察面外分量残留");
-                }
+                LaunchTestScenarios.RunAscentTest(null, 45.0 * Mathf.Deg2Rad, 0.0);
+                Log.Message("[LaunchTest] 提示：高纬入倾斜圆轨（控制律无面外项），用于观察面外分量残留");
             }
             if (Widgets.ButtonText(new Rect(2 * (bw + 4), y, bw, 30f), "清除视图 + 探针"))
             {
@@ -179,19 +173,6 @@ namespace PioneerFramework
             Widgets.Label(new Rect(0, y, inRect.width, 24f), title);
             y += 28f;
             Text.Font = GameFont.Small;
-        }
-
-        /// <summary>打开绑定该火箭群组的 3D 空间视角，便于观察爬升。</summary>
-        private static void OpenViewerFor(int groupId)
-        {
-            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
-            var group = spaceGame?.GetGroupById(groupId);
-            if (group == null)
-            {
-                Log.Message("[LaunchTest] 群组不存在，跳过视角切换（日志仍可观测）");
-                return;
-            }
-            Find.WindowStack.Add(new Window_SpaceBattleView3D(group));
         }
 
         /// <summary>验证所有 Orbited 记录对应的群组实体仍在轨：重力和位置一致、速度快于第一宇宙速度、轨道能量为束缚态。</summary>

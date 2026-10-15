@@ -747,8 +747,9 @@ namespace PioneerFramework
         /// <summary>
         /// RCS 全矢量推力：任意方向 = Σ RCS 引擎（免对准/免锥）。
         /// 返回按工质网络的切片（工质消耗按切片流率分配）。
+        /// enabled 可为 null（= 全启用；实现本就 `enabled != null` 守卫）。
         /// </summary>
-        public void GetRcsThrustAlong(HashSet<PropellantDef> enabled, List<ThrustSlice> slices,
+        public void GetRcsThrustAlong(HashSet<PropellantDef>? enabled, List<ThrustSlice> slices,
             out float totalThrust, out float totalMassFlow)
         {
             totalThrust = 0f;
@@ -771,9 +772,10 @@ namespace PioneerFramework
         /// 方向感知推力：目标世界方向 dir 落在哪个船体轴向的矢量锥内（含主推进方向辅助），
         /// 取锥内引擎的聚合推力/流率（跨网络，按网络切片，工质消耗按切片流率分配）。
         /// 调用方（burn/手动平移）传入 group 当前姿态 rotation 做局部→世界换算。
+        /// enabled 可为 null（= 全启用；实现本就 `enabled != null` 守卫）。
         /// </summary>
         public void GetThrustAlong(DVector3 dirSystem, Quaternion rotation, float coneCos,
-            HashSet<PropellantDef> enabled, List<ThrustSlice> slices, out float totalThrust, out float totalMassFlow)
+            HashSet<PropellantDef>? enabled, List<ThrustSlice> slices, out float totalThrust, out float totalMassFlow)
         {
             totalThrust = 0f;
             totalMassFlow = 0f;
@@ -813,9 +815,10 @@ namespace PioneerFramework
         /// 手动指令用的方向感知推力：**逐引擎**过滤——
         /// RCS 引擎**全矢量**（任意方向出力，免对准），主引擎只在矢量锥内出力；
         /// 都受「已武装（动作组）」过滤。返回按工质网络的切片（工质消耗按切片流率分配）。
+        /// enabled 可为 null（= 全启用；实现本就 `enabled != null` 守卫）。
         /// </summary>
         public void GetManualThrustAlong(DVector3 dirSystem, Quaternion rotation, float coneCos,
-            HashSet<PropellantDef> enabled, int armedGroupsMask, List<ThrustSlice> slices,
+            HashSet<PropellantDef>? enabled, int armedGroupsMask, List<ThrustSlice> slices,
             out float totalThrust, out float totalMassFlow)
         {
             totalThrust = 0f;

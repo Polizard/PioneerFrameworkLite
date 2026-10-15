@@ -1,81 +1,113 @@
-﻿# 部署脚本：把 Lite 裁剪后的运行时资产同步到游戏 Mods 目录。
-# 用法：在 PowerShell 中运行本脚本（路径含空格，建议用管理员权限执行一次以确保写入 Program Files 下的 Mods）。
-#   .\Tools\Deploy-LiteToGame.ps1
-# 说明：
-#   - 同步 1.6/Defs、1.6/Textures、1.6/Patches、1.6/AssetBundles、About、Shaders（先清后复制，无冗余残留）
-#   - 1.6/Assemblies 只部署 PioneerFrameworkLite.dll（若已构建）；旧 dll/pdb 一律清理
-#   - 请先 build（msbuild /p:Configuration=Debug）再运行本脚本
+# Deploy script: sync the mod package from this repo to the game's Mods folder.
+#
+# Usage (run in PowerShell):
+#   powershell -ExecutionPolicy Bypass -File tools/Deploy-LiteToGame.ps1                # 1.6 (frozen) - default
+#   powershell -ExecutionPolicy Bypass -File tools/Deploy-LiteToGame.ps1 -Version 1.7    # 1.7 mainline
+#   powershell -ExecutionPolicy Bypass -File tools/Deploy-LiteToGame.ps1 -DeployDir "<path>"
+#
+# Version semantics (2026-10-13 tree split):
+#   -Version 1.6 : copy the FROZEN package verbatim; NO build.
+#                  Gate = tools/check-frozen-1.6.ps1 (hash-pinned). This is the way to
+#                  re-deploy the accepted 1.6 baseline for local play.
+#   -Version 1.7 : build Release (writes 1.7/Assemblies) then copy the 1.7 package.
+#                  Requires 1.7/Defs + 1.7/Assemblies to exist (packaging task P3 of the migration plan).
+#
+# History note: the 2026-09-19 "build + artifact-freshness" gate was replaced on 2026-10-13 because
+# 1.6 is frozen (never rebuilt): 1.6 -> freeze guard; 1.7 -> build-then-copy in one shot.
+#
+# ASCII-only on purpose (Windows PowerShell 5.1 reads BOM-less files as ANSI).
 param(
+    [ValidateSet("1.6", "1.7")]
+    [string]$Version = "1.6",
     [string]$DeployDir = "C:\Program Files (x86)\Steam\steamapps\common\RimWorld\Mods\PioneerFrameworkLite"
 )
 
 $ErrorActionPreference = 'Stop'
 $srcRoot = Split-Path -Parent $PSScriptRoot
 
-# ── 硬门（2026-09-19 加，用户批准）：**闸门红就别部署** ──────────────────────────────
-# 起因：那天我在"Debug 全量重建失败"之后照样跑了本脚本 ⇒ 把**上一版** DLL 部署进游戏，
-# 而"构建失败时不要部署"是我自己写进台账的规矩（B30）—— 靠人记没用，改成本脚本自己拦。
-# 两道检查：
-#   ① 主工程能过 Release 构建（红 ⇒ 直接退出，不部署任何东西）；
-#   ② 交付物 `1.6/Assemblies/PioneerFrameworkLite.dll` **不比最新源文件旧**
-#      （否则就是把旧 DLL 送进游戏 —— 那天真正发生的事）。
-Write-Host "=== 部署前闸门 ===" -ForegroundColor Cyan
+Write-Host "=== Deploy gate ($Version) ===" -ForegroundColor Cyan
 
-$proj = Join-Path $srcRoot 'Source\PioneerFramework\PioneerFramework.csproj'
-$buildLog = & dotnet build $proj -c Release --nologo 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "闸门红：Release 构建失败 ⇒ **拒绝部署**（先修构建）" -ForegroundColor Red
-    $buildLog | Select-Object -Last 12 | ForEach-Object { Write-Host "  $_" }
-    exit 1
+if ($Version -eq "1.6") {
+    & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "check-frozen-1.6.ps1")
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Gate red: frozen 1.6 package is NOT intact => refusing to deploy." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "Gate green: frozen 1.6 package intact." -ForegroundColor Green
+    $subDirs = @("1.6\Defs", "1.6\Textures", "1.6\Patches", "1.6\AssetBundles")
+    $dllSrc = "1.6\Assemblies\PioneerFrameworkLite.dll"
+    $modSubfolder = "1.6"
+    $rootDirs = @("About", "Shaders")
 }
-
-$dllPath = Join-Path $srcRoot '1.6\Assemblies\PioneerFrameworkLite.dll'
-if (-not (Test-Path -LiteralPath $dllPath)) {
-    Write-Host "闸门红：交付物 DLL 不存在 ⇒ 拒绝部署" -ForegroundColor Red
-    exit 1
+else {
+    $proj = Join-Path $srcRoot 'Source\PioneerFramework\PioneerFramework.csproj'
+    $buildLog = & dotnet build $proj -c Release --nologo 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Gate red: Release build failed => refusing to deploy (fix the build first)." -ForegroundColor Red
+        $buildLog | Select-Object -Last 12 | ForEach-Object { Write-Host "  $_" }
+        exit 1
+    }
+    foreach ($need in @("1.7\Defs", "1.7\Assemblies\PioneerFrameworkLite.dll")) {
+        if (-not (Test-Path -LiteralPath (Join-Path $srcRoot $need))) {
+            Write-Host "Gate red: $need missing -- the 1.7 package is not assembled yet (migration plan P3)." -ForegroundColor Red
+            exit 1
+        }
+    }
+    Write-Host "Gate green: Release built, 1.7 package present." -ForegroundColor Green
+    $subDirs = @("1.7\Defs", "1.7\Textures", "1.7\Patches", "1.7\Shaders", "1.7\AssetBundles")
+    $dllSrc = "1.7\Assemblies\PioneerFrameworkLite.dll"
+    $modSubfolder = "1.7"
+    $rootDirs = @("About")
 }
-$dllTime = (Get-Item -LiteralPath $dllPath).LastWriteTimeUtc
-# ⚠ 必须用 `-Filter` 而**不是** `-Include *.cs`：PowerShell 5.1 里 `-Include` 与 `-Recurse` 同用
-#   会**把过滤丢掉**（实测它返回了 `Source\PioneerFramework\DesignNotes` 这个**目录**，
-#   于是"最新源文件"变成了一份 `.md` 交班文档的时间戳 ⇒ 闸门随机变红、拦住合法部署）✗✗。
-#   2026-09-21 修（`tools/` 下只此一处用 `-Include`，已核对）。
-#   `-Filter` 由文件系统提供者执行、快得多，且不会退化。
-$newestSrc = Get-ChildItem -LiteralPath (Join-Path $srcRoot 'Source') -Recurse -File -Filter *.cs |
-             Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
-if ($newestSrc -and $newestSrc.LastWriteTimeUtc -gt $dllTime.AddSeconds(2)) {
-    Write-Host ("闸门红：交付物 DLL 比最新源文件旧（DLL {0:u} vs {1} {2:u}）⇒ 这是'部署旧 DLL'的情形，拒绝" `
-        -f $dllTime, $newestSrc.Name, $newestSrc.LastWriteTimeUtc) -ForegroundColor Red
-    Write-Host "  先跑 tools/test-all.ps1（它会重建 Release 交付物）" -ForegroundColor Yellow
-    exit 1
-}
-Write-Host "闸门绿：Release 构建通过、交付物不比源文件旧" -ForegroundColor Green
 
 if (-not (Test-Path -LiteralPath $DeployDir)) {
-    Write-Host "部署目录不存在，已创建: $DeployDir"
+    Write-Host "Deploy directory does not exist, creating: $DeployDir"
     New-Item -ItemType Directory -Force -Path $DeployDir | Out-Null
 }
 
-# 资产目录：先清后复制（防止 Lite 已删除的文件残留在部署副本）
-foreach ($d in @("1.6\Defs", "1.6\Textures", "1.6\Patches", "1.6\AssetBundles")) {
-    if (Test-Path -LiteralPath "$DeployDir\$d") { Remove-Item -LiteralPath "$DeployDir\$d" -Recurse -Force }
-    Copy-Item -LiteralPath "$srcRoot\$d" -Destination "$DeployDir\1.6\" -Recurse -Force
-    Write-Host "  同步 $d"
+# Sub-packages: clean-then-copy (files deleted in the repo must not linger in the game copy).
+foreach ($d in $subDirs) {
+    $src = Join-Path $srcRoot $d
+    if (-not (Test-Path -LiteralPath $src)) {
+        Write-Host "  skip (not present): $d" -ForegroundColor Yellow
+        continue
+    }
+    $leaf = Split-Path $d -Leaf
+    $dst = Join-Path $DeployDir (Join-Path $modSubfolder $leaf)
+    if (Test-Path -LiteralPath $dst) { Remove-Item -LiteralPath $dst -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path (Split-Path $dst -Parent) | Out-Null
+    Copy-Item -LiteralPath $src -Destination $dst -Recurse -Force
+    Write-Host "  synced $d"
 }
-foreach ($d in @("About", "Shaders")) {
-    if (Test-Path -LiteralPath "$DeployDir\$d") { Remove-Item -LiteralPath "$DeployDir\$d" -Recurse -Force }
-    Copy-Item -LiteralPath "$srcRoot\$d" -Destination "$DeployDir\" -Recurse -Force
-    Write-Host "  同步 $d"
+foreach ($d in $rootDirs) {
+    $src = Join-Path $srcRoot $d
+    if (-not (Test-Path -LiteralPath $src)) { continue }
+    $dst = Join-Path $DeployDir $d
+    if (Test-Path -LiteralPath $dst) { Remove-Item -LiteralPath $dst -Recurse -Force }
+    Copy-Item -LiteralPath $src -Destination $dst -Recurse -Force
+    Write-Host "  synced $d"
 }
 
-# Assemblies：只保留 PioneerFrameworkLite.dll（未构建时为空目录，游戏不会加载空 mod 代码）
-if (Test-Path -LiteralPath "$DeployDir\1.6\Assemblies") { Remove-Item -LiteralPath "$DeployDir\1.6\Assemblies" -Recurse -Force }
-New-Item -ItemType Directory -Force -Path "$DeployDir\1.6\Assemblies" | Out-Null
-$liteDll = Join-Path $srcRoot '1.6\Assemblies\PioneerFrameworkLite.dll'
-if (Test-Path -LiteralPath $liteDll) {
-    Copy-Item -LiteralPath $liteDll -Destination "$DeployDir\1.6\Assemblies\"
-    Write-Host "  部署 PioneerFrameworkLite.dll"
-} else {
-    Write-Host "  警告：PioneerFrameworkLite.dll 未构建，先执行 msbuild /p:Configuration=Debug 再运行本脚本"
+# Root FILES that must ship at the mod root (LoadFolders.xml declares the per-version folders).
+foreach ($f in @("LoadFolders.xml")) {
+    $src = Join-Path $srcRoot $f
+    if (Test-Path -LiteralPath $src) {
+        Copy-Item -LiteralPath $src -Destination $DeployDir -Force
+        Write-Host "  synced $f"
+    }
 }
 
-Write-Host "部署同步完成: $DeployDir"
+# Assemblies: only the deliverable DLL (no stale dll/pdb leftovers).
+$dllDst = Join-Path $DeployDir (Join-Path $modSubfolder "Assemblies")
+if (Test-Path -LiteralPath $dllDst) { Remove-Item -LiteralPath $dllDst -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $dllDst | Out-Null
+$dllFull = Join-Path $srcRoot $dllSrc
+if (Test-Path -LiteralPath $dllFull) {
+    Copy-Item -LiteralPath $dllFull -Destination $dllDst
+    Write-Host "  deployed $(Split-Path $dllSrc -Leaf)"
+}
+else {
+    Write-Host "  WARNING: deliverable DLL not found ($dllSrc); code will not load." -ForegroundColor Yellow
+}
+
+Write-Host "Deploy sync complete: $DeployDir (version $Version)"

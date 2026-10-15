@@ -4,7 +4,7 @@ namespace PioneerFramework.GroundAssembly
 {
     /// <summary>
     /// 火箭建造蓝图的 Comp：在原版 Blueprint 阶段持有 RocketDesignSpec，
-    /// 当 Blueprint 转成 Frame 时由 Harmony 补丁把 spec 转交给 CompUnfinishedRocket。
+    /// 当 Blueprint 转成 Frame 时由 <see cref="PF_Blueprint_Rocket"/>（def 的 blueprintClass 子类）把 spec 转交给 CompUnfinishedRocket。
     /// </summary>
     public class CompProperties_RocketBlueprint : CompProperties
     {

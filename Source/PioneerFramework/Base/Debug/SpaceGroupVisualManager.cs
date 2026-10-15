@@ -110,23 +110,21 @@ namespace PioneerFramework
             var harmony = new Harmony("PioneerFramework.SpaceGroupVisualManager");
             try
             {
-            // 补丁1：渲染世界地图时绘制图标和轨道
-            harmony.Patch(AccessTools.Method(typeof(WorldRenderer), "DrawWorldLayers"),
-                postfix: new HarmonyMethod(typeof(SpaceGroupVisualManager), nameof(WorldRenderer_DrawWorldLayers_Postfix)));
+            // 2026-10-15 反射清理 A-2：原先这里是 `WorldRenderer.DrawWorldLayers` 的 Postfix（画卫星图标/轨道）
+            // ——已改为 **def 驱动的全局绘制层** `PF_WorldDrawLayer_SpaceOverlay`
+            //（`Defs/WorldDrawLayerDefs/PF_SpaceOverlay.xml`）；绘制主体仍是本类的
+            // `RenderSpaceOverlayFrame()`（由该层每帧调用，调用点与旧 postfix 逐字相同）。
             // 补丁2：世界地图 GUI 事件（信息面板、点击选中）
             harmony.Patch(AccessTools.Method(typeof(WorldInterface), "WorldInterfaceOnGUI"),
                 postfix: new HarmonyMethod(typeof(SpaceGroupVisualManager), nameof(WorldInterface_OnGUI_Postfix)));
-            // 补丁3：相机跟随
-            harmony.Patch(AccessTools.Method(typeof(WorldCameraDriver), "Update"),
-                postfix: new HarmonyMethod(typeof(SpaceGroupVisualManager), nameof(WorldCameraDriver_Update_Postfix)));
+            // 2026-10-15 反射清理 A-13：原先这里还有 `WorldCameraDriver.Update` 的 Postfix（跟随 + farClip）
+            // 与 `WorldCameraDriver.Awake` 的 Postfix（farClip）——已改为**常驻 MonoBehaviour**
+            //（`PF_CameraFollowDriver`，见下）；MaxAltitude 的两处 transpiler 保留（改的是 vanilla 字面量，无可替代）。
             // 补丁3b：修改世界摄像机最大高度（1100→50000），让玩家能拉远看高轨道
             harmony.Patch(AccessTools.Method(typeof(WorldCameraDriver), "WorldCameraDriverOnGUI"),
                 transpiler: new HarmonyMethod(typeof(SpaceGroupVisualManager), nameof(Transpiler_MaxAltitude_OnGUI)));
             harmony.Patch(AccessTools.Method(typeof(WorldCameraDriver), "Update"),
                 transpiler: new HarmonyMethod(typeof(SpaceGroupVisualManager), nameof(Transpiler_MaxAltitude_Update)));
-            // 补丁3c：增大 farClipPlane
-            harmony.Patch(AccessTools.Method(typeof(WorldCameraDriver), "Awake"),
-                postfix: new HarmonyMethod(typeof(SpaceGroupVisualManager), nameof(WorldCameraDriver_Awake_Postfix)));
             // 补丁4：在世界地图右下角添加开关按钮（更可靠）
             harmony.Patch(AccessTools.Method(typeof(WorldInterface), "WorldInterfaceOnGUI"),
                 prefix: new HarmonyMethod(typeof(SpaceGroupVisualManager), nameof(WorldInterface_OnGUI_Prefix_AddGizmo)));
@@ -136,6 +134,12 @@ namespace PioneerFramework
                 Log.Error("[SpaceGroupVisualManager] Harmony 补丁应用失败（世界视图轨道/相机增强可能部分失效；"
                     + "主功能与发射流程不受影响）：" + ex);
             }
+
+            // 2026-10-15 反射清理 A-13：跟随 / farClip 的常驻驱动器（替代原两处 Postfix）。
+            // 默认执行序即可——两项都不写相机 transform，见 PF_CameraFollowDriver 头注的时序等价性说明。
+            var followGo = new GameObject("PF_CameraFollowDriver");
+            UnityEngine.Object.DontDestroyOnLoad(followGo);
+            followGo.AddComponent<PF_CameraFollowDriver>();
         }
 
         // ── Harmony 补丁方法 ──
@@ -190,7 +194,12 @@ namespace PioneerFramework
         }
 
 
-        public static void WorldRenderer_DrawWorldLayers_Postfix()
+        /// <summary>
+        /// 世界地图叠加的**逐帧入口**（2026-10-15 反射清理 A-2：原名 `WorldRenderer_DrawWorldLayers_Postfix`，
+        /// 现由 def 驱动的 `PF_WorldDrawLayer_SpaceOverlay.Render()` 调用——调用点与旧 postfix 同一处）。
+        /// 含帧耗时/GC/draw-call 探针（尖峰归因），绘制主体见 <see cref="DrawWorldLayersBody"/>。
+        /// </summary>
+        public static void RenderSpaceOverlayFrame()
         {
             long frameClock = System.Diagnostics.Stopwatch.GetTimestamp();
             try
@@ -507,15 +516,20 @@ namespace PioneerFramework
             DrawInfoPanel(spaceGame);
         }
 
-        public static void WorldCameraDriver_Update_Postfix(WorldCameraDriver __instance)
+        /// <summary>
+        /// 跟随选中编队（2026-10-15 反射清理 A-13：原 `WorldCameraDriver_Update_Postfix`，
+        /// 现由常驻 `PF_CameraFollowDriver` 每帧调用；farClip 那半边也搬去了它）。
+        /// 只写 `sphereRotation`（由下一帧 vanilla Update 消费）⇒ 时序与原 postfix 同效。
+        /// </summary>
+        public static void ApplyFollowCameraFrame()
         {
-            // 始终确保 farClipPlane 足够大（不依赖 EnableVisualization）
-            if (Find.WorldCamera != null && Find.WorldCamera.farClipPlane < 200000f)
-                Find.WorldCamera.farClipPlane = 200000f;
-
             if (!EnableVisualization) return;
             if (!isFollowing) return;
             if (!WorldRendererUtility.WorldSelected) return;
+
+            var driver = Find.WorldCameraDriver;
+            if (driver == null) return;
+
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return;
 
@@ -533,7 +547,7 @@ namespace PioneerFramework
 
             Quaternion targetRot = Quaternion.Inverse(Quaternion.LookRotation(-direction));
             float t = Mathf.Clamp01(Time.deltaTime * followLerpSpeed);
-            __instance.sphereRotation = Quaternion.Slerp(__instance.sphereRotation, targetRot, t);
+            driver.sphereRotation = Quaternion.Slerp(driver.sphereRotation, targetRot, t);
         }
 
         // 在世界地图右下角添加一个按钮
@@ -566,7 +580,9 @@ namespace PioneerFramework
 
         /// <summary>
         /// Transpiler: 把 WorldCameraDriverOnGUI 中的 1100f（MaxAltitude）替换为 NEW_MAX_ALTITUDE。
-        /// 影响高度限制 Mathf.Clamp(num2, MinAltitude, 1100f) 和行星层切换判断。
+        /// **只**替换 `Mathf.Clamp(num2, MinAltitude, 1100f)` 里的上界（放开拉远）；
+        /// 同行前的行星层切换判断（`num2 &gt; 1100f`）**保持原版**——层系统照旧，
+        /// 与 1.6 的既有行为一致（1.6 时代该字面量同样未替换，观感已被验收）。
         /// 带上下文保护：仅替换后接 Mathf.Clamp 调用的 1100f，避免误改同名字面量。
         /// </summary>
         public static IEnumerable<CodeInstruction> Transpiler_MaxAltitude_OnGUI(IEnumerable<CodeInstruction> instructions)
@@ -574,18 +590,9 @@ namespace PioneerFramework
             var list = instructions.ToList();
             for (int i = 0; i < list.Count; i++)
             {
-                if (list[i].opcode == OpCodes.Ldc_R4 && (float)list[i].operand == 1100f)
-                {
-                    // 安全检查：1100f 是 Mathf.Clamp 的第三个参数（最大值）
-                    // 后一条指令应为 call Mathf.Clamp
-                    bool isClampArg = i + 1 < list.Count
-                        && list[i + 1].opcode == OpCodes.Call
-                        && list[i + 1].operand is System.Reflection.MethodInfo mi
-                        && mi.Name == "Clamp"
-                        && mi.DeclaringType == typeof(Mathf);
-                    if (isClampArg)
-                        list[i].operand = NEW_MAX_ALTITUDE;
-                }
+                var next = i + 1 < list.Count ? list[i + 1] : null;
+                if (PatchIlGuards.IsClampUpperBound(list[i], next))
+                    list[i].operand = NEW_MAX_ALTITUDE;
             }
             return list;
         }
@@ -593,34 +600,25 @@ namespace PioneerFramework
         /// <summary>
         /// Transpiler: 把 WorldCameraDriver.Update 中的 1100f（MaxAltitude）替换为 NEW_MAX_ALTITUDE。
         /// 影响旋转速度归一化因子 (altitude - MinAltitude) / (1100 - MinAltitude)。
-        /// 带上下文保护：仅替换后接 MinAltitude(5f) 加载的 1100f。
+        /// ⚠ 2026-10-15（补丁核对发现的真缺陷）：旧守卫要求 `ldc.r4 1100` 后接 `ldc.r4 5f`
+        /// （1.6 的 `MinAltitude` 是常量 5f）；**1.7 的 `MinAltitude` 改成了静态属性**
+        /// （`get_MinAltitude`，桌面 = 125f）⇒ 守卫永不匹配、替换静默失效（症状：拉远到高高度时
+        /// 世界拖拽转速被放大到 ~43×）。现在两种形态都认（旧形态只为鲁棒性保留）。
         /// </summary>
         public static IEnumerable<CodeInstruction> Transpiler_MaxAltitude_Update(IEnumerable<CodeInstruction> instructions)
         {
             var list = instructions.ToList();
             for (int i = 0; i < list.Count; i++)
             {
-                if (list[i].opcode == OpCodes.Ldc_R4 && (float)list[i].operand == 1100f)
-                {
-                    // 安全检查：1100f 应当后接 MinAltitude（5f），用于 (1100 - MinAltitude)
-                    bool isInFormula = i + 1 < list.Count
-                        && list[i + 1].opcode == OpCodes.Ldc_R4
-                        && (float)list[i + 1].operand == 5f;
-                    if (isInFormula)
-                        list[i].operand = NEW_MAX_ALTITUDE;
-                }
+                var next = i + 1 < list.Count ? list[i + 1] : null;
+                if (PatchIlGuards.IsMaxAltitudeDenominator(list[i], next))
+                    list[i].operand = NEW_MAX_ALTITUDE;
             }
             return list;
         }
 
-        /// <summary>
-        /// Awake 后立即增大世界摄像机的 farClipPlane，防止远处被裁掉。
-        /// </summary>
-        public static void WorldCameraDriver_Awake_Postfix()
-        {
-            if (Find.WorldCamera != null && Find.WorldCamera.farClipPlane < 200000f)
-                Find.WorldCamera.farClipPlane = 200000f;
-        }
+        // ──（原 `WorldCameraDriver.Awake` 的 farClip Postfix 已随 A-13 搬进
+        //   `PF_CameraFollowDriver.Update`——见该类头注。）──
 
 
         // ── 核心辅助函数（单位转换关键） ──
@@ -1628,11 +1626,9 @@ namespace PioneerFramework
             float leftX = panel.x + 12f;
             float rightX = panel.x + 12f + btnW + 10f;
 
-            // 行1：3D 视角 | 跟随
-            if (Widgets.ButtonText(new Rect(leftX, y, btnW, rowH), "切换至3D视角"))
-                Find.WindowStack.Add(new Window_SpaceBattleView3D(group));
+            // 行1：跟随
             string followLabel = isFollowing && selectedGroupId == group.GroupId ? "停止跟随" : "跟随";
-            if (Widgets.ButtonText(new Rect(rightX, y, btnW, rowH), followLabel))
+            if (Widgets.ButtonText(new Rect(leftX, y, btnW, rowH), followLabel))
             {
                 if (isFollowing && selectedGroupId == group.GroupId)
                     isFollowing = false;

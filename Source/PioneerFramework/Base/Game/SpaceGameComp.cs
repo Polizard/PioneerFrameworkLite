@@ -8,7 +8,6 @@ using UnityEngine;
 using Verse;
 using RimWorld.Planet;
 using RimWorld;
-using System.Reflection;
 using PioneerFramework.Combat;
 using MechJebLib.Lambert;
 
@@ -603,7 +602,8 @@ namespace PioneerFramework
         /// 卫星与地表锚点的销毁都汇聚到 DestroyGroup，订阅方（星座收尸等）不必到处挂点。
         /// **注意**：fire 时刻群组仍在 groups 字典中（注销是第 4 步）→ 订阅者可读 group 自身身份字段。
         /// </summary>
-        public event Action<int> GroupDestroyed;
+        // 契约改真（2026-10-15 手清）：事件在没有订阅者时本就为 null（消费方是 `?.Invoke` / `+=`/`-=`）
+        public event Action<int>? GroupDestroyed;
 
         /// <summary>
         /// 销毁群组：从粗细网格移除 → 清理战斗缓存 → 注销实体 → 注销群组。
@@ -673,7 +673,8 @@ namespace PioneerFramework
 
         public void RegisterMapComponent(int mapId, object mapComp) => mapComponents[mapId] = mapComp;
         public void UnregisterMapComponent(int mapId) => mapComponents.Remove(mapId);
-        public T GetMapComponent<T>(int mapId) where T : class => mapComponents.TryGetValue(mapId, out var comp) ? comp as T : null;
+        // 契约改真（2026-10-15 手清）：查不到 / 类型不符都返回 null（两个消费方本就 null 守卫）
+        public T? GetMapComponent<T>(int mapId) where T : class => mapComponents.TryGetValue(mapId, out var comp) ? comp as T : null;
 
         /// <summary>
         /// 为群组添加机动规划并记录到追踪表（供自动降速使用）。
@@ -957,7 +958,7 @@ namespace PioneerFramework
         /// **[V7] 试验用**：往站内地图放一座传感器阵列建筑（Def 缺失时静默跳过）。
         /// 验收三件：① 站 group 的 `DetectTech` 叠加出非零贡献；② 打掉它 ⇒ 贡献掉；③ 存档往返读数不变。
         /// </summary>
-        private static void SpawnSensorArrayForTest(Map map)
+        private static void SpawnSensorArrayForTest(Map? map)   // 契约改真（2026-10-15 手清）：实现本就容忍 null（`map == null` 早退）
         {
             var def = DefDatabase<ThingDef>.GetNamedSilentFail("PF_Building_SensorArray");
             if (def == null || map == null) return;
@@ -968,7 +969,7 @@ namespace PioneerFramework
         }
 
         /// <summary>[E3] 试验用：往站内地图放一座干扰机建筑（Def 缺失时静默跳过；群级开关默认关）。</summary>
-        private static void SpawnJammerForTest(Map map)
+        private static void SpawnJammerForTest(Map? map)   // 契约改真（2026-10-15 手清）：实现本就容忍 null（`map == null` 早退）
         {
             var def = DefDatabase<ThingDef>.GetNamedSilentFail("PF_Building_Jammer");
             if (def == null || map == null) return;
@@ -981,7 +982,7 @@ namespace PioneerFramework
         }
 
         /// <summary>[V7]/[E2] 试验用：往站内地图放一座主动雷达建筑（Def 缺失时静默跳过）。</summary>
-        private static void SpawnActiveRadarForTest(Map map)
+        private static void SpawnActiveRadarForTest(Map? map)   // 契约改真（2026-10-15 手清）：实现本就容忍 null（`map == null` 早退）
         {
             var def = DefDatabase<ThingDef>.GetNamedSilentFail("PF_Building_ActiveRadar");
             if (def == null || map == null) return;
@@ -2751,8 +2752,9 @@ namespace PioneerFramework
             foreach (int eid in group.GetEntityIds())
             {
                 var e = GetEntityById(eid);
+                // HasMainAxis 的定义即 mainAxisShip.HasValue 且模长非零（SpaceEntity.cs:276）⇒ 非空断言有凭据
                 if (e != null && e.HasMainAxis)
-                    return DVector3.Rotate(e.mainAxisShip.Value.normalized, group.CurrentOrbit.rotation);
+                    return DVector3.Rotate(e.mainAxisShip!.Value.normalized, group.CurrentOrbit.rotation);
             }
             return DVector3.zero;
         }
@@ -3838,13 +3840,15 @@ namespace PioneerFramework
                 {
                     // 多网络按切片流率比例分配消耗并扣各自工质；全部网络工质尽 → 燃烧终止
                     float totalConsumed = 0f;
-                    int activeCount = result.ActiveSlices != null ? result.ActiveSlices.Count : 0;
+                    var slices = result.ActiveSlices;
+                    int activeCount = slices != null ? slices.Count : 0;
                     int exhaustedCount = 0;
-                    if (activeCount > 0)
+                    // slices != null 并入判据（activeCount > 0 本就蕴含它）⇒ 块内 `slices` 被编译器收窄，免 `!`
+                    if (slices != null && activeCount > 0)
                     {
                         float mfTotal = 0f;
                         for (int i = 0; i < activeCount; i++)
-                            mfTotal += result.ActiveSlices[i].massFlow;
+                            mfTotal += slices[i].massFlow;
                         // ★ 执行器**实际所用**网络的 ΣF·dt 与 Σṁ·dt ⇒ 真实 ve = ΣF/Σṁ 的唯一来源。
                         //   ⚠ 用"全部网络合并"的 `EffectiveVe` 会**白送 Δv 假警报**：2026-09-19 实测
                         //   过推档船（主网 ve=4000/ṁ=140 + RCS 网 ve=1500/ṁ=20）= 合并 ve 3687.5，
@@ -3852,14 +3856,14 @@ namespace PioneerFramework
                         double fSum = 0.0, mfSum = 0.0;
                         for (int i = 0; i < activeCount; i++)
                         {
-                            fSum += result.ActiveSlices[i].thrust * dtSeconds;
-                            mfSum += result.ActiveSlices[i].massFlow * dtSeconds;
+                            fSum += slices[i].thrust * dtSeconds;
+                            mfSum += slices[i].massFlow * dtSeconds;
                         }
                         group.burnThrustDt += fSum;
                         group.burnFlowDt += mfSum;
                         for (int i = 0; i < activeCount; i++)
                         {
-                            var slice = result.ActiveSlices[i];
+                            var slice = slices[i];
                             float share = mfTotal > 0f ? (float)result.PropellantConsumed * (slice.massFlow / mfTotal) : 0f;
                             float actual = ConsumeGroupPropellant(group, slice.network.propellant, share);
                             totalConsumed += actual;
@@ -3990,7 +3994,8 @@ namespace PioneerFramework
                     var okSrc = GetGroupPropulsionSource(group);
                     float okVe = okSrc != null ? okSrc.EffectiveVe : 0f;
                     bool okExhausted;
-                    if (okVe <= 0f)
+                    // okSrc == null 并入判据（那时 okVe 恒 0，走同一分支）⇒ else 内 `okSrc` 被编译器收窄，免 `!`
+                    if (okSrc == null || okVe <= 0f)
                     {
                         okExhausted = true; // 未装引擎 → 无法维持
                     }
@@ -4243,7 +4248,8 @@ namespace PioneerFramework
                     pm.radialDV * pm.radialDV + pm.tangentialDV * pm.tangentialDV + pm.normalDV * pm.normalDV);
                 var maneuverSrc = GetGroupPropulsionSource(group);
                 double mDry = GetGroupMass(group, null); // 干质量（不含工质）
-                var mEst = BurnCalculator.Estimate(dvMag, (float)mDry, maneuverSrc,
+                // maneuverSrc 非空凭据：null ⇒ networks 实参为 null ⇒ Estimate 在 active.Count==0 处早退（BurnCalculator.cs:78），不触 src
+                var mEst = BurnCalculator.Estimate(dvMag, (float)mDry, maneuverSrc!,
                     maneuverSrc != null ? maneuverSrc.Networks : null, pm.useNetworks);
                 if (!mEst.Feasible)
                 {
@@ -5214,7 +5220,8 @@ namespace PioneerFramework
             // 可行性（继承出发机动的工质网络）
             var src = GetGroupPropulsionSource(group);
             double mDry = GetGroupMass(group, null);
-            var est = BurnCalculator.Estimate((float)dv.magnitude, (float)mDry, src,
+            // src 非空凭据：null ⇒ networks 实参为 null ⇒ Estimate 在 active.Count==0 处早退（BurnCalculator.cs:78），不触 src
+            var est = BurnCalculator.Estimate((float)dv.magnitude, (float)mDry, src!,
                 src != null ? src.Networks : null, group.rendezvousUseNetworks);
             double safeRadius = GetBodySafeRadius(group.CelestialBodyId);
 
@@ -6712,7 +6719,8 @@ namespace PioneerFramework
             // Δv 可行性：**沿用既有唯一判据**（主网/RCS 接力语义），不另写一份火箭方程
             var src = GetGroupPropulsionSource(group);
             double mDry = GetGroupMass(group, null);
-            est = BurnCalculator.Estimate((float)quote.deltaV, (float)mDry, src, src?.Networks);
+            // src 非空凭据：null ⇒ networks 实参为 null ⇒ Estimate 在 active.Count==0 处早退（BurnCalculator.cs:78），不触 src
+            est = BurnCalculator.Estimate((float)quote.deltaV, (float)mDry, src!, src?.Networks);
             if (!est.Feasible)
             {
                 reason = $"工质不足：本次需 Δv {quote.deltaV:F0} m/s（工质 {est.RequiredPropellant:F0} kg），当前可达 {est.MaxDeltaV:F0} m/s";

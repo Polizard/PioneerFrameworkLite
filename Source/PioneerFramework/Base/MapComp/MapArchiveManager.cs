@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Xml;
 using RimWorld;
 using RimWorld.Planet;
@@ -24,23 +23,10 @@ namespace PioneerFramework
         private const string ARCHIVE_FOLDER_NAME = "PioneerFramework/ArchivedMaps";
         private const string ARCHIVE_EXTENSION = ".pfmap";
 
-        // Scribe 反射缓存（懒加载，避免静态初始化时 Assembly 未就绪）
-        private static FieldInfo? _saverField;
-        private static FieldInfo? _loaderField;
-        private static FieldInfo? _curXmlParentField;
-
-        private static FieldInfo? SaverField =>   // 契约改真（2026-10-15）：GetField 找不到时为 null
-            _saverField ??= typeof(Scribe).GetField("saver",
-                BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-
-        private static FieldInfo? LoaderField =>   // 契约改真（2026-10-15）
-            _loaderField ??= typeof(Scribe).GetField("loader",
-                BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-
-        private static FieldInfo? CurXmlParentField =>   // 契约改真（2026-10-15）
-            _curXmlParentField ??= typeof(ScribeLoader).GetField("curXmlParent",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-
+        // 2026-10-15 反射清理（A-16）：本类原先用 FieldInfo 读写 `Scribe.saver` / `Scribe.loader` /
+        // `ScribeLoader.curXmlParent`——实测三者**在 1.7 都是 public**（`Scribe.cs:44/47` 是 public static 字段、
+        // `ScribeLoader.curXmlParent` 是 public 实例字段），原版自己也直接驱动它们（`SafeSaver.cs:121`、
+        // `LoadedModManager.cs:692`）⇒ 三个 FieldInfo 连同 GetField 全部删除、改直接成员访问。
         // Scribe 静态状态：封存/取出会临时替换 Scribe.saver/loader；
         // 结束后必须恢复原始实例，否则后续正常存档/读档会因 null 而 NRE。
         private static ScribeSaver? originalScribeSaver;   // 契约改真（2026-10-15 手清）：清理归零（614 行）
@@ -568,7 +554,7 @@ namespace PioneerFramework
 
                 // 直接注入解析好的 XML（等效于 InitLoading 的 curXmlParent 赋值）
                 // curXmlParent 就是 CompRoot，PostExposeData 直接从这里读子节点
-                CurXmlParentField?.SetValue(loader, doc.DocumentElement);
+                loader.curXmlParent = doc.DocumentElement;
                 Scribe.mode = LoadSaveMode.LoadingVars;
 
                 comp.PostExposeData();
@@ -587,18 +573,20 @@ namespace PioneerFramework
         }
 
         // ═══════════════════════════════════════════════
-        //  Scribe 反射辅助（设置 Scribe.saver / Scribe.loader 静态字段）
-        //  这是 Scribe 系统唯一的扩展入口，RimWorld 本身也通过此方式使用
+        //  Scribe 状态辅助（替换 Scribe.saver / Scribe.loader）
+        //  ⚠ 2026-10-15 更正：旧注释写"这是 Scribe 系统唯一的扩展入口（才需反射）"是错的——
+        //  这两个字段是 public，原版自己就直接驱动（`SafeSaver.cs:121` / `LoadedModManager.cs:692`）。
+        //  真正必须原地换 saver/loader 的原因 = 封存/取档期间不能与主存档流程共用同一个实例。
         // ═══════════════════════════════════════════════
 
         private static void SetScribeSaver(ScribeSaver saver)
         {
-            SaverField?.SetValue(null, saver);
+            Scribe.saver = saver;
         }
 
         private static void SetScribeLoader(ScribeLoader loader)
         {
-            LoaderField?.SetValue(null, loader);
+            Scribe.loader = loader;
         }
 
         private static void PreserveOriginalScribeState()

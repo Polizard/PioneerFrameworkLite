@@ -381,9 +381,9 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 将空间站实体与地图双向关联。
+        /// 将空间站实体与地图双向关联。map 可为 null（生成失败时调用方直接跳过；实现本就早退）。
         /// </summary>
-        public static void LinkEntityToMap(SpaceEntity entity, Map map)
+        public static void LinkEntityToMap(SpaceEntity entity, Map? map)
         {
             if (entity == null || map == null) return;
             entity.MapId = map.uniqueID;

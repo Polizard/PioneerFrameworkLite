@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Text;
 using PioneerFramework.Combat;   // CombatManager 的详细日志开关
 using RimWorld;
@@ -422,17 +421,20 @@ namespace PioneerFramework
         //  共用设施①：逐 tick 详细日志开关的**保存/恢复**
         //  背景：13+ 处场景把 `DebugDetailed*` 打开却不关 ⇒ 整轮日志被刷爆
         //  （`PerfAcceptanceRunner` 曾在验收器里手工补过一份，这里收口）。
+        //  2026-10-15 反射清理：原为 (Type, fieldName) 反射表——9 个字段全是 `public static` ⇒
+        //  改为**强类型访问器表**：字段改名/删除会当场编译错，而不是运行期静默失效。
         // ══════════════════════════════════════════════════════════════════════════
-        private static readonly (Type type, string field)[] DetailedSwitches =
-        [(typeof(CombatManager), "DebugDetailedCombat"),
-            (typeof(CombatManager), "DebugDetailedCollision"),
-            (typeof(CombatManager), "DebugProjectileProbeInterval"),
-            (typeof(SpaceGameComp), "DebugDetailedSteering"),
-            (typeof(SpaceGameComp), "DebugDetailedThrust"),
-            (typeof(AutonomousVehicleManager), "DebugDetailedGuidance"),
-            (typeof(BoardingManager), "DebugDetailedBoarding"),
-            (typeof(RocketLaunchController), "DebugDetailedLaunch"),
-            (typeof(ConstellationGameComp), "DebugDetailedConstellation"),
+        private static readonly (Func<object?> Get, Action<object?> Set)[] DetailedSwitches =
+        [
+            (() => CombatManager.DebugDetailedCombat, v => CombatManager.DebugDetailedCombat = (bool)v!),
+            (() => CombatManager.DebugDetailedCollision, v => CombatManager.DebugDetailedCollision = (bool)v!),
+            (() => CombatManager.DebugProjectileProbeInterval, v => CombatManager.DebugProjectileProbeInterval = (int)v!),
+            (() => SpaceGameComp.DebugDetailedSteering, v => SpaceGameComp.DebugDetailedSteering = (bool)v!),
+            (() => SpaceGameComp.DebugDetailedThrust, v => SpaceGameComp.DebugDetailedThrust = (bool)v!),
+            (() => AutonomousVehicleManager.DebugDetailedGuidance, v => AutonomousVehicleManager.DebugDetailedGuidance = (bool)v!),
+            (() => BoardingManager.DebugDetailedBoarding, v => BoardingManager.DebugDetailedBoarding = (bool)v!),
+            (() => RocketLaunchController.DebugDetailedLaunch, v => RocketLaunchController.DebugDetailedLaunch = (bool)v!),
+            (() => ConstellationGameComp.DebugDetailedConstellation, v => ConstellationGameComp.DebugDetailedConstellation = (bool)v!),
         ];
 
         /// <summary>
@@ -448,21 +450,13 @@ namespace PioneerFramework
             public SwitchesRestorer()
             {
                 for (int i = 0; i < DetailedSwitches.Length; i++)
-                {
-                    var fi = DetailedSwitches[i].type.GetField(DetailedSwitches[i].field,
-                        BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                    saved[i] = fi?.GetValue(null);
-                }
+                    saved[i] = DetailedSwitches[i].Get();
             }
 
             public void Dispose()
             {
                 for (int i = 0; i < DetailedSwitches.Length; i++)
-                {
-                    var fi = DetailedSwitches[i].type.GetField(DetailedSwitches[i].field,
-                        BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                    if (fi != null && saved[i] != null) fi.SetValue(null, saved[i]);
-                }
+                    DetailedSwitches[i].Set(saved[i]);
             }
         }
     }

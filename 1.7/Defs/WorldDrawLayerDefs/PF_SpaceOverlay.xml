@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- 2026-10-15 反射清理 A-2：世界地图叠加层（卫星图标/轨道线/波束/标记）。
+       原为挂在 `WorldRenderer.DrawWorldLayers` 上的 Harmony Postfix ⇒ 改 def 驱动的全局绘制层。
+       类见 Source/PioneerFramework/WorldDrawLayer/PF_WorldDrawLayer_SpaceOverlay.cs。 -->
+  <GlobalWorldDrawLayerDef>
+    <defName>PF_SpaceOverlay</defName>
+    <worldDrawLayer>PioneerFramework.PF_WorldDrawLayer_SpaceOverlay</worldDrawLayer>
+  </GlobalWorldDrawLayerDef>
+</Defs>
