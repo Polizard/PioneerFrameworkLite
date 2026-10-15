@@ -56,6 +56,33 @@ namespace PioneerFramework
             }
             PflTestKit.End();
 
+            // ②b 机制在册自检（2026-10-16，同步）：反射清理 / 行为迁移批的可机判部分
+            //     —— Def 表与已载入地图组件表上的只读断言（天空/地表图层、地图组件、火箭链 def、相机驱动器）
+            PflTestKit.Begin("机制在册自检（同步）", "00 验收");
+            try
+            {
+                RefactorMechanismsSelfTest.Run();
+                PflTestKit.Check(PflTestKit.Kind.Invariant, RefactorMechanismsSelfTest.LastFailed == 0,
+                    "机制自检失败项为 0",
+                    $"通过 {RefactorMechanismsSelfTest.LastPassed} / 失败 {RefactorMechanismsSelfTest.LastFailed}");
+                if (RefactorMechanismsSelfTest.LastFailed > 0)
+                {
+                    var detail = new System.Text.StringBuilder();
+                    var fails = RefactorMechanismsSelfTest.LastFailures;
+                    for (int i = 0; i < fails.Count; i++)
+                    {
+                        if (i > 0) detail.Append('；');
+                        detail.Append(fails[i]);
+                    }
+                    PflTestKit.Check(PflTestKit.Kind.Value, false, "机制自检失败明细", detail.ToString());
+                }
+            }
+            catch (System.Exception e)
+            {
+                PflTestKit.Check(PflTestKit.Kind.Invariant, false, "机制自检异常", e.Message);
+            }
+            PflTestKit.End();
+
             // ③ 着陆判据（S3，2026-09-23）：同步段 = 报价/距离门/跨层错配/越界/缺表面/执行三件事
             LandingAcceptanceRunner.RunSync();
 

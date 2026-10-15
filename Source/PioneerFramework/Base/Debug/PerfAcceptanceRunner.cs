@@ -241,10 +241,14 @@ namespace PioneerFramework
             if (batteryEnabled)
             {
                 GravityFieldSelfTest.Run();
-                batteryPassed = GravityFieldSelfTest.LastPassed;
-                batteryFailed = GravityFieldSelfTest.LastFailed;
-                batterySummary = $"引力自检电池：通过 {batteryPassed} / 失败 {batteryFailed}";
-                foreach (var f in GravityFieldSelfTest.LastFailures) failures.Add("[电池] " + f);
+                // 2026-10-16：机制在册自检并进即时电池（反射清理/行为迁移批的可机判部分）
+                RefactorMechanismsSelfTest.Run();
+                batteryPassed = GravityFieldSelfTest.LastPassed + RefactorMechanismsSelfTest.LastPassed;
+                batteryFailed = GravityFieldSelfTest.LastFailed + RefactorMechanismsSelfTest.LastFailed;
+                batterySummary = $"即时电池：引力 {GravityFieldSelfTest.LastPassed}/{GravityFieldSelfTest.LastFailed}"
+                    + $" + 机制在册 {RefactorMechanismsSelfTest.LastPassed}/{RefactorMechanismsSelfTest.LastFailed}";
+                foreach (var f in GravityFieldSelfTest.LastFailures) failures.Add("[电池·引力] " + f);
+                foreach (var f in RefactorMechanismsSelfTest.LastFailures) failures.Add("[电池·机制] " + f);
             }
             else
             {
@@ -645,7 +649,7 @@ Log.Message($"[验收] 组数：结束={GroupCount()}｜id 复用观察={PerfPro
 
             // ── 即时电池 + 引力场读数（值判据，与覆盖度分开报）──
             Log.Message("[验收] ═══════════ 引力场 / 制导参数（A0/A1/A2）═══════════");
-            Log.Message($"[验收] {(batterySummary ?? "引力自检电池未运行")}（明细见上方 [引力自检] 段落）");
+            Log.Message($"[验收] {(batterySummary ?? "引力自检电池未运行")}（明细见上方 [引力自检] / [机制自检] 段落）");
             Log.Message($"[验收] ㉑引力场：根域影子 检查={PerfProbe.GravityRootChecked} 不一致={PerfProbe.GravityRootMismatch}｜子天体域差分={PerfProbe.GravitySubBodyProbes} 次，最近比值={PerfProbe.GravitySubBodyLastRatio:P4}（范围 {PerfProbe.GravitySubBodyMinRatio:P4}–{PerfProbe.GravitySubBodyMaxRatio:P4}）｜判读 0=旧行为(错) 0.1%–0.6%=潮汐(对) ~7%=全量和(错)");
             Log.Message($"[验收] ㉒弹头引力(A2)：建段 {PerfProbe.WarheadSegments} 次 最近 |a|={PerfProbe.WarheadAccel:F3} m/s²（主导项 {PerfProbe.WarheadAccelRatio:F2}×，应 0.2–5×；~100× = 参考系混用旧伪值） 指向行星中心余弦={PerfProbe.WarheadTowardCenterCos:F3}｜射弹段：重建={PerfProbe.ProjectileSegments} / 步={PerfProbe.ProjectileSteps}（预期 ≈1/120）");
             if (failures.Count > 0)

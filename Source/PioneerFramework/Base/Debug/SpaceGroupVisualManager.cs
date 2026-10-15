@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Emit;
@@ -115,19 +115,22 @@ namespace PioneerFramework
             //（`Defs/WorldDrawLayerDefs/PF_SpaceOverlay.xml`）；绘制主体仍是本类的
             // `RenderSpaceOverlayFrame()`（由该层每帧调用，调用点与旧 postfix 逐字相同）。
             // 补丁2：世界地图 GUI 事件（信息面板、点击选中）
+            // 2026-10-16 反射清理 A-4：原先这里还有**同一条方法上的第二个安装点**——
+            // `WorldInterfaceOnGUI` 的 Prefix（画"显示/隐藏卫星视图"按钮）。两处补丁本就是**同一个方法**，
+            // 现已合并进 Postfix 的绘制体（`WorldInterfaceOnGUIBody` → `DrawToggleButton`）：
+            // 安装点 −1、按钮位置/文案/时机**零变化**（只是画序从"vanilla 内容之前"挪到"之后"，更不会被盖）。
             harmony.Patch(AccessTools.Method(typeof(WorldInterface), "WorldInterfaceOnGUI"),
                 postfix: new HarmonyMethod(typeof(SpaceGroupVisualManager), nameof(WorldInterface_OnGUI_Postfix)));
             // 2026-10-15 反射清理 A-13：原先这里还有 `WorldCameraDriver.Update` 的 Postfix（跟随 + farClip）
             // 与 `WorldCameraDriver.Awake` 的 Postfix（farClip）——已改为**常驻 MonoBehaviour**
-            //（`PF_CameraFollowDriver`，见下）；MaxAltitude 的两处 transpiler 保留（改的是 vanilla 字面量，无可替代）。
+            //（`PF_WorldCameraService`，见下）；MaxAltitude 的两处 transpiler 保留（改的是 vanilla 字面量，无可替代）。
+            // 2026-10-16 反射清理 A-13b：原先另有两处属性式补丁（`WorldCameraDriver.ApplyMapPositionToGameObject`
+            // 与 `.Update`，含图编队的背景相机接管 + near clip 还原）也已收进同一个常驻组件 ⇒ 属性式补丁归零。
             // 补丁3b：修改世界摄像机最大高度（1100→50000），让玩家能拉远看高轨道
             harmony.Patch(AccessTools.Method(typeof(WorldCameraDriver), "WorldCameraDriverOnGUI"),
                 transpiler: new HarmonyMethod(typeof(SpaceGroupVisualManager), nameof(Transpiler_MaxAltitude_OnGUI)));
             harmony.Patch(AccessTools.Method(typeof(WorldCameraDriver), "Update"),
                 transpiler: new HarmonyMethod(typeof(SpaceGroupVisualManager), nameof(Transpiler_MaxAltitude_Update)));
-            // 补丁4：在世界地图右下角添加开关按钮（更可靠）
-            harmony.Patch(AccessTools.Method(typeof(WorldInterface), "WorldInterfaceOnGUI"),
-                prefix: new HarmonyMethod(typeof(SpaceGroupVisualManager), nameof(WorldInterface_OnGUI_Prefix_AddGizmo)));
             }
             catch (System.Exception ex)
             {
@@ -135,11 +138,32 @@ namespace PioneerFramework
                     + "主功能与发射流程不受影响）：" + ex);
             }
 
-            // 2026-10-15 反射清理 A-13：跟随 / farClip 的常驻驱动器（替代原两处 Postfix）。
-            // 默认执行序即可——两项都不写相机 transform，见 PF_CameraFollowDriver 头注的时序等价性说明。
-            var followGo = new GameObject("PF_CameraFollowDriver");
+            // 2026-10-15 反射清理 A-13 / A-13b：相机相关四件事（farClip / 跟随 / 背景接管 / near clip 还原）
+            // 的常驻服务，替代原四处 Postfix。**执行序必须 −50**：晚于相机驱动（−103）、
+            // 早于世界层绘制（在 Root_Play 的 Update 里）——否则背景相机会晚一帧、天空盒"游泳"。
+            var followGo = new GameObject("PF_WorldCameraService");
             UnityEngine.Object.DontDestroyOnLoad(followGo);
-            followGo.AddComponent<PF_CameraFollowDriver>();
+            PF_WorldCameraService.Instance = followGo.AddComponent<PF_WorldCameraService>();
+            try
+            {
+                var runtime = Waylith.UnityCompat.UnityRuntime.Current;
+                var unityWorld = runtime?.World;
+                if (unityWorld != null)
+                {
+                    unityWorld.RegisterExecutionOrder(typeof(PF_WorldCameraService), -50);
+                    PF_WorldCameraService.ExecutionOrderRegistered = true;
+                }
+                else
+                {
+                    Log.Error("[SpaceGroupVisualManager] 拿不到 Waylith UnityWorld（UnityRuntime.Current 为空）⇒ "
+                        + "世界相机服务退化为默认执行序（世界层绘制之后）：背景相机接管会晚一帧、天空盒可能“游泳”。");
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Log.Error("[SpaceGroupVisualManager] 世界相机服务未注册执行序 −50 ⇒ 退化为默认序（世界层绘制之后）："
+                    + "背景相机接管会晚一帧、天空盒可能“游泳”：" + ex);
+            }
         }
 
         // ── Harmony 补丁方法 ──
@@ -193,6 +217,16 @@ namespace PioneerFramework
             _frameDrawCalls++;
         }
 
+        // 2026-10-16 合批后 draw 数 ≠ 可见点数（轨道点/点阵都并成一批）⇒ 点数单独一列，读数不失真。
+        private static readonly long[] _dcQuadWindow = new long[DcCats];
+        private static readonly long[] _dcQuadFrame = new long[DcCats];
+
+        private static void CountQuads(int cat, int n)
+        {
+            _dcQuadWindow[cat] += n;
+            _dcQuadFrame[cat] += n;
+        }
+
 
         /// <summary>
         /// 世界地图叠加的**逐帧入口**（2026-10-15 反射清理 A-2：原名 `WorldRenderer_DrawWorldLayers_Postfix`，
@@ -230,11 +264,11 @@ namespace PioneerFramework
                 if (Prefs.DevMode && frameUs > SpikeThresholdUs && _spikeLinesThisWindow < SpikeMaxLinesPerWindow)
                 {
                     _spikeLinesThisWindow++;
-                    Log.Message($"[帧耗时·尖峰] 本帧={frameUs:F0}µs｜draw call={_dcFrameTotal}（球{_dcFrame[DcSphere]}/图标{_dcFrame[DcIcon]}/轨道点{_dcFrame[DcOrbitPoint]}/标记{_dcFrame[DcMarker]}/发射点{_dcFrame[DcLaunch]}）｜GC 本帧={_gc0}/{_gc1}/{_gc2}｜轨道线={_frameOrbitPathsThisFrame} 条");
+                    Log.Message($"[帧耗时·尖峰] 本帧={frameUs:F0}µs｜draw call={_dcFrameTotal}（球{_dcFrame[DcSphere]}/图标{_dcFrame[DcIcon]}/轨道点{_dcFrame[DcOrbitPoint]}/标记{_dcFrame[DcMarker]}/发射点{_dcFrame[DcLaunch]}）｜点数：轨道{_dcQuadFrame[DcOrbitPoint]}/标记{_dcQuadFrame[DcMarker]}｜GC 本帧={_gc0}/{_gc1}/{_gc2}｜轨道线={_frameOrbitPathsThisFrame} 条");
                 }
 
                 _dcFrameTotal = 0;
-                for (int i = 0; i < DcCats; i++) _dcFrame[i] = 0;
+                for (int i = 0; i < DcCats; i++) { _dcFrame[i] = 0; _dcQuadFrame[i] = 0; }
                 _frameOrbitPathsThisFrame = 0;
 
                 if (_frameClocks >= FrameAutoLogEvery)
@@ -247,15 +281,16 @@ namespace PioneerFramework
                         //   真正的"每帧最大"是 `{4}`（老代码里它恒 0）。分类别计数让"谁在画"一眼可判。
                         Log.Message(string.Format(
                             "[帧耗时] 帧数={0} 平均={1:F1}µs/帧 最慢={2:F1}µs｜draw call **窗口累计** {3}（每帧均 {11:F1}，**每帧最大 {4}**）"
-                            + "｜分类：球 {5}/图标 {6}/轨道点 {7}/标记 {8}/发射点 {9}｜轨道线 {10} 条",
+                            + "｜分类（draw｜点数）：球 {5}/图标 {6}/轨道点 {7}｜{12}/标记 {8}｜{13}/发射点 {9}｜轨道线 {10} 条",
                             _frameClocks, _frameTicksTotal * toUsNow / _frameClocks, _frameTicksMax * toUsNow,
                             _frameDrawCalls, _frameDrawCallsMax,
                             _dcWindow[DcSphere], _dcWindow[DcIcon], _dcWindow[DcOrbitPoint], _dcWindow[DcMarker], _dcWindow[DcLaunch],
-                            _frameOrbitPaths, (double)_frameDrawCalls / _frameClocks));
+                            _frameOrbitPaths, (double)_frameDrawCalls / _frameClocks,
+                            _dcQuadWindow[DcOrbitPoint], _dcQuadWindow[DcMarker]));
                     }
                     _frameClocks = 0; _frameTicksTotal = 0; _frameTicksMax = 0;
                     _frameDrawCalls = 0; _frameDrawCallsMax = 0; _frameOrbitPaths = 0;
-                    for (int i = 0; i < DcCats; i++) _dcWindow[i] = 0;
+                    for (int i = 0; i < DcCats; i++) { _dcWindow[i] = 0; _dcQuadWindow[i] = 0; }
                     _spikeLinesThisWindow = 0;
                 }
             }
@@ -315,6 +350,7 @@ namespace PioneerFramework
                     }
                     DrawGroupIcon(group, camera, posOverride);
                 }
+            IconBatchFlush();   // 图标批收口（2026-10-16 合批；空批无操作）
 
             // ── [V-2] 认知层图层：影子 σ 圈 / 假接触 / 波束锥（同一准入：dev 真值开关下跳过）──
             DrawCognitionOverlay(camera, spaceGame, sensor);
@@ -507,6 +543,10 @@ namespace PioneerFramework
 
         private static void WorldInterfaceOnGUIBody()
         {
+            // 开关按钮：**不依赖 EnableVisualization**（关着的时候要能开回来）。
+            // 2026-10-16 反射清理 A-4：原为同方法上的 Prefix 安装点，合并到此处（安装点 −1，行为不变）。
+            DrawToggleButton();
+
             if (!EnableVisualization) return;
             if (!WorldRendererUtility.WorldSelected) return;
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
@@ -517,8 +557,34 @@ namespace PioneerFramework
         }
 
         /// <summary>
+        /// 世界地图右下角的"显示/隐藏卫星视图"开关（原 `WorldInterface_OnGUI_Prefix_AddGizmo` 原样搬入）。
+        /// </summary>
+        private static void DrawToggleButton()
+        {
+            if (!WorldRendererUtility.WorldSelected) return;
+            if (Current.ProgramState != ProgramState.Playing) return;
+            if (Find.World == null) return;
+
+            // 绘制按钮（右下角固定位置）
+            float x = UI.screenWidth - 180f;
+            float y = UI.screenHeight - 50f;
+            Rect rect = new Rect(x, y, 160f, 40f);
+            string label = EnableVisualization ? "隐藏卫星视图" : "显示卫星视图";
+            if (Widgets.ButtonText(rect, label))
+            {
+                EnableVisualization = !EnableVisualization;
+                // 关闭可视化时同时停止跟随和清除选中
+                if (!EnableVisualization)
+                {
+                    isFollowing = false;
+                    selectedGroupId = -1;
+                }
+            }
+        }
+
+        /// <summary>
         /// 跟随选中编队（2026-10-15 反射清理 A-13：原 `WorldCameraDriver_Update_Postfix`，
-        /// 现由常驻 `PF_CameraFollowDriver` 每帧调用；farClip 那半边也搬去了它）。
+        /// 现由常驻 `PF_WorldCameraService` 每帧调用；farClip / 背景相机接管也都在它里面）。
         /// 只写 `sphereRotation`（由下一帧 vanilla Update 消费）⇒ 时序与原 postfix 同效。
         /// </summary>
         public static void ApplyFollowCameraFrame()
@@ -550,29 +616,8 @@ namespace PioneerFramework
             driver.sphereRotation = Quaternion.Slerp(driver.sphereRotation, targetRot, t);
         }
 
-        // 在世界地图右下角添加一个按钮
-        public static void WorldInterface_OnGUI_Prefix_AddGizmo()
-        {
-            if (!WorldRendererUtility.WorldSelected) return;
-            if (Current.ProgramState != ProgramState.Playing) return;
-            if (Find.World == null) return;
-
-            // 绘制按钮（右下角固定位置）
-            float x = UI.screenWidth - 180f;
-            float y = UI.screenHeight - 50f;
-            Rect rect = new Rect(x, y, 160f, 40f);
-            string label = EnableVisualization ? "隐藏卫星视图" : "显示卫星视图";
-            if (Widgets.ButtonText(rect, label))
-            {
-                EnableVisualization = !EnableVisualization;
-                // 关闭可视化时同时停止跟随和清除选中
-                if (!EnableVisualization)
-                {
-                    isFollowing = false;
-                    selectedGroupId = -1;
-                }
-            }
-        }
+        // 在世界地图右下角添加一个按钮 —— 2026-10-16 反射清理 A-4：原为 `WorldInterfaceOnGUI` 的
+        // Prefix 安装点，已合并进同方法的 Postfix 绘制体（见 `DrawToggleButton`）⇒ 该方法体删去。
 
         // ──────────── 摄像机拉远距离补丁 ────────────
 
@@ -694,9 +739,37 @@ namespace PioneerFramework
             if (selectedGroupId == group.GroupId) size *= 1.12f;
 
             Vector3 drawPos = viewPos + toCam.normalized * 1.5f; // 避免深度冲突
-            Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, new Vector3(size, 1f, size));
-            CountDraw(DcIcon);
-            Graphics.DrawMesh(MeshPool.plane10, matrix, iconMaterial, WorldCameraManager.WorldLayer);
+            // 2026-10-16 合批：图标**同 mesh 同材质、连 MPB 都没有**（全同色）⇒ 整帧所有图标并成一次提交
+            //（原来是"每个编队一次"——蜂群/星座动辄上百上千群）。矩阵自带位置/尺寸（选中放大也在矩阵里）⇒ 外观不变。
+            IconBatchAdd(Matrix4x4.TRS(drawPos, rot, new Vector3(size, 1f, size)));
+        }
+
+        /// <summary>图标批是否已开（一帧内一次：首个图标开批、组循环结束后 <see cref="IconBatchFlush"/> 收口）。</summary>
+        private static bool iconBatchOpen;
+
+        private static void IconBatchAdd(Matrix4x4 matrix)
+        {
+            if (!iconBatchOpen)
+            {
+                WorldQuadBatch.Reset();
+                iconBatchOpen = true;
+            }
+            WorldQuadBatch.AddQuad(matrix);
+        }
+
+        /// <summary>收口图标批（空批 = 无操作）。逐个提交时的顺序 = 加入顺序 ⇒ 外观不变。</summary>
+        private static void IconBatchFlush()
+        {
+            if (!iconBatchOpen) return;
+            iconBatchOpen = false;
+
+            if (WorldQuadBatch.ItemCount > 0)
+            {
+                CountDraw(DcIcon);
+                CountQuads(DcIcon, WorldQuadBatch.ItemCount);
+                // `null` 属性 ⇒ 与原 4 参调用同链（最终都是 ShadowCastingMode.On，已核 UnityStubs 重载链）
+                WorldQuadBatch.Flush(iconMaterial, null, WorldCameraManager.WorldLayer);
+            }
         }
 
         /// <summary>
@@ -819,6 +892,10 @@ namespace PioneerFramework
         private static void DrawOrbitPath(List<Vector3> pointsUnity, Color color, float size, Camera cam)
         {
             _frameOrbitPaths++; _frameOrbitPathsThisFrame++;   // 轨道线计数（现状应恒为 ≤1 + 机动预览段）
+            // 2026-10-16 合批：整条路径**同 mesh 同材质同一个颜色** ⇒ 拼一个 mesh、一次 DrawMesh
+            //（原来是"每个可见轨道点一次"——采样 36–180 点 ⇒ 36–180 次/帧）。
+            orbitMarkerPropertyBlock.SetColor("_Color", color);   // 一色一批；原在循环内逐点设（冗余）
+            WorldQuadBatch.Reset();
             for (int i = 0; i < pointsUnity.Count; i++)
             {
                 Vector3 viewPos = ToView(pointsUnity[i]);
@@ -829,10 +906,14 @@ namespace PioneerFramework
 
                 Quaternion rot = Quaternion.LookRotation(cam.transform.up, toCam.normalized);
                 Vector3 drawPos = viewPos + toCam.normalized * 0.5f;
-                Matrix4x4 matrix = Matrix4x4.TRS(drawPos, rot, new Vector3(size, 1f, size));
-                orbitMarkerPropertyBlock.SetColor("_Color", color);
-                CountDraw(DcOrbitPoint);   // ★ 每个可见轨道点一次 `Graphics.DrawMesh`
-                Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
+                WorldQuadBatch.AddQuad(Matrix4x4.TRS(drawPos, rot, new Vector3(size, 1f, size)));
+            }
+
+            if (WorldQuadBatch.ItemCount > 0)
+            {
+                CountDraw(DcOrbitPoint);
+                CountQuads(DcOrbitPoint, WorldQuadBatch.ItemCount);
+                WorldQuadBatch.Flush(orbitMarkerMaterial, orbitMarkerPropertyBlock, WorldCameraManager.WorldLayer);
             }
         }
 
@@ -1137,10 +1218,14 @@ namespace PioneerFramework
         }
 
         /// <summary>点阵画笔：输入**视图系**点列（与 `DrawOrbitPath` 的区别：不做 ToView、单独计数）。
-        /// 返回**实际画出的点数**（被行星/视锥剔除的不计）——供 `[波束锥]` 读数用。</summary>
+        /// 返回**实际画出的点数**（被行星/视锥剔除的不计）——供 `[波束锥]` 读数用。
+        /// 2026-10-16 **合批**：一次调用 = 一个颜色 ⇒ 拼一个 mesh、一次 DrawMesh（原来每点一次；
+        /// σ 圈 24 点、波束锥数十点都在这里受益）；返回值口径不变（= 实际点数）。</summary>
         private static int DrawMarkerPoints(List<Vector3> viewPoints, Color color, float size, Camera cam)
         {
             int drawn = 0;
+            orbitMarkerPropertyBlock.SetColor("_Color", color);   // 一色一批；原在循环内逐点设（冗余）
+            WorldQuadBatch.Reset();
             for (int i = 0; i < viewPoints.Count; i++)
             {
                 Vector3 viewPos = viewPoints[i];
@@ -1148,11 +1233,15 @@ namespace PioneerFramework
                 Vector3 toCam = cam.transform.position - viewPos;
                 if (toCam.sqrMagnitude < 0.01f) continue;
                 Quaternion rot = Quaternion.LookRotation(cam.transform.up, toCam.normalized);
-                Matrix4x4 matrix = Matrix4x4.TRS(viewPos + toCam.normalized * 0.5f, rot, new Vector3(size, 1f, size));
-                orbitMarkerPropertyBlock.SetColor("_Color", color);
-                CountDraw(DcMarker);
-                Graphics.DrawMesh(MeshPool.plane10, matrix, orbitMarkerMaterial, WorldCameraManager.WorldLayer, null, 0, orbitMarkerPropertyBlock);
+                WorldQuadBatch.AddQuad(Matrix4x4.TRS(viewPos + toCam.normalized * 0.5f, rot, new Vector3(size, 1f, size)));
                 drawn++;
+            }
+
+            if (drawn > 0)
+            {
+                CountDraw(DcMarker);
+                CountQuads(DcMarker, drawn);
+                WorldQuadBatch.Flush(orbitMarkerMaterial, orbitMarkerPropertyBlock, WorldCameraManager.WorldLayer);
             }
             return drawn;
         }

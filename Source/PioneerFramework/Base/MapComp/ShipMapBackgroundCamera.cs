@@ -1,4 +1,3 @@
-using HarmonyLib;
 using RimWorld.Planet;
 using UnityEngine;
 using Verse;
@@ -37,12 +36,16 @@ namespace PioneerFramework
     /// 又是朝行星的那一侧。出壳余量只有几十米，在 1 单位 = 50 km 的视图尺度下不可见 —— 这步的意义在
     /// "镜头在壳外、跟着甲板转"，不在那点位移。
     ///
-    /// ## 为什么挂 `ApplyMapPositionToGameObject`（而不是别处）
-    /// 背景模式下每帧两条路都写这台相机：`Update()` 走 `ApplyMapPositionToGameObject()`（背景分支），
-    /// `WorldCameraDriverOnGUI()` 走 `ApplyPositionToGameObject()`（GUI 阶段，**在渲染之后**）。
-    /// 渲染前最后一次写是 `Update` 那条 ⇒ postfix 挂在 `ApplyMapPositionToGameObject` 上就是"渲染前最后一手"，
-    /// GUI 那条不会把我们盖掉（它写的是下一帧渲染前早被覆盖的位置）。**世界地图自己那条路不受影响**
-    /// （世界视图不走本函数；世界视图每帧由 `ApplyPositionToGameObject` 从 `sphereRotation`/`altitude` 重算）。
+    /// ## 由谁调用（2026-10-16 反射清理 A-13b 起）
+    /// 原先是两处 Harmony 补丁（`WorldCameraDriver.ApplyMapPositionToGameObject` 与 `.Update` 的 Postfix）。
+    /// 现由常驻 `PF_WorldCameraService`（`Update` 里成对调用 <see cref="ApplyAfterVanillaMapPosition"/> 与
+    /// <see cref="RestoreNearClipIfNotTakenOver"/>）**在世界层绘制之前**执行；该组件用
+    /// `RegisterExecutionOrder(typeof(PF_WorldCameraService), -50)` 钉在执行序 −50
+    /// （vanilla：相机驱动 −103 → Root_Entry −50 → Root_Play −20，**世界层绘制在 Root_Play 里**）。
+    /// 相机驱动那一步此刻**不写**背景相机（我们的 `MapParent.WorldCameraPosition` 是 `Vector3.zero`，
+    /// vanilla 在 `ApplyMapPositionToGameObject` 里直接早退）⇒ 我们写的就是本帧渲染要用的一份；
+    /// GUI 阶段那条 `ApplyPositionToGameObject` 跑在渲染之后，只影响下一帧、会被我们覆盖。
+    /// （细节与时序等价性论证见 `PF_WorldCameraService` 头注。）
     ///
     /// ## 唯一的额外一行：接管期间压 near clip（理由与边界）
     /// 世界相机原版 `nearClipPlane = 2` 单位 = **100 km**。相机真的坐到船上之后，低于 100 km 的一切
@@ -184,19 +187,5 @@ namespace PioneerFramework
             float inv = 1f / Mathf.Sqrt(m);
             return new Quaternion(q.x * inv, q.y * inv, q.z * inv, q.w * inv);
         }
-    }
-
-    /// <summary>背景模式每帧摆世界相机的地方（见 <see cref="ShipMapBackgroundCamera"/> 类注释）。</summary>
-    [HarmonyPatch(typeof(WorldCameraDriver), nameof(WorldCameraDriver.ApplyMapPositionToGameObject))]
-    internal static class WorldCameraDriver_ApplyMapPositionToGameObject_ShipCamera
-    {
-        private static void Postfix() => ShipMapBackgroundCamera.ApplyAfterVanillaMapPosition();
-    }
-
-    /// <summary>退出接管时把世界相机的 near clip 还原（配对见 <see cref="ShipMapBackgroundCamera"/>）。</summary>
-    [HarmonyPatch(typeof(WorldCameraDriver), nameof(WorldCameraDriver.Update))]
-    internal static class WorldCameraDriver_Update_RestoreNearClip
-    {
-        private static void Postfix() => ShipMapBackgroundCamera.RestoreNearClipIfNotTakenOver();
     }
 }

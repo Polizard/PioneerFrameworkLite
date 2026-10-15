@@ -141,7 +141,7 @@ namespace PioneerFramework
             AddAction("一键验收", "00 验收", 100, PerfAcceptanceRunner.Run,
                 () => PerfAcceptanceRunner.Running
                     ? "一键验收（运行中…）"
-                    : "一键验收（引力自检电池 + 7 个场景 → 硬指标/值判据/覆盖度结论）");
+                    : "一键验收（即时电池：引力 + 机制在册 + 7 个场景 → 硬指标/值判据/覆盖度结论）");
             AddAction("中止验收（立即打印结论与计数）", "00 验收", 90, PerfAcceptanceRunner.Abort, null);
             AddCheckbox("性能优化验收探针（影子校验 + 周期汇总）", "00 验收", 80, typeof(PerfProbe), "Enabled");
             // ★ 按需读"物理步总耗时"（常驻测量，与影子校验**无关** ⇒ 测耗时不会被观测者效应污染）：
@@ -150,6 +150,9 @@ namespace PioneerFramework
                 () => { PerfProbe.LogStepClockNow(); }, null);
             AddAction("自检进度窗口（实时：阶段进度 + 引力读数 + 失败清单）", "00 验收", 70,
                 Window_PFLSelfTest.OpenIfClosed, null);
+            // 2026-10-16：本轮（反射清理 / 行为迁移）的可机判部分——只读 Def 表与组件表，不造景。
+            AddAction("机制在册自检（天空图层/地表层/地图组件/火箭链 def/相机驱动器——只读）", "00 验收", 69,
+                RefactorMechanismsSelfTest.Run, null);
             // P1-8：规划器一键验收 —— 12 个操作各走一遍"参数描述 → 计算 → 入队"，
             // 打完判决块后**自动把规划器窗口开出来**（窗口长什么样只有人眼能判，探针明写 UNCHECKED）。
             AddAction("规划器一键验收（12 操作：参数→计算→入队 + 自动开窗）", "00 验收", 60,

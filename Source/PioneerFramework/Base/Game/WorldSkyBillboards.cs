@@ -299,18 +299,53 @@ namespace PioneerFramework
         /// </summary>
         internal static bool VanillaLayersVisible(bool replaceEnabled) => !replaceEnabled;
 
+        /// <summary>换层是否已核对就位（成功后**单布尔早退**——帧兜底调用的常态代价）。</summary>
+        internal static bool LayerTypesSwapped { get; private set; }
+
+        private static bool IsOurReplacement(System.Type? layerType)
+            => layerType == typeof(PF_GlobalDrawLayer_Sun) || layerType == typeof(PF_GlobalDrawLayer_Stars);
+
         /// <summary>
-        /// 启动时把两个原版层的 def 类型换成我们的子类（`GlobalWorldDrawLayerDef.worldDrawLayer` 是公开 Type 字段）。
-        /// 每次建层（新世界生成 / 每次读档 `WorldGrid.CreateRequiredLayers`）都会实例化我们的子类；
-        /// 画不画由子类 `Visible` 按开关**动态**决定 ⇒ 运行时开关依旧有效。
+        /// 把两个原版层的 def 类型换成我们的子类（`GlobalWorldDrawLayerDef.worldDrawLayer` 是公开 Type 字段）。
+        ///
+        /// **主机制 = XML patch**（`1.7/Patches/GlobalWorldDrawLayers_SkySwap.xml`：def 解析期就定型，无时序问题）。
+        /// 本方法 = **兜底 + 启动自报**：1.7 实测"只在 `[StaticConstructorOnStartup]` 里改这个字段"**没生效**
+        /// （2026-10-16 机制在册自检抓到 def 仍是 `GlobalDrawLayer_Sun`）⇒ 每次启动核对一遍并打一行读数
+        /// （共见 N / 已是我们的 M / 本次替换 K；K&gt;0 = patch 没吃到、靠这里救回）。
+        /// 帧兜底（`PF_WorldCameraService`，每 60 帧）覆盖"此刻 def 还没定型/被重建"的极端情形；成功后早退。
+        ///
+        /// ⚠ 层实例在**开世界时**建（`WorldGrid.InitializeGlobalLayers` 读 def 字段）⇒ 既有存档要**重载**
+        /// 才换上新实例（机制在册自检里有对应判据："世界层实例"那一节）。
         /// </summary>
-        internal static void SwapVanillaLayerTypes()
+        internal static void EnsureLayerTypesSwapped(string phase, bool logAlways = false)
         {
+            if (LayerTypesSwapped) return;
+
+            int seen = 0, alreadyOurs = 0, swapped = 0;
             foreach (GlobalWorldDrawLayerDef def in DefDatabase<GlobalWorldDrawLayerDef>.AllDefsListForReading)
             {
+                seen++;
+                if (IsOurReplacement(def.worldDrawLayer))
+                {
+                    alreadyOurs++;
+                    continue;
+                }
+
                 System.Type? replacement = ReplacementLayerTypeFor(def.worldDrawLayer);
                 if (replacement != null)
+                {
                     def.worldDrawLayer = replacement;
+                    swapped++;
+                }
+            }
+
+            if (swapped > 0 || alreadyOurs > 0)
+                LayerTypesSwapped = true;
+
+            if (logAlways || swapped > 0)
+            {
+                Log.Message($"[PF·天空] 换层核对（{phase}）：共见 {seen} 条 GlobalWorldDrawLayerDef｜已是我们的子类 {alreadyOurs}｜本次替换 {swapped}"
+                    + (LayerTypesSwapped ? "" : "（此刻 def 未定型，帧兜底继续）"));
             }
         }
     }
@@ -357,13 +392,13 @@ namespace PioneerFramework
         }
     }
 
-    /// <summary>启动时执行 A-14 的层类型替换（def 已载入、世界尚未创建/读档 ⇒ 时机正确）。</summary>
+    /// <summary>启动时核对（并兜底）A-14 的层类型替换（def 已载入、世界尚未创建/读档 ⇒ 时机正确）。</summary>
     [StaticConstructorOnStartup]
     internal static class SkyLayerTypeSwap
     {
         static SkyLayerTypeSwap()
         {
-            VanillaSkySuppression.SwapVanillaLayerTypes();
+            VanillaSkySuppression.EnsureLayerTypesSwapped("启动静态构造", logAlways: true);
         }
     }
 }

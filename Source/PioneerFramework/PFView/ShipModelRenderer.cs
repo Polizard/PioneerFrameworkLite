@@ -85,15 +85,21 @@ namespace PioneerFramework
             if (toonOutline)
                 block.SetFloat("_OutlineWidth", PartOutlineWidth);
 
+            // 2026-10-16 合批（"渲染线优化审查"第二批）：全部零件**同网格同材质同色**（`PartColor` 是常量）
+            // ⇒ 一个实体并成**一次**提交（原来是每零件一次 —— 站体动辄数百零件，编队还要乘船数）。
+            // 位置/尺寸都在各自矩阵里、批内顺序 = 零件顺序 ⇒ 外观不变。
+            block.SetColor("_Color", PartColor);     // 常量色；原在循环内逐零件设（冗余）
+            WorldQuadBatch.Reset();
             foreach (var part in entity.Parts)
             {
                 if (part.isDestroyed) continue;
 
-                Matrix4x4 mtx = PartMatrix(viewPos, rotation, part.positionShip, part.boundsSizeShip,
-                    metersToView, scale);
-                block.SetColor("_Color", PartColor);
-                Graphics.DrawMesh(mesh, mtx, material, layer, null, 0, block);
+                WorldQuadBatch.AddMesh(mesh, PartMatrix(viewPos, rotation, part.positionShip, part.boundsSizeShip,
+                    metersToView, scale));
             }
+
+            if (WorldQuadBatch.ItemCount > 0)
+                WorldQuadBatch.Flush(material, block, layer);
         }
 
         // ════════════════════════════════════════════════════

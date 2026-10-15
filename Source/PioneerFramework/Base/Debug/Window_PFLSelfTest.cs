@@ -163,7 +163,7 @@ namespace PioneerFramework
                 ? PerfAcceptanceRunner.StageOutcome.Pending
                 : (bFail == 0 ? PerfAcceptanceRunner.StageOutcome.Passed : PerfAcceptanceRunner.StageOutcome.Failed);
             DrawRow(new Rect(0, y, inRect.width, RowHeight), batteryOutcome,
-                "引力自检电池（瞬时，34 项）",
+                "即时电池（引力 34 项 + 机制在册）",
                 batteryRun ? $"通过 {bPass} / 失败 {bFail}" : "未运行",
                 true, PerfAcceptanceRunner.IsBatteryEnabled, running,
                 on => PerfAcceptanceRunner.SetBatteryEnabled(on));

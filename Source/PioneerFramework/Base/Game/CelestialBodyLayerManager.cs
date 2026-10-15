@@ -55,26 +55,17 @@ namespace PioneerFramework
         /// </summary>
         public static float GetDayLengthForMap(Map map)
         {
-            if (map == null || map.Tile < 0) return 60000f;
+            if (map == null) return 60000f;
 
+            // 2026-10-16 降成本：原先每次都**遍历全部 PlanetLayer 比 Def**（本方法在
+            // `CurCelestialSunGlow` / `GenLocalDate.DayPercent(Map)` 两条**每帧**前缀里各调一次）。
+            // 1.7 的 `PlanetTile.Layer` 直接给层（`PlanetLayers[layerId]` 一次字典查），
+            // 而 `GetDayLength(layer)` 也是按 `LayerID` 的字典查 ⇒ 两条 O(1)，遍历删去。
             var tile = map.Tile;
-            var layerDef = tile.LayerDef;
-            if (layerDef == null) return 60000f;
+            if (!tile.Valid) return 60000f;
 
-            var wg = Find.WorldGrid;
-            if (wg == null) return 60000f;
-
-            // 2026-10-15 反射清理：改用公开属性 `WorldGrid.PlanetLayers`（1.7 起公开，IReadOnlyDictionary）。
-            var layers = wg.PlanetLayers;
-
-            foreach (var kv in layers)
-            {
-                if (kv.Value?.Def == layerDef)
-                {
-                    return GetDayLength(kv.Value);
-                }
-            }
-            return 60000f;
+            var layer = tile.Layer;
+            return layer != null ? GetDayLength(layer) : 60000f;
         }
 
         /// <summary>所有已注册的天体 layer</summary>
@@ -430,21 +421,18 @@ namespace PioneerFramework
             //（`PF_CelestialSurfaceLayer`；原版 `Surface` def 由 `Patches/PlanetLayerDefs_CelestialSurface.xml`
             // 改指同一类）⇒ 补丁数 6 → 4。
 
-            // 补丁1：WorldGrid.RegisterPlanetLayer 创建新 layer 时自动注册天体 layer
-            var registerMethod = AccessTools.Method(typeof(WorldGrid), "RegisterPlanetLayer",
-                [typeof(PlanetLayerDef), typeof(PlanetLayerSettings),
-                    typeof(float?), typeof(Vector3?), typeof(Vector3?), typeof(float?)]);
-            if (registerMethod != null)
-            {
-                harmony.Patch(registerMethod,
-                    postfix: new HarmonyMethod(typeof(CelestialBodyLayerManager), nameof(RegisterPlanetLayer_Postfix)));
-            }
+            // 2026-10-16 反射清理 A-5（WorldGrid 族细判）：安装点 **4 → 2**（两条按源码核实为冗余）。
+            //  · 删「`WorldGrid.RegisterPlanetLayer` 的 Postfix」：读 1.7 源码 —— 该函数在 vanilla 里
+            //    **唯一的生产调用者就是 `WorldGrid.CreateRequiredLayers`**（另一处是开发者调试动作
+            //    `DebugActionsMisc.TestLayer`，造的是 Orbit 层、本就不该注册为天体层），
+            //    而下面的补丁3 会在 `CreateRequiredLayers` 之后把**全部层**扫一遍统一注册 ⇒ 逐层钩子冗余。
+            //    我们自己那两条建层路径（`RuntimePlanetLayerService.CreateLayerIfMissing` /
+            //    `EnsureCelestialBodyLayersExist`——后者本就随 `TryRegisterExistingLayers` 的全量扫描一起注册）
+            //    改为显式调用 `NotifyLayerCreated`（见 `RuntimePlanetLayerService` 那处）。
+            //  · 删「`WorldGrid.ExposeData` 的 Postfix」：读档路径里 `ExposeData` 的 `PostLoadInit` 分支
+            //    **自己就会调 `CreateRequiredLayers()`**（`WorldGrid.cs:924`，无条件）⇒ 已被补丁3 覆盖，重复。
 
-            // 补丁2：WorldGrid.GetGizmos 追加"查看天体"Gizmo
-            harmony.Patch(AccessTools.Method(typeof(WorldGrid), nameof(WorldGrid.GetGizmos)),
-                postfix: new HarmonyMethod(typeof(CelestialBodyLayerManager), nameof(GetGizmos_Postfix)));
-
-            // 补丁3：WorldGrid.CreateRequiredLayers 末尾强制注册
+            // 补丁3：WorldGrid.CreateRequiredLayers 末尾强制注册（新世界 / 读档两条路都经它）
             var createLayersMethod = AccessTools.Method(typeof(WorldGrid), "CreateRequiredLayers");
             if (createLayersMethod != null)
             {
@@ -452,21 +440,17 @@ namespace PioneerFramework
                     postfix: new HarmonyMethod(typeof(CelestialBodyLayerManager), nameof(CreateRequiredLayers_Postfix)));
             }
 
-            // 补丁4：WorldGrid.ExposeData 加载后重新注册
-            harmony.Patch(AccessTools.Method(typeof(WorldGrid), nameof(WorldGrid.ExposeData)),
-                postfix: new HarmonyMethod(typeof(CelestialBodyLayerManager), nameof(WorldGrid_ExposeData_Postfix)));
+            // 补丁4：WorldGrid.GetGizmos 追加"查看天体"Gizmo（保留：**无 def 通道**——vanilla 的层 Gizmo 由
+            // `PlanetLayerDef.viewGizmoTexPath` 生成，管不到我们这套"按天体列浮窗切视图"。
+            // ⚠ 这是**每帧**路径（Gizmo 每帧枚举）：2026-10-16 起命令走缓存，见 `GetOrBuildCelestialViewCommand`。）
+            harmony.Patch(AccessTools.Method(typeof(WorldGrid), nameof(WorldGrid.GetGizmos)),
+                postfix: new HarmonyMethod(typeof(CelestialBodyLayerManager), nameof(GetGizmos_Postfix)));
 
             Log.Message("[CelestialBodyLayerManager] Harmony patches applied");
         }
 
         // ──（原 `PlanetLayer.Visible` / `PlanetLayer.Raycastable` 两处 Prefix 已迁入
         //   `PF_CelestialSurfaceLayer` 的覆写——见该类头注，2026-10-15 反射清理 A-3。）──
-
-        // ── Postfix: RegisterPlanetLayer ──
-        public static void RegisterPlanetLayer_Postfix(PlanetLayer __result)
-        {
-            TryRegisterLayer(__result);
-        }
 
         // ── Postfix: CreateRequiredLayers ──
         public static void CreateRequiredLayers_Postfix()
@@ -478,19 +462,27 @@ namespace PioneerFramework
             }
         }
 
-        // ── Postfix: WorldGrid.ExposeData ──
-        public static void WorldGrid_ExposeData_Postfix()
+        /// <summary>
+        /// **层新建后的显式注册入口**（2026-10-16 反射清理 A-5：替代原 `WorldGrid.RegisterPlanetLayer` 的 Postfix）。
+        /// 只转发到 <see cref="TryRegisterLayer"/>（它自己会判"不匹配任何 CelestialBodyDef 就不注册"）。
+        /// 调用点 = 我们自己的建层路径（`RuntimePlanetLayerService.CreateLayerIfMissing`）。
+        /// </summary>
+        public static void NotifyLayerCreated(PlanetLayer? layer)
         {
-            var mgr = Current.Game?.GetComponent<CelestialBodyLayerManager>();
-            if (mgr != null && !mgr.layersRegistered)
-            {
-                mgr.TryRegisterExistingLayers();
-            }
+            TryRegisterLayer(layer);
         }
 
         // ──────────── "查看天体" Gizmo ────────────
 
         private static readonly Texture2D ViewCelestialBodyIcon = ContentFinder<Texture2D>.Get("UI/Commands/ViewPlanet");
+
+        // 缓存（2026-10-16）：`WorldGrid.GetGizmos` 是**每帧**枚举 ⇒ 不许每帧 LINQ + new。
+        private static readonly List<PlanetLayer> cachedBodies = new();
+        private static Command_Action? cachedViewCommand;
+        private static CelestialBodyLayerManager? cachedGizmoMgr;
+        private static WorldGrid? cachedGizmoGrid;
+        private static int cachedBodyCount = -1;
+        private static int cachedSelectedLayerId = int.MinValue;
 
         public static IEnumerable<Gizmo> GetGizmos_Postfix(IEnumerable<Gizmo> __result)
         {
@@ -502,8 +494,43 @@ namespace PioneerFramework
             if (Current.ProgramState != ProgramState.Playing)
                 yield break;
 
-            var bodies = GetAllCelestialBodyLayers().ToList();
+            yield return GetOrBuildCelestialViewCommand();
+        }
 
+        /// <summary>
+        /// "查看天体"命令 —— **缓存版**（2026-10-16 降成本）：旧实现每帧走
+        /// `GetAllCelestialBodyLayers().ToList()`（LINQ 迭代器 + List 分配）并 `new Command_Action`
+        /// （含闭包）⇒ 每帧 GC 垃圾。现在只在"**换局 / 换世界 / 注册数变化 / 选中的天体层变化**"时重建；
+        /// 浮窗候选项本来就是点击时才建（标签含"(当前)"态 ⇒ 每次点开都是最新）。
+        /// </summary>
+        private static Command_Action GetOrBuildCelestialViewCommand()
+        {
+            var mgr = Current.Game?.GetComponent<CelestialBodyLayerManager>();
+            var grid = Find.WorldGrid;
+            int selectedId = PlanetLayer.Selected?.LayerID ?? -1;
+
+            if (cachedViewCommand == null
+                || !ReferenceEquals(cachedGizmoMgr, mgr)
+                || !ReferenceEquals(cachedGizmoGrid, grid)
+                || cachedBodyCount != celestialBodyLayers.Count
+                || cachedSelectedLayerId != selectedId)
+            {
+                cachedGizmoMgr = mgr;
+                cachedGizmoGrid = grid;
+                cachedBodyCount = celestialBodyLayers.Count;
+                cachedSelectedLayerId = selectedId;
+
+                cachedBodies.Clear();
+                cachedBodies.AddRange(GetAllCelestialBodyLayers());
+
+                cachedViewCommand = BuildCelestialViewCommand();
+            }
+
+            return cachedViewCommand;
+        }
+
+        private static Command_Action BuildCelestialViewCommand()
+        {
             var cmd = new Command_Action
             {
                 defaultLabel = "查看天体",
@@ -511,7 +538,7 @@ namespace PioneerFramework
                 icon = ViewCelestialBodyIcon,
                 action = () =>
                 {
-                    if (bodies.Count == 0)
+                    if (cachedBodies.Count == 0)
                     {
                         Messages.Message("没有已注册的天体 layer。请检查 CelestialBodyDef XML 配置。",
                             MessageTypeDefOf.RejectInput, false);
@@ -520,7 +547,7 @@ namespace PioneerFramework
 
                     var options = new List<FloatMenuOption>();
 
-                    foreach (var layer in bodies)
+                    foreach (var layer in cachedBodies)
                     {
                         var capturedLayer = layer;
                         string label = layer.Def.label ?? layer.Def.defName;
@@ -548,10 +575,10 @@ namespace PioneerFramework
             };
 
             // 无注册天体时禁用
-            if (bodies.Count == 0)
+            if (cachedBodies.Count == 0)
                 cmd.Disable("没有已注册的天体 layer。请先配置 CelestialBodyDef XML。");
 
-            yield return cmd;
+            return cmd;
         }
     }
 }

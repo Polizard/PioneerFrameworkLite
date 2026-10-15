@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Reflection;
 using UnityEngine;
@@ -72,7 +72,7 @@ namespace PioneerFramework
             try
             {
                 string assemblyDir = Path.GetDirectoryName(
-                    Path.GetFullPath(Assembly.GetExecutingAssembly().Location)) ?? ".";
+                    Path.GetFullPath(typeof(PFViewToonShader).Assembly.Location)) ?? ".";
                 path = Path.GetFullPath(Path.Combine(assemblyDir, "..", "AssetBundles", bundleName));
             }
             catch (Exception exception)

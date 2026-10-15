@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <!-- 2026-10-16（A-14 修复）：原版两层的世界绘制类在 **def 解析期**换成我们的子类
+       （`PF_GlobalDrawLayer_Sun/Stars`：`Visible => !开关 && base.Visible` ⇒ 运行时开关依旧）。
+       背景：只靠 `[StaticConstructorOnStartup]` 在启动时改 def 字段，1.7 实测**未生效**
+       （2026-10-16 机制在册自检抓到 def 仍是原版类）⇒ 改走 XML patch（解析期定型，无时序问题）；
+       `VanillaSkySuppression.EnsureLayerTypesSwapped` 保留为兜底 + 启动自报一行读数。
+       纯 XML def 改写，无 Harmony。层实例在开世界时建（`WorldGrid.InitializeGlobalLayers`）⇒ 既有存档要重载才换新实例。 -->
+  <Operation Class="PatchOperationReplace">
+    <xpath>/Defs/GlobalWorldDrawLayerDef[defName="Sun"]/worldDrawLayer</xpath>
+    <value>
+      <worldDrawLayer>PioneerFramework.PF_GlobalDrawLayer_Sun</worldDrawLayer>
+    </value>
+  </Operation>
+  <Operation Class="PatchOperationReplace">
+    <xpath>/Defs/GlobalWorldDrawLayerDef[defName="Stars"]/worldDrawLayer</xpath>
+    <value>
+      <worldDrawLayer>PioneerFramework.PF_GlobalDrawLayer_Stars</worldDrawLayer>
+    </value>
+  </Operation>
+</Patch>

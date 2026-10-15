@@ -325,6 +325,12 @@ namespace PioneerFramework
             PlanetLayer layer =
                 Find.WorldGrid.RegisterPlanetLayer(layerDef, spec.CreateSettings());
 
+            // 2026-10-16 反射清理 A-5：天体层注册改由**显式调用**——原先靠
+            // `WorldGrid.RegisterPlanetLayer` 的 Postfix 补丁（已随"逐层钩子冗余"判据删除：
+            // vanilla 里该函数的唯一生产调用者就是 `WorldGrid.CreateRequiredLayers`，那条路已由
+            // `CreateRequiredLayers` 的 Postfix 全量扫描覆盖）；本路径是那个扫描之外的唯一生产建层路径。
+            CelestialBodyLayerManager.NotifyLayerCreated(layer);
+
             try
             {
                 RunWorldGenerationPreservingRandState(layer, seedPart);

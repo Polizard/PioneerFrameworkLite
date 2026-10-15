@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Reflection;
 using UnityEngine;
@@ -126,7 +126,7 @@ namespace PioneerFramework.PFView
             try
             {
                 bundlePath = GetBundlePath(
-                    Assembly.GetExecutingAssembly().Location,
+                    typeof(PFViewOutlineAssetBundleProvider).Assembly.Location,
                     bundleName);
             }
             catch (Exception exception)

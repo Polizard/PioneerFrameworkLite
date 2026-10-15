@@ -50,13 +50,21 @@ namespace PioneerFramework
         }
 
         /// <summary>
+        /// 时间倍速来源的缓存引用（2026-10-16 降成本）：原先每个 prefix **每次调用**都走
+        /// `Current.Game?.GetComponent&lt;TimeScaleManager&gt;()`（组件表查）——而这些 prefix 全是
+        /// **每帧多次**的热方法（日期读数 / 地图光照 / 太阳方向）。`GameComponentRef` 跨局自动失效、
+        /// 命中后是纯字段读（见该类头注）。
+        /// </summary>
+        private static readonly GameComponentRef<TimeScaleManager> timeScaleRef = new();
+
+        /// <summary>
         /// 日历 tick 缩放：始终使用 TimeScaleManager.GetDisplayTicksAbs()，
         /// 无论 Normal/Fast 模式，保证切换时间流速时数值连续。
         /// 始终以地球时间为准，不叠加天体自转缩放。
         /// </summary>
         private static long GetTimeScaledTicksAbs(long originalTicksAbs)
         {
-            var timeScaleManager = Current.Game?.GetComponent<TimeScaleManager>();
+            var timeScaleManager = timeScaleRef.Get();
             return (timeScaleManager != null)
                 ? (long)timeScaleManager.GetDisplayTicksAbs()
                 : originalTicksAbs;
@@ -68,7 +76,7 @@ namespace PioneerFramework
         /// </summary>
         private static long GetCelestialScaledTicksAbs(float? dayLengthSource = null)
         {
-            var timeScaleManager = Current.Game?.GetComponent<TimeScaleManager>();
+            var timeScaleManager = timeScaleRef.Get();
             long ticksAbs = (timeScaleManager != null)
                 ? (long)timeScaleManager.GetDisplayTicksAbs()
                 : Find.TickManager.TicksAbs;
@@ -145,10 +153,7 @@ namespace PioneerFramework
             if (Math.Abs(dayLength - 60000f) <= 10f) return true; // Earth，走原版
 
             // 获取 physicsTick 并缩放到天体自转周期
-            var timeScaleManager = Current.Game?.GetComponent<TimeScaleManager>();
-            long displayTicksAbs = (timeScaleManager != null)
-                ? (long)timeScaleManager.GetDisplayTicksAbs()
-                : Find.TickManager.TicksAbs;
+            long displayTicksAbs = GetCelestialScaledTicksAbs(dayLength);
 
             long celestialTicks = (long)(displayTicksAbs * (60000.0 / dayLength));
             Vector2 longLat = Find.WorldGrid.LongLatOf(map.Tile);
