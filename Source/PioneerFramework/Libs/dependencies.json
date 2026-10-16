@@ -37,5 +37,15 @@
       "path": "0Harmony/0Harmony.dll",
       "sha256": "94DD929A06F720869F6A718A64BC6713A37DBE153C2F4C16C031B2587D7EE694"
     }
+  ],
+  "testFiles": [
+    {
+      "path": "TestRuntime/Microsoft.Extensions.Logging.Abstractions.dll",
+      "sha256": "A76A735B63E6EF3B0BF41FF92423CBD16103B8952E8306140A9BD650346034DC"
+    },
+    {
+      "path": "TestRuntime/com.rlabrecque.steamworks.net.dll",
+      "sha256": "FF601AA1046D315E6EE1EF8FFD5B91D1DEF6CA6E7CCD39926AFF3AF695805FDE"
+    }
   ]
 }

@@ -21,6 +21,13 @@
   <Import Project="..\GameReferences.props" />
 
   <ItemGroup>
+    <!-- NativeArray needs logging contracts; Scribe's primitive parser registers Steam value types. -->
+    <Reference Include="..\PioneerFramework\Libs\TestRuntime\*.dll">
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="..\..\Shaders\*.shader" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Defs\**\*.xml" Link="Defs\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Patches\**\*.xml" Link="Patches\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

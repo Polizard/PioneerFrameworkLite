@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_RingCreateSmall>创建环世界 256×3</PF_RingCreateSmall>
+  <PF_RingCreateLarge>创建环世界 1024×12</PF_RingCreateLarge>
+  <PF_RingView>查看环世界全景</PF_RingView>
+  <PF_RingFocus>聚焦选中环世界地块内侧</PF_RingFocus>
+  <PF_RingEnterMap>进入选中环世界地块殖民地图</PF_RingEnterMap>
+  <PF_RingValidate>校验环世界拓扑与状态</PF_RingValidate>
+  <PF_RingRemove>删除空环世界</PF_RingRemove>
+  <PF_RingError>环世界操作失败：{0}</PF_RingError>
+  <PF_RingCreated>已创建或恢复环世界 {0}，共 {1} 个地块。</PF_RingCreated>
+  <PF_RingNone>当前没有环世界，请先创建。</PF_RingNone>
+  <PF_RingSelectTile>请先在世界地图上选中一个环世界地块。</PF_RingSelectTile>
+  <PF_RingValidated>环世界校验通过，详细状态已写入日志。</PF_RingValidated>
+  <PF_RingRemoved>已删除空环世界。</PF_RingRemoved>
+  <PF_RingColonyName>{0} 殖民地 {1}</PF_RingColonyName>
+</LanguageData>

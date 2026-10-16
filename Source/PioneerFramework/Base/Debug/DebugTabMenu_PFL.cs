@@ -273,6 +273,14 @@ namespace PioneerFramework
             AddAction("打印 PlanetLayer 状态", "75 场景 · PlanetLayer", 70,
                 RuntimePlanetLayerDebugActions.PrintLayers, null);
 
+            AddAction("PF_RingCreateSmall".Translate(), "76 场景 · 环世界", 100, RingWorld.RingWorldDebugActions.CreateSmall, null);
+            AddAction("PF_RingCreateLarge".Translate(), "76 场景 · 环世界", 95, RingWorld.RingWorldDebugActions.CreateLarge, null);
+            AddAction("PF_RingView".Translate(), "76 场景 · 环世界", 90, RingWorld.RingWorldDebugActions.View, null);
+            AddAction("PF_RingFocus".Translate(), "76 场景 · 环世界", 85, RingWorld.RingWorldDebugActions.FocusSelected, null);
+            AddAction("PF_RingEnterMap".Translate(), "76 场景 · 环世界", 80, RingWorld.RingWorldDebugActions.EnterSelectedMap, null);
+            AddAction("PF_RingValidate".Translate(), "76 场景 · 环世界", 75, RingWorld.RingWorldDebugActions.Validate, null);
+            AddAction("PF_RingRemove".Translate(), "76 场景 · 环世界", 70, RingWorld.RingWorldDebugActions.Remove, null);
+
             // ═══ 场景 · 星座（组织层）═══
             AddAction("星座自检（API 全链）", "90 场景 · 星座", 100, ConstellationSelfTest.Run, null);
 

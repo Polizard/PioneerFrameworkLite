@@ -729,6 +729,17 @@ namespace PioneerFramework
         /// 设置并注册 PFL 火箭的虚拟推进数据（LA-18）。
         /// 该数据没有对应地图建筑，必须由本组件负责持久化与重建。
         /// </summary>
+        internal Landing.LandingVirtualPropulsionData ExportLandingVirtualPropulsion()
+        {
+            var def = DefDatabase<PropellantDef>.GetNamedSilentFail(virtualPropellantDefName ?? "");
+            return new Landing.LandingVirtualPropulsionData
+            {
+                HasVirtualPropulsion = hasVirtualPropulsion, PropellantDefName = virtualPropellantDefName ?? "",
+                Ve = virtualVe, MassFlow = virtualMassFlow, FuelCapacity = virtualFuelCapacity,
+                FuelMass = def == null ? 0 : GetPropellantMass(def)
+            };
+        }
+
         public void SetVirtualRocketPropulsion(RocketDesignSpec spec, PropellantDef def,
             float ve, float massFlow, float fuelMass, float capacity)
         {

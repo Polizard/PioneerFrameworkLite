@@ -787,7 +787,7 @@ namespace PioneerFramework
             Log.Message(string.Format(
                 "[降落探针] {0} G{1} 执行 tile={2} ⇒ {3}｜{4}｜执行前剩余 Δv={5:F0} m/s，执行后编队{6}",
                 tag, g.GroupId, tile, ok ? "**成功**" : "**被拒**", reason, before.remainingDv,
-                sg.GetGroupById(g.GroupId) == null ? "已销毁 ✓" : "**仍在（应当已销毁）**"));
+                !string.IsNullOrEmpty(sg.GetGroupById(g.GroupId)?.LandingTaskId) ? "已进入降落流程" : "未进入降落流程"));
         }
 
         public static void SpawnMoonGravityTest()

@@ -64,7 +64,7 @@ namespace PioneerFramework
 
     /// <summary>
     /// Explicit, synchronous transfer of a selected ship region into an existing surface map.
-    /// No launch or landing code calls this service. Call only on the RimWorld game thread.
+    /// Group landing uses the optional participant for areas and ownership. Call only on the RimWorld game thread.
     /// </summary>
     public static class ShipSurfaceTransfer
     {
@@ -106,6 +106,9 @@ namespace PioneerFramework
 
         /// <summary>Transfers original Thing/Pawn instances and copies selected terrain and roofs.</summary>
         public static bool TryTransfer(ShipSurfaceTransferRequest request, out ShipSurfaceTransferReport report)
+            => TryTransfer(request, null, out report);
+
+        public static bool TryTransfer(ShipSurfaceTransferRequest request, IShipSurfaceTransferParticipant? participant, out ShipSurfaceTransferReport report)
         {
             if (!TryPrepare(request, out TransferPlan plan, out report)) return false;
             if (!plan.Ledger.TryBegin(plan.OperationId))
@@ -116,8 +119,12 @@ namespace PioneerFramework
             }
 
             var touched = new List<ThingSnapshot>();
+            bool participantCaptured = false;
             try
             {
+                // The participant owns rollback even if Capture changes state before throwing.
+                participantCaptured = participant != null;
+                participant?.Capture();
                 // Removing these roofs first avoids collapse when a supporting ship wall despawns.
                 foreach (CellSnapshot cell in plan.Cells)
                     if (cell.SourceRoof != null) plan.SourceMap.roofGrid.SetRoof(cell.Source, null);
@@ -146,7 +153,9 @@ namespace PioneerFramework
                 foreach (CellSnapshot cell in plan.Cells)
                     if (cell.SourceRoof != null) plan.TargetMap.roofGrid.SetRoof(cell.Target, cell.SourceRoof);
 
+                participant?.Apply();
                 VerifyTransferred(plan);
+                participant?.Verify();
                 plan.Ledger.Complete(plan.OperationId);
                 report = new ShipSurfaceTransferReport(ShipSurfaceTransferStatus.Completed,
                     "Selected terrain, roofs and persistent Thing/Pawn instances transferred.",
@@ -156,6 +165,9 @@ namespace PioneerFramework
             catch (Exception error)
             {
                 bool recovered = TryRollback(plan, touched, out string recoveryError);
+                if (participantCaptured)
+                    try { participant!.Rollback(); }
+                    catch (Exception restore) { recovered = false; recoveryError += "; " + restore.Message; }
                 if (recovered) plan.Ledger.Cancel(plan.OperationId);
                 else plan.Ledger.Block(plan.OperationId);
                 report = new ShipSurfaceTransferReport(recovered

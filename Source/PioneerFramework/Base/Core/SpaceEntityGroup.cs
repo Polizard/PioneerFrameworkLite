@@ -33,6 +33,7 @@ namespace PioneerFramework
 
     public class SpaceEntityGroup : ISpatialEntity, IExposable
     {
+        public string LandingTaskId = string.Empty;
         public int GroupId;
         public int FactionId;
 
@@ -1882,6 +1883,7 @@ namespace PioneerFramework
 
         public void ExposeData()
         {
+            Scribe_Values.Look(ref LandingTaskId, "landingTaskId", string.Empty);
             Scribe_Values.Look(ref GroupId, "groupId");
             Scribe_Values.Look(ref FactionId, "factionId");
             Scribe_Values.Look(ref IsActive, "isActive", true);

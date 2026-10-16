@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <WorldObjectDef>
+    <defName>PF_LandedShipSite</defName>
+    <label>spacecraft landing site</label>
+    <description>A permanent landing site for spacecraft.</description>
+    <worldObjectClass>PioneerFramework.Landing.LandedShipMapParent</worldObjectClass>
+    <texture>World/WorldObjects/TravelingTransportPods</texture>
+    <useDynamicDrawer>true</useDynamicDrawer>
+    <expandingIcon>true</expandingIcon>
+    <expandingIconTexture>World/WorldObjects/Expanding/TravelingTransportPods</expandingIconTexture>
+    <expandingIconDrawSize>1.6</expandingIconDrawSize>
+    <expandingIconPriority>60</expandingIconPriority>
+  </WorldObjectDef>
+</Defs>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PFL_LandingTitle>编队 {0} 地表降落</PFL_LandingTitle>
+  <PFL_LandingOpen>降落到地面</PFL_LandingOpen>
+  <PFL_LandingGuide>选择目标天体 → 点击地表地块 → 确认降落。</PFL_LandingGuide>
+  <PFL_LandingSelectedTile>{0} · {1} · 地块 {2}</PFL_LandingSelectedTile>
+  <PFL_LandingCost>所需 Δv：{0} m/s\n工质消耗：{1} kg\n剩余 Δv：{2} m/s</PFL_LandingCost>
+  <PFL_LandingDuration>预计耗时：{0} 游戏 tick。抵达后选择地图内落点。</PFL_LandingDuration>
+  <PFL_LandingSelectTile>请在目标天体的地表点击一个地块。</PFL_LandingSelectTile>
+  <PFL_LandingStart>开始降落</PFL_LandingStart>
+  <PFL_LandingPreparing>正在准备地图</PFL_LandingPreparing>
+  <PFL_LandingStarted>编队 {0} 已开始降落。</PFL_LandingStarted>
+  <PFL_LandingCompleted>编队 {0} 已完成降落。</PFL_LandingCompleted>
+  <PFL_LandingContinue>继续降落</PFL_LandingContinue>
+  <PFL_LandingProgress>降落阶段：{0} · {1}%</PFL_LandingProgress>
+  <PFL_LandingPlacementTitle>放置第 {0}/{1} 艘船站</PFL_LandingPlacementTitle>
+  <PFL_LandingClickToPlace>点击放置完整船体轮廓。关闭面板后可稍后继续选址。</PFL_LandingClickToPlace>
+  <PFL_LandingInvalidState>降落任务当前无法执行此操作。</PFL_LandingInvalidState>
+  <PFL_LandingGroupUnavailable>编队不可用、属于其他阵营，或已在降落中。</PFL_LandingGroupUnavailable>
+  <PFL_LandingMissingGroup>原编队缺失，任务已保留以供恢复。</PFL_LandingMissingGroup>
+  <PFL_LandingQuoteRejected>无法开始降落：{0}</PFL_LandingQuoteRejected>
+  <PFL_LandingSourceUnavailable>船内地图不可用：{0}</PFL_LandingSourceUnavailable>
+  <PFL_LandingSourceBusy>已有地图封存或恢复操作正在进行。</PFL_LandingSourceBusy>
+  <PFL_LandingWrongLayer>请选择目标天体地表层上的地块。</PFL_LandingWrongLayer>
+  <PFL_LandingTooLarge>船体范围超出了支持的降落地图尺寸。</PFL_LandingTooLarge>
+  <PFL_LandingUnsupportedDestination>此地块、阵营或特殊地图暂不支持和平降落。</PFL_LandingUnsupportedDestination>
+  <PFL_LandingDestinationUnavailable>已有地图无法安全恢复，已停止重新生成。</PFL_LandingDestinationUnavailable>
+  <PFL_LandingDestinationError>目标地图准备失败：{0}</PFL_LandingDestinationError>
+  <PFL_LandingFootprintError>无法确定完整船体范围：{0}</PFL_LandingFootprintError>
+  <PFL_LandingFootprintChanged>船体布局已变化，请查看更新后的轮廓并重新选址。</PFL_LandingFootprintChanged>
+  <PFL_LandingInvalidCell>船体超出地图边界、位于未揭示区域或与预留区域重叠。</PFL_LandingInvalidCell>
+  <PFL_LandingInvalidTerrain>降落区域需要能够承载重型建筑的地形。</PFL_LandingInvalidTerrain>
+  <PFL_LandingPlacementBlocked>无法在此落地：{0}</PFL_LandingPlacementBlocked>
+  <PFL_LandingTransferBlocked>搬运记录需要恢复，已阻止自动重复执行。</PFL_LandingTransferBlocked>
+  <PFL_LandingExecutionError>降落操作失败：{0}</PFL_LandingExecutionError>
+  <PFL_LandingRecoveryUnavailable>回收点没有可用的接收商队。</PFL_LandingRecoveryUnavailable>
+  <PFL_LandingRecoveryRemaining>尚待回收的载具：{0}</PFL_LandingRecoveryRemaining>
+  <PFL_LandingRecoveredMass>载具与剩余工质质量：{0} kg</PFL_LandingRecoveredMass>
+  <PFL_LandingViewSite>查看降落地点</PFL_LandingViewSite>
+  <PFL_LandingRecover>使用 {0} 回收</PFL_LandingRecover>
+  <PFL_LandingRecoverAction>回收已着陆载具</PFL_LandingRecoverAction>
+</LanguageData>

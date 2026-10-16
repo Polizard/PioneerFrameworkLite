@@ -368,12 +368,12 @@ namespace PioneerFramework
             }
 
             bool ok = sg.TryLandAtTile(g, bodyId, target, out var landReason);
-            bool gone = sg.GetGroupById(groupId) == null;
+            bool suspended = sg.GetGroupById(groupId) is SpaceEntityGroup landed && !landed.IsActive && !string.IsNullOrEmpty(landed.LandingTaskId);
 
             PflTestKit.Check(PflTestKit.Kind.Value, ok, "降落指令被接受", landReason);
-            PflTestKit.Check(PflTestKit.Kind.Invariant, gone,
-                "① 编队已销毁（落点不再留在场上）",
-                string.Format("G{0} {1}", groupId, gone ? "已销毁" : "**仍在场上**"));
+            PflTestKit.Check(PflTestKit.Kind.Invariant, suspended,
+                "① 编队进入在途状态并挂起空间执行",
+                string.Format("G{0} suspended={1}", groupId, suspended));
             PflTestKit.Check(PflTestKit.Kind.Value, sg.lastLandingConsumedKg > 0.0,
                 "② 工质真的扣了（> 0 kg）",
                 string.Format("实扣 {0:F1} kg／报价预测 {1:F1} kg", sg.lastLandingConsumedKg, est.RequiredPropellant));
@@ -388,7 +388,7 @@ namespace PioneerFramework
 
             // ③ 消息（玩家可见那条）：落在**归档**里（`Messages.Message(..., historical: true)` 的收口），
             //    不是"我们打了日志所以玩家看到了"。
-            string? archived = FindArchivedMessage(tickMark, "着陆于" + bodyName);
+            string? archived = FindArchivedMessage(tickMark, "PFL_LandingStarted".Translate(groupId).ToString());
             PflTestKit.Check(PflTestKit.Kind.Value, archived != null,
                 "③ 玩家可见消息出现（归档里能查到）",
                 archived ?? string.Format("归档里没有『着陆于{0}』（tick ≥ {1}）", bodyName, tickMark));

@@ -402,7 +402,7 @@ namespace PioneerFramework
                 // 地表锚点（星座成员载体）不进任何空间索引：粗网格的唯一消费者是
                 // 定向能粗筛 / GetGroupsInRange 的候选预过滤，锚点没有参与资格。
                 // 在本方法短路 = RegisterGroup / SyncGroupToCoarseGrid / DestroyGroup 三处一并覆盖。
-                if (group.IsSurfaceAnchor) return null;
+                if (group.IsSurfaceAnchor || !string.IsNullOrEmpty(group.LandingTaskId)) return null;
                 var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
                 if (mgr != null)
                 {
@@ -608,6 +608,60 @@ namespace PioneerFramework
         /// **注意**：fire 时刻群组仍在 groups 字典中（注销是第 4 步）→ 订阅者可读 group 自身身份字段。
         /// </summary>
         public event Action<int> GroupDestroyed;
+        public event Action<int>? GroupLanded;
+
+        internal void RemoveLandingGroupFromIndexes(SpaceEntityGroup group, Landing.LandingSuspensionData? startup = null)
+        {
+            Current.Game?.GetComponent<CombatGrid>()?.RemoveShip(group);
+            foreach (var grid in GetAllGrids()) { grid.Remove(group); grid.ApplyChanges(); }
+            groupLastCoarsePos.Remove(group.GroupId);
+            if (startup != null && trackedManeuvers.TryGetValue(group.GroupId, out var tracked)) startup.StartupManeuverTracker = tracked;
+            trackedManeuvers.Remove(group.GroupId);
+            group.GetLinkedMapComp()?.SetThrustersBurning(false);
+        }
+
+        internal void FinishLandingGroup(Landing.LandingTaskData task)
+        {
+            if (!groups.TryGetValue(task.GroupId, out var group)) { task.Cleanup.SpaceRemoved = true; return; }
+            RemoveLandingGroupFromIndexes(group);
+            Current.Game?.GetComponent<CombatManager>()?.OnGroupDestroyed(group.GroupId);
+            if (!task.Cleanup.Notified)
+            {
+                var errors = new List<Exception>();
+                foreach (var handler in GroupLanded?.GetInvocationList() ?? Array.Empty<Delegate>())
+                    try { ((Action<int>)handler)(group.GroupId); } catch (Exception e) { errors.Add(e); }
+                if (errors.Count != 0) throw new AggregateException(errors);
+                task.Cleanup.Notified = true;
+            }
+            foreach (int id in group.GetEntityIds().ToList())
+                if (entities.TryGetValue(id, out var entity)) UnregisterEntity(entity);
+            UnregisterGroup(group);
+            task.Cleanup.SpaceRemoved = true;
+        }
+
+        internal double ConsumeLandingDeltaV(SpaceEntityGroup group, double deltaV)
+        {
+            var source = GetGroupPropulsionSource(group);
+            var estimate = EstimateLandingBurn(group, deltaV);
+            if (source == null || !estimate.Feasible || estimate.Networks == null) return 0.0;
+            double consumed = 0.0;
+            foreach (var network in estimate.Networks)
+                if (!network.IsReserve && network.RequiredPropellant > 0f)
+                    consumed += source.TryConsumePropellant(network.Propellant, network.RequiredPropellant);
+            Log.Message(string.Format("[Landing] Group {0} Δv={1:F1} m/s, quoted={2:F3} kg, debited={3:F3} kg",
+                group.GroupId, deltaV, estimate.RequiredPropellant, consumed));
+            return consumed;
+        }
+        internal void RestoreLandingTracker(int groupId, Landing.LandingSuspensionData state)
+        { if (state.StartupManeuverTracker is ManeuverTracker tracker) trackedManeuvers[groupId] = tracker; }
+        internal double LandingRequiredFuel(SpaceEntityGroup group, double deltaV) => EstimateLandingBurn(group, deltaV).RequiredPropellant;
+
+        // Landing must debit the same main/RCS allocation accepted by the quote, including RCS relay.
+        private BurnEstimate EstimateLandingBurn(SpaceEntityGroup group, double deltaV)
+        {
+            var source = GetGroupPropulsionSource(group);
+            return BurnCalculator.Estimate((float)deltaV, (float)GetGroupMass(group, null), source, source?.Networks);
+        }
 
         /// <summary>
         /// 销毁群组：从粗细网格移除 → 清理战斗缓存 → 注销实体 → 注销群组。
@@ -793,6 +847,7 @@ namespace PioneerFramework
         /// <summary>开始封存操作（异步多 tick）。</summary>
         public bool BeginArchiveMap(SpaceEntity entity)
         {
+            if (entity != null && !string.IsNullOrEmpty(GetGroupById(entity.GroupId)?.LandingTaskId)) return false;
             if (ActiveArchiveOperation != null)
             {
                 Messages.Message("已有地图正在封存中，请等待完成。", MessageTypeDefOf.RejectInput, false);
@@ -854,7 +909,12 @@ namespace PioneerFramework
         /// <summary>每 tick 处理取档批次。</summary>
         private void ProcessRestoreOperation()
         {
-            if (ActiveRestoreOperation == null) return;
+            StepActiveMapRestore();
+        }
+
+        internal bool StepActiveMapRestore()
+        {
+            if (ActiveRestoreOperation == null) return true;
 
             bool done = MapArchiveManager.ProcessBuildingBatch(
                 ActiveRestoreOperation, MapRestoreOperation.BATCH_SIZE);
@@ -863,6 +923,7 @@ namespace PioneerFramework
             {
                 FinalizeRestoreOperation();
             }
+            return ActiveRestoreOperation == null;
         }
 
         private void FinalizeArchiveOperation()
@@ -5585,9 +5646,7 @@ namespace PioneerFramework
             spot = FormatLongLat(latRad, lonRad);
 
             // Δv 可行性：**沿用既有唯一判据**（主网/RCS 接力语义），不另写一份火箭方程
-            var src = GetGroupPropulsionSource(group);
-            double mDry = GetGroupMass(group, null);
-            est = BurnCalculator.Estimate((float)quote.deltaV, (float)mDry, src, src?.Networks);
+            est = EstimateLandingBurn(group, quote.deltaV);
             if (!est.Feasible)
             {
                 reason = string.Format("工质不足：本次需 Δv {0:F0} m/s（工质 {1:F0} kg），当前可达 {2:F0} m/s",
@@ -5617,27 +5676,10 @@ namespace PioneerFramework
 
         public bool TryLandAtTile(SpaceEntityGroup group, int targetBodyId, PlanetTile target, out string? reason)
         {
-            if (!TryQuoteLanding(group, targetBodyId, target, out var q, out var est,
-                    out var bodyName, out var spot, out reason))
-                return false;
-
-            double consumed = ConsumeDeltaVOneShot(group, q.deltaV, "降落");
-            // 探针读数（**编队随即被销毁 ⇒ 扣料量事后无从观测**）。本库既有范式：把"会沉默的量"做成无条件读数
-            // （`FactionResolver.UnresolvedCount` / `GravityFieldSelfTest.LastPassed` 同理）⇒ 验收不许靠翻日志文案。
-            lastLandingConsumedKg = consumed;
-            lastLandingQuotedDeltaV = q.deltaV;
-
-            Log.Message(string.Format(
-                "[降落] G{0} 主动降落于{1}（{2}）tile={3}｜付出 Δv={4:F1} m/s（需工质 {5:F1} kg／实扣 {6:F1} kg）｜地表距离 {7:F0} km",
-                group.GroupId, bodyName, spot, target.tileId, q.deltaV, est.RequiredPropellant, consumed,
-                q.surfaceDistance / 1000.0));
-            Messages.Message(string.Format(
-                "Group {0} 着陆于{1}（{2}）：付出 Δv {3:F0} m/s（工质 {4:F0} kg）。",
-                group.GroupId, bodyName, spot, q.deltaV, est.RequiredPropellant),
-                MessageTypeDefOf.TaskCompletion);
-
-            DestroyGroup(group.GroupId);
-            return true;
+            bool started = Landing.LandingTransitService.TryStart(this, group, targetBodyId, target, 180, out _, out var report);
+            reason = started ? null : report.Text;
+            if (started) Messages.Message("PFL_LandingStarted".Translate(group.GroupId), MessageTypeDefOf.NeutralEvent);
+            return started;
         }
 
         /// <summary>
