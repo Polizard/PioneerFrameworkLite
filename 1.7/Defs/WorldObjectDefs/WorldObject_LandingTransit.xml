@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs><WorldObjectDef>
+  <defName>PF_LandingTransit</defName><label>descending spacecraft</label>
+  <description>A spacecraft descending toward a surface tile.</description>
+  <worldObjectClass>PioneerFramework.Landing.LandingTransitWorldObject</worldObjectClass>
+  <texture>World/WorldObjects/TravelingTransportPods</texture>
+  <useDynamicDrawer>true</useDynamicDrawer>
+  <expandingIcon>true</expandingIcon>
+  <expandingIconTexture>World/WorldObjects/Expanding/TravelingTransportPods</expandingIconTexture>
+  <expandingIconDrawSize>1.6</expandingIconDrawSize>
+  <expandingIconPriority>60</expandingIconPriority>
+</WorldObjectDef></Defs>

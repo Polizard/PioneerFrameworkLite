@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_RingCreateSmall>Create ring world 256×3</PF_RingCreateSmall>
+  <PF_RingCreateLarge>Create ring world 1024×12</PF_RingCreateLarge>
+  <PF_RingView>View ring world overview</PF_RingView>
+  <PF_RingFocus>Focus inside selected ring tile</PF_RingFocus>
+  <PF_RingEnterMap>Enter colony map on selected ring tile</PF_RingEnterMap>
+  <PF_RingValidate>Validate ring topology and state</PF_RingValidate>
+  <PF_RingRemove>Remove empty ring world</PF_RingRemove>
+  <PF_RingError>Ring world operation failed: {0}</PF_RingError>
+  <PF_RingCreated>Created or restored ring world {0} with {1} tiles.</PF_RingCreated>
+  <PF_RingNone>No ring world exists. Create one first.</PF_RingNone>
+  <PF_RingSelectTile>Select a ring world tile on the world map first.</PF_RingSelectTile>
+  <PF_RingValidated>Ring validation passed. Details were written to the log.</PF_RingValidated>
+  <PF_RingRemoved>Empty ring world removed.</PF_RingRemoved>
+  <PF_RingColonyName>{0} colony {1}</PF_RingColonyName>
+</LanguageData>

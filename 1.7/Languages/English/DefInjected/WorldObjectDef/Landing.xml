@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_LandingTransit.label>descending spacecraft</PF_LandingTransit.label>
+  <PF_LandingTransit.description>A spacecraft descending toward a surface tile.</PF_LandingTransit.description>
+  <PF_LandedShipSite.label>spacecraft landing site</PF_LandedShipSite.label>
+  <PF_LandedShipSite.description>A permanent surface site for landed spacecraft.</PF_LandedShipSite.description>
+  <PF_LandedGroup.label>landed spacecraft recovery point</PF_LandedGroup.label>
+  <PF_LandedGroup.description>An intact landed spacecraft waiting to be recovered by a caravan.</PF_LandedGroup.description>
+</LanguageData>

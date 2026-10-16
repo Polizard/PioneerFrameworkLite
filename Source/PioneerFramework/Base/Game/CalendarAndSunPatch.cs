@@ -115,6 +115,11 @@ namespace PioneerFramework
         public static bool CurCelestialSunGlow_Prefix(Map map, ref float __result)
         {
             if (map == null || map.Tile < 0) return true;
+            if (map.Tile.Layer is RingWorld.RingSurfaceLayer)
+            {
+                __result = (float)RingWorld.RingClimate.SunGlow(RingWorld.RingWorldEnvironment.DisplayTicks);
+                return false;
+            }
 
             // 用 Map 所在 tile 的天体自转周期，而非当前查看的星球
             float dayLength = CelestialBodyLayerManager.GetDayLengthForMap(map);
@@ -148,6 +153,11 @@ namespace PioneerFramework
         public static bool GenLocalDate_DayPercent_Map_Prefix(Map map, ref float __result)
         {
             if (map == null || map.Tile < 0) return true;
+            if (map.Tile.Layer is RingWorld.RingSurfaceLayer)
+            {
+                __result = (float)RingWorld.RingClimate.DayPercent(RingWorld.RingWorldEnvironment.DisplayTicks);
+                return false;
+            }
 
             float dayLength = CelestialBodyLayerManager.GetDayLengthForMap(map);
             if (Math.Abs(dayLength - 60000f) <= 10f) return true; // Earth，走原版

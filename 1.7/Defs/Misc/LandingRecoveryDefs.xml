@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs><PioneerFramework.Landing.LandingRecoveryDef><defName>PF_GenericLandingRecovery</defName><label>landed spacecraft</label>
+<packagedThingDef>PF_RecoveredSpacecraft</packagedThingDef><texturePath>UI/Icons/SatelliteIcon</texturePath>
+</PioneerFramework.Landing.LandingRecoveryDef></Defs>

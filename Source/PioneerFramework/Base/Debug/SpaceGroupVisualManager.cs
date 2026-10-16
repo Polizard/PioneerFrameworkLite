@@ -1818,7 +1818,7 @@ namespace PioneerFramework
             y += rowH + rowGap;
 
             // 行6：主动降落（选 tile + 付 Δv；结算在 SpaceGameComp.TryLandAtTile）
-            if (Widgets.ButtonText(new Rect(leftX, y, panel.width - 24f, rowH), "降落（选落点）"))
+            if (Widgets.ButtonText(new Rect(leftX, y, panel.width - 24f, rowH), "PFL_LandingOpen".Translate()))
                 Find.WindowStack.Add(new Window_LandingTarget(spaceGame, group));
             GUI.color = Color.white;
             y += rowH + rowGap;

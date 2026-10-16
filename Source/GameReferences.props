@@ -1,0 +1,16 @@
+<Project>
+  <!-- Compile against the installed RimWorld 1.7 API; the game supplies these at runtime. -->
+  <PropertyGroup>
+    <GameReferenceRoot>$(MSBuildThisFileDirectory)PioneerFramework\Libs\</GameReferenceRoot>
+    <CopyGameReferences Condition="'$(CopyGameReferences)' == ''">false</CopyGameReferences>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="0Harmony">
+      <HintPath>$(GameReferenceRoot)0Harmony\0Harmony.dll</HintPath>
+      <Private>$(CopyGameReferences)</Private>
+    </Reference>
+    <Reference Include="$(GameReferenceRoot)RimWorld\*.dll">
+      <Private>$(CopyGameReferences)</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

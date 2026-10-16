@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot 'Use-ProjectDotnet.ps1')
 $root = Split-Path -Parent $PSScriptRoot
 $outA = Join-Path $env:TEMP "pfl_det_a"
 $outB = Join-Path $env:TEMP "pfl_det_b"

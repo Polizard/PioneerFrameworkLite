@@ -44,6 +44,7 @@ namespace PioneerFramework
 
         /// <summary>当前存量（kg）。</summary>
         private float storedMass;
+        internal float LandingStoredMass { get => storedMass; set => storedMass = value; }
 
         public float StoredMass => storedMass;
 

@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot 'Use-ProjectDotnet.ps1')
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {

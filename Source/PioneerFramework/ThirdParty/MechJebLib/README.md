@@ -82,27 +82,23 @@ Interpolants/   IInterpolant
 > `Functions/SingleImpulseHyperbolicBurn.cs`（被 `Astro.cs:838` 引用）——编译器抓到了。
 > 若日后新增移植物，**照上面同样的方式把闭包重新跑一遍**，不要凭记忆。
 
-## ⚠ 编译环境：只在 net48 下成立（且这是对的）
+## 当前编译环境：RimWorld 1.7 / .NET 10
 
-本目录的源码**按上游假设只 target net48**，本项目的**主工程也是 net48**，所以逐字可编译、0 警告。
+主工程与两个数值测试工程现均使用 `net10.0`。2026-10-14 迁移时，仅将
+`Functions/Angles.cs`、`Lambert/Izzo.cs`、`TwoBody/Farnocchia.cs` 中的
+`Asinh/Atanh/Acosh` 调用明确限定为 `MechJebLib.Utils.Statics`，消除与现代
+`System.Math` 的同名冲突；这些调用的公式、求值顺序和实现保持原样。
+`MechJebLibTest/StaticTests.cs` 同样明确限定 `Statics.Clamp`，断言不变。
 
-**不要**把这些文件链接进 **net8** 工程（如 `PioneerFramework.Pure.Tests`）。原因是硬的：
+全量验收还复现了 `Maneuvers/Simple.cs` 极端椭圆的消去误差：原角动量表达式
+对两个近似相等的平方项做差。现用数学等价的 `h² = 2 mu rp ra / (rp + ra)`
+计算，轨道模型与最小速度增量的分支选择保持原样。新增 `rp=1e4, ra=1e17`
+的确定性回归用例；修改前失败、修改后通过。原椭圆随机用例改为两个固定种子，
+并从状态角动量和离心率独立核对近心点，保留原有 1e-4 误差阈值和远心点断言。
+这是明确记录的数值稳定性改动。
 
-`Functions/Angles.cs` 同时 `using static MechJebLib.Utils.Statics` 与 `using static System.Math`，
-而 `Math.Asinh / Acosh / Atanh` 是 **.NET Core 2.1 才进 BCL** 的。
-**上游 MechJebLib 正是靠 net48 没有这三个函数才写得通**；放到 net8 上会 CS0121 二义性。
-这不是可以靠改配置绕开的东西——改了就叫偏离上游，那条"diff 为空"的不变式就没了。
-
-**⇒ 移植面的测试宿主一律用 net48 工程**，共两个：
-
-| 宿主 | 装什么 | 层次 |
-|---|---|---|
-| **`Source/MechJebLibTest/`** | **上游自己那套测试**（逐字移植）+ **我们自己的跨求解器互证台**（`MechJebLibPortTests.cs`）。net48、**零 RimWorld/Unity 依赖**（镜像上游 `MechJebLibTest → MechJebLib` 的形状）；程序集名与命名空间保持 `MechJebLibTest`。**共 5012 条用例** | **L1（白拿）+ L3（互证）** |
-
-> 互证台需要**我们这一侧**的 `OrbitMath` 才能做"移植面 ↔ 我们"的互证，所以该工程额外用
-> `<Compile Include>` 链接了 `DVector3` / `SpaceConstants` / `OrbitMath`（并定义 `PURE_MATH`）。
-> （批5 U4 起 `DVector3Extensions` 已退役——它的成员并进了 `DVector3`，见 `Source/已弃置/README.md`。）
-> **它仍然零 RimWorld/Unity 依赖**，只是不再是"纯上游镜像"——这是为了让 L1 与 L3 同处一个桶。
+`Source/MechJebLibTest/` 与 `Source/PioneerFramework.Pure.Tests/` 均继续链接同一份
+数值源码，且无 RimWorld / Unity 引用。下文的 net48 记录属于迁移前的历史。
 
 ### L1：搬了哪些、为什么少了那些
 

@@ -490,7 +490,9 @@ namespace MechJebLibTest.Primitives.M3Tests
             M3.Rotate(one).ShouldEqual(five);
             M3.Rotate(two).ShouldEqual(six);
             M3.Rotate(three).ShouldEqual(seven);
-            M3.Rotate(three * two * one).ShouldEqual(seven * six * five);
+            // Quaternion composition and three matrix products accumulate several
+            // binary64 rounding steps; allow four epsilons across .NET runtimes.
+            M3.Rotate(three * two * one).ShouldEqual(seven * six * five, EPS * 4);
         }
 
         [Fact]

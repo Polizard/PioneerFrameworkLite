@@ -1,13 +1,13 @@
 # PioneerFrameworkLite（PFL）
 
-先驱框架 Lite 是 RimWorld 1.6 的地月系太空框架前置 Mod，提供：
+先驱框架 Lite 是 RimWorld 1.7 的地月系太空框架前置 Mod，提供：
 
 - 地月系轨道力学与 N 体引力积分
 - 轨道机动规划、Lambert 转移、交会规划
 - 单 Part 空间站 / 飞船结构
 - 空间站对射与 3D 战斗
 - 月球表面动态生成与运行时 PlanetLayer 服务
-- PFView 3D 视图与三平台 AssetBundle 描边管线
+- PFView 3D 视图及预留的独立描边模块（Waylith 后端待迁移）
 
 ## 安装
 
@@ -19,28 +19,45 @@
 
 ```text
 About/                 Mod 元数据
-1.6/                   运行时数据（Assemblies / Defs / Patches / AssetBundles / Textures）
+1.7/                   运行时数据（Assemblies / Defs / Patches / AssetBundles / Textures）
 Shaders/               PFView 描边 Shader 源文件
 Source/PioneerFramework/ 主 C# 工程
-Source/PioneerFramework.Tests/ 游戏集成 xUnit 测试（net48）
-Source/PioneerFramework.Pure.Tests/ 纯数学 xUnit 测试（net8）
+Source/PioneerFramework.Tests/ 游戏集成 xUnit 测试（net10.0）
+Source/PioneerFramework.Pure.Tests/ 纯数学 xUnit 测试（net10.0）
 tools/                 构建 / 校验 / CI 辅助脚本
 ```
+
+## 1.7 依赖迁移
+
+当前目标为 RimWorld 1.7、Waylith 与 .NET 10。`Source/GameReferences.props` 统一主工程和集成测试引用。
+游戏 DLL 使用 `Assembly-CSharp`、`UnityStubs`、`Waylith` 等，Harmony 使用 1.7 版本（程序集 3.0.0.0）。
+刷新本机依赖后会记录版本和 SHA256：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/update-game-dependencies.ps1
+powershell -ExecutionPolicy Bypass -File tools/check-game-dependencies.ps1
+```
+
+如本机已在 `.zcode/dotnet10/` 准备便携 SDK，构建/校验脚本会自动使用它；手动调用 `dotnet` 前可运行
+`. ./tools/Use-ProjectDotnet.ps1`。新克隆请安装下列精确 SDK。
+
+保留的独立屏幕描边模块依赖 Unity CommandBuffer，当前 1.7 的兼容层只提供占位实现。
+该预留模块现明确返回不可用状态；主 PFView 原有流程未接入这个模块。自定义渲染、Shader 和游戏内功能仍需实际游戏验收。
 
 ## 构建
 
 环境要求：
 
-- .NET SDK **8.0.100（精确版本）** —— 仓库 `global.json` 是 `"rollForward": "disable"`，装别的版本会**直接报错**。
-  这是刻意的：交付件 `1.6/Assemblies/PioneerFrameworkLite.dll` 走**逐字节**判据，而字节由**编译器版本**决定
-  （CI 也钉 8.0.100）。要换 SDK 版本，必须 `global.json` 与 `.github/workflows/ci.yml` **一起**改，并重建交付件。
+- .NET SDK **10.0.402（精确版本）** —— 仓库 `global.json` 是 `"rollForward": "disable"`，装别的版本会**直接报错**。
+  这是刻意的：交付件 `1.7/Assemblies/PioneerFrameworkLite.dll` 走**逐字节**判据，而字节由**编译器版本**决定
+  （CI 也钉 10.0.402）。要换 SDK 版本，必须 `global.json` 与 `.github/workflows/ci.yml` **一起**改，并重建交付件。
   安装（管理员，装进标准 dotnet 根、与已装版本并存）：
   ```powershell
   Invoke-WebRequest https://dot.net/v1/dotnet-install.ps1 -OutFile "$env:TEMP\dotnet-install.ps1"
-  & "$env:TEMP\dotnet-install.ps1" -Version 8.0.100 -InstallDir "C:\Program Files\dotnet"
+  & "$env:TEMP\dotnet-install.ps1" -Version 10.0.402 -InstallDir "C:\Program Files\dotnet"
   ```
-  装完 `dotnet --list-sdks` 应同时列出 `8.0.100`；在仓库里 `dotnet --version` 必须回 `8.0.100`。
-- RimWorld 1.6 依赖 DLL 已放入 `Source/PioneerFramework/Libs/`
+  装完 `dotnet --list-sdks` 应同时列出 `10.0.402`；在仓库里 `dotnet --version` 必须回 `10.0.402`。
+- RimWorld 1.7 依赖 DLL 已放入 `Source/PioneerFramework/Libs/`
 
 ```powershell
 dotnet build Source/PioneerFramework/PioneerFramework.csproj -c Release
@@ -49,7 +66,7 @@ dotnet build Source/PioneerFramework/PioneerFramework.csproj -c Release
 输出 DLL：
 
 ```text
-1.6/Assemblies/PioneerFrameworkLite.dll
+1.7/Assemblies/PioneerFrameworkLite.dll
 ```
 
 ## 测试

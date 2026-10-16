@@ -1,46 +1,36 @@
 # PioneerFrameworkLite 构建说明
 
-## 环境要求
+RimWorld 1.7 使用 Waylith 和 .NET 10。主工程与三个测试工程均使用 net10.0，
+SDK 固定为 **10.0.402**，与根目录 global.json 和 CI 一致。
 
-- .NET SDK **8.0.100（精确版本）** —— 仓库 `global.json` 为 `rollForward: disable`，装别的版本会直接报错
-  （交付件 DLL 的字节由编译器版本决定，CI 也钉 8.0.100）
-- RimWorld 1.6 依赖 DLL 已放在 `Libs/` 中
-
-## 构建
+在仓库根目录运行：
 
 ```powershell
+# 本机准备了便携 SDK 时，先把它加入当前终端环境。
+. ./tools/Use-ProjectDotnet.ps1
 dotnet build Source/PioneerFramework/PioneerFramework.csproj -c Debug
 dotnet build Source/PioneerFramework/PioneerFramework.csproj -c Release
+powershell -ExecutionPolicy Bypass -File tools/test-all.ps1
 ```
 
-输出：
+Release 输出为 1.7/Assemblies/PioneerFrameworkLite.dll；Debug 输出留在主工程的 bin/Debug/。
 
-```text
-1.6/Assemblies/PioneerFrameworkLite.dll
-```
+依赖通过 Source/GameReferences.props 统一引用，位于 Source/PioneerFramework/Libs/：
 
-## 测试
+- RimWorld/：从 1.7 游戏根目录复制的 Assembly-CSharp、UnityStubs、Waylith、
+  Waylith.UnityCompat 和需要的 Brutal.Core.*。
+- 0Harmony/0Harmony.dll：Harmony 模组 1.7/Assemblies/ 中的 Harmony 3。
+- dependencies.json：游戏版本、Harmony 版本和每个 DLL 的 SHA256。
+
+刷新与核对：
 
 ```powershell
-dotnet test Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj
-dotnet test Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.csproj
+powershell -ExecutionPolicy Bypass -File tools/update-game-dependencies.ps1
+powershell -ExecutionPolicy Bypass -File tools/check-game-dependencies.ps1
 ```
 
-## 依赖
+游戏安装路径或 Harmony 路径不同时，给刷新脚本传入 -GamePath 和 -HarmonyPath。
+游戏和引擎 DLL 用于编译与测试，由游戏提供运行时依赖。交付的 1.7/Assemblies/ 仅放本模组 DLL。
 
-依赖统一放在 `Source/PioneerFramework/Libs/`：
-
-- `Libs/RimWorld/Assembly-CSharp.dll`
-- `Libs/RimWorld/netstandard.dll`
-- `Libs/Unity/*.dll`
-- `Libs/0Harmony/0Harmony.dll`
-
-游戏更新后，如编译或运行异常，优先用当前游戏 `RimWorldWin64_Data/Managed/` 覆盖 `Libs/RimWorld` 与 `Libs/Unity`。
-
-## 提交 DLL
-
-CI 会校验 `1.6/Assemblies/PioneerFrameworkLite.dll` 与 Release 构建一致。修改 C# 后请运行：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools/rebuild-dll.ps1
-```
+修改 C# 后运行 tools/rebuild-dll.ps1，再用 tools/check-committed-dll.ps1 核对 Release 产物。
+自动验证覆盖编译、测试、XML、坐标系审计及确定性构建；实际游戏加载和图形效果需单独验收。
