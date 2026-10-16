@@ -25,13 +25,4 @@
     <AnalysisMode>Recommended</AnalysisMode>
   </PropertyGroup>
 
-  <!--
-    2026-10-14（大规模现代化 · 主线切 net10）：游戏程序集与 Harmony 3 的路径，所有 1.7 线工程共用。
-    `-p:Rw17Dir=…` / `-p:Harmony17Dir=…` 可覆盖（换安装位置时不必改文件）。
-    ⛔ 1.6 线不受影响：它冻结在 legacy/1.6/Source/（不在本 props 覆盖范围）。
-  -->
-  <PropertyGroup>
-    <Rw17Dir Condition="'$(Rw17Dir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\RimWorld</Rw17Dir>
-    <Harmony17Dir Condition="'$(Harmony17Dir)' == ''">C:\Program Files (x86)\Steam\steamapps\workshop\content\294100\2009463077\1.7\Assemblies</Harmony17Dir>
-  </PropertyGroup>
 </Project>

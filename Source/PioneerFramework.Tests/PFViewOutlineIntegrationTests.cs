@@ -217,18 +217,12 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
-        public void Project_RetainsAssetBundleModuleReference()
+        public void OutlineAssetBundleApi_IsAvailableFromResolvedGameReferences()
         {
-            string project = File.ReadAllText(Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory,
-                "Source", "PioneerFramework", "PioneerFramework.csproj"));
-
-            // 2026-10-14（主线切 net10）：**断言对象随参考体系变更，守的意图不变** ——
-            // 1.6 = 逐模块引 `Libs/Unity/UnityEngine.AssetBundleModule.dll`；
-            // 1.7 = 引游戏根的 `UnityStubs.dll`（它就是 Unity API 的实现，AssetBundle 在其中）。
-            // 意图：**轮廓线的 AssetBundle 依赖必须留在参考里**（名字换了，事实等价）。
-            Assert.Contains("Include=\"UnityStubs\"", project);
-            Assert.Contains("$(Rw17Dir)\\UnityStubs.dll", project);
+            // Resolve the shipped API instead of depending on how the project spells its imports.
+            Assert.Equal("UnityStubs", typeof(AssetBundle).Assembly.GetName().Name);
+            Assert.NotNull(typeof(AssetBundle).GetMethod("LoadFromFile", new[] { typeof(string) }));
+            Assert.NotNull(typeof(AssetBundle).GetMethod("Unload", new[] { typeof(bool) }));
         }
     }
 }

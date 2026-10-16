@@ -9,6 +9,8 @@
   <PFL_LandingSelectTile>Click a tile on the selected body's surface.</PFL_LandingSelectTile>
   <PFL_LandingStart>Begin descent</PFL_LandingStart>
   <PFL_LandingPreparing>Preparing maps</PFL_LandingPreparing>
+  <PFL_LandingPrepareSource>Restore ship maps</PFL_LandingPrepareSource>
+  <PFL_LandingPrepareSourceGuide>Restore the archived ship maps to calculate propellant costs. Then review the destination and costs before confirming descent.</PFL_LandingPrepareSourceGuide>
   <PFL_LandingStarted>Group {0} has begun descending.</PFL_LandingStarted>
   <PFL_LandingCompleted>Group {0} has landed successfully.</PFL_LandingCompleted>
   <PFL_LandingContinue>Continue landing</PFL_LandingContinue>

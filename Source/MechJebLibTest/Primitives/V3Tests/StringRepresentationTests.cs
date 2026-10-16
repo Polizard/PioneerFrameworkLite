@@ -111,8 +111,8 @@ namespace MechJebLibTest.Primitives.V3Tests
         private void ToStringWithNumberFormat()
         {
             var v = new V3(1234.5, 6789.25, 10000);
-            // .NET 10 uses midpoint-to-even formatting.
-            v.ToString("N1").ShouldEqual("[1,234.5, 6,789.2, 10,000.0]");
+            // This project retains master's net48 midpoint-away-from-zero baseline.
+            v.ToString("N1").ShouldEqual("[1,234.5, 6,789.3, 10,000.0]");
         }
 
         [Fact]
@@ -136,7 +136,7 @@ namespace MechJebLibTest.Primitives.V3Tests
             var germanCulture = new CultureInfo("de-DE");
 
             string result = v.ToString("F2", germanCulture);
-            result.ShouldEqual("[1234,50, 6789,25, 10000,12]");
+            result.ShouldEqual("[1234,50, 6789,25, 10000,13]");
         }
 
         [Fact]
@@ -146,7 +146,7 @@ namespace MechJebLibTest.Primitives.V3Tests
             var frenchCulture = new CultureInfo("fr-FR");
 
             string result = v.ToString("F2", frenchCulture);
-            result.ShouldEqual("[1234,50, 6789,25, 10000,12]");
+            result.ShouldEqual("[1234,50, 6789,25, 10000,13]");
         }
 
         [Fact]
@@ -185,7 +185,7 @@ namespace MechJebLibTest.Primitives.V3Tests
             v.ToString("F2").ShouldEqual("[1.23, 1.24, 1.24]");
 
             var v2 = new V3(1.2345, 1.2355, 1.2365);
-            v2.ToString("F3").ShouldEqual("[1.234, 1.236, 1.236]");
+            v2.ToString("F3").ShouldEqual("[1.235, 1.236, 1.237]");
         }
 
         [Fact]

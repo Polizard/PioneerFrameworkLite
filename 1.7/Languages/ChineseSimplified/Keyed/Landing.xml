@@ -9,6 +9,8 @@
   <PFL_LandingSelectTile>请在目标天体的地表点击一个地块。</PFL_LandingSelectTile>
   <PFL_LandingStart>开始降落</PFL_LandingStart>
   <PFL_LandingPreparing>正在准备地图</PFL_LandingPreparing>
+  <PFL_LandingPrepareSource>恢复船舱地图</PFL_LandingPrepareSource>
+  <PFL_LandingPrepareSourceGuide>请先恢复已封存的船舱地图以计算燃料报价。恢复完成后，请检查落点和参数，再确认开始降落。</PFL_LandingPrepareSourceGuide>
   <PFL_LandingStarted>编队 {0} 已开始降落。</PFL_LandingStarted>
   <PFL_LandingCompleted>编队 {0} 已完成降落。</PFL_LandingCompleted>
   <PFL_LandingContinue>继续降落</PFL_LandingContinue>

@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- 导弹（自主武器平台）弹体/弹头定义（K2，2026-09-06）：一个 MissileDef = 一枚标准弹。
+       弹体（无 Map body Part）+ D15 主推方向型（局部主推轴 + 锥角 + 转向率）+ RCS 副网 + 弹头。
+       WeaponDef 只保留发射/齐射/出膛语义，经 missileDefName 指向本类。
+       注：maxAngularRateDegrees 已接线（SpaceEntityGroup.maxAngularRate，2026-09-07）；
+       coneDegrees 仍未消费（无 Map 主网点火门槛为 SpaceGameComp 常量 1.5°，待 D15 参数化）。 -->
+  <PioneerFramework.Combat.MissileDef>
+    <defName>PF_Missile_Standard</defName>
+    <label>标准导弹</label>
+    <description>标准制导导弹弹体：8m 长主推方向型（液氢主网 + 肼 RCS），撞击式弹头。</description>
+
+    <!-- ── 弹体 ── -->
+    <bodySize>(2, 2, 8)</bodySize>
+    <dryMass>300</dryMass>
+    <hp>200</hp>
+
+    <!-- ── 主网推进（注入满罐）── -->
+    <propellantDefName>PF_Propellant_Hydrogen</propellantDefName>
+    <ve>3200</ve>
+    <massFlow>60</massFlow>
+    <fuelMass>2000</fuelMass>
+
+    <!-- ── 终末制导（Attack 自动段，K4 表面距口径；2026-09-08 参数化 + 抽纯核心）──
+         terminalSpeed 重定义为「终末目标接近率」（原 desired 速度上限旧 PN 语义作废）；
+         实际补量受 guidanceTimeMargin 的横差修正时间约束（横差大/距离近时自动压低，不无脑冲 450）。 -->
+    <homingEngageDistance>100000</homingEngageDistance>
+    <terminalSpeed>450</terminalSpeed>
+    <guidanceLateralGain>0.8</guidanceLateralGain>
+    <guidanceClosingThreshold>300</guidanceClosingThreshold>
+    <guidanceTimeMargin>2</guidanceTimeMargin>
+    <guidanceLostMarginMeters>30000</guidanceLostMarginMeters>
+
+    <!-- ── 燃尽惯性弹寿命（K5 自动清理）── -->
+    <bodyLifetimeSeconds>600</bodyLifetimeSeconds>
+
+    <!-- ── D15 主推方向型 ── -->
+    <mainThrustDirectional>true</mainThrustDirectional>
+    <mainAxisShip>(0, 0, -1)</mainAxisShip>
+    <coneDegrees>10</coneDegrees>
+    <maxAngularRateDegrees>20</maxAngularRateDegrees>
+
+    <!-- ── 弹头（撞击式，§10；结算由后续转化交接任务消费）── -->
+    <warheadDamage>800</warheadDamage>
+    <blastRadius>1500</blastRadius>
+    <blastCenterDamage>600</blastCenterDamage>
+    <!-- Map 爆炸半径（格）：拆站 = 进图拆建筑（2026-09-09 定稿），与 3D AoE 分口径 -->
+    <mapBlastRadiusCells>5</mapBlastRadiusCells>
+    <warheadLifetimeSeconds>120</warheadLifetimeSeconds>
+
+    <!-- ── 弱 RCS 副网（与主网异工质）── -->
+    <hasRcs>true</hasRcs>
+    <rcsPropellantDefName>PF_Propellant_Hydrazine</rcsPropellantDefName>
+    <rcsVe>900</rcsVe>
+    <rcsMassFlow>2</rcsMassFlow>
+    <rcsFuelMass>120</rcsFuelMass>
+  </PioneerFramework.Combat.MissileDef>
+
+  <!-- 巡航→终末转移测试用弹体：homing 接管边界压到 500m——1.5km 靶出生即巡航（不点火），
+       惯性接近至 500m 表面距后自动转终末火炬（验证巡航分支 + 状态转移，10s 内出全链）。 -->
+  <PioneerFramework.Combat.MissileDef>
+    <defName>PF_Missile_TestCruise</defName>
+    <label>标准导弹（巡航测试）</label>
+    <description>巡航测试专用：homingEngageDistance=500m，其余同 PF_Missile_Standard。</description>
+    <bodySize>(2, 2, 8)</bodySize>
+    <dryMass>300</dryMass>
+    <hp>200</hp>
+    <propellantDefName>PF_Propellant_Hydrogen</propellantDefName>
+    <ve>3200</ve>
+    <massFlow>60</massFlow>
+    <fuelMass>2000</fuelMass>
+    <homingEngageDistance>500</homingEngageDistance>
+    <terminalSpeed>450</terminalSpeed>
+    <guidanceLateralGain>0.8</guidanceLateralGain>
+    <guidanceClosingThreshold>300</guidanceClosingThreshold>
+    <guidanceTimeMargin>2</guidanceTimeMargin>
+    <guidanceLostMarginMeters>30000</guidanceLostMarginMeters>
+    <bodyLifetimeSeconds>600</bodyLifetimeSeconds>
+    <mainThrustDirectional>true</mainThrustDirectional>
+    <mainAxisShip>(0, 0, -1)</mainAxisShip>
+    <coneDegrees>10</coneDegrees>
+    <maxAngularRateDegrees>20</maxAngularRateDegrees>
+    <warheadDamage>800</warheadDamage>
+    <blastRadius>1500</blastRadius>
+    <blastCenterDamage>600</blastCenterDamage>
+    <mapBlastRadiusCells>5</mapBlastRadiusCells>
+    <warheadLifetimeSeconds>120</warheadLifetimeSeconds>
+    <hasRcs>true</hasRcs>
+    <rcsPropellantDefName>PF_Propellant_Hydrazine</rcsPropellantDefName>
+    <rcsVe>900</rcsVe>
+    <rcsMassFlow>2</rcsMassFlow>
+    <rcsFuelMass>120</rcsFuelMass>
+  </PioneerFramework.Combat.MissileDef>
+</Defs>

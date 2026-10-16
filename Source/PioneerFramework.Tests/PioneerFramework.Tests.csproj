@@ -6,6 +6,7 @@
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <IsPackable>false</IsPackable>
+    <CopyGameReferences>true</CopyGameReferences>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,30 +19,18 @@
     <ProjectReference Include="..\PioneerFramework\PioneerFramework.csproj" />
   </ItemGroup>
 
-  <!-- 2026-10-14：引用换游戏根三件 + Harmony 3（同主工程；路径见 Source/Directory.Build.props） -->
+  <Import Project="..\GameReferences.props" />
   <ItemGroup>
-    <Reference Include="Assembly-CSharp">
-      <HintPath>$(Rw17Dir)\Assembly-CSharp.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="UnityStubs">
-      <HintPath>$(Rw17Dir)\UnityStubs.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="Waylith">
-      <HintPath>$(Rw17Dir)\Waylith.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="0Harmony">
-      <HintPath>$(Harmony17Dir)\0Harmony.dll</HintPath>
+    <Reference Include="..\PioneerFramework\Libs\TestRuntime\*.dll">
       <Private>true</Private>
     </Reference>
   </ItemGroup>
 
   <ItemGroup>
     <None Include="..\..\Shaders\*.shader" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\1.6\Defs\**\*.xml" Link="Defs\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\1.6\Patches\**\*.xml" Link="Patches\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\1.7\Defs\**\*.xml" Link="Defs\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\1.7\Patches\**\*.xml" Link="Patches\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\GameReferences.props" Link="Source\GameReferences.props" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PioneerFramework.csproj" Link="Source\PioneerFramework\PioneerFramework.csproj" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\Base\Game\RuntimePlanetLayerService.cs" Link="Source\PioneerFramework\Base\Game\RuntimePlanetLayerService.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\WorldGenStep\WorldGenStep_MoonTiles.cs" Link="Source\PioneerFramework\WorldGenStep\WorldGenStep_MoonTiles.cs" CopyToOutputDirectory="PreserveNewest" />

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+
+  <!-- 精确炮击标记（测试用）：半透明红色方块，标记被精确瞄准的敌舰格子。
+       生命周期由 CompMapDesignator 管理（solidTime 极大=不自然过期，清除时显式销毁）。 -->
+  <ThingDef>
+    <defName>PF_Mote_PreciseStrike</defName>
+    <thingClass>PioneerFramework.Combat.Mote_PreciseStrikeMarker</thingClass>
+    <label>精确炮击标记</label>
+    <category>Mote</category>
+    <tickerType>Normal</tickerType>
+    <altitudeLayer>MoteOverhead</altitudeLayer>
+    <mote>
+      <fadeInTime>0</fadeInTime>
+      <solidTime>999999</solidTime>
+      <fadeOutTime>0</fadeOutTime>
+      <realTime>false</realTime>
+    </mote>
+    <isSaveable>false</isSaveable>
+  </ThingDef>
+
+</Defs>

@@ -48,7 +48,7 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
-        public void MoonPlanetLayerDef_UsesSurfaceLayerAndTiles()
+        public void MoonPlanetLayerDef_UsesCelestialSurfaceLayerAndTiles()
         {
             var layerDefs = new System.Xml.XmlDocument();
             layerDefs.Load(DataPath("Defs/PlanetLayerDefs/PlanetLayers_Celestial.xml"));
@@ -56,7 +56,9 @@ namespace PioneerFramework.Tests
             var moon = layerDefs.SelectSingleNode(
                 "/Defs/PlanetLayerDef[defName='Moon']");
             Assert.NotNull(moon);
-            Assert.Equal("SurfaceLayer", moon.SelectSingleNode("layerType")?.InnerText);
+            var layerType = typeof(PF_CelestialSurfaceLayer).Assembly.GetType(moon.SelectSingleNode("layerType")?.InnerText, true);
+            Assert.Equal(typeof(PF_CelestialSurfaceLayer), layerType);
+            Assert.True(typeof(SurfaceLayer).IsAssignableFrom(layerType));
             Assert.Equal("SurfaceTile", moon.SelectSingleNode("tileType")?.InnerText);
             var steps = moon.SelectNodes("worldGenSteps/li");
             var stepNames = steps.Cast<System.Xml.XmlNode>().Select(n => n.InnerText).ToList();
