@@ -35,6 +35,7 @@
   <ItemGroup>
     <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Pure\DVector3.cs" />
     <Compile Include="..\PioneerFramework\RingWorld\Core\*.cs" Link="RingWorld\%(Filename)%(Extension)" />
+    <Compile Include="..\PioneerFramework\Megastructures\Core\**\*.cs" Link="Megastructures\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\PioneerFramework\Launch\LaunchTransitPath.cs" Link="Pure\LaunchTransitPath.cs" />
     <Compile Include="..\PioneerFramework\Landing\LandingTransitPath.cs" Link="Pure\LandingTransitPath.cs" />
     <!-- 批6 S3-3c（2026-09-30）：**系载体**（`SystemVec3` / `BodyVec3` / `FrameConvert`）——纯类型（无引擎依赖）

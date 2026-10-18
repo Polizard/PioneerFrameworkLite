@@ -51,9 +51,21 @@ namespace PioneerFramework.RingWorld
             if (!Find.WorldGrid.PlanetLayers.TryGetValue(ring.LayerID, out PlanetLayer? current) || !ReferenceEquals(current, ring))
                 throw new InvalidOperationException("Ring is not registered.");
             PlanetLayer.Selected = ring; CameraJumper.TryShowWorld();
-            if (tileId >= 0) { ring.Topology.Check(tileId); Find.WorldCameraDriver.JumpTo(new PlanetTile(tileId, ring)); }
-            else Find.WorldCameraDriver.JumpTo(Vector3.forward);
-            float altitude = tileId >= 0 ? 180 : 600;
+            float altitude;
+            if (tileId >= 0)
+            {
+                ring.Topology.Check(tileId); Find.WorldCameraDriver.JumpTo(new PlanetTile(tileId, ring));
+                altitude = 180;
+            }
+            else
+            {
+                // 2026-10-17 电影感重制："完整环"默认机位。旧版固定 altitude=600 + Vector3.forward
+                // = 相机在环平面内的边缘视角且左右被 20° FOV 裁掉；这里按屏幕宽高比反算能装下
+                // 整环的 altitude，并给一个 35° 俯仰的倾斜机位（详见 RingViewFraming）。
+                float aspect = Screen.height > 0 ? (float)Screen.width / Screen.height : 16f / 9f;
+                altitude = RingViewFraming.PresetAltitude(ring.Geometry, aspect);
+                Find.WorldCameraDriver.JumpTo((Vector3)RingViewFraming.PresetViewDirection());
+            }
             Find.WorldCameraDriver.altitude = altitude;
             HarmonyLib.AccessTools.Field(typeof(WorldCameraDriver), "desiredAltitude").SetValue(Find.WorldCameraDriver, altitude);
         }

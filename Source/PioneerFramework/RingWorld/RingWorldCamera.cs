@@ -48,7 +48,7 @@ namespace PioneerFramework.RingWorld
             }
             if (__instance.altitude >= 300)
             {
-                float halfWidth = (float)(ring.Geometry.RowSpacing * ring.Parameters.Rows / 2);
+                float halfWidth = (float)ring.Geometry.HalfWidth;
                 float bound = Mathf.Sqrt(radius*radius+halfWidth*halfWidth);
                 camera.transform.position = ring.Origin+direction*(bound+__instance.altitude);
                 camera.transform.rotation = Quaternion.LookRotation(-direction,Vector3.up);
@@ -59,7 +59,12 @@ namespace PioneerFramework.RingWorld
             Vector3 normal=(Vector3)RingRotation.ToView(new DVector3(-desired.x/radius,0,-desired.z/radius),tick);
             var body = Current.Game.GetComponent<CelestialBodyManager>()?.GetBodyById(ring.Parameters.ParentBodyId);
             float clearance = radius - (float)((body?.radius ?? 0) * SpaceConstants.UnitsPerMeter);
-            float zoom = Mathf.Lerp(1,Mathf.Max(1,clearance*.8f),Mathf.InverseLerp(WorldCameraDriver.MinAltitude,300,__instance.altitude));
+            // 2026-10-17 电影感重制：相机 near clip = 2，旧版最低高度时距居住面仅约 1 单位会"贴脸穿模"。
+            // 最低间距 clamp 到 3 单位，既避开 near clip 又保留贴地观感。
+            const float MinSurfaceClearance = 3f;
+            float zoomMax = Mathf.Max(MinSurfaceClearance,clearance*.8f);
+            float zoom = Mathf.Lerp(MinSurfaceClearance,zoomMax,
+                Mathf.InverseLerp(WorldCameraDriver.MinAltitude,300,__instance.altitude));
             camera.transform.position = center + normal*zoom;
             camera.transform.rotation = Quaternion.LookRotation(-normal,Vector3.up);
             return false;

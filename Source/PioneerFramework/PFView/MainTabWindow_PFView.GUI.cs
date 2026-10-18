@@ -71,6 +71,7 @@ namespace PioneerFramework
                 }
             }
 
+            if (TrySelectMegastructure(mouseInView, viewSize, best)) return;
             if (bestId >= 0)
             {
                 selectedGroupId = bestId;

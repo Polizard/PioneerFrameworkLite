@@ -11,6 +11,9 @@ namespace PioneerFramework.RingWorld
         public double Spacing => 2 * Math.PI * Radius / Topology.Columns;
         public double RowSpacing => Math.Sqrt(3) * Spacing / 2;
 
+        /// <summary>环带轴向半宽（含六边形外伸角，与 RingIndustrialGeometry 的 halfWidth 同口径）。</summary>
+        public double HalfWidth => RowSpacing * (Topology.Rows - 1) / 2 + Spacing / Math.Sqrt(3);
+
         public RingGeometry(RingTopology topology, double radius)
         {
             if (!double.IsFinite(radius) || radius <= 0) throw new ArgumentOutOfRangeException(nameof(radius));

@@ -87,6 +87,10 @@ namespace PioneerFramework
             return mgr.GetBodyPositionAbs(bodyId, tick) - mgr.GetBodyPositionAbs(root, tick);
         }
 
+        /// <summary>系统系米制位置转为绝对系显示位置；只供渲染与拾取使用。</summary>
+        public static DVector3 SystemToAbsoluteForDisplay(SystemVec3 position, int frameId, double tick, CelestialBodyManager manager)
+            => position.v + manager.GetBodyPositionAbs(frameId, tick);
+
         /// <summary>被查看天体在视图里的半径（Unity 单位）—— 球体遮挡判定用（月亮 30 / 地球 100）。</summary>
         public static float ViewedBodyRadiusUnity
         {

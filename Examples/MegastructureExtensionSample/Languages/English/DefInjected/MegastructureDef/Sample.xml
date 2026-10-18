@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <Sample_IndependentFacility.label>extension sample facility</Sample_IndependentFacility.label>
+  <Sample_IndependentFacility.description>Demonstrates a custom capability implemented in a separate assembly.</Sample_IndependentFacility.description>
+</LanguageData>

@@ -335,6 +335,11 @@ namespace PioneerFramework
             AddAction("PF_RingEnterMap".Translate(), "76 场景 · 环世界", 80, RingWorld.RingWorldDebugActions.EnterSelectedMap, null);
             AddAction("PF_RingValidate".Translate(), "76 场景 · 环世界", 75, RingWorld.RingWorldDebugActions.Validate, null);
             AddAction("PF_RingRemove".Translate(), "76 场景 · 环世界", 70, RingWorld.RingWorldDebugActions.Remove, null);
+            AddAction("PF_Mega_DebugOpen".Translate(), "78 场景 · 通用巨构", 100, delegate
+            {
+                var tab=DefDatabase<MainButtonDef>.GetNamedSilentFail("PF_Megastructures");
+                if(tab!=null)Find.MainTabsRoot.SetCurrentTab(tab);
+            }, null);
 
             // ═══ 场景 · 星座（组织层）═══
             AddAction("星座自检（API 全链）", "90 场景 · 星座", 100, ConstellationSelfTest.Run, null);

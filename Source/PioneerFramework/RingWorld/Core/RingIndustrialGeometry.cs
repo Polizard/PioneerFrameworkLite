@@ -20,19 +20,65 @@ namespace PioneerFramework.RingWorld
             double reference = (tile % columns + (tile / columns) * .5) / columns;
             double turn = Math.Atan2(position.z, position.x) / Math.Tau;
             turn += Math.Round(reference - turn);
-            // Even repeat counts close both the geometry and the mirrored texture at the seam.
-            int repeats = 2 * Math.Max(1, (int)Math.Round(columns / 16.0));
-            return new RingVisualPoint(position, turn * repeats, position.y / (geometry.Spacing * 8) + .5);
+            // 2026-10-17 电影感贴图：按世界尺度（贴图 texel 纵横比）决定环向重复数，
+            // 让 256×3 与 1024×12 的贴图密度一致；贴图横向严格无缝 + Repeat，任意整数都安全。
+            // 仍取偶数：保留历史"镜像接缝"时期的既有 UV 连续性测试判据（只加强不软化）。
+            int repeats = SurfaceRepeats(geometry);
+            // V 使用整个带宽（旧口径只采样贴图中段 36%，新贴图按整条带设计）。
+            double halfWidth = geometry.HalfWidth;
+            double v = (position.y + halfWidth) / (2 * halfWidth);
+            return new RingVisualPoint(position, turn * repeats, v);
+        }
+
+        /// <summary>居住面贴图（4096×1024）对应的环向重复数（世界尺度、偶数）。</summary>
+        public static int SurfaceRepeats(RingGeometry geometry) => EvenWorldRepeats(geometry, 4096, 1024);
+
+        /// <summary>外壳贴图（2048×512）对应的环向重复数（世界尺度、偶数）。</summary>
+        public static int StructureRepeats(RingGeometry geometry) => EvenWorldRepeats(geometry, 2048, 512);
+
+        /// <summary>
+        /// 给定贴图宽高，按"环周长 / 带宽"算出让 texel 接近正方形的环向重复数。
+        /// 结果强制为偶数：历史 UV 测试按"偶数重复 + Mirror 接缝"设计（新贴图已无缝，
+        /// 但仍保留该约束以免软化既有判据）。
+        /// </summary>
+        public static int EvenWorldRepeats(RingGeometry geometry, int textureWidth, int textureHeight)
+        {
+            if (textureWidth <= 0) throw new ArgumentOutOfRangeException(nameof(textureWidth));
+            if (textureHeight <= 0) throw new ArgumentOutOfRangeException(nameof(textureHeight));
+            double circumference = Math.Tau * geometry.Radius;
+            double bandWidth = Math.Max(1e-6, 2 * geometry.HalfWidth);
+            double desired = (double)textureHeight * circumference / (bandWidth * textureWidth);
+            return 2 * Math.Max(1, (int)Math.Round(desired / 2.0));
+        }
+
+        /// <summary>
+        /// 四边形可见侧法线：A-B-C / A-C-D 绕序的 cross。Hull 朝外、内衬朝内已在
+        /// `RingWorldVisualTests.BackHullClosesExactlyAtSeamAndFacesOutward` /
+        /// `GapAboveZigzagHabitatEdgeHasInwardFacingBacking` 中锚定。
+        /// </summary>
+        public static DVector3 FaceNormal(RingVisualQuad quad)
+        {
+            DVector3 n = DVector3.Cross(quad.B.Position - quad.A.Position, quad.C.Position - quad.A.Position);
+            return n.magnitude > 1e-12 ? n.normalized : new DVector3(0, 1, 0);
+        }
+
+        /// <summary>
+        /// 居住面（圆柱内表面）逐顶点朝内法线。与 hex 三角绕序数值复算一致（见 IMPL §2.3）。
+        /// </summary>
+        public static DVector3 HabitatNormal(DVector3 position)
+        {
+            double length = Math.Sqrt(position.x * position.x + position.z * position.z);
+            return length > 1e-12 ? new DVector3(-position.x / length, 0, -position.z / length) : new DVector3(0, 0, 1);
         }
 
         public static IEnumerable<RingVisualQuad> Build(RingGeometry geometry)
         {
             double radius = geometry.Radius, spacing = geometry.Spacing;
-            double halfWidth = geometry.RowSpacing * (geometry.Topology.Rows - 1) / 2 + spacing / Math.Sqrt(3);
+            double halfWidth = geometry.HalfWidth;
             double back = radius + spacing * .08;
             int segments = Math.Clamp(geometry.Topology.Columns, 128, 512);
             int bays = Math.Clamp(geometry.Topology.Columns / 4, 16, 128);
-            int repeats = 2 * Math.Max(1, segments / 16);
+            int repeats = StructureRepeats(geometry);
 
             for (int i = 0; i < segments; i++)
             {
@@ -58,6 +104,18 @@ namespace PioneerFramework.RingWorld
             }
             foreach (var q in Pipe(back + spacing * .055, 0, spacing * .03, segments)) yield return q;
 
+            // 两道沿周向的纵向脊梁（在带面 ±42% 处凸起），与每个 bay 的横向肋骨形成"井"字骨架，
+            // 受光后产生连续的高光/阴影线，增强外壳体积感（2026-10-17 凹凸增强）。
+            int keelSegments = Math.Clamp(segments / 2, 128, 256);
+            foreach (int side in new[] { -1, 1 })
+            {
+                double keelY = side * halfWidth * .42;
+                foreach (var q in BoxBand(0, 1, keelY - spacing * .035, keelY + spacing * .035,
+                    back + spacing * .018, back + spacing * .15, keelSegments, capped: false)) yield return q;
+            }
+
+            // 2026-10-17 用户反馈"X 形钢架不美观"：移除原来的两道交叉斜撑（Brace），
+            // 改为**凹凸起伏的装甲凸块 + 每 4 bay 一座 L 形检修吊臂**（无交叉线框）。
             for (int i = 0; i < bays; i++)
             {
                 double a = (double)i / bays, b = (double)(i + 1) / bays;
@@ -65,9 +123,33 @@ namespace PioneerFramework.RingWorld
                 foreach (var q in BoxBand(a - ribHalfTurn, a + ribHalfTurn, -halfWidth, halfWidth,
                     back + spacing * .008, back + spacing * .11, 1, capped: true)) yield return q;
 
-                // Curved cross-braces follow the cylinder rather than cutting a chord through the habitat.
-                foreach (var q in Brace(a, b, -halfWidth, halfWidth, back + spacing * .015, spacing)) yield return q;
-                foreach (var q in Brace(a, b, halfWidth, -halfWidth, back + spacing * .015, spacing)) yield return q;
+                // 3 个不同高度/位置的凸起装甲块：从侧面看形成明确的前后层次（受光后就是凹凸感）。
+                int seed = 0x2B9F13 + i * 211;
+                for (int k = 0; k < 3; k++)
+                {
+                    int s = seed + k * 29;
+                    double center = a + (b - a) * (0.18 + 0.28 * k + Range(s + 1, -.04, .04));
+                    double halfTurn = (b - a) * Range(s + 2, .055, .105);
+                    double yCenter = Range(s + 3, -.58, .58) * halfWidth;
+                    double yHalf = Math.Max(.12, Range(s + 4, .10, .22) * halfWidth);
+                    double height = spacing * Range(s + 5, .03, .16);
+                    foreach (var q in BoxBand(center - halfTurn, center + halfTurn, yCenter - yHalf, yCenter + yHalf,
+                        back + spacing * .012, back + height, 1, capped: true)) yield return q;
+                }
+
+                // 每 4 个 bay 一座 L 形吊臂：径向伸出 + 沿环带边缘向上竖起，强调上下结构。
+                if ((i & 3) == 0)
+                {
+                    double g = a + (b - a) * .5;
+                    double half = (b - a) * .055;
+                    double armRadius = back + spacing * .62;
+                    foreach (var q in BoxBand(g - half, g + half, -spacing * .07, spacing * .07,
+                        back + spacing * .02, armRadius, 1, capped: true)) yield return q;
+                    foreach (var q in BoxBand(g - half, g + half, halfWidth + spacing * .02,
+                        halfWidth + spacing * .55, armRadius - spacing * .05, armRadius + spacing * .05,
+                        1, capped: true)) yield return q;
+                }
+
                 foreach (int side in new[] { -1, 1 })
                 {
                     double y0 = side > 0 ? halfWidth + spacing * .035 : -halfWidth - spacing * .145;
@@ -164,5 +246,23 @@ namespace PioneerFramework.RingWorld
                     Point(b,side+1),Point(b,side),a*16,(double)side/6,b*16,(double)(side+1)/6);
             }
         }
+
+        // ── 确定性哈希（凸块布局用；不使用 Rand，纯核可测/跨平台逐位一致） ─────
+
+        private static double Hash01(int seed)
+        {
+            unchecked
+            {
+                uint x = (uint)seed * 0x9E3779B1u;
+                x ^= x >> 16;
+                x *= 0x85EBCA6Bu;
+                x ^= x >> 13;
+                x *= 0xC2B2AE35u;
+                x ^= x >> 16;
+                return x / 4294967296.0;
+            }
+        }
+
+        private static double Range(int seed, double min, double max) => min + (max - min) * Hash01(seed);
     }
 }
