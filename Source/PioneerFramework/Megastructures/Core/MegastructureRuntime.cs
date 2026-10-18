@@ -32,12 +32,24 @@ namespace PioneerFramework.Megastructures
         public IReadOnlyList<StructureState> Snapshots=>document.Instances.Select(MegastructureCodec.Clone).ToArray();
         internal IEnumerable<StructureState> LiveInstances=>document.Instances;
         internal ResourceDocument ResourceState=>document.Resources;
+        internal BackendDocument BackendState=>document.Backends;
+        internal List<StructureMapSiteState> MapSiteState=>document.MapSites;
+        internal List<SurfaceBindingState> SurfaceState=>document.Surfaces;
+        internal StructureDefinition? Definition(string id)=>definitions.GetValueOrDefault(id);
         internal TransportDocument TransportState=>document.Transport;
         public FrameworkResult? GetOperationResult(string id)=>document.Operations.FirstOrDefault(x=>x.Id==id)?.Result;
         internal StructureState? Find(string id)=>document.Instances.FirstOrDefault(x=>x.Id==id);
         public bool HasDefinition(string id)=>definitions.ContainsKey(id);
         public StructureState? GetSnapshot(string id)=>Find(id) is { } state?MegastructureCodec.Clone(state):null;
         public FrameworkDocument Export()=>MegastructureCodec.Clone(document);
+        internal FrameworkResult PreviewCreate(CreateStructureRequest request)
+        {
+            var preview=new MegastructureRuntime{CurrentTick=CurrentTick};
+            foreach(var definition in definitions.Values)preview.RegisterDefinition(definition);
+            var restored=preview.Restore(Export());if(!restored.Success)return restored;
+            preview.DocumentGuard=DocumentGuard;
+            return preview.Create(request);
+        }
         public FrameworkResult RegisterDefinition(StructureDefinition definition)
         {
             if(string.IsNullOrWhiteSpace(definition.Id)||definition.Nodes.Count==0||definition.Nodes.Any(x=>!FrameworkValidation.StableId(x.Id))||definition.Nodes.Select(x=>x.Id).Distinct(StringComparer.Ordinal).Count()!=definition.Nodes.Count) return FrameworkResult.Reject("InvalidDefinition");

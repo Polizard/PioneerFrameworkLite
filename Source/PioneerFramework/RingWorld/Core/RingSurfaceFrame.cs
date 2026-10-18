@@ -12,12 +12,9 @@ namespace PioneerFramework.RingWorld
         {
             if(!double.IsFinite(parentAngularRate)||!double.IsFinite(physicsTick)) throw new ArgumentOutOfRangeException(nameof(physicsTick));
             var geometry=new RingGeometry(new RingTopology(parameters.Columns,parameters.Rows),parameters.RadiusMeters);
-            double angularRate=parentAngularRate+RingRotation.AngularRate;
-            DVector3 position=SurfaceFrame.FixedToEci(geometry.Center(tile),angularRate,physicsTick);
-            return new RingTileFrame(position,
-                SurfaceFrame.FixedToEci(geometry.Normal(tile),angularRate,physicsTick),
-                SurfaceFrame.FixedToEci(geometry.Tangent(tile),angularRate,physicsTick),
-                SurfaceFrame.SurfaceVelocity(position,angularRate));
+            var frame=Megastructures.SurfaceSpatialMath.EvaluateParentAxial(new(geometry.Center(tile),geometry.Normal(tile),geometry.Tangent(tile)),
+                new Megastructures.SpatialState(parameters.ParentBodyId,DVector3.zero,DVector3.zero,Megastructures.RotationData.Identity,new(0,-parentAngularRate,0),physicsTick),RingRotation.AngularRate,physicsTick);
+            return new RingTileFrame(frame.Pose.PositionSystem.v,frame.Normal,frame.Tangent,frame.Pose.VelocitySystem.v);
         }
     }
 }

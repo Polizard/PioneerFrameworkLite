@@ -16,6 +16,12 @@ namespace PioneerFramework.Megastructures
         private StructureSpatialService? spatial;
         private StructureEndpointService? endpoints;
         private StructureMapService? maps;
+        private StructureSurfaceService? surfaces;
+        private StructureMapSiteService? mapSites;
+        private StructureActionService? actions;
+        public StructureActionService Actions {get{EnsureInitialized();return actions!;}}
+        public StructureMapSiteService MapSites {get{EnsureInitialized();return mapSites!;}}
+        public StructureSurfaceService Surfaces {get{EnsureInitialized();return surfaces!;}}
         public string SelectedInstanceId { get; set; }="";
         public string LoadError { get; private set; }="";
         public MegastructureRuntime Runtime { get {EnsureInitialized();return runtime;} }
@@ -26,7 +32,11 @@ namespace PioneerFramework.Megastructures
         public IReadOnlyList<StructureState> Snapshots=>Runtime.Snapshots;
         public StructureState? GetSnapshot(string instanceId)=>Runtime.GetSnapshot(instanceId);
         public FrameworkResult Create(CreateStructureRequest request)
-        {EnsureInitialized();if(!string.IsNullOrEmpty(LoadError))return FrameworkResult.Reject(LoadError);if(Scribe.mode!=LoadSaveMode.Inactive)return FrameworkResult.Reject("SaveInProgress");runtime.CurrentTick=Find.TickManager?.TicksGame??0;return runtime.Create(request);}
+        {EnsureInitialized();if(!string.IsNullOrEmpty(LoadError))return FrameworkResult.Reject(LoadError);if(Scribe.mode!=LoadSaveMode.Inactive)return FrameworkResult.Reject("SaveInProgress");if(!string.IsNullOrEmpty(runtime.Definition(request.DefinitionId)?.BackendProviderId))
+            {
+                if(Backends.FindProvider(runtime.Definition(request.DefinitionId)!.BackendProviderId) is not IBackendRequestFactory factory)return FrameworkResult.Reject("BackendConfigurationRequired");
+                var built=factory.CreateDefault(request,out var configured);return built.Success?Create(configured):built;
+            }runtime.CurrentTick=Find.TickManager?.TicksGame??0;return runtime.Create(request);}
         public FrameworkResult Execute(StructureCommand command)
         {EnsureInitialized();if(!string.IsNullOrEmpty(LoadError))return FrameworkResult.Reject(LoadError);if(Scribe.mode!=LoadSaveMode.Inactive)return FrameworkResult.Reject("SaveInProgress");runtime.CurrentTick=Find.TickManager?.TicksGame??0;return runtime.Execute(command);}
         public MegastructureManager(Game game) { }
@@ -37,6 +47,7 @@ namespace PioneerFramework.Megastructures
             if(initialized)return;initialized=true;
             foreach(var def in DefDatabase<MegastructureDef>.AllDefsListForReading)
             {var result=runtime.RegisterDefinition(def.ToDefinition());if(!result.Success)Log.Error("[PFL Megastructures] "+def.defName+": "+result.Code);}
+            RegisterCompatibilityDefinitions();
             if(!string.IsNullOrEmpty(payload))
             {
                 try{var result=runtime.Restore(MegastructureCodec.Decode(payload));if(!result.Success)LoadError=result.Code;}
@@ -49,6 +60,16 @@ namespace PioneerFramework.Megastructures
                 try {spatial.RegisterProvider(factory());}catch(Exception e){Log.Error("[PFL Megastructures] Spatial provider: "+e);}
             endpoints=new StructureEndpointService(runtime,spatial,resources,runtime.TransportState);
             maps=new StructureMapService(this);
+            maps.RegisterProvider(SurfaceModules.Map,new SurfaceMapSlotProvider(this));
+            surfaces=new StructureSurfaceService(this);
+            mapSites=new StructureMapSiteService(this);
+            actions=new StructureActionService(this);
+            backends=new StructureBackendService(runtime);
+            RegisterBuiltinBackends();
+            foreach(var factory in MegastructureRegistry.BackendFactories)backends.Register(factory());
+            MigrateBackendAssociations();
+            runtime.Changed+=_=>surfaces.Reconcile();
+            runtime.ActivationGuard=backends.ActivationGuard;
             runtime.DocumentGuard=spatial.Validate;
             runtime.RetirementGuard=CheckRetirement;
             runtime.CommandExecutor=ExecuteHostCommand;
@@ -59,6 +80,7 @@ namespace PioneerFramework.Megastructures
             MegastructureRegistry.Capabilities.Seal();
             if(string.IsNullOrEmpty(LoadError))LoadError=spatial.Validate(runtime.Export())??"";
             AttachHostEvents();
+            surfaces.Reconcile();
         }
         public object? GetService(Type type)=>type==typeof(StructureResourceService)?Resources:type==typeof(StructureSpatialService)?Spatial:type==typeof(StructureEndpointService)?Endpoints:type==typeof(IResourceStoreFactory)?this:type==typeof(MegastructureManager)?this:null;
         private FrameworkResult ExecuteHostCommand(StructureState instance,StructureCommand command)
@@ -93,6 +115,9 @@ namespace PioneerFramework.Megastructures
             if(Scribe.mode==LoadSaveMode.LoadingVars){initialized=false;runtime=new();}
         }
         partial void AttachHostEvents();
+        partial void RegisterBuiltinBackends();
+        partial void RegisterCompatibilityDefinitions();
+        partial void MigrateBackendAssociations();
         partial void ReconcileHostBindings();
         private string? CheckRetirement(StructureState instance)=>HostRetirementGuard(instance);
         private partial string? HostRetirementGuard(StructureState instance);

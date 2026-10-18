@@ -3,8 +3,11 @@ using System.Collections.Generic;
 
 namespace PioneerFramework.RingWorld
 {
-    public sealed class RingTopology
+    public sealed class RingTopology : Megastructures.IArtificialSurfaceGraph
     {
+        int Megastructures.IArtificialSurfaceGraph.CellCount=>TileCount;
+        double Megastructures.IArtificialSurfaceGraph.Distance(int from,int to)=>Distance(from,to);
+
         private static readonly int[] Dq = { 1, 1, 0, -1, -1, 0 };
         private static readonly int[] Dr = { 0, -1, -1, 0, 1, 1 };
         public int Columns { get; }

@@ -9,36 +9,12 @@ namespace PioneerFramework.RingWorld
 {
     public static class RingWorldPatches
     {
-        private static bool installed;
-        public static void Install()
+        public static void Install()=>Megastructures.SurfaceNativeBridge.Install(InstallShapeHooks);
+        private static void InstallShapeHooks(Harmony harmony)
         {
-            if (installed) return;
-            var harmony = new Harmony("PioneerFrameworkLite.RingWorld");
-            try
-            {
-            RingWorldMotion.Install(harmony);
-            harmony.Patch(AccessTools.Method(typeof(PlanetLayer), nameof(PlanetLayer.InitializeLayer)),
-                prefix: new HarmonyMethod(typeof(RingWorldPatches), nameof(Initialize)));
-            harmony.Patch(AccessTools.Method(typeof(PlanetLayer), nameof(PlanetLayer.ExposeData)),
-                prefix: new HarmonyMethod(typeof(RingWorldPatches), nameof(Expose)));
-            Patch(harmony, typeof(PlanetLayer), "GetTileCenter", nameof(Center), new[]{typeof(int)});
-            Patch(harmony, typeof(PlanetLayer), "ApproxDistanceInTiles", nameof(Distance), new[]{typeof(int),typeof(int)});
-            Patch(harmony, typeof(PlanetLayer), "GetHeadingFromTo", nameof(Heading), new[]{typeof(int),typeof(int)});
-            Patch(harmony, typeof(PlanetLayer), "LongLatOf", nameof(LongLat), new[]{typeof(int)});
+            Patch(harmony,typeof(PlanetLayer),"GetHeadingFromTo",nameof(Heading),new[]{typeof(int),typeof(int)});
+            Patch(harmony,typeof(PlanetLayer),"LongLatOf",nameof(LongLat),new[]{typeof(int)});
             harmony.Patch(AccessTools.Method(typeof(PlanetLayer),"LineIntersects"),prefix:new HarmonyMethod(typeof(RingWorldPatches),nameof(LineIntersects)));
-            harmony.Patch(AccessTools.Method(typeof(WorldPath),"DrawPath"),prefix:new HarmonyMethod(typeof(RingWorldObjects),"DrawPath"));
-            harmony.Patch(AccessTools.PropertyGetter(typeof(PlanetLayer), nameof(PlanetLayer.Visible)),prefix:new HarmonyMethod(typeof(RingWorldPatches),nameof(Visible)));
-            harmony.Patch(AccessTools.PropertyGetter(typeof(PlanetLayer), nameof(PlanetLayer.Raycastable)),prefix:new HarmonyMethod(typeof(RingWorldPatches),nameof(Raycastable)));
-            harmony.Patch(AccessTools.Method(typeof(WorldPathing),"FindPath"),prefix:new HarmonyMethod(typeof(RingWorldPathing),"FindPath"));
-            harmony.Patch(AccessTools.Method(typeof(FastTileFinder),"Query"),prefix:new HarmonyMethod(typeof(RingWorldPathing),"Query"));
-            harmony.Patch(AccessTools.Method(typeof(FastTileFinder),"Closest"),prefix:new HarmonyMethod(typeof(RingWorldPathing),"Closest"));
-            harmony.Patch(AccessTools.Method(typeof(WorldCameraDriver),"ApplyPositionToGameObject"),prefix:new HarmonyMethod(typeof(RingWorldCamera),"Apply"));
-            harmony.Patch(AccessTools.Method(typeof(WorldObject),"Print"),prefix:new HarmonyMethod(typeof(RingWorldObjects),"Print"));
-            harmony.Patch(AccessTools.Method(typeof(WorldObject),"Draw"),prefix:new HarmonyMethod(typeof(RingWorldObjects),"Draw"));
-            harmony.Patch(AccessTools.Method(typeof(GenTemperature),"GetTemperatureFromSeasonAtTile"),prefix:new HarmonyMethod(typeof(RingWorldEnvironment),"Temperature"));
-            installed = true;
-            }
-            catch { harmony.UnpatchAll(harmony.Id); throw; }
         }
         private static void Patch(Harmony harmony,Type type,string method,string prefix,Type[] arguments) =>
             harmony.Patch(AccessTools.Method(type,method,arguments)??throw new MissingMethodException(type.FullName,method),
@@ -53,7 +29,7 @@ namespace PioneerFramework.RingWorld
             if (__instance is RingSurfaceLayer ring) ring.ExposeRingParameters();
         }
         public static bool ShouldHide(PlanetLayer candidate, PlanetLayer? selected) =>
-            !ReferenceEquals(candidate, selected) && (candidate is RingSurfaceLayer || selected is RingSurfaceLayer);
+            Megastructures.SurfaceNativeBridge.ShouldHide(candidate,selected);
         private static bool Center(PlanetLayer __instance,int tileID,ref Vector3 __result)
         {
             if(__instance is not RingSurfaceLayer ring) return true;

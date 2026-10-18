@@ -19,6 +19,7 @@ namespace PioneerFramework.RingWorld
 
         public override void Render()
         {
+            if(!Megastructures.ArtificialSurfaceLayers.ModuleAvailable(planetLayer,Megastructures.SurfaceModules.Presentation))return;
             RingWorldVisualState.UpdatePerFrame();
             base.Render();
         }
@@ -40,14 +41,8 @@ namespace PioneerFramework.RingWorld
                     AddVertex(mesh, RingIndustrialGeometry.SurfaceUV(ring.Geometry, tile, corners[i]));
                     mesh.normals.Add((Vector3)RingIndustrialGeometry.HabitatNormal(corners[i]));
                 }
-                for (int i = 0; i < 6; i++)
-                {
-                    mesh.tris.Add(start);
-                    mesh.tris.Add(start + 1 + i);
-                    mesh.tris.Add(start + 1 + (i + 1) % 6);
-                    AppendRaycastableTriangle(meshIndex, tile);
-                }
-                if (tile % 256 == 0) yield return null;
+                Megastructures.SurfaceMeshParts.AddCellFan(mesh,start,corners.Length,Megastructures.SurfaceMeshRole.Habitat,()=>AppendRaycastableTriangle(meshIndex,tile));
+                if (tile % Megastructures.SurfaceMeshParts.BatchSize == 0) yield return null;
             }
             FinalizeMesh(MeshParts.All);
             foreach (object item in RegenerateWorldMeshColliders()) yield return item;
@@ -55,8 +50,7 @@ namespace PioneerFramework.RingWorld
 
         internal static void AddVertex(LayerSubMesh mesh, RingVisualPoint point)
         {
-            mesh.verts.Add((Vector3)point.Position);
-            mesh.uvs.Add(new Vector3((float)point.U, (float)point.V, 0f));
+            Megastructures.SurfaceMeshParts.AddVertex(mesh,point.Position,new Vector3((float)point.U,(float)point.V,0));
         }
     }
 }

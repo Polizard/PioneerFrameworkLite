@@ -16,8 +16,14 @@ namespace PioneerFramework.Megastructures
         {
             var manager=Manager;if(manager==null)return;
             if(Widgets.ButtonText(new Rect(0,0,230,32),"PF_Mega_Create".Translate()))OpenCreateMenu(manager);
-            if(Widgets.ButtonText(new Rect(240,0,230,32),"PF_Mega_ImportRings".Translate()))
-                foreach(var ring in Find.WorldGrid.PlanetLayers.Values.OfType<RingWorld.RingSurfaceLayer>())Show(manager.ImportRing(ring,Faction.OfPlayer.loadID));
+            if(Widgets.ButtonText(new Rect(240,0,230,32),"PF_Surface_Import".Translate()))
+                foreach(var layer in Find.WorldGrid.PlanetLayers.Values.Where(l=>l is IArtificialSurfaceLayer))Show(manager.ImportSurface(layer,Faction.OfPlayer.loadID));
+            if(Widgets.ButtonText(new Rect(480,0,230,32),"PF_Surface_Resume".Translate()))
+            {
+                var options=manager.Backends.Operations.Where(o=>o.Request!=null&&o.Stage!=BackendOperationStage.Completed&&o.Request.ActorFactionId==Faction.OfPlayer.loadID)
+                    .Select(o=>new FloatMenuOption(o.InstanceId,()=>Show(manager.RetryBackend(o.OperationId,Faction.OfPlayer.loadID)))).ToList();
+                if(options.Count>0)Find.WindowStack.Add(new FloatMenu(options));
+            }
             if(!string.IsNullOrEmpty(manager.LoadError)){Widgets.Label(new Rect(0,40,inRect.width,50),"PF_Mega_LoadBlocked".Translate(manager.LoadError));return;}
             var states=manager.Snapshots.Where(s=>s.Lifecycle!=StructureLifecycle.Retired&&(StructurePermissions.Allows(s,"",Faction.OfPlayer.loadID,StructurePermission.View)||s.Nodes.Any(n=>StructurePermissions.Allows(s,n.Id,Faction.OfPlayer.loadID,StructurePermission.View)))).ToArray();
             var listRect=new Rect(0,42,260,inRect.height-45);var listView=new Rect(0,0,240,Math.Max(listRect.height,states.Length*54));
@@ -32,7 +38,7 @@ namespace PioneerFramework.Megastructures
             var selected=states.FirstOrDefault(s=>s.Id==manager.SelectedInstanceId)??states.FirstOrDefault();
             if(selected==null){Widgets.Label(new Rect(280,55,700,100),"PF_Mega_Empty".Translate());return;}
             manager.SelectedInstanceId=selected.Id;
-            var panel=new Rect(280,42,inRect.width-280,inRect.height-45);var view=new Rect(0,0,panel.width-20,Math.Max(panel.height,220+selected.Nodes.Sum(n=>150+n.Capabilities.Count*30)+selected.Capabilities.Count*30+manager.Resources.Stores.Sum(s=>s.Balances.Count*30)));
+            var panel=new Rect(280,42,inRect.width-280,inRect.height-45);var view=new Rect(0,0,panel.width-20,Math.Max(panel.height,720+manager.MapSites.Sites.Count(s=>s.Address.Node.InstanceId==selected.Id)*34+selected.Nodes.Sum(n=>150+n.Capabilities.Count*30)+selected.Capabilities.Count*30+manager.Resources.Stores.Sum(s=>s.Balances.Count*30)));
             Widgets.BeginScrollView(panel,ref detailScroll,view);DrawDetail(manager,selected,view.width);Widgets.EndScrollView();
         }
         private static string Label(StructureState state)=>DefDatabase<MegastructureDef>.GetNamedSilentFail(state.DefinitionId)?.LabelCap.ToString()??state.Id;
@@ -62,16 +68,51 @@ namespace PioneerFramework.Megastructures
                 Widgets.DrawLineHorizontal(0,y,width);y+=8;
                 Widgets.Label(new Rect(0,y,width,26),"PF_Mega_Node".Translate(node.Id,node.Enabled?"PF_Mega_Enabled".Translate():"PF_Mega_Disabled".Translate()));y+=28;
                 if(!string.IsNullOrEmpty(node.BlockedReason)){Widgets.Label(new Rect(0,y,width,26),"PF_Mega_Failed".Translate(node.BlockedReason));y+=28;}
-                var ringBinding=node.Bindings.FirstOrDefault(b=>b.Kind=="ring");
-                if(ringBinding!=null&&Widgets.ButtonText(new Rect(0,y,170,28),"PF_Mega_View".Translate()))
-                {var ring=RingWorld.RingWorldService.FindById(ringBinding.Id);if(ring!=null)RingWorld.RingWorldColonyService.View(ring);}
-                if(ringBinding!=null)y+=33;
+                foreach(var surface in manager.Surfaces.ForInstance(state.Id).Where(a=>a.Node.NodeId==node.Id))
+                    DrawSurface(manager,state,surface,ref y,width);
                 foreach(var capability in node.Capabilities)DrawCapability(manager,state,node.Id,capability,ref y,width);
                 foreach(var store in manager.Resources.Stores.Where(s=>s.Owner==new NodeAddress(state.Id,node.Id)))foreach(var balance in store.Balances)
                 {Widgets.Label(new Rect(0,y,width,26),$"{balance.ResourceId}: {balance.Amount:0.##}/{balance.Capacity:0.##} {balance.Unit}");y+=28;}
                 foreach(var store in manager.ThingStores.Where(s=>s.Owner==new NodeAddress(state.Id,node.Id)))
                 {Widgets.Label(new Rect(0,y,width,26),"PF_Mega_Items".Translate(store.Count));y+=28;}
                 y+=15;
+            }
+        }
+        private static void DrawSurface(MegastructureManager manager,StructureState state,SurfaceAddress surface,ref float y,float width)
+        {
+            int cell=-1;
+            if(manager.Surfaces.TryResolve(surface,out var layer,out _))
+            {
+                var selected=Find.WorldSelector.SelectedTile;
+                if(selected.Valid&&selected.Layer==layer)cell=selected.tileId;
+            }
+            Widgets.Label(new Rect(0,y,width,26),"PF_Surface_Selected".Translate(cell));y+=30;
+            foreach(var action in manager.Actions.Query(surface,Faction.OfPlayer.loadID,cell))
+            {
+                var captured=new StructureSurfaceActionRequest{OperationId=Guid.NewGuid().ToString("N"),Key=action.Key,Surface=surface,CellId=cell,ActorFactionId=Faction.OfPlayer.loadID,ExpectedRevision=state.Revision};
+                if(action.Available&&Widgets.ButtonText(new Rect(0,y,210,27),action.LabelKey.Translate()))
+                {
+                    void Execute()
+                    {
+                        var result=manager.Actions.Execute(captured,out var map);Show(result);
+                        if(result.Success&&map!=null){Current.Game.CurrentMap=map;CameraJumper.TryHideWorld();}
+                    }
+                    if(action.Key=="enter")LongEventHandler.QueueLongEvent(Execute,"GeneratingMap",false,null);
+                    else Execute();
+                }
+                if(!action.Available)Widgets.Label(new Rect(0,y,width,26),action.LabelKey.Translate()+" · "+action.BlockedReason);
+                y+=31;
+            }
+            foreach(var site in manager.MapSites.Sites.Where(s=>s.Address.Cell?.Surface==surface))
+            {
+                var address=site.Address;
+                if(Widgets.ButtonText(new Rect(0,y,width-15,27),"PF_Surface_Map".Translate(address.Cell!.Value.CellId,site.MapParentId,site.MapId)))
+                    LongEventHandler.QueueLongEvent(()=>
+                    {
+                        var result=manager.MapSites.Access(address,true,Faction.OfPlayer.loadID,new(250,1,250),out var map);Show(result);
+                        if(result.Success){Current.Game.CurrentMap=map;CameraJumper.TryHideWorld();}
+                    },"GeneratingMap",false,null);
+                y+=32;
             }
         }
         private static void DrawCapability(MegastructureManager manager,StructureState state,string nodeId,CapabilityState capability,ref float y,float width)

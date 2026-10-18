@@ -56,6 +56,7 @@ namespace PioneerFramework.RingWorld
         /// </summary>
         public override void Render()
         {
+            if(!Megastructures.ArtificialSurfaceLayers.ModuleAvailable(planetLayer,Megastructures.SurfaceModules.Presentation))return;
             RingWorldVisualState.UpdatePerFrame();
             base.Render();
         }

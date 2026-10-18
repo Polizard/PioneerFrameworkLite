@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PioneerFramework\PioneerFramework.csproj" />
     <ProjectReference Include="..\..\Examples\MegastructureExtensionSample\MegastructureExtensionSample.csproj" />
+    <ProjectReference Include="..\..\Examples\ArtificialSurfaceSample\ArtificialSurfaceSample.csproj" />
   </ItemGroup>
 
   <Import Project="..\GameReferences.props" />

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <PioneerFramework.Megastructures.MegastructureDef>
+    <defName>PF_Megastructure_RingWorld</defName>
+    <label>环世界</label>
+    <description>依附现有天体的人工环形表面；通过巨构后端与通用表面模块管理。</description>
+    <backendProviderId>pfl.ring</backendProviderId>
+    <backendProperties Class="PioneerFramework.RingWorld.RingBackendProperties">
+      <columns>256</columns>
+      <rows>3</rows>
+      <radiusMultiplier>3.2</radiusMultiplier>
+      <seedOffset>194913</seedOffset>
+    </backendProperties>
+    <referenceOnly>false</referenceOnly>
+    <nodes>
+      <li>
+        <key>facility</key>
+        <spatialMode>BodyAnchored</spatialMode>
+        <bodyId>-1</bodyId>
+        <capabilities>
+          <li>
+            <key>surface</key>
+            <handlerId>pfl.surface.layer</handlerId>
+          </li>
+          <li>
+            <key>rotation</key>
+            <handlerId>pfl.motion.periodic</handlerId>
+          </li>
+          <li>
+            <key>navigation</key>
+            <handlerId>pfl.surface.navigation</handlerId>
+          </li>
+          <li>
+            <key>maps</key>
+            <handlerId>pfl.map.surface</handlerId>
+          </li>
+          <li>
+            <key>environment</key>
+            <handlerId>pfl.environment.artificial</handlerId>
+          </li>
+          <li>
+            <key>presentation</key>
+            <handlerId>pfl.presentation.surface</handlerId>
+          </li>
+          <li>
+            <key>view</key>
+            <handlerId>pfl.view.surface</handlerId>
+          </li>
+        </capabilities>
+      </li>
+    </nodes>
+  </PioneerFramework.Megastructures.MegastructureDef>
+</Defs>

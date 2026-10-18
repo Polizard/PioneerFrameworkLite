@@ -115,9 +115,9 @@ namespace PioneerFramework
         public static bool CurCelestialSunGlow_Prefix(Map map, ref float __result)
         {
             if (map == null || map.Tile < 0) return true;
-            if (map.Tile.Layer is RingWorld.RingSurfaceLayer)
+            if (Megastructures.SurfaceEnvironmentBridge.TrySunGlow(map.Tile.Layer,out float artificialSunGlow))
             {
-                __result = (float)RingWorld.RingClimate.SunGlow(RingWorld.RingWorldEnvironment.DisplayTicks);
+                __result = artificialSunGlow;
                 return false;
             }
 
@@ -153,9 +153,9 @@ namespace PioneerFramework
         public static bool GenLocalDate_DayPercent_Map_Prefix(Map map, ref float __result)
         {
             if (map == null || map.Tile < 0) return true;
-            if (map.Tile.Layer is RingWorld.RingSurfaceLayer)
+            if (Megastructures.SurfaceEnvironmentBridge.TryDayPercent(map.Tile.Layer,out float artificialDayPercent))
             {
-                __result = (float)RingWorld.RingClimate.DayPercent(RingWorld.RingWorldEnvironment.DisplayTicks);
+                __result = artificialDayPercent;
                 return false;
             }
 

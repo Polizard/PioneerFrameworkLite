@@ -13,6 +13,15 @@ namespace PioneerFramework.Megastructures
                 bool Capabilities(System.Collections.Generic.List<CapabilityState> values)=>values!=null&&values.All(c=>c!=null&&StableId(c.Id)&&!string.IsNullOrWhiteSpace(c.HandlerId)&&c.Version>0&&c.Payload!=null&&c.Payload.Length<=1_048_576)&&values.Select(c=>c.Id).Distinct().Count()==values.Count;
                 bool Access(StructureAccessPolicy access)=>access!=null&&access.Grants!=null&&access.Grants.All(g=>g!=null&&g.Permissions!=null&&g.Permissions.All(Enum.IsDefined));
                 if(document.Resources==null||document.Transport==null||document.Resources.Stores==null||document.Resources.Transactions==null||document.Transport.Tickets==null)return "InvalidDocument";
+                if(document.Backends==null||document.Backends.Associations==null||document.Backends.Operations==null||document.Surfaces==null||document.MapSites==null)return "InvalidSurfaceDocument";
+                bool Backend(StructureBackendRef b)=>StableId(b.ProviderId)&&!string.IsNullOrWhiteSpace(b.StableId);
+                bool Node(NodeAddress n)=>document.Instances.Any(s=>s.Id==n.InstanceId&&s.Nodes.Any(x=>x.Id==n.NodeId));
+                if(document.Backends.Associations.Any(a=>a==null||!Node(a.Node)||!Backend(a.Backend)||a.Generation<1||!Enum.IsDefined(a.Ownership)||!Enum.IsDefined(a.Disposition))||document.Backends.Associations.Select(a=>(a.Node,a.Backend)).Distinct().Count()!=document.Backends.Associations.Count)return "InvalidBackendDocument";
+                var active=document.Backends.Associations.Where(a=>!a.Released).ToArray();
+                if(active.Select(a=>a.Backend).Distinct().Count()!=active.Length)return "DuplicateBackendAuthority";
+                if(document.Backends.Operations.Any(o=>o==null||string.IsNullOrWhiteSpace(o.OperationId)||string.IsNullOrWhiteSpace(o.Fingerprint)||!Enum.IsDefined(o.Stage)||!Enum.IsDefined(o.Disposition))||document.Backends.Operations.Select(o=>o.OperationId).Distinct().Count()!=document.Backends.Operations.Count)return "InvalidBackendDocument";
+                if(document.Surfaces.Any(s=>s==null||!Node(s.Address.Node)||!StableId(s.Address.SurfaceId)||!Backend(s.Backend)||s.Version<1||s.AssociationGeneration<1)||document.Surfaces.Select(s=>s.Address).Distinct().Count()!=document.Surfaces.Count)return "InvalidSurfaceDocument";
+                if(document.MapSites.Any(s=>s==null||!Node(s.Address.Node)||string.IsNullOrWhiteSpace(s.Address.SiteKey)||s.MapParentId< -1||s.MapId< -1||s.Address.Cell is { } c&&(c.Surface.Node!=s.Address.Node||c.CellId<0||!StableId(c.Surface.SurfaceId)))||document.MapSites.Select(s=>s.Address).Distinct().Count()!=document.MapSites.Count)return "InvalidMapSiteDocument";
                 foreach(var instance in document.Instances)
                 {
                     if(!StableId(instance.Id)||!Enum.IsDefined(instance.Lifecycle)||instance.Revision<0||!Access(instance.Access)||!Capabilities(instance.Capabilities)||instance.Connections==null)return "InvalidDocument";

@@ -9,10 +9,12 @@ namespace PioneerFramework.Megastructures
     {
         public List<MegastructureNodeConfig> nodes=new();
         public bool referenceOnly;
+        public string backendProviderId="";
+        public MegastructureBackendProperties? backendProperties;
         public List<MegastructureCapabilityConfig> capabilities=new();
         public AccessPolicyConfig access=new();
         public List<NodeConnectionConfig> connections=new();
-        public StructureDefinition ToDefinition()=>new() {Id=defName,Access=access.ToPolicy(),Nodes=nodes.Select(n=>n.ToTemplate()).ToList(),Connections=connections.Select(c=>c.ToConnection()).ToList(),Capabilities=capabilities.Select(c=>c.ToState()).ToList()};
+        public StructureDefinition ToDefinition()=>new() {Id=defName,BackendProviderId=backendProviderId,Access=access.ToPolicy(),Nodes=nodes.Select(n=>n.ToTemplate()).ToList(),Connections=connections.Select(c=>c.ToConnection()).ToList(),Capabilities=capabilities.Select(c=>c.ToState()).ToList()};
         public override IEnumerable<string> ConfigErrors()
         {
             foreach(string error in base.ConfigErrors())yield return error;
@@ -21,6 +23,10 @@ namespace PioneerFramework.Megastructures
             foreach(var node in nodes)foreach(var capability in node.capabilities)
                 if(string.IsNullOrWhiteSpace(capability.key)||string.IsNullOrWhiteSpace(capability.handlerId))yield return "Capabilities require stable keys and handler IDs.";
         }
+    }
+    public abstract class MegastructureBackendProperties
+    {
+        public abstract string Encode();
     }
     public sealed class MegastructureNodeConfig
     {
@@ -68,8 +74,16 @@ namespace PioneerFramework.Megastructures
     {
         public static MegastructureCapabilityRegistry Capabilities { get; }=Create();
         private static readonly Dictionary<string,Func<ISpatialBindingProvider>> spatialFactories=new(StringComparer.Ordinal);
+        private static readonly Dictionary<string,Func<IStructureBackendProvider>> backendFactories=new(StringComparer.Ordinal);
+        internal static IEnumerable<Func<IStructureBackendProvider>> BackendFactories=>backendFactories.Values;
+        public static FrameworkResult RegisterBackendProvider(string id,Func<IStructureBackendProvider> factory)
+        {
+            if(Capabilities.IsSealed)return FrameworkResult.Reject("RegistrySealed");
+            if(string.IsNullOrWhiteSpace(id)||factory==null)return FrameworkResult.Reject("InvalidBackendProvider");
+            return backendFactories.TryAdd(id,factory)?FrameworkResult.Ok():FrameworkResult.Reject("DuplicateBackendProvider");
+        }
         internal static IEnumerable<Func<ISpatialBindingProvider>> SpatialFactories=>spatialFactories.Values;
-        private static MegastructureCapabilityRegistry Create(){var result=new MegastructureCapabilityRegistry();StandardCapabilities.Register(result);return result;}
+        private static MegastructureCapabilityRegistry Create(){var result=new MegastructureCapabilityRegistry();StandardCapabilities.Register(result);SurfaceModules.Register(result);return result;}
         public static FrameworkResult RegisterCapability(CapabilityDescriptor descriptor)=>Capabilities.Register(descriptor);
         public static FrameworkResult RegisterSpatialProvider(string id,Func<ISpatialBindingProvider> factory)
         {

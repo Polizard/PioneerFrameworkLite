@@ -6,9 +6,10 @@ using Verse;
 
 namespace PioneerFramework.RingWorld
 {
-    public sealed class RingSurfaceLayer : SurfaceLayer
+    public sealed class RingSurfaceLayer : SurfaceLayer, Megastructures.IArtificialSurfaceLayer, Megastructures.IArtificialSurfaceSaveHeader
     {
         private RingWorldSaveData? saveData;
+        public Megastructures.ArtificialSurfaceDescriptor Surface {get;private set;}=null!;
         public RingParameters Parameters { get; private set; } = null!;
         public RingTopology Topology { get; private set; } = null!;
         public RingGeometry Geometry { get; private set; } = null!;
@@ -26,8 +27,10 @@ namespace PioneerFramework.RingWorld
             if (TilesCount > 0 && Parameters != parameters)
                 throw new InvalidOperationException("An initialized ring cannot change its tile identity.");
             Parameters = parameters ?? throw new ArgumentNullException(nameof(parameters));
+            Surface=new(){ImportRequestFactory=(actor,id)=>RingBackendProvider.Build(parameters,actor,id,true),ColonyNameKey="PF_RingColonyName",Backend=new(RingBackendProvider.ProviderId,parameters.RingId),ParentBodyId=parameters.ParentBodyId,ParentAxialPose=true,Geometry=new RingSurfaceGeometryProvider(parameters),Motion=new(new DVector3(0,-1,0),60000),Environment=new()};
             Topology = new RingTopology(parameters.Columns, parameters.Rows);
             Geometry = new RingGeometry(Topology, parameters.RadiusMeters * SpaceConstants.UnitsPerMeter);
+            Surface.View=new RingViewGeometryAdapter(Geometry);
             RingGridAdapter.Field("radius").SetValue(this, (float)Geometry.Radius);
         }
         public void InitializeRing()
@@ -45,15 +48,12 @@ namespace PioneerFramework.RingWorld
                 Configure(saveData.ToParameters());
             }
         }
+        void Megastructures.IArtificialSurfaceSaveHeader.ExposeSurfaceHeader()=>ExposeRingParameters();
         public void GenerateTiles(BiomeDef biome)
         {
             tiles.Clear();
             for (int i = 0; i < Topology.TileCount; i++)
-                tiles.Add(new SurfaceTile(new PlanetTile(i, this))
-                {
-                    PrimaryBiome = biome, elevation = 100, hilliness = Hilliness.Flat,
-                    temperature = 21, rainfall = 1200, swampiness = 0, pollution = 0
-                });
+                tiles.Add(Megastructures.SurfaceEnvironmentBridge.CreateInitialTile(new PlanetTile(i,this),biome,Surface.Environment!));
         }
     }
 }

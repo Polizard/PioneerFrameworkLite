@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Surface_Import>Manage existing artificial surfaces</PF_Surface_Import>
+  <PF_Surface_Resume>Resume unfinished creation</PF_Surface_Resume>
+  <PF_Surface_Overview>View entire surface</PF_Surface_Overview>
+  <PF_Surface_Focus>Focus selected cell</PF_Surface_Focus>
+  <PF_Surface_Enter>Enter or generate selected map</PF_Surface_Enter>
+  <PF_Surface_Validate>Validate surface connectivity</PF_Surface_Validate>
+  <PF_Surface_Detach>Detach and keep backend</PF_Surface_Detach>
+  <PF_Surface_Destroy>Retire and safely delete owned backend</PF_Surface_Destroy>
+  <PF_Surface_Selected>Selected cell: {0} (-1 means none)</PF_Surface_Selected>
+  <PF_Surface_Map>Cell {0} · parent {1} · map {2}</PF_Surface_Map>
+  <PF_Surface_ColonyName>{0} colony {1}</PF_Surface_ColonyName>
+</LanguageData>

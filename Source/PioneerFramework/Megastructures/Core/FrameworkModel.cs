@@ -15,6 +15,7 @@ namespace PioneerFramework.Megastructures
     }
     public sealed class StructureDefinition
     {
+        public string BackendProviderId { get; set; }="";
         public StructureAccessPolicy Access { get; set; }=new();
         public string Id { get; set; }="";
         public List<NodeTemplate> Nodes { get; set; }=new();
@@ -130,6 +131,9 @@ namespace PioneerFramework.Megastructures
     }
     public sealed class FrameworkDocument
     {
+        public BackendDocument Backends { get; set; }=new();
+        public List<StructureMapSiteState> MapSites { get; set; }=new();
+        public List<SurfaceBindingState> Surfaces { get; set; }=new();
         public int SchemaVersion { get; set; }=1;
         public List<StructureState> Instances { get; set; }=new();
         public List<OperationReceipt> Operations { get; set; }=new();

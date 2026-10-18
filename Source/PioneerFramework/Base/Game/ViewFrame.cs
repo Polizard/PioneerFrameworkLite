@@ -44,8 +44,8 @@ namespace PioneerFramework
             {
                 var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
                 if (mgr == null) return 1;
-                if (Verse.Find.WorldSelector?.SelectedLayer is RingWorld.RingSurfaceLayer ring)
-                    return ring.Parameters.ParentBodyId;
+                if (Megastructures.ArtificialSurfaceLayers.TryDescribe(Verse.Find.WorldSelector?.SelectedLayer,out var artificialSurface))
+                    return artificialSurface.ParentBodyId;
                 var layer = CelestialBodyLayerManager.CurrentCelestialBodyLayer;
                 if (layer != null)
                 {

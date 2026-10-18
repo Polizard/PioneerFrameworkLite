@@ -22,6 +22,7 @@ namespace PioneerFramework.RingWorld
 
         public override void Render()
         {
+            if(!Megastructures.ArtificialSurfaceLayers.ModuleAvailable(planetLayer,Megastructures.SurfaceModules.Presentation))return;
             RingWorldVisualState.UpdatePerFrame();
             base.Render();
         }
@@ -40,9 +41,8 @@ namespace PioneerFramework.RingWorld
                 AddVertex(mesh, quad.B, normal);
                 AddVertex(mesh, quad.C, normal);
                 AddVertex(mesh, quad.D, normal);
-                mesh.tris.Add(start); mesh.tris.Add(start + 1); mesh.tris.Add(start + 2);
-                mesh.tris.Add(start); mesh.tris.Add(start + 2); mesh.tris.Add(start + 3);
-                if (++count % 256 == 0) yield return null;
+                Megastructures.SurfaceMeshParts.AddQuadTriangles(mesh,start);
+                if (++count % Megastructures.SurfaceMeshParts.BatchSize == 0) yield return null;
             }
             FinalizeMesh(MeshParts.All);
             // Only the original habitable hexagons own colliders and triangle-to-tile mappings.

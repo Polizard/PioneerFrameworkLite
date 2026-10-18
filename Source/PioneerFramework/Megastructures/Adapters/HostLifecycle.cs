@@ -23,6 +23,17 @@ namespace PioneerFramework.Megastructures
         }
         private string? HostMutationGuard(StructureState instance,StructureCommand command)
         {
+            var pending=Backends.Operations.FirstOrDefault(o=>o.InstanceId==instance.Id&&o.Request!=null&&o.Stage<BackendOperationStage.Bound);
+            if(pending!=null&&(command.Kind!=StructureCommandKind.AttachBackend||command.OperationId!=pending.OperationId+"/binding"))return "BackendCreationInProgress";
+            if(command.Kind==StructureCommandKind.AttachBackend&&command.Backend!=null&&Backends.HasProvider(command.Backend.Kind)&&pending==null)return "BackendCoordinatorRequired";
+            bool bound=Backends.Associations.Any(a=>a.Node==new NodeAddress(instance.Id,command.NodeId)&&!a.Released);
+            if(bound)
+            {
+                if(command.Kind is StructureCommandKind.RemoveNode or StructureCommandKind.BindNode||command.Kind==StructureCommandKind.SetNodeEnabled&&!command.Enabled)return "StructuralSurfaceBound";
+                var module=instance.Nodes.First(n=>n.Id==command.NodeId).Capabilities.FirstOrDefault(c=>c.Id==command.CapabilityId);
+                bool structural=module?.HandlerId is SurfaceModules.Layer or SurfaceModules.Motion or SurfaceModules.Presentation;
+                if(structural&&(command.Kind==StructureCommandKind.SetCapabilityEnabled&&!command.Enabled||command.Kind==StructureCommandKind.UpdateCapability))return "StructuralSurfaceBound";
+            }
             if(command.Kind!=StructureCommandKind.RemoveNode)return null;
             var address=new NodeAddress(instance.Id,command.NodeId);
             if(thingStores.Any(s=>s.Owner==address&&(s.Count>0||s.HasReservations)))return "StoredResourcesRemain";
@@ -45,15 +56,18 @@ namespace PioneerFramework.Megastructures
         }
         partial void ReconcileHostBindings()
         {
-            AttachHostEvents();
+            AttachHostEvents();Backends.Reconcile();Surfaces.Reconcile();
+            if(Find.WorldObjects!=null)MapSites.Reconcile();
             foreach(var instance in runtime.LiveInstances)
             {
                 if(instance.Lifecycle==StructureLifecycle.Retired)continue;
-                instance.BlockedReason=runtime.HasDefinition(instance.DefinitionId)||instance.DefinitionId=="PF_ExistingRing"?"":"DefinitionMissing";
+                instance.BlockedReason=runtime.HasDefinition(instance.DefinitionId)?"":"DefinitionMissing";
                 foreach(var node in instance.Nodes)
                 {
                     if(node.Spatial.Mode==SpatialMode.PhysicalGroup&&subscribed?.GetGroupById(node.Spatial.GroupId)==null){node.BlockedReason="GroupMissing";node.Enabled=false;}
                     else if(node.Enabled){var result=Spatial.Evaluate(new(instance.Id,node.Id),Spatial.CurrentTime);node.BlockedReason=result.Success?"":result.Code;}
+                    var backendError=Backends.Associations.FirstOrDefault(a=>a.Node==new NodeAddress(instance.Id,node.Id)&&!a.Released&&!string.IsNullOrEmpty(a.BlockedReason));
+                    if(backendError!=null)node.BlockedReason=backendError.BlockedReason;
                 }
             }
         }
@@ -89,11 +103,11 @@ namespace PioneerFramework.Megastructures
                         var map=Find.Maps?.FirstOrDefault(m=>m.uniqueID==mapId);if(map==null||map.listerThings.AllThings.Count>0)return "MapContentsRemain";
                     }
                 }
-                if(node.Bindings.Any(b=>b.Ownership==BindingOwnership.Owned&&b.Kind is not ("map" or "ring")))return "UnsupportedOwnedBinding";
-                foreach(var binding in node.Bindings.Where(b=>b.Ownership==BindingOwnership.Owned&&b.Kind=="ring"))
-                {var ring=RingWorld.RingWorldService.FindById(binding.Id);if(ring!=null&&!RuntimePlanetLayerService.CanRemove(ring,false,out _))return "LayerContentsRemain";}
+                if(node.Bindings.Any(b=>b.Ownership==BindingOwnership.Owned&&b.Kind!="map"&&!Backends.HasProvider(b.Kind)&&!Backends.Associations.Any(a=>a.Node==new NodeAddress(instance.Id,node.Id)&&a.Backend.StableId==b.Id)))return "UnsupportedOwnedBinding";
+
             }
-            return null;
+            var backendCheck=Backends.CanRelease(instance);
+            return backendCheck.Success?null:backendCheck.Code;
         }
         private FrameworkResult FinishHostRetirement(StructureState instance)
         {
@@ -113,25 +127,10 @@ namespace PioneerFramework.Megastructures
                         int mapId=ResolveBoundMapId(node,binding);var map=Find.Maps?.FirstOrDefault(m=>m.uniqueID==mapId);
                         if(map!=null){var parent=map.Parent;Current.Game.DeinitAndRemoveMap(map,false);parent.Destroy();}
                     }
-                    else if(binding.Kind=="ring")
-                    {var ring=RingWorld.RingWorldService.FindById(binding.Id);if(ring!=null&&!RingWorld.RingWorldService.TryRemove(ring,out string reason))return FrameworkResult.Reject("LayerRemovalFailed",reason);}
+
                 }
             }
-            return FrameworkResult.Ok();
-        }
-        public FrameworkResult ImportRing(RingWorld.RingSurfaceLayer ring,int ownerFactionId)
-        {
-            EnsureInitialized();const string definitionId="PF_ExistingRing";
-            runtime.RegisterDefinition(new StructureDefinition {Id=definitionId,Nodes={new NodeTemplate {Id="facility"}}});
-            string id="ring:"+ring.Parameters.RingId;
-            var result=runtime.Create(new CreateStructureRequest {OperationId="import/"+id,InstanceId=id,DefinitionId=definitionId,OwnerFactionId=ownerFactionId,SpatialOverrides={ ["facility"]=new SpatialBinding {Mode=SpatialMode.BodyAnchored,BodyId=ring.Parameters.ParentBodyId} }});
-            if(!result.Success)return result;
-            result=runtime.Execute(new StructureCommand {OperationId="import-binding/"+id,InstanceId=id,ActorFactionId=ownerFactionId,NodeId="facility",Kind=StructureCommandKind.AttachBackend,Backend=new BackendBinding {Kind="ring",Id=ring.Parameters.RingId,Ownership=BindingOwnership.Borrowed}});
-            if(!result.Success)return result;
-            var mapIds=(Find.Maps??new System.Collections.Generic.List<Map>()).Where(m=>m.Tile.Layer==ring).Select(m=>m.uniqueID).OrderBy(x=>x).ToList();
-            var existing=runtime.GetSnapshot(id)!.Nodes[0].Capabilities.FirstOrDefault(c=>c.Id=="existingMaps");
-            var maps=new CapabilityState {Id="existingMaps",HandlerId="pfl.map",Payload=MegastructureCodec.Encode(new MapCapabilityData {MapIds=mapIds})};
-            return runtime.Execute(new StructureCommand {OperationId="import-maps/"+id+"/"+string.Join("-",mapIds),InstanceId=id,ActorFactionId=ownerFactionId,NodeId="facility",Kind=existing==null?StructureCommandKind.AddCapability:StructureCommandKind.UpdateCapability,CapabilityId="existingMaps",Capability=maps});
+            return Backends.Release(instance);
         }
     }
 }

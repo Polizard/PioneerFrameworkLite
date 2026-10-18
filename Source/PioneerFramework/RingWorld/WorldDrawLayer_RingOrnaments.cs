@@ -30,6 +30,7 @@ namespace PioneerFramework.RingWorld
 
         public override void Render()
         {
+            if(!Megastructures.ArtificialSurfaceLayers.ModuleAvailable(planetLayer,Megastructures.SurfaceModules.Presentation))return;
             RingWorldVisualState.UpdatePerFrame();
             base.Render();
         }
@@ -67,10 +68,9 @@ namespace PioneerFramework.RingWorld
                     AddVertex(mesh, ring.Geometry, quad, quad.B, quad.U0, quad.V1);
                     AddVertex(mesh, ring.Geometry, quad, quad.C, quad.U1, quad.V1);
                     AddVertex(mesh, ring.Geometry, quad, quad.D, quad.U1, quad.V0);
-                    mesh.tris.Add(start); mesh.tris.Add(start + 1); mesh.tris.Add(start + 2);
-                    mesh.tris.Add(start); mesh.tris.Add(start + 2); mesh.tris.Add(start + 3);
+                    Megastructures.SurfaceMeshParts.AddQuadTriangles(mesh,start);
                 }
-                if (++count % 256 == 0) yield return null;
+                if (++count % Megastructures.SurfaceMeshParts.BatchSize == 0) yield return null;
             }
 
             // 只提交网格：本层没有碰撞、没有拾取映射（装饰件不可点选）。

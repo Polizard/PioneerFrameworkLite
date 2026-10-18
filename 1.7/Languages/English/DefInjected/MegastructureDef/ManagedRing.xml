@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Megastructure_RingWorld.label>ring world</PF_Megastructure_RingWorld.label>
+  <PF_Megastructure_RingWorld.description>An artificial ring surface anchored to a celestial body, managed through megastructure backends and reusable surface modules.</PF_Megastructure_RingWorld.description>
+</LanguageData>
