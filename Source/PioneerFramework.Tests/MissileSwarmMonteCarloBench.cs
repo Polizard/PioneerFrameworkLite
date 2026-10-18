@@ -579,7 +579,7 @@ namespace PioneerFramework.Tests
             {
                 positionSystem = (SystemVec3)pos,
                 velocitySystem = (SystemVec3)vel,
-                rotation = Quaternion.identity,
+                rotation = DQuaternion.identity,
             };
         }
 

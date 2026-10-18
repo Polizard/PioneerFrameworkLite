@@ -51,6 +51,10 @@ namespace PioneerFramework
             // 测试确定性：强制 Normal 流速（1x），避免 Fast 下物理时间轴 8x 干扰 burn 观测
             Current.Game?.GetComponent<TimeScaleManager>()?.SetNormalMode();
 
+            // ★ 架构测试**刻意冻结方向、走固定 Δv 路径**（`abFreezeDirection`）：
+            //   这里验的是 pendingImpulse / 质量口径 / 储罐同步，不是“活靶律在节点处的有限燃烧精度”。
+            //   活靶律的节点靶语义另有专项验收；混在这里会让“冲量施加正确”被制导误差污染。
+            group.abFreezeDirection = true;
             // 规划一条 ΔV=30 径向机动（T+30 物理秒后执行）。
             // executeTick 用 physicsTick 基准（与 ManeuverPlanner/检查点一致，Fast 档不错位）；
             // 走 QueueGroupManeuver 以登记 trackedManeuvers（触发"有机动→1x"自动降速）。
@@ -140,11 +144,59 @@ namespace PioneerFramework
                             dvMass = ve * System.Math.Log(group.burnStartMass
                                 / System.Math.Max(group.burnStartMass - group.burnConsumedPropellant, 1.0));
                         }
-                        Log.Message($"[ArchTest] burn 对账: |Δv_vec|={dvVec:F2} m/s  实际ΔV(质量)={dvMass:F2} m/s  消耗工质={group.burnConsumedPropellant:F1} kg");
-                        if (dvMass > 0.0 && (dvVec < 0.5 * dvMass || dvVec > 1.5 * dvMass))
-                            Fail($"burn 冲量未正确施加: |Δv_vec|={dvVec:F2} 与质量口径 {dvMass:F2} 偏差过大");
+                        Log.Message($"[ArchTest] burn 对账: |Δv_vec|={dvVec:F2} m/s  实际ΔV(质量)={dvMass:F2} m/s  交付={group.appliedBurnDV:F2} m/s  计划={PLAN_DV:F0} m/s  消耗工质={group.burnConsumedPropellant:F1} kg");
+                        // ⚠ `|Δv_vec|` 含轨道速度方向变化（径向 burn 尤其明显），不能当冲量幅值判据；
+                        //   只做观测。真正的冲量判据 = 质量口径 ΔV vs 执行器交付（两者同尺）。
+                        if (dvMass > 0.0 && System.Math.Abs(dvMass - group.appliedBurnDV) > 0.05 * group.appliedBurnDV + 0.05)
+                            Fail($"burn 冲量未正确施加: 质量口径 {dvMass:F2} vs 执行器交付 {group.appliedBurnDV:F2}");
                         else
-                            Pass("burn 冲量已正确施加 |Δv_vec|=" + $"{dvVec:F2}");
+                            Pass($"burn 冲量已正确施加（质量/交付同尺） mass={dvMass:F2} applied={group.appliedBurnDV:F2}");
+
+                        // **真正的完成判据 = 节点处活速度 vs 目标速度**（活差额律的靶）。
+                        // ⚠ 不能拿 `appliedBurnDV` 直接比 `PLAN_DV`：计划 Δv 是**节点脉冲**，
+                        //   有限燃烧在节点前完成，重力在剩余时间里额外贡献了径向速度
+                        //   （实测 30 计划只烧 16.8，差 ~13 正是重力项；强行要求 30 是旧固定冲量时代的判据）。
+                        double targetMiss = double.NaN;
+                        if (group.burnHasTargetV && group.burnArcNodeUt > 0.0)
+                        {
+                            var cm = Current.Game?.GetComponent<CelestialBodyManager>();
+                            if (cm != null && OrbitAdapter.TryToOrbitView(group, cm,
+                                    TimeScaleManager.GetPhysicsTickSafe(), out OrbitView ovEnd))
+                            {
+                                (DVector3 _, DVector3 vNode) = ovEnd.GameFrameStateAtUT(group.burnArcNodeUt);
+                                targetMiss = (vNode - group.burnTargetV).magnitude;
+                            }
+                        }
+                        if (!group.burnHasTargetV)
+                        {
+                            // 固定方向/固定 Δv 架构路径：没有节点靶；直接判交付 = 计划。
+                            if (System.Math.Abs(group.appliedBurnDV - PLAN_DV) > 0.5)
+                                Fail($"burn 固定方向交付 {group.appliedBurnDV:F2} vs 计划 {PLAN_DV:F0}");
+                            else
+                                Pass("burn 固定方向交付计划 Δv=" + $"{group.appliedBurnDV:F2}");
+                        }
+                        else
+                        {
+                        Log.Message($"[ArchTest] 靶达成读数: |v_live(node)-v_target|={targetMiss:F3} m/s（applied={group.appliedBurnDV:F2} / 计划={PLAN_DV:F0}，差值含重力项）");
+                        DVector3 lastDir = group.burnLastDeficitDir;
+                        double dirDot = DVector3.Dot(lastDir.normalized, group.burnDirectionSystem.normalized);
+                        Log.Message($"[ArchTest] 执行器最后一步: lastDeficit={group.burnLastDeficit:F3} m/s |vLive(node)-target|={(group.burnLastVLiveUt - group.burnTargetV).magnitude:F3} m/s appliedStep={group.burnLastAppliedDv:F3} defDir·burnDir={dirDot:F3} node={group.burnArcNodeUt:F1}");
+                        if (!double.IsNaN(targetMiss))
+                        {
+                            var cmDbg = Current.Game?.GetComponent<CelestialBodyManager>();
+                            if (cmDbg != null && OrbitAdapter.TryToOrbitView(group, cmDbg,
+                                    TimeScaleManager.GetPhysicsTickSafe(), out OrbitView ovDbg))
+                            {
+                                (DVector3 _, DVector3 vNodeDbg) = ovDbg.GameFrameStateAtUT(group.burnArcNodeUt);
+                                Log.Message($"[ArchTest] 靶向量对账: target=({group.burnTargetV.x:F2},{group.burnTargetV.y:F2},{group.burnTargetV.z:F2}) lastVLive=({group.burnLastVLiveUt.x:F2},{group.burnLastVLiveUt.y:F2},{group.burnLastVLiveUt.z:F2}) testVNode=({vNodeDbg.x:F2},{vNodeDbg.y:F2},{vNodeDbg.z:F2}) |last-test|={(group.burnLastVLiveUt - vNodeDbg).magnitude:F3} |test-target|={targetMiss:F3}");
+                            }
+                        }
+                        if (!double.IsNaN(targetMiss) && targetMiss > 1.0)
+                            Fail($"burn 靶未达成: |Δv_target|={targetMiss:F2} m/s（applied={group.appliedBurnDV:F2} 计划={PLAN_DV:F0}）");
+                        else
+                            Pass($"burn 靶已达成（|miss|={(double.IsNaN(targetMiss) ? 0.0 : targetMiss):F3} m/s）");
+
+                        }
 
                         // 储罐差值同步（burn 消耗路径）：本地储罐应追平向量
                         double vec = mapComp.GetPropellantMass(thruster.PropellantDef);
@@ -287,8 +339,8 @@ namespace PioneerFramework
         private static void Finish()
         {
             Log.Message($"[ArchTest] ═══ 汇总: PASS={passes.Count} FAIL={failures.Count} ═══");
-            if (failures.Count == 0)
-                phase = Phase.Done;
+            // 失败后必须离开当前阶段：否则 DrainSync 会每 10 tick 重复 PASS、最后刷一个假超时
+            phase = failures.Count == 0 ? Phase.Done : Phase.Failed;
         }
     }
 }

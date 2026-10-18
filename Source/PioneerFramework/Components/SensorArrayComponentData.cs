@@ -74,6 +74,10 @@ namespace PioneerFramework.Components
             Scribe_Values.Look(ref passiveRangeMeters, "passiveRangeMeters", 500000f);
             Scribe_Values.Look(ref ecmResist, "ecmResist", 0f);
             Scribe_Values.Look(ref eccmResist, "eccmResist", 0f);
+            // ★ 修复（2026-10-17 批 -1）：其余三场曾漏盘（与 `AccumulateStats` 的贡献面对不上）
+            Scribe_Values.Look(ref memorySeconds, "memorySeconds", 0f);
+            Scribe_Values.Look(ref activeGainBonus, "activeGainBonus", 0f);
+            Scribe_Values.Look(ref activeRadiation, "activeRadiation", 0f);
         }
 
         public override void Write(BinaryWriter w)
@@ -81,6 +85,9 @@ namespace PioneerFramework.Components
             w.Write(passiveRangeMeters);
             w.Write(ecmResist);
             w.Write(eccmResist);
+            w.Write(memorySeconds);      // ★ 修复（2026-10-17 批 -1）：与 ExposeData 三场同补（二进制通道对称）
+            w.Write(activeGainBonus);
+            w.Write(activeRadiation);
         }
 
         public override void Read(BinaryReader r)
@@ -88,6 +95,9 @@ namespace PioneerFramework.Components
             passiveRangeMeters = r.ReadSingle();
             ecmResist = r.ReadSingle();
             eccmResist = r.ReadSingle();
+            memorySeconds = r.ReadSingle();
+            activeGainBonus = r.ReadSingle();
+            activeRadiation = r.ReadSingle();
         }
     }
 }

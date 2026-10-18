@@ -88,6 +88,8 @@
     <!-- B2.2：有限燃烧弧的前向模型 -->
     <Compile Include="..\PioneerFramework\Base\Orbital\BurnStep.cs" Link="Adapter\BurnStep.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\BurnArcCompensation.cs" Link="Adapter\BurnArcCompensation.cs" />
+    <!-- KSA-①（2026-10-17）：候选搜索体（牛顿 + 半步回溯）；net48 兼容适配（Miss3 结构体 / 本地 IsFinite） -->
+    <Compile Include="..\PioneerFramework\Base\Orbital\BurnRefineNewton.cs" Link="Adapter\BurnRefineNewton.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\BurnArc.cs" Link="Adapter\BurnArc.cs" />
     <!-- "MJ 优先"第 5 件（2026-09-20）：活差额律的靶 = `(a_t, h向量)` ⇒ 微调原语升级为唯一权威，
          台架必须能直接调它（否则又会写成"台架自己那份复刻"⇒ 漂移） -->

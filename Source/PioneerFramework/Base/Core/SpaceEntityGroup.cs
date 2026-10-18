@@ -17,7 +17,8 @@ namespace PioneerFramework
         public SystemVec3 positionSystem;
         /// <summary>**系统系**速度。语义同 <see cref="positionSystem" />。</summary>
         public SystemVec3 velocitySystem;
-        public Quaternion rotation;
+        /// <summary>姿态（B2：物理/姿态全程 double；Unity Quaternion 只在渲染/UI 边界转换）。</summary>
+        public DQuaternion rotation;
 
         // 批6 S3-3c 第三片收尾：**过渡桥已删除**（同名 `position`/`velocity` 两个 DVector3 属性）。
         // 桥的出口条件是"未迁移读点 = 0"，2026-09-30 达成（109 → 0，逐片迁移 + 棘轮判据看着它降）；
@@ -28,11 +29,11 @@ namespace PioneerFramework
         {
             SystemVec3.Scribe("position", ref positionSystem);
             SystemVec3.Scribe("velocity", ref velocitySystem);
-            Scribe_Values.Look(ref rotation, "rotation");
+            DQuaternion.Scribe("rotation", ref rotation);
         }
     }
 
-    public class SpaceEntityGroup : ISpatialEntity, IExposable
+    public partial class SpaceEntityGroup : ISpatialEntity, IExposable
     {
         public int GroupId;
         public int FactionId;
@@ -41,6 +42,8 @@ namespace PioneerFramework
         public bool IsMovable = true;
         public bool IsCollidable = true;
         public bool HasGravityWell ;
+        /// <summary>B5：关键件损毁 ⇒ 整船失能（不立即解体）：禁止新点火/自动机动；碰撞与漂移照常。</summary>
+        public bool IsCrippled ;
 
         /// <summary>
         /// 匿踪闸门（[V1]）：false = **公开坐标**（应答机语义，对所有阵营可见、不做任何探测计算）；
@@ -349,18 +352,24 @@ namespace PioneerFramework
             var sg = Current.Game?.GetComponent<SpaceGameComp>();
             if (sg != null)
             {
+                // 尺寸口径（B8 定稿）：**编队并集 AABB 的半尺寸模**（船体系，姿态无关），
+                // 与碰撞的组并集盒同口径；不再“逐实体取最大半对角线”（多实体组会低估/口径不一）。
+                double uMinX = double.MaxValue, uMinY = double.MaxValue, uMinZ = double.MaxValue;
+                double uMaxX = double.MinValue, uMaxY = double.MinValue, uMaxZ = double.MinValue;
+                bool hasGeo = false;
                 foreach (int eid in entityIds)
                 {
                     var e = sg.GetEntityById(eid);
                     if (e == null) continue;
-                    // 尺寸口径 = **船体系包围盒半对角线**（`AabbHalfSize` = `BoundsSize × 0.5`，部件局部系）。
-                    // ⚠ 2026-10-02 用户裁定「**RCS 暂时与姿态无关**」：原先取 `GetAabbSystem` 的半对角线，而那是
-                    //   **旋转后**的世界轴对齐投影 ⇒ 姿态一变尺寸就变，而本缓存**没有姿态失效钩子**
-                    //   ⇒ S 会静默停在旧值上（`InvalidateSignal` 的三个驱动点里没有"旋转"）。
-                    //   改用船体系值（对该船是常数）⇒ 天然姿态无关、不必新开销失效点。
-                    //   世界系 AABB 的口径仍归**碰撞**（`CombatManager`/`AVM` 那两处），两边别混。
-                    double r = e.AabbHalfSize.magnitude;
-                    if (r > x.rcsRadiusMeters) x.rcsRadiusMeters = r;
+                    e.GetAabbSystem(out DVector3 eMin, out DVector3 eMax);
+                    DVector3 p = e.Position;
+                    uMinX = System.Math.Min(uMinX, p.x + eMin.x);
+                    uMinY = System.Math.Min(uMinY, p.y + eMin.y);
+                    uMinZ = System.Math.Min(uMinZ, p.z + eMin.z);
+                    uMaxX = System.Math.Max(uMaxX, p.x + eMax.x);
+                    uMaxY = System.Math.Max(uMaxY, p.y + eMax.y);
+                    uMaxZ = System.Math.Max(uMaxZ, p.z + eMax.z);
+                    hasGeo = true;
                     // 热/电项今天恒为 0（无组件写那两个槽），组件就位后自动生效（§3.2 的空槽）
                     var st = e.AggregatedStats;
                     x.heatWatts += st.heatProduction + st.heatDissipation;
@@ -373,6 +382,13 @@ namespace PioneerFramework
                     // （建筑级那一份在循环之后加，见下面 buildingJamBonus）
                     dt.ecmResist += st.ecmResist;
                     dt.eccmResist += st.eccmResist;
+                }
+                if (hasGeo)
+                {
+                    double hx = (uMaxX - uMinX) * 0.5;
+                    double hy = (uMaxY - uMinY) * 0.5;
+                    double hz = (uMaxZ - uMinZ) * 0.5;
+                    x.rcsRadiusMeters = new DVector3(hx, hy, hz).magnitude;
                 }
             }
 
@@ -405,6 +421,10 @@ namespace PioneerFramework
         // 故指纹匹配即可复用实例（聚合器 Networks 懒构建一次，此后只读）。
         internal GroupPropulsionAggregator? cachedPropulsionAggregator;
         internal int cachedPropulsionStamp;
+
+        /// <summary>B6：多图/多源聚合器缓存（地图源 + 无图实体源；指纹含各图 NetworksVersion/开关）。</summary>
+        internal CompositePropulsionSource? cachedMapPropulsionAggregator;
+        internal int cachedMapPropulsionStamp;
 
         /// <summary>燃烧切片 scratch（第 3 条：每物理步复用，免每步 new List）。
         /// 物理并行区内由本组唯一迭代独占写入，主线程在同一步消费其引用快照后不再保留。</summary>
@@ -1055,22 +1075,34 @@ namespace PioneerFramework
 
         /// <summary>
         /// 清除所有机动规划。
+        /// **自动对准目标被清 ⇒ 消旋**（2026-10-17 用户实测：预对准转到一半清队列/手动接管，
+        /// 魔法动量轮没人写 ω ⇒ 船永久自转）。手动输入随后会覆盖 ω；手动键松开仍保留自由自转。
         /// </summary>
         public void ClearManeuvers()
         {
+            bool hadAutoAlign = pendingAlignDir.sqrMagnitude > 1e-12;
             plannedManeuvers.Clear();
             ClearRendezvousGuidance();
             pendingAlignDir = DVector3.zero; // 取消预对准（手动接管）
+            if (hadAutoAlign) angularVelocity = DVector3.zero;
         }
 
         /// <summary>
         /// 取消从指定索引（含）到末尾的所有机动规划（保留前面的）。
+        /// 从 0 取消 = 连预对准目标一起取消 ⇒ 消旋；从后面取消保留前面的预对准。
         /// </summary>
         public void CancelManeuversFrom(int index)
         {
             if (index < 0 || index >= plannedManeuvers.Count) return;
+            bool hadAutoAlign = index == 0 && pendingAlignDir.sqrMagnitude > 1e-12;
             plannedManeuvers.RemoveRange(index, plannedManeuvers.Count - index);
-            ClearRendezvousGuidance(); // 取消出发段 = 交会/接近计划作废
+            // 从 0 取消：旧引导的整代节点已无意义 ⇒ 撤回；从后面取消：保留前面的阶梯节点
+            ClearRendezvousGuidance(invalidateLadderNodes: index == 0);
+            if (index == 0)
+            {
+                pendingAlignDir = DVector3.zero;
+                if (hadAutoAlign) angularVelocity = DVector3.zero;
+            }
         }
 
         /// <summary>
@@ -1144,6 +1176,11 @@ namespace PioneerFramework
         // ── 姿态控制（魔法动量轮）──
         /// <summary>角速度（rad/s，魔法动量轮直设；每物理步积分到 CurrentOrbit.rotation）。</summary>
         public DVector3 angularVelocity;
+
+        /// <summary>调试/演示用：物理步按**无外力矩 Euler 方程**积分姿态（批2物理档前哨；默认 false）。
+        /// 开启后 `ComputeGroupPhysics` 用本组多part 惯量张量演化 ω 与 rotation，演示贾尼别科夫效应；
+        /// 不参与生产的魔法档。仅在演示组置 true，不入存档。</summary>
+        public bool torqueFreePhysics;
         /// <summary>上次诊断的本地状态 + tick + 剩余 Δv（用于把"真正施加的冲量"从状态里扣出来）。</summary>
         /// <summary>⚠ 存的是**适配层系**的状态（与 `Shepperd` 同系 ⇒ 消除换系机会）。</summary>
         public DVector3 burnDiagR, burnDiagV;
@@ -1193,6 +1230,14 @@ namespace PioneerFramework
         /// </summary>
         public DVector3 burnTargetV;
         public bool burnHasTargetV;
+        /// <summary>B6/ArchTest：活差额律的靶已达成（用了靶速度 ⇒ 允许 BurnStep 结束燃烧）。
+        /// 未达成时即使本步“计划预算”烧完也继续，下一步从活状态重算差额（有限燃烧的重力项）。</summary>
+        public bool burnTargetReached;
+        /// <summary>诊断：活差额律**最后一步**看到的剩余 Δv 与它在节点处的活速度（不落盘）。</summary>
+        public double burnLastDeficit;
+        public DVector3 burnLastVLiveUt;
+        public DVector3 burnLastDeficitDir;
+        public double burnLastAppliedDv;
 
         /// <summary>B2.2 诊断：实际燃烧的起止 tick（-1 = 未记录）。用于打印"实际燃烧时长"。</summary>
         public double burnActualStartTick = -1.0;
@@ -1325,15 +1370,31 @@ namespace PioneerFramework
         /// </summary>
         public double burnPhaseShift;
 
-        /// <summary>动量轮最大角速度（rad/s；无转动惯量，限速即手感，暂定 ~5°/s）。</summary>
+        /// <summary>
+        /// 魔法动量轮的**锚点**限速（rad/s）：默认无Map船（5000 kg 结构干质量 / 40×20×80 盒体）的
+        /// **最慢主轴**。批 1 起它只是锚点——实际限速按 τ_ref/I_轴 现算（见 <see cref="MaxAngularRate"/>）。
+        /// </summary>
         public const float DefaultMaxAngularRate = 5f * Mathf.Deg2Rad;
         /// <summary>
-        /// 实际限速（rad/s）。&lt;=0 = 用默认（旧存档/普通船兼容）。
+        /// 实际限速（rad/s）。&lt;=0 = 未覆盖（走 I 加权公式；旧存档无感）。
         /// 导弹等敏捷自主体出生时按 MissileDef.maxAngularRateDegrees 覆盖（D15 主推对准收敛速度）。
         /// </summary>
         public float maxAngularRate = -1f;
-        /// <summary>实际限速（rad/s；per-group 覆盖，未设用默认常量）。</summary>
-        public float MaxAngularRate => maxAngularRate > 0f ? maxAngularRate : DefaultMaxAngularRate;
+        /// <summary>
+        /// 实际限速（rad/s，**最慢轴**口径）：def 覆盖优先；否则 `clamp(τ_ref / I_最慢主轴, 0.2, 30)°/s`
+        /// （批 1，2026-10-17）。无惯量数据（headless / 无部件）⇒ 回落 <see cref="DefaultMaxAngularRate"/>。
+        /// 具体某根轴（滚/偏/俯）的限速见 `MaxAngularRateAboutBodyAxis`——大船往往先被各轴差异卡住。
+        /// </summary>
+        public float MaxAngularRate
+        {
+            get
+            {
+                if (maxAngularRate > 0f) return maxAngularRate;
+                var r = InertiaResult;
+                if (!r.HasData || !(r.p1 > 0.0)) return DefaultMaxAngularRate;
+                return (float)InertiaTensor.RateForMoment(r.p1);
+            }
+        }
 
         /// <summary>
         /// 船体局部轴向 → 世界方向（当前姿态 rotation 旋转）。
@@ -1350,7 +1411,10 @@ namespace PioneerFramework
         /// <param name="dV">本次燃烧的总 dV 向量 (m/s)</param>
         public void StartBurn(DVector3 dV)
         {
+            // B5：关键件损毁 ⇒ 失能，不再接受新点火（已有点火由 MarkPartDestroyed 的 EndBurn 熄掉）。
+            if (IsCrippled) return;
             HasActiveBurn = true;
+            burnTargetReached = false;
             // ⚠ **信号失效点之一**：点火会让 SignalStrength 跃升（[V8] 的 burning 项）——
             // 这正是"冷发射信号 profile"的来源（巡航低信号 / 末段高信号）。
             // `HasActiveBurn` 是 public 字段，钩子只能挂在本方法与 EndBurn 两处；
@@ -1635,9 +1699,12 @@ namespace PioneerFramework
             rendezvousArmed = true;
         }
 
-        /// <summary>清除交会引导（玩家手动接管 / 出发段失败 / 交会完成）。</summary>
-        public void ClearRendezvousGuidance()
+        /// <summary>清除交会引导（玩家手动接管 / 出发段失败 / 交会完成）。
+        /// <paramref name="invalidateLadderNodes"/> = true（默认）时**撤回该代未执行的阶梯节点**
+        /// （2026-10-17：用户实测"断开引导后旧目标的机动作仍会点火"）；手动条目不动。</summary>
+        public void ClearRendezvousGuidance(bool invalidateLadderNodes = true)
         {
+            bool hadGuidance = HasRendezvousGuidance;
             HasRendezvousGuidance = false;
             rendezvousArmed = false;
             rendezvousTargetId = -1;
@@ -1647,6 +1714,13 @@ namespace PioneerFramework
             rendezvousTargetOffset = DVector3.zero;
             terminalMode = false;                                        // 2026-10-01：换目标/引导结束 ⇒ 终端接管失效
             terminalNextTick = double.NegativeInfinity;
+
+            if (hadGuidance && invalidateLadderNodes)
+            {
+                // 旧引导排下的阶梯节点全部作废；提升代号后 InvalidateStaleLadderNodes 只留手动条目。
+                BeginLadderPlanEpoch();
+                InvalidateStaleLadderNodes();
+            }
         }
 
 
@@ -2059,6 +2133,7 @@ namespace PioneerFramework
             Scribe_Values.Look(ref IsMovable, "isMovable", true);
             Scribe_Values.Look(ref IsCollidable, "isCollidable", true);
             Scribe_Values.Look(ref HasGravityWell, "hasGravityWell", false);
+            Scribe_Values.Look(ref IsCrippled, "isCrippled", false);
             // 匿踪闸门（[V1]）：旧存档无此节点 → 默认 false（公开坐标），与"飞船/站不广播"一致
             Scribe_Values.Look(ref IsStealth, "isStealth", false);
             // 主动探测开关（[V1]）：旧存档无节点 → false（被动）
@@ -2070,6 +2145,7 @@ namespace PioneerFramework
             Scribe_Values.Look(ref radarTrackGroupId, "radarTrackGroupId", -1);
             Scribe_Deep.Look(ref CurrentOrbit, "currentOrbit");
             DVector3.Scribe("angularVelocity", ref angularVelocity);
+            Scribe_Values.Look(ref torqueFreePhysics, "torqueFreePhysics", false); // 演示/物理档前哨；默认 false
             Scribe_Values.Look(ref maxAngularRate, "maxAngularRate", -1f); // -1 = 默认常量（旧存档兼容）
             Scribe_Values.Look(ref OrbitDirty, "orbitDirty", true);
             Scribe_Collections.Look(ref entityIds, "entityIds", LookMode.Value);

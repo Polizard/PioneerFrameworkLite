@@ -407,7 +407,7 @@ namespace PioneerFramework
             // 球面固定网格 = 船体系；屏幕 +Y 上 = 船体 +Y，+Z 朝向观察者
             DrawNavballGrid(c, radius);
 
-            Quaternion qi = Quaternion.Inverse(g.CurrentOrbit.rotation);
+            Quaternion qi = Quaternion.Inverse(g.CurrentOrbit.rotation.ToQuaternion());
 
             Vector3 vel = (Vector3)g.CurrentOrbit.velocitySystem.v;
             Vector3 pos = (Vector3)g.CurrentOrbit.positionSystem.v;
@@ -443,7 +443,7 @@ namespace PioneerFramework
             float y = r.y + 10f;
             MiniLabel(new Rect(lx, y, sideW - 16f, lh), "姿态", PFViewPalette.TextSecondary);
             y += lh;
-            Vector3 euler = g.CurrentOrbit.rotation.eulerAngles;
+            Vector3 euler = g.CurrentOrbit.rotation.ToQuaternion().eulerAngles;
             MiniLabel(new Rect(lx, y, sideW - 16f, lh), $"yaw {euler.y:F0}° pitch {euler.x:F0}° roll {euler.z:F0}°", PFViewPalette.TextPrimary);
             y += lh;
             MiniLabel(new Rect(lx, y, sideW - 16f, lh), $"角速度 {g.angularVelocity.magnitude * Mathf.Rad2Deg:F1}°/s", PFViewPalette.TextPrimary);

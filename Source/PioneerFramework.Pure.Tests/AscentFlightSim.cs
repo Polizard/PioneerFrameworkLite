@@ -67,7 +67,9 @@ namespace PioneerFramework.Pure.Tests
             public bool noseFirst;           // true = 顺气流（带限速/死区的真实对准）；false = 姿态锁死（旧故障）
             /// <summary>对准死区（rad）：生产 = `SpaceGameComp.DefaultThrustAlignCos` = cos(1.5°) ⇒ ≈0.02618。</summary>
             public double alignDeadZoneRad;
-            /// <summary>魔法动量轮最大角速率（rad/s）：生产 = `SpaceEntityGroup.DefaultMaxAngularRate` = 5°/s。</summary>
+            /// <summary>魔法动量轮最大角速率（rad/s）：**批 1 生产值**（`InertiaTensor.RateForMoment` 天花板）。
+            /// 测试火箭 = 3×3×30 m / 4000 kg ⇒ I_横 = 4000/12·(3²+30²) = 303,000 kg·m²
+            /// ⇒ τ_ref/I = 55°/s → **封顶 30°/s**。</summary>
             public double maxAngularRateRad;
             /// <summary>出生姿态：false = 世界系单位阵（游戏现状，长棍 = 侧向 90 m²）；true = 长轴顺当地铅垂。</summary>
             public bool initialNoseUp;
@@ -101,7 +103,7 @@ namespace PioneerFramework.Pure.Tests
                 drag = false,
                 noseFirst = true,
                 alignDeadZoneRad = 0.0261799,      // acos(0.999657325) = 1.5°
-                maxAngularRateRad = 0.0872665,     // 5°/s（SpaceEntityGroup.DefaultMaxAngularRate）
+                maxAngularRateRad = 0.5235987756,  // 30°/s（批 1：测试火箭 3×3×30 / 4000 kg；τ_ref/I=55°/s → 天花板）
                 initialNoseUp = false,             // 游戏现状：单位阵出生（长棍侧向）
                 rho0 = 1.2,
                 scaleHeight = 8000.0,

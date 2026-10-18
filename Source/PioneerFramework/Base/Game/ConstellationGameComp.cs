@@ -506,7 +506,7 @@ namespace PioneerFramework
                 // 位置需 group.CelestialBodyId 已置位（对象初始化器先于本行完成）→ 见 AnchorPositionSystem
                 positionSystem = new SystemVec3(AnchorPositionSystem(group, bodyId, tile)),
                 velocitySystem = SystemVec3.zero,
-                rotation = Quaternion.identity
+                rotation = DQuaternion.identity
             };
             sg.RegisterGroup(group);
             settlementToAnchor[settlement.ID] = group.GroupId;

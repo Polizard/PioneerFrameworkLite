@@ -73,15 +73,19 @@ namespace PioneerFramework
         /// </summary>
         public static DVector3 GetRotationWorldAngularVelocity(SpaceEntityGroup g)
         {
-            float r = SpaceEntityGroup.DefaultMaxAngularRate;
+            // 批 1（2026-10-17）：**按该体轴的 I 加权限速**（不再用全局 5°/s 硬编码）——
+            // 大船慢、细长船滚转快；`maxAngularRate` def 覆盖（导弹）优先。
+            float rRoll = g.MaxAngularRateAboutBodyAxis(0, 0, 1);    // 滚转绕船头轴（局部 Z）
+            float rYaw = g.MaxAngularRateAboutBodyAxis(0, 1, 0);     // 偏航绕局部 Y
+            float rPitch = g.MaxAngularRateAboutBodyAxis(1, 0, 0);   // 俯仰绕局部 X
             DVector3 w = DVector3.zero;
-            Quaternion rot = g.CurrentOrbit.rotation;
-            if (KeyRollL) w += DVector3.Rotate(DVector3.back * r, rot);    // 绕 -Forward 滚转
-            if (KeyRollR) w += DVector3.Rotate(DVector3.forward * r, rot);
-            if (KeyYawL) w += DVector3.Rotate(DVector3.up * r, rot);
-            if (KeyYawR) w += DVector3.Rotate(DVector3.down * r, rot);
-            if (KeyPitchU) w += DVector3.Rotate(DVector3.left * r, rot);   // 绕 -Right 抬头
-            if (KeyPitchD) w += DVector3.Rotate(DVector3.right * r, rot);
+            DQuaternion rot = g.CurrentOrbit.rotation;
+            if (KeyRollL) w += DVector3.Rotate(DVector3.back * rRoll, rot);    // 绕 -Forward 滚转
+            if (KeyRollR) w += DVector3.Rotate(DVector3.forward * rRoll, rot);
+            if (KeyYawL) w += DVector3.Rotate(DVector3.up * rYaw, rot);
+            if (KeyYawR) w += DVector3.Rotate(DVector3.down * rYaw, rot);
+            if (KeyPitchU) w += DVector3.Rotate(DVector3.left * rPitch, rot);   // 绕 -Right 抬头
+            if (KeyPitchD) w += DVector3.Rotate(DVector3.right * rPitch, rot);
             return w;
         }
 

@@ -29,10 +29,10 @@ namespace PioneerFramework.Launch
                 mapWidth = 50,
                 mapHeight = 50,
                 fuelAmount = 1000f,
-                parts = new List<RocketPartSpec>
+                parts = new List<DesignPartSpec>
                 {
-                    new() { defName = "PF_RocketPart_Debug_Thruster", category = "thruster", quantity = 1 },
-                    new() { defName = "PF_RocketPart_Debug_Tank", category = "tank", quantity = 1 }
+                    new() { defName = "PF_ShipPart_Thruster_Debug", category = "thruster", quantity = 1 },
+                    new() { defName = "PF_ShipPart_Tank_Debug", category = "tank", quantity = 1 }
                 },
                 payloads = new List<RocketPayloadSpec>
                 {
@@ -137,7 +137,7 @@ namespace PioneerFramework.Launch
             {
                 positionSystem = (SystemVec3)pos,
                 velocitySystem = (SystemVec3)birthVel,
-                rotation = UnityEngine.Quaternion.identity
+                rotation = DQuaternion.identity
             };
             spaceGame.RegisterGroup(group);
 
@@ -145,6 +145,13 @@ namespace PioneerFramework.Launch
             entity.GroupId = groupId;
             entity.SetPositionVelocity(DVector3.zero, DVector3.zero);
             entity.SetRotation(UnityEngine.Quaternion.identity);
+
+            // ── M1 第一刀（2026-10-17）：舱盒 + 目录命中的追加件 ──
+            // 舱盒仍是 Part[0]（原点、地图载体、质量公式不变）；追加件沿 −Y 堆叠、不挂图。
+            // ⚠ `includeUnknownDefs: false`：只有真 `ShipPartDef`（新目录）才追加 ⇒ 既有 DMS/ThingDef
+            //   设计保持单 part 行为，直到它们的目录条目补齐。
+            entity.SetParts(DesignPartAssembler.BuildParts(spec, spec.mapWidth, spec.mapHeight,
+                out _, includeUnknownDefs: false));
 
             bool hasCabinMap = spec.CabinType == RocketCabinType.Spacecraft;
             Map? map = null;
@@ -240,63 +247,20 @@ namespace PioneerFramework.Launch
             if (mapComp == null)
                 return;
 
-            PropellantDef propellant = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Chemical");
+            var summary = PartPropulsionResolver.Resolve(spec);
+            PropellantDef? propellant = ResolvePropellant(summary);
             if (propellant == null)
-            {
-                Log.Warning("[PioneerFramework] PF_Propellant_Chemical missing; rocket propulsion not configured.");
                 return;
-            }
 
-            // ── 推进器聚合：优先读 Part 对应的 ThingDef 参数；调试 Part 无 Def 时用 PFL 调试值 ──
-            float totalMassFlow = 0f;
-            float ve = 3000f;
-            int thrusterCount = 0;
-            for (int i = 0; i < spec.parts.Count; i++)
-            {
-                var part = spec.parts[i];
-                if (part == null || part.category != "thruster")
-                    continue;
-
-                int qty = Math.Max(1, part.quantity);
-                ThingDef partDef = DefDatabase<ThingDef>.GetNamedSilentFail(part.defName);
-                var thrusterProps = partDef?.comps?.OfType<CompProperties_Thruster>().FirstOrDefault();
-                if (thrusterProps != null)
-                {
-                    ve = thrusterProps.exhaustVelocity;
-                    totalMassFlow += thrusterProps.massFlowRate * qty;
-                }
-                else
-                {
-                    totalMassFlow += 10f * qty;
-                }
-
-                thrusterCount += qty;
-            }
-
-            // ── 储罐/燃料：debug spec.fuelAmount 直接作为化学工质 kg；正式 Part Def 可覆写容量 ──
-            float capacity = 0f;
-            for (int i = 0; i < spec.parts.Count; i++)
-            {
-                var part = spec.parts[i];
-                if (part == null || part.category != "tank")
-                    continue;
-
-                int qty = Math.Max(1, part.quantity);
-                ThingDef partDef = DefDatabase<ThingDef>.GetNamedSilentFail(part.defName);
-                var tankProps = partDef?.comps?.OfType<CompProperties_PropellantTank>().FirstOrDefault();
-                if (tankProps != null)
-                    capacity += tankProps.capacity * qty;
-                else
-                    capacity += 1000f * qty;
-            }
-
+            // 燃料量仍是设计字段（后续由分级/加注链接管）；容量不足时按旧口径退化为燃料量。
             float fuelMass = Math.Max(0f, spec.fuelAmount);
-            if (capacity <= 0f)
-                capacity = fuelMass;
+            float capacity = summary.capacity > 0f ? summary.capacity : fuelMass;
 
             // 统一交给 SpaceMapComp：注册虚拟推进 + 持久化 RocketDesignSpec/燃料/引擎参数。
-            mapComp.SetVirtualRocketPropulsion(spec, propellant, ve, totalMassFlow, fuelMass, capacity);
-            Log.Message($"[PioneerFramework] Rocket propulsion injected: thrusters={thrusterCount}, ve={ve:0.#} m/s, massFlow={totalMassFlow:0.#} kg/s");
+            mapComp.SetVirtualRocketPropulsion(spec, propellant, summary.exhaustVelocity, summary.massFlow,
+                fuelMass, capacity);
+            mapComp.SyncOwnerTankFuelFromPools();   // B4a：初装油量分布到 tank part（COM/惯量）
+            LogPropulsion("Rocket", summary, propellant, capacity);
         }
 
         /// <summary>为无舱内地图的普通运输仓配置实体级自带推进数据。</summary>
@@ -305,67 +269,55 @@ namespace PioneerFramework.Launch
             if (entity == null || spec?.parts == null)
                 return;
 
-            PropellantDef propellant = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Chemical");
+            var summary = PartPropulsionResolver.Resolve(spec);
+            PropellantDef? propellant = ResolvePropellant(summary);
             if (propellant == null)
-            {
-                Log.Warning("[PioneerFramework] PF_Propellant_Chemical missing; rocket propulsion not configured.");
                 return;
-            }
-
-            float totalMassFlow = 0f;
-            float ve = 3000f;
-            int thrusterCount = 0;
-            for (int i = 0; i < spec.parts.Count; i++)
-            {
-                var part = spec.parts[i];
-                if (part == null || part.category != "thruster")
-                    continue;
-
-                int qty = Math.Max(1, part.quantity);
-                ThingDef partDef = DefDatabase<ThingDef>.GetNamedSilentFail(part.defName);
-                var thrusterProps = partDef?.comps?.OfType<CompProperties_Thruster>().FirstOrDefault();
-                if (thrusterProps != null)
-                {
-                    ve = thrusterProps.exhaustVelocity;
-                    totalMassFlow += thrusterProps.massFlowRate * qty;
-                }
-                else
-                {
-                    totalMassFlow += 10f * qty;
-                }
-
-                thrusterCount += qty;
-            }
-
-            float capacity = 0f;
-            for (int i = 0; i < spec.parts.Count; i++)
-            {
-                var part = spec.parts[i];
-                if (part == null || part.category != "tank")
-                    continue;
-
-                int qty = Math.Max(1, part.quantity);
-                ThingDef partDef = DefDatabase<ThingDef>.GetNamedSilentFail(part.defName);
-                var tankProps = partDef?.comps?.OfType<CompProperties_PropellantTank>().FirstOrDefault();
-                if (tankProps != null)
-                    capacity += tankProps.capacity * qty;
-                else
-                    capacity += 1000f * qty;
-            }
 
             float fuelMass = Math.Max(0f, spec.fuelAmount);
-            if (capacity <= 0f)
-                capacity = fuelMass;
+            float capacity = summary.capacity > 0f ? summary.capacity : fuelMass;
 
             entity.AddPropulsion(new PropulsionData
             {
                 propellant = propellant,
-                ve = ve,
-                massFlow = totalMassFlow,
+                ve = summary.exhaustVelocity,
+                massFlow = summary.massFlow,
                 mass = fuelMass,
                 capacity = capacity
             });
-            Log.Message($"[PioneerFramework] Entity rocket propulsion injected: thrusters={thrusterCount}, ve={ve:0.#} m/s, massFlow={totalMassFlow:0.#} kg/s");
+            entity.SyncTankFuelDistribution(propellant.defName, fuelMass);   // B4a：初装油量分布到 tank part
+            LogPropulsion("Entity rocket", summary, propellant, capacity);
+        }
+
+        /// <summary>
+        /// 工质选择：目录/建筑给出的首个工质优先，缺失或查不到时回退化学工质。
+        /// 单池虚拟推进（v1）一次只注册一种工质——跨级异工质多池是分级线的扩展点。
+        /// </summary>
+        private static PropellantDef? ResolvePropellant(PartPropulsionResolver.Summary summary)
+        {
+            if (!string.IsNullOrEmpty(summary.propellantDefName))
+            {
+                PropellantDef named = DefDatabase<PropellantDef>.GetNamedSilentFail(summary.propellantDefName);
+                if (named != null)
+                    return named;
+                Log.Warning($"[PioneerFramework] Part propellant '{summary.propellantDefName}' not found; " +
+                            "falling back to PF_Propellant_Chemical.");
+            }
+
+            PropellantDef chemical = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Chemical");
+            if (chemical == null)
+                Log.Warning("[PioneerFramework] PF_Propellant_Chemical missing; rocket propulsion not configured.");
+            return chemical;
+        }
+
+        private static void LogPropulsion(string source, PartPropulsionResolver.Summary summary,
+            PropellantDef propellant, float capacity)
+        {
+            Log.Message($"[PioneerFramework] {source} propulsion injected: thrusters={summary.thrusterCount}" +
+                        $" (catalog {summary.catalogThrusters}), ve={summary.exhaustVelocity:0.#} m/s, " +
+                        $"massFlow={summary.massFlow:0.#} kg/s, tanks={summary.tankCount}" +
+                        $" (catalog {summary.catalogTanks}), capacity={capacity:0.#} kg, " +
+                        $"propellant={propellant.defName}");
         }
 
         /// <summary>发射失败清理：销毁群组/实体/口袋地图，地面火箭保留。</summary>

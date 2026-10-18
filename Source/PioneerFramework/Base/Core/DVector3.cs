@@ -660,6 +660,8 @@ namespace PioneerFramework
 #endif
 
         public bool Equals(DQuaternion other) => x == other.x && y == other.y && z == other.z && w == other.w;
+        public static bool operator ==(DQuaternion a, DQuaternion b) => a.Equals(b);
+        public static bool operator !=(DQuaternion a, DQuaternion b) => !a.Equals(b);
         public override bool Equals(object obj) => obj is DQuaternion other && Equals(other);
         public override int GetHashCode()
         {
@@ -697,6 +699,18 @@ namespace PioneerFramework
 #if !PURE_MATH
         public static DQuaternion FromQuaternion(Quaternion q) => new(q.x, q.y, q.z, q.w);
         public Quaternion ToQuaternion() => new((float)x, (float)y, (float)z, (float)w);
+
+        /// <summary>用 Scribe_Values 序列化 DQuaternion 为四个 double 分量（w 默认 1 = identity）。</summary>
+        public static void Scribe(string label, ref DQuaternion value)
+        {
+            double sx = value.x, sy = value.y, sz = value.z, sw = value.w;
+            Scribe_Values.Look(ref sx, label + "_x", 0.0);
+            Scribe_Values.Look(ref sy, label + "_y", 0.0);
+            Scribe_Values.Look(ref sz, label + "_z", 0.0);
+            Scribe_Values.Look(ref sw, label + "_w", 1.0);
+            if (Verse.Scribe.mode == Verse.LoadSaveMode.LoadingVars)
+                value = new DQuaternion(sx, sy, sz, sw);
+        }
 #endif
     }
 }

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- ════════════════════════════════════════════════════════════════════
+       M1 第一刀 · 零件目录最小集（2026-10-17）
+       纯数据 Def：只被 DesignPartAssembler 读来派生 SpacePart（几何 + 质量）；
+       推进仍按 M2 甲 留在地图/实体级，但**推进参数（ve/ṁ/罐容/工质）以本目录为唯一出处**——
+       PartPropulsionResolver 先查这里，未收录的条目才回退建筑 ThingDef 的 Comp。
+       不是 ThingDef，不进建造菜单、不需要贴图。
+       ⚠ **必须带 Class 属性**：RimWorld 的 Def 解析按简单类型名 `assembly.GetType("ShipPartDef")`
+       查全局类型，找不到命名空间里的 `PioneerFramework.ShipPartDef` ⇒ 写全名。
+       ════════════════════════════════════════════════════════════════════ -->
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Thruster_Debug</defName>
+    <label>调试推进器</label>
+    <category>thruster</category>
+    <massKg>500</massKg>
+    <boundsX>2</boundsX>
+    <boundsY>4</boundsY>
+    <boundsZ>2</boundsZ>
+    <stackLengthMeters>4</stackLengthMeters>
+    <exhaustVelocity>3000</exhaustVelocity>
+    <massFlowRate>10</massFlowRate>
+    <propellantDefName>PF_Propellant_Chemical</propellantDefName>
+  </ShipPartDef>
+
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Tank_Debug</defName>
+    <label>调试储罐</label>
+    <category>tank</category>
+    <massKg>200</massKg>
+    <boundsX>2</boundsX>
+    <boundsY>6</boundsY>
+    <boundsZ>2</boundsZ>
+    <stackLengthMeters>6</stackLengthMeters>
+    <tankCapacityKg>1000</tankCapacityKg>
+    <propellantDefName>PF_Propellant_Chemical</propellantDefName>
+  </ShipPartDef>
+
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Stage_Debug</defName>
+    <label>调试分离环</label>
+    <category>stage</category>
+    <massKg>100</massKg>
+    <boundsX>2</boundsX>
+    <boundsY>2</boundsY>
+    <boundsZ>2</boundsZ>
+    <stackLengthMeters>2</stackLengthMeters>
+  </ShipPartDef>
+</Defs>

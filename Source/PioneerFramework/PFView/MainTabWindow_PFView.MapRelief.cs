@@ -50,14 +50,19 @@ namespace PioneerFramework
         private readonly HashSet<int> reliefLoggedMaps = new();   // 首次构建时打一行分类普查（游戏内验收用）
 
         /// <summary>
-        /// 画本实体的地图浮雕。返回 true = 已画（调用方跳过 part 盒体）；false = 画不了（调用方回退）。
+        /// 画**指定地图/挂图 part**的浮雕。返回 true = 已画（调用方跳过该 part 的盒体）；
+        /// false = 画不了/封闭（调用方画 part 盒体）。
+        /// **B6**：封闭舱（`SpacePart.isSealed`）不显示浮雕；每张图按自己的 part 位置/旋转绘制。
         /// </summary>
-        private bool TryDrawMapRelief(SpaceEntity entity, Vector3 eVp, Quaternion gRot, float scale)
+        private bool TryDrawMapRelief(SpaceEntity entity, int mapId, SpacePart? mapPart,
+            Vector3 partVp, Quaternion partRot, float scale)
         {
-            if (!debugMapRelief || entity == null || entity.MapId < 0 || entity.IsMapArchived)
+            if (!debugMapRelief || entity == null || mapId < 0 || entity.IsMapArchived)
                 return false;
+            if (mapPart != null && (mapPart.isSealed || mapPart.isDestroyed))
+                return false;   // 封闭/残骸：不画浮雕，回退盒体
 
-            Map? map = SpaceMapGenerator.GetEntityMap(entity);
+            Map? map = SpaceMapGenerator.FindPocketMap(mapId);
             if (map == null)
                 return false;
 
@@ -80,7 +85,7 @@ namespace PioneerFramework
             // 画（矩阵：网格以"格"为单位 ⇒ 缩放 = 米→视图、debugScaleParts 同倍；三档颜色；描边宽）
             // 全在 `ShipModelRenderer.DrawRelief`（D-1：与场景无关的绘制段）——本函数只管**取数据**
             // （地图/分类/网格缓存）与**回退判定**。
-            ShipModelRenderer.DrawRelief(set.Meshes, eVp, gRot, scale, mat, matBlock, ToonMat != null,
+            ShipModelRenderer.DrawRelief(set.Meshes, partVp, partRot, scale, mat, matBlock, ToonMat != null,
                 MetersToView, SceneLayer);
             return true;
         }

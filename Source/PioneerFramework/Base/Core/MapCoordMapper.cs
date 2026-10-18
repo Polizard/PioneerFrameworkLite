@@ -8,17 +8,49 @@ namespace PioneerFramework
     /// 3D 轨道空间 ↔ Pocket Map 格坐标 的换算器（P1-3 基础设施）。
     /// F2 炮塔锚点 / F3 贯穿弹道 / 着陆 共用。
     ///
-    /// 映射基准（与 SpaceMapGenerator.CreateStationEntity 约定一致）：
-    /// - 地图中心 = 船体局部原点（空间站 Part.positionShip 为零）
+    /// 映射基准：
+    /// - **B6 多图**：图挂在 part 上 ⇒ 地图中心 = 该 part 的 `positionShip`（含 part 自身旋转）；
+    ///   旧单图（`ownerPartId < 0`）仍 = 实体原点，逐位不变。
     /// - 地图 1 格 = 船体 1 米（Part 尺寸 = mapWidth × 50m × mapHeight）
-    /// - 地图 xz 平面 = 船体局部 xz 平面；船体局部 y = 船体厚度方向（50m）
+    /// - 地图 xz 平面 = 该 part 的局部 xz 平面；part 的 y = 地图地面高度。
     /// </summary>
     public static class MapCoordMapper
     {
-        /// <summary>地图格 → 船体局部米坐标（y = 0，地面）。1 格 = 1 米。</summary>
+        /// <summary>本图对应的 part（B6；旧档未绑定/无 Game 时 null ⇒ 退回实体原点）。</summary>
+        private static SpacePart? OwnerPartOf(Map map)
+            => map.GetComponent<SpaceMapComp>()?.OwnerPart;
+
+        /// <summary>地图格 → 船体局部米坐标（y = 0，地面）。1 格 = 1 米；B6 自动叠加挂图 part 的位置/旋转。</summary>
         public static Vector3 MapCellToShip(Map map, IntVec3 cell)
         {
-            return MapCellToShip(map.Center, cell);
+            return MapCellToShip(map, cell, OwnerPartOf(map));
+        }
+
+        /// <summary>B6：显式指定挂图 part 的地图格 → 船体局部米（null = 实体原点基准）。</summary>
+        public static Vector3 MapCellToShip(Map map, IntVec3 cell, SpacePart? ownerPart)
+        {
+            return MapLocalToShip(MapCellToShip(map.Center, cell), ownerPart);
+        }
+
+        /// <summary>B6 纯换算：地图局部米（中心为原点）→ 船体系绝对米（叠加 part 位置/旋转）。
+        /// 与 <see cref="ShipToMapLocal"/> 互逆；part = null 时恒等。</summary>
+        public static Vector3 MapLocalToShip(Vector3 localMeters, SpacePart? ownerPart)
+        {
+            if (ownerPart == null) return localMeters;
+            DVector3 local = new DVector3(localMeters.x, localMeters.y, localMeters.z);
+            DVector3 rotated = DVector3.Rotate(local, ownerPart.rotationShip);
+            DVector3 ship = ownerPart.positionShip + rotated;
+            return new Vector3((float)ship.x, (float)ship.y, (float)ship.z);
+        }
+
+        /// <summary>B6 纯换算：船体系绝对米 → 地图局部米（减 part 位置、逆 part 旋转）。
+        /// part = null 时恒等。</summary>
+        public static Vector3 ShipToMapLocal(Vector3 shipMeters, SpacePart? ownerPart)
+        {
+            if (ownerPart == null) return shipMeters;
+            DVector3 delta = new DVector3(shipMeters.x, shipMeters.y, shipMeters.z) - ownerPart.positionShip;
+            DVector3 local = DVector3.Rotate(delta, DQuaternion.Inverse(ownerPart.rotationShip));
+            return new Vector3((float)local.x, (float)local.y, (float)local.z);
         }
 
         /// <summary>纯逻辑重载（不依赖 Map 实例，便于单元测试）：中心格 + 目标格 → 局部米。</summary>
@@ -27,10 +59,17 @@ namespace PioneerFramework
             return new Vector3(cell.x - center.x, 0f, cell.z - center.z);
         }
 
-        /// <summary>船体局部米坐标 → 地图格（xz 截断取整，越界收敛到边界）。跳帮落点用。</summary>
+        /// <summary>船体局部米坐标 → 地图格（xz 截断取整，越界收敛到边界）。跳帮落点用；B6 自动逆 part 变换。</summary>
         public static IntVec3 ShipToMapCell(Map map, Vector3 shipMeters)
         {
-            return ShipToMapCell(map.Center, shipMeters, new IntVec2(map.Size.x, map.Size.z));
+            return ShipToMapCell(map, shipMeters, OwnerPartOf(map));
+        }
+
+        /// <summary>B6：显式指定挂图 part 的船体局部米 → 地图格（null = 实体原点基准）。</summary>
+        public static IntVec3 ShipToMapCell(Map map, Vector3 shipMeters, SpacePart? ownerPart)
+        {
+            Vector3 local = ShipToMapLocal(shipMeters, ownerPart);
+            return ShipToMapCell(map.Center, local, new IntVec2(map.Size.x, map.Size.z));
         }
 
         /// <summary>
@@ -50,16 +89,23 @@ namespace PioneerFramework
         public static DVector3 ShipToSystem(SpaceEntity entity, DVector3 groupPos, Vector3 shipMeters)
         {
             Vector3 shipUnity = shipMeters * (float)SpaceConstants.UnitsPerMeter;
-            Vector3 rotatedShipUnity = entity.Rotation * shipUnity;
+            Vector3 rotatedShipUnity = entity.RotationUnity * shipUnity;
             DVector3 rotatedMeters = (DVector3)(rotatedShipUnity / (float)SpaceConstants.UnitsPerMeter);
             return groupPos + entity.Position + rotatedMeters;
         }
 
-        /// <summary>船体局部米坐标 → Map 场景 3D 坐标（xz = 格坐标，y = 高度单位）。F3 贯穿弹道用。</summary>
+        /// <summary>船体局部米坐标 → Map 场景 3D 坐标（xz = 格坐标，y = 高度单位）。F3 贯穿弹道用；B6 自动逆 part 变换。</summary>
         public static Vector3 ShipToMap(Map map, Vector3 shipMeters)
         {
+            return ShipToMap(map, shipMeters, OwnerPartOf(map));
+        }
+
+        /// <summary>B6：显式指定挂图 part 的船体局部米 → Map 场景 3D（null = 实体原点基准）。</summary>
+        public static Vector3 ShipToMap(Map map, Vector3 shipMeters, SpacePart? ownerPart)
+        {
+            Vector3 local = ShipToMapLocal(shipMeters, ownerPart);
             IntVec3 c = map.Center;
-            return new Vector3(c.x + shipMeters.x, shipMeters.y, c.z + shipMeters.z);
+            return new Vector3(c.x + local.x, local.y, c.z + local.z);
         }
 
         /// <summary>世界 → 船体局部米坐标（含船姿态逆旋转）。</summary>
@@ -67,7 +113,7 @@ namespace PioneerFramework
         {
             DVector3 delta = systemMeters - (groupPos + entity.Position);
             Vector3 deltaSystemUnity = (Vector3)(delta * SpaceConstants.UnitsPerMeter);
-            Vector3 shipUnity = Quaternion.Inverse(entity.Rotation) * deltaSystemUnity;
+            Vector3 shipUnity = Quaternion.Inverse(entity.RotationUnity) * deltaSystemUnity;
             return shipUnity / (float)SpaceConstants.UnitsPerMeter;
         }
 

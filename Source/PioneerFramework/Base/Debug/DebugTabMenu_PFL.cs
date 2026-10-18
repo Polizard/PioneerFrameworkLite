@@ -35,12 +35,8 @@ namespace PioneerFramework
             // ═══ 验收（性能优化 9 条 + 中低优先批）═══
             // S2 首片（2026-09-23）：单一入口「一键测试（全覆盖）」—— 跑得完的全收进统一判定框架，
             // 跑不完/还没判据的**逐条显式登记**（不许用沉默冒充全覆盖）
-            AddAction("大气/悬浮/档位·判据（L1 自动跑，无需人盯读数）", "00 验收", 58,
-                AtmosphereAcceptanceRunner.Run,
-                () => "一条按钮跑完 [A1]–[A8] 的可判定面：解析档准入拒绝+对照 · 解析轨与气动互斥 · " +
-                      "进气充填 · 包线（推力<标称 35%）· 物理档悬浮（高度差<25 m）· 切解析档（**位置钉死 <1 m**、" +
-                      "定点不变、耗料率 ≈ m·g/ve ±25%）· 切回 · 料尽自动退出。收工清场。");
-            AddAction("一键测试（全覆盖：框架自检 + 引力电池 + 降落/撞击判据 + 未覆盖项登记）", "00 验收", 35, FullTestRunner.Run, null);
+            AddAction("大气/悬浮/档位判据", "00 验收", 58, AtmosphereAcceptanceRunner.Run, null);
+            AddAction("一键测试（全覆盖）", "00 验收", 35, FullTestRunner.Run, null);
             // [V7]（2026-10-01）：自跑站 + 站内传感器阵列建筑，验"投影非零 → 打伤减半 → 摧毁归零"，并打印存档前读数
             // PFView 天体地表烘焙（2026-10-10）：手动选天体 → 只烤**有地块覆盖的球冠** + 山/河/路点缀 → 落旁挂 PNG（跟存档走）
             AddAction("PFView·烘焙天体地表补丁（只烘有地块的区域 + 山/河/路；手动选天体；结果落旁挂文件，不自动烘）", "20 视图/表现", 60,
@@ -139,10 +135,9 @@ namespace PioneerFramework
             AddAction("G1 守卫自检（正负对照同场：相位内必报 / 相位外必不报）", "00 验收", 31,
                 ParallelRegionGuard.SelfTest, null);
             AddAction("一键验收", "00 验收", 100, PerfAcceptanceRunner.Run,
-                () => PerfAcceptanceRunner.Running
-                    ? "一键验收（运行中…）"
-                    : "一键验收（即时电池：引力 + 机制在册 + 7 个场景 → 硬指标/值判据/覆盖度结论）");
+                () => PerfAcceptanceRunner.Running ? "一键验收（运行中…）" : "一键验收");
             AddAction("中止验收（立即打印结论与计数）", "00 验收", 90, PerfAcceptanceRunner.Abort, null);
+            AddAction("多part 一键验收", "00 验收", 58, MultipartAcceptanceRunner.Run, null);
             AddCheckbox("性能优化验收探针（影子校验 + 周期汇总）", "00 验收", 80, typeof(PerfProbe), "Enabled");
             // ★ 按需读"物理步总耗时"（常驻测量，与影子校验**无关** ⇒ 测耗时不会被观测者效应污染）：
             //   打印并清零 ⇒ 每次读数 = 上一份读数以来这些步的 平均/最慢/引力段占比。
@@ -155,8 +150,7 @@ namespace PioneerFramework
                 RefactorMechanismsSelfTest.Run, null);
             // P1-8：规划器一键验收 —— 12 个操作各走一遍"参数描述 → 计算 → 入队"，
             // 打完判决块后**自动把规划器窗口开出来**（窗口长什么样只有人眼能判，探针明写 UNCHECKED）。
-            AddAction("规划器一键验收（12 操作：参数→计算→入队 + 自动开窗）", "00 验收", 60,
-                PlanEditorAcceptanceRunner.Run, null);
+            AddAction("规划器一键验收", "00 验收", 60, PlanEditorAcceptanceRunner.Run, null);
             // 真飞验收（两按钮，因为"要等"）：唯一会**真的让船变轨**的验收工具。
             AddAction("真飞验收·布置（真排队，会真的变轨；烧完按「检查」）", "00 验收", 55,
                 LiveBurnAcceptanceRunner.Stage, null);
@@ -196,6 +190,66 @@ namespace PioneerFramework
             AddAction("降落/撞击·判据（S3：报价·距离门·跨层错配·越界·缺表面·执行三件事 + 撞击事件）",
                 "05 场景 · 引力场(A0)", 74, RunLandingJudgments, null);
             AddAction("降落/撞击·判据中止", "05 场景 · 引力场(A0)", 73, LandingAcceptanceRunner.Abort, null);
+
+            // ═══ 场景 · 多part（批 0：惯量底座，2026-10-17）═══
+            AddAction("多part 调试船",
+                "07 场景 · 多part", 92, () => DebugShipSpawner.SpawnMultiPartDebugShip(), null);
+            AddAction("打印全部编队惯量读数",
+                "07 场景 · 多part", 90,
+                () =>
+                {
+                    var sg = Current.Game?.GetComponent<SpaceGameComp>();
+                    if (sg == null) return;
+                    int n = 0;
+                    foreach (var g in sg.GetAllGroups())
+                    {
+                        Log.Message($"[惯量读数] G{g.GroupId}: {g.InertiaDebugString()}");
+                        n++;
+                    }
+                    Log.Message($"[惯量读数] 共 {n} 组；判据：**静止时再按一次，所有组的 重算# 都不应增长**");
+                }, null);
+            AddAction("多part 地图站",
+                "07 场景 · 多part", 88, () => DebugShipSpawner.SpawnMultipartStationDebug(), null);
+            AddAction("多part 双舱室船（B6：两图各挂一件舱盒）",
+                "07 场景 · 多part", 89, () => DebugShipSpawner.SpawnDualCabinDebugShip(), null);
+            AddAction("256 件基准船（B7：装配/惯量/碰撞/存档规模）",
+                "07 场景 · 多part", 91, () => DebugShipSpawner.Spawn256PartDebugShip(), null);
+            AddAction("B8 表现验收·全部布置（残骸色 + 主推轴 + 双舱室）",
+                "07 场景 · 多part", 77, DebugShipSpawner.SpawnAllB8Demos, null);
+            AddAction("B8 表现验收·残骸分色（生成 3 件船并损毁第 2 件）",
+                "07 场景 · 多part", 76, DebugShipSpawner.SpawnB8WreckColorDemo, null);
+            AddAction("B8 表现验收·主推轴（无 Map 多引擎，清空旧 mainAxisShip）",
+                "07 场景 · 多part", 75, DebugShipSpawner.SpawnB8MainAxisDemo, null);
+            AddAction("B8 表现验收·多图入口（双舱室；旧面板应出「选择地图入口」）",
+                "07 场景 · 多part", 74, DebugShipSpawner.SpawnB8MultiMapDemo, null);
+            AddAction("B8 表现验收·清场（只清 B8 按钮生成的组）",
+                "07 场景 · 多part", 73, DebugShipSpawner.CleanupB8Demos, null);
+            AddAction("多part 复杂碰撞·一键验收（4 组不同角度，自动结算角动量）",
+                "07 场景 · 多part", 87, ComplexCollisionAcceptanceRunner.Stage, null);
+            AddAction("低速对撞（4 m/s：看最小穿透轴/质量反比/e=0.2/角速度）",
+                "07 场景 · 多part", 86, () => DebugShipSpawner.SpawnLowSpeedCollisionDemo(), null);
+            AddAction("高速对撞（80 m/s：看爆炸）",
+                "07 场景 · 多part", 85, () => DebugShipSpawner.SpawnHighSpeedCollisionDemo(), null);
+            AddAction("预对准消旋演示·布置（船开始转）",
+                "07 场景 · 多part", 84, () => DebugShipSpawner.SpawnPrealignCancelDemo(), null);
+            AddAction("预对准消旋演示·取消（应停转）",
+                "07 场景 · 多part", 83, DebugShipSpawner.CancelPrealignDemo, null);
+            AddAction("交会引导切断演示·布置（2 引导 + 1 手动节点）",
+                "07 场景 · 多part", 82, () => DebugShipSpawner.SpawnGuidanceCutDemo(), null);
+            AddAction("交会引导切断演示·断开（旧节点应消失）",
+                "07 场景 · 多part", 81, DebugShipSpawner.CutGuidanceDemo, null);
+            AddAction("关闭碰撞详细日志（测完性能用）",
+                "07 场景 · 多part", 80,
+                () =>
+                {
+                    bool was = CombatManager.DebugDetailedCollision;
+                    CombatManager.DebugDetailedCollision = false;
+                    Log.Message($"[碰撞] 详细日志：{(was ? "已关闭（恢复生产性能口径）" : "本来就是关的")}");
+                }, null);
+            AddAction("贾尼别科夫演示·布置（中间轴自旋，看长轴翻转）",
+                "07 场景 · 多part", 79, DzhanibekovDemo.Spawn, null);
+            AddAction("贾尼别科夫演示·停止",
+                "07 场景 · 多part", 78, DzhanibekovDemo.Stop, null);
 
             // ═══ 场景 · 大气（A1–A6；[A7] 悬浮落地后并入本类）═══
             AddAction("吸气式试验机（30 km 水平 400 m/s，空罐起飞：看充填 / 包线衰减 / 抽干熄火）",
@@ -403,8 +457,7 @@ namespace PioneerFramework
 
             // ⭐ P0 适配层**一键验收**：一次点击 = 铺 4 个受控轨道场景 + 跑全套判据 + 打结论块。
             // 不需要事先选中任何东西；会铺场并真的排一条机动（见 runner 的类注释）。
-            AddAction("适配层一键验收（铺场 + F1换系 + 构造点 + 端到端 + 队列 + 契约）", "00 验收", 65,
-                AdapterAcceptanceRunner.Run, null);
+            AddAction("适配层一键验收", "00 验收", 65, AdapterAcceptanceRunner.Run, null);
 
             return myRoot;
         }
@@ -460,6 +513,9 @@ namespace PioneerFramework
 
         private DebugActionNode AddAction(string label, string category, int priority, Action action, Func<string>? labelGetter)
         {
+            // ⚠ **RimWorld 的 `DebugActionNode.LabelNow` 优先用 `labelGetter()` 作为显示文字**（不是 tooltip！）
+            //   ⇒ 固定文案传 null；只有"运行中…/已布置"这类动态状态才用它。
+            //   长说明请写日志/计划，别塞 getter（2026-10-17 用户实测："菜单里的字和你给我的不一样"即此）。
             var node = new DebugActionNode(label, DebugActionType.Action, action, null);
             node.category = category;
             node.displayPriority = priority;

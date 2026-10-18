@@ -59,7 +59,10 @@ namespace PioneerFramework.Pure.Tests
         public double RcsThrust = 1500.0, RcsVe = 1500.0, RcsMassFlow = 1.0;
 
         // ── 姿态 ──
-        public double MaxAngularRate = 5.0 * Math.PI / 180.0;      // DefaultMaxAngularRate = 5°/s
+        // 5°/s = **锚点船的最慢轴**（批 1：默认无Map船 5000 kg / 40×20×80 ⇒ I_最慢=(40²+80²)/12·m）。
+        // 交会台架用这台船（DryMass=5000 与锚点一致）⇒ 主推轴对准（绕 X/Y）实际 5.0~5.9°/s；
+        // 取 5°/s 是保守口径（多转一点时间，不会高估可行性）。
+        public double MaxAngularRate = 5.0 * Math.PI / 180.0;
         /// <summary>游戏侧**出锥窗口**（`DefaultThrustConeCos`，10°）= **主推能不能出力**的门。
         /// ⚠ 2026-09-19：游戏里出力的门原来被写成了下面那个 1.5° 死区 ⇒ 质心在死区附近摆动时
         /// **整步空转**（不推力不耗料）⇒ 燃烧被拉长、Δv 质心后移（实测不变量掉 2%、e 停在 5.8e-3）。

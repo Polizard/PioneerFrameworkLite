@@ -309,21 +309,21 @@ namespace PioneerFramework
                 if (dirShip.sqrMagnitude < 1f) continue; // 目标与炮口重合（<1m）跳过
                 dirShip.Normalize();
 
-                // 出膛点：炮口射线与本船 AABB 六面求交（任意一面，360° 全方位出膛）
-                Vector3 half = (Vector3)entity.AabbHalfSize;
-                Vector3 exitShip = MapCoordMapper.RayExitAabb(muzzleShip, dirShip, -half, half, out int exitFace);
+                // 用户裁定（2026-10-18）：炮弹从**开火 part 的炮塔位置**直接出来，不做船壳出膛点；
+                // 若因此打中自己，后果自负。不要再加 AABB/OBB 出膛修正。
+                Vector3 exitShip = muzzleShip;
                 DVector3 exitSystem = MapCoordMapper.ShipToSystem(entity, myPos, exitShip);
 
-                // 炮塔详情（详细日志）：射线输入 + 出射距离（验证六面求交的几何输入）
+                // 炮塔详情（详细日志）：炮口/目标局部坐标 + 出射距离（part 直出 ⇒ 应恒 0）
                 if (CombatManager.DebugDetailedCombat)
                 {
-                    Log.Message($"[炮塔详情] G{myGroup.GroupId}→G{target.GroupId} 炮口局部=({muzzleShip.x:F1},{muzzleShip.y:F1},{muzzleShip.z:F1}) 目标局部=({targetShip.x:F1},{targetShip.y:F1},{targetShip.z:F1}) dirShip=({dirShip.x:F3},{dirShip.y:F3},{dirShip.z:F3}) AABB半长=({half.x:F1},{half.y:F1},{half.z:F1}) 出射距离={(exitShip - muzzleShip).magnitude:F2}m");
+                    Log.Message($"[炮塔详情] G{myGroup.GroupId}→G{target.GroupId} 炮口局部=({muzzleShip.x:F1},{muzzleShip.y:F1},{muzzleShip.z:F1}) 目标局部=({targetShip.x:F1},{targetShip.y:F1},{targetShip.z:F1}) dirShip=({dirShip.x:F3},{dirShip.y:F3},{dirShip.z:F3}) 出射距离={(exitShip - muzzleShip).magnitude:F2}m [part 直出]");
                 }
 
                 cm.FireFromMapBuilding(myGroup.GroupId, mount.weapon, exitSystem, targetPos, targetVel, target.GroupId);
 
                 // 出膛诊断日志：验证六面出膛（射界解除 + 碰撞点准确）+ 目标距离与武器状态
-                Log.Message($"[炮塔出膛] G{myGroup.GroupId}→G{target.GroupId} 炮塔({binding.turret.Position.x},{binding.turret.Position.z}) 面={exitFace}(0x- 1x+ 2y- 3y+ 4z- 5z+) 局部=({exitShip.x:F1},{exitShip.y:F1},{exitShip.z:F1})m 世界=({exitSystem.x:F0},{exitSystem.y:F0},{exitSystem.z:F0})m 距离={(targetPos - myPos).magnitude / 1000.0:F1}km 冷却={mount.weapon.cooldownRemaining} 过热={mount.weapon.isOverheated} 弹={mount.weapon.ammo}");
+                Log.Message($"[炮塔出膛] G{myGroup.GroupId}→G{target.GroupId} 炮塔({binding.turret.Position.x},{binding.turret.Position.z}) 出膛=part直出 局部=({exitShip.x:F1},{exitShip.y:F1},{exitShip.z:F1})m 世界=({exitSystem.x:F0},{exitSystem.y:F0},{exitSystem.z:F0})m 距离={(targetPos - myPos).magnitude / 1000.0:F1}km 冷却={mount.weapon.cooldownRemaining} 过热={mount.weapon.isOverheated} 弹={mount.weapon.ammo}");
 
                 // Map 出膛视觉弹：从炮塔格飞向出膛点映射格（纯视觉叙事，不伤害己方建筑）
                 SpawnMuzzleShell(parent.Map, muzzleShip, exitShip);

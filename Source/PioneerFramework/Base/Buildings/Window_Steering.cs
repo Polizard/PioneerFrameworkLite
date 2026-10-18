@@ -20,9 +20,16 @@ namespace PioneerFramework
     /// </summary>
     public class Window_Steering : Window
     {
-        public override Vector2 InitialSize => new(372f, 470f);
+        // 内容高度预算（2026-10-17 用户报障"UI 太短够不着按钮"）：
+        // 绘制顺序累加 ≈ 466px（姿态 42 + 平移 140 + 旋转 62 + 惯量 82 + 主推 46 + 动作组 46 + SAS 44 + 起始 4）
+        // + 键位提示 24 ≈ 490；Window 的 DoWindowContents 拿到的是 **windowRect 收缩 18px 边框**后的矩形
+        // ⇒ 窗口高度必须 ≥ 490 + 36 ≈ 526。取 560 留余量（新增一行读数不会再次裁掉底部按钮）。
+        // 宽度：主推轴/动作组/SAS 三排按钮最多 7 个（带间距 ≈ 370px）⇒ 取 420（内容 384）并让按钮宽度自适应，
+        // 不再出现"最右一个按钮被窗口右边缘裁掉"（旧 372 宽时 SAS 的最后一枚要 364px、实际只有 336px）。
+        public override Vector2 InitialSize => new(420f, 560f);
 
         private const float RowH = 24f;
+        /// <summary>键位提示固定画在**内容之后**（旧版锚在 yMax−20，内容一长就压住 SAS 按钮）。</summary>
         private static readonly Color bgColor = new(0.05f, 0.05f, 0.08f, 0.55f);
 
         public Window_Steering(bool absorbAroundWindow = true)
@@ -81,6 +88,10 @@ namespace PioneerFramework
             DrawSectionTitle(inRect, ref y, "旋转（Q/E 滚转 · 方向键 偏航/俯仰）");
             DrawRotationInfo(inRect, ref y, group);
 
+            // ── 惯量区（批 0 底座：读数；不参与任何控制——限速 I 化在批 1）──
+            DrawSectionTitle(inRect, ref y, "惯量（批 0：绕质心主轴 / 质心偏移 / 绕原点）");
+            DrawInertiaInfo(inRect, ref y, group);
+
             // ── 主推进方向 ──
             DrawSectionTitle(inRect, ref y, "主推进方向");
             DrawMainAxisSelector(inRect, ref y, mapComp);
@@ -93,9 +104,10 @@ namespace PioneerFramework
             DrawSectionTitle(inRect, ref y, "姿态对准 SAS（主推进轴 → 目标）");
             DrawSasButtons(inRect, ref y);
 
-            // 键位提示
+            // 键位提示（内容之后；不再锚在 yMax ⇒ 不会被新增读数压住）
             Text.Font = GameFont.Tiny;
-            Widgets.Label(new Rect(inRect.x + 6f, inRect.yMax - 20f, inRect.width - 12f, 18f),
+            y += 6f;
+            Widgets.Label(new Rect(inRect.x + 6f, y, inRect.width - 12f, 18f),
                 "ESC 关闭 · 任意操舵输入会清空机动队列（手动接管）");
         }
 
@@ -112,7 +124,7 @@ namespace PioneerFramework
             Text.Font = GameFont.Tiny;
             float w = (float)group.angularVelocity.magnitude;
             Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH),
-                $"角速度: {w * Mathf.Rad2Deg:F2} °/s  姿态(欧拉): ({group.CurrentOrbit.rotation.eulerAngles.x:F0}, {group.CurrentOrbit.rotation.eulerAngles.y:F0}, {group.CurrentOrbit.rotation.eulerAngles.z:F0})");
+                $"角速度: {w * Mathf.Rad2Deg:F2} °/s  姿态(欧拉): ({group.CurrentOrbit.rotation.ToQuaternion().eulerAngles.x:F0}, {group.CurrentOrbit.rotation.ToQuaternion().eulerAngles.y:F0}, {group.CurrentOrbit.rotation.ToQuaternion().eulerAngles.z:F0})");
             y += RowH - 2f;
         }
 
@@ -131,15 +143,50 @@ namespace PioneerFramework
         private void DrawRotationInfo(Rect inRect, ref float y, SpaceEntityGroup group)
         {
             Text.Font = GameFont.Tiny;
+            float slow = group.MaxAngularRate * Mathf.Rad2Deg;
+            if (group.maxAngularRate > 0f)
+            {
+                Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH),
+                    $"动量轮限速: {slow:F1} °/s（def 覆盖，各轴同限）");
+                y += RowH - 2f;
+                return;
+            }
+            // 批 1：I 加权——最慢轴 + 三根手操轴各自的上限（大船可能全压在地板上）
+            float roll = group.MaxAngularRateAboutBodyAxis(0, 0, 1) * Mathf.Rad2Deg;
+            float yaw = group.MaxAngularRateAboutBodyAxis(0, 1, 0) * Mathf.Rad2Deg;
+            float pitch = group.MaxAngularRateAboutBodyAxis(1, 0, 0) * Mathf.Rad2Deg;
             Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH),
-                $"动量轮限速: {SpaceEntityGroup.DefaultMaxAngularRate * Mathf.Rad2Deg:F1} °/s");
+                $"动量轮限速（I 加权）: 最慢轴 {slow:F1} °/s");
+            y += RowH - 4f;
+            Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH),
+                $"滚 {roll:F1} · 偏 {yaw:F1} · 俯 {pitch:F1} °/s");
             y += RowH - 2f;
+        }
+
+        /// <summary>惯量读数（批 0：只显示，不控制；重算# = 事件惰性自证——静止时不涨）。</summary>
+        private void DrawInertiaInfo(Rect inRect, ref float y, SpaceEntityGroup group)
+        {
+            Text.Font = GameFont.Tiny;
+            group.InertiaDebugLines(out string line1, out string line2, out string line3);
+            Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH), line1);
+            y += RowH - 4f;
+            if (!string.IsNullOrEmpty(line2))
+            {
+                Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH), line2);
+                y += RowH - 4f;
+            }
+            if (!string.IsNullOrEmpty(line3))
+            {
+                Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH), line3);
+                y += RowH - 2f;
+            }
         }
 
         private void DrawMainAxisSelector(Rect inRect, ref float y, SpaceMapComp mapComp)
         {
             string[] names = ["自动", "F 前", "B 后", "L 左", "R 右", "U 上", "D 下"];
-            float bw = 44f, gap = 6f;
+            const float gap = 6f;
+            float bw = (inRect.width - 12f - gap * (names.Length - 1)) / names.Length;   // 自适应：最右一枚不出界
             for (int i = 0; i < names.Length; i++)
             {
                 int sel = mapComp.mainThrustAxisIndex + 1; // 0=自动, 1..6=六向
@@ -163,8 +210,10 @@ namespace PioneerFramework
         private void DrawActionGroups(Rect inRect, ref float y, SpaceMapComp mapComp)
         {
             Text.Font = GameFont.Tiny;
-            float bw = 32f, gap = 5f;
-            for (int g = 0; g < 9; g++)
+            const float gap = 5f;
+            const int count = 9;
+            float bw = (inRect.width - 12f - gap * (count - 1)) / count;   // 自适应
+            for (int g = 0; g < count; g++)
             {
                 bool armed = (mapComp.armedGroupsMask & (1 << g)) != 0;
                 var rect = new Rect(inRect.x + 6f + g * (bw + gap), y, bw, RowH - 4f);
@@ -183,7 +232,8 @@ namespace PioneerFramework
         private void DrawSasButtons(Rect inRect, ref float y)
         {
             string[] names = ["关", "顺向", "逆向", "法向", "反法向", "径外", "径内"];
-            float bw = 46f, gap = 6f;
+            const float gap = 6f;
+            float bw = (inRect.width - 12f - gap * (names.Length - 1)) / names.Length;   // 自适应
             for (int i = 0; i < names.Length; i++)
             {
                 bool isSel = (int)SteeringController.SasKind == i;

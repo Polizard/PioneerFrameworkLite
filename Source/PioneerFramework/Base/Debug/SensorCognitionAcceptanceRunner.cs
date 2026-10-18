@@ -542,7 +542,7 @@ namespace PioneerFramework
             {
                 positionSystem = (SystemVec3)(obs.CurrentOrbit.positionSystem.v + dir * distanceMeters),
                 velocitySystem = obs.CurrentOrbit.velocitySystem,
-                rotation = Quaternion.identity,
+                rotation = DQuaternion.identity,
             };
         }
 
@@ -605,7 +605,7 @@ namespace PioneerFramework
             {
                 positionSystem = (SystemVec3)pos,
                 velocitySystem = (SystemVec3)vel,
-                rotation = Quaternion.identity,
+                rotation = DQuaternion.identity,
             };
             sg.RegisterGroup(group);
 

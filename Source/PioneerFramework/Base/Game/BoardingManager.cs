@@ -261,17 +261,25 @@ namespace PioneerFramework
                 return;
             }
 
-            // 被击毁：part HP ≤ 0 → 单兵死亡 / 穿梭机乘客全灭
-            foreach (var part in unit.ResolvedEntity.Parts)
+            // 目标组还在，但指定的目标 part 已被击毁 → 落点不存在，取消（§5：跳帮落点需要目标 part 存活）
+            var targetPart = ResolveTargetPart(unit);
+            if (unit.targetPartId >= 0 && (targetPart == null || targetPart.isDestroyed))
             {
-                if (part.isDestroyed)
-                {
-                    Log.Message($"[Boarding] Unit {unit.id} ({unit.type}) 飞行中被击毁");
-                    KillMembers(unit, "跳帮单位被击毁");
-                    SpaceGame?.DestroyGroup(unit.groupId, "登船拆除（临时实体）");
-                    unit.state = BoardingState.Destroyed;
-                    return;
-                }
+                Log.Message($"[Boarding] Unit {unit.id} 目标 Part{unit.targetPartId} 已损毁/不存在，任务取消");
+                KillMembers(unit, "目标 part 损毁");
+                SpaceGame?.DestroyGroup(unit.groupId, "登船拆除（临时实体）");
+                unit.state = BoardingState.Destroyed;
+                return;
+            }
+
+            // 被击毁：**关键件**损毁 → 单兵死亡 / 穿梭机乘客全灭（B5：非关键件只掉功能）
+            if (!unit.ResolvedEntity.HasIntactKeyPart)
+            {
+                Log.Message($"[Boarding] Unit {unit.id} ({unit.type}) 关键件被击毁");
+                KillMembers(unit, "跳帮单位被击毁");
+                SpaceGame?.DestroyGroup(unit.groupId, "登船拆除（临时实体）");
+                unit.state = BoardingState.Destroyed;
+                return;
             }
 
             // 跳帮专属持续引导：不依赖通用接近引导（节流 + 巡航 Lambert 对近距离极慢，实测卡在 5km 振荡）
@@ -554,7 +562,7 @@ namespace PioneerFramework
             public double distToAim;    // 距移动落点（m）
             public double relVel;       // 相对目标空间站速度（m/s）
             public bool guidanceActive; // 接近引导是否激活
-            public bool partDestroyed;  // part 是否已被击毁
+            public bool partDestroyed;  // 关键件是否已被击毁（B5：非关键件损毁不判击毁）
             public DVector3 unitPos;    // 单位位置（世界，m）
             public DVector3 aimPoint;   // 移动落点（世界，m）
         }
@@ -574,8 +582,7 @@ namespace PioneerFramework
             if (target != null)
                 s.relVel = (GetGroupVelocity(group) - GetGroupVelocity(target)).magnitude;
             s.guidanceActive = group.HasApproachGuidance;
-            foreach (var part in unit.ResolvedEntity.Parts)
-                if (part.isDestroyed) s.partDestroyed = true;
+            s.partDestroyed = !unit.ResolvedEntity.HasIntactKeyPart;
             return s;
         }
 
@@ -608,12 +615,32 @@ namespace PioneerFramework
             foreach (int eid in target.GetEntityIds())
             {
                 var e = SpaceGame?.GetEntityById(eid);
-                if (e != null) return e;
+                if (e == null) continue;
+                // B5：targetPartId 决定落在哪个实体；未指定时沿用“首个实体”。
+                if (unit.targetPartId < 0 || e.GetPartById(unit.targetPartId) != null)
+                    return e;
             }
             return null;
         }
 
-        /// <summary>移动落点（世界，米）= 目标 group 位置 + 实体偏移 + 姿态旋转(落点局部偏移)。</summary>
+        /// <summary>B5：解析跳帮目标的 part（目标件存活判据 + 落点基点）。</summary>
+        private SpacePart? ResolveTargetPart(BoardingUnit unit)
+        {
+            if (unit.targetPartId < 0) return null;
+            var target = ResolveTargetGroup(unit);
+            if (target == null) return null;
+            foreach (int eid in target.GetEntityIds())
+            {
+                var e = SpaceGame?.GetEntityById(eid);
+                var p = e?.GetPartById(unit.targetPartId);
+                if (p != null) return p;
+            }
+            return null;
+        }
+
+        /// <summary>移动落点（世界，米）= 目标 group 位置 + 实体偏移 + 姿态旋转(落点局部偏移)。
+        /// B6：`landingOffsetShip` 来自 `MapCoordMapper.MapCellToShip`，已含挂图 part 的位置/旋转
+        /// ⇒ 这里**不再**叠加 part.positionShip（否则双计；B5 的加 part 版已被取代）。</summary>
         private DVector3 GetAimPointSystem(BoardingUnit unit)
         {
             var target = ResolveTargetGroup(unit);
@@ -621,7 +648,8 @@ namespace PioneerFramework
             DVector3 groupPos = GetGroupPos(target);
             var targetEntity = ResolveTargetEntity(unit);
             if (targetEntity == null) return groupPos + unit.landingOffsetShip;
-            return BoardingMath.AimPointSystem(groupPos, targetEntity.Position, targetEntity.Rotation, unit.landingOffsetShip);
+            return BoardingMath.AimPointSystem(groupPos, targetEntity.Position, targetEntity.RotationUnity,
+                unit.landingOffsetShip);
         }
 
         /// <summary>与 CombatManager.GetGroupPos 同基准：圆轨解析位置 / 非圆轨 CurrentOrbit.positionSystem。</summary>
@@ -662,7 +690,7 @@ namespace PioneerFramework
                 IsCollidable = true,
                 CelestialBodyId = celestialBodyId
             };
-            group.CurrentOrbit = new OrbitState { positionSystem = (SystemVec3)pos, velocitySystem = (SystemVec3)vel, rotation = Quaternion.identity };
+            group.CurrentOrbit = new OrbitState { positionSystem = (SystemVec3)pos, velocitySystem = (SystemVec3)vel, rotation = DQuaternion.identity };
             spaceGame.RegisterGroup(group);
 
             var entity = new SpaceEntity(entityId, factionId)
@@ -710,13 +738,15 @@ namespace PioneerFramework
             };
         }
 
-        /// <summary>穿梭机推进：强推进，独立机动。</summary>
+        /// <summary>穿梭机推进：强推进，独立机动。
+        /// B5 回归读数（2026-10-18）：3 km 跳帮按持续引导要烧 ~300 s，旧 8 t 恰在 511 m 处耗尽
+        /// （差 111 m 进不了 400 m 降落窗）⇒ 提高到 12 t，留出终端修正余量。</summary>
         private static List<PropulsionData> ShuttlePropulsion()
         {
             var prop = DefDatabase<PropellantDef>.GetNamedSilentFail("PF_Propellant_Hydrogen");
             return new List<PropulsionData>
             {
-                new() { propellant = prop, ve = 3500f, massFlow = 40f, mass = 8000f, capacity = 8000f }
+                new() { propellant = prop, ve = 3500f, massFlow = 40f, mass = 12000f, capacity = 12000f }
             };
         }
 
@@ -783,7 +813,18 @@ namespace PioneerFramework
         public static DVector3 AimPointSystem(DVector3 groupPos, DVector3 entityPosition,
             UnityEngine.Quaternion rotation, DVector3 offsetShip)
         {
-            return groupPos + entityPosition + DVector3.Rotate(offsetShip, rotation);
+            return AimPointSystem(groupPos, entityPosition, rotation, DVector3.zero, offsetShip);
+        }
+
+        /// <summary>
+        /// B5：**part 相对**偏移版落点（调用方明确给的是 part 局部坐标）。
+        /// ⚠ B6 起 `MapCoordMapper.MapCellToShip` 已返回**含 part 位置/旋转的船体系绝对偏移** ⇒
+        /// 地图格落点走 4 参重载，**不要**再用本重载叠加 part（会双计）。
+        /// </summary>
+        public static DVector3 AimPointSystem(DVector3 groupPos, DVector3 entityPosition,
+            UnityEngine.Quaternion rotation, DVector3 partPositionShip, DVector3 offsetShip)
+        {
+            return groupPos + entityPosition + DVector3.Rotate(partPositionShip + offsetShip, rotation);
         }
 
         /// <summary>降落窗口判定：距移动落点 &lt; 阈值 且 相对速度 &lt; 阈值（低速接舷）。</summary>

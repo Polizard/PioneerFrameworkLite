@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Verse;
 using RimWorld;
 using PioneerFramework.Combat;
+using PioneerFramework.Components;
 
 namespace PioneerFramework
 {
@@ -221,7 +223,8 @@ namespace PioneerFramework
             var weapons = combatManager != null ? combatManager.GetGroupWeapons(selectedGroupId) : new List<WeaponInstance>();
             int shownWeapons = Mathf.Min(weapons.Count, 4);
 
-            // 收集本编队的舱室部件（用于"进入舱室"）
+            // 收集本编队的“可进入件”：房间模块（可现生成图）**或**已挂图件（B6 多图。
+            // 旧实现只收 RoomComponentData 件；双舱室/多图船的普通舱盒会被漏掉。
             var roomEntities = new List<SpaceEntity>();
             var roomParts = new List<SpacePart>();
             foreach (int eid in g.GetEntityIds())
@@ -230,28 +233,46 @@ namespace PioneerFramework
                 if (e == null) continue;
                 foreach (var part in e.Parts)
                 {
-                    if (part.IsRoomModulePart)
+                    if (part == null || part.isDestroyed) continue;
+                    if (part.IsRoomModulePart || part.linkedMapId >= 0 || e.GetArchivedMapForPart(part.partId) >= 0)
                     {
                         roomEntities.Add(e);
                         roomParts.Add(part);
                     }
                 }
             }
-            float roomSectionH = roomParts.Count > 0 ? 20 + roomParts.Count * 26 + 26 : 0;
+            var tankEntries = new List<(SpaceEntity entity, SpacePart part)>();
+            foreach (int eid in g.GetEntityIds())
+            {
+                var e = spaceGame.GetEntityById(eid);
+                if (e == null) continue;
+                foreach (var part in e.Parts)
+                {
+                    if (part == null || part.isDestroyed) continue;
+                    if (part.GetComponent<PropellantTankComponentData>() != null)
+                        tankEntries.Add((e, part));
+                }
+            }
+            float roomSectionH = roomParts.Count > 0 ? 20 + roomParts.Count * 46 + 26 : 0;
+            float fuelSectionH = tankEntries.Count > 0 ? 20 + tankEntries.Count * 24 + 26 : 0;
 
             var target = targetGroupId >= 0 ? spaceGame.GetGroupById(targetGroupId) : null;
+            var mapMassComp = g.GetLinkedMapComp();   // 2026-10-17：Map 质量读数（有图编队才有）
 
             // 面板高度 = 下面逐行累加的行高之和（旧版是手写常数 195 + …，与实际画出的行对不上：
             // 无目标时底部空出一大块，而"目标被销毁"时又按 80 预留 → 高度与内容长期错位）。
-            const float RowTitle = 22f, RowText = 18f, RowBtn = 30f;
+            const float RowTitle = 22f, RowText = 18f, RowBtn = 30f, RowTiny = 15f;
+            const float InertiaH = 18f + RowTiny * 4f + 4f;   // 标题 + 三行惯量 + 一行限速 + 间距
             float pw = width;
             float ph = 5                                             // 上留白
                      + RowTitle                                      // 标题
+                     + InertiaH                                      // 惯量读数（批 0）
+                     + (mapMassComp != null ? RowTiny + 4f : 0f)     // 地图质量（2026-10-17）
                      + RowText + RowBtn                              // 目标行 + 设为目标
                      + RowBtn                                        // 手动操舵开关
                      + shownWeapons * 22 + (weapons.Count > shownWeapons ? RowText : 0) + 4 + RowBtn
                      + (target != null ? 26 + 30 : 0)                 // 传送 + 调速
-                     + roomSectionH
+                     + roomSectionH + fuelSectionH
                      + RowBtn + 6;                                    // 取消选中
             Rect p = new Rect(colRect.xMax - pw, colRect.yMax - ph, pw, ph);
 
@@ -268,6 +289,54 @@ namespace PioneerFramework
 
             MiniLabel(new Rect(x, y, w, RowTitle), $"编队 {g.GroupId}", PFViewPalette.TextPrimary);
             y += RowTitle;
+
+            // ── 惯量读数（批 0）──
+            // 无Map 编队没有操舵台（`Window_Steering` 的准入要求船图上有完好操舵台）⇒
+            // PFView 的选中面板就是它的读数面；与操舵窗同一出处（`InertiaDebugLines`，禁止第二份格式化）。
+            MiniLabel(new Rect(x, y, w, 16f), "惯量（质心主轴·降序 / 绕原点）", PFViewPalette.TextSecondary);
+            y += 18f;
+            g.InertiaDebugLines(out string il1, out string il2, out string il3);
+            MiniLabel(new Rect(x, y, w, RowTiny), il1, PFViewPalette.TextPrimary);
+            y += RowTiny;
+            if (!string.IsNullOrEmpty(il2))
+            {
+                MiniLabel(new Rect(x, y, w, RowTiny), il2, PFViewPalette.TextPrimary);
+                y += RowTiny;
+            }
+            if (!string.IsNullOrEmpty(il3))
+            {
+                MiniLabel(new Rect(x, y, w, RowTiny), il3, PFViewPalette.TextPrimary);
+                y += RowTiny;
+            }
+            // 批 1：魔法档限速（NoMap 船的唯一读数面；与操舵窗同一公式、不同排版）
+            if (g.maxAngularRate > 0f)
+            {
+                MiniLabel(new Rect(x, y, w, RowTiny),
+                    $"限速 {g.MaxAngularRate * Mathf.Rad2Deg:F1} °/s（def 覆盖）", PFViewPalette.TextSecondary);
+            }
+            else
+            {
+                float slowR = g.MaxAngularRate * Mathf.Rad2Deg;
+                float rollR = g.MaxAngularRateAboutBodyAxis(0, 0, 1) * Mathf.Rad2Deg;
+                float yawR = g.MaxAngularRateAboutBodyAxis(0, 1, 0) * Mathf.Rad2Deg;
+                float pitchR = g.MaxAngularRateAboutBodyAxis(1, 0, 0) * Mathf.Rad2Deg;
+                MiniLabel(new Rect(x, y, w, RowTiny),
+                    $"限速 {slowR:F1} °/s（最慢轴）｜滚 {rollR:F1} · 偏 {yawR:F1} · 俯 {pitchR:F1}",
+                    PFViewPalette.TextSecondary);
+            }
+            y += RowTiny + 4f;
+
+            // ── 地图质量（2026-10-17 用户裁定：建筑生成/拆除、屋顶覆盖/拆除、工质加注/消耗）──
+            if (mapMassComp != null)
+            {
+                var (buildingKg, roofCells, propellantKg, totalKg) = mapMassComp.MapMassSnapshot();
+                MiniLabel(new Rect(x, y, w, RowTiny),
+                    "地图质量 " + totalKg.ToString("0", CultureInfo.InvariantCulture) + " kg（建筑 "
+                    + buildingKg.ToString("0", CultureInfo.InvariantCulture) + " · 屋顶 " + roofCells.ToString(CultureInfo.InvariantCulture)
+                    + " 格 · 工质 " + propellantKg.ToString("0", CultureInfo.InvariantCulture) + "）",
+                    PFViewPalette.TextSecondary);
+                y += RowTiny + 4f;
+            }
 
             if (target != null)
             {
@@ -335,32 +404,112 @@ namespace PioneerFramework
                 y += RowBtn;
             }
 
-            // 舱室操作：进入舱室 / 预生成地图（测试）
+            // 舱室/地图操作：每张图一个入口（B6）；房间模块可现生成图，普通挂图舱盒直接进已有图。
             if (roomParts.Count > 0)
             {
-                Widgets.Label(new Rect(x, y, w, 18), "<b>舱室:</b>");
+                Widgets.Label(new Rect(x, y, w, 18), "<b>舱室/地图:</b>");
                 y += 20;
                 for (int i = 0; i < roomParts.Count; i++)
                 {
                     var rp = roomParts[i];
                     var ent = roomEntities[i];
+                    int archivedMapId = ent.GetArchivedMapForPart(rp.partId);
                     string label = rp.RoomTypeDef != null
                         ? rp.RoomTypeDef.label + " P" + rp.partId
-                        : "舱室 P" + rp.partId;
+                        : (rp.linkedMapId >= 0 ? "地图" + rp.linkedMapId + " P" + rp.partId : "舱室 P" + rp.partId);
                     bool hasMap = rp.linkedMapId >= 0 && SpaceMapGenerator.FindPocketMap(rp.linkedMapId) != null;
                     if (hasMap) label += " (已生成)";
+                    if (rp.isSealed) label += " [封闭]";
+                    if (archivedMapId >= 0) label = "存档地图" + archivedMapId + " P" + rp.partId + " [已封存]";
 
-                    if (Widgets.ButtonText(new Rect(x, y, w, 22), "进入 " + label))
+                    float mainW = hasMap ? w * 0.68f : w;
+                    if (Widgets.ButtonText(new Rect(x, y, mainW, 22),
+                            archivedMapId >= 0 ? "取档 " + label : "进入 " + label))
                     {
-                        var m = SpaceMapGenerator.GenerateRoomMap(ent, rp);
-                        if (m != null) SpaceMapGenerator.EnterPocketMap(m);
+                        if (archivedMapId >= 0)
+                        {
+                            spaceGame.BeginRestoreMap(ent, archivedMapId, rp.partId);
+                        }
+                        else
+                        {
+                            Map? m = rp.linkedMapId >= 0 ? SpaceMapGenerator.FindPocketMap(rp.linkedMapId) : null;
+                            if (m == null && rp.IsRoomModulePart)
+                                m = SpaceMapGenerator.GenerateRoomMap(ent, rp);   // 普通挂图件没有房间模板，不现生成
+                            if (m != null) SpaceMapGenerator.EnterPocketMap(m);
+                        }
                     }
+                    if (hasMap && Widgets.ButtonText(new Rect(x + w * 0.70f, y, w * 0.30f, 22), "封存"))
+                        spaceGame.BeginArchiveMap(ent, rp.linkedMapId);   // B6：逐图封存
                     y += 26;
+
+                    // B6：逐图系统开关（减小多图管理压力）；只对活图显示。
+                    if (hasMap && rp.linkedMapId >= 0)
+                    {
+                        var mc = ent.GetMapComp(rp.linkedMapId);
+                        if (mc != null)
+                        {
+                            bool propOn = mc.PropulsionEnabled;
+                            bool sensorOn = mc.SensorsEnabled;
+                            if (Widgets.ButtonText(new Rect(x, y, w * 0.48f, 20),
+                                    "推进: " + (propOn ? "开" : "关")))
+                                mc.SetSystemEnabled(MapSystemFlags.Propulsion, !propOn);
+                            if (Widgets.ButtonText(new Rect(x + w * 0.52f, y, w * 0.48f, 20),
+                                    "传感: " + (sensorOn ? "开" : "关")))
+                                mc.SetSystemEnabled(MapSystemFlags.Sensors, !sensorOn);
+                            y += 20;
+                        }
+                    }
                 }
                 if (Widgets.ButtonText(new Rect(x, y, w, 22), "预生成所有舱室地图（测试）"))
                 {
                     for (int i = 0; i < roomParts.Count; i++)
-                        SpaceMapGenerator.GenerateRoomMap(roomEntities[i], roomParts[i]);
+                        if (roomParts[i].IsRoomModulePart)
+                            SpaceMapGenerator.GenerateRoomMap(roomEntities[i], roomParts[i]);
+                }
+                y += 26;
+            }
+
+            // B6：燃料罐——供油组/优先级（逐件）；切出只隔离该罐，质量仍计入物理学
+            if (tankEntries.Count > 0)
+            {
+                Widgets.Label(new Rect(x, y, w, 18), "<b>燃料罐:</b>");
+                y += 20;
+                for (int i = 0; i < tankEntries.Count; i++)
+                {
+                    var ent = tankEntries[i].entity;
+                    var rp = tankEntries[i].part;
+                    var tank = rp.GetComponent<PropellantTankComponentData>();
+                    if (tank == null) continue;
+                    string group = rp.fuelGroupId == 0 ? "主" : rp.fuelGroupId.ToString();
+                    Widgets.Label(new Rect(x, y, w * 0.52f, 22),
+                        $"P{rp.partId} 组{group} 优{rp.fuelPriority} {tank.massKg:F0}/{tank.capacityKg:F0}kg");
+                    if (Widgets.ButtonText(new Rect(x + w * 0.54f, y, w * 0.20f, 20),
+                            rp.fuelGroupId == 0 ? "切出" : "接回"))
+                    {
+                        rp.fuelGroupId = rp.fuelGroupId == 0 ? rp.partId : 0;
+                        rp.InvalidateStats();
+                        ent.InvalidateFuelPlans();
+                    }
+                    if (Widgets.ButtonText(new Rect(x + w * 0.76f, y, w * 0.10f, 20), "-"))
+                    {
+                        if (rp.fuelPriority > 0) rp.fuelPriority--;
+                        ent.InvalidateFuelPlans();
+                    }
+                    if (Widgets.ButtonText(new Rect(x + w * 0.88f, y, w * 0.12f, 20), "+"))
+                    {
+                        if (rp.fuelPriority < 9) rp.fuelPriority++;
+                        ent.InvalidateFuelPlans();
+                    }
+                    y += 24;
+                }
+                if (Widgets.ButtonText(new Rect(x, y, w, 22), "全部接回主网"))
+                {
+                    for (int i = 0; i < tankEntries.Count; i++)
+                    {
+                        tankEntries[i].part.fuelGroupId = 0;
+                        tankEntries[i].part.InvalidateStats();
+                        tankEntries[i].entity.InvalidateFuelPlans();
+                    }
                 }
                 y += 26;
             }
@@ -541,7 +690,7 @@ namespace PioneerFramework
                 IsCollidable = true,
                 CelestialBodyId = bodyId
             };
-            group.CurrentOrbit = new OrbitState { positionSystem = (SystemVec3)pos, velocitySystem = (SystemVec3)vel, rotation = Quaternion.identity };
+            group.CurrentOrbit = new OrbitState { positionSystem = (SystemVec3)pos, velocitySystem = (SystemVec3)vel, rotation = DQuaternion.identity };
             spaceGame.RegisterGroup(group);
             group.EnterCircularOrbit(Find.TickManager.TicksGame, bodyId);
 

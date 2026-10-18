@@ -35,7 +35,7 @@ namespace PioneerFramework.GroundAssembly
         public float fuelAmount;
 
         /// <summary>Part 配置。</summary>
-        public List<RocketPartSpec> parts = new();
+        public List<DesignPartSpec> parts = new();
 
         /// <summary>载荷配置。</summary>
         public List<RocketPayloadSpec> payloads = new();
@@ -54,7 +54,7 @@ namespace PioneerFramework.GroundAssembly
             Scribe_Collections.Look(ref parts, "parts", LookMode.Deep);
             Scribe_Collections.Look(ref payloads, "payloads", LookMode.Deep);
             Scribe_Collections.Look(ref dockingPorts, "dockingPorts", LookMode.Value);
-            if (parts == null) parts = new List<RocketPartSpec>();
+            if (parts == null) parts = new List<DesignPartSpec>();
             if (payloads == null) payloads = new List<RocketPayloadSpec>();
             if (dockingPorts == null) dockingPorts = new List<string>();
         }

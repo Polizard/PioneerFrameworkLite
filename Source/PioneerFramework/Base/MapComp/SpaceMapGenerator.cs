@@ -114,6 +114,8 @@ namespace PioneerFramework
                 mapComp = new SpaceMapComp(map);
                 map.components.Add(mapComp);
             }
+            // 2026-10-17：地图生成（含舱室墙/屋顶）已完成 ⇒ 先建结构质量缓存；绑定实体时再写回舱盒 part。
+            mapComp.RecomputeStructureMass();
 
             // 5. 注册到 SpaceGameComp，便于后续查找
             var spaceGame = Current.Game.GetComponent<SpaceGameComp>();
@@ -329,7 +331,11 @@ namespace PioneerFramework
         /// </summary>
         public static Map FindPocketMap(int mapId)
         {
-            return Find.Maps.FirstOrDefault(m => m.uniqueID == mapId);
+            // headless/纯测试没有 World：Find.Maps 为 null（B6 单测触发过 NRE）
+            if (Current.Game == null) return null!;
+            var maps = Find.Maps;
+            if (maps == null) return null!;
+            return maps.FirstOrDefault(m => m.uniqueID == mapId);
         }
 
         /// <summary>
@@ -365,11 +371,10 @@ namespace PioneerFramework
                 // 空间站是地图载体：无 Part 血条，存亡由 Map 内建筑决定（射弹命中不扣 Part HP）
                 isIndestructible = true,
             };
-            // 站体质量（2026-09-06 补：此前无质量组件 → 1kg 兜底 → 任何爆炸冲量（弹头 AoE / 船-船）
-            // 把空间站以 ~1.6e4 m/s 打飞离轨——弹头命中后目标成逃逸体、后续导弹全部追丢。
-            // 口径：part 体积 mapW×50×mapH m³ × 90kg/m³（低密度站壳，内部空旷）
-            // ≈ 60×60 站 1.6e4 t → 弹头冲量对站速影响 <1m/s（站保持轨道，受击不漂移）。
-            part.AddComponent(new HullMassComponent { mass = mapWidth * 50.0f * mapHeight * 90.0f });
+            // 站体质量（2026-10-17 用户裁定）：舱盒 part 的质量 = **Map 内容质量**（建筑 + 屋顶），
+            // 由 `SpaceMapComp` 在建筑生成/拆除、屋顶覆盖/拆除时维护，`LinkEntityToMap` 时写入。
+            // 旧的 `mapW×50×mapH×90` 站体公式已退役（空图的 part 质量由 part 层兜底 1 kg）。
+            part.AddComponent(new HullMassComponent { mass = 0f });
             // [V7] 站载传感器阵列：空间站是固定大平台 ⇒ 灵敏度最高的一档（2000 km）+ 一点抗性
             part.AddComponent(new SensorArrayComponentData
             {
@@ -381,29 +386,62 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 将空间站实体与地图双向关联。map 可为 null（生成失败时调用方直接跳过；实现本就早退）。
+        /// 将实体与地图双向关联（单图兼容入口）。map 可为 null（生成失败时调用方直接跳过）。
+        /// **B6**：优先复用已挂本图的 part；否则取第一个**未挂图且未毁**的 part
+        /// （单图站 = 首件，逐位同旧行为；多图船 = 下一个空位）。
         /// </summary>
         public static void LinkEntityToMap(SpaceEntity entity, Map? map)
         {
             if (entity == null || map == null) return;
-            entity.MapId = map.uniqueID;
-            entity.HasMap = true;
 
-            // 双向映射：Map 侧
-            var mapComp = map.GetComponent<SpaceMapComp>();
-            if (mapComp != null)
+            var existing = entity.GetPartForMap(map.uniqueID);
+            if (existing != null)
             {
-                mapComp.ownerEntityId = entity.EntityId;
-                // 取第一个 Part 作为地图对应的部件（空间站只有一个 Part）
-                foreach (var part in entity.Parts)
+                LinkEntityToMap(entity, map, existing.partId);
+                return;
+            }
+
+            var parts = entity.Parts;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var part = parts[i];
+                if (part != null && !part.isDestroyed && part.linkedMapId < 0)
                 {
-                    if (!part.isDestroyed)
-                    {
-                        part.linkedMapId = map.uniqueID;
-                        break;
-                    }
+                    LinkEntityToMap(entity, map, part.partId);
+                    return;
                 }
             }
+
+            Log.Warning($"[MapLink] Entity {entity.EntityId} 没有可挂图的 part（全毁/全已挂图）⇒ 地图 {map.uniqueID} 未绑定");
+        }
+
+        /// <summary>
+        /// **B6：显式挂 part**——一 part 一图；`entity.MapId` 只记主图（第一个挂图件）。
+        /// </summary>
+        public static void LinkEntityToMap(SpaceEntity entity, Map? map, int partId)
+        {
+            if (entity == null || map == null) return;
+
+            var part = entity.GetPartById(partId);
+            if (part == null)
+            {
+                Log.Warning($"[MapLink] Entity {entity.EntityId} 不存在 Part{partId} ⇒ 地图 {map.uniqueID} 未绑定");
+                return;
+            }
+            if (part.linkedMapId >= 0 && part.linkedMapId != map.uniqueID)
+            {
+                Log.Warning($"[MapLink] Part{partId} 已挂地图 {part.linkedMapId}（一 part 一图）⇒ 地图 {map.uniqueID} 未绑定");
+                return;
+            }
+
+            part.linkedMapId = map.uniqueID;
+            if (entity.MapId < 0)
+                entity.MapId = map.uniqueID;   // 主图 = 第一个挂图 part；后续图不覆盖
+            entity.HasMap = true;
+
+            // 双向映射：Map 侧（ownerEntityId + ownerPartId）
+            var mapComp = map.GetComponent<SpaceMapComp>();
+            mapComp?.BindOwner(entity, part.partId);   // 内含 ownerEntityId 写入 + 结构质量写回 + 工质分布
         }
 
         /// <summary>

@@ -1837,11 +1837,13 @@ namespace PioneerFramework
         // 旧律已作废（用户 2026-09-22 裁定），而阶梯**没有"腿长"这个旋钮**（价格由它自己出）。
         // 要回看：git 历史 / `_backups/20260928-2315-pre-legacy-rendezvous-removal-459f7e2b1fc681fa/`。
 
-        private static void DrawPanelMap(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)        {
-            var mapEntity = GetMapEntityForGroup(group);
+        private static void DrawPanelMap(SpaceEntityGroup group, Rect panel, ref float y, SpaceGameComp spaceGame)
+        {
+            var entries = new List<MapEntry>(4);
+            var mapEntity = GetMapEntityForGroup(group, entries);
             if (mapEntity == null) return;
 
-            DrawSectionTitle(panel, ref y, "空间站地图", CyanColor);
+            DrawSectionTitle(panel, ref y, entries.Count > 1 ? $"空间站地图（{entries.Count} 入口）" : "空间站地图", CyanColor);
             GUI.color = GrayButton; // 普通按钮统一灰色
 
             float btnW = (panel.width - 24f - 10f) * 0.5f;
@@ -1849,9 +1851,16 @@ namespace PioneerFramework
             float leftX = panel.x + 12f;
             float rightX = panel.x + 12f + btnW + 10f;
 
-            // 进入空间站
-            if (Widgets.ButtonText(new Rect(leftX, y, btnW, rowH), "进入空间站"))
-                SpaceMapGenerator.EnterStation(mapEntity);
+            // 进入空间站：单活图沿用旧行为；多图/仅封存图弹出入口列表（B8）。
+            bool useEntryMenu = entries.Count > 1 || (entries.Count == 1 && entries[0].archived);
+            string enterLabel = useEntryMenu ? "选择地图入口" : "进入空间站";
+            if (Widgets.ButtonText(new Rect(leftX, y, btnW, rowH), enterLabel))
+            {
+                if (useEntryMenu)
+                    OpenMapEntryMenu(entries, spaceGame);
+                else
+                    SpaceMapGenerator.EnterStation(mapEntity);
+            }
 
             // 取档/封存中 → 进度条；否则 取出/封存 按钮
             if (spaceGame.ActiveRestoreOperation != null && spaceGame.ActiveRestoreOperation.TargetEntity == mapEntity)
@@ -1892,13 +1901,106 @@ namespace PioneerFramework
             y += rowH + 8f;
         }
 
+        /// <summary>B8：地图入口（一张图一行；归档图带 archived=true）。</summary>
+        private readonly struct MapEntry
+        {
+            public readonly SpaceEntity entity;
+            public readonly int mapId;
+            public readonly int partId;
+            public readonly bool archived;
+
+            public MapEntry(SpaceEntity entity, int mapId, int partId, bool archived)
+            {
+                this.entity = entity;
+                this.mapId = mapId;
+                this.partId = partId;
+                this.archived = archived;
+            }
+        }
+
         /// <summary>
-        /// 获取 group 中关联地图的 SpaceEntity（用于地图操作）。
+        /// B8：收集 group 的全部地图入口（主图 + 每 part 的图 + 已封存图）。
+        /// 多图船不再只暴露第一张图；UI 用入口列表，主图仍由 <see cref="GetMapEntityForGroup"/> 给。
         /// </summary>
-        private static SpaceEntity? GetMapEntityForGroup(SpaceEntityGroup group)
+        private static void CollectMapEntries(SpaceEntityGroup group, SpaceGameComp spaceGame, List<MapEntry> entries)
+        {
+            foreach (int entityId in group.GetEntityIds())
+            {
+                var entity = spaceGame.GetEntityById(entityId);
+                if (entity == null) continue;
+
+                bool anyPartEntry = false;
+                foreach (var part in entity.Parts)
+                {
+                    if (part == null) continue;
+                    if (!part.isDestroyed && part.linkedMapId >= 0 &&
+                        SpaceMapGenerator.FindPocketMap(part.linkedMapId) != null)
+                    {
+                        AddMapEntry(entries, entity, part.linkedMapId, part.partId, archived: false);
+                        anyPartEntry = true;
+                    }
+
+                    int archivedMapId = entity.GetArchivedMapForPart(part.partId);
+                    if (archivedMapId >= 0)
+                    {
+                        AddMapEntry(entries, entity, archivedMapId, part.partId, archived: true);
+                        anyPartEntry = true;
+                    }
+                }
+
+                // 旧式单图实体：图没挂到 part 上时仍给一个入口（partId=0 表示实体级主图）。
+                if (!anyPartEntry && entity.HasMap && entity.MapId >= 0)
+                    AddMapEntry(entries, entity, entity.MapId, entity.GetPrimaryMapPart()?.partId ?? 0, archived: false);
+                if (!anyPartEntry && entity.IsMapArchived && entity.ArchivedMapId >= 0)
+                    AddMapEntry(entries, entity, entity.ArchivedMapId, entity.ArchivedPartId, archived: true);
+            }
+        }
+
+        private static void AddMapEntry(List<MapEntry> entries, SpaceEntity entity, int mapId, int partId, bool archived)
+        {
+            for (int i = 0; i < entries.Count; i++)
+                if (entries[i].mapId == mapId) return;   // 同一张图只列一次
+            entries.Add(new MapEntry(entity, mapId, partId, archived));
+        }
+
+        /// <summary>B8：多图入口菜单（进入活图 / 取档已封存图）。</summary>
+        private static void OpenMapEntryMenu(List<MapEntry> entries, SpaceGameComp spaceGame)
+        {
+            var options = new List<FloatMenuOption>(entries.Count);
+            for (int i = 0; i < entries.Count; i++)
+            {
+                MapEntry entry = entries[i];   // 捕获副本（struct）
+                string label = (entry.archived ? "取档 地图" : "进入 地图") + entry.mapId;
+                if (entry.partId > 0) label += " P" + entry.partId;
+                if (entry.archived) label += " [已封存]";
+                options.Add(new FloatMenuOption(label, () =>
+                {
+                    if (entry.archived)
+                    {
+                        spaceGame.BeginRestoreMap(entry.entity, entry.mapId, entry.partId);
+                        return;
+                    }
+                    Map? map = SpaceMapGenerator.FindPocketMap(entry.mapId);
+                    if (map != null) SpaceMapGenerator.EnterPocketMap(map);
+                }));
+            }
+            Find.WindowStack.Add(new FloatMenu(options));
+        }
+
+        /// <summary>
+        /// 获取 group 中关联地图的 SpaceEntity（用于地图操作；返回主图载体）。
+        /// B8：可选填充全部入口列表（见 <see cref="CollectMapEntries"/>）。
+        /// </summary>
+        private static SpaceEntity? GetMapEntityForGroup(SpaceEntityGroup group, List<MapEntry>? entries = null)
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return null;
+
+            if (entries != null)
+            {
+                entries.Clear();
+                CollectMapEntries(group, spaceGame, entries);
+            }
 
             foreach (int entityId in group.GetEntityIds())
             {

@@ -477,7 +477,7 @@ namespace PioneerFramework
             foreach (int eid in group.GetEntityIds())
             {
                 var e = spaceGame.GetEntityById(eid);
-                if (e != null && e.MapId >= 0)
+                if (e != null && e.HasMap)   // B6：至少一张图（不再只看主图 MapId）
                     return true;
             }
             return false;
@@ -523,7 +523,7 @@ namespace PioneerFramework
             // 旧实现用**速度方向**做 LookRotation（船头永远朝轨道切线）：那是轨道运动的切线，不是船的
             // 朝向 —— 船转到任何姿态画面都一样，玩家看到的朝向与物理（主推对准 / 碰撞盒 / 命中几何，
             // 三者都消费同一个 rotation）毫无关系。改用真姿态后，船怎么转、画面就怎么转。
-            Quaternion gRot = viewFrameRot * group.CurrentOrbit.rotation;   // 姿态同过参考系（固连档下"相对地面"的姿态）
+            Quaternion gRot = viewFrameRot * group.CurrentOrbit.rotation.ToQuaternion();   // 姿态同过参考系（固连档下"相对地面"的姿态）
             float scale = debugScaleParts ? 200f : 1f;
             bool drewRelief = false;
 
@@ -537,17 +537,35 @@ namespace PioneerFramework
 
                 if (!SphereInFrustum(eVp, 10f * scale)) continue;
 
-                // 有 Map 的实体（空间站/舱内图火箭）：画"地图挤出来的浮雕"（2026-10-02）；
-                // 无图 / 图已封存 / 房间数据未追平 / 全图无建造痕迹 ⇒ 落回下面的 part 盒体。
-                if (entity.MapId >= 0 && TryDrawMapRelief(entity, eVp, gRot, scale))
+                // 有 Map 的实体（空间站/舱内图火箭）：逐**挂图 part** 画地图浮雕（2026-10-02 / B6）；
+                // 封闭舱（isSealed）不画浮雕 ⇒ 回退该件盒体。无图/图已封存/无建造痕迹 ⇒ 同样回退盒体。
+                HashSet<int>? reliefPartIds = null;
+                if (entity.Parts.Count > 0)
                 {
-                    drewRelief = true;
-                    continue;
+                    var parts = entity.Parts;
+                    for (int i = 0; i < parts.Count; i++)
+                    {
+                        var part = parts[i];
+                        if (part == null || part.isDestroyed || part.isSealed || part.linkedMapId < 0)
+                            continue;
+
+                        Vector3 partOffset = gRot * new Vector3(
+                            (float)part.positionShip.x, (float)part.positionShip.y, (float)part.positionShip.z)
+                            * (MetersToView * scale);
+                        Quaternion partRot = part.rotationShip == DQuaternion.identity
+                            ? gRot
+                            : gRot * part.rotationShip.ToQuaternion();
+                        if (TryDrawMapRelief(entity, part.linkedMapId, part, eVp + partOffset, partRot, scale))
+                        {
+                            drewRelief = true;
+                            (reliefPartIds ??= new HashSet<int>()).Add(part.partId);
+                        }
+                    }
                 }
 
-                // 单 part 化：无设计数据分支，统一按运行时 Parts 绘制盒体（§5.4 C4）
-                if (entity.Parts.Count > 0)
-                    DrawRuntimeParts(entity, eVp, gRot, scale);
+                // 单 part 化：无设计数据分支，统一按运行时 Parts 绘制盒体（§5.4 C4）；
+                // 只跳过“已经用浮雕画过”的那几件挂图 part（封闭/无浮雕的件仍画盒体）。
+                DrawRuntimeParts(entity, eVp, gRot, scale, reliefPartIds);
             }
 
             // 有 Map 的编队不画黄棒（用户 2026-10-02："把那个黄色的指示取消掉"）：船体本身的形体
@@ -595,10 +613,11 @@ namespace PioneerFramework
         /// （材质 = Toon 优先 / 网格 / 层 / 米→视图换算 / 共享 matBlock）。矩阵与画法的口径全在绘制段那边
         /// —— 本函数不表达任何"怎么画"，只表达"PFView 用哪套资源画"。
         /// </summary>
-        private static void DrawRuntimeParts(SpaceEntity entity, Vector3 eVp, Quaternion gRot, float scale = 1f)
+        private static void DrawRuntimeParts(SpaceEntity entity, Vector3 eVp, Quaternion gRot, float scale = 1f,
+            HashSet<int>? reliefPartIds = null)
         {
             ShipModelRenderer.DrawParts(entity, eVp, gRot, scale, cubeMesh, ToonMat ?? renderMat, matBlock,
-                ToonMat != null, MetersToView, SceneLayer);
+                ToonMat != null, MetersToView, SceneLayer, reliefPartIds);
         }
 
         private void DrawProjectiles(DVector3 origin)

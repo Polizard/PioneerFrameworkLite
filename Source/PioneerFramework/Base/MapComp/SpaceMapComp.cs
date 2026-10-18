@@ -322,7 +322,69 @@ namespace PioneerFramework
             sumMfRcs = Mathf.Max(0f, sumMfRcs - mf);
         }
 
+        /// <summary>B6：把另一条网络并入本网（多图聚合；Σ 分量/包线/附带进气一起合并）。</summary>
+        internal void MergeFrom(PropellantNetwork other)
+        {
+            if (other == null) return;
+            sumVeMf += other.sumVeMf;
+            sumMf += other.sumMf;
+            for (int i = 0; i < 6; i++)
+            {
+                sumVeMfByAxis[i] += other.sumVeMfByAxis[i];
+                sumMfByAxis[i] += other.sumMfByAxis[i];
+            }
+            sumVeMfRcs += other.sumVeMfRcs;
+            sumMfRcs += other.sumMfRcs;
+
+            if (other.envelopeTerms != null)
+            {
+                if (envelopeTerms == null) envelopeTerms = new System.Collections.Generic.List<EnvelopeTerm>(other.envelopeTerms.Count);
+                for (int i = 0; i < other.envelopeTerms.Count; i++)
+                {
+                    var o = other.envelopeTerms[i];
+                    bool merged = false;
+                    for (int j = 0; j < envelopeTerms.Count; j++)
+                    {
+                        var t = envelopeTerms[j];
+                        if (t.densityExponent != o.densityExponent || !SameCurve(t.machCurve, o.machCurve)) continue;
+                        t.veMf += o.veMf;
+                        merged = true;
+                        break;
+                    }
+                    if (!merged)
+                        envelopeTerms.Add(new EnvelopeTerm { veMf = o.veMf, densityExponent = o.densityExponent, machCurve = o.machCurve });
+                }
+            }
+            if (other.gasDraws != null)
+            {
+                if (gasDraws == null) gasDraws = new System.Collections.Generic.List<GasDraw>(other.gasDraws.Count);
+                for (int i = 0; i < other.gasDraws.Count; i++)
+                {
+                    var o = other.gasDraws[i];
+                    bool merged = false;
+                    for (int j = 0; j < gasDraws.Count; j++)
+                    {
+                        if (gasDraws[j].propellant != o.propellant) continue;
+                        gasDraws[j].flowKgPerSec += o.flowKgPerSec;
+                        merged = true;
+                        break;
+                    }
+                    if (!merged)
+                        gasDraws.Add(new GasDraw { propellant = o.propellant, flowKgPerSec = o.flowKgPerSec });
+                }
+            }
+        }
+
         public bool Empty => sumMf <= 0f;
+    }
+
+    /// <summary>B6：每张图的系统开关位。切掉的系统不参与聚合/投影（工质仍作为质量计入）。</summary>
+    [System.Flags]
+    public enum MapSystemFlags
+    {
+        None = 0,
+        Propulsion = 1,
+        Sensors = 2,
     }
 
     // partial：PFView 地图浮雕的逐格分类缓存（含置脏入口）在 `SpaceMapComp.Relief.cs`；
@@ -335,7 +397,28 @@ namespace PioneerFramework
         /// <summary>Map → Entity：此地图所属的 SpaceEntity ID。</summary>
         public int ownerEntityId = -1;
 
-        /// <summary>Map → Part：此地图对应的 SpacePart.partId（在 ownerEntity 的 Parts 列表中）。</summary>
+        /// <summary>Map → Part：此地图对应的 SpacePart.partId（在 ownerEntity 的 Parts 列表中）。-1 = 未绑定（旧档/单图兜底）。</summary>
+        public int ownerPartId = -1;
+
+        /// <summary>B6：被切断的系统位（推进/传感器；工质仍作为质量计入）。运行时改推进位会推进 `NetworksVersion`。</summary>
+        public MapSystemFlags disabledSystems;
+        /// <summary>B6：本图未覆写部件的默认供油组/优先级（0/0 = 主网、无优先级；逐件可覆写）。</summary>
+        public int defaultFuelGroupId;
+        public byte defaultFuelPriority;
+        /// <summary>网络聚合版本：引擎注册/注销、推进开关变化时自增（多图聚合缓存指纹）。</summary>
+        public int NetworksVersion { get; private set; }
+
+        public bool IsSystemEnabled(MapSystemFlags system) => (disabledSystems & system) == 0;
+        public bool PropulsionEnabled => IsSystemEnabled(MapSystemFlags.Propulsion);
+        public bool SensorsEnabled => IsSystemEnabled(MapSystemFlags.Sensors);
+
+        public void SetSystemEnabled(MapSystemFlags system, bool enabled)
+        {
+            if (enabled) disabledSystems &= ~system;
+            else disabledSystems |= system;
+            if ((system & MapSystemFlags.Propulsion) != 0)
+                NetworksVersion++;   // 聚合缓存失效
+        }
 
         // ── PFL 火箭虚拟推进持久化（LA-18）──
         // RocketDesignSpec 与虚拟推进参数不依赖地图建筑，因此需要显式落盘；
@@ -531,13 +614,38 @@ namespace PioneerFramework
         public void AddPropellantMass(PropellantDef def, double delta)
         {
             if (def == null || delta == 0.0) return;
+            AddPropellantMassRaw(def, delta);
+            // B4a：池变化后把「全部图 + 自带推进」按工质汇总写回 tank 镜像
+            SyncOwnerTankFuel(def.defName, GetPropellantMass(def));
+        }
+
+        /// <summary>只改池向量/总量，不碰 tank 镜像（FuelPlan 已直接改罐时用）。</summary>
+        private void AddPropellantMassRaw(PropellantDef def, double delta)
+        {
+            if (def == null || delta == 0.0) return;
             double next = GetPropellantMass(def) + delta;
             if (next <= 0.0001)
                 propellantMass.Remove(def);
             else
                 propellantMass[def] = next;
-            // 增量维护总量（delta 即本次净变化，键新增/移除均适用）
             totalPropellantMass = System.Math.Max(0.0, totalPropellantMass + delta);
+        }
+
+        /// <summary>B4a：把当前全部工质池同步到 owner 的 tank part 分布镜像。</summary>
+        /// <summary>
+        /// **B6 燃料作用域**：所有图的工质池都作数 —— 统一步骤由实体把「全部图 + 自带推进」
+        /// 按工质求和后写回 tank 镜像（`SpaceEntity.SyncCombinedTankFuel`）。
+        /// 单图/多图同一口径；任何一张图的池变化都会重算总和。
+        /// </summary>
+        public void SyncOwnerTankFuelFromPools()
+        {
+            ResolveOwner()?.SyncCombinedTankFuel();
+        }
+
+        private void SyncOwnerTankFuel(string defName, double totalMass)
+        {
+            // defName/totalMass 参数保留给旧调用点；实际口径是“全图按工质求和”。
+            ResolveOwner()?.SyncCombinedTankFuel();
         }
 
         /// <summary>
@@ -548,10 +656,47 @@ namespace PioneerFramework
         {
             if (def == null || kg <= 0.0) return 0.0;
             double have = GetPropellantMass(def);
+            if (have <= 0.0) return 0.0;
+
+            // B6：有 owner + tank 计划 ⇒ 按计划直接改罐（优先级/切网生效），池只 raw 扣减；
+            // 纯建筑站（无 tank part）⇒ 回退旧池路径。
+            var owner = ResolveOwner();
+            if (owner != null)
+            {
+                double canUse = System.Math.Min(kg, have);
+                if (owner.TryConsumeViaPlan(def, defaultFuelGroupId, canUse, out double planned, out bool handled))
+                {
+                    if (planned > 0.0)
+                        AddPropellantMassRaw(def, -planned);
+                    return planned;
+                }
+            }
+
             double actual = System.Math.Min(kg, have);
             if (actual <= 0.0) return 0.0;
             AddPropellantMass(def, -actual);
             return actual;
+        }
+
+        /// <summary>B6：按供油计划加注（高层先加满）；无 tank 计划的纯建筑站回退旧池。</summary>
+        public double TryFillPropellant(PropellantDef def, double kg)
+        {
+            if (def == null || kg <= 0.0) return 0.0;
+            double room = GetPropellantRoom(def);
+            if (!(room > 0.0)) return 0.0;
+            double canUse = System.Math.Min(kg, room);
+
+            var owner = ResolveOwner();
+            if (owner != null
+                && owner.TryFillViaPlan(def, defaultFuelGroupId, canUse, out double planned, out bool handled))
+            {
+                if (planned > 0.0)
+                    AddPropellantMassRaw(def, planned);
+                return planned;
+            }
+
+            AddPropellantMass(def, canUse);
+            return canUse;
         }
 
         /// <summary>全部工质 → 质量 的快照（调试 / dV 计算消费方）。</summary>
@@ -774,7 +919,7 @@ namespace PioneerFramework
         /// 调用方（burn/手动平移）传入 group 当前姿态 rotation 做局部→世界换算。
         /// enabled 可为 null（= 全启用；实现本就 `enabled != null` 守卫）。
         /// </summary>
-        public void GetThrustAlong(DVector3 dirSystem, Quaternion rotation, float coneCos,
+        public void GetThrustAlong(DVector3 dirSystem, DQuaternion rotation, float coneCos,
             HashSet<PropellantDef>? enabled, List<ThrustSlice> slices, out float totalThrust, out float totalMassFlow)
         {
             totalThrust = 0f;
@@ -817,7 +962,7 @@ namespace PioneerFramework
         /// 都受「已武装（动作组）」过滤。返回按工质网络的切片（工质消耗按切片流率分配）。
         /// enabled 可为 null（= 全启用；实现本就 `enabled != null` 守卫）。
         /// </summary>
-        public void GetManualThrustAlong(DVector3 dirSystem, Quaternion rotation, float coneCos,
+        public void GetManualThrustAlong(DVector3 dirSystem, DQuaternion rotation, float coneCos,
             HashSet<PropellantDef>? enabled, int armedGroupsMask, List<ThrustSlice> slices,
             out float totalThrust, out float totalMassFlow)
         {
@@ -871,6 +1016,7 @@ namespace PioneerFramework
         private void RebuildNetworkList()
         {
             networkList = new List<PropellantNetwork>(networks.Values);
+            NetworksVersion++;
         }
 
         // ── 推进器状态（burn 表现层）──
@@ -945,6 +1091,7 @@ namespace PioneerFramework
             if (hasVirtualPropulsion && virtualPropulsionRegistered)
             {
                 rocketSpec = spec;
+                SyncOwnerTankFuelFromPools();
                 return;
             }
 
@@ -957,6 +1104,38 @@ namespace PioneerFramework
             virtualFuelCapacity = capacity;
             virtualPropulsionRegistered = false;
             RegisterVirtualPropulsion();
+        }
+
+        /// <summary>
+        /// B5：储罐 part 损毁 ⇒ 虚拟推进容量同步出局（否则读档时 `RegisterVirtualPropulsion`
+        /// 会把旧总容量加回来，损毁白做）。
+        /// </summary>
+        public void RemoveVirtualTankCapacity(double lostCapacity)
+        {
+            if (!hasVirtualPropulsion || lostCapacity <= 0.0) return;
+            virtualFuelCapacity = Mathf.Max(0f, virtualFuelCapacity - (float)lostCapacity);
+        }
+
+        /// <summary>
+        /// B5：引擎 part 损毁 ⇒ 从虚拟推进网络扣掉该台的流率/推力，并同步重建读档参数。
+        /// 虚拟网络是"多台引擎按 ve·ṁ 汇总成一台"的聚合，线性扣减对混装型号同样成立。
+        /// 只对**目录虚拟推进**生效（舱内建筑推进器走 `UnregisterThruster`，不在此重复扣）。
+        /// </summary>
+        public bool RemoveVirtualEngineFlow(PropellantDef def, float ve, float massFlow)
+        {
+            if (!hasVirtualPropulsion || def == null || massFlow <= 0f) return false;
+            if (!string.Equals(virtualPropellantDefName, def.defName, System.StringComparison.Ordinal))
+                return false;
+            float oldFlow = virtualMassFlow;
+            if (oldFlow <= 0f) return false;
+
+            float take = Mathf.Min(massFlow, oldFlow);
+            float newFlow = oldFlow - take;
+            float newThrust = Mathf.Max(0f, virtualVe * oldFlow - ve * take);
+            virtualVe = newFlow > 1e-6f ? newThrust / newFlow : 0f;
+            virtualMassFlow = newFlow;
+            UnregisterEngine(def, ve, take, ThrustAxis.Back, isRcs: true);
+            return true;
         }
 
         /// <summary>把保存的虚拟推进参数重新注册到本 MapComponent（新建/读档共用）。</summary>
@@ -987,6 +1166,20 @@ namespace PioneerFramework
 
             if (hasVirtualPropulsion)
                 RegisterVirtualPropulsion();
+
+            // 2026-10-17：读档/新图生成后，从地图实际状态重建结构质量（建筑+屋顶）并写回舱盒 part。
+            ownerEntity = null;   // 读档后旧引用失效，按 ownerEntityId 重解析
+            if (map.IsPocketMap)
+            {
+                if (ownerPartId < 0)
+                {
+                    // B6：旧绑定/旧档没有 ownerPartId ⇒ 按 Part→Map 指针反查一次
+                    var p = ResolveOwner()?.GetPartForMap(map.uniqueID);
+                    if (p != null) ownerPartId = p.partId;
+                }
+                RecomputeStructureMass();
+                SyncOwnerTankFuelFromPools();   // B4b：读档后把工质池分布回 tank part
+            }
         }
 
         public override void ExposeData()
@@ -1004,6 +1197,12 @@ namespace PioneerFramework
 
             Scribe_Values.Look(ref stationName, "stationName", "Unnamed Station");
             Scribe_Values.Look(ref ownerEntityId, "ownerEntityId", -1);
+            Scribe_Values.Look(ref ownerPartId, "ownerPartId", -1);
+            int disabled = (int)disabledSystems;
+            Scribe_Values.Look(ref disabled, "disabledSystems", 0);
+            if (Scribe.mode == LoadSaveMode.LoadingVars) disabledSystems = (MapSystemFlags)disabled;
+            Scribe_Values.Look(ref defaultFuelGroupId, "defaultFuelGroupId", 0);
+            Scribe_Values.Look(ref defaultFuelPriority, "defaultFuelPriority", (byte)0);
             Scribe_Deep.Look(ref rocketSpec, "rocketSpec");
             Scribe_Values.Look(ref hasVirtualPropulsion, "hasVirtualPropulsion", false);
             Scribe_Values.Look(ref virtualPropellantDefName, "virtualPropellantDefName");
@@ -1013,7 +1212,10 @@ namespace PioneerFramework
             Scribe_Values.Look(ref virtualFuelCapacity, "virtualFuelCapacity", 0f);
 
             if (Scribe.mode == LoadSaveMode.LoadingVars)
+            {
                 virtualPropulsionRegistered = false;
+                ownerEntity = null;
+            }
 
             // 操舵与推进朝向（六方向/主推进/动作组）
             Scribe_Values.Look(ref mainThrustAxisIndex, "mainThrustAxisIndex", -1);

@@ -15,6 +15,8 @@ namespace PioneerFramework.Components
 
         // ── 低频事件回调（不进 tick）──
         public virtual void OnAttached() { }
+        /// <summary>组件随 part 被移除/替换时调用（对称于 <see cref="OnAttached"/>；不参与 tick）。</summary>
+        public virtual void OnDetached() { }
         public virtual void OnDamaged(float damage) { }
         public virtual void OnDestroyed() { }
         public virtual void PostLoad() { }

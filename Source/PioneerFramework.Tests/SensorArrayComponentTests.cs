@@ -32,6 +32,13 @@ namespace PioneerFramework.Tests
             return part;
         }
 
+        private static SpacePart PartWith(int partId, params PartComponentData[] comps)
+        {
+            var part = PartWith(comps);
+            part.partId = partId;
+            return part;
+        }
+
         private static SpaceEntity EntityWith(SpacePart part)
         {
             var e = new SpaceEntity(1, 0) { HasMap = false };
@@ -94,13 +101,57 @@ namespace PioneerFramework.Tests
         [Fact]
         public void Clone_RoundTripsThroughBinaryChannel()
         {
-            // `PartComponentData.Clone` 默认走 Write/Read 二进制通道 ⇒ 三个字段都要在里面
-            var src = new SensorArrayComponentData { passiveRangeMeters = 777_000f, ecmResist = 1.5f, eccmResist = 2.5f };
+            // `PartComponentData.Clone` 默认走 Write/Read 二进制通道 ⇒ **六个字段**都要在里面。
+            // ★ 2026-10-17 批 -1：后三场曾漏盘（与 ExposeData 同批补上）；本用例是修复 #5 的判据。
+            var src = new SensorArrayComponentData
+            {
+                passiveRangeMeters = 777_000f, ecmResist = 1.5f, eccmResist = 2.5f,
+                memorySeconds = 45f, activeGainBonus = 0.75f, activeRadiation = 3.5f
+            };
             var copy = (SensorArrayComponentData)src.Clone();
 
             Assert.Equal(777_000f, copy.passiveRangeMeters, 3);
             Assert.Equal(1.5f, copy.ecmResist, 4);
             Assert.Equal(2.5f, copy.eccmResist, 4);
+            Assert.Equal(45f, copy.memorySeconds, 3);       // ★ 批 -1：曾漏盘
+            Assert.Equal(0.75f, copy.activeGainBonus, 4);   // ★ 批 -1：曾漏盘
+            Assert.Equal(3.5f, copy.activeRadiation, 4);    // ★ 批 -1：曾漏盘
+        }
+
+        [Fact]
+        public void ActiveSlots_FlowPartToEntity()
+        {
+            // ★ 2026-10-17 批 -1：`activeGainBonus`/`activeRadiation` 曾**漏实体层聚合**（群级恒 0 ⇒
+            // 主动雷达"看得远的代价"断链）。本用例钉住 part → entity 两槽的求和（修复 #5 的判据之二）。
+            var part = PartWith(new HullMassComponent { mass = 100f },
+                new SensorArrayComponentData { activeGainBonus = 0.5f, activeRadiation = 2f },
+                new SensorArrayComponentData { activeGainBonus = 1.0f, activeRadiation = 3f });
+
+            var agg = EntityWith(part).AggregatedStats;
+            Assert.Equal(1.5f, agg.activeGainBonus, 4);
+            Assert.Equal(5f, agg.activeRadiation, 4);
+        }
+
+        [Fact]
+        public void TwoParts_AggregateAtEntityLevel()
+        {
+            // **多part 就绪的第一条覆盖**（用户 2026-10-17 令"变化剧烈 ⇒ 多下探针多跑测试"）：
+            // 同一实体的两个 part 在实体级聚合（质量 / 传感器 / 主动两槽）逐项求和。
+            var e = new SpaceEntity(1, 0) { HasMap = false };
+            e.SetRotation(UnityEngine.Quaternion.identity);
+            e.SetParts(new List<SpacePart>
+            {
+                PartWith(1, new HullMassComponent { mass = 100f },
+                    new SensorArrayComponentData { passiveRangeMeters = 400_000f, activeGainBonus = 0.25f }),
+                PartWith(2, new HullMassComponent { mass = 200f },
+                    new SensorArrayComponentData { passiveRangeMeters = 600_000f, activeRadiation = 1.5f }),
+            });
+
+            var agg = e.AggregatedStats;
+            Assert.Equal(300f, agg.mass, 3);
+            Assert.Equal(1_000_000f, agg.sensorRange, 3);
+            Assert.Equal(0.25f, agg.activeGainBonus, 4);
+            Assert.Equal(1.5f, agg.activeRadiation, 4);
         }
     }
 }

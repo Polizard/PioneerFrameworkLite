@@ -686,7 +686,8 @@ namespace PioneerFramework
 
             // 详细日志（门控，10 tick 限频）：距离/速度/接近率/横向差/点火状态
             // 附双方权威坐标（与碰撞 [碰撞详细]/[导弹复核] 同 tick 对照——2026-09-07 制导-碰撞距离矛盾诊断）
-            if (DebugDetailedGuidance && now - rec.lastGuidanceLogTick >= 10)
+            if (DebugDetailedGuidance && now - rec.lastGuidanceLogTick >= 10
+                && SpaceGameComp.DiagSamplingAllowed(rec.groupId, now, byGroupId.Count))
             {
                 rec.lastGuidanceLogTick = now;
                 Log.Message($"[导弹制导] V{rec.vehicleId} G{rec.groupId}→G{rec.targetGroupId} 表面距={step.surfaceDist / 1000.0:F1}km 速={vel.magnitude:F0}m/s 接近={step.closing:F1}m/s 横差={step.lateral:F0}m/s 冲刺={step.boostDemand:F0}m/s 需求上限={step.closingDemand:F0}m/s 燃料={fuelKg:F0}kg burn={(group.HasActiveBurn ? "on" : "off")}{(step.reacquiring ? " 再捕获" : "")} | t={now} 弹pos=({pos.x:F0},{pos.y:F0},{pos.z:F0}) 目pos=({tPos.x:F0},{tPos.y:F0},{tPos.z:F0})");

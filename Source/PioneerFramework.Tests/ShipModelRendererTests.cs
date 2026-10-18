@@ -113,6 +113,22 @@ namespace PioneerFramework.Tests
             Assert.Equal(0.2f, size.z);
         }
 
+        [Fact]
+        public void PartColorFor_DamagedUsesWreckColor_HealthyUsesPartColor()
+        {
+            // B8：损毁件仍画（B5），但换暗红残骸色；健康件必须仍是原 PartColor（外观不变）。
+            Color healthy = ShipModelRenderer.PartColorFor(false);
+            Assert.Equal(ShipModelRenderer.PartColor.r, healthy.r);
+            Assert.Equal(ShipModelRenderer.PartColor.g, healthy.g);
+            Assert.Equal(ShipModelRenderer.PartColor.b, healthy.b);
+
+            Color damaged = ShipModelRenderer.PartColorFor(true);
+            Assert.Equal(ShipModelRenderer.DamagedPartColor.r, damaged.r);
+            Assert.Equal(ShipModelRenderer.DamagedPartColor.g, damaged.g);
+            Assert.Equal(ShipModelRenderer.DamagedPartColor.b, damaged.b);
+            Assert.NotEqual(ShipModelRenderer.PartColor.r, damaged.r);
+        }
+
         // ⚠ 为什么这里不直接断言 `PartMatrix` 的平移列/列长：**Unity 的 `Matrix4x4.TRS` 是 ECall**
         //   —— headless 一调即抛 `SecurityException`（2026-10-11 实测，栈顶 = `Matrix4x4.TRS`；
         //   与 `Quaternion.Euler/LookRotation` 同族。这条已登记进渲染线交接 §4 的 ECall 清单）。

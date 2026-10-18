@@ -208,7 +208,7 @@ namespace PioneerFramework
             {
                 positionSystem = new SystemVec3(new DVector3(radius, 0.0, 0.0)),
                 velocitySystem = SystemVec3.zero,
-                rotation = Quaternion.identity
+                rotation = DQuaternion.identity
             };
             sg.RegisterGroup(group);
             if (circular)
