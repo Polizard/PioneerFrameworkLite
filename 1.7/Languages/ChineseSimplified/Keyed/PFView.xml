@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PFV_NotOperable>该编队当前不可操作。</PFV_NotOperable>
+  <PFV_NoConsole>本编队没有可用的操舵台。</PFV_NoConsole>
+  <PFV_SourceLost>操作编队已失效，武器操作已结束。</PFV_SourceLost>
+  <PFV_TargetLost>目标已失效或失去接触。</PFV_TargetLost>
+  <PFV_KeepOperator>请先明确更换操控编队；查看对象不会切换操作来源。</PFV_KeepOperator>
+  <PFV_CannotFire>无法开火：请检查操作编队、目标与武器状态。</PFV_CannotFire>
+  <PFV_Group>编队 {0}</PFV_Group>
+  <PFV_Own>我方</PFV_Own>
+  <PFV_Visible>公开对象</PFV_Visible>
+  <PFV_Contact>接触 {0}</PFV_Contact>
+  <PFV_Unidentified>未识别</PFV_Unidentified>
+  <PFV_DecoyIdentified>已识破的诱饵</PFV_DecoyIdentified>
+  <PFV_ContactLost>所查看的接触已失效。</PFV_ContactLost>
+  <PFV_Objects>可见对象（{0}）</PFV_Objects>
+  <PFV_DistanceReference>距离基准：{0}</PFV_DistanceReference>
+  <PFV_Filter_All>筛选：全部</PFV_Filter_All>
+  <PFV_Filter_OwnGroups>筛选：我方</PFV_Filter_OwnGroups>
+  <PFV_Filter_OtherGroups>筛选：其他</PFV_Filter_OtherGroups>
+  <PFV_Filter_Contacts>筛选：接触</PFV_Filter_Contacts>
+  <PFV_Sort_Name>名称排序</PFV_Sort_Name>
+  <PFV_Sort_Distance>距离排序</PFV_Sort_Distance>
+  <PFV_BackToList>返回对象列表</PFV_BackToList>
+  <PFV_Collapse>收起</PFV_Collapse>
+  <PFV_State>状态</PFV_State>
+  <PFV_Error>位置误差</PFV_Error>
+  <PFV_ObservationAge>观测距今</PFV_ObservationAge>
+  <PFV_ContactReadOnly>此处展示观测记录。未识别接触不提供实体详情或实体聚焦。</PFV_ContactReadOnly>
+  <PFV_Region>所在区域</PFV_Region>
+  <PFV_Speed>轨道速度</PFV_Speed>
+  <PFV_Focus>聚焦此对象</PFV_Focus>
+  <PFV_SetTarget>设为目标</PFV_SetTarget>
+  <PFV_StopSteering>结束 {0} 操舵</PFV_StopSteering>
+  <PFV_StartSteering>操舵 {0}</PFV_StartSteering>
+  <PFV_OpenWeapons>打开 {0} 武器</PFV_OpenWeapons>
+  <PFV_ChangeOperator>改为操作 {0}</PFV_ChangeOperator>
+  <PFV_Rooms>舱室（{0}）</PFV_Rooms>
+  <PFV_Room>舱室</PFV_Room>
+  <PFV_EnterRoom>进入 {0}</PFV_EnterRoom>
+  <PFV_Operating>操作编队 {0}</PFV_Operating>
+  <PFV_WeaponTarget>目标：{0}</PFV_WeaponTarget>
+  <PFV_CloseWeapons>结束武器操作</PFV_CloseWeapons>
+  <PFV_ClearTarget>清除目标</PFV_ClearTarget>
+  <PFV_Overheated>过热</PFV_Overheated>
+  <PFV_Ready>就绪</PFV_Ready>
+  <PFV_NotReady>未就绪</PFV_NotReady>
+  <PFV_Fire>开火</PFV_Fire>
+  <PFV_SelectGroup>查看编队</PFV_SelectGroup>
+  <PFV_SelectGroupTip>单击只查看详情；双击列表或使用聚焦按钮调整镜头。</PFV_SelectGroupTip>
+  <PFV_Navigate>天体导航</PFV_Navigate>
+  <PFV_NavigateTip>选择观察天体，保留查看对象、操作编队与目标。</PFV_NavigateTip>
+  <PFV_BodyView>行星视角</PFV_BodyView>
+  <PFV_BodyViewTip>返回当前天体的远景，保留其他交互状态。</PFV_BodyViewTip>
+  <PFV_Display>显示 ▾</PFV_Display>
+  <PFV_DisplayTip>仪表显示方式、地图浮雕与定居点。</PFV_DisplayTip>
+  <PFV_Frame_Auto>自动</PFV_Frame_Auto>
+  <PFV_Frame_Inertial>惯性</PFV_Frame_Inertial>
+  <PFV_Frame_Fixed>固连</PFV_Frame_Fixed>
+  <PFV_FrameTip>前项是选择，后项是实际参考系。点击切换自动、惯性、固连；自动在低空使用固连系。</PFV_FrameTip>
+  <PFV_Weapons>武器 {0}</PFV_Weapons>
+  <PFV_OpenOperationsTip>打开当前操作编队的武器面板，不更换操控对象。</PFV_OpenOperationsTip>
+  <PFV_Help>操作说明</PFV_Help>
+  <PFV_Debug>调试</PFV_Debug>
+  <PFV_DebugTip>PFView 调试开关与测试动作。</PFV_DebugTip>
+  <PFV_Navball>姿态仪表</PFV_Navball>
+  <PFV_Radar>雷达</PFV_Radar>
+  <PFV_RadarSource>雷达 · {0} · 只显示</PFV_RadarSource>
+  <PFV_RadarRange>满环距离 {0}</PFV_RadarRange>
+  <PFV_NoOperator>尚无操作编队</PFV_NoOperator>
+  <PFV_NavballSource>姿态仪表 · {0}</PFV_NavballSource>
+  <PFV_EndSteering>结束操舵</PFV_EndSteering>
+  <PFV_Panel_Automatic>自动：按当前任务展开</PFV_Panel_Automatic>
+  <PFV_Panel_Expanded>本次会话保持展开</PFV_Panel_Expanded>
+  <PFV_Panel_Collapsed>本次会话保持收起</PFV_Panel_Collapsed>
+  <PFV_Frozen>冻结机位</PFV_Frozen>
+  <PFV_Status>查看 {0} · 跟随 {1} · 操作 {2} · 目标 {3} ｜ 相机视距 {4}</PFV_Status>
+  <PFV_PreviousView>上一视角</PFV_PreviousView>
+  <PFV_PreviousViewTip>返回上一次有效机位；保留查看对象与操作编队。</PFV_PreviousViewTip>
+  <PFV_NoPreviousView>没有可返回的上一视角。</PFV_NoPreviousView>
+  <PFV_ViewUnavailable>上一视角的对象已失效，保留当前取景。</PFV_ViewUnavailable>
+  <PFV_ViewLimit>已到编队取景限制；需要看远景时使用“行星视角”。</PFV_ViewLimit>
+  <PFV_HelpTitle>PFView 操作说明</PFV_HelpTitle>
+  <PFV_HelpCameraTitle>观察与镜头</PFV_HelpCameraTitle>
+  <PFV_HelpCamera>单击查看、双击聚焦；右键旋转，中键或 Shift+右键平移。滚轮上远下近，R/Home 复位，“上一视角”单步返回。</PFV_HelpCamera>
+  <PFV_HelpTasksTitle>按场景展开</PFV_HelpTasksTitle>
+  <PFV_HelpTasks>操舵时展开姿态仪表，武器操作时展开雷达。显示菜单可临时固定展开或收起；重开恢复自动。雷达只显示。</PFV_HelpTasks>
+  <PFV_HelpSubjectsTitle>查看与操作</PFV_HelpSubjectsTitle>
+  <PFV_HelpSubjects>底部依次显示查看、跟随、操作编队、目标。查看其他对象或收起详情不会切换操控编队。Shift+左键设目标；开火前需明确打开操作编队的武器面板。</PFV_HelpSubjects>
+  <PFV_HelpTimeTitle>游戏时间</PFV_HelpTimeTitle>
+  <PFV_HelpTime>工具条控制暂停与时间档。默认数字键 1/2/3/4 调整速度，Space 暂停，沿用原版可重绑键位。搜索和上层窗口优先占用输入。</PFV_HelpTime>
+  <PFV_HelpKnownTitle>接触与仪表</PFV_HelpKnownTitle>
+  <PFV_HelpKnown>未识别接触只显示观测记录与误差。姿态球记号：P 顺行、A 逆行、R/r 径外/径内、N/S 法向/反法向、T 主推轴。</PFV_HelpKnown>
+  <PFV_HelpLimitsTitle>取景与调试</PFV_HelpLimitsTitle>
+  <PFV_HelpLimits>编队视距 300 m–3 km，平移不超过 2 km；远景使用行星视角。调试入口保留在工具条。</PFV_HelpLimits>
+  <PFV_Close>关闭</PFV_Close>
+  <PFV_Search>搜索名称或编号</PFV_Search>
+  <PFV_NoObjects>没有符合条件的可见对象。</PFV_NoObjects>
+  <PFV_NavballReadouts>姿态球与完整读数…</PFV_NavballReadouts>
+  <PFV_InspectionLost>所查看的编队已失效或失去接触。</PFV_InspectionLost>
+  <PFV_Tracking>跟踪记录</PFV_Tracking>
+  <PFV_TrackLive>当前观测</PFV_TrackLive>
+  <PFV_TrackRecord>保留的观测记录</PFV_TrackRecord>
+  <PFV_ObservedPosition>观测坐标（参考系未知）</PFV_ObservedPosition>
+</LanguageData>

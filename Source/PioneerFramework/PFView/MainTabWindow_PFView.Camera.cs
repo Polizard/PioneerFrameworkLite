@@ -1,0 +1,686 @@
+using System.Collections.Generic;
+using UnityEngine;
+using RimWorld;
+using Verse;
+
+namespace PioneerFramework
+{
+    /// <summary>
+    /// PFView 视图系统 v2（2026-10-18）：**焦点与选中解耦** + 相机保活 + 换焦点过渡 + 丢失冻结。
+    ///
+    /// 设计口径（计划案 §3）：
+    /// · selection（selectedGroupId）= 详情/射手；focus = 相机锚点；target = 攻击对象；三者独立。
+    /// · 只有显式动作（双击/「前往编队」/「行星视角」/Shift+左键设目标）才改相机或目标；
+    ///   左键单击只选详情，**不动相机**。
+    /// · 换焦点保留 yaw/pitch，距离按新档投影；0.25–0.45 s 平滑过渡（输入可打断）。
+    /// · 关窗/重开不重置；编队丢失 → Frozen（相机不动）+ 视图内 toast。
+    ///
+    /// ⚠ 本文件只做「取哪、怎么动」；渲染/换系/天体集仍在 Scene.cs / Render.cs 的既有入口。
+    /// 坐标系：view space（AbsToView 之后），1 单位 = 10 m，与旧实现一致。
+    /// </summary>
+    public partial class MainTabWindow_PFView
+    {
+        private sealed class CameraPose
+        {
+            public float Yaw;
+            public float Pitch;
+            public float Distance;
+            public Vector3 Pan;
+        }
+
+        private sealed record PreviousView(Game? Game, PFViewFocusKind Kind, int GroupId, int BodyId,
+            int SystemBodyId, DVector3 Frozen, CameraPose Pose, PFViewFrameMode Frame);
+        private readonly PFViewUiViewHistory<PreviousView> viewHistory = new();
+        private float nextViewLimitToast;
+
+        private void RememberPreviousView()
+        {
+            if (cameraInitialized)
+                viewHistory.Remember(new(Current.Game, focusKind, focusGroupId, focusBodyId,
+                    currentSystemBodyId, frozenAbs, CapturePose(), viewFrameMode));
+        }
+
+        private bool IsPreviousViewValid(PreviousView snapshot)
+        {
+            if (!ReferenceEquals(snapshot.Game, Current.Game)) return false;
+            if (snapshot.Kind == PFViewFocusKind.Group)
+                return CanInspectEntity(Current.Game?.GetComponent<SpaceGameComp>()?.GetGroupById(snapshot.GroupId));
+            return snapshot.Kind == PFViewFocusKind.Frozen
+                || Current.Game?.GetComponent<CelestialBodyManager>()?.GetBodyById(snapshot.BodyId) != null;
+        }
+
+        private void RestorePreviousView()
+        {
+            bool hadHistory = viewHistory.HasValue;
+            if (!viewHistory.TryTake(IsPreviousViewValid, out PreviousView? snapshot))
+            {
+                QueueToast((hadHistory ? "PFV_ViewUnavailable" : "PFV_NoPreviousView").Translate());
+                return;
+            }
+            SaveCameraMemory();
+            var oldOrigin = ResolveFocusOrigin();
+            var oldPose = CapturePose();
+            focusKind = snapshot!.Kind;
+            focusGroupId = snapshot.GroupId;
+            focusBodyId = snapshot.BodyId;
+            currentSystemBodyId = snapshot.SystemBodyId;
+            frozenAbs = snapshot.Frozen;
+            camYaw = snapshot.Pose.Yaw;
+            camPitch = snapshot.Pose.Pitch;
+            camDistance = snapshot.Pose.Distance;
+            camFocusOffset = snapshot.Pose.Pan;
+            viewFrameMode = snapshot.Frame;
+            objectsDirty = true;
+            BeginTransition(oldOrigin, oldPose);
+        }
+
+        private void NotifyViewLimit()
+        {
+            if (Time.realtimeSinceStartup < nextViewLimitToast) return;
+            nextViewLimitToast = Time.realtimeSinceStartup + 2f;
+            QueueToast("PFV_ViewLimit".Translate());
+        }
+
+        // ── 焦点（相机锚点） ──
+        /// <summary>PFView 是否打开（供 HUD 输入隔离补丁判据）。</summary>
+        internal static bool IsOpen => Find.WindowStack?.WindowOfType<MainTabWindow_PFView>() != null;
+
+        private PFViewFocusKind focusKind = PFViewFocusKind.Body;
+        private int focusGroupId = -1;
+        private int focusBodyId = 1;
+        private DVector3 frozenAbs;
+        private DVector3 lastFocusAbs;
+        private bool cameraInitialized;
+        private Game? cameraGame;
+
+        // ── 显示值（过渡期间与目标值分离） ──
+        private float camDisplayDistance;
+        private bool cameraTransitioning;
+        private float transitionElapsed;
+        private float transitionDuration;
+        private Vector3 transitionStartPos;
+        private Vector3 transitionStartLook;
+
+        // 右键「点击 vs 拖拽」判定（右键单击 = 上下文菜单，拖拽 = 旋转）
+        private Vector2 rightMouseDownPos;
+
+        // ── 会话级机位记忆（不写档）：key = (焦点类型, id) ──
+        private static readonly Dictionary<(PFViewFocusKind kind, int id), CameraPose> cameraMemory = new();
+
+        // ════════════════════════════════════════════════════
+        //  初始化 / 保活
+        // ════════════════════════════════════════════════════
+
+        /// <summary>
+        /// EnsureResources 调：第一次开窗建默认取景；之后重开**保留**上次机位（U2）。
+        /// 换局/读档（Game 引用变化）清空机位记忆并回到默认取景。
+        /// </summary>
+        internal void RestoreOrInitCamera()
+        {
+            if (cameraGame != null && !ReferenceEquals(cameraGame, Current.Game))
+            {
+                cameraMemory.Clear();
+                viewHistory.Clear();
+                cameraInitialized = false;
+                selectedGroupId = -1;   // 换局/读档：旧存档的 id 不能带进新局
+                targetGroupId = -1;
+                lastFocusAbs = DVector3.zero;
+            }
+            cameraGame = Current.Game;
+
+            if (cameraInitialized) return;
+
+            camYaw = 0f;
+            camPitch = PFViewCameraCore.DefaultPitch;
+            camFocusOffset = Vector3.zero;
+
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var selected = selectedGroupId >= 0 ? spaceGame?.GetGroupById(selectedGroupId) : null;
+            if (selected != null)
+            {
+                focusKind = PFViewFocusKind.Group;
+                focusGroupId = selectedGroupId;
+                focusBodyId = selected.CelestialBodyId >= 0 ? selected.CelestialBodyId : currentSystemBodyId;
+                camDistance = PFViewCameraCore.DefaultGroupDistanceView(MetersToView);
+            }
+            else
+            {
+                focusKind = PFViewFocusKind.Body;
+                focusGroupId = -1;
+                focusBodyId = currentSystemBodyId;
+                camDistance = DefaultBodyDistance();
+            }
+
+            camDisplayDistance = camDistance;
+            cameraInitialized = true;
+        }
+
+        /// <summary>关窗时保存当前机位（供重开恢复；不写档）。</summary>
+        internal void SaveCameraMemory()
+        {
+            if (!cameraInitialized) return;
+            if (focusKind == PFViewFocusKind.Group || focusKind == PFViewFocusKind.Body)
+                cameraMemory[(focusKind, FocusId())] = CapturePose();
+        }
+
+        private int FocusId()
+            => focusKind == PFViewFocusKind.Group ? focusGroupId : focusBodyId;
+
+        private CameraPose CapturePose() => new()
+        {
+            Yaw = camYaw,
+            Pitch = camPitch,
+            Distance = camDistance,
+            Pan = camFocusOffset,
+        };
+
+        private bool TryLoadPose()
+        {
+            if (focusKind != PFViewFocusKind.Group && focusKind != PFViewFocusKind.Body) return false;
+            if (!cameraMemory.TryGetValue((focusKind, FocusId()), out var pose)) return false;
+            camYaw = pose.Yaw;
+            camPitch = pose.Pitch;
+            camDistance = pose.Distance;
+            camFocusOffset = pose.Pan;
+            return true;
+        }
+
+        // ════════════════════════════════════════════════════
+        //  焦点动作（只有这些会动相机）
+        // ════════════════════════════════════════════════════
+
+        internal void FocusGroup(int groupId)
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var g = spaceGame?.GetGroupById(groupId);
+            if (!CanInspectEntity(g))
+            {
+                QueueToast($"编队 G{groupId} 不存在或已销毁");
+                return;
+            }
+
+            if (focusKind == PFViewFocusKind.Group && focusGroupId == groupId) return;
+
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            RememberPreviousView();
+            SaveCameraMemory();
+            DVector3 oldOrigin = ResolveFocusOrigin();
+            CameraPose oldPose = CapturePose();
+            PFViewFocusKind oldKind = focusKind;
+
+            focusKind = PFViewFocusKind.Group;
+            focusGroupId = groupId;
+            focusBodyId = g.CelestialBodyId >= 0 ? g.CelestialBodyId : currentSystemBodyId;
+            int root = mgr != null ? mgr.GetRootPlanetId(focusBodyId) : -1;
+            // 编队可能在恒星/深空（root=-1）：至少让「当前系统」指向它自己的天体，
+            // 否则 GetCurrentSystemBodyIds 不包含它 → 选中后连它自己都不画（2026-10-18 用户报障）。
+            int systemBody = root >= 0 ? root : focusBodyId;
+            if (systemBody >= 0) currentSystemBodyId = systemBody;
+
+            if (!TryLoadPose())
+            {
+                camFocusOffset = Vector3.zero;
+                camDistance = PFViewCameraCore.ProjectDistance(oldKind, PFViewFocusKind.Group,
+                    oldPose.Distance, MetersToView, FocusBodyRadiusView());
+            }
+
+            BeginTransition(oldOrigin, oldPose);
+        }
+
+        internal void FocusBody(int bodyId)
+        {
+            if (focusKind == PFViewFocusKind.Body && focusBodyId == bodyId) return;
+
+            if (Current.Game?.GetComponent<CelestialBodyManager>()?.GetBodyById(bodyId) == null) return;
+            RememberPreviousView();
+            SaveCameraMemory();
+            DVector3 oldOrigin = ResolveFocusOrigin();
+            CameraPose oldPose = CapturePose();
+
+            focusKind = PFViewFocusKind.Body;
+            focusBodyId = bodyId;
+            focusGroupId = -1;
+            currentSystemBodyId = bodyId;
+
+            if (!TryLoadPose())
+            {
+                camFocusOffset = Vector3.zero;
+                camDistance = DefaultBodyDistance();
+            }
+
+            BeginTransition(oldOrigin, oldPose);
+        }
+
+        /// <summary>「行星视角」按钮/Home：焦点回到当前天体（保留选中与目标）。</summary>
+        internal void FocusCurrentBody()
+        {
+            int bodyId = currentSystemBodyId;
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (mgr != null && mgr.GetBodyById(bodyId) == null)
+            {
+                var star = mgr.GetStar();
+                if (star != null) bodyId = star.bodyId;
+            }
+            FocusBody(bodyId);
+        }
+
+        /// <summary>「回到编队」：有选中就聚焦选中，否则聚焦焦点编队（无则提示）。</summary>
+        internal void FocusSelectionOrNothing()
+        {
+            if (selectedGroupId >= 0)
+            {
+                FocusGroup(selectedGroupId);
+                return;
+            }
+            QueueToast("没有选中的编队（先点左栏或 3D 里的船）");
+        }
+
+        internal void SetTargetGroup(int groupId)
+        {
+            if (groupId < 0)
+            {
+                targetGroupId = -1;
+                QueueToast("已清除目标");
+                return;
+            }
+            if (groupId == ResolveOperationGroup()?.GroupId || !TryGetKnownContact(groupId, out _))
+            {
+                QueueToast("PFV_CannotFire".Translate());
+                return;
+            }
+            targetGroupId = groupId;
+            QueueToast($"目标：编队 G{groupId}");
+        }
+
+        /// <summary>R / Home：复位到当前焦点的默认机位（带过渡）。</summary>
+        internal void ResetCamera()
+        {
+            DVector3 oldOrigin = ResolveFocusOrigin();
+            CameraPose oldPose = CapturePose();
+
+            camYaw = 0f;
+            camPitch = PFViewCameraCore.DefaultPitch;
+            camFocusOffset = Vector3.zero;
+            camDistance = focusKind == PFViewFocusKind.Group
+                ? PFViewCameraCore.DefaultGroupDistanceView(MetersToView)
+                : DefaultBodyDistance();
+
+            BeginTransition(oldOrigin, oldPose);
+        }
+
+        // ════════════════════════════════════════════════════
+        //  焦点解析 / 丢失回退（U3）
+        // ════════════════════════════════════════════════════
+
+        /// <summary>当前焦点在绝对系的位置（渲染原点）。丢失 → Frozen + toast（只一次）。</summary>
+        internal DVector3 ResolveFocusOrigin(double? tickOverride = null)
+        {
+            if (!cameraInitialized) RestoreOrInitCamera();
+
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            double tick = tickOverride ?? RenderTick();
+
+            if (focusKind == PFViewFocusKind.Group)
+            {
+                var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+                var g = spaceGame?.GetGroupById(focusGroupId);
+                if (!CanInspectEntity(g))
+                {
+                    return FreezeFocus();
+                }
+                focusBodyId = g.CelestialBodyId;
+                lastFocusAbs = GetGroupPosAbs(g, tick);
+                return lastFocusAbs;
+            }
+
+            if (focusKind == PFViewFocusKind.Body)
+            {
+                if (mgr != null && mgr.GetBodyById(focusBodyId) != null)
+                {
+                    lastFocusAbs = GetBodyPosAbs(focusBodyId, tick);
+                    return lastFocusAbs;
+                }
+
+                if (mgr != null && mgr.GetBodyById(currentSystemBodyId) != null)
+                {
+                    focusBodyId = currentSystemBodyId;
+                    lastFocusAbs = GetBodyPosAbs(focusBodyId, tick);
+                    return lastFocusAbs;
+                }
+                return lastFocusAbs;
+            }
+
+            return frozenAbs;
+        }
+
+        private DVector3 FreezeFocus()
+        {
+            if (focusKind == PFViewFocusKind.Frozen) return frozenAbs;
+
+            int lostId = focusGroupId;
+            focusKind = PFViewFocusKind.Frozen;
+            focusGroupId = -1;
+            frozenAbs = lastFocusAbs;
+
+            if (selectedGroupId == lostId)
+            {
+                selectedGroupId = -1;
+                targetGroupId = -1;
+            }
+            if (targetGroupId == lostId) targetGroupId = -1;
+
+            QueueToast($"焦点编队 G{lostId} 已失去信号——视角已冻结（Home 回行星）");
+            Log.Message($"[PFView·焦点] 编队 G{lostId} 丢失 → Frozen，相机停在最后位置");
+            return frozenAbs;
+        }
+
+        /// <summary>参考系/天体集归属用的 bodyId（Group 用编队所在天体；Frozen 保留最后天体）。</summary>
+        internal int ResolveFocusBodyId()
+        {
+            if (focusKind == PFViewFocusKind.Group)
+            {
+                var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+                var g = spaceGame?.GetGroupById(focusGroupId);
+                if (g != null && g.CelestialBodyId >= 0) focusBodyId = g.CelestialBodyId;
+            }
+            // 旧组/深空组 CelestialBodyId=-1，或 id 已失效（读档/换星系）⇒ 回退当前系统天体。
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (focusBodyId < 0 || (mgr != null && mgr.GetBodyById(focusBodyId) == null))
+                focusBodyId = currentSystemBodyId;
+            return focusBodyId;
+        }
+
+        /// <summary>当前焦点编队（焦点不是编队时 null）。</summary>
+        internal SpaceEntityGroup? GetFocusGroup()
+        {
+            if (focusKind != PFViewFocusKind.Group) return null;
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            return spaceGame?.GetGroupById(focusGroupId);
+        }
+
+        private float FocusBodyRadiusView()
+        {
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            var def = mgr?.GetBodyById(ResolveFocusBodyId());
+            if (def == null) return 300000f; // 兜底：地球半径量级（500 km 半径 = 5e5 视图单位的一半）
+            return Mathf.Max((float)(def.radius * MetersToView), 1f);
+        }
+
+        private float DefaultBodyDistance()
+        {
+            float aspect = renderCamera != null ? renderCamera.aspect : 16f / 9f;
+            float fov = renderCamera != null ? renderCamera.fieldOfView : 45f;
+            return PFViewCameraCore.DefaultBodyDistanceView(FocusBodyRadiusView(), fov, aspect);
+        }
+
+        // ════════════════════════════════════════════════════
+        //  过渡（U13 地基；P0 先接好，时长可调）
+        // ════════════════════════════════════════════════════
+
+        private void BeginTransition(DVector3 oldOrigin, CameraPose oldPose)
+        {
+            if (renderCamera == null)
+            {
+                cameraTransitioning = false;
+                return;
+            }
+
+            DVector3 newOrigin = ResolveFocusOrigin();
+            Vector3 deltaView = viewFrameRot * (Vector3)((oldOrigin - newOrigin) * MetersToView);
+            Vector3 startPos = PFViewCameraCore.CameraViewPos(oldPose.Pan, oldPose.Yaw, oldPose.Pitch, oldPose.Distance)
+                             + deltaView;
+            Vector3 startLook = oldPose.Pan + deltaView;
+
+            Vector3 targetPos = PFViewCameraCore.CameraViewPos(camFocusOffset, camYaw, camPitch, camDistance);
+            Vector3 targetLook = camFocusOffset;
+
+            transitionStartPos = startPos;
+            transitionStartLook = startLook;
+            transitionElapsed = 0f;
+
+            float ratio = Mathf.Max(targetPos.magnitude, 1f) / Mathf.Max(startPos.magnitude, 1f);
+            transitionDuration = Mathf.Clamp(0.25f + Mathf.Abs(Mathf.Log(ratio)) * 0.03f, 0.20f, 0.45f);
+            cameraTransitioning = true;
+        }
+
+        private void CancelTransition()
+        {
+            cameraTransitioning = false;
+        }
+
+        // ════════════════════════════════════════════════════
+        //  每帧取景（替代 Render.cs 的旧 UpdateCamera）
+        // ════════════════════════════════════════════════════
+
+        private void UpdateCamera(CelestialBodyManager bodyMgr, double tick, DVector3 origin)
+        {
+            if (renderCamera == null) return;
+            if (!cameraInitialized) RestoreOrInitCamera();
+
+            RecreateRenderTexture();
+
+            float bodyRadiusView = FocusBodyRadiusView();
+
+            camDistance = PFViewCameraCore.ClampDistance(focusKind, camDistance, MetersToView, bodyRadiusView);
+            if (focusKind == PFViewFocusKind.Group)
+                camFocusOffset = PFViewCameraLimits.ClampPanOffset(camFocusOffset, MetersToView, true);
+
+            Vector3 targetPos = PFViewCameraCore.CameraViewPos(camFocusOffset, camYaw, camPitch, camDistance);
+            Vector3 targetLook = camFocusOffset;
+
+            Vector3 pos;
+            Vector3 look;
+            if (cameraTransitioning)
+            {
+                transitionElapsed += Time.unscaledDeltaTime;
+                float s = PFViewCameraCore.SmoothStep01(transitionElapsed / Mathf.Max(transitionDuration, 0.0001f));
+                pos = Vector3.Lerp(transitionStartPos, targetPos, s);
+                look = Vector3.Lerp(transitionStartLook, targetLook, s);
+                if (s >= 1f) cameraTransitioning = false;
+            }
+            else
+            {
+                pos = targetPos;
+                look = targetLook;
+            }
+
+            // 相机不许钻进**任何**天体（2026-10-18 用户：缩放/转视角会进入星体内部、行星局部透明）。
+            // 不只看焦点天体：焦点组的 CelestialBodyId 可能失效/回退，相机仍可能贴着另一颗星。
+            float minSurfaceGapView = float.MaxValue;
+            if (bodyMgr != null)
+            {
+                foreach (var b in bodyMgr.GetAllBodies())
+                {
+                    float r = (float)(b.radius * MetersToView);
+                    if (r <= 0f) continue;
+                    Vector3 c = AbsToView(GetBodyPosAbs(b.bodyId, tick), origin);
+                    pos = PFViewCameraCore.ClampCameraOutsideSphere(pos, c, r);
+                    float gap = (pos - c).magnitude - r;
+                    if (gap < minSurfaceGapView) minSurfaceGapView = gap;
+                }
+            }
+
+            camDisplayDistance = Vector3.Distance(pos, look);
+
+            renderCamera.transform.position = pos;
+            renderCamera.transform.LookAt(look, Vector3.up);
+            renderCamera.farClipPlane = FarClip;
+
+            // 近裁随**实际视距/离最近表面余量**自适应：near 必须小于「相机→任何天体表面」的距离，
+            // 否则星球近侧会被近裁面切掉（露出星空 = 用户看到的「局部半透明」）。
+            float surfaceGapView = minSurfaceGapView < float.MaxValue ? minSurfaceGapView : camDisplayDistance;
+            renderCamera.nearClipPlane = PFViewCameraCore.NearClipForCamera(camDisplayDistance, surfaceGapView, NearClip, 5000f);
+
+            // 记录焦点位置，供丢失冻结（Resolve 内已更新；这里兜底）
+            if (focusKind != PFViewFocusKind.Frozen) lastFocusAbs = origin;
+        }
+
+        /// <summary>相机在 view space 的位置（供 Scene 的剔除/大气读数）。</summary>
+        private Vector3 GetCameraViewPos()
+        {
+            if (renderCamera != null) return renderCamera.transform.position;
+            return PFViewCameraCore.CameraViewPos(camFocusOffset, camYaw, camPitch, camDistance);
+        }
+
+        // ════════════════════════════════════════════════════
+        //  输入（U7/U8；从 Render.cs 搬来并加窗口归属/限幅）
+        // ════════════════════════════════════════════════════
+
+
+        /// <summary>设置游戏时间档（按钮与数字键共用）。暂停走 TogglePaused，保留原版 prePause。</summary>
+        internal static void SetGameSpeed(TimeSpeed speed)
+        {
+            var tm = Find.TickManager;
+            if (tm == null) return;
+            if (speed == TimeSpeed.Paused)
+            {
+                if (tm.CurTimeSpeed != TimeSpeed.Paused) tm.TogglePaused();
+                return;
+            }
+            tm.CurTimeSpeed = speed;
+        }
+
+        /// <summary>
+        /// 原版数字键时间档（2026-10-18 用户：像原版一样数字键控制时间）。
+        /// 1/2/3/4 = 正常/快速/超快/极速，Space = 暂停（均读 KeyBindingDef，可被玩家重绑）。
+        /// </summary>
+        private bool HandleTimeSpeedKeys()
+        {
+            if (KeyBindingDefOf.TogglePause.KeyDownEvent)
+            {
+                Find.TickManager.TogglePaused();
+                return true;
+            }
+            if (KeyBindingDefOf.TimeSpeed_Normal.KeyDownEvent)
+            {
+                SetGameSpeed(TimeSpeed.Normal);
+                return true;
+            }
+            if (KeyBindingDefOf.TimeSpeed_Fast.KeyDownEvent)
+            {
+                SetGameSpeed(TimeSpeed.Fast);
+                return true;
+            }
+            if (KeyBindingDefOf.TimeSpeed_Superfast.KeyDownEvent)
+            {
+                SetGameSpeed(TimeSpeed.Superfast);
+                return true;
+            }
+            if (KeyBindingDefOf.TimeSpeed_Ultrafast.KeyDownEvent)
+            {
+                SetGameSpeed(TimeSpeed.Ultrafast);
+                return true;
+            }
+            return false;
+        }
+
+        private void HandleInput(Rect inRect)
+        {
+            var e = Event.current;
+            if (e == null) return;
+            if (EndCameraDrag(e, inRect)) return;
+
+            // 键盘只在「最上层窗口就是本窗口」时处理，避免改名/搜索窗里按 R 复位相机
+            if (e.type == EventType.KeyDown && HasInputFocus())
+            {
+                if (KeyBindingDefOf.Cancel.KeyDownEvent)
+                {
+                    if (GUI.GetNameOfFocusedControl() == "PFViewSearch") GUI.FocusControl(null);
+                    else if (WantsInspector) preferObjectList = true;
+                    else Close();
+                    e.Use();
+                    return;
+                }
+                if (GUI.GetNameOfFocusedControl() == "PFViewSearch") return;
+                if (HandleTimeSpeedKeys())
+                {
+                    e.Use();
+                    return;
+                }
+                if (e.keyCode == KeyCode.Home || (e.keyCode == KeyCode.R && !SteeringController.IsOpen))
+                {
+                    ResetCamera();
+                    e.Use();
+                    return;
+                }
+            }
+
+            bool inViewport = MouseInViewport(inRect);
+            if (!inViewport) return;
+
+            if (e.type == EventType.ScrollWheel)
+            {
+                CancelTransition();
+                camDistance = PFViewCameraCore.WheelDistance(camDistance, e.delta.y);
+                if (focusKind == PFViewFocusKind.Group
+                    && (camDistance < PFViewCameraLimits.GroupOrbitMinMeters * MetersToView
+                        || camDistance > PFViewCameraLimits.GroupOrbitMaxMeters * MetersToView)) NotifyViewLimit();
+                e.Use();
+            }
+
+            if (e.type == EventType.MouseDown && (e.button == 1 || e.button == 2))
+            {
+                CancelTransition();
+                dragState.Begin(e.button == 2 || e.shift);
+                rightMouseDownPos = e.mousePosition;
+                lastMousePos = e.mousePosition;
+                e.Use();
+            }
+
+            if (isDraggingRight && e.type == EventType.MouseDrag && e.button == 1)
+            {
+                if ((e.mousePosition - rightMouseDownPos).magnitude > 3f) dragState.MarkMoved();
+                Vector2 d = e.mousePosition - lastMousePos;
+                camYaw -= d.x * OrbitSensitivity;
+                camPitch = PFViewCameraCore.ClampPitch(camPitch - d.y * OrbitSensitivity);
+                lastMousePos = e.mousePosition;
+                e.Use();
+            }
+
+            if (isDraggingPan && e.type == EventType.MouseDrag && (e.button == 1 || e.button == 2))
+            {
+                Vector2 d = e.mousePosition - lastMousePos;
+                if (renderCamera != null)
+                {
+                    float worldPerPx = 2f * camDistance * Mathf.Tan(renderCamera.fieldOfView * 0.5f * Mathf.Deg2Rad)
+                                       / Mathf.Max(1f, renderCamera.pixelHeight);
+                    camFocusOffset -= (renderCamera.transform.right * d.x + renderCamera.transform.up * d.y) * worldPerPx;
+                    if (focusKind == PFViewFocusKind.Group && camFocusOffset.magnitude > PFViewCameraLimits.GroupPanMaxMeters * MetersToView)
+                        NotifyViewLimit();
+                }
+                lastMousePos = e.mousePosition;
+                e.Use();
+            }
+        }
+
+        /// <summary>最上层窗口是否就是本窗口（键盘归属）。</summary>
+        private bool EndCameraDrag(Event e, Rect inRect)
+        {
+            if (e.rawType != EventType.MouseUp || (e.button != 1 && e.button != 2)) return false;
+            bool active = isDraggingRight || isDraggingPan;
+            bool click = dragState.End();
+            bool menu = active && e.button == 1 && click;
+            ResetCameraDrag();
+            if (!active) return false;
+            if (menu && MouseInViewport(inRect)) ShowContextMenu(e.mousePosition, inRect);
+            if (e.type != EventType.Used) e.Use();
+            return true;
+        }
+
+        private void ResetCameraDrag()
+        {
+            dragState.Reset();
+            rightMouseDownPos = Vector2.zero;
+            lastMousePos = Vector2.zero;
+        }
+
+        private bool HasInputFocus()
+        {
+            var stack = Find.WindowStack;
+            if (stack == null) return false;
+            var windows = stack.Windows;
+            return windows != null && windows.Count > 0 && (ReferenceEquals(windows[windows.Count - 1], this)
+                || (HasTextInputFocus && windows[windows.Count - 1] is Window_Steering));
+        }
+    }
+}

@@ -35,7 +35,7 @@ namespace PioneerFramework
             if (sunFixed.sqrMagnitude < 1e-6f) return -Vector3.forward;
 
             // 固连→惯性 的旋转取自**根源行星**（原版那条太阳方向就是定义在它的世界系里的）
-            int shipBodyId = selectedGroupId >= 0 ? GetSelectedGroupBodyId() : currentSystemBodyId;
+            int shipBodyId = ResolveFocusBodyId();
             int rootId = mgr.GetRootPlanetId(shipBodyId);
             Quaternion spin = PFViewBodyRotation.FixedToEciRotation(rootId >= 0 ? rootId : 0);
             return (spin * sunFixed).normalized;
@@ -96,9 +96,17 @@ namespace PioneerFramework
         //  场景渲染
         // ════════════════════════════════════════════════════
 
+        private int lastSceneRenderFrame = int.MinValue;
+
         private void RenderScene(CelestialBodyManager mgr)
         {
             if (renderCamera == null || renderTexture == null) return;
+            // 1.7 先派发输入，再推进模拟，最后派发布局/重绘；DrawMesh 队列会在帧内累计。
+            // 输入期绘制会把旧编队原点的场景留在队列中，与重绘期的新场景混在一起。
+            // Camera.Render 按提交顺序绘制：后一次星空可能落在旧行星之上，产生局部漏星。
+            if (Event.current == null || Event.current.type != EventType.Repaint
+                || lastSceneRenderFrame == RealTime.frameCount) return;
+            lastSceneRenderFrame = RealTime.frameCount;
 
             // ⚠ 2026-10-11（"别的航天器整体位置在抖"的治本）：这里用**帧级连续时钟**（不是阶梯的物理 tick）。
             //   物理 tick 由整数 `TicksGame` 推出 ⇒ 渲染帧率高于 tick 率时，位置一格一格跳；
@@ -109,6 +117,8 @@ namespace PioneerFramework
             DVector3 origin = GetRenderOrigin(tick);
 
             UpdateViewFrame(mgr, tick, origin);   // 参考系（惯性/固连）——**必须在一切取位/取向之前**
+            // 相机防穿入/近裁与天体绘制共享这一份时钟、原点和参考系。
+            UpdateCamera(mgr, tick, origin);
             UpdateLighting(mgr, tick, origin);
             UpdateAtmosphereSky(mgr, tick, origin);   // 大气视觉：天空盒按相机高度变蓝（并给雾层/壳准备读数）
             UpdateSunDisc(mgr);                       // 太阳圆片：本帧角半径（由"根行星绕日半径"定）
@@ -131,40 +141,25 @@ namespace PioneerFramework
             DrawCelestialBodies(mgr, tick, origin);
             DrawSystemGroups(mgr, tick, origin);
             DrawMegastructures(mgr, origin);
-            DrawProjectiles(origin);
+            DrawProjectiles(origin, tick);
         }
 
         /// <summary>计算本行星系应渲染的天体 ID 集合（恒星 + 飞船所在行星 + 其卫星）。
         /// 第 12 条：按 shipBodyId 记忆化（每帧调用；天体图开局后不可变 → 键相同即内容相同）。</summary>
         private HashSet<int> GetLocalSystemBodyIds(CelestialBodyManager mgr)
         {
-            // 找到飞船所在天体
-            int shipBodyId = selectedGroupId >= 0 ? GetSelectedGroupBodyId() : currentSystemBodyId;
+            // 2026-10-18 用户报「选中编队时不会显示出其他星体」：
+            // 原来只画「恒星 + 焦点所在根行星 + 其卫星」，聚焦到别的天体（恒星/深空/卫星）时其余天体会被过滤掉。
+            // 本 mod 天体图很小（Sun/Earth/Moon），全画成本可忽略；观感上也不会再「选中后世界只剩船」。
+            int shipBodyId = ResolveFocusBodyId();
+            if (shipBodyId < 0) shipBodyId = currentSystemBodyId;
             if (localSystemBodyIdsCacheKey == shipBodyId) return localSystemBodyIdsCache;
             localSystemBodyIdsCacheKey = shipBodyId;
 
             var ids = localSystemBodyIdsCache;
             ids.Clear();
-            var shipBody = mgr.GetBodyById(shipBodyId);
-
-            // 找到顶层恒星
-            var star = mgr.GetStar();
-            if (star != null) ids.Add(star.bodyId);
-
-            if (shipBody != null)
-            {
-                // ⚠ 2026-09-26（D8）：两个分支其实是同一件事——"显示**根行星** + 它的全部卫星"。
-                //   原先写成"行星→自身 / 卫星→父体"两路手搓 ⇒ 收敛到 `GetRootPlanetId` 一条。
-                int rootPlanetId = mgr.GetRootPlanetId(shipBody.bodyId);
-                var rootPlanet = rootPlanetId >= 0 ? mgr.GetBodyById(rootPlanetId) : null;
-                if (rootPlanet != null)
-                {
-                    ids.Add(rootPlanetId);
-                    foreach (var moon in rootPlanet.moonBodies)
-                        ids.Add(moon.bodyId);
-                }
-            }
-
+            foreach (var body in mgr.GetAllBodies())
+                ids.Add(body.bodyId);
             return ids;
         }
 
@@ -182,14 +177,6 @@ namespace PioneerFramework
                 foreach (var m in bodyDef.moonBodies)
                     ids.Add(m.bodyId);
             return ids;
-        }
-
-        private int GetSelectedGroupBodyId()
-        {
-            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
-            if (spaceGame == null) return currentSystemBodyId;
-            var g = spaceGame.GetGroupById(selectedGroupId);
-            return g != null ? g.CelestialBodyId : currentSystemBodyId;
         }
 
 
@@ -229,7 +216,7 @@ namespace PioneerFramework
                     DrawSunDisc(camPos);
 
                     // ── 调试：在太阳位置放黄色方块（默认关闭；面板上"太阳标记"勾选）──
-                    if (debugShowSunMarker && renderMat != null)
+                    if (DebugShowSunMarker && renderMat != null)
                     {
                         Vector3 dbgPos = camPos + SunDiscDir(camPos) * SunPlaceDistView;
                         matBlock.SetColor("_Color", new Color(1f, 1f, 0f));
@@ -277,9 +264,9 @@ namespace PioneerFramework
                     renderR = bodyR * (placeDist / camDistToBody);
                 }
 
-                float cullR = Mathf.Max(renderR, MinBodyVisRadius);
-                if (!SphereInFrustum(renderPos, cullR))
-                    continue;
+                // 2026-10-18 用户报「右键转动视角时行星闪烁/突然透明」：
+                // 天体中心点可能已在视锥外，但巨大球面仍占满视野（高轨/近表都常见）⇒ 中心点剔除会误杀。
+                // 本 mod 只有 Sun/Earth/Moon 三颗，直接全画、交给 GPU 裁剪；不要再用 SphereInFrustum 剔天体。
 
                 // LOD 选择：根据天体在屏幕上的角大小决定网格精度
                 float camDistToRender = Vector3.Distance(renderPos, camPos);
@@ -439,6 +426,7 @@ namespace PioneerFramework
             {
                 if (!g.IsActive) continue;
                 if (!sysIds.Contains(g.CelestialBodyId)) continue;
+                if (!CanInspectEntity(g)) continue;
                 if (sensor != null && !sensor.PlayerCanSee(g)) continue;   // [V3]/S4c：列表只列看得见的
 
                 DVector3 gPosAbs = GetGroupPosAbs(g, tick);
@@ -525,7 +513,7 @@ namespace PioneerFramework
             // 朝向 —— 船转到任何姿态画面都一样，玩家看到的朝向与物理（主推对准 / 碰撞盒 / 命中几何，
             // 三者都消费同一个 rotation）毫无关系。改用真姿态后，船怎么转、画面就怎么转。
             Quaternion gRot = viewFrameRot * group.CurrentOrbit.rotation;   // 姿态同过参考系（固连档下"相对地面"的姿态）
-            float scale = debugScaleParts ? 200f : 1f;
+            float scale = DebugScaleParts ? 200f : 1f;
             bool drewRelief = false;
 
             foreach (int eid in group.GetEntityIds())
@@ -602,7 +590,7 @@ namespace PioneerFramework
                 ToonMat != null, MetersToView, SceneLayer);
         }
 
-        private void DrawProjectiles(DVector3 origin)
+        private void DrawProjectiles(DVector3 origin, double tick)
         {
             var cm = Current.Game?.GetComponent<CombatManager>();
             if (cm == null) return;
@@ -612,7 +600,7 @@ namespace PioneerFramework
             // 与 TicksGame 直接相减单位错位 → 外推恒为 0 → 渲染只显示离散物理位置 → 折线。
             // 天体偏移同样用 double physicsTick：int 化在 1/60x 下每 60 real tick 才跳 1 秒，
             // 天体位置离散跳变 → 射弹/场景"集体闪现"。全部用 double 后完全连续。
-            double tick = RenderTick();   // 连续时钟（2026-10-11 起）：射弹的外推基准也一并连续
+            // 与相机/天体使用 RenderScene 捕获的同一连续时钟。
             Vector3 camView = GetCameraViewPos();   // 逐弹重复求一次相机位（含三角函数）没有意义
 
             foreach (var proj in cm.ActiveProjectiles)

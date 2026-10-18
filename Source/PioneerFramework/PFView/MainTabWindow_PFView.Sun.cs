@@ -50,7 +50,7 @@ namespace PioneerFramework
         private void UpdateSunDisc(CelestialBodyManager mgr)
         {
             var star = mgr.GetStar();
-            int shipBodyId = selectedGroupId >= 0 ? GetSelectedGroupBodyId() : currentSystemBodyId;
+            int shipBodyId = ResolveFocusBodyId();
             int rootId = mgr.GetRootPlanetId(shipBodyId);
             var root = rootId >= 0 ? mgr.GetBodyById(rootId) : null;
             sunDiscAngularRadiusDeg = PFViewSunDisc.AngularRadiusDeg(

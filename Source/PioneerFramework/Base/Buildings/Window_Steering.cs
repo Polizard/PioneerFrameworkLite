@@ -42,8 +42,14 @@ namespace PioneerFramework
         public override void PostClose()
         {
             base.PostClose();
+            StopControl();
+        }
+
+        internal static void StopControl()
+        {
+            var mapComp = GetCurrentMapComp();
             SteeringController.Close();
-            GetCurrentMapComp()?.SetThrustersBurning(false);
+            mapComp?.SetThrustersBurning(false);
         }
 
         public override void DoWindowContents(Rect inRect)
@@ -58,7 +64,6 @@ namespace PioneerFramework
             var mapComp = group?.GetLinkedMapComp();
             if (group == null || !group.IsActive || mapComp == null || !CompSteeringConsole.HasConsole(mapComp.map))
             {
-                SteeringController.Close();
                 Close();
                 return;
             }
@@ -198,6 +203,11 @@ namespace PioneerFramework
 
         private void ReadKeys()
         {
+            if (!CanReadKeyboard())
+            {
+                ClearHeldKeys();
+                return;
+            }
             // 平移（保持态）
             SteeringController.KeyForward = Input.GetKey(KeyCode.W);
             SteeringController.KeyBack = Input.GetKey(KeyCode.S);
@@ -236,7 +246,27 @@ namespace PioneerFramework
             }
         }
 
-        private SpaceMapComp? GetCurrentMapComp()
+        private bool CanReadKeyboard()
+        {
+            var stack = Find.WindowStack;
+            var view = stack?.WindowOfType<MainTabWindow_PFView>();
+            if (view?.HasTextInputFocus == true) return false;
+            var windows = stack?.Windows;
+            if (windows == null || windows.Count == 0) return false;
+            var foreground = windows[windows.Count - 1];
+            return ReferenceEquals(foreground, this) || (view != null && ReferenceEquals(foreground, view));
+        }
+
+        internal static void ClearHeldKeys()
+        {
+            // 文本输入或上层弹窗仅暂停手动按键，保留操舵对象与 SAS。
+            SteeringController.KeyForward = SteeringController.KeyBack = SteeringController.KeyLeft =
+                SteeringController.KeyRight = SteeringController.KeyUp = SteeringController.KeyDown = false;
+            SteeringController.KeyRollL = SteeringController.KeyRollR = SteeringController.KeyYawL =
+                SteeringController.KeyYawR = SteeringController.KeyPitchU = SteeringController.KeyPitchD = false;
+        }
+
+        private static SpaceMapComp? GetCurrentMapComp()
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             var group = spaceGame != null ? spaceGame.GetGroupById(SteeringController.GroupId) : null;

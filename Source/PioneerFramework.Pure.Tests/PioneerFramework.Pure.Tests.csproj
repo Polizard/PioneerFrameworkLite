@@ -117,4 +117,16 @@
 
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\PioneerFramework\PFView\PFViewUiPolicy.cs" Link="Pure\PFViewUiPolicy.cs" />
+    <Compile Include="..\PioneerFramework\PFView\PFViewUiOperationContext.cs" Link="Pure\PFViewUiOperationContext.cs" />
+    <Compile Include="..\PioneerFramework\PFView\PFViewUiLayoutCore.cs" Link="Pure\PFViewUiLayoutCore.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\PioneerFramework\PFView\PFViewUiObjectListCore.cs" Link="Pure\PFViewUiObjectListCore.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\PioneerFramework\PFView\PFViewUiViewHistory.cs" Link="Pure\PFViewUiViewHistory.cs" />
+    <Compile Include="..\PioneerFramework\PFView\PFViewUiDragState.cs" Link="Pure\PFViewUiDragState.cs" />
+  </ItemGroup>
 </Project>

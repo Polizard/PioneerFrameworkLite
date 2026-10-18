@@ -123,6 +123,8 @@ namespace PioneerFramework
             cameraObject = new GameObject("PFViewCamera");
             UnityEngine.Object.DontDestroyOnLoad(cameraObject);
             renderCamera = cameraObject.AddComponent<Camera>();
+            // 本窗口只在重绘期手动 Render；关闭 1.7 宿主对启用相机的额外自动捕获。
+            renderCamera.enabled = false;
             renderCamera.clearFlags = CameraClearFlags.SolidColor;
             renderCamera.backgroundColor = SpaceBackdropColor;   // 深空色；有大气时每帧由 UpdateAtmosphereSky 混向大气色
             renderCamera.cullingMask = 1 << SceneLayer;
@@ -150,7 +152,7 @@ namespace PioneerFramework
             fillLight.color = new Color(0.5f, 0.6f, 1f);
 
             BuildSystemList();
-            InitCameraForCurrentBody();
+            RestoreOrInitCamera();
             resourcesCreated = true;
         }
 
@@ -179,6 +181,7 @@ namespace PioneerFramework
             if (fillLight != null) { UnityEngine.Object.Destroy(fillLight.gameObject); fillLight = null; }
             if (cameraObject != null) { UnityEngine.Object.Destroy(cameraObject); cameraObject = null; }
             renderCamera = null;
+            lastSceneRenderFrame = int.MinValue;
             resourcesCreated = false;
         }
 
@@ -198,42 +201,10 @@ namespace PioneerFramework
         //  相机 — 浮动原点，物体位置均相对于渲染原点
         // ════════════════════════════════════════════════════
 
-        /// <summary>计算渲染原点（所有物体的 view-space 位置都相对此点）</summary>
+        /// <summary>计算渲染原点（所有物体的 view-space 位置都相对此点）。
+        /// 2026-10-18（U1）：跟**相机焦点**，不再跟 selectedGroupId —— 单击只改选中，不动相机。</summary>
         private DVector3 GetRenderOrigin(double? tickOverride = null)
-        {
-            double tick = tickOverride ?? RenderTick();   // 默认走**连续时钟**（2026-10-11）：原点与物体同钟 ⇒ 相对位置平滑
-            if (selectedGroupId >= 0)
-            {
-                var g = GetSelectedGroup(tick);
-                if (g != DVector3.zero)
-                    return g;
-            }
-
-            return GetBodyPosAbs(currentSystemBodyId, tick);
-        }
-
-        /// <summary>获取选中编队的世界坐标（tick 时刻），无选中返回 zero</summary>
-        private DVector3 GetSelectedGroup(double tick)
-        {
-            if (selectedGroupId < 0) return DVector3.zero;
-            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
-            if (spaceGame == null) return DVector3.zero;
-
-            var g = spaceGame.GetGroupById(selectedGroupId);
-            if (g == null) { selectedGroupId = -1; return DVector3.zero; }
-
-            return GetGroupPosAbs(g, tick);
-        }
-
-        /// <summary>相机在 view space 中的位置（相对于原点）</summary>
-        private Vector3 GetCameraViewPos()
-        {
-            float yR = camYaw * Mathf.Deg2Rad;
-            float pR = camPitch * Mathf.Deg2Rad;
-            float cP = Mathf.Cos(pR);
-            Vector3 orbitDir = new Vector3(cP * Mathf.Sin(yR), Mathf.Sin(pR), cP * Mathf.Cos(yR));
-            return camFocusOffset + orbitDir * camDistance;
-        }
+            => ResolveFocusOrigin(tickOverride);
 
         /// <summary>
         /// 将编队的天体-相对坐标转换为绝对世界坐标。
@@ -286,28 +257,6 @@ namespace PioneerFramework
             return mgr != null ? mgr.GetBodyPositionAbs(bodyId, tick) : DVector3.zero;
         }
 
-        /// <summary>重置相机：无编队时退到天体 2 倍半径处，有编队时退到 500m 处</summary>
-        private void InitCameraForCurrentBody()
-        {
-            camFocusOffset = Vector3.zero;
-            camYaw = 0f;
-            camPitch = 45f;
-
-            if (selectedGroupId >= 0)
-            {
-                // 选中编队：默认距离走 PFViewCameraLimits（2026-10-10 用户口径 300 m ~ 3 km 的那一档；
-                // 原值 500 单位 = 5 km，直接违反新上限）
-                camDistance = PFViewCameraLimits.GroupInitOrbitMeters * MetersToView;
-                return;
-            }
-
-            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            if (mgr == null) return;
-            var body = mgr.GetBodyById(currentSystemBodyId);
-            if (body != null)
-                camDistance = (float)(body.radius * MetersToView) * 2f;
-        }
-
         /// <summary>
         /// 绝对系（米）→ 视图系：**先算相对渲染原点的差、再乘分辨率、最后过"视图参考系"旋转**。
         /// ⚠ 2026-10-12「参考系按场景选」的**唯一换系口**：`viewFrameRot` 恒等 = 惯性系（历史行为），
@@ -342,7 +291,7 @@ namespace PioneerFramework
         /// </summary>
         private void UpdateViewFrame(CelestialBodyManager mgr, double tick, DVector3 origin)
         {
-            int bodyId = selectedGroupId >= 0 ? GetSelectedGroupBodyId() : currentSystemBodyId;
+            int bodyId = ResolveFocusBodyId();
             var def = mgr?.GetBodyById(bodyId);
             double altMeters = CameraAltitudeAboveBodyMeters(mgr, bodyId, tick, origin);
             double thickness = def != null ? def.atmosphereThickness : 0.0;
@@ -400,88 +349,5 @@ namespace PioneerFramework
             return true;
         }
 
-        private void HandleInput(Rect inRect)
-        {
-            var e = Event.current;
-            if (e == null) return;
-
-            // 鼠标不在视口上时不接管相机输入（面板按钮/勾选/信息面板/上层菜单占用的区域见 MouseInViewport）
-            bool inViewport = MouseInViewport(inRect);
-
-            if (e.type == EventType.ScrollWheel && inViewport)
-            {
-                camDistance = Mathf.Clamp(camDistance * (1f - e.delta.y * WheelSensitivity), MinDistance, MaxDistance);
-                e.Use();
-            }
-            // 右键拖拽 = 旋转；中键（或 Shift+右键）拖拽 = 平移。
-            // 只在视口内起手，避免在面板上拖拽时相机乱转/乱移。
-            if (e.type == EventType.MouseDown && inViewport && (e.button == 1 || e.button == 2))
-            {
-                if (e.button == 2 || e.shift) isDraggingPan = true;
-                else isDraggingRight = true;
-                lastMousePos = e.mousePosition;
-                e.Use();
-            }
-            // 只在真的拖过时才消费抬起（否则会把别人的事件吃掉，比如上层菜单/取消操作）
-            if (e.type == EventType.MouseUp && (e.button == 1 || e.button == 2))
-            {
-                if (isDraggingRight || isDraggingPan) e.Use();
-                isDraggingRight = false;
-                isDraggingPan = false;
-            }
-            if (isDraggingRight && e.type == EventType.MouseDrag && e.button == 1)
-            {
-                Vector2 d = e.mousePosition - lastMousePos;
-                camYaw -= d.x * OrbitSensitivity;
-                camPitch = Mathf.Clamp(camPitch - d.y * OrbitSensitivity, MinPitch, MaxPitch);
-                lastMousePos = e.mousePosition; e.Use();
-            }
-            if (isDraggingPan && e.type == EventType.MouseDrag && (e.button == 1 || e.button == 2))
-            {
-                Vector2 d = e.mousePosition - lastMousePos;
-                if (renderCamera != null)
-                {
-                    // 像素→世界尺度：焦点平面上的 1:1 拖拽（垂直 FOV 45°）
-                    float worldPerPx = 2f * camDistance * Mathf.Tan(renderCamera.fieldOfView * 0.5f * Mathf.Deg2Rad)
-                                       / Mathf.Max(1f, renderCamera.pixelHeight);
-                    camFocusOffset -= (renderCamera.transform.right * d.x + renderCamera.transform.up * d.y) * worldPerPx;
-                }
-                lastMousePos = e.mousePosition; e.Use();
-            }
-        }
-
-        private void UpdateCamera()
-        {
-            if (renderCamera == null) return;
-            RecreateRenderTexture();   // 分辨率/窗口尺寸变化 → 重建（尺寸相同则空转）
-
-            // ── 取景限制（2026-10-10 用户口径）──
-            // 看向编队时：平移 ≤ 2 km · 拉远 ≤ 3 km · 靠近 ≥ 300 m（常量在 `PFViewCameraLimits` 里，一处改处处生效）。
-            // 放在**这里**（算相机位置之前）而不是各输入分支里：能改 `camDistance`/`camFocusOffset` 的路径不止一条
-            // （滚轮、选中编队时的初始化、将来可能有的"跳到船上"），收口一处才不会有漏网；顺带保证本帧就生效（无 1 帧滞后）。
-            bool onGroup = selectedGroupId >= 0;
-            camDistance = PFViewCameraLimits.ClampOrbitDistance(camDistance, MetersToView, onGroup);
-            camFocusOffset = PFViewCameraLimits.ClampPanOffset(camFocusOffset, MetersToView, onGroup);
-
-            Vector3 camViewPos = GetCameraViewPos();
-            renderCamera.transform.position = camViewPos;
-            renderCamera.transform.LookAt(camFocusOffset, Vector3.up);
-            renderCamera.farClipPlane = FarClip;
-
-            // 近裁剪面**随相机距离自适应**（2026-10-10）。原样是 `NearClip = 0.01` + `FarClip = 1e8` ⇒ 远近比 1e10，
-            // 深度精度在最远 ~1e8 处等于报废：在 5×10⁵ 单位（行星）处 δz ≈ d²/(near·2²⁴) ≈ **1.5 万单位** ——
-            // 于是"基底球 + 地表分格"这两层同心面**必然 z-fighting**（往外挪几十米毫无意义）。
-            // 相机离焦点越远，镜头近处其实越没有东西需要 1 cm 级的近裁：取 camDistance 的一个小比例即可，
-            // 精度随 near 线性变好（同样 5×10⁵ 处：near=100 ⇒ δz ≈ 150 单位，1 公里级；near=5000 ⇒ δz ≈ 3000 单位）。
-            // 近裁剪面比例 **0.05 → 0.35（2026-10-10 修"大气壳一闪一闪"）**：
-            // 深度精度 δz ≈ d²/(near·2²⁴)。看行星时 camDistance 大、这条被 Clamp 到 5000 上限，
-            // 行星（5e5 单位）处 δz ≈ 30 m ⇒ 一切正常；但**盯着船看**时 camDistance 只有 30~300 单位
-            // （= 300 m ~ 3 km，见 `PFViewCameraLimits`），原来 near = 0.05×camDistance ⇒ 1.5~15 单位
-            // ⇒ 同一距离处 δz ≈ **10~100 km** —— 而大气壳离地只有 50 km、地表补丁离基底球只有 1 km
-            // ⇒ 两者都落进同一个深度格，逐帧翻面 = 肉眼看到的"闪"。
-            // 取 0.35×：焦点（船）永远在 camDistance 处、船体尺度远小于它 ⇒ **绝不裁到船**；
-            // δz 直接降 7 倍（最贴近那一档也从 ~100 km 降到 ~14 km）。
-            renderCamera.nearClipPlane = Mathf.Clamp(camDistance * 0.35f, NearClip, 5000f);
-        }
     }
 }

@@ -53,14 +53,20 @@ namespace PioneerFramework
         private float camPitch = 45f;
         private Vector3 camFocusOffset;
 
-        private bool isDraggingRight;
+        private readonly PFViewUiDragState dragState = new();
+        private bool isDraggingRight => dragState.Orbit;
         private Vector2 lastMousePos;
 
         private int selectedGroupId = -1;
         private int targetGroupId = -1;   // 手动标记的攻击目标（射手 = selectedGroupId）
 
-        private bool debugScaleParts;    // 调试：放大所有渲染部件以观测远处飞船
-        private bool debugShowSunMarker; // 调试：在太阳位置显示黄色标记（默认关；面板上可勾）
+
+        // 调试窗口用的实例开关（2026-10-18 用户：调试选项放回 PFView）
+        internal bool DebugMapRelief { get => debugMapRelief; set => debugMapRelief = value; }
+        internal bool DebugSettlements { get => debugSettlements; set => debugSettlements = value; }
+
+        internal static bool DebugScaleParts;    // 调试：放大所有渲染部件（PFView 调试窗 + DebugTabMenu_PFL 双入口）
+        internal static bool DebugShowSunMarker; // 调试：太阳位置黄色标记（入口已移到 DebugTabMenu_PFL）
         private bool debugMapRelief = true; // 有 Map 的编队画"地图浮雕"（默认开；关掉即回到旧盒体，便于 A/B）
         private int cachedRenderTick;           // 缓存渲染 tick，避免 OnPostRender 中重复获取
 
@@ -186,6 +192,7 @@ namespace PioneerFramework
             absorbInputAroundWindow = false;
             closeOnClickedOutside = false;
             closeOnAccept = false;
+            closeOnCancel = false;
             soundAppear = null;
             soundClose = SoundDefOf.TabClose;
         }
@@ -199,6 +206,7 @@ namespace PioneerFramework
         public override void PostOpen()
         {
             base.PostOpen();
+            ResetUiSession();
             EnsureResources();
             // 2026-10-13（P2-b）：原挂 RenderPipelineManager.endCameraRendering 画轨道线；
             // 1.7 无该类型（且 GL 已退化为 2D）⇒ 轨道线改在 RenderScene 里以 mesh 提交，钩子整个删除。
@@ -213,11 +221,11 @@ namespace PioneerFramework
         public override void DoWindowContents(Rect inRect)
         {
             if (!resourcesCreated) EnsureResources();
+            ResolveUiContext();
 
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (mgr != null)
             {
-                UpdateCamera();
                 RenderScene(mgr);
                 if (renderTexture != null)
                 {
@@ -228,7 +236,7 @@ namespace PioneerFramework
             else
             {
                 // 只有"没有天体管理器"（未开局）才无可看之物。旧版把"未选中编队"也归进这个分支，
-                // 于是刚打开页签就是一块黑屏：而相机取景（InitCameraForCurrentBody 已按天体半径退开）、
+                // 于是刚打开页签就是一块黑屏：而相机取景（RestoreOrInitCamera 已按天体半径/FOV 退开）、
                 // 渲染原点（GetRenderOrigin 回退到天体）、天体/轨道线绘制全都支持无选中状态 —— 那条
                 // 路径从没被执行过。现在未选中编队 = 正常渲染当前星系视图。
                 Widgets.DrawBoxSolid(inRect, new Color(0.005f, 0.005f, 0.03f));
@@ -253,6 +261,8 @@ namespace PioneerFramework
 
         public override void PreClose()
         {
+            SaveCameraMemory();
+            ResetUiSession();
             CleanupResources();
             base.PreClose();
         }

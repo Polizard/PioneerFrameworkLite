@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PFV_NotOperable>This group cannot be operated right now.</PFV_NotOperable>
+  <PFV_NoConsole>This group has no working steering console.</PFV_NoConsole>
+  <PFV_SourceLost>The operating group is unavailable. Weapon operations ended.</PFV_SourceLost>
+  <PFV_TargetLost>The target is unavailable or contact was lost.</PFV_TargetLost>
+  <PFV_KeepOperator>Change the operating group explicitly. Inspection does not change command ownership.</PFV_KeepOperator>
+  <PFV_CannotFire>Cannot fire. Check the operating group, target and weapon status.</PFV_CannotFire>
+  <PFV_Group>Group {0}</PFV_Group>
+  <PFV_Own>Player group</PFV_Own>
+  <PFV_Visible>Public object</PFV_Visible>
+  <PFV_Contact>Contact {0}</PFV_Contact>
+  <PFV_Unidentified>Unidentified</PFV_Unidentified>
+  <PFV_DecoyIdentified>Identified decoy</PFV_DecoyIdentified>
+  <PFV_ContactLost>The inspected contact is no longer available.</PFV_ContactLost>
+  <PFV_Objects>Visible objects ({0})</PFV_Objects>
+  <PFV_DistanceReference>Distance reference: {0}</PFV_DistanceReference>
+  <PFV_Filter_All>Filter: All</PFV_Filter_All>
+  <PFV_Filter_OwnGroups>Filter: Own</PFV_Filter_OwnGroups>
+  <PFV_Filter_OtherGroups>Filter: Other</PFV_Filter_OtherGroups>
+  <PFV_Filter_Contacts>Filter: Contacts</PFV_Filter_Contacts>
+  <PFV_Sort_Name>By name</PFV_Sort_Name>
+  <PFV_Sort_Distance>By distance</PFV_Sort_Distance>
+  <PFV_BackToList>Back to objects</PFV_BackToList>
+  <PFV_Collapse>Hide</PFV_Collapse>
+  <PFV_State>Status</PFV_State>
+  <PFV_Error>Position error</PFV_Error>
+  <PFV_ObservationAge>Observation age</PFV_ObservationAge>
+  <PFV_ContactReadOnly>This is an observation. Unidentified contacts do not expose entity details or entity focus.</PFV_ContactReadOnly>
+  <PFV_Region>Region</PFV_Region>
+  <PFV_Speed>Orbital speed</PFV_Speed>
+  <PFV_Focus>Focus this object</PFV_Focus>
+  <PFV_SetTarget>Set as target</PFV_SetTarget>
+  <PFV_StopSteering>Stop steering {0}</PFV_StopSteering>
+  <PFV_StartSteering>Steer {0}</PFV_StartSteering>
+  <PFV_OpenWeapons>Open {0} weapons</PFV_OpenWeapons>
+  <PFV_ChangeOperator>Operate {0}</PFV_ChangeOperator>
+  <PFV_Rooms>Rooms ({0})</PFV_Rooms>
+  <PFV_Room>Room</PFV_Room>
+  <PFV_EnterRoom>Enter {0}</PFV_EnterRoom>
+  <PFV_Operating>Operating group {0}</PFV_Operating>
+  <PFV_WeaponTarget>Target: {0}</PFV_WeaponTarget>
+  <PFV_CloseWeapons>End weapon operation</PFV_CloseWeapons>
+  <PFV_ClearTarget>Clear target</PFV_ClearTarget>
+  <PFV_Overheated>Overheated</PFV_Overheated>
+  <PFV_Ready>Ready</PFV_Ready>
+  <PFV_NotReady>Not ready</PFV_NotReady>
+  <PFV_Fire>Fire</PFV_Fire>
+  <PFV_SelectGroup>Inspect group</PFV_SelectGroup>
+  <PFV_SelectGroupTip>Single click inspects. Double click a list row or use Focus to move the camera.</PFV_SelectGroupTip>
+  <PFV_Navigate>Bodies</PFV_Navigate>
+  <PFV_NavigateTip>Observe a body while keeping inspection, operator and target.</PFV_NavigateTip>
+  <PFV_BodyView>Planet view</PFV_BodyView>
+  <PFV_BodyViewTip>Return to the current body without changing other interaction states.</PFV_BodyViewTip>
+  <PFV_Display>Display ▾</PFV_Display>
+  <PFV_DisplayTip>Instrument visibility, map relief and settlements.</PFV_DisplayTip>
+  <PFV_Frame_Auto>Auto</PFV_Frame_Auto>
+  <PFV_Frame_Inertial>Inertial</PFV_Frame_Inertial>
+  <PFV_Frame_Fixed>Fixed</PFV_Frame_Fixed>
+  <PFV_FrameTip>Selected mode, then resolved frame. Click to cycle Auto, Inertial and Fixed. Auto uses Fixed near the surface.</PFV_FrameTip>
+  <PFV_Weapons>Weapons {0}</PFV_Weapons>
+  <PFV_OpenOperationsTip>Open the operating group's weapons without changing operator.</PFV_OpenOperationsTip>
+  <PFV_Help>Controls and help</PFV_Help>
+  <PFV_Debug>Debug</PFV_Debug>
+  <PFV_DebugTip>PFView debug settings and test actions.</PFV_DebugTip>
+  <PFV_Navball>Attitude</PFV_Navball>
+  <PFV_Radar>Radar</PFV_Radar>
+  <PFV_RadarSource>Radar · {0} · Display only</PFV_RadarSource>
+  <PFV_RadarRange>Full range {0}</PFV_RadarRange>
+  <PFV_NoOperator>No operating group</PFV_NoOperator>
+  <PFV_NavballSource>Attitude · {0}</PFV_NavballSource>
+  <PFV_EndSteering>Stop steering</PFV_EndSteering>
+  <PFV_Panel_Automatic>Automatic: follow current task</PFV_Panel_Automatic>
+  <PFV_Panel_Expanded>Keep expanded this session</PFV_Panel_Expanded>
+  <PFV_Panel_Collapsed>Keep collapsed this session</PFV_Panel_Collapsed>
+  <PFV_Frozen>Frozen view</PFV_Frozen>
+  <PFV_Status>Inspect {0} · Follow {1} · Operate {2} · Target {3} | Camera distance {4}</PFV_Status>
+  <PFV_PreviousView>Back view</PFV_PreviousView>
+  <PFV_PreviousViewTip>Restore the last valid view without changing inspection or operator.</PFV_PreviousViewTip>
+  <PFV_NoPreviousView>No previous view is available.</PFV_NoPreviousView>
+  <PFV_ViewUnavailable>The previous view's object is unavailable. Keeping the current view.</PFV_ViewUnavailable>
+  <PFV_ViewLimit>Group framing limit reached. Use Planet view for a wider view.</PFV_ViewLimit>
+  <PFV_HelpTitle>PFView controls</PFV_HelpTitle>
+  <PFV_HelpCameraTitle>Inspection and camera</PFV_HelpCameraTitle>
+  <PFV_HelpCamera>Click to inspect; double-click to focus. Right drag rotates; middle or Shift+right drag pans. Wheel up zooms out, down zooms in. R/Home resets; Back view restores one previous view.</PFV_HelpCamera>
+  <PFV_HelpTasksTitle>Contextual instruments</PFV_HelpTasksTitle>
+  <PFV_HelpTasks>Steering opens attitude instruments; weapon operation opens radar. Display options can pin visibility for this session. Reopening restores automatic visibility. Radar is display-only.</PFV_HelpTasks>
+  <PFV_HelpSubjectsTitle>Inspection and operation</PFV_HelpSubjectsTitle>
+  <PFV_HelpSubjects>The bottom bar shows inspection, follow, operator and target. Inspecting another object or hiding details keeps the operator. Shift+click sets a target; open the operating group's weapon panel before firing.</PFV_HelpSubjects>
+  <PFV_HelpTimeTitle>Game time</PFV_HelpTimeTitle>
+  <PFV_HelpTime>The toolbar controls pause and speed. Default keys 1/2/3/4 select speed; Space pauses. Vanilla bindings remain rebindable. Search and foreground windows take input priority.</PFV_HelpTime>
+  <PFV_HelpKnownTitle>Contacts and instruments</PFV_HelpKnownTitle>
+  <PFV_HelpKnown>Unidentified contacts show observations and error only. Attitude markers: P prograde, A retrograde, R/r radial out/in, N/S normal/antinormal, T main thrust axis.</PFV_HelpKnown>
+  <PFV_HelpLimitsTitle>Framing and debug</PFV_HelpLimitsTitle>
+  <PFV_HelpLimits>Group distance is 300 m–3 km with pan up to 2 km. Use Planet view for wider scales. Debug remains available in the toolbar.</PFV_HelpLimits>
+  <PFV_Close>Close</PFV_Close>
+  <PFV_Search>Search name or ID</PFV_Search>
+  <PFV_NoObjects>No visible objects match this filter.</PFV_NoObjects>
+  <PFV_NavballReadouts>Navball and full readouts…</PFV_NavballReadouts>
+  <PFV_InspectionLost>The inspected group is unavailable or contact was lost.</PFV_InspectionLost>
+  <PFV_Tracking>Track record</PFV_Tracking>
+  <PFV_TrackLive>Current observation</PFV_TrackLive>
+  <PFV_TrackRecord>Retained observation</PFV_TrackRecord>
+  <PFV_ObservedPosition>Observed coordinates (frame unknown)</PFV_ObservedPosition>
+</LanguageData>

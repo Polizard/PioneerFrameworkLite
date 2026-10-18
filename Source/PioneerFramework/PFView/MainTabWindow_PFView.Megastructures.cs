@@ -33,7 +33,7 @@ namespace PioneerFramework
                 if(Vector2.Distance(mouseInView,point)>25)continue;best=screen.z;selected=item.Address.InstanceId;
             }
             if(selected==null)return false;facilities.SelectedInstanceId=selected;
-            var tab=DefDatabase<RimWorld.MainButtonDef>.GetNamedSilentFail("PF_Megastructures");if(tab!=null)Find.MainTabsRoot.SetCurrentTab(tab);return true;
+            QueueToast("已选中巨构（在「巨构」页签查看详情）");return true;
         }
     }
 }

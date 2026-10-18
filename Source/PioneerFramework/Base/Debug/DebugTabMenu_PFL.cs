@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Reflection;
 using LudeonTK;
 using PioneerFramework.Combat;
@@ -53,6 +53,22 @@ namespace PioneerFramework
                     string? p = MainTabWindow_PFView.CaptureToPng();
                     Log.Message(p != null ? "[PFView·截图] 已写出：" + p : "[PFView·截图] 失败：PFView 未打开或无 RT");
                 }, null);
+
+            // PFView 视图系统 v2（2026-10-18）：原先挂在玩家工具条/面板上的测试与作弊项，统一收进这里。
+            AddAction("PFView·部署交火测试对（1 我方 + 1 敌对，100 m 间距；需 PFView 打开）", "20 视图/表现", 57,
+                PFViewDebugActions.DeployCombatPair, null);
+            AddAction("PFView·把目标传送到正前方 1km（作弊；需先选中射手与目标）", "20 视图/表现", 56,
+                PFViewDebugActions.TeleportTarget, null);
+            AddAction("PFView·目标 +100 m/s（作弊）", "20 视图/表现", 55,
+                PFViewDebugActions.TargetSpeedUp, null);
+            AddAction("PFView·目标 -100 m/s（作弊）", "20 视图/表现", 54,
+                PFViewDebugActions.TargetSpeedDown, null);
+            AddAction("PFView·预生成当前选中编队的舱室地图（测试）", "20 视图/表现", 53,
+                PFViewDebugActions.PregenerateRooms, null);
+            AddCheckbox("PFView·放大部件（×200，调试）", "20 视图/表现", 52,
+                typeof(MainTabWindow_PFView), "DebugScaleParts");
+            AddCheckbox("PFView·太阳位置标记（黄块，调试）", "20 视图/表现", 51,
+                typeof(MainTabWindow_PFView), "DebugShowSunMarker");
 
             AddAction("传感器/雷达投影验收（[V7]：站 + 两座建筑 → 投影 / W1 开机 / 打伤 / 摧毁 / 往返）", "00 验收", 34,
                 SensorProjectionAcceptanceRunner.Run, null);
