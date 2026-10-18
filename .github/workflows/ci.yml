@@ -18,11 +18,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.401
+          dotnet-version: 10.0.402
           cache: true
           cache-dependency-path: |
             Source/PioneerFramework/PioneerFramework.csproj
@@ -34,6 +36,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Verify game reference dependencies
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/check-game-dependencies.ps1
 
       - name: Build PioneerFrameworkLite (Debug)
         run: dotnet build Source/PioneerFramework/PioneerFramework.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_debug -p:AppendTargetFrameworkToOutputPath=false
@@ -54,15 +60,15 @@ jobs:
         run: pwsh -NoProfile -File tools/check-committed-dll.ps1
 
       - name: Run game integration tests
-        run: dotnet test Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_test_game -p:AppendTargetFrameworkToOutputPath=false
+        run: dotnet test Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj --configuration Debug -v:minimal
 
-      - name: Run pure math tests (net48)
-        run: dotnet test Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_test_pure -p:AppendTargetFrameworkToOutputPath=false
+      - name: Run pure math tests (net10.0)
+        run: dotnet test Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.csproj --configuration Debug -v:minimal
 
-      # 第三方移植物（MechJebLib 数值底座）的上游测试套：net48、零 RimWorld/Unity 依赖。
+      # 第三方移植物（MechJebLib 数值底座）的上游测试套保留 net48 的数值基线。
       # 详见 Source/PioneerFramework/ThirdParty/MechJebLib/README.md
       - name: Run ported MechJebLib tests
-        run: dotnet test Source/MechJebLibTest/MechJebLibTest.csproj --configuration Debug -v:minimal -p:OutputPath=$env:RUNNER_TEMP/pfl_test_mjl -p:AppendTargetFrameworkToOutputPath=false
+        run: dotnet test Source/MechJebLibTest/MechJebLibTest.csproj --configuration Debug -v:minimal
 
       - name: Validate XML / DefOf / localization
         run: python tools/validate_config.py

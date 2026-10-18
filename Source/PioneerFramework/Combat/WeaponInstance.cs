@@ -50,15 +50,13 @@ namespace PioneerFramework.Combat
         /// <summary>
         /// 与 `UnityEngine.Quaternion.RotateTowards` 同语义的本地实现（2026-10-13，P2）。
         /// 1.7 的 UnityStubs 没有该静态方法（元数据核实）⇒ 自实现（D5：缺什么自己解）。
-        /// 沿最短弧朝目标转最多 maxRadiansDelta、不越过目标。
+        /// 沿最短弧朝目标转最多 maxDegreesDelta、不越过目标。
         /// </summary>
-        private static Quaternion RotateTowards(Quaternion from, Quaternion to, float maxRadiansDelta)
+        private static Quaternion RotateTowards(Quaternion from, Quaternion to, float maxDegreesDelta)
         {
-            float dot = Quaternion.Dot(from, to);
-            if (dot < 0f) { to = new Quaternion(-to.x, -to.y, -to.z, -to.w); dot = -dot; }
-            float angle = 2f * Mathf.Acos(Mathf.Clamp(dot, -1f, 1f));
-            if (angle <= maxRadiansDelta || angle <= 1e-6f) return to;
-            return Quaternion.SlerpUnclamped(from, to, maxRadiansDelta / angle);
+            float angle = Quaternion.Angle(from, to);
+            if (angle <= maxDegreesDelta || angle <= 1e-6f) return to;
+            return Quaternion.SlerpUnclamped(from, to, maxDegreesDelta / angle);
         }
 
         public bool CanFire()

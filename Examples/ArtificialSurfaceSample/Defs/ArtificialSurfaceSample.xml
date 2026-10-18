@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <PlanetLayerDef>
+    <defName>PF_RectangularSurfaceSample</defName>
+    <label>矩形表面复用样例</label>
+    <layerType>PFL.ArtificialSurfaceSample.RectangularLayer</layerType>
+    <tileType>SurfaceTile</tileType>
+    <backgroundBiome>TemperateForest</backgroundBiome>
+    <isSpace>false</isSpace>
+    <worldDrawLayers><li>PFL.ArtificialSurfaceSample.RectangularDrawLayer</li><li>PioneerFramework.Megastructures.WorldDrawLayer_SurfaceSelected</li><li>PioneerFramework.Megastructures.WorldDrawLayer_SurfaceMouse</li></worldDrawLayers>
+  </PlanetLayerDef>
+  <PioneerFramework.Megastructures.MegastructureDef>
+    <defName>PF_RectangularSample</defName>
+    <label>矩形巨构复用样例</label>
+    <description>独立扩展程序集中的六格矩形表面，用于验证通用模块接入。</description>
+    <backendProviderId>sample.rectangle</backendProviderId>
+    <nodes><li><key>surface</key><spatialMode>BodyAnchored</spatialMode><bodyId>-1</bodyId><capabilities>
+      <li><key>surface</key><handlerId>pfl.surface.layer</handlerId></li>
+      <li><key>rotation</key><handlerId>pfl.motion.periodic</handlerId></li>
+      <li><key>navigation</key><handlerId>pfl.surface.navigation</handlerId></li>
+      <li><key>maps</key><handlerId>pfl.map.surface</handlerId></li>
+      <li><key>environment</key><handlerId>pfl.environment.artificial</handlerId></li>
+      <li><key>presentation</key><handlerId>pfl.presentation.surface</handlerId></li>
+      <li><key>view</key><handlerId>pfl.view.surface</handlerId></li>
+    </capabilities></li></nodes>
+  </PioneerFramework.Megastructures.MegastructureDef>
+</Defs>

@@ -372,6 +372,29 @@ namespace PioneerFramework
             AddAction("跳帮测试面板", "60 场景 · 跳帮", 90, () => Find.WindowStack.Add(new Window_BoardingTest()), null);
             AddAction("发射测试面板", "70 场景 · 发射", 100, () => Find.WindowStack.Add(new Window_LaunchTest()), null);
 
+            // ═══ 场景 · 运行时 PlanetLayer ═══
+            AddAction("创建测试地表（PlanetLayer）", "75 场景 · PlanetLayer", 100,
+                RuntimePlanetLayerDebugActions.CreateTestLayer, null);
+            AddAction("选择查看 PlanetLayer", "75 场景 · PlanetLayer", 90,
+                RuntimePlanetLayerDebugActions.ChooseLayerToView, null);
+            AddAction("删除空 PlanetLayer（保留主地表/轨道）", "75 场景 · PlanetLayer", 80,
+                RuntimePlanetLayerDebugActions.ChooseLayerToRemove, null);
+            AddAction("打印 PlanetLayer 状态", "75 场景 · PlanetLayer", 70,
+                RuntimePlanetLayerDebugActions.PrintLayers, null);
+
+            AddAction("PF_RingCreateSmall".Translate(), "76 场景 · 环世界", 100, RingWorld.RingWorldDebugActions.CreateSmall, null);
+            AddAction("PF_RingCreateLarge".Translate(), "76 场景 · 环世界", 95, RingWorld.RingWorldDebugActions.CreateLarge, null);
+            AddAction("PF_RingView".Translate(), "76 场景 · 环世界", 90, RingWorld.RingWorldDebugActions.View, null);
+            AddAction("PF_RingFocus".Translate(), "76 场景 · 环世界", 85, RingWorld.RingWorldDebugActions.FocusSelected, null);
+            AddAction("PF_RingEnterMap".Translate(), "76 场景 · 环世界", 80, RingWorld.RingWorldDebugActions.EnterSelectedMap, null);
+            AddAction("PF_RingValidate".Translate(), "76 场景 · 环世界", 75, RingWorld.RingWorldDebugActions.Validate, null);
+            AddAction("PF_RingRemove".Translate(), "76 场景 · 环世界", 70, RingWorld.RingWorldDebugActions.Remove, null);
+            AddAction("PF_Mega_DebugOpen".Translate(), "78 场景 · 通用巨构", 100, delegate
+            {
+                var tab=DefDatabase<MainButtonDef>.GetNamedSilentFail("PF_Megastructures");
+                if(tab!=null)Find.MainTabsRoot.SetCurrentTab(tab);
+            }, null);
+
             // ═══ 场景 · 星座（组织层）═══
             AddAction("星座自检（API 全链）", "90 场景 · 星座", 100, ConstellationSelfTest.Run, null);
 

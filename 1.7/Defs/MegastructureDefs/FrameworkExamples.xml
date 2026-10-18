@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <PioneerFramework.Megastructures.MegastructureDef>
+    <defName>PF_MegastructureServiceArray</defName><label>依附式服务阵列（框架示例）</label><referenceOnly>true</referenceOnly>
+    <description>无地图的天体依附设施，具有标量库存和生产能力。</description>
+    <nodes><li><key>hub</key><spatialMode>BodyAnchored</spatialMode><bodyId>1</bodyId><offset><x>18000000</x></offset>
+      <capabilities>
+        <li><key>storage</key><handlerId>pfl.resource.storage</handlerId><properties Class="PioneerFramework.Megastructures.StorageCapabilityProperties"><resources><li><resourceId>energy</resourceId><unit>kWd</unit><capacity>1000</capacity></li></resources></properties></li>
+        <li><key>generator</key><handlerId>pfl.production</handlerId><payload>{"PeriodTicks":60000,"Outputs":[{"ResourceId":"energy","Amount":10}]}</payload></li>
+        <li><key>visual</key><handlerId>pfl.presentation</handlerId></li>
+      </capabilities>
+    </li></nodes>
+  </PioneerFramework.Megastructures.MegastructureDef>
+  <PioneerFramework.Megastructures.MegastructureDef>
+    <defName>PF_MegastructureOrbitalPlatform</defName><label>自由轨道平台（框架示例）</label><referenceOnly>true</referenceOnly>
+    <description>绑定既有己方群组，组合库存、生产、货运端点与可选内部图；轨道、推进和燃料继续由原物理系统管理。</description>
+    <nodes><li><key>platform</key><spatialMode>PhysicalGroup</spatialMode><capabilities>
+      <li><key>drive</key><handlerId>pfl.maneuver</handlerId></li><li><key>combat</key><handlerId>pfl.combat</handlerId></li>
+      <li><key>interior</key><handlerId>pfl.map</handlerId><payload>{"AllowGenerate":true,"Width":120,"Height":120}</payload></li>
+      <li><key>storage</key><handlerId>pfl.resource.storage</handlerId><payload>{"Resources":[{"Id":"energy","Unit":"kWd","Capacity":1000}]}</payload></li>
+      <li><key>cargo</key><handlerId>pfl.resource.storage</handlerId><payload>{"Resources":[{"Id":"Steel","Unit":"item","IsItem":true,"Capacity":500}]}</payload></li>
+      <li><key>generator</key><handlerId>pfl.production</handlerId><payload>{"PeriodTicks":600,"Outputs":[{"ResourceId":"energy","Amount":1}]}</payload></li>
+      <li><key>port</key><handlerId>pfl.transport</handlerId><payload>{"Endpoints":[{"Id":"cargo","StoreProviderId":"$instance/$node/cargo","Capacity":1}]}</payload></li>
+    </capabilities></li></nodes>
+  </PioneerFramework.Megastructures.MegastructureDef>
+  <PioneerFramework.Megastructures.MegastructureDef>
+    <defName>PF_MegastructureDistributedArray</defName><label>分布式阵列（框架示例）</label><referenceOnly>true</referenceOnly>
+    <description>三个独立定位节点，包含采集端到主节点的标量资源连接，以及独立的远端节点。</description>
+    <capabilities><li><key>network</key><handlerId>pfl.resource.connections</handlerId><payload>{"MaximumDistanceMeters":5000000}</payload></li></capabilities>
+    <connections><li><key>collector-to-hub</key><sourceNode>collector</sourceNode><targetNode>hub</targetNode><resourceId>energy</resourceId><capacityPerStep>2</capacityPerStep></li></connections>
+    <nodes>
+      <li><key>hub</key><spatialMode>BodyAnchored</spatialMode><bodyId>1</bodyId><offset><x>19000000</x></offset><capabilities>
+        <li><key>visual</key><handlerId>pfl.presentation</handlerId></li>
+        <li><key>storage</key><handlerId>pfl.resource.storage</handlerId><payload>{"Resources":[{"Id":"energy","Unit":"kWd","Capacity":1000}]}</payload></li>
+      </capabilities></li>
+      <li><key>collector</key><spatialMode>NodeRelative</spatialMode><parentNode>hub</parentNode><offset><z>1000000</z></offset><capabilities>
+        <li><key>visual</key><handlerId>pfl.presentation</handlerId></li>
+        <li><key>storage</key><handlerId>pfl.resource.storage</handlerId><payload>{"Resources":[{"Id":"energy","Unit":"kWd","Capacity":1000}]}</payload></li>
+        <li><key>generator</key><handlerId>pfl.production</handlerId><payload>{"PeriodTicks":600,"Outputs":[{"ResourceId":"energy","Amount":1}]}</payload></li>
+      </capabilities></li>
+      <li><key>remote</key><spatialMode>BodyAnchored</spatialMode><bodyId>2</bodyId><offset><x>9000000</x></offset><capabilities><li><key>visual</key><handlerId>pfl.presentation</handlerId></li></capabilities></li>
+    </nodes>
+  </PioneerFramework.Megastructures.MegastructureDef>
+</Defs>

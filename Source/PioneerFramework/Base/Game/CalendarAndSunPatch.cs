@@ -115,6 +115,11 @@ namespace PioneerFramework
         public static bool CurCelestialSunGlow_Prefix(Map map, ref float __result)
         {
             if (map == null || map.Tile < 0) return true;
+            if (Megastructures.SurfaceEnvironmentBridge.TrySunGlow(map.Tile.Layer,out float artificialSunGlow))
+            {
+                __result = artificialSunGlow;
+                return false;
+            }
 
             // 用 Map 所在 tile 的天体自转周期，而非当前查看的星球
             float dayLength = CelestialBodyLayerManager.GetDayLengthForMap(map);
@@ -148,6 +153,11 @@ namespace PioneerFramework
         public static bool GenLocalDate_DayPercent_Map_Prefix(Map map, ref float __result)
         {
             if (map == null || map.Tile < 0) return true;
+            if (Megastructures.SurfaceEnvironmentBridge.TryDayPercent(map.Tile.Layer,out float artificialDayPercent))
+            {
+                __result = artificialDayPercent;
+                return false;
+            }
 
             float dayLength = CelestialBodyLayerManager.GetDayLengthForMap(map);
             if (Math.Abs(dayLength - 60000f) <= 10f) return true; // Earth，走原版

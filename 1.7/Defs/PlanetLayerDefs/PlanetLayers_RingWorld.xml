@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <PlanetLayerDef>
+    <defName>PF_RingWorld</defName>
+    <label>环世界</label>
+    <description>围绕行星的人工居住环带，拥有周向连通的地块和独立殖民地。</description>
+    <layerType>PioneerFramework.RingWorld.RingSurfaceLayer</layerType>
+    <tileType>SurfaceTile</tileType>
+    <viewGizmoTexPath>UI/Commands/ViewPlanet</viewGizmoTexPath>
+    <viewGizmoTooltip>查看环世界。</viewGizmoTooltip>
+    <gerundLabel>在环世界</gerundLabel>
+    <backgroundBiome>TemperateForest</backgroundBiome>
+    <isSpace>false</isSpace>
+    <obstructsExpandingIcons>true</obstructsExpandingIcons>
+    <worldGenSteps><li>PF_RingTiles</li></worldGenSteps>
+    <worldDrawLayers>
+      <li>PioneerFramework.RingWorld.WorldDrawLayer_RingTerrain</li>
+      <li>PioneerFramework.RingWorld.WorldDrawLayer_RingShell</li>
+      <!-- 2026-10-17 电影感视觉升级：环外装饰物（外挂塔/散热鳍/漂浮信标，无碰撞无拾取） -->
+      <li>PioneerFramework.RingWorld.WorldDrawLayer_RingOrnaments</li>
+      <!-- 2026-10-17 电影感视觉升级：加性边缘光/大气薄带/警示灯光晕（不写深度） -->
+      <li>PioneerFramework.RingWorld.WorldDrawLayer_RingGlow</li>
+      <li>PioneerFramework.RingWorld.WorldDrawLayer_RingSelected</li>
+      <li>PioneerFramework.RingWorld.WorldDrawLayer_RingMouse</li>
+      <li>WorldDrawLayer_WorldObjects_Expandable</li>
+      <li>WorldDrawLayer_WorldObjects_NonExpandable</li>
+    </worldDrawLayers>
+    <worldTabs><li>WITab_Terrain</li><li>WITab_Planet</li></worldTabs>
+  </PlanetLayerDef>
+  <WorldGenStepDef>
+    <defName>PF_RingTiles</defName>
+    <order>5</order>
+    <worldGenStep Class="PioneerFramework.RingWorld.WorldGenStep_RingTiles" />
+  </WorldGenStepDef>
+</Defs>

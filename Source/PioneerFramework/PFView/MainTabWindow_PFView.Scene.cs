@@ -130,6 +130,7 @@ namespace PioneerFramework
         {
             DrawCelestialBodies(mgr, tick, origin);
             DrawSystemGroups(mgr, tick, origin);
+            DrawMegastructures(mgr, origin);
             DrawProjectiles(origin);
         }
 

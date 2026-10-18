@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Surface_Import>纳管已有人工表面</PF_Surface_Import>
+  <PF_Surface_Resume>恢复未完成的创建</PF_Surface_Resume>
+  <PF_Surface_Overview>查看全景</PF_Surface_Overview>
+  <PF_Surface_Focus>聚焦所选地块</PF_Surface_Focus>
+  <PF_Surface_Enter>进入或生成所选地图</PF_Surface_Enter>
+  <PF_Surface_Validate>验证表面连通性</PF_Surface_Validate>
+  <PF_Surface_Detach>解除关联并保留后端</PF_Surface_Detach>
+  <PF_Surface_Destroy>退役并安全删除自有后端</PF_Surface_Destroy>
+  <PF_Surface_Selected>当前选择地块：{0}（-1 表示未选择）</PF_Surface_Selected>
+  <PF_Surface_Map>地块 {0} · 父对象 {1} · 地图 {2}</PF_Surface_Map>
+  <PF_Surface_ColonyName>{0} 殖民地 {1}</PF_Surface_ColonyName>
+</LanguageData>

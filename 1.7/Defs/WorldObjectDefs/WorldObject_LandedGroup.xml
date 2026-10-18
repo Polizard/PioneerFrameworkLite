@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs><WorldObjectDef><defName>PF_LandedGroup</defName><label>landed spacecraft</label>
+<description>An intact landed spacecraft waiting to be recovered by a caravan.</description>
+<worldObjectClass>PioneerFramework.Landing.LandedGroupWorldObject</worldObjectClass>
+<texture>World/WorldObjects/TravelingTransportPods</texture>
+<useDynamicDrawer>true</useDynamicDrawer>
+<expandingIcon>true</expandingIcon>
+<expandingIconTexture>World/WorldObjects/Expanding/TravelingTransportPods</expandingIconTexture>
+<expandingIconDrawSize>1.6</expandingIconDrawSize>
+<expandingIconPriority>60</expandingIconPriority>
+</WorldObjectDef></Defs>

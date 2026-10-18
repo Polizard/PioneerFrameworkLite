@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: LicenseRef-PD-hp OR Unlicense OR CC0-1.0 OR 0BSD OR MIT-0 OR MIT OR LGPL-2.1+
  */
 
+using System;
 using System.Globalization;
 using MechJebLib.Primitives;
 using Xunit;
@@ -91,9 +92,12 @@ namespace MechJebLibTest.Primitives.V3Tests
             var v = new V3(1.0 / 3.0, 2.0 / 3.0, 4.0 / 3.0);
             string result = v.ToString("R");
 
-            result.ShouldContain("0.33333333333333331");
-            result.ShouldContain("0.66666666666666663");
-            result.ShouldContain("1.3333333333333333");
+            // Modern .NET emits the shortest round-trippable decimal representation.
+            string[] components = result.Trim('[', ']').Split(',');
+            Assert.Equal(3, components.Length);
+            Assert.Equal(v.x, double.Parse(components[0], CultureInfo.InvariantCulture));
+            Assert.Equal(v.y, double.Parse(components[1], CultureInfo.InvariantCulture));
+            Assert.Equal(v.z, double.Parse(components[2], CultureInfo.InvariantCulture));
         }
 
         [Fact]
@@ -107,6 +111,7 @@ namespace MechJebLibTest.Primitives.V3Tests
         private void ToStringWithNumberFormat()
         {
             var v = new V3(1234.5, 6789.25, 10000);
+            // This project retains master's net48 midpoint-away-from-zero baseline.
             v.ToString("N1").ShouldEqual("[1,234.5, 6,789.3, 10,000.0]");
         }
 

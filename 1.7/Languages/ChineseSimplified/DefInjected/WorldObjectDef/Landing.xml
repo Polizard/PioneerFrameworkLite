@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_LandingTransit.label>正在降落的航天器</PF_LandingTransit.label>
+  <PF_LandingTransit.description>正在接近目标地表地块的航天器。</PF_LandingTransit.description>
+  <PF_LandedShipSite.label>航天器降落地点</PF_LandedShipSite.label>
+  <PF_LandedShipSite.description>供船站落地并长期保留的地表地点。</PF_LandedShipSite.description>
+  <PF_LandedGroup.label>已着陆载具回收点</PF_LandedGroup.label>
+  <PF_LandedGroup.description>安全着陆的载具，可派遣商队前往回收。</PF_LandedGroup.description>
+</LanguageData>

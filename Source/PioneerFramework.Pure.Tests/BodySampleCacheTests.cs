@@ -47,15 +47,27 @@ namespace PioneerFramework.Pure.Tests
         public async Task ConcurrentWritersAndReaders_NeverReturnValueFromAnotherTick()
         {
             const int slots = 4;
+            const int samplesPerReader = 25_001;
             var cache = new BodySampleCache();
             cache.EnsureCapacity(slots);
 
             var clock = new Clock();
             using var cts = new CancellationTokenSource();
+            using var ready = new CountdownEvent(slots * 2);
+            using var start = new ManualResetEventSlim(false);
             long mismatches = 0;
             long hits = 0;
 
-            var writers = Enumerable.Range(0, slots).Select(w => Task.Run(() =>
+            // Busy writers must not occupy the thread-pool workers needed to start
+            // readers on a small CI runner. All eight dedicated workers start together.
+            Task StartWorker(Action work) => Task.Factory.StartNew(() =>
+            {
+                ready.Signal();
+                start.Wait();
+                work();
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+            var writers = Enumerable.Range(0, slots).Select(w => StartWorker(() =>
             {
                 int slot = w;
                 double tick = 0.0;
@@ -69,14 +81,16 @@ namespace PioneerFramework.Pure.Tests
                 }
             })).ToArray();
 
-            var readers = Enumerable.Range(0, slots).Select(r => Task.Run(() =>
+            var readers = Enumerable.Range(0, slots).Select(r => StartWorker(() =>
             {
                 int slot = r;
-                while (!cts.IsCancellationRequested)
+                int samples = 0;
+                while (samples < samplesPerReader && !cts.IsCancellationRequested)
                 {
                     double tick = clock.Tick;
                     if (!cache.TryGet(slot, tick, out var pos, out var vel)) continue;
                     Interlocked.Increment(ref hits);
+                    samples++;
 
                     // 命中即断言：值必须等于"该 tick 的纯函数值"
                     if ((pos - PosAt(tick)).magnitude > 0.0 || (vel - VelAt(tick)).magnitude > 0.0)
@@ -84,9 +98,20 @@ namespace PioneerFramework.Pure.Tests
                 }
             })).ToArray();
 
-            await Task.Delay(1500);
-            cts.Cancel();
-            await Task.WhenAll(writers.Concat(readers));
+            try
+            {
+                Assert.True(ready.Wait(TimeSpan.FromSeconds(10)), "缓存压测工作线程未能全部就绪");
+                start.Set();
+                // Require actual samples from every reader, with a bounded failure
+                // if the cache stops making progress. Wall-clock throughput is not the invariant.
+                await Task.WhenAll(readers).WaitAsync(TimeSpan.FromSeconds(30));
+            }
+            finally
+            {
+                cts.Cancel();
+                start.Set();
+                await Task.WhenAll(writers.Concat(readers));
+            }
 
             // 读数打出来：对照「同负载压旧实现（值类型元组 + Dictionary）」实测 656 万命中 / 1585 次撕裂
             _out.WriteLine($"BodySampleCache 压测：命中={hits} 撕裂={mismatches}");

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Mega_Create>登记设施</PF_Mega_Create>
+  <PF_Mega_ImportRings>接入已有环世界</PF_Mega_ImportRings>
+  <PF_Mega_LoadBlocked>巨构数据需要处理：{0}</PF_Mega_LoadBlocked>
+  <PF_Mega_Empty>尚未登记设施。安装巨构内容定义，或在开发者模式使用框架示例。</PF_Mega_Empty>
+  <PF_Mega_Failed>操作暂不可用：{0}</PF_Mega_Failed>
+  <PF_Mega_Summary>节点：{0} · 状态修订：{1}</PF_Mega_Summary>
+  <PF_Mega_Activate>启用</PF_Mega_Activate>
+  <PF_Mega_Suspend>暂停运营</PF_Mega_Suspend>
+  <PF_Mega_Retire>退役</PF_Mega_Retire>
+  <PF_Mega_RetireConfirm>确认退役此设施？外借的后端设施会保留；清空内容和活动任务后，才能移除本设施拥有的后端。</PF_Mega_RetireConfirm>
+  <PF_Mega_Node>节点：{0} · {1}</PF_Mega_Node>
+  <PF_Mega_Enabled>已启用</PF_Mega_Enabled>
+  <PF_Mega_Disabled>已停用</PF_Mega_Disabled>
+  <PF_Mega_Disable>停用</PF_Mega_Disable>
+  <PF_Mega_View>查看设施</PF_Mega_View>
+  <PF_Mega_Items>库存物品：{0}</PF_Mega_Items>
+  <PF_Mega_AccessMap>进入内部地图</PF_Mega_AccessMap>
+  <PF_Mega_Group>绑定己方轨道群组 {0}</PF_Mega_Group>
+  <PF_Mega_State_Created>已登记</PF_Mega_State_Created>
+  <PF_Mega_State_Active>运行中</PF_Mega_State_Active>
+  <PF_Mega_State_Suspended>已暂停</PF_Mega_State_Suspended>
+  <PF_Mega_State_Decommissioning>退役处理中</PF_Mega_State_Decommissioning>
+  <PF_Mega_State_Retired>已退役</PF_Mega_State_Retired>
+  <PF_Mega_NoDefinitions>当前没有可用的巨构内容定义。开发者模式中可使用框架示例。</PF_Mega_NoDefinitions>
+  <PF_Mega_DebugOpen>打开通用巨构管理</PF_Mega_DebugOpen>
+</LanguageData>

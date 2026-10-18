@@ -562,9 +562,6 @@ namespace PioneerFramework
 
                             PlanetLayer.Selected = capturedLayer;
 
-                            // 强制重绘地形层，确保切换后 biome 更新立即显示
-                            Find.World.renderer.SetDirty<WorldDrawLayer_Terrain>(capturedLayer);
-
                             Messages.Message($"已切换至天体视图：{(capturedLayer.Def.label ?? capturedLayer.Def.defName)}",
                                 MessageTypeDefOf.SilentInput, false);
                         }));

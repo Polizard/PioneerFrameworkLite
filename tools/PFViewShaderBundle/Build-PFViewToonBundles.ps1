@@ -12,7 +12,7 @@ Lite's TODO M5-2).
 This script stages PF_Toon.shader into a temporary Unity project (copied from
 ProjectTemplate), runs PFViewToonBundleBuilder.BuildAll in batch mode, verifies
 the serialized shader name in every staged bundle with Unity's own
-WebExtract/binary2text tools, and publishes the validated set to 1.6\AssetBundles.
+WebExtract/binary2text tools, and publishes the validated set to 1.7\AssetBundles.
 
 Use -PrepareOnly to inspect the generated Unity project without launching Unity:
 
@@ -26,7 +26,7 @@ Normal build usage (requires Unity 2022.3.35f1):
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
         Tools\PFViewShaderBundle\Build-PFViewToonBundles.ps1
 
-It publishes these extensionless files to 1.6\AssetBundles:
+It publishes these extensionless files to 1.7\AssetBundles:
 
     pfview_toon_win
     pfview_toon_linux
@@ -257,7 +257,7 @@ try
 
     $bundleOutputRoot = Join-Path `
         $resolvedModRoot `
-        '1.6\AssetBundles'
+        '1.7\AssetBundles'
     $stagedBundleRoot = Join-Path `
         $resolvedProjectRoot `
         'PublishedBundles'

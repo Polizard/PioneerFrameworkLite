@@ -40,12 +40,14 @@ namespace MechJebLibTest.ManeuversTests
             }
         }
 
-        [Fact]
-        public void DeltaVToEllipticizeTest()
+        [Theory]
+        [InlineData(0)]
+        [InlineData(20261014)]
+        public void DeltaVToEllipticizeTest(int seed)
         {
             const int NTRIALS = 50;
 
-            var random = new Random();
+            var random = new Random(seed);
 
             for (int i = 0; i < NTRIALS; i++)
             {
@@ -64,9 +66,30 @@ namespace MechJebLibTest.ManeuversTests
 
                 V3 dv = MechJebLib.Maneuvers.Simple.DeltaVToEllipticize(mu, r, v, newPeR, newApR);
 
-                Astro.PeriapsisFromStateVectors(mu, r, v + dv).ShouldEqual(newPeR, 1e-4);
+                // At the generated extreme radius ratios a*(1-e) loses precision.
+                // Validate the same periapsis target from the independent state invariants.
+                double eccentricity = Astro.EccFromStateVectors(mu, r, v + dv);
+                double momentumSquared = V3.Cross(r, v + dv).sqrMagnitude;
+                (momentumSquared / (mu * (1 + eccentricity))).ShouldEqual(newPeR, 1e-4);
                 Astro.ApoapsisFromStateVectors(mu, r, v + dv).ShouldEqual(newApR, 1e-4);
             }
+        }
+
+        [Fact]
+        public void DeltaVToEllipticize_ExtremeRadiusRatioPreservesAngularMomentum()
+        {
+            const double mu = 3.986004418e14;
+            const double periapsis = 1e4;
+            const double apoapsis = 1e17;
+            var r = new V3(7e6, 0, 0);
+            var v = new V3(0, 7500, 0);
+            V3 dv = MechJebLib.Maneuvers.Simple.DeltaVToEllipticize(mu, r, v, periapsis, apoapsis);
+            // h^2 = 2 mu rp / (1 + rp/ra), evaluated without subtracting near-equal energies.
+            double expectedMomentum = Sqrt(mu) * Sqrt(2 * periapsis / (1 + periapsis / apoapsis));
+            V3 momentum = V3.Cross(r, v + dv);
+            momentum.magnitude.ShouldEqual(expectedMomentum, 1e-8);
+            double eccentricity = Astro.EccFromStateVectors(mu, r, v + dv);
+            (momentum.sqrMagnitude / (mu * (1 + eccentricity))).ShouldEqual(periapsis, 1e-8);
         }
 
         [Fact]

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <WorldObjectDef>
+    <defName>PF_LaunchTransit</defName>
+    <label>launching spacecraft</label>
+    <worldObjectClass>PioneerFramework.Launch.LaunchTransitWorldObject</worldObjectClass>
+    <texture>Things/Building/SpaceLaunchTechnology/ZQ_Rocket</texture>
+    <useDynamicDrawer>true</useDynamicDrawer>
+  </WorldObjectDef>
+</Defs>

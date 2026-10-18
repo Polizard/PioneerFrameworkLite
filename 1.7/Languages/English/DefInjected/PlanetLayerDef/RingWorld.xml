@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_RingWorld.label>ring world</PF_RingWorld.label>
+  <PF_RingWorld.description>An artificial habitat ring around a planet, with connected world tiles and persistent colonies.</PF_RingWorld.description>
+  <PF_RingWorld.viewGizmoTooltip>View the ring world.</PF_RingWorld.viewGizmoTooltip>
+  <PF_RingWorld.gerundLabel>on the ring world</PF_RingWorld.gerundLabel>
+</LanguageData>

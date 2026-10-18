@@ -107,7 +107,7 @@ $toolsRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $modRoot = [System.IO.Path]::GetFullPath(
     (Join-Path $toolsRoot '..\..'))
 $buildScript = Join-Path $toolsRoot 'Build-PFViewOutlineBundles.ps1'
-$bundleRoot = Join-Path $modRoot '1.6\AssetBundles'
+$bundleRoot = Join-Path $modRoot '1.7\AssetBundles'
 $buildLog = Join-Path `
     $toolsRoot `
     'Logs\PFViewOutlineBundleBuild.log'

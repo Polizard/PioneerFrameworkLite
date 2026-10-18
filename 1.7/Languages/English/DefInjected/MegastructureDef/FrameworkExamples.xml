@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_MegastructureServiceArray.label>anchored service array (framework example)</PF_MegastructureServiceArray.label>
+  <PF_MegastructureServiceArray.description>A body-attached facility with scalar storage and production, without a map.</PF_MegastructureServiceArray.description>
+  <PF_MegastructureOrbitalPlatform.label>orbital service platform (framework example)</PF_MegastructureOrbitalPlatform.label>
+  <PF_MegastructureOrbitalPlatform.description>An existing owned group with storage, production, cargo endpoints and an optional interior. Its physical backend manages movement and propellant.</PF_MegastructureOrbitalPlatform.description>
+  <PF_MegastructureDistributedArray.label>distributed service array (framework example)</PF_MegastructureDistributedArray.label>
+  <PF_MegastructureDistributedArray.description>Three independently located nodes, with a collector-to-hub scalar resource link and an independent remote node.</PF_MegastructureDistributedArray.description>
+</LanguageData>

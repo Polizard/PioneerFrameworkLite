@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs><ThingDef ParentName="ResourceBase"><defName>PF_RecoveredSpacecraft</defName><label>recovered spacecraft</label>
+<description>A recovered spacecraft containing its original parts, payload and remaining propellant.</description>
+<thingClass>PioneerFramework.Landing.RecoveredSpacecraft</thingClass><stackLimit>1</stackLimit>
+<graphicData><texPath>UI/Icons/SatelliteIcon</texPath><graphicClass>Graphic_Single</graphicClass></graphicData>
+<statBases><Mass>1</Mass><MarketValue>0</MarketValue></statBases>
+</ThingDef></Defs>

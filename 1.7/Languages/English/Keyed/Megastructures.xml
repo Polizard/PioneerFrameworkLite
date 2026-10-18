@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Mega_Create>Register facility</PF_Mega_Create>
+  <PF_Mega_ImportRings>Import existing rings</PF_Mega_ImportRings>
+  <PF_Mega_LoadBlocked>Facility data requires attention: {0}</PF_Mega_LoadBlocked>
+  <PF_Mega_Empty>No facilities registered. Add a content definition or use developer reference facilities.</PF_Mega_Empty>
+  <PF_Mega_Failed>Operation unavailable: {0}</PF_Mega_Failed>
+  <PF_Mega_Summary>Nodes: {0} · Revision: {1}</PF_Mega_Summary>
+  <PF_Mega_Activate>Activate</PF_Mega_Activate>
+  <PF_Mega_Suspend>Suspend operations</PF_Mega_Suspend>
+  <PF_Mega_Retire>Retire</PF_Mega_Retire>
+  <PF_Mega_RetireConfirm>Retire this facility? Borrowed backends remain. Contents and active tasks must be cleared before owned backends can be removed.</PF_Mega_RetireConfirm>
+  <PF_Mega_Node>Node: {0} · {1}</PF_Mega_Node>
+  <PF_Mega_Enabled>Enabled</PF_Mega_Enabled>
+  <PF_Mega_Disabled>Disabled</PF_Mega_Disabled>
+  <PF_Mega_Disable>Disable</PF_Mega_Disable>
+  <PF_Mega_View>View facility</PF_Mega_View>
+  <PF_Mega_Items>Stored items: {0}</PF_Mega_Items>
+  <PF_Mega_AccessMap>Enter interior</PF_Mega_AccessMap>
+  <PF_Mega_Group>Bind owned orbital group {0}</PF_Mega_Group>
+  <PF_Mega_State_Created>Created</PF_Mega_State_Created>
+  <PF_Mega_State_Active>Active</PF_Mega_State_Active>
+  <PF_Mega_State_Suspended>Suspended</PF_Mega_State_Suspended>
+  <PF_Mega_State_Decommissioning>Retiring</PF_Mega_State_Decommissioning>
+  <PF_Mega_State_Retired>Retired</PF_Mega_State_Retired>
+  <PF_Mega_NoDefinitions>No facility content definitions are available. Framework examples are available in developer mode.</PF_Mega_NoDefinitions>
+  <PF_Mega_DebugOpen>Open megastructure management</PF_Mega_DebugOpen>
+</LanguageData>

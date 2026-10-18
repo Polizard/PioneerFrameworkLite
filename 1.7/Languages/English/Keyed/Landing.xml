@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PFL_LandingTitle>Land group {0}</PFL_LandingTitle>
+  <PFL_LandingOpen>Land on the surface</PFL_LandingOpen>
+  <PFL_LandingGuide>Select a body, click a surface tile, then confirm descent.</PFL_LandingGuide>
+  <PFL_LandingSelectedTile>{0} · {1} · tile {2}</PFL_LandingSelectedTile>
+  <PFL_LandingCost>Required Δv: {0} m/s\nPropellant: {1} kg\nAvailable Δv: {2} m/s</PFL_LandingCost>
+  <PFL_LandingDuration>Descent: {0} game ticks. Choose a map cell after arrival.</PFL_LandingDuration>
+  <PFL_LandingSelectTile>Click a tile on the selected body's surface.</PFL_LandingSelectTile>
+  <PFL_LandingStart>Begin descent</PFL_LandingStart>
+  <PFL_LandingPreparing>Preparing maps</PFL_LandingPreparing>
+  <PFL_LandingPrepareSource>Restore ship maps</PFL_LandingPrepareSource>
+  <PFL_LandingPrepareSourceGuide>Restore the archived ship maps to calculate propellant costs. Then review the destination and costs before confirming descent.</PFL_LandingPrepareSourceGuide>
+  <PFL_LandingStarted>Group {0} has begun descending.</PFL_LandingStarted>
+  <PFL_LandingCompleted>Group {0} has landed successfully.</PFL_LandingCompleted>
+  <PFL_LandingContinue>Continue landing</PFL_LandingContinue>
+  <PFL_LandingProgress>Landing: {0} · {1}%</PFL_LandingProgress>
+  <PFL_LandingPlacementTitle>Place spacecraft {0} of {1}</PFL_LandingPlacementTitle>
+  <PFL_LandingClickToPlace>Click to place the complete ship outline. Close this panel to continue later.</PFL_LandingClickToPlace>
+  <PFL_LandingInvalidState>The landing task cannot perform this action in its current state.</PFL_LandingInvalidState>
+  <PFL_LandingGroupUnavailable>The group is unavailable, belongs to another faction, or is already descending.</PFL_LandingGroupUnavailable>
+  <PFL_LandingMissingGroup>The original group is missing. The task is retained for recovery.</PFL_LandingMissingGroup>
+  <PFL_LandingQuoteRejected>Cannot begin descent: {0}</PFL_LandingQuoteRejected>
+  <PFL_LandingSourceUnavailable>Ship map unavailable: {0}</PFL_LandingSourceUnavailable>
+  <PFL_LandingSourceBusy>A map archive or restoration operation is already running.</PFL_LandingSourceBusy>
+  <PFL_LandingWrongLayer>Select a tile on the target body's surface layer.</PFL_LandingWrongLayer>
+  <PFL_LandingTooLarge>The ship footprint exceeds the supported landing-map size.</PFL_LandingTooLarge>
+  <PFL_LandingUnsupportedDestination>This tile, faction or special map does not support peaceful landing.</PFL_LandingUnsupportedDestination>
+  <PFL_LandingDestinationUnavailable>The existing map cannot be restored safely. It will not be regenerated.</PFL_LandingDestinationUnavailable>
+  <PFL_LandingDestinationError>Destination preparation failed: {0}</PFL_LandingDestinationError>
+  <PFL_LandingFootprintError>Cannot determine the complete ship footprint: {0}</PFL_LandingFootprintError>
+  <PFL_LandingFootprintChanged>The ship layout changed. Review the updated outline and choose again.</PFL_LandingFootprintChanged>
+  <PFL_LandingInvalidCell>The ship outline is outside the map, unrevealed, or reserved.</PFL_LandingInvalidCell>
+  <PFL_LandingInvalidTerrain>The landing area must have terrain capable of supporting heavy structures.</PFL_LandingInvalidTerrain>
+  <PFL_LandingPlacementBlocked>Landing area unavailable: {0}</PFL_LandingPlacementBlocked>
+  <PFL_LandingTransferBlocked>Transfer records require recovery. Automatic replay is blocked.</PFL_LandingTransferBlocked>
+  <PFL_LandingExecutionError>Landing operation failed: {0}</PFL_LandingExecutionError>
+  <PFL_LandingRecoveryUnavailable>No valid receiving caravan is available at the recovery point.</PFL_LandingRecoveryUnavailable>
+  <PFL_LandingRecoveryRemaining>Recovery entries remaining: {0}</PFL_LandingRecoveryRemaining>
+  <PFL_LandingRecoveredMass>Spacecraft and remaining propellant: {0} kg</PFL_LandingRecoveredMass>
+  <PFL_LandingViewSite>View landing site</PFL_LandingViewSite>
+  <PFL_LandingRecover>Recover with {0}</PFL_LandingRecover>
+  <PFL_LandingRecoverAction>Recover landed spacecraft</PFL_LandingRecoverAction>
+</LanguageData>

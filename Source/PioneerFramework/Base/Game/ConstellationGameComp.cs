@@ -116,8 +116,9 @@ namespace PioneerFramework
             if (sg == null) return null;
             if (!ReferenceEquals(subscribedComp, sg))
             {
-                if (subscribedComp != null) subscribedComp.GroupDestroyed -= OnGroupDestroyed;
+                if (subscribedComp != null) { subscribedComp.GroupDestroyed -= OnGroupDestroyed; subscribedComp.GroupLanded -= OnGroupDestroyed; }
                 sg.GroupDestroyed += OnGroupDestroyed;
+                sg.GroupLanded += OnGroupDestroyed;
                 subscribedComp = sg;
             }
             return sg;

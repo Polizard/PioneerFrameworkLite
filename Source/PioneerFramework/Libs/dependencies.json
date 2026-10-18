@@ -1,0 +1,51 @@
+{
+  "gameVersion": "1.7.4977 rev1248",
+  "targetFramework": "net10.0",
+  "harmonyVersion": "3.0.0.0",
+  "gameSource": "Installed RimWorld root",
+  "harmonySource": "Harmony Workshop item 2009463077, 1.7/Assemblies/0Harmony.dll",
+  "files": [
+    {
+      "path": "RimWorld/Assembly-CSharp.dll",
+      "sha256": "3D4F1DDFE71BD8760CB488255E3BDEAC9366F537DC1EF813CC6F8D09824E2DA9"
+    },
+    {
+      "path": "RimWorld/UnityStubs.dll",
+      "sha256": "B9E08C6BF72F57FA6F0C09277EADCA209A30B157508795072F2DD9F79DE655DD"
+    },
+    {
+      "path": "RimWorld/Waylith.dll",
+      "sha256": "850E99644283A94E78BD6DC5CF0BBFA25367D8E1E11C1ACB1F82E9F73A321B37"
+    },
+    {
+      "path": "RimWorld/Waylith.UnityCompat.dll",
+      "sha256": "F50F51020B9C600DB8AB22E12C63EF6CF6FDB5B4F2E279EEB13046631C303888"
+    },
+    {
+      "path": "RimWorld/Brutal.Core.Numerics.dll",
+      "sha256": "9EA6A308C0DD835D151E60209B80D0038E7AAF69C8C577F7B0699E8DD25ACF3A"
+    },
+    {
+      "path": "RimWorld/Brutal.Core.Logging.dll",
+      "sha256": "B83A5FD273E0B5A654C51707F52D797C6198C0250658D2715D7D793338DFF2F1"
+    },
+    {
+      "path": "RimWorld/Brutal.Core.Common.dll",
+      "sha256": "FA944D6482126745A8D7C951D3D291BCAC972F23CA3D5E3A470D43447B0903EC"
+    },
+    {
+      "path": "0Harmony/0Harmony.dll",
+      "sha256": "94DD929A06F720869F6A718A64BC6713A37DBE153C2F4C16C031B2587D7EE694"
+    }
+  ],
+  "testFiles": [
+    {
+      "path": "TestRuntime/Microsoft.Extensions.Logging.Abstractions.dll",
+      "sha256": "A76A735B63E6EF3B0BF41FF92423CBD16103B8952E8306140A9BD650346034DC"
+    },
+    {
+      "path": "TestRuntime/com.rlabrecque.steamworks.net.dll",
+      "sha256": "FF601AA1046D315E6EE1EF8FFD5B91D1DEF6CA6E7CCD39926AFF3AF695805FDE"
+    }
+  ]
+}

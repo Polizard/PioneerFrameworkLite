@@ -48,4 +48,69 @@
       <flipTextureST>true</flipTextureST>
     </shaderProgram>
   </ShaderDef>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       环世界「电影感」视觉升级（2026-10-17，recon-render/task-5；契约 = `.zcode/ringworld-visual/IMPL.md` §2）。
+       · PF_RingLit  = 环主体受光（居住面/外壳/端盖）；不透明、写深度、单面（Back）。
+       · PF_RingOrnament = 装饰实体专用方向受光；复用主体顶点阶段。
+         C# 侧（Lead 的 RingWorldMaterials）显式 material.renderQueue=3500。
+       · PF_RingGlow = 加性辉光（rim / ribbon 大气薄带 / sprite 灯晕）；不写深度、双面、queue 3550。
+       · GLSL 在 1.7/Shaders/ 下（引擎 ShaderDefRegistry 自动收集，无需 AssetBundle）。
+       · 两 shader 都不声明 FragmentUniforms（set=0,binding=1 对 Mod shader 是否自动绑定未验证）；
+         太阳方向/相机位置/时间走 material uniform（C# RingWorldVisualState 每帧写 _RingSunDir/_RingCameraPos/_RingTime）。
+       · flipTextureST 显式 false（Lead 裁决 2026-10-17）：raw UV 采样，PNG 顶部 = 环 +Y 侧。
+         反编译证据：`Waylith.Rendering.ShaderProgramDefinition.flipTextureST` 的 C# 字段初值是 true
+         （`.zcode/tmp/render-inspection/WL_Waylith_Rendering_ShaderProgramDefinition.cs:13`），
+         XML 缺省≠false ⇒ 必须显式写，不能省略。
+       ════════════════════════════════════════════════════════════════════ -->
+  <ShaderDef>
+    <defName>PF_RingLit</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_RingLit.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_RingLit.frag.glsl</fragmentShaderFileName>
+      <depthWrite>true</depthWrite>
+      <cullMode>Back</cullMode>
+      <flipTextureST>false</flipTextureST>
+    </shaderProgram>
+  </ShaderDef>
+
+  <!-- 装饰实体独立方向受光，主体昼夜混色保持原有口径。 -->
+  <ShaderDef>
+    <defName>PF_RingOrnament</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_RingLit.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_RingOrnament.frag.glsl</fragmentShaderFileName>
+      <depthWrite>true</depthWrite>
+      <cullMode>Back</cullMode>
+      <flipTextureST>false</flipTextureST>
+    </shaderProgram>
+  </ShaderDef>
+
+  <!-- 末端实体灯头：复用辉光公式的 mode 4，不透明写深度，六个面均直接发光。 -->
+  <ShaderDef>
+    <defName>PF_RingTerminal</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_RingGlow.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_RingGlow.frag.glsl</fragmentShaderFileName>
+      <depthTest>true</depthTest>
+      <depthWrite>true</depthWrite>
+      <cullMode>Back</cullMode>
+      <renderQueue>3500</renderQueue>
+      <flipTextureST>false</flipTextureST>
+    </shaderProgram>
+  </ShaderDef>
+
+  <ShaderDef>
+    <defName>PF_RingGlow</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_RingGlow.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_RingGlow.frag.glsl</fragmentShaderFileName>
+      <blendMode>Additive</blendMode>
+      <depthTest>true</depthTest>
+      <depthWrite>false</depthWrite>
+      <cullMode>None</cullMode>
+      <renderQueue>3550</renderQueue>
+      <flipTextureST>false</flipTextureST>
+    </shaderProgram>
+  </ShaderDef>
 </Defs>

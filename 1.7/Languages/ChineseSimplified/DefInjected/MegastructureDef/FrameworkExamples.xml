@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+<PF_MegastructureServiceArray.label>依附式服务阵列（框架示例）</PF_MegastructureServiceArray.label>
+<PF_MegastructureServiceArray.description>无地图的天体依附设施，用于验证标量资源和生产能力。</PF_MegastructureServiceArray.description>
+<PF_MegastructureOrbitalPlatform.label>自由轨道平台（框架示例）</PF_MegastructureOrbitalPlatform.label>
+<PF_MegastructureOrbitalPlatform.description>绑定既有己方群组，组合库存、生产、货运端点与可选内部图；轨道、推进和燃料继续由原物理系统管理。</PF_MegastructureOrbitalPlatform.description>
+<PF_MegastructureDistributedArray.label>分布式阵列（框架示例）</PF_MegastructureDistributedArray.label>
+<PF_MegastructureDistributedArray.description>三个独立定位节点，包含采集端到主节点的标量资源连接，以及独立的远端节点。</PF_MegastructureDistributedArray.description>
+</LanguageData>

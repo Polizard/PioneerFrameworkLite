@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_RecoveredSpacecraft.label>回收的航天器</PF_RecoveredSpacecraft.label>
+  <PF_RecoveredSpacecraft.description>保留原有部件、载荷和剩余工质的航天器封装。</PF_RecoveredSpacecraft.description>
+</LanguageData>

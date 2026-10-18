@@ -62,7 +62,7 @@
 
   <ItemGroup>
     <Reference Include="UnityStubs">
-      <HintPath>$(Rw17Dir)\UnityStubs.dll</HintPath>
+      <HintPath>..\PioneerFramework\Libs\RimWorld\UnityStubs.dll</HintPath>
       <!-- 台架是**跑**的（不像主工程只编）：UnityStubs 必须随输出复制，否则运行时找不到 Color32/Mathf -->
       <Private>true</Private>
     </Reference>

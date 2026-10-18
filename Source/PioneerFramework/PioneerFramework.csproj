@@ -33,37 +33,14 @@
     <DeterministicSourcePaths>true</DeterministicSourcePaths>
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <PathMap>$(MSBuildProjectDirectory)=PioneerFramework</PathMap>
   </PropertyGroup>
 
-  <!--
-    2026-10-14（主线切 net10）：引用从 `Libs/`（1.6/Unity 2022 时代）换成**游戏根的 1.7 程序集**
-    （`Assembly-CSharp` / `UnityStubs` / `Waylith`）+ 工坊 Harmony 3（路径见 `Source/Directory.Build.props`）。
-  -->
+  <!-- Versioned RimWorld 1.7 / Harmony references, shared with clean CI builds. -->
+  <Import Project="..\GameReferences.props" />
   <ItemGroup>
-    <Reference Include="Assembly-CSharp">
-      <HintPath>$(Rw17Dir)\Assembly-CSharp.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityStubs">
-      <HintPath>$(Rw17Dir)\UnityStubs.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="Waylith">
-      <HintPath>$(Rw17Dir)\Waylith.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <!-- 2026-10-16（反射清理 A-13b）：`UnityRuntime.Current.World.RegisterExecutionOrder(...)` ——
-         给"世界相机服务"钉执行序 −50 用的**引擎原生 API**（D5：能直接用 Waylith 就别绕 Unity 转接）。
-         `UnityWorld` 定义在 Waylith.UnityCompat.dll（UnityStubs 只放 `UnityRuntime` 壳）⇒ 必须一并引用。 -->
-    <Reference Include="Waylith.UnityCompat">
-      <HintPath>$(Rw17Dir)\Waylith.UnityCompat.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="0Harmony">
-      <HintPath>$(Harmony17Dir)\0Harmony.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
+    <Compile Include="**\*.cs" Exclude="obj\**;bin\**;.vs\**" />
   </ItemGroup>
 
 

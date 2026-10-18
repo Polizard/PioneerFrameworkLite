@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData><name>PFL Megastructure Extension Sample</name><author>New Frontier Team</author><packageId>NewFrontierTeam.PFL.MegastructureExtensionSample</packageId><supportedVersions><li>1.7</li></supportedVersions><modDependencies><li><packageId>NewFrontierTeam.PioneerFrameworkLite</packageId><displayName>PioneerFrameworkLite</displayName></li></modDependencies><description>Optional author example. Build and copy its DLL into this sample's Assemblies directory to load it separately.</description></ModMetaData>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs><PioneerFramework.Megastructures.MegastructureDef>
+  <defName>Sample_IndependentFacility</defName><label>扩展示例设施</label><description>演示由独立程序集实现的自定义巨构能力。</description><referenceOnly>true</referenceOnly>
+  <nodes><li><key>node</key><spatialMode>FrameFixed</spatialMode><frameId>1</frameId><offset><x>20000000</x></offset><capabilities><li><key>counter</key><handlerId>sample.counter</handlerId><payload>{"SimulatedTicks":0}</payload></li><li><key>visual</key><handlerId>pfl.presentation</handlerId></li></capabilities></li></nodes>
+</PioneerFramework.Megastructures.MegastructureDef></Defs>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <MainButtonDef>
+    <defName>PF_Megastructures</defName>
+    <label>巨构</label>
+    <description>管理设施、节点、能力与后端绑定。</description>
+    <tabWindowClass>PioneerFramework.Megastructures.MainTabWindow_Megastructures</tabWindowClass>
+    <order>51</order><validWithoutMap>true</validWithoutMap><defaultHotKey>None</defaultHotKey>
+  </MainButtonDef>
+</Defs>

@@ -132,7 +132,7 @@ function Get-TestSummary {
     for ($i = $TestOutput.Count - 1; $i -ge 0; $i--) {
         if ("$($TestOutput[$i])" -match '\.dll \(net') { return "$($TestOutput[$i])".Trim() }
     }
-    return "see log"
+    throw "No test execution summary was produced; refusing to count an empty run as PASS."
 }
 
 # Distinct warning KINDS (CSxxxx), used by -WarningDiff. Deliberately file-name-agnostic:
