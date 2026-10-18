@@ -269,6 +269,10 @@ namespace PioneerFramework
             return viewFrameRot * (Vector3)((worldMeters - originMeters) * MetersToView);
         }
 
+        /// <summary>AbsToView 的逆变换，保存镜头显示状态用于跨模式过渡与丢失冻结。</summary>
+        private DVector3 ViewToAbs(Vector3 viewPosition, DVector3 originMeters)
+            => originMeters + (DVector3)(Quaternion.Inverse(viewFrameRot) * viewPosition) * ViewToMeters;
+
         // ════════════════════════════════════════════════════
         //  视图参考系（2026-10-12「PFView 参考系按场景选」）
         // ════════════════════════════════════════════════════

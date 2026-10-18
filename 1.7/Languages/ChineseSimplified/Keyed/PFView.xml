@@ -67,7 +67,7 @@
   <PFV_Radar>雷达</PFV_Radar>
   <PFV_RadarSource>雷达 · {0} · 只显示</PFV_RadarSource>
   <PFV_RadarRange>满环距离 {0}</PFV_RadarRange>
-  <PFV_NoOperator>尚无操作编队</PFV_NoOperator>
+  <PFV_NoSelection>尚未选中编队</PFV_NoSelection>
   <PFV_NavballSource>姿态仪表 · {0}</PFV_NavballSource>
   <PFV_EndSteering>结束操舵</PFV_EndSteering>
   <PFV_Panel_Automatic>自动：按当前任务展开</PFV_Panel_Automatic>
@@ -82,7 +82,7 @@
   <PFV_ViewLimit>已到编队取景限制；需要看远景时使用“行星视角”。</PFV_ViewLimit>
   <PFV_HelpTitle>PFView 操作说明</PFV_HelpTitle>
   <PFV_HelpCameraTitle>观察与镜头</PFV_HelpCameraTitle>
-  <PFV_HelpCamera>单击查看、双击聚焦；右键旋转，中键或 Shift+右键平移。滚轮上远下近，R/Home 复位，“上一视角”单步返回。</PFV_HelpCamera>
+  <PFV_HelpCamera>单击查看、双击聚焦；右键旋转；自由视角下中键或 Shift+右键平移。滚轮上远下近，R/Home 复位，“上一视角”单步返回。</PFV_HelpCamera>
   <PFV_HelpTasksTitle>按场景展开</PFV_HelpTasksTitle>
   <PFV_HelpTasks>操舵时展开姿态仪表，武器操作时展开雷达。显示菜单可临时固定展开或收起；重开恢复自动。雷达只显示。</PFV_HelpTasks>
   <PFV_HelpSubjectsTitle>查看与操作</PFV_HelpSubjectsTitle>
@@ -92,7 +92,7 @@
   <PFV_HelpKnownTitle>接触与仪表</PFV_HelpKnownTitle>
   <PFV_HelpKnown>未识别接触只显示观测记录与误差。姿态球记号：P 顺行、A 逆行、R/r 径外/径内、N/S 法向/反法向、T 主推轴。</PFV_HelpKnown>
   <PFV_HelpLimitsTitle>取景与调试</PFV_HelpLimitsTitle>
-  <PFV_HelpLimits>编队视距 300 m–3 km，平移不超过 2 km；远景使用行星视角。调试入口保留在工具条。</PFV_HelpLimits>
+  <PFV_HelpLimits>自由编队视角的视距为 300 m–3 km，平移不超过 2 km；第三人称按编队尺寸设置独立的安全缩放范围。远景使用行星视角。</PFV_HelpLimits>
   <PFV_Close>关闭</PFV_Close>
   <PFV_Search>搜索名称或编号</PFV_Search>
   <PFV_NoObjects>没有符合条件的可见对象。</PFV_NoObjects>
@@ -102,4 +102,17 @@
   <PFV_TrackLive>当前观测</PFV_TrackLive>
   <PFV_TrackRecord>保留的观测记录</PFV_TrackRecord>
   <PFV_ObservedPosition>观测坐标（参考系未知）</PFV_ObservedPosition>
+  <PFV_Camera_Free>自由视角</PFV_Camera_Free>
+  <PFV_Camera_ThirdPersonHull>第三人称·船体正向</PFV_Camera_ThirdPersonHull>
+  <PFV_Camera_ThirdPersonVelocity>第三人称·速度正向</PFV_Camera_ThirdPersonVelocity>
+  <PFV_CameraShort_Free>自由</PFV_CameraShort_Free>
+  <PFV_CameraShort_ThirdPersonHull>船体正向</PFV_CameraShort_ThirdPersonHull>
+  <PFV_CameraShort_ThirdPersonVelocity>速度正向</PFV_CameraShort_ThirdPersonVelocity>
+  <PFV_CameraMode>视角：{0}</PFV_CameraMode>
+  <PFV_CameraModeTip>切换聚焦编队的镜头模式：自由环绕／第三人称·船体正向／第三人称·速度正向。三种模式分别保留机位与缩放。</PFV_CameraModeTip>
+  <PFV_SettingsCamera>PFView 编队镜头</PFV_SettingsCamera>
+  <PFV_SettingsFocusMode>双击／聚焦时的默认视角：{0}</PFV_SettingsFocusMode>
+  <PFV_SettingsFocusModeTip>只影响之后双击编队或点击“聚焦”。当前镜头保持不变；也可在 PFView 工具条临时切换视角。</PFV_SettingsFocusModeTip>
+  <PFV_HelpCameraModesTitle>自由与两种第三人称</PFV_HelpCameraModesTitle>
+  <PFV_HelpCameraModes>Mod 设置决定双击／聚焦时的默认视角。第三人称·船体正向：镜头从船尾后上方跟随船体，随船体转向和滚转；第三人称·速度正向：镜头前向取当前速度方向（速度为零时退回船体方向），滚转基准仍取船体上方向（速度与船头有俯仰差时上方向随之过渡），所以船横着漂或倒着飞时画面仍沿运动方向。两种第三人称都是右键左右最多各 60°、俯仰 −10°～45°；滚轮缩放，禁用平移。Home 恢复默认后上方 15° 的取景。工具条可切换三种视角，各模式分别保留机位与缩放。</PFV_HelpCameraModes>
 </LanguageData>

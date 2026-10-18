@@ -34,7 +34,7 @@ namespace PioneerFramework
             var content = new Rect(0, 0, outer.width - 18, contentHeight);
             Widgets.BeginScrollView(outer, ref scroll, content);
             float y = 0;
-            foreach (string name in new[] { "Camera", "Tasks", "Subjects", "Time", "Known", "Limits" })
+            foreach (string name in new[] { "Camera", "CameraModes", "Tasks", "Subjects", "Time", "Known", "Limits" })
             {
                 Widgets.Label(new Rect(0, y, content.width, 26), ("PFV_Help" + name + "Title").Translate());
                 y += 28;

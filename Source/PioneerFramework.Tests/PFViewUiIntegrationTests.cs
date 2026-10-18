@@ -224,6 +224,18 @@ namespace PioneerFramework.Tests
                 || m.Name == "get_IsForged" || m.Name == "targetGroupId" || m.Name == "decoyId");
         }
 
+        [Fact]
+        public void CameraInputAndRenderingApplyFocusAwarePitchAndContinuousOrbitUp()
+        {
+            var input = ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("HandleInput", Flags)).ToArray();
+            Assert.Contains(input, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "ResolvePitch");
+            Assert.DoesNotContain(input, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "ClampPitch");
+            var render = ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("UpdateCamera", Flags)).ToArray();
+            Assert.Contains(render, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "ResolvePitch");
+            Assert.Contains(render, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "OrbitUp");
+            Assert.Contains(render, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "InterpolateOrbit");
+        }
+
         internal static IEnumerable<MemberInfo> ReferencedMembers(MethodBase method)
         {
             var bytes = method.GetMethodBody()?.GetILAsByteArray() ?? Array.Empty<byte>();

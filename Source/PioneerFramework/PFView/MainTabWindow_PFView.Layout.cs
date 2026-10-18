@@ -97,51 +97,54 @@ namespace PioneerFramework
             Widgets.DrawBoxSolid(r, PFViewPalette.BarBg);
             UiKit.SpacecraftUIDecor.DrawDivider(r, r.yMax - 1f, r.width, PFViewPalette.Divider);
             Text.Font = GameFont.Small;
-            float by = r.y + 4f;
-            float x = r.x + 6f;
-            if (ToolbarButton(NextToolbarRect(ref x, ref by, 92), "PFV_SelectGroup".Translate(), "PFV_SelectGroupTip".Translate()))
+            float by = 4f;
+            float x = 6f;
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Group), "PFV_SelectGroup".Translate(), "PFV_SelectGroupTip".Translate()))
                 ShowGroupMenu();
-            if (ToolbarButton(NextToolbarRect(ref x, ref by, 92), "PFV_Navigate".Translate(), "PFV_NavigateTip".Translate()))
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Navigate), "PFV_Navigate".Translate(), "PFV_NavigateTip".Translate()))
                 ShowSystemMenu();
-            if (ToolbarButton(NextToolbarRect(ref x, ref by, 92), "PFV_BodyView".Translate(), "PFV_BodyViewTip".Translate()))
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Body), "PFV_BodyView".Translate(), "PFV_BodyViewTip".Translate()))
                 FocusCurrentBody();
-            if (ToolbarButton(NextToolbarRect(ref x, ref by, 80), "PFV_PreviousView".Translate(), "PFV_PreviousViewTip".Translate()))
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Previous), "PFV_PreviousView".Translate(), "PFV_PreviousViewTip".Translate()))
                 RestorePreviousView();
-            if (ToolbarButton(NextToolbarRect(ref x, ref by, 76), "PFV_Display".Translate(), "PFV_DisplayTip".Translate()))
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Display), "PFV_Display".Translate(), "PFV_DisplayTip".Translate()))
                 ShowDisplayMenu();
+            bool previousEnabled = GUI.enabled;
+            GUI.enabled = previousEnabled && focusKind == PFViewFocusKind.Group;
+            // 工具条按钮宽度固定（PFViewUiLayoutCore: Camera=144）⇒ 用短名；全名留给模式菜单与设置窗口。
+            string cameraMode = ("PFV_CameraShort_" + (focusKind == PFViewFocusKind.Group ? groupCameraMode : PFViewGroupCameraMode.Free)).Translate();
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Camera), "PFV_CameraMode".Translate(cameraMode), "PFV_CameraModeTip".Translate()))
+                ShowCameraModeMenu();
+            GUI.enabled = previousEnabled;
             string frame = ("PFV_Frame_" + viewFrameMode).Translate();
             string resolved = (viewFrameIsFixed ? "PFV_Frame_Fixed" : "PFV_Frame_Inertial").Translate();
-            if (ToolbarButton(NextToolbarRect(ref x, ref by, 132), frame + " · " + resolved, "PFV_FrameTip".Translate()))
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Frame), frame + " · " + resolved, "PFV_FrameTip".Translate()))
             {
                 viewFrameMode = (PFViewFrameMode)(((int)viewFrameMode + 1) % 3);
                 lastFrameLogTick = double.MinValue;
             }
-            Rect time = NextToolbarRect(ref x, ref by, 158);
+            Rect time = NextToolbarRect(ref x, ref by, PFViewToolbarItem.Time);
             DrawTimeSpeedButtons(time.x, time.y, time.height);
             var source = ResolveOperationGroup();
-            if (source != null && ToolbarButton(NextToolbarRect(ref x, ref by, 88),
+            if (source != null && ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Weapons),
                     "PFV_Weapons".Translate("G" + source.GroupId), "PFV_OpenOperationsTip".Translate()))
                 TryOpenWeaponsFor(source.GroupId);
-            if (ToolbarButton(NextToolbarRect(ref x, ref by, 30), "?", "PFV_Help".Translate()))
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Help), "?", "PFV_Help".Translate()))
                 Find.WindowStack.Add(new Window_PFViewHelp());
-            if (ToolbarButton(NextToolbarRect(ref x, ref by, 60), "PFV_Debug".Translate(), "PFV_DebugTip".Translate()))
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Debug), "PFV_Debug".Translate(), "PFV_DebugTip".Translate()))
                 Window_PFViewDebug.Toggle(this);
             if (uiLayout.RequiresInstrumentDrawer)
             {
-                if (instrumentVisibility.ShowNavball && Widgets.ButtonText(NextToolbarRect(ref x, ref by, 80), "PFV_Navball".Translate()))
+                if (instrumentVisibility.ShowNavball && Widgets.ButtonText(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Navball), "PFV_Navball".Translate()))
                     OpenInstrumentWindow(PFViewUiInstrument.Navball);
-                if (instrumentVisibility.ShowRadar && Widgets.ButtonText(NextToolbarRect(ref x, ref by, 80), "PFV_Radar".Translate()))
+                if (instrumentVisibility.ShowRadar && Widgets.ButtonText(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Radar), "PFV_Radar".Translate()))
                     OpenInstrumentWindow(PFViewUiInstrument.Radar);
             }
         }
 
-        private Rect NextToolbarRect(ref float x, ref float y, float width)
+        private Rect NextToolbarRect(ref float x, ref float y, PFViewToolbarItem item)
         {
-            width = Mathf.Min(width, rToolbar.width - 12f);
-            if (x + width > rToolbar.xMax - 6f) { x = rToolbar.x + 6f; y += 32f; }
-            var rect = new Rect(x, y, width, 24f);
-            x += width + 4f;
-            return rect;
+            return FromUiRect(PFViewUiLayoutCore.NextToolbarRect(rToolbar.width, ref x, ref y, item), rToolbar);
         }
 
         private static bool ToolbarButton(Rect rr, string label, string tip)
@@ -249,7 +252,7 @@ namespace PioneerFramework
             var sensor = Current.Game?.GetComponent<SensorManager>();
             if (g == null || sensor == null || spaceGame == null)
             {
-                MiniLabel(new Rect(r.x + 8f, r.yMax - 22f, r.width - 16f, 16f), "PFV_NoOperator".Translate(), PFViewPalette.TextSecondary, TextAnchor.MiddleCenter);
+                MiniLabel(new Rect(r.x + 8f, r.yMax - 22f, r.width - 16f, 16f), "PFV_NoSelection".Translate(), PFViewPalette.TextSecondary, TextAnchor.MiddleCenter);
                 return;
             }
 
@@ -280,6 +283,9 @@ namespace PioneerFramework
             }
             float scale = radius * 0.92f / maxR;
 
+            // 扫描线 + 尾迹（2026-10-18）：真实波束联动；**先于接触点**绘制（余辉要读本帧扫过的区间）
+            DrawRadarSweep(c, radius, g, radial, pro);
+
             // 接触 blip（灰度：形状/明度表态，不靠色相）
             for (int i = 0; i < contactBuf.Count; i++)
             {
@@ -292,8 +298,14 @@ namespace PioneerFramework
                 Vector2 p = c + new Vector2(right, -up) * scale;
                 if ((p - c).magnitude > radius * 1.02f) continue;
 
+                // 被扫描线扫过 ⇒ 提亮 + 微微放大 + 短余辉（灰度：仍是明度差，不用色相）
+                int blipKey = cc.targetGroupId >= 0 ? cc.targetGroupId : -1 - cc.decoyId;
+                RegisterBlipSweep(blipKey, Mathf.Atan2(p.y - c.y, p.x - c.x) * Mathf.Rad2Deg);
+                float flash = BlipFlashOf(blipKey);
                 Color col = cc.isDecoy ? PFViewPalette.StateDead : PFViewPalette.StateWarn;
-                Widgets.DrawBoxSolid(new Rect(p.x - 1.75f, p.y - 1.75f, 3.5f, 3.5f), col);
+                if (flash > 0f) col = Color.Lerp(col, PFViewPalette.SweepLine, flash * BlipFlashPeak);
+                float half = 1.75f + flash * 1.1f;
+                Widgets.DrawBoxSolid(new Rect(p.x - half, p.y - half, half * 2f, half * 2f), col);
             }
 
             // 中心 = 选中编队
@@ -342,7 +354,7 @@ namespace PioneerFramework
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (g == null || spaceGame == null)
             {
-                MiniLabel(new Rect(r.x, c.y - 8f, r.width, 16f), "PFV_NoOperator".Translate(), PFViewPalette.TextSecondary, TextAnchor.MiddleCenter);
+                MiniLabel(new Rect(r.x, c.y - 8f, r.width, 16f), "PFV_NoSelection".Translate(), PFViewPalette.TextSecondary, TextAnchor.MiddleCenter);
                 return;
             }
 

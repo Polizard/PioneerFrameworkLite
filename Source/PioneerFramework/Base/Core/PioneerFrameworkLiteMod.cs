@@ -20,9 +20,31 @@ namespace PioneerFramework
         /// <summary>是否用本模组的太阳/星空**替换**原版（**默认开**）。</summary>
         public bool replaceWorldSky = true;
 
+        /// <summary>
+        /// 双击/聚焦编队时的**默认镜头模式**（跨局保存在 Mod 配置中）：
+        /// `Free` / `ThirdPersonHull`（船体正向）/ `ThirdPersonVelocity`（速度正向）。
+        /// </summary>
+        internal PFViewGroupCameraMode pfviewFocusCameraMode = PFViewGroupCameraMode.ThirdPersonHull;
+
+        /// <summary>
+        /// **旧版键**（1.7 及以前）：true = 聚焦时默认第三人称（那时只有"船体正向"一种），false = 自由视角。
+        /// 现在只用于迁移 —— 新键 `pfviewFocusCameraMode` 缺席时按它推断；保存时仍写回，方便降级。
+        /// </summary>
+        private bool legacyThirdPersonOnFocus = true;
+
         public override void ExposeData()
         {
             Scribe_Values.Look(ref replaceWorldSky, "replaceWorldSky", true);
+
+            // 降级兼容：旧键只表达「是否仍默认第三人称」（船体/速度正向都算 true）。
+            if (Scribe.mode == LoadSaveMode.Saving)
+                legacyThirdPersonOnFocus = pfviewFocusCameraMode != PFViewGroupCameraMode.Free;
+            Scribe_Values.Look(ref legacyThirdPersonOnFocus, "pfviewThirdPersonOnFocus", true);
+
+            // 旧键先读（缺省 true = 旧默认）；新键缺席（默认 -1）时按旧键迁移。
+            int storedMode = Scribe.mode == LoadSaveMode.LoadingVars ? -1 : (int)pfviewFocusCameraMode;
+            Scribe_Values.Look(ref storedMode, "pfviewFocusCameraMode", -1);
+            pfviewFocusCameraMode = PFViewGroupCameraCore.MigrateMode(storedMode, legacyThirdPersonOnFocus);
         }
     }
 
@@ -56,6 +78,20 @@ namespace PioneerFramework
             listing.Label("开（默认）：世界视图与含图编队地图背景里的太阳/星空用本模组补画的那套；");
             listing.Label("原版那两套画在行星中心附近、只在镜头进入行星壳（船落地/低空）时才会露出来，已停用。");
             listing.Label("关：一切照原版（含「镜头进壳时会看到原版太阳/星空」这条）。");
+            listing.Gap(18f);
+            listing.Label("PFV_SettingsCamera".Translate());
+            string mode = ("PFV_Camera_" + Settings.pfviewFocusCameraMode).Translate();
+            if (Widgets.ButtonText(listing.GetRect(30f), "PFV_SettingsFocusMode".Translate(mode)))
+            {
+                var options = new System.Collections.Generic.List<FloatMenuOption>();
+                foreach (PFViewGroupCameraMode value in System.Enum.GetValues<PFViewGroupCameraMode>())
+                {
+                    PFViewGroupCameraMode captured = value;
+                    options.Add(new(("PFV_Camera_" + value).Translate(), () => Settings.pfviewFocusCameraMode = captured));
+                }
+                Find.WindowStack.Add(new FloatMenu(options));
+            }
+            listing.Label("PFV_SettingsFocusModeTip".Translate());
             listing.End();
         }
 

@@ -97,6 +97,100 @@ namespace PioneerFramework.Tests
             Assert.Equal(45f, PFViewCameraCore.ClampPitch(45f));
         }
 
+        [Theory]
+        [InlineData(0f, 0f, 100f)]
+        [InlineData(90f, 100f, 0f)]
+        [InlineData(-90f, -100f, 0f)]
+        [InlineData(180f, 0f, -100f)]
+        [InlineData(270f, -100f, 0f)]
+        [InlineData(450f, 100f, 0f)]
+        [InlineData(-450f, -100f, 0f)]
+        public void GroupOrbitCanReachBothPolesAndContinueAroundFocus(float requestedPitch, float expectedY, float expectedZ)
+        {
+            float pitch = PFViewCameraCore.ResolvePitch(PFViewFocusKind.Group, requestedPitch);
+            Vector3 position = PFViewCameraCore.CameraViewPos(Vector3.zero, 0f, pitch, 100f);
+            Assert.Equal(expectedY, position.y, 3);
+            Assert.Equal(expectedZ, position.z, 3);
+            Assert.Equal(100f, position.magnitude, 3);
+        }
+
+        [Theory]
+        [InlineData(-120f, 5f)]
+        [InlineData(120f, 85f)]
+        [InlineData(45f, 45f)]
+        public void BodyOrbitKeepsItsExistingPitchBounds(float requestedPitch, float expectedPitch)
+            => Assert.Equal(expectedPitch, PFViewCameraCore.ResolvePitch(PFViewFocusKind.Body, requestedPitch));
+
+        [Fact]
+        public void FrozenGroupViewKeepsItsUnrestrictedViewingDirection()
+        {
+            float pitch = PFViewCameraCore.ResolvePitch(PFViewFocusKind.Frozen, -120f);
+            Vector3 direction = PFViewCameraCore.OrbitDir(0f, pitch);
+            Assert.True(direction.y < 0f);
+            Assert.True(direction.z < 0f);
+        }
+
+        [Theory]
+        [InlineData(0f, 90f)]
+        [InlineData(90f, 90f)]
+        [InlineData(225f, -90f)]
+        [InlineData(45f, 270f)]
+        [InlineData(180f, -270f)]
+        public void OrbitUpStaysValidAndContinuousWhenCrossingEitherPole(float yaw, float pole)
+        {
+            Vector3 atPole = PFViewCameraCore.OrbitUp(yaw, pole);
+            Assert.Equal(1f, atPole.magnitude, 4);
+            Assert.Equal(0f, Vector3.Dot(atPole, PFViewCameraCore.OrbitDir(yaw, pole)), 4);
+            Vector3 before = PFViewCameraCore.OrbitUp(yaw, pole - .1f);
+            Vector3 after = PFViewCameraCore.OrbitUp(yaw, pole + .1f);
+            Assert.True(Vector3.Dot(before, after) > .9999f, "Crossing a pole must not reverse camera up.");
+        }
+
+        [Fact]
+        public void FullRevolutionWrapKeepsPositionAndOrientationContinuous()
+        {
+            float beforePitch = PFViewCameraCore.ResolvePitch(PFViewFocusKind.Group, 179.9f);
+            float afterPitch = PFViewCameraCore.ResolvePitch(PFViewFocusKind.Group, 180.1f);
+            Assert.True(Vector3.Dot(PFViewCameraCore.OrbitDir(30f, beforePitch), PFViewCameraCore.OrbitDir(30f, afterPitch)) > .9999f);
+            Assert.True(Vector3.Dot(PFViewCameraCore.OrbitUp(30f, beforePitch), PFViewCameraCore.OrbitUp(30f, afterPitch)) > .9999f);
+        }
+
+        [Theory]
+        [InlineData(180f)]
+        [InlineData(-135f)]
+        [InlineData(90f)]
+        [InlineData(-90f)]
+        public void ResetFromUnrestrictedPitchKeepsTransitionAwayFromFocusAndUpPerpendicular(float startPitch)
+        {
+            Vector3? previousUp = null;
+            for (int step = 0; step <= 100; step++)
+            {
+                var pose = PFViewCameraCore.InterpolateOrbit(0f, startPitch, 100f, 0f, 45f, 100f, step / 100f);
+                Assert.Equal(100f, pose.Offset.magnitude, 3);
+                Assert.Equal(1f, pose.Up.magnitude, 4);
+                Assert.Equal(0f, Vector3.Dot(pose.Offset.normalized, pose.Up), 4);
+                if (previousUp.HasValue) Assert.True(Vector3.Dot(previousUp.Value, pose.Up) > .999f);
+                previousUp = pose.Up;
+            }
+        }
+
+        [Fact]
+        public void InvertedResetAtOldSingularityHasStableOrthogonalUp()
+        {
+            var pose = PFViewCameraCore.InterpolateOrbit(0f, 180f, 100f, 0f, 45f, 100f, .41421356f);
+            Assert.Equal(0f, Vector3.Dot(pose.Offset.normalized, pose.Up), 4);
+            Assert.True(pose.Up.y < 0f);
+        }
+
+        [Fact]
+        public void OrbitTransitionCrossesAngleWrapByTheShortPathAndBlendsDistance()
+        {
+            var pose = PFViewCameraCore.InterpolateOrbit(0f, 170f, 100f, 0f, -170f, 200f, .5f);
+            Assert.Equal(0f, pose.Offset.y, 3);
+            Assert.Equal(-150f, pose.Offset.z, 3);
+            Assert.Equal(-1f, pose.Up.y, 4);
+        }
+
         [Fact]
         public void CameraViewPos_MatchesSphericalOrbitFormula()
         {

@@ -67,7 +67,7 @@
   <PFV_Radar>Radar</PFV_Radar>
   <PFV_RadarSource>Radar · {0} · Display only</PFV_RadarSource>
   <PFV_RadarRange>Full range {0}</PFV_RadarRange>
-  <PFV_NoOperator>No operating group</PFV_NoOperator>
+  <PFV_NoSelection>No group selected</PFV_NoSelection>
   <PFV_NavballSource>Attitude · {0}</PFV_NavballSource>
   <PFV_EndSteering>Stop steering</PFV_EndSteering>
   <PFV_Panel_Automatic>Automatic: follow current task</PFV_Panel_Automatic>
@@ -82,7 +82,7 @@
   <PFV_ViewLimit>Group framing limit reached. Use Planet view for a wider view.</PFV_ViewLimit>
   <PFV_HelpTitle>PFView controls</PFV_HelpTitle>
   <PFV_HelpCameraTitle>Inspection and camera</PFV_HelpCameraTitle>
-  <PFV_HelpCamera>Click to inspect; double-click to focus. Right drag rotates; middle or Shift+right drag pans. Wheel up zooms out, down zooms in. R/Home resets; Back view restores one previous view.</PFV_HelpCamera>
+  <PFV_HelpCamera>Click to inspect; double-click to focus. Right drag rotates; in free view, middle or Shift+right drag pans. Wheel up zooms out, down zooms in. R/Home resets; Back view restores one previous view.</PFV_HelpCamera>
   <PFV_HelpTasksTitle>Contextual instruments</PFV_HelpTasksTitle>
   <PFV_HelpTasks>Steering opens attitude instruments; weapon operation opens radar. Display options can pin visibility for this session. Reopening restores automatic visibility. Radar is display-only.</PFV_HelpTasks>
   <PFV_HelpSubjectsTitle>Inspection and operation</PFV_HelpSubjectsTitle>
@@ -92,7 +92,7 @@
   <PFV_HelpKnownTitle>Contacts and instruments</PFV_HelpKnownTitle>
   <PFV_HelpKnown>Unidentified contacts show observations and error only. Attitude markers: P prograde, A retrograde, R/r radial out/in, N/S normal/antinormal, T main thrust axis.</PFV_HelpKnown>
   <PFV_HelpLimitsTitle>Framing and debug</PFV_HelpLimitsTitle>
-  <PFV_HelpLimits>Group distance is 300 m–3 km with pan up to 2 km. Use Planet view for wider scales. Debug remains available in the toolbar.</PFV_HelpLimits>
+  <PFV_HelpLimits>Free group view uses 300 m–3 km distance and up to 2 km pan. Third person has a separate safe zoom range based on group size. Use Planet view for wider scales.</PFV_HelpLimits>
   <PFV_Close>Close</PFV_Close>
   <PFV_Search>Search name or ID</PFV_Search>
   <PFV_NoObjects>No visible objects match this filter.</PFV_NoObjects>
@@ -102,4 +102,17 @@
   <PFV_TrackLive>Current observation</PFV_TrackLive>
   <PFV_TrackRecord>Retained observation</PFV_TrackRecord>
   <PFV_ObservedPosition>Observed coordinates (frame unknown)</PFV_ObservedPosition>
+  <PFV_Camera_Free>Free view</PFV_Camera_Free>
+  <PFV_Camera_ThirdPersonHull>Third person · hull forward</PFV_Camera_ThirdPersonHull>
+  <PFV_Camera_ThirdPersonVelocity>Third person · velocity forward</PFV_Camera_ThirdPersonVelocity>
+  <PFV_CameraShort_Free>Free</PFV_CameraShort_Free>
+  <PFV_CameraShort_ThirdPersonHull>Hull</PFV_CameraShort_ThirdPersonHull>
+  <PFV_CameraShort_ThirdPersonVelocity>Velocity</PFV_CameraShort_ThirdPersonVelocity>
+  <PFV_CameraMode>View: {0}</PFV_CameraMode>
+  <PFV_CameraModeTip>Switch the focused group's camera mode: free orbit / third person · hull forward / third person · velocity forward. Each mode retains its own pose and zoom.</PFV_CameraModeTip>
+  <PFV_SettingsCamera>PFView group camera</PFV_SettingsCamera>
+  <PFV_SettingsFocusMode>Default view on double-click / focus: {0}</PFV_SettingsFocusMode>
+  <PFV_SettingsFocusModeTip>Applies to future double-clicks and Focus actions. The current camera stays in place. You can also switch modes in the PFView toolbar.</PFV_SettingsFocusModeTip>
+  <PFV_HelpCameraModesTitle>Free and two third-person views</PFV_HelpCameraModesTitle>
+  <PFV_HelpCameraModes>Mod settings choose the default mode on double-click / Focus. Hull forward follows above and behind the hull, including turns and roll. Velocity forward points the camera along the current velocity direction (falling back to the hull direction when velocity is zero) while using the hull's up direction as the roll reference (the up direction transitions when velocity and nose differ in pitch), so drifting sideways or flying backwards still shows the motion direction. Both third-person modes look up to 60° either side, with pitch from −10° to 45°. The wheel zooms; pan is disabled. Home restores the default view 15° above the tail. Switch between the three modes in the toolbar; each mode retains its own pose and zoom.</PFV_HelpCameraModes>
 </LanguageData>

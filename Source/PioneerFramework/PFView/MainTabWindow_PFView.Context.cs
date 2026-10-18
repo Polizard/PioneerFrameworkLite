@@ -108,6 +108,16 @@ namespace PioneerFramework
             return CanOperateGroup(group, false, out _) ? group : null;
         }
 
+        /// <summary>
+        /// **仪表基准**（2026-10-18 用户裁定③）：雷达 / 姿态球**总是显示当前选中的编队**（查看对象），
+        /// 不再跟随"操作编队"——操作编队只决定命令来源。这样只要左侧选中了编队，两块仪表就有内容；
+        /// 没有选中编队时返回 null（面板画空态）。
+        /// </summary>
+        private SpaceEntityGroup? ResolveInstrumentGroup()
+            => selectedGroupId >= 0
+                ? Current.Game?.GetComponent<SpaceGameComp>()?.GetGroupById(selectedGroupId)
+                : null;
+
         private bool TryGetKnownContact(int groupId, out Contact known)
         {
             known = default;
@@ -163,8 +173,8 @@ namespace PioneerFramework
             Rect saved = radar ? rRadar : rNavball;
             try
             {
-                if (radar) { rRadar = rect; DrawRadarPanel(ResolveOperationGroup()); }
-                else { rNavball = rect; DrawNavballPanel(ResolveOperationGroup()); }
+                if (radar) { rRadar = rect; DrawRadarPanel(ResolveInstrumentGroup()); }
+                else { rNavball = rect; DrawNavballPanel(ResolveInstrumentGroup()); }
             }
             finally
             {

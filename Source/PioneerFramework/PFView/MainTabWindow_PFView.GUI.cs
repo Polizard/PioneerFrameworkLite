@@ -104,8 +104,9 @@ namespace PioneerFramework
             DrawToolbar();
             DrawObjectList(rLeftCol);
             DrawInspector(rInspector);
-            if (rRadar.width > 0) DrawRadarPanel(ResolveOperationGroup());
-            if (rNavball.width > 0) DrawNavballPanel(ResolveOperationGroup());
+            // 仪表基准 = 当前选中的编队（2026-10-18 用户裁定③；操作编队只决定命令来源）
+            if (rRadar.width > 0) DrawRadarPanel(ResolveInstrumentGroup());
+            if (rNavball.width > 0) DrawNavballPanel(ResolveInstrumentGroup());
             DrawSteeringStrip();
             DrawStatusLine();
 

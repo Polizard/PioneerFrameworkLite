@@ -81,6 +81,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\PioneerFramework\PFView\PFViewUiViewHistory.cs" Link="Source\PioneerFramework\PFView\PFViewUiViewHistory.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewGroupCameraCore.cs" Link="Source\PioneerFramework\PFView\PFViewGroupCameraCore.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.FollowCamera.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.FollowCamera.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\Base\Core\PioneerFrameworkLiteMod.cs" Link="Source\PioneerFramework\Base\Core\PioneerFrameworkLiteMod.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\PFViewUiDragState.cs" Link="Source\PioneerFramework\PFView\PFViewUiDragState.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\Base\Buildings\Window_Steering.cs" Link="Source\PioneerFramework\Base\Buildings\Window_Steering.cs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

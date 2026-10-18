@@ -22,7 +22,7 @@ namespace PioneerFramework
     /// </summary>
     internal static class PFViewCameraCore
     {
-        /// <summary>俯仰夹取（与旧实现一致：5°–85°，避免万向锁/穿地）。</summary>
+        /// <summary>天体视角的俯仰夹取；编队及冻结视角允许完整旋转。</summary>
         public const float MinPitch = 5f;
         public const float MaxPitch = 85f;
 
@@ -79,6 +79,16 @@ namespace PioneerFramework
         public static float ClampPitch(float pitchDeg)
             => Mathf.Clamp(pitchDeg, MinPitch, MaxPitch);
 
+        /// <summary>编队俯仰只按整圈归一化，不设角度终点；天体视角保留原限位。</summary>
+        public static float ResolvePitch(PFViewFocusKind kind, float pitchDeg)
+            => kind == PFViewFocusKind.Body ? ClampPitch(pitchDeg) : WrapAngle(pitchDeg);
+
+        private static float WrapAngle(float angleDeg)
+        {
+            float wrapped = angleDeg % 360f;
+            return wrapped > 180f ? wrapped - 360f : wrapped < -180f ? wrapped + 360f : wrapped;
+        }
+
         /// <summary>按焦点类型夹取距离。Group 档沿用 PFViewCameraLimits（用户口径，只许加强）。</summary>
         public static float ClampDistance(PFViewFocusKind kind, float distanceView, float metersToView, float bodyRadiusView)
         {
@@ -133,6 +143,122 @@ namespace PioneerFramework
             float pR = pitchDeg * Mathf.Deg2Rad;
             float cP = Mathf.Cos(pR);
             return new Vector3(cP * Mathf.Sin(yR), Mathf.Sin(pR), cP * Mathf.Cos(yR));
+        }
+
+        /// <summary>随轨道俯仰连续旋转的上方向，避免越过正上/正下方时固定 world-up 翻转。</summary>
+        public static Vector3 OrbitUp(float yawDeg, float pitchDeg)
+        {
+            float yR = yawDeg * Mathf.Deg2Rad;
+            float pR = pitchDeg * Mathf.Deg2Rad;
+            float sP = Mathf.Sin(pR);
+            return new Vector3(-sP * Mathf.Sin(yR), Mathf.Cos(pR), -sP * Mathf.Cos(yR));
+        }
+
+        /// <summary>船体局部 +Z 为船头；轨道坐标 +Z 转向机尾，+Y 保持船体上方。</summary>
+        public static Quaternion GroupOrbitFrame(Quaternion shipRotationInView)
+            => shipRotationInView * new Quaternion(0, 1, 0, 0);
+
+        /// <summary>
+        /// **速度正向**的编队第三人称帧（2026-10-18 用户口径）：相机前向 = 速度方向。
+        /// 做法：取船体帧，绕**最小旋转**把船头(+Z)搬到速度方向，再套 <see cref="GroupOrbitFrame" />
+        /// 翻到机尾 —— 滚转基准仍取船体上方向（最小旋转不会绕前向轴额外加滚转；速度与船头有
+        /// 俯仰差时上方向随之过渡），只有前向被换成速度。
+        /// 速度为零/非有限 ⇒ 原样退回船体帧（悬停/停靠不产生无意义朝向）。
+        ///
+        /// ⚠ 只用**受管**四元数算术：`Quaternion.FromToRotation/AngleAxis/LookRotation` 在 Unity 引用
+        /// 程序集里是 ECall，headless 一调即抛（同 `ViewFrame.ToViewRotation` 的纪律）⇒ 这里自己算。
+        /// </summary>
+        public static Quaternion GroupVelocityOrbitFrame(Quaternion hullRotationInView, Vector3 velocityInView)
+        {
+            float max = Mathf.Max(Mathf.Abs(velocityInView.x), Mathf.Max(Mathf.Abs(velocityInView.y), Mathf.Abs(velocityInView.z)));
+            if (!float.IsFinite(max) || max <= 1e-4f) return GroupOrbitFrame(hullRotationInView);
+
+            // 先按最大分量缩放再单位化：速度量级 1e4 m/s 时平方不溢出。
+            Vector3 scaled = velocityInView / max;
+            float length = Mathf.Sqrt(scaled.x * scaled.x + scaled.y * scaled.y + scaled.z * scaled.z);
+            if (!float.IsFinite(length) || length <= 1e-4f) return GroupOrbitFrame(hullRotationInView);
+            Vector3 target = scaled / length;
+
+            Vector3 nose = hullRotationInView * Vector3.forward;
+            Quaternion align = MinimalRotation(nose, target, hullRotationInView * Vector3.up);
+            return GroupOrbitFrame(align * hullRotationInView);
+        }
+
+        /// <summary>把单位向量 <paramref name="from" /> 转到 <paramref name="to" /> 的最小旋转四元数。
+        /// 180° 反平行时绕 <paramref name="fallbackUp" /> 翻（保持滚转基准）；退化轴回落到世界 +Y。</summary>
+        private static Quaternion MinimalRotation(Vector3 from, Vector3 to, Vector3 fallbackUp)
+        {
+            float dot = Mathf.Clamp(Vector3.Dot(from, to), -1f, 1f);
+            if (dot >= 1f - 1e-6f) return Quaternion.identity;
+            if (dot <= -1f + 1e-6f)
+            {
+                Vector3 axis = fallbackUp;
+                float axisLength = Mathf.Sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
+                if (!float.IsFinite(axisLength) || axisLength <= 1e-6f) axis = Vector3.up;
+                else axis /= axisLength;
+                return UnitRotation(new Quaternion(axis.x, axis.y, axis.z, 0f));
+            }
+            Vector3 cross = Vector3.Cross(from, to);
+            return UnitRotation(new Quaternion(cross.x, cross.y, cross.z, 1f + dot));
+        }
+
+        /// <summary>轨道后方向和上方向的正交基；仅使用受管四元数算术。</summary>
+        public static Quaternion OrbitRotation(float yawDeg, float pitchDeg, Quaternion frame)
+        {
+            float y = yawDeg * Mathf.Deg2Rad * .5f, p = -pitchDeg * Mathf.Deg2Rad * .5f;
+            float sy = Mathf.Sin(y), cy = Mathf.Cos(y), sp = Mathf.Sin(p), cp = Mathf.Cos(p);
+            return frame * new Quaternion(cy * sp, sy * cp, -sy * sp, cy * cp);
+        }
+
+        private static Quaternion UnitRotation(Quaternion q)
+        {
+            float length = Mathf.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+            return length > 1e-6f && float.IsFinite(length)
+                ? new(q.x / length, q.y / length, q.z / length, q.w / length) : Quaternion.identity;
+        }
+
+        /// <summary>视角模式过渡走最短四元数弧；q 与 -q 保持同一姿态。</summary>
+        public static Quaternion InterpolateRotation(Quaternion from, Quaternion to, float progress)
+        {
+            float t = Mathf.Clamp01(progress);
+            from = UnitRotation(from);
+            to = UnitRotation(to);
+            float dot = from.x * to.x + from.y * to.y + from.z * to.z + from.w * to.w;
+            if (dot < 0)
+            {
+                to = new(-to.x, -to.y, -to.z, -to.w);
+                dot = -dot;
+            }
+            float a = 1 - t, b = t;
+            if (dot < .9995f)
+            {
+                float angle = Mathf.Acos(Mathf.Clamp(dot, 0, 1));
+                float sine = Mathf.Sin(angle);
+                a = Mathf.Sin((1 - t) * angle) / sine;
+                b = Mathf.Sin(t * angle) / sine;
+            }
+            return UnitRotation(new(from.x * a + to.x * b, from.y * a + to.y * b,
+                from.z * a + to.z * b, from.w * a + to.w * b));
+        }
+
+        /// <summary>跨视角或船体坐标系的过渡，位置与 up 使用同一旋转。</summary>
+        public static (Vector3 Offset, Vector3 Up) InterpolateOrbit(Quaternion fromRotation, float fromDistance,
+            Quaternion toRotation, float toDistance, float progress)
+        {
+            Quaternion rotation = InterpolateRotation(fromRotation, toRotation, progress);
+            float distance = Mathf.Lerp(fromDistance, toDistance, Mathf.Clamp01(progress));
+            return (rotation * Vector3.forward * distance, rotation * Vector3.up);
+        }
+
+        /// <summary>过渡按短角差插值朝向和视距，位置与上方向同源，倒置复位也不穿过焦点。</summary>
+        public static (Vector3 Offset, Vector3 Up) InterpolateOrbit(float fromYaw, float fromPitch, float fromDistance,
+            float toYaw, float toPitch, float toDistance, float progress)
+        {
+            float t = Mathf.Clamp01(progress);
+            float yaw = fromYaw + WrapAngle(toYaw - fromYaw) * t;
+            float pitch = fromPitch + WrapAngle(toPitch - fromPitch) * t;
+            float distance = Mathf.Lerp(fromDistance, toDistance, t);
+            return (OrbitDir(yaw, pitch) * distance, OrbitUp(yaw, pitch));
         }
 
         /// <summary>相机在 view space 中的位置（相对渲染原点）。</summary>

@@ -43,6 +43,36 @@ public class PFViewUiLayoutCoreTests
     }
 
     [Fact]
+    public void NarrowToolbarReservesThirdRowForBothInstrumentDrawers()
+    {
+        var layout = PFViewUiLayoutCore.Compute(645, 480, true, new(true, true, false));
+        Assert.True(layout.RequiresInstrumentDrawer);
+        Assert.True(layout.Toolbar.Height >= 96f);
+        Assert.True(layout.Details.Y >= layout.Toolbar.Height);
+    }
+
+    [Theory]
+    [InlineData(645, 480)]
+    [InlineData(640, 360)]
+    [InlineData(759, 400)]
+    [InlineData(760, 320)]
+    [InlineData(853, 480)]
+    [InlineData(1280, 720)]
+    public void EveryToolbarButtonFitsTheReservedInputRegion(float width, float height)
+    {
+        var layout = PFViewUiLayoutCore.Compute(width, height, true, new(true, true, false));
+        float x = 6, y = 4;
+        foreach (var item in Enum.GetValues<PFViewToolbarItem>())
+        {
+            if (!layout.RequiresInstrumentDrawer && item >= PFViewToolbarItem.Navball) continue;
+            var button = PFViewUiLayoutCore.NextToolbarRect(width, ref x, ref y, item);
+            Assert.True(button.X >= 0 && button.X + button.Width <= layout.Toolbar.Width);
+            Assert.True(button.Y >= 0 && button.Y + button.Height <= layout.Toolbar.Height);
+            Assert.False(button.Overlaps(layout.Details));
+        }
+    }
+
+    [Fact]
     public void EmptyRegionsNeverCaptureInput()
     {
         var layout = PFViewUiLayoutCore.Compute(1280, 720, false, new(false, false, false));

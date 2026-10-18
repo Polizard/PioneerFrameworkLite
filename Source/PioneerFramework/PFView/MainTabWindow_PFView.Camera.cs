@@ -26,6 +26,10 @@ namespace PioneerFramework
             public float Pitch;
             public float Distance;
             public Vector3 Pan;
+            public PFViewGroupCameraMode Mode;
+            public Quaternion Frame = Quaternion.identity;
+            public FrozenCameraPose? Frozen;
+            public Quaternion FrozenFrameSystem = Quaternion.identity;
         }
 
         private sealed record PreviousView(Game? Game, PFViewFocusKind Kind, int GroupId, int BodyId,
@@ -65,10 +69,7 @@ namespace PioneerFramework
             focusBodyId = snapshot.BodyId;
             currentSystemBodyId = snapshot.SystemBodyId;
             frozenAbs = snapshot.Frozen;
-            camYaw = snapshot.Pose.Yaw;
-            camPitch = snapshot.Pose.Pitch;
-            camDistance = snapshot.Pose.Distance;
-            camFocusOffset = snapshot.Pose.Pan;
+            ApplyCameraPose(snapshot.Pose);
             viewFrameMode = snapshot.Frame;
             objectsDirty = true;
             BeginTransition(oldOrigin, oldPose);
@@ -98,8 +99,9 @@ namespace PioneerFramework
         private bool cameraTransitioning;
         private float transitionElapsed;
         private float transitionDuration;
-        private Vector3 transitionStartPos;
-        private Vector3 transitionStartLook;
+        private float transitionStartDistance;
+        private DVector3 transitionStartLookAbs;
+        private Quaternion transitionStartRotationSystem = Quaternion.identity;
 
         // 右键「点击 vs 拖拽」判定（右键单击 = 上下文菜单，拖拽 = 旋转）
         private Vector2 rightMouseDownPos;
@@ -121,6 +123,7 @@ namespace PioneerFramework
             {
                 cameraMemory.Clear();
                 viewHistory.Clear();
+                ResetCameraSession();
                 cameraInitialized = false;
                 selectedGroupId = -1;   // 换局/读档：旧存档的 id 不能带进新局
                 targetGroupId = -1;
@@ -136,12 +139,13 @@ namespace PioneerFramework
 
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             var selected = selectedGroupId >= 0 ? spaceGame?.GetGroupById(selectedGroupId) : null;
-            if (selected != null)
+            if (CanInspectEntity(selected))
             {
                 focusKind = PFViewFocusKind.Group;
                 focusGroupId = selectedGroupId;
                 focusBodyId = selected.CelestialBodyId >= 0 ? selected.CelestialBodyId : currentSystemBodyId;
-                camDistance = PFViewCameraCore.DefaultGroupDistanceView(MetersToView);
+                groupCameraMode = DefaultGroupCameraMode();
+                InitializeGroupCameraPose(selected, PFViewFocusKind.Body, null);
             }
             else
             {
@@ -159,7 +163,9 @@ namespace PioneerFramework
         internal void SaveCameraMemory()
         {
             if (!cameraInitialized) return;
-            if (focusKind == PFViewFocusKind.Group || focusKind == PFViewFocusKind.Body)
+            if (focusKind == PFViewFocusKind.Group)
+                groupCameraMemory.Remember(focusGroupId, groupCameraMode, CapturePose());
+            else if (focusKind == PFViewFocusKind.Body)
                 cameraMemory[(focusKind, FocusId())] = CapturePose();
         }
 
@@ -172,16 +178,22 @@ namespace PioneerFramework
             Pitch = camPitch,
             Distance = camDistance,
             Pan = camFocusOffset,
+            Mode = focusKind == PFViewFocusKind.Group ? groupCameraMode : PFViewGroupCameraMode.Free,
+            Frame = ResolveOrbitFrame(),
+            Frozen = frozenCameraPose,
+            FrozenFrameSystem = frozenFreeFrameSystem,
         };
 
         private bool TryLoadPose()
         {
             if (focusKind != PFViewFocusKind.Group && focusKind != PFViewFocusKind.Body) return false;
-            if (!cameraMemory.TryGetValue((focusKind, FocusId()), out var pose)) return false;
-            camYaw = pose.Yaw;
-            camPitch = pose.Pitch;
-            camDistance = pose.Distance;
-            camFocusOffset = pose.Pan;
+            CameraPose? pose;
+            if (focusKind == PFViewFocusKind.Group)
+            {
+                if (!groupCameraMemory.TryGet(focusGroupId, groupCameraMode, out pose)) return false;
+            }
+            else if (!cameraMemory.TryGetValue((focusKind, FocusId()), out pose)) return false;
+            ApplyCameraPose(pose);
             return true;
         }
 
@@ -199,7 +211,12 @@ namespace PioneerFramework
                 return;
             }
 
-            if (focusKind == PFViewFocusKind.Group && focusGroupId == groupId) return;
+            PFViewGroupCameraMode requestedMode = DefaultGroupCameraMode();
+            if (focusKind == PFViewFocusKind.Group && focusGroupId == groupId)
+            {
+                SwitchGroupCameraMode(requestedMode);
+                return;
+            }
 
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             RememberPreviousView();
@@ -210,6 +227,7 @@ namespace PioneerFramework
 
             focusKind = PFViewFocusKind.Group;
             focusGroupId = groupId;
+            groupCameraMode = requestedMode;
             focusBodyId = g.CelestialBodyId >= 0 ? g.CelestialBodyId : currentSystemBodyId;
             int root = mgr != null ? mgr.GetRootPlanetId(focusBodyId) : -1;
             // 编队可能在恒星/深空（root=-1）：至少让「当前系统」指向它自己的天体，
@@ -219,12 +237,11 @@ namespace PioneerFramework
 
             if (!TryLoadPose())
             {
-                camFocusOffset = Vector3.zero;
-                camDistance = PFViewCameraCore.ProjectDistance(oldKind, PFViewFocusKind.Group,
-                    oldPose.Distance, MetersToView, FocusBodyRadiusView());
+                InitializeGroupCameraPose(g, oldKind, oldPose);
             }
 
             BeginTransition(oldOrigin, oldPose);
+            objectsDirty = true;
         }
 
         internal void FocusBody(int bodyId)
@@ -240,6 +257,8 @@ namespace PioneerFramework
             focusKind = PFViewFocusKind.Body;
             focusBodyId = bodyId;
             focusGroupId = -1;
+            groupCameraMode = PFViewGroupCameraMode.Free;
+            frozenCameraPose = null;
             currentSystemBodyId = bodyId;
 
             if (!TryLoadPose())
@@ -301,9 +320,16 @@ namespace PioneerFramework
             camYaw = 0f;
             camPitch = PFViewCameraCore.DefaultPitch;
             camFocusOffset = Vector3.zero;
-            camDistance = focusKind == PFViewFocusKind.Group
+            frozenCameraPose = null;
+            if (focusKind == PFViewFocusKind.Frozen) frozenFreeFrameSystem = Quaternion.Inverse(viewFrameRot);
+            if (IsThirdPersonView)
+            {
+                camPitch = PFViewGroupCameraCore.DefaultPitch;
+                camDistance = ThirdPersonDistances(force: true).DefaultMeters * MetersToView;
+            }
+            else camDistance = focusKind == PFViewFocusKind.Group
                 ? PFViewCameraCore.DefaultGroupDistanceView(MetersToView)
-                : DefaultBodyDistance();
+                : focusKind == PFViewFocusKind.Frozen ? oldPose.Distance : DefaultBodyDistance();
 
             BeginTransition(oldOrigin, oldPose);
         }
@@ -361,6 +387,7 @@ namespace PioneerFramework
             focusKind = PFViewFocusKind.Frozen;
             focusGroupId = -1;
             frozenAbs = lastFocusAbs;
+            LockFrozenCamera();
 
             if (selectedGroupId == lostId)
             {
@@ -426,25 +453,20 @@ namespace PioneerFramework
             }
 
             DVector3 newOrigin = ResolveFocusOrigin();
-            Vector3 deltaView = viewFrameRot * (Vector3)((oldOrigin - newOrigin) * MetersToView);
-            Vector3 startPos = PFViewCameraCore.CameraViewPos(oldPose.Pan, oldPose.Yaw, oldPose.Pitch, oldPose.Distance)
-                             + deltaView;
-            Vector3 startLook = oldPose.Pan + deltaView;
-
-            Vector3 targetPos = PFViewCameraCore.CameraViewPos(camFocusOffset, camYaw, camPitch, camDistance);
-            Vector3 targetLook = camFocusOffset;
-
-            transitionStartPos = startPos;
-            transitionStartLook = startLook;
+            transitionStartLookAbs = hasDisplayedCameraPose ? displayedLookAbs : ViewToAbs(oldPose.Pan, oldOrigin);
+            transitionStartRotationSystem = hasDisplayedCameraPose ? displayedOrbitRotationSystem
+                : Quaternion.Inverse(viewFrameRot) * PFViewCameraCore.OrbitRotation(oldPose.Yaw, oldPose.Pitch, oldPose.Frame);
+            transitionStartDistance = hasDisplayedCameraPose ? camDisplayDistance : oldPose.Distance;
             transitionElapsed = 0f;
 
-            float ratio = Mathf.Max(targetPos.magnitude, 1f) / Mathf.Max(startPos.magnitude, 1f);
+            float ratio = Mathf.Max(camDistance, 1f) / Mathf.Max(transitionStartDistance, 1f);
             transitionDuration = Mathf.Clamp(0.25f + Mathf.Abs(Mathf.Log(ratio)) * 0.03f, 0.20f, 0.45f);
             cameraTransitioning = true;
         }
 
         private void CancelTransition()
         {
+            ReleaseFrozenCamera();
             cameraTransitioning = false;
         }
 
@@ -461,32 +483,58 @@ namespace PioneerFramework
 
             float bodyRadiusView = FocusBodyRadiusView();
 
-            camDistance = PFViewCameraCore.ClampDistance(focusKind, camDistance, MetersToView, bodyRadiusView);
-            if (focusKind == PFViewFocusKind.Group)
-                camFocusOffset = PFViewCameraLimits.ClampPanOffset(camFocusOffset, MetersToView, true);
+            if (IsThirdPersonView)
+            {
+                camYaw = PFViewGroupCameraCore.ClampYaw(camYaw);
+                camPitch = PFViewGroupCameraCore.ClampPitch(camPitch);
+                camDistance = ThirdPersonDistances().ClampMeters(camDistance * ViewToMeters) * MetersToView;
+                camFocusOffset = Vector3.zero;
+            }
+            else if (frozenCameraPose == null)
+            {
+                camPitch = PFViewCameraCore.ResolvePitch(focusKind, camPitch);
+                camDistance = PFViewCameraCore.ClampDistance(focusKind, camDistance, MetersToView, bodyRadiusView);
+                if (focusKind == PFViewFocusKind.Group)
+                    camFocusOffset = PFViewCameraLimits.ClampPanOffset(camFocusOffset, MetersToView, true);
+            }
 
-            Vector3 targetPos = PFViewCameraCore.CameraViewPos(camFocusOffset, camYaw, camPitch, camDistance);
+            Quaternion orbitFrame = ResolveOrbitFrame();
+            Vector3 targetPos = camFocusOffset + orbitFrame * PFViewCameraCore.CameraViewPos(Vector3.zero, camYaw, camPitch, camDistance);
             Vector3 targetLook = camFocusOffset;
 
             Vector3 pos;
             Vector3 look;
-            if (cameraTransitioning)
+            Vector3 up;
+            if (focusKind == PFViewFocusKind.Frozen && frozenCameraPose != null)
+            {
+                pos = AbsToView(frozenCameraPose.Position, origin);
+                look = AbsToView(frozenCameraPose.Look, origin);
+                up = viewFrameRot * frozenCameraPose.RotationSystem * Vector3.up;
+                cameraTransitioning = false;
+            }
+            else if (cameraTransitioning)
             {
                 transitionElapsed += Time.unscaledDeltaTime;
                 float s = PFViewCameraCore.SmoothStep01(transitionElapsed / Mathf.Max(transitionDuration, 0.0001f));
-                pos = Vector3.Lerp(transitionStartPos, targetPos, s);
-                look = Vector3.Lerp(transitionStartLook, targetLook, s);
+                look = Vector3.Lerp(AbsToView(transitionStartLookAbs, origin), targetLook, s);
+                var orbit = PFViewCameraCore.InterpolateOrbit(viewFrameRot * transitionStartRotationSystem, transitionStartDistance,
+                    PFViewCameraCore.OrbitRotation(camYaw, camPitch, orbitFrame), camDistance, s);
+                pos = look + orbit.Offset;
+                up = orbit.Up;
                 if (s >= 1f) cameraTransitioning = false;
             }
             else
             {
                 pos = targetPos;
                 look = targetLook;
+                up = focusKind == PFViewFocusKind.Body ? Vector3.up : orbitFrame * PFViewCameraCore.OrbitUp(camYaw, camPitch);
             }
 
             // 相机不许钻进**任何**天体（2026-10-18 用户：缩放/转视角会进入星体内部、行星局部透明）。
             // 不只看焦点天体：焦点组的 CelestialBodyId 可能失效/回退，相机仍可能贴着另一颗星。
             float minSurfaceGapView = float.MaxValue;
+            if (IsThirdPersonView)
+                pos = PFViewCameraCore.ClampCameraOutsideSphere(pos, Vector3.zero, hullRadiusMeters * MetersToView + NearClip * 2f, 1f);
             if (bodyMgr != null)
             {
                 foreach (var b in bodyMgr.GetAllBodies())
@@ -503,12 +551,15 @@ namespace PioneerFramework
             camDisplayDistance = Vector3.Distance(pos, look);
 
             renderCamera.transform.position = pos;
-            renderCamera.transform.LookAt(look, Vector3.up);
+            renderCamera.transform.LookAt(look, up);
+            CacheDisplayedCamera(origin, pos, look);
             renderCamera.farClipPlane = FarClip;
 
             // 近裁随**实际视距/离最近表面余量**自适应：near 必须小于「相机→任何天体表面」的距离，
             // 否则星球近侧会被近裁面切掉（露出星空 = 用户看到的「局部半透明」）。
             float surfaceGapView = minSurfaceGapView < float.MaxValue ? minSurfaceGapView : camDisplayDistance;
+            if (IsThirdPersonView)
+                surfaceGapView = Mathf.Min(surfaceGapView, Mathf.Max(NearClip * 2f, pos.magnitude - hullRadiusMeters * MetersToView));
             renderCamera.nearClipPlane = PFViewCameraCore.NearClipForCamera(camDisplayDistance, surfaceGapView, NearClip, 5000f);
 
             // 记录焦点位置，供丢失冻结（Resolve 内已更新；这里兜底）
@@ -612,7 +663,9 @@ namespace PioneerFramework
             {
                 CancelTransition();
                 camDistance = PFViewCameraCore.WheelDistance(camDistance, e.delta.y);
-                if (focusKind == PFViewFocusKind.Group
+                if (IsThirdPersonView)
+                    camDistance = ThirdPersonDistances().ClampMeters(camDistance * ViewToMeters) * MetersToView;
+                else if (focusKind == PFViewFocusKind.Group
                     && (camDistance < PFViewCameraLimits.GroupOrbitMinMeters * MetersToView
                         || camDistance > PFViewCameraLimits.GroupOrbitMaxMeters * MetersToView)) NotifyViewLimit();
                 e.Use();
@@ -620,6 +673,7 @@ namespace PioneerFramework
 
             if (e.type == EventType.MouseDown && (e.button == 1 || e.button == 2))
             {
+                if (IsThirdPersonView && (e.button == 2 || e.shift)) { e.Use(); return; }
                 CancelTransition();
                 dragState.Begin(e.button == 2 || e.shift);
                 rightMouseDownPos = e.mousePosition;
@@ -631,13 +685,14 @@ namespace PioneerFramework
             {
                 if ((e.mousePosition - rightMouseDownPos).magnitude > 3f) dragState.MarkMoved();
                 Vector2 d = e.mousePosition - lastMousePos;
-                camYaw -= d.x * OrbitSensitivity;
-                camPitch = PFViewCameraCore.ClampPitch(camPitch - d.y * OrbitSensitivity);
+                camYaw = IsThirdPersonView ? PFViewGroupCameraCore.ClampYaw(camYaw - d.x * OrbitSensitivity) : camYaw - d.x * OrbitSensitivity;
+                camPitch = IsThirdPersonView ? PFViewGroupCameraCore.ClampPitch(camPitch - d.y * OrbitSensitivity)
+                    : PFViewCameraCore.ResolvePitch(focusKind, camPitch - d.y * OrbitSensitivity);
                 lastMousePos = e.mousePosition;
                 e.Use();
             }
 
-            if (isDraggingPan && e.type == EventType.MouseDrag && (e.button == 1 || e.button == 2))
+            if (!IsThirdPersonView && isDraggingPan && e.type == EventType.MouseDrag && (e.button == 1 || e.button == 2))
             {
                 Vector2 d = e.mousePosition - lastMousePos;
                 if (renderCamera != null)

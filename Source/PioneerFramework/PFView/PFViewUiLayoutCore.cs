@@ -2,6 +2,11 @@ using System;
 
 namespace PioneerFramework
 {
+    internal enum PFViewToolbarItem
+    {
+        Group, Navigate, Body, Previous, Display, Camera, Frame, Time, Weapons, Help, Debug, Navball, Radar
+    }
+
     internal readonly record struct PFViewUiRect(float X, float Y, float Width, float Height)
     {
         public bool Contains(float x, float y) => Width > 0 && Height > 0
@@ -19,6 +24,39 @@ namespace PioneerFramework
     {
         private const float Pad = 8f;
         public const float BallSize = 222f;
+
+        public static PFViewUiRect NextToolbarRect(float toolbarWidth, ref float x, ref float y, PFViewToolbarItem item)
+        {
+            float width = item switch
+            {
+                PFViewToolbarItem.Group or PFViewToolbarItem.Navigate or PFViewToolbarItem.Body => 92f,
+                PFViewToolbarItem.Previous or PFViewToolbarItem.Navball or PFViewToolbarItem.Radar => 80f,
+                PFViewToolbarItem.Display => 76f,
+                PFViewToolbarItem.Camera => 144f,
+                PFViewToolbarItem.Frame => 132f,
+                PFViewToolbarItem.Time => 158f,
+                PFViewToolbarItem.Weapons => 88f,
+                PFViewToolbarItem.Help => 30f,
+                _ => 60f
+            };
+            width = Math.Min(width, Math.Max(0, toolbarWidth - 12f));
+            if (x + width > toolbarWidth - 6f) { x = 6f; y += 32f; }
+            var rect = new PFViewUiRect(x, y, width, 24f);
+            x += width + 4f;
+            return rect;
+        }
+
+        private static float ToolbarHeight(float width, bool navDrawer, bool radarDrawer)
+        {
+            float x = 6f, y = 4f;
+            // Reserve weapons even when no operation source is available, so focus changes keep the layout stable.
+            for (var item = PFViewToolbarItem.Group; item <= PFViewToolbarItem.Radar; item++)
+            {
+                if (item == PFViewToolbarItem.Navball && !navDrawer || item == PFViewToolbarItem.Radar && !radarDrawer) continue;
+                NextToolbarRect(width, ref x, ref y, item);
+            }
+            return y + 28f;
+        }
 
         public static PFViewUiRect PlaceLabel(PFViewUiRect desired, float width, float height, PFViewUiLayout layout)
         {
@@ -67,13 +105,15 @@ namespace PioneerFramework
         public static PFViewUiLayout Compute(float width, float height, bool detailsVisible, PFViewUiVisibility visibility)
         {
             if (!float.IsFinite(width) || !float.IsFinite(height) || width <= 0 || height <= 0) return default;
-            float toolbarH = Math.Min(height, 32f * (float)Math.Ceiling(1120f / Math.Max(1f, width - 12f)));
+            float toolbarH = Math.Min(height, ToolbarHeight(width, false, false));
+            bool drawer = width < 760f || height - toolbarH - 24f - 2f * Pad < 268f;
+            if (drawer)
+                toolbarH = Math.Min(height, ToolbarHeight(width, visibility.ShowNavball, visibility.ShowRadar));
             float statusH = Math.Min(24f, Math.Max(0, height - toolbarH));
             float top = toolbarH + Pad;
             float bottom = Math.Max(top, height - statusH - Pad);
             float bodyH = Math.Max(0, bottom - top);
             bool compact = width < 1100f || height < 600f;
-            bool drawer = width < 760f || bodyH < 268f;
             float sideW = Math.Min(252f, Math.Max(0, width - 2 * Pad));
             var side = new PFViewUiRect(Pad, top, sideW, bodyH);
             PFViewUiRect objects = compact && detailsVisible ? default : side;
