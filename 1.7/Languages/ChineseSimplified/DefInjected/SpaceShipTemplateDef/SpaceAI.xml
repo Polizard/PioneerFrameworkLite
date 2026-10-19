@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Debug_CombatShip.label>交火测试舰</PF_Debug_CombatShip.label>
+  <PF_Debug_CombatShip.description>配有实际探测、武器、推进、燃料和电子战设备的完整测试舰。</PF_Debug_CombatShip.description>
+  <PF_AI_Gunship.label>炮战护卫舰</PF_AI_Gunship.label>
+  <PF_AI_Gunship.description>配有实际炮塔、推进器、储罐和传感器的炮战舰。</PF_AI_Gunship.description>
+  <PF_AI_MissileShip.label>导弹护卫舰</PF_AI_MissileShip.label>
+  <PF_AI_MissileShip.description>以有限装载的导弹实施协同齐射的舰船。</PF_AI_MissileShip.description>
+  <PF_AI_ElectronicWarfareShip.label>电子战支援舰</PF_AI_ElectronicWarfareShip.label>
+  <PF_AI_ElectronicWarfareShip.description>提供主动搜索、压制干扰和诱饵掩护的支援舰。</PF_AI_ElectronicWarfareShip.description>
+</LanguageData>

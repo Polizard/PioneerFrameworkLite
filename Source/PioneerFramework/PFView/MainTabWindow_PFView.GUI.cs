@@ -6,6 +6,7 @@ using UnityEngine.Rendering;
 using Verse;
 using RimWorld;
 using PioneerFramework.Combat;
+using PioneerFramework.SpaceAI;
 
 namespace PioneerFramework
 {
@@ -383,68 +384,67 @@ namespace PioneerFramework
             Log.Message($"[PFView] G{target.GroupId} 速度沿射向 G{shooter.GroupId} 方向调整 {dv:+#;-#;0} m/s");
         }
 
-        /// <summary>部署一对 100m 间距的交火测试船（敌对 faction），绕当前系统天体 500km 轨道。</summary>
+        /// <summary>部署一对配有实际设备和内景的交火测试船，间距 200m、高度 500km。</summary>
         private void DeployCombatTestPair()
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return;
-
-            int gidA = spaceGame.AllocGroupId();
-            int gidB = gidA + 1;
-            int eidA = spaceGame.AllocEntityId();
-            int eidB = eidA + 1;
-
+            var source = SpaceMapGenerator.GetAnchorMap();
+            var enemy = IncidentWorker_SpaceEncounter.FindEnemy();
+            var template = DefDatabase<SpaceShipTemplateDef>.GetNamedSilentFail("PF_Debug_CombatShip");
+            if (source == null || enemy == null || template == null)
+            { QueueToast("需要锚点地图、敌对势力和交火测试舰模板"); return; }
+            var session = Current.Game;
             int bodyId = currentSystemBodyId;
-            double orbitRadius = SpaceConstants.PlanetRadiusMeters + 500000.0;
-            double angle = Find.TickManager.TicksGame * 0.001;
-            DVector3 basePos = new DVector3(System.Math.Cos(angle) * orbitRadius, 0, System.Math.Sin(angle) * orbitRadius);
-            double mu = spaceGame.GetBodyGM(bodyId);
-            double speed = System.Math.Sqrt(mu / orbitRadius);
-            DVector3 vel = new DVector3(-System.Math.Sin(angle) * speed, 0, System.Math.Cos(angle) * speed);
-
-            CreateTestShip(spaceGame, gidA, eidA, basePos, vel, Faction.OfPlayer.loadID, bodyId);   // [V12] 真阵营 id
-            CreateTestShip(spaceGame, gidB, eidB, basePos + new DVector3(200, 0, 0), vel, FactionResolver.HostileFactionIdForPlayer(), bodyId);
-
-            selectedGroupId = gidA;
-            targetGroupId = gidB;
-            FocusGroup(gidA);
-
-            Log.Message($"[PFView] 部署交火测试对: G{gidA}(f0) vs G{gidB}(f1) 间距200m @ {orbitRadius / 1000.0:F0}km 轨道");
+            LongEventHandler.QueueLongEvent(() =>
+            {
+                if (!ReferenceEquals(session, Current.Game)) return;
+                using var creation = new EncounterBuildTransaction(id => spaceGame.DestroyGroup(id, "交火测试部署回滚"));
+                double tick = TimeScaleManager.GetPhysicsTickSafe();
+                double orbitRadius = spaceGame.GetBodySurfaceRadius(bodyId) + 500000.0;
+                double angle = tick * 0.001;
+                double speed = System.Math.Sqrt(spaceGame.GetBodyGM(bodyId) / orbitRadius);
+                var reference = new SpaceEntityGroup(-1, Faction.OfPlayer.loadID) { CelestialBodyId = bodyId };
+                var center = reference.GetCentralBodyOffset(tick);
+                var centerVelocity = reference.GetCentralBodyVelocity((int)System.Math.Round(tick));
+                DVector3 basePos = FrameConvert.BodyToSystem((BodyVec3)new DVector3(
+                    System.Math.Cos(angle) * orbitRadius, 0, System.Math.Sin(angle) * orbitRadius), center);
+                DVector3 vel = FrameConvert.BodyToSystemVelocity((BodyVec3)new DVector3(
+                    -System.Math.Sin(angle) * speed, 0, System.Math.Cos(angle) * speed), centerVelocity);
+                var first = CreateTestShip(template, source, basePos, vel, Faction.OfPlayer, bodyId, creation);
+                var second = CreateTestShip(template, source, basePos + new DVector3(200, 0, 0), vel, enemy, bodyId, creation);
+                creation.Commit();
+                selectedGroupId = first.GroupId;
+                targetGroupId = second.GroupId;
+                FocusGroup(first.GroupId);
+                Log.Message($"[PFView] 部署完整交火测试对: G{first.GroupId}(f{first.FactionId}) vs G{second.GroupId}(f{second.FactionId}) 间距200m @ {orbitRadius / 1000.0:F0}km 轨道；传感器/主动雷达/武器/燃料已就绪");
+            }, "GeneratingMap", false, e => Log.Error("[PFView] 交火测试部署失败：" + e));
         }
 
-        /// <summary>创建单 part 测试船（Lite 裁剪：无 Ship3D 蓝本，直接构造唯一 part 盒体）。</summary>
-        private static void CreateTestShip(SpaceGameComp spaceGame, int groupId, int entityId,
-            DVector3 pos, DVector3 vel, int factionId, int bodyId)
+        /// <summary>测试舰复用遭遇舰船生成与设备投影，保持玩家可操作的普通建筑。</summary>
+        private static SpaceEntityGroup CreateTestShip(SpaceShipTemplateDef template, Map source,
+            DVector3 pos, DVector3 vel, Faction faction, int bodyId, EncounterBuildTransaction creation)
         {
-            var group = new SpaceEntityGroup(groupId, factionId)
-            {
-                IsMovable = true,
-                IsCollidable = true,
-                CelestialBodyId = bodyId
-            };
-            group.CurrentOrbit = new OrbitState { positionSystem = (SystemVec3)pos, velocitySystem = (SystemVec3)vel, rotation = Quaternion.identity };
-            spaceGame.RegisterGroup(group);
+            var group = EncounterShipFactory.Create(template, faction, source, pos, vel, bodyId);
+            creation.Add(group.GroupId);
+            group.IsStealth = false;
+            group.ActivePingEnabled = true;
             group.EnterCircularOrbit(Find.TickManager.TicksGame, bodyId);
-
-            var entity = new SpaceEntity(entityId, factionId)
+            var spaceGame = Current.Game.GetComponent<SpaceGameComp>();
+            foreach (int eid in group.GetEntityIds())
             {
-                GroupId = groupId,
-                IsCollidable = true,
-                IsMovable = true,
-                IsAffectedByGravity = true
-            };
-            entity.SetPositionVelocity(DVector3.zero, DVector3.zero);
-            entity.SetRotation(Quaternion.identity);
-            entity.SetParts(new List<SpacePart>
-            {
-                new() {
-                    partId = 1,
-                    defName = "PF_TestShip",
-                    positionShip = DVector3.zero,
-                    boundsSizeShip = new DVector3(100.0, 40.0, 100.0)
+                var map = SpaceMapGenerator.FindPocketMap(spaceGame.GetEntityById(eid)!.MapId);
+                if (map == null) continue;
+                Thing? designator = map.spawnedThings.FirstOrDefault(t => t.TryGetComp<CompMapDesignator>() != null);
+                if (designator == null) continue;
+                foreach (var thing in map.spawnedThings)
+                {
+                    var turret = thing.TryGetComp<CompMapTurret>();
+                    if (turret?.Mount != null && designator.TryGetComp<CompMapDesignator>().RegisterTurret(thing))
+                        turret.Mount.boundDesignator = designator;
                 }
-            });
-            spaceGame.RegisterEntity(entity);
+            }
+            return group;
         }
     }
 }

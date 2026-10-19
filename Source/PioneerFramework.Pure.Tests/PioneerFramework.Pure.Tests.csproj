@@ -34,6 +34,7 @@
 
   <ItemGroup>
     <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Pure\DVector3.cs" />
+    <Compile Include="..\PioneerFramework\SpaceAI\Core\*.cs" Link="SpaceAI\%(Filename)%(Extension)" />
     <Compile Include="..\PioneerFramework\RingWorld\Core\*.cs" Link="RingWorld\%(Filename)%(Extension)" />
     <Compile Include="..\PioneerFramework\Megastructures\Core\**\*.cs" Link="Megastructures\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\PioneerFramework\Launch\LaunchTransitPath.cs" Link="Pure\LaunchTransitPath.cs" />

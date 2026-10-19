@@ -19,6 +19,7 @@ namespace PioneerFramework
     {
         /// <summary>是否用本模组的太阳/星空**替换**原版（**默认开**）。</summary>
         public bool replaceWorldSky = true;
+        public bool spaceAiRandomEncounters;
 
         /// <summary>
         /// 双击/聚焦编队时的**默认镜头模式**（跨局保存在 Mod 配置中）：
@@ -35,6 +36,7 @@ namespace PioneerFramework
         public override void ExposeData()
         {
             Scribe_Values.Look(ref replaceWorldSky, "replaceWorldSky", true);
+            Scribe_Values.Look(ref spaceAiRandomEncounters, "spaceAiRandomEncounters");
 
             // 降级兼容：旧键只表达「是否仍默认第三人称」（船体/速度正向都算 true）。
             if (Scribe.mode == LoadSaveMode.Saving)
@@ -74,6 +76,7 @@ namespace PioneerFramework
             listing.Begin(inRect);
             // ⚠ 只用最小且确定的 API（`CheckboxLabeled(2 参)` / `Label`）——不确定的签名不猜（仓库纪律）
             listing.CheckboxLabeled("替换世界视图的太阳与星空（默认开）", ref Settings.replaceWorldSky);
+            listing.CheckboxLabeled("PF_AI_RandomEncounters".Translate(), ref Settings.spaceAiRandomEncounters);
             listing.Gap(6f);
             listing.Label("开（默认）：世界视图与含图编队地图背景里的太阳/星空用本模组补画的那套；");
             listing.Label("原版那两套画在行星中心附近、只在镜头进入行星壳（船落地/低空）时才会露出来，已停用。");

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <ThingDef>
+    <defName>PF_Building_DecoyEmitter</defName>
+    <label>欺骗诱饵发射器</label>
+    <description>携带六份欺骗载荷的电子战设备。制造虚假接触，干扰对方主动雷达下的搜索、选靶和导弹制导。每次使用消耗一份载荷，冷却二十模拟秒。初始载荷包含在制造材料中，用尽后需要重建。</description>
+    <category>Building</category>
+    <thingClass>Building</thingClass>
+    <graphicData>
+      <texPath>Things/Building/Production/FermentingBarrel</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <size>(1,1)</size>
+    <passability>Standable</passability>
+    <selectable>true</selectable>
+    <statBases>
+      <MaxHitPoints>250</MaxHitPoints>
+      <Flammability>0.1</Flammability>
+      <Mass>150</Mass>
+      <WorkToBuild>800</WorkToBuild>
+    </statBases>
+    <costList>
+      <Steel>120</Steel>
+      <ComponentIndustrial>6</ComponentIndustrial>
+    </costList>
+    <designationCategory>Power</designationCategory>
+    <comps>
+      <li Class="PioneerFramework.CompProperties_DecoyEmitter">
+        <charges>6</charges>
+        <cooldownSeconds>20</cooldownSeconds>
+        <lifetimeSeconds>45</lifetimeSeconds>
+        <signalStrength>10</signalStrength>
+        <apparentRadius>20</apparentRadius>
+      </li>
+    </comps>
+  </ThingDef>
+</Defs>

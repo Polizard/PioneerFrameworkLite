@@ -94,7 +94,7 @@ namespace PioneerFramework
         private bool cameraInitialized;
         private Game? cameraGame;
 
-        // ── 显示值（过渡期间与目标值分离） ──
+        // ── 实际显示值：换焦点过渡与滚轮平滑共用，camDistance 保留目标距离 ──
         private float camDisplayDistance;
         private bool cameraTransitioning;
         private float transitionElapsed;
@@ -467,6 +467,7 @@ namespace PioneerFramework
         private void CancelTransition()
         {
             ReleaseFrozenCamera();
+            if (cameraTransitioning) camDistance = camDisplayDistance;
             cameraTransitioning = false;
         }
 
@@ -499,7 +500,9 @@ namespace PioneerFramework
             }
 
             Quaternion orbitFrame = ResolveOrbitFrame();
-            Vector3 targetPos = camFocusOffset + orbitFrame * PFViewCameraCore.CameraViewPos(Vector3.zero, camYaw, camPitch, camDistance);
+            // RenderScene 只在 Repaint 且每帧一次调用；暂停/时间倍率不影响镜头缩放。
+            float zoomDistance = PFViewCameraCore.SmoothZoomDistance(camDisplayDistance, camDistance, Time.unscaledDeltaTime);
+            Vector3 targetPos = camFocusOffset + orbitFrame * PFViewCameraCore.CameraViewPos(Vector3.zero, camYaw, camPitch, zoomDistance);
             Vector3 targetLook = camFocusOffset;
 
             Vector3 pos;
@@ -662,12 +665,17 @@ namespace PioneerFramework
             if (e.type == EventType.ScrollWheel)
             {
                 CancelTransition();
-                camDistance = PFViewCameraCore.WheelDistance(camDistance, e.delta.y);
+                camDistance = PFViewCameraCore.WheelTargetDistance(camDistance, camDisplayDistance, e.delta.y);
                 if (IsThirdPersonView)
                     camDistance = ThirdPersonDistances().ClampMeters(camDistance * ViewToMeters) * MetersToView;
-                else if (focusKind == PFViewFocusKind.Group
-                    && (camDistance < PFViewCameraLimits.GroupOrbitMinMeters * MetersToView
-                        || camDistance > PFViewCameraLimits.GroupOrbitMaxMeters * MetersToView)) NotifyViewLimit();
+                else
+                {
+                    if (focusKind == PFViewFocusKind.Group
+                        && (camDistance < PFViewCameraLimits.GroupOrbitMinMeters * MetersToView
+                            || camDistance > PFViewCameraLimits.GroupOrbitMaxMeters * MetersToView)) NotifyViewLimit();
+                    // 每个事件即限幅，避免同帧多次输入在边界之外积累目标距离。
+                    camDistance = PFViewCameraCore.ClampDistance(focusKind, camDistance, MetersToView, FocusBodyRadiusView());
+                }
                 e.Use();
             }
 
@@ -697,7 +705,7 @@ namespace PioneerFramework
                 Vector2 d = e.mousePosition - lastMousePos;
                 if (renderCamera != null)
                 {
-                    float worldPerPx = 2f * camDistance * Mathf.Tan(renderCamera.fieldOfView * 0.5f * Mathf.Deg2Rad)
+                    float worldPerPx = 2f * camDisplayDistance * Mathf.Tan(renderCamera.fieldOfView * 0.5f * Mathf.Deg2Rad)
                                        / Mathf.Max(1f, renderCamera.pixelHeight);
                     camFocusOffset -= (renderCamera.transform.right * d.x + renderCamera.transform.up * d.y) * worldPerPx;
                     if (focusKind == PFViewFocusKind.Group && camFocusOffset.magnitude > PFViewCameraLimits.GroupPanMaxMeters * MetersToView)

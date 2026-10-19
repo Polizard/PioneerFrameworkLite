@@ -31,6 +31,9 @@ namespace PioneerFramework
         {
             myRoot = new DebugActionNode("PFL 测试", DebugActionType.Action, null, null);
             absRoot.AddChild(myRoot);
+            AddAction("太空 AI：生成 3 艘完整敌舰（攻击活动玩家船）", "10 战斗", 90, SpaceAiDebugActions.SpawnThree, null);
+            AddAction("太空 AI：生成 6 艘完整敌舰（攻击活动玩家船）", "10 战斗", 89, SpaceAiDebugActions.SpawnSix, null);
+            AddAction("太空 AI：状态与性能读数", "10 战斗", 88, SpaceAiDebugActions.Report, null);
 
             // ═══ 验收（性能优化 9 条 + 中低优先批）═══
             // S2 首片（2026-09-23）：单一入口「一键测试（全覆盖）」—— 跑得完的全收进统一判定框架，

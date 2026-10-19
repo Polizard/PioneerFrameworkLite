@@ -234,6 +234,17 @@ namespace PioneerFramework
             Log.Message($"[PioneerFramework] Destroyed pocket map with ID {map.uniqueID}");
         }
 
+        internal static void DestroyShipMap(Map map)
+        {
+            if (map == null) return;
+            if (map.Parent is PocketMapParent) DestroyPocketMap(map);
+            else
+            {
+                Current.Game?.GetComponent<SpaceGameComp>()?.UnregisterMapComponent(map.uniqueID);
+                Current.Game.DeinitAndRemoveMap(map, notifyPlayer: true);
+            }
+        }
+
         /// <summary>
         /// 生成一个空白口袋地图（仅框架，无建筑无地形），用于取档恢复。
         /// 使用相同的 SpaceStationMapParent + PF_SpacePocket 生成器。

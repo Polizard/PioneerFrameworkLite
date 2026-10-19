@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Debug_CombatShip.label>combat test ship</PF_Debug_CombatShip.label>
+  <PF_Debug_CombatShip.description>A complete test ship with physical sensors, weapons, propulsion, fuel and electronic warfare equipment.</PF_Debug_CombatShip.description>
+  <PF_AI_Gunship.label>gun frigate</PF_AI_Gunship.label>
+  <PF_AI_Gunship.description>A frigate equipped with physical cannons, propulsion, tanks and sensors.</PF_AI_Gunship.description>
+  <PF_AI_MissileShip.label>missile frigate</PF_AI_MissileShip.label>
+  <PF_AI_MissileShip.description>A frigate carrying finite ammunition for coordinated missile salvos.</PF_AI_MissileShip.description>
+  <PF_AI_ElectronicWarfareShip.label>electronic warfare support ship</PF_AI_ElectronicWarfareShip.label>
+  <PF_AI_ElectronicWarfareShip.description>A support vessel providing active search, jamming and deception decoys.</PF_AI_ElectronicWarfareShip.description>
+</LanguageData>

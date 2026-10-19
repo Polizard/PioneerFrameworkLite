@@ -157,6 +157,19 @@ namespace PioneerFramework
         /// <summary>清掉某条假接触（被消耗 / 手动撤销）。</summary>
         public bool RemoveDecoy(int decoyId) => decoys.Remove(decoyId);
 
+        /// <summary>Resolve only an already observed false contact, with its own lifetime.</summary>
+        public bool TryGetDecoyContactAt(int factionId, int decoyId, double now, out Contact contact)
+        {
+            contact = default;
+            if (!decoys.TryGetValue(decoyId, out var rec) || now >= rec.expirePhysics) return false;
+            var picture = PictureIfAny(factionId);
+            if (picture == null) return false;
+            int index = picture.IndexOfDecoy(decoyId);
+            if (index < 0) return false;
+            contact = picture.tracks[index].contact;
+            return true;
+        }
+
         /// <summary>在册假目标条数（读数/验收）。</summary>
         public int DecoyCount => decoys.Count;
 

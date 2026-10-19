@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_AI_RandomEncounters>允许叙事者生成太空敌方遭遇（默认关闭）</PF_AI_RandomEncounters>
+  <PF_AI_DecoyEmit>发射欺骗诱饵</PF_AI_DecoyEmit>
+  <PF_AI_DecoyDescription>消耗一份载荷制造持续四十五模拟秒的假接触。对开启主动雷达的敌方生效，设备冷却二十模拟秒。</PF_AI_DecoyDescription>
+  <PF_AI_DecoyCharges>欺骗载荷：{0}</PF_AI_DecoyCharges>
+  <PF_AI_EncounterLabel>太空袭击</PF_AI_EncounterLabel>
+  <PF_AI_EncounterText>一支敌方舰队已进入附近轨道。保持观测，准备应对。</PF_AI_EncounterText>
+</LanguageData>

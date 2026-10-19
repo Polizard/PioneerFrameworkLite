@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 namespace PioneerFramework
@@ -48,6 +49,34 @@ namespace PioneerFramework
         /// delta &gt; 0（滚轮向上）= 距离变大（拉远）；delta &lt; 0 = 拉近。</summary>
         public static float WheelDistance(float distanceView, float deltaY)
             => distanceView * Mathf.Pow(1f / (1f - WheelSensitivity), ClampWheelDelta(deltaY));
+
+        /// <summary>同向滚动累加目标；反向输入从当前画面距离起算，立即改变缩放方向。</summary>
+        public static float WheelTargetDistance(float targetDistance, float displayedDistance, float deltaY)
+        {
+            if (!float.IsFinite(deltaY)) return targetDistance;
+            if (float.IsFinite(displayedDistance) && displayedDistance > 0f
+                && ((deltaY > 0f && targetDistance < displayedDistance)
+                    || (deltaY < 0f && targetDistance > displayedDistance)))
+                targetDistance = displayedDistance;
+            return WheelDistance(targetDistance, deltaY);
+        }
+
+        /// <summary>
+        /// 用真实帧时间平滑视距；在对数距离上指数收敛，近景/行星档共享比例手感。
+        /// 0.065 s 时间常数使约 95% 的缩放在 0.2 s 内完成，无速度积累和过冲。
+        /// 目标已按当前镜头模式限幅；显示值仍可来自被用户打断的跨档过渡。
+        /// </summary>
+        public static float SmoothZoomDistance(float current, float target, float dt)
+        {
+            if (!float.IsFinite(target) || target <= 0f) return current;
+            if (!float.IsFinite(current) || current <= 0f) return target;
+            if (!float.IsFinite(dt) || dt <= 0f) return current;
+
+            double blend = 1.0 - Math.Exp(-dt / 0.065);
+            float distance = (float)(current * Math.Exp(Math.Log((double)target / current) * blend));
+            if (Math.Abs(distance - target) <= target * 1e-6f) return target;
+            return Mathf.Clamp(distance, Math.Min(current, target), Math.Max(current, target));
+        }
 
         /// <summary>
         /// 相机不许钻进天体：若相机到球心的距离 &lt; 半径×margin，沿径向推回球面外。

@@ -22,7 +22,6 @@ namespace PioneerFramework
     /// 单一 TurretMount 持 WeaponInstance（冷却/过热/弹药状态机），360° 无射界限制。
     /// 朝向用 Graphic.extraRotation 无反射实现。
     /// </summary>
-    [StaticConstructorOnStartup]
     public class CompMapTurret : ThingComp
     {
         private TurretMount mount = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
@@ -31,9 +30,13 @@ namespace PioneerFramework
         /// 炮头贴图（启动时主线程加载；暂用原版铀炮炮头 TurretSniper_Top，后续换专属贴图）。
         /// 底座由 ThingDef graphicData 绘制（TurretHeavy_Base），本 Comp 只画会转的炮头，避免同一贴图画两遍。
         /// </summary>
-        private static readonly Graphic turretGraphic = GraphicDatabase.Get<Graphic_Single>(
-            "Things/Building/Security/TurretSniper_Top",
-            ShaderDatabase.Cutout, new Vector2(1.3f, 1.3f), Color.white);
+        [StaticConstructorOnStartup]
+        private static class TurretGraphics
+        {
+            internal static readonly Graphic Top = GraphicDatabase.Get<Graphic_Single>(
+                "Things/Building/Security/TurretSniper_Top",
+                ShaderDatabase.Cutout, new Vector2(1.3f, 1.3f), Color.white);
+        }
 
         public CompProperties_MapTurret Props => (CompProperties_MapTurret)props;
         public TurretMount Mount => mount;
@@ -42,6 +45,13 @@ namespace PioneerFramework
         {
             base.PostSpawnSetup(respawningAfterLoad);
             if (mount == null) BuildMount();
+            parent.Map?.GetComponent<SpaceMapComp>()?.RegisterSpaceWeapon(parent);
+        }
+
+        public override void PostDeSpawn(Map map, DestroyMode mode)
+        {
+            map.GetComponent<SpaceMapComp>()?.UnregisterSpaceWeapon(parent);
+            base.PostDeSpawn(map, mode);
         }
 
         public override void CompTick()
@@ -71,7 +81,7 @@ namespace PioneerFramework
             // 炮头用 DrawWorker + Altitudes.AltIncVect 抬高一个高度层绘制（原版 TurretTop.DrawTurret
             // 同款：drawLoc + Altitudes.AltIncVect），保证炮头始终盖在底座之上、不 z-fight。
             Vector3 topPos = parent.DrawPos + Altitudes.AltIncVect;
-            turretGraphic.DrawWorker(topPos, Rot4.North, parent.def, parent, mount.rotation);
+            TurretGraphics.Top.DrawWorker(topPos, Rot4.North, parent.def, parent, mount.rotation);
         }
 
         public override IEnumerable<Gizmo> CompGetGizmosExtra()
@@ -126,13 +136,16 @@ namespace PioneerFramework
             Scribe_Deep.Look(ref mount, "mount");
             if (Scribe.mode == LoadSaveMode.LoadingVars)
             {
-                // 读档后补齐武器实例（状态机冷启动，冷却重置可接受；弹药默认无限）
+                // 旧档缺少状态时保留原默认值；新档只重新绑定 Def。
                 if (mount == null) BuildMount();
-                else if (mount.weapon == null)
+                else
                 {
                     var weaponDef = DefDatabase<WeaponDef>.GetNamedSilentFail(Props.weaponDefName);
                     if (weaponDef != null)
-                        mount.weapon = new WeaponInstance { def = weaponDef };
+                    {
+                        mount.weapon ??= new WeaponInstance();
+                        mount.weapon.def = weaponDef;
+                    }
                 }
             }
         }
@@ -147,6 +160,7 @@ namespace PioneerFramework
 
         public void ExposeData()
         {
+            Scribe_Deep.Look(ref weapon, "weapon");
             Scribe_Values.Look(ref rotation, "rotation");
             Scribe_References.Look(ref boundDesignator, "boundDesignator");
         }

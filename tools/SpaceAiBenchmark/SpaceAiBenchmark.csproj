@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <DefineConstants>PURE_MATH</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="JetBrains.Annotations" Version="2023.3.0" />
+    <Compile Include="../../Source/PioneerFramework/SpaceAI/Core/*.cs" Link="Core/%(Filename)%(Extension)" />
+    <Compile Include="../../Source/PioneerFramework/Base/Core/DVector3.cs" Link="Core/DVector3.cs" />
+    <Compile Include="../../Source/PioneerFramework/Base/Core/FrameVec3.cs" Link="Core/FrameVec3.cs" />
+    <Compile Include="../../Source/PioneerFramework/Base/Core/SpaceConstants.cs" Link="Core/SpaceConstants.cs" />
+    <Compile Include="../../Source/PioneerFramework/Base/Orbital/OrbitMath.cs" Link="Core/OrbitMath.cs" />
+    <Compile Include="../../Source/PioneerFramework/Base/Orbital/OrbitView.cs" Link="Core/OrbitView.cs" />
+    <Compile Include="../../Source/PioneerFramework/Base/Orbital/Gooding.cs" Link="Core/Gooding.cs" />
+    <Compile Include="../../Source/PioneerFramework/Base/Orbital/TransferGeometry.cs" Link="Core/TransferGeometry.cs" />
+    <Compile Include="../../Source/PioneerFramework/ThirdParty/MechJebLib/**/*.cs"
+             Exclude="../../Source/PioneerFramework/ThirdParty/MechJebLib/ODE/**/*.cs;../../Source/PioneerFramework/ThirdParty/MechJebLib/Interpolants/**/*.cs;../../Source/PioneerFramework/ThirdParty/MechJebLib/TwoBody/Farnocchia.cs;../../Source/PioneerFramework/ThirdParty/MechJebLib/Rootfinding/Bisection.cs;../../Source/PioneerFramework/ThirdParty/MechJebLib/Rootfinding/Newton.cs;../../Source/PioneerFramework/ThirdParty/MechJebLib/Primitives/Vec.cs;../../Source/PioneerFramework/ThirdParty/MechJebLib/Primitives/VecOps.cs;../../Source/PioneerFramework/ThirdParty/MechJebLib/Utils/ObjectPool.cs" />
+  </ItemGroup>
+</Project>

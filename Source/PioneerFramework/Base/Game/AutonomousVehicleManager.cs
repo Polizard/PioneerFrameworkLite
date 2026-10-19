@@ -58,6 +58,8 @@ namespace PioneerFramework
             public MissionType mission = MissionType.Standby;
             /// <summary>Attack 目标 group id（Standby/Loiter 时为 -1）。</summary>
             public int targetGroupId = -1;
+            public int targetDecoyId = -1;
+            public bool contactOnlyAim;
             /// <summary>目标局部系弹着偏置（米，y=0；零 = 瞄准目标质心）。有 Map 目标精确打击（§10，2026-09-07）：
             /// 发射器点选目标地图一格 → 格偏移随导弹携带；终末制导每步随目标实体旋转换算世界瞄准点，
             /// 撞击/弹头 Map 爆炸落于该格。换目标/改派新目标时清零（旧目标局部系对新目标无意义）。</summary>
@@ -104,6 +106,8 @@ namespace PioneerFramework
                 Scribe_Values.Look(ref weaponDefName, "weaponDefName");
                 Scribe_Values.Look(ref mission, "mission", MissionType.Standby);
                 Scribe_Values.Look(ref targetGroupId, "targetGroupId", -1);
+                Scribe_Values.Look(ref targetDecoyId, "targetDecoyId", -1);
+                Scribe_Values.Look(ref contactOnlyAim, "contactOnlyAim");
                 DVector3.Scribe("aimOffsetShip", ref aimOffsetShip);
             }
 
@@ -280,6 +284,7 @@ namespace PioneerFramework
                     int oldTarget = rec.targetGroupId;
                     rec.mission = MissionType.Attack;
                     rec.targetGroupId = targetGroupId;
+                    rec.targetDecoyId = -1;
                     rec.attackStartSurface = 0.0; // 接管日志与 HasActiveAttack 在下一物理步重设
                     rec.guidanceState = default;   // 制导状态清零：最近点基准对新目标/新几何无意义（防跨目标误判几何丢失）
                     rec.holdFireUntilTick = 0;     // 玩家重新下令 = 立即权威（清错峰时隙）
@@ -493,7 +498,10 @@ namespace PioneerFramework
             var sensor = sensorMgrRef.Get();
             Contact know = default(Contact);
             bool targetKnown;
-            if (target == null || !target.IsActive) targetKnown = false;
+            if (rec.contactOnlyAim)
+                targetKnown = SpaceAI.ContactTargetService.TryResolve(sensor, spaceGame, group.FactionId,
+                    SpaceAI.ContactTargetService.CopyTarget(rec), TimeScaleManager.GetPhysicsTickSafe(), out know);
+            else if (target == null || !target.IsActive) targetKnown = false;
             else if (sensor == null) targetKnown = true;                 // 认知层缺位 ⇒ 放行（旧行为）
             else targetKnown = sensor.TryGetKnownState(group.FactionId, target, out know);
             if (!targetKnown)
@@ -505,7 +513,7 @@ namespace PioneerFramework
                 Log.Message($"[导弹中止] V{rec.vehicleId} G{rec.groupId} 目标G{rec.targetGroupId} {(target == null || !target.IsActive ? "失活/消失" : "接触丢失（看不见了）")} → 中止撞击，回 Standby 待命");
                 return;
             }
-            if (target == null) return;   // ⚠ 只为可空分析：上面的 `target != null` 被折进 `targetKnown`，流分析看不见（运行期不可能触发）
+            if (target == null && !rec.contactOnlyAim) return;
 
             var missileDef = rec.missileDefName == null
                 ? null
@@ -516,19 +524,20 @@ namespace PioneerFramework
             DVector3 vel = GroupVel(group);
             // 目标位置/速度：**有认知层就吃已知状态**（影子期按速度外推 = "假定它没机动"；真机动了就打偏）；
             // 认知层缺位（组件没加载）⇒ 回真值（旧行为，别让缺组件变成"弹全哑了"）。
-            DVector3 tPos = sensor != null ? ContactMemory.CoastedPosition(in know, TimeScaleManager.GetPhysicsTickSafe()) : GroupPos(target);
-            DVector3 tVel = sensor != null ? know.velocity : GroupVel(target);
+            DVector3 tPos = sensor != null ? ContactMemory.CoastedPosition(in know, TimeScaleManager.GetPhysicsTickSafe()) : GroupPos(target!);
+            DVector3 tVel = sensor != null ? know.velocity : GroupVel(target!);
+            double targetRadius = rec.contactOnlyAim ? know.apparentRadius : GroupRadius(target!, spaceGame);
             // 弹着偏置（§10 精确打击，2026-09-07）：Attack 携带"目标局部系偏移"（发射器点选格 → 米，
             // y=0）时，瞄准点 = 目标锚点（群中心 + 目标本体实体局部偏移）+ 旋转后的偏置——随目标
             // 运动/姿态保持贴在该格；无偏置 / 目标无实体 → 目标质心（零偏置路径，无行为回归）。
             DVector3 aimPoint = tPos;
-            if (rec.aimOffsetShip != DVector3.zero)
+            if (!rec.contactOnlyAim && rec.aimOffsetShip != DVector3.zero)
             {
-                var aimEntity = GetAimEntity(target, spaceGame);
+                var aimEntity = GetAimEntity(target!, spaceGame);
                 if (aimEntity != null)
                     aimPoint = tPos + aimEntity.Position + DVector3.Rotate(rec.aimOffsetShip, aimEntity.Rotation);
             }
-            else if (CountAliveEntities(target, spaceGame) > 1)
+            else if (!rec.contactOnlyAim && CountAliveEntities(target!, spaceGame) > 1)
             {
                 // 多实体目标（合并弹群）零偏置 → **随机锁定一枚实体**（交战期缓存在记录上）：
                 // 质心 = 队列中点的空当，瞄质心 = 瞄空处，导弹会从编队实体间穿过零接触
@@ -536,7 +545,7 @@ namespace PioneerFramework
                 // 导弹天然散布到不同成员；缓存后每步只有一次 O(1) 查询，无遍历开销（用户定稿，
                 // 否决"每步选最近"的逐实体距离比较）。单实体目标不受影响。
                 var aimE = rec.aimEntityId >= 0 ? spaceGame.GetEntityById(rec.aimEntityId) : null;
-                if (aimE == null || !target.ContainsEntity(rec.aimEntityId))
+                if (aimE == null || !target!.ContainsEntity(rec.aimEntityId))
                 {
                     aimE = null;
                     rec.aimEntityId = -1;
@@ -565,7 +574,7 @@ namespace PioneerFramework
             double dist = toTarget.magnitude;
             if (dist < 1e-6) return; // 与目标/弹着点重合（罕见）：物理碰撞同步处理
 
-            double surfaceDist = dist - GroupRadius(target, spaceGame);
+            double surfaceDist = dist - targetRadius;
 
             // ── 巡航段（> homing 边界）：不点火。转移/定期日志（每车 600 tick 限频）──
             if (surfaceDist > missileDef.homingEngageDistance)
@@ -599,7 +608,7 @@ namespace PioneerFramework
                 toTarget = aimPoint - pos;
                 dist = toTarget.magnitude;
                 if (dist < 1e-6) return;
-                surfaceDist = dist - GroupRadius(target, spaceGame);
+                surfaceDist = dist - targetRadius;
             }
 
             // ── 终末段接管（`Add` 的返回值即"这次才登记" ⇒ 免一次 Contains 双查；CA1868）──
@@ -608,8 +617,8 @@ namespace PioneerFramework
                 rec.attackStartSurface = surfaceDist; // 追丢中止基准（本次 Attack 接管点）
                 // 目标状态诊断（2026-09-07：designator 开火报 20km 而接管报 56km/0.22km 的矛盾——
                 // 打印目标解析/数值状态与绝对位置速度，判定目标是否在圆轨解析态）
-                string targetState = $"目标G{target.GroupId} pos=({tPos.x:F0},{tPos.y:F0},{tPos.z:F0})m vel=({tVel.x:F1},{tVel.y:F1},{tVel.z:F1})m/s 圆轨={(target.IsCircularOrbit ? "是" : "否")} r={(target.IsCircularOrbit ? target.circularRadius : 0.0) / 1000.0:F0}km";
-                Log.Message($"[导弹制导] V{rec.vehicleId} G{rec.groupId}→G{rec.targetGroupId} 终末接管：表面距={surfaceDist / 1000.0:F2}km 质心距={dist / 1000.0:F2}km 目标半径={GroupRadius(target, spaceGame):F0}m（控制律：横向速度归零 + 接近率补量双门控[阈值{missileDef.guidanceClosingThreshold:F0} 巡航{missileDef.terminalSpeed:F0} 时间裕度{missileDef.guidanceTimeMargin:F1}] 几何丢失[最近点+{missileDef.guidanceLostMarginMeters / 1000.0:F0}km]）｜ {targetState}");
+                string targetState = $"接触 pos=({tPos.x:F0},{tPos.y:F0},{tPos.z:F0})m vel=({tVel.x:F1},{tVel.y:F1},{tVel.z:F1})m/s";
+                Log.Message($"[导弹制导] V{rec.vehicleId} G{rec.groupId}→接触 终末接管：表面距={surfaceDist / 1000.0:F2}km 目标半径={targetRadius:F0}m｜ {targetState}");
                 if (aimPoint != tPos)
                 {
                     Log.Message($"[导弹制导] V{rec.vehicleId} G{rec.groupId} 弹着偏置启用：瞄准目标局部({rec.aimOffsetShip.x:F1},0,{rec.aimOffsetShip.z:F1})m → 世界点=({aimPoint.x:F0},{aimPoint.y:F0},{aimPoint.z:F0})m（撞击与弹头 Map 爆炸落于所选格）");
@@ -645,7 +654,7 @@ namespace PioneerFramework
             // 控制律本体在纯测试里用迷你飞行仿真迭代（**不在此处记用例数**：数字必漂，2026-09-14 实际已与旧注释差 13 条），游戏内只做验收。
             bool allowBoost = now >= rec.holdFireUntilTick; // 错峰时隙未到：只修横向不冲刺
             var step = MissileGuidanceCore.ComputeStep(pos, vel, aimPoint, tVel,
-                GroupRadius(target, spaceGame), missileDef.GuidanceParams, rec.guidanceState, allowBoost);
+                targetRadius, missileDef.GuidanceParams, rec.guidanceState, allowBoost);
             rec.guidanceState = step.state;
 
             if (step.action == MissileGuidanceAction.Abort)
@@ -830,6 +839,8 @@ namespace PioneerFramework
                     rec.missileDefName, rec.weaponDefName, rec.mission, rec.targetGroupId, rec.aimOffsetShip);
                 if (clone != null)
                 {
+                    clone.targetDecoyId = rec.targetDecoyId;
+                    clone.contactOnlyAim = rec.contactOnlyAim;
                     clone.volleySplit = true; // 单枚记录不再拆
                     // 错峰点火时隙（2026-09-08 三轮实测：各弹收敛 closing 不同 → 队列间隔在到达前
                     // 坍缩 → 后弹爆炸杀死先到兄弟）。时隙 = 距领弹深度 / 巡航接近率（游戏秒→tick：
