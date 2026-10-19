@@ -129,5 +129,6 @@
     <Compile Include="..\PioneerFramework\PFView\PFViewUiViewHistory.cs" Link="Pure\PFViewUiViewHistory.cs" />
     <Compile Include="..\PioneerFramework\PFView\PFViewUiDragState.cs" Link="Pure\PFViewUiDragState.cs" />
     <Compile Include="..\PioneerFramework\PFView\PFViewGroupCameraCore.cs" Link="Pure\PFViewGroupCameraCore.cs" />
+    <Compile Include="..\PioneerFramework\PFView\PFViewClouds.cs" Link="Pure\PFViewClouds.cs" />
   </ItemGroup>
 </Project>

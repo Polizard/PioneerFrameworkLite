@@ -176,6 +176,7 @@ namespace PioneerFramework
             DestroyAllReliefMeshes();   // 浮雕网格是运行时 Mesh：不显式销毁会跟着会话泄漏
             DestroySurfaceResources();  // 基底球材质 + 补丁网格/材质同上
             DestroyAtmosphereShellMaterials();  // 大气壳材质同上（网格是静态资源，不销毁）
+            DestroyCloudResources();
             if (renderTexture != null) { renderTexture.Release(); UnityEngine.Object.Destroy(renderTexture); renderTexture = null; }
             if (sunLight != null) { UnityEngine.Object.Destroy(sunLight.gameObject); sunLight = null; }
             if (fillLight != null) { UnityEngine.Object.Destroy(fillLight.gameObject); fillLight = null; }

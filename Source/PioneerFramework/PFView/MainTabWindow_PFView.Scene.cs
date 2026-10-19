@@ -320,6 +320,10 @@ namespace PioneerFramework
                 // ⇒ 壳会自然罩在定居点上面（与"贴在地表"的观感一致）。
                 DrawSettlementOverlay(body, bodyLayer, renderPos, renderR, selfRot);
 
+                // 云层与地表共用姿态/等比挪位；淡出用真实相机高度，避免远景缩放影响显隐。
+                DrawCloudLayer(body, renderPos, renderR, selfRot, tick,
+                    camDistToBody / (double)MetersToView - body.radius);
+
                 // 大气壳（2026-10-10 用户口径）：半径 = R + **大气厚度的一半**（XML 定义），半透明。
                 // 日照走**几何**（只画朝太阳那半边 ⇒ 夜侧没有壳）；双面网格 ⇒ 球缘那圈自然叠两层 = 大气辉光贴边。
                 DrawAtmosphereShell(body, renderPos, renderR, -sunLightForward);
