@@ -14,7 +14,7 @@ namespace PioneerFramework.Tests
             {
                 positionSystem = (SystemVec3)new DVector3(0, 0, 140),
                 velocitySystem = (SystemVec3)new DVector3(1, 0, 0),
-                rotation = Quaternion.identity
+                rotation = DQuaternion.identity
             };
             var transit = new LaunchTransitWorldObject();
             transit.Initialize(42, "ship-42", 1, 7, DVector3.zero,

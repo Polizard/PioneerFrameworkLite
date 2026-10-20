@@ -54,6 +54,20 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
+        public void MapIdCache_InvalidatesAfterLinkChange()
+        {
+            // P0-1：图链缓存必须随 NotifyMapLinksChanged 失效，否则推进聚合器会读到旧图集。
+            var e = new SpaceEntity(3, 0);
+            e.SetParts(new List<SpacePart> { Part(1, -1) });
+            Assert.Empty(e.GetMapIds());
+
+            e.Parts[0].linkedMapId = 77;
+            e.NotifyMapLinksChanged();
+
+            Assert.Equal(new[] { 77 }, e.GetMapIds());
+        }
+
+        [Fact]
         public void GetMapIds_LegacyFallback_UsesPrimaryMapId_WhenNoPartLinked()
         {
             var e = new SpaceEntity(3, 0);

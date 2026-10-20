@@ -15,8 +15,9 @@ $harmony = [Reflection.AssemblyName]::GetAssemblyName((Resolve-Path -LiteralPath
 if ($harmony.Version.Major -ne 3) { throw "Expected Harmony 3, found $($harmony.Version)" }
 $libs = Join-Path $root 'Source/PioneerFramework/Libs'
 $names = @('Assembly-CSharp', 'UnityStubs', 'Waylith', 'Waylith.UnityCompat',
-    'Brutal.Core.Numerics', 'Brutal.Core.Logging', 'Brutal.Core.Common')
-$testNames = @('Microsoft.Extensions.Logging.Abstractions', 'com.rlabrecque.steamworks.net')
+    'Brutal.Core.Numerics', 'Brutal.Core.Logging', 'Brutal.Core.Common', 'Brutal.Core.Strings')
+$testNames = @('Microsoft.Extensions.Logging.Abstractions', 'Microsoft.Extensions.ObjectPool',
+    'com.rlabrecque.steamworks.net')
 # Validate every source before replacing any reference.
 foreach ($name in ($names + $testNames)) {
     $source = Join-Path $GamePath "$name.dll"

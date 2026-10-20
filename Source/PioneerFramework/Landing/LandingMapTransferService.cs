@@ -86,6 +86,7 @@ namespace PioneerFramework.Landing
                         var e = sg.GetEntityById(id); if (e == null) continue;
                         if (e.MapId == entry.MapId) { e.MapId = -1; e.HasMap = false; e.IsMapArchived = false; }
                         foreach (var part in e.Parts.Where(p => p.linkedMapId == entry.MapId)) part.linkedMapId = -1;
+                        e.NotifyMapLinksChanged();   // P0-1：图链缓存失效
                     }
                     if (map != null)
                     {

@@ -438,6 +438,7 @@ namespace PioneerFramework
             if (entity.MapId < 0)
                 entity.MapId = map.uniqueID;   // 主图 = 第一个挂图 part；后续图不覆盖
             entity.HasMap = true;
+            entity.NotifyMapLinksChanged();   // P0-1：图链缓存失效（不碰 stats/信号）
 
             // 双向映射：Map 侧（ownerEntityId + ownerPartId）
             var mapComp = map.GetComponent<SpaceMapComp>();
@@ -514,6 +515,7 @@ namespace PioneerFramework
                 mapComp.ownerEntityId = entity.EntityId;
             }
             part.linkedMapId = map.uniqueID;
+            entity.NotifyMapLinksChanged();   // P0-1：图链缓存失效
 
             Log.Message($"[RoomMap] 舱室地图已生成: part {part.partId}, map {map.uniqueID}, {w}x{h}");
             return map;

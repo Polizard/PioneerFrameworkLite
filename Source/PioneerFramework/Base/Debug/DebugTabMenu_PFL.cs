@@ -214,6 +214,26 @@ namespace PioneerFramework
                 "07 场景 · 多part", 89, () => DebugShipSpawner.SpawnDualCabinDebugShip(), null);
             AddAction("256 件基准船（B7：装配/惯量/碰撞/存档规模）",
                 "07 场景 · 多part", 91, () => DebugShipSpawner.Spawn256PartDebugShip(), null);
+            AddAction("256 件船飞行·一键（无Map 圆轨，自动顺行点火 15 m/s）",
+                "07 场景 · 多part", 72, DebugShipSpawner.Spawn256PartFlightDemo, null);
+            AddAction("256 件船对撞·一键（两艘 256 件，间距 60m / 6 m/s，约 3s）",
+                "07 场景 · 多part", 71, DebugShipSpawner.Spawn256PartCollisionDemo, null);
+            AddAction("256 件紧凑高速近失·一键（8×8×4，相对 45m/s；测 part 级 CCD）",
+                "07 场景 · 多part", 93, DebugShipSpawner.SpawnCompact256CcdDemo, null);
+            AddAction("多part 交会·一键（3 件追击 → 3 件目标，同轨 30° 相位）",
+                "07 场景 · 多part", 70, DebugShipSpawner.SpawnMultipartRendezvousDemo, null);
+            AddAction("256/多part 演示·清场（只清飞行/对撞/交会按钮生成的组）",
+                "07 场景 · 多part", 69, DebugShipSpawner.CleanupStressDemos, null);
+            AddAction("多part 多点对撞·一键（3 件×2 侧靠错位，专门触发多接触求解）",
+                "07 场景 · 多part", 68, DebugShipSpawner.SpawnMultipartMultiContactDemo, null);
+            AddAction("形状接触·一键（Sphere/Box 混合，低速对撞）",
+                "07 场景 · 多part", 67, DebugShipSpawner.SpawnShapeContactDemo, null);
+            AddAction("极端高速对撞（10 km/s：只判撞上，不追 part 精确）",
+                "07 场景 · 多part", 66, DebugShipSpawner.SpawnExtremeSpeedCollisionDemo, null);
+            AddAction("相邻格对穿（相对 10 km/s：一步 20km 互换格位，验证配对完备性）",
+                "07 场景 · 多part", 65, DebugShipSpawner.SpawnAdjacentCellCrossingDemo, null);
+            AddAction("同格 256 艘（独立单part，500m 间距；测宽相配对/枚举）",
+                "07 场景 · 多part", 64, DebugShipSpawner.SpawnDenseSameCellDemo, null);
             AddAction("B8 表现验收·全部布置（残骸色 + 主推轴 + 双舱室）",
                 "07 场景 · 多part", 77, DebugShipSpawner.SpawnAllB8Demos, null);
             AddAction("B8 表现验收·残骸分色（生成 3 件船并损毁第 2 件）",

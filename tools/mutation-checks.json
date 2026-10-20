@@ -85,8 +85,8 @@
     "name": "M8-part-aabb-cache-invalidation",
     "why": "B1：Add/Remove/Move 必须显式失效 AABB 缓存（headless tick 恒 -1，只靠 tick 会读旧值）",
     "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
-    "oldText": "            aabbDirty = true;\n            cachedAabbTick = -1;\n            InvalidateStats();                 // partSetVersion++ 与群组信号失效都在这里",
-    "newText": "            // MUTATION: aabbDirty = true;\n            cachedAabbTick = -1;\n            InvalidateStats();                 // partSetVersion++ 与群组信号失效都在这里",
+    "oldText": "            aabbDirty = true;\n            cachedAabbTick = -1;\n            NotifyMapLinksChanged();           // 部件集变化可能带来挂图件的增删/移动\n            InvalidateStats();                 // partSetVersion++ 与群组信号失效都在这里",
+    "newText": "            // MUTATION: aabbDirty = true;\n            cachedAabbTick = -1;\n            NotifyMapLinksChanged();           // 部件集变化可能带来挂图件的增删/移动\n            InvalidateStats();                 // partSetVersion++ 与群组信号失效都在这里",
     "testFilter": "FullyQualifiedName~PartSetMutationTests",
     "expectFail": [
       "PartSetMutationTests.MovePart_InvalidatesAabbCache_EvenWithoutTickManager"
@@ -268,6 +268,72 @@
     "testFilter": "FullyQualifiedName~ShipModelRendererTests",
     "expectFail": [
       "ShipModelRendererTests.PartColorFor_DamagedUsesWreckColor_HealthyUsesPartColor"
+    ]
+  },
+  {
+    "name": "M25-map-link-cache-invalidate",
+    "why": "P0-1：图链缓存必须在挂图变化时失效；把 Notify 改成空操作 ⇒ 缓存测试必红",
+    "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
+    "oldText": "            mapLinkVersion++;\n            cachedMapIdsVersion = -1;",
+    "newText": "            // MUTATION: NotifyMapLinksChanged is a no-op",
+    "testFilter": "FullyQualifiedName~MultiMapBindingTests",
+    "expectFail": [
+      "MultiMapBindingTests.MapIdCache_InvalidatesAfterLinkChange"
+    ]
+  },
+  {
+    "name": "M26-tank-mass-version",
+    "why": "P0-2：罐质量变化必须走 tankMassVersion；去掉自增 ⇒ 燃料失效测试必红",
+    "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
+    "oldText": "            actual = plan.Consume(kg);\n            if (actual > 0.0)\n                tankMassVersion++;   // 罐质量变了 ⇒ COM/惯量缓存失效；功能 stats/群信号不受影响",
+    "newText": "            actual = plan.Consume(kg);\n            if (actual > 0.0) { }   // MUTATION",
+    "testFilter": "FullyQualifiedName~FuelPlanTests",
+    "expectFail": [
+      "FuelPlanTests.EntityConsume_DoesNotDirtyPartStats_ButBumpsTankMassVersion"
+    ]
+  },
+  {
+    "name": "M27-swept-cover-union",
+    "why": "配对完备性：注册格盒必须是 上一步当前格 ∪ 本步当前格；退回只注册当前格 ⇒ 相邻格对穿台架必红",
+    "file": "Source/PioneerFramework/SpatialIndexing/CombatGrid.cs",
+    "oldText": "            var newSweptBox = CoverBox.Union(oldCurrentBox, newCurrentBox);",
+    "newText": "            var newSweptBox = newCurrentBox;   // MUTATION",
+    "testFilter": "FullyQualifiedName~CollisionPairEnumerationTests",
+    "expectFail": [
+      "CollisionPairEnumerationTests.AdjacentCell_SweptCrossing_IsPaired"
+    ]
+  },
+  {
+    "name": "M28-part-axis-order-entity-position",
+    "why": "CCD part SAP 轴序必须含 entity.Position；只按 RelMin 排序 ⇒ 多实体组顺序错，AxisOrders 测试必红",
+    "file": "Source/PioneerFramework/Combat/CombatManager.cs",
+    "oldText": "                    keys[i] = r.Identity\n                        ? entity + (axis == 0 ? r.RelMin.x : axis == 1 ? r.RelMin.y : r.RelMin.z)\n                        : entity + center - half;",
+    "newText": "                    keys[i] = r.Identity\n                        ? (axis == 0 ? r.RelMin.x : axis == 1 ? r.RelMin.y : r.RelMin.z)\n                        : entity + center - half;   // MUTATION",
+    "testFilter": "FullyQualifiedName~AxisOrders_IncludeEntityPosition",
+    "expectFail": [
+      "CollisionPlanValidationBench.CollisionCache_AxisOrders_IncludeEntityPosition"
+    ]
+  },
+  {
+    "name": "M29-ccd-part-pair-cap",
+    "why": "256×256 part 级细化的护栏；退回 4096 ⇒ 256 验收测试必红",
+    "file": "Source/PioneerFramework/Combat/CombatManager.cs",
+    "oldText": "        internal const long CcdPartRefineMaxPartPairs = 256L * 256L;",
+    "newText": "        internal const long CcdPartRefineMaxPartPairs = 4096L;   // MUTATION",
+    "testFilter": "FullyQualifiedName~CcdPartRefine_Allows256x256",
+    "expectFail": [
+      "CollisionPlanValidationBench.CcdPartRefine_Allows256x256"
+    ]
+  },
+  {
+    "name": "M30-ccd-part-translate",
+    "why": "CCD 采样原位平移必须真的加 delta；退化成原样返回 ⇒ 平移 vs 重收集测试必红",
+    "file": "Source/PioneerFramework/Combat/CombatManager.cs",
+    "oldText": "                return new PartAabb(Min + delta, Max + delta, Center + delta,\n                    Half, Rotation, UseObb, Shape, Order);",
+    "newText": "                return new PartAabb(Min, Max, Center, Half, Rotation, UseObb, Shape, Order);   // MUTATION",
+    "testFilter": "FullyQualifiedName~Translated_MatchesFresh",
+    "expectFail": [
+      "CollisionPlanValidationBench.PartAabb_Translated_MatchesFreshCollect_AndOverlap"
     ]
   }
 ]

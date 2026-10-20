@@ -239,18 +239,47 @@ namespace PioneerFramework
         /// <summary>
         /// **B6：本实体挂的全部地图 id**（按 part 顺序、去重；不含未挂图件）。
         /// 兼容旧单图：若没有任何 part 记录 linkedMapId 但 MapId 有效，则返回主图。
+        /// P0-1：结果按 `mapLinkVersion` 缓存；返回**新副本**，调用方可安全修改。
         /// </summary>
         public List<int> GetMapIds()
         {
-            var ids = new List<int>(2);
+            var linked = GetPartLinkedMapIdsCached();
+            var ids = new List<int>(linked.Count + 1);
+            for (int i = 0; i < linked.Count; i++) ids.Add(linked[i]);
+            if (ids.Count == 0 && MapId >= 0) ids.Add(MapId);
+            return ids;
+        }
+
+        /// <summary>P0-1：只列**挂在 part 上**的图（不含 MapId 单图回退）；缓存，热路径只读。</summary>
+        internal IReadOnlyList<int> GetPartLinkedMapIdsCached()
+        {
+            EnsureMapIdCache();
+            return cachedPartLinkedMapIds;
+        }
+
+        /// <summary>P0-1：挂图/解挂/主图切换后调；只清图链缓存，不碰 stats/信号。</summary>
+        internal void NotifyMapLinksChanged()
+        {
+            mapLinkVersion++;
+            cachedMapIdsVersion = -1;
+        }
+
+        private void EnsureMapIdCache()
+        {
+            if (cachedMapIdsVersion == mapLinkVersion) return;
+            cachedPartLinkedMapIds.Clear();
             for (int i = 0; i < parts.Count; i++)
             {
                 var p = parts[i];
                 if (p == null || p.linkedMapId < 0) continue;
-                if (!ids.Contains(p.linkedMapId)) ids.Add(p.linkedMapId);
+                bool seen = false;
+                for (int j = 0; j < cachedPartLinkedMapIds.Count; j++)
+                {
+                    if (cachedPartLinkedMapIds[j] == p.linkedMapId) { seen = true; break; }
+                }
+                if (!seen) cachedPartLinkedMapIds.Add(p.linkedMapId);
             }
-            if (ids.Count == 0 && MapId >= 0) ids.Add(MapId);
-            return ids;
+            cachedMapIdsVersion = mapLinkVersion;
         }
 
         /// <summary>**B6：Part→Map 反查**——指定地图挂在哪件 part 上（未找到 null）。</summary>
@@ -299,6 +328,7 @@ namespace PioneerFramework
             }
             MapId = primary;
             HasMap = primary >= 0;
+            NotifyMapLinksChanged();
             // B6：主图切换后按**全部图**重算 tank 镜像（不再只取新主图）。
             if (primary >= 0)
                 SyncCombinedTankFuel();
@@ -381,6 +411,15 @@ namespace PioneerFramework
         /// <summary>部件集/组件可能变化的版本号（批 0：群级惯量缓存指纹读它；与 `PropulsionVersion` 同款模式）。
         /// **唯一自增点 = `InvalidateStats`**（"部件集可能变化"的唯一既有收口）。</summary>
         internal int partSetVersion;
+
+        /// <summary>P0-2：**罐内工质质量版本**。只影响 COM/惯量（燃料不进 `ShipStats.mass`），
+        /// 不进功能 stats、不打脏群信号。燃烧/加注/漏光只自增它，不再走 `InvalidateStats`。</summary>
+        internal int tankMassVersion;
+
+        /// <summary>P0-1：**图链版本**（挂图/解挂/主图切换/部件集变化）。`GetPartLinkedMapIdsCached` 的缓存指纹。</summary>
+        internal int mapLinkVersion;
+        private List<int> cachedPartLinkedMapIds = new(2);
+        private int cachedMapIdsVersion = -1;
 
         /// <summary>B6：供油计划结构版本（部件集/切网/优先级/外部镜像重分配时自增；**质量变化不增**）。</summary>
         internal int fuelPlanVersion;
@@ -707,7 +746,7 @@ namespace PioneerFramework
             if (plan.TotalMass <= 0.0) return true;
             actual = plan.Consume(kg);
             if (actual > 0.0)
-                InvalidateStats();   // 罐质量变了 ⇒ COM/惯量缓存失效；不碰 fuelPlanVersion
+                tankMassVersion++;   // 罐质量变了 ⇒ COM/惯量缓存失效；功能 stats/群信号不受影响
             return true;
         }
 
@@ -725,7 +764,7 @@ namespace PioneerFramework
             if (!(room > 0.0)) return true;
             actual = plan.Fill(System.Math.Min(kg, room));
             if (actual > 0.0)
-                InvalidateStats();
+                tankMassVersion++;   // 罐质量变了 ⇒ COM/惯量缓存失效；功能 stats/群信号不受影响
             return true;
         }
 
@@ -779,7 +818,8 @@ namespace PioneerFramework
         /// <summary>
         /// **B4a：把某工质的总存量按储罐容量比例写入 tank part 的分布镜像**（Σtank = 池）。
         /// 权威池仍是推进源；这里只维护“燃料质量在哪件 part 上”，供 COM/惯量使用。
-        /// 任何差异都会 `InvalidateStats()` ⇒ 群级惯量指纹失效并重算。
+        /// 任何差异都会 `tankMassVersion++` / `fuelPlanVersion++` ⇒ 群级惯量重算、计划质量基线失效；
+        /// **不**打脏功能 stats 或群信号。
         /// </summary>
         public void SyncTankFuelDistribution(string propellantDefName, double totalMass)
         {
@@ -813,7 +853,7 @@ namespace PioneerFramework
             if (changed)
             {
                 fuelPlanVersion++;   // 外部镜像重分配 ⇒ 计划里的质量基线失效
-                InvalidateStats();
+                tankMassVersion++;   // 只影响 COM/惯量；功能 stats/群信号不变
             }
         }
 
@@ -898,6 +938,7 @@ namespace PioneerFramework
             parts = newParts ?? new List<SpacePart>();
             fuelPlanVersion++;
             SyncNextPartIdFromParts();
+            NotifyMapLinksChanged();
             aabbDirty = true;
             cachedAabbTick = -1; // 部件参与 GetAabbSystem → 失效缓存
             InvalidateStats();
@@ -983,6 +1024,7 @@ namespace PioneerFramework
         {
             aabbDirty = true;
             cachedAabbTick = -1;
+            NotifyMapLinksChanged();           // 部件集变化可能带来挂图件的增删/移动
             InvalidateStats();                 // partSetVersion++ 与群组信号失效都在这里
             if (recalculateBounds)
                 RecalculateBoundsFromParts();
@@ -1115,7 +1157,11 @@ namespace PioneerFramework
             if (tank == null) return;
             if (tank.leaked)
             {
-                tank.massKg = 0.0;   // 已漏过：读档后残骸再被命中也不二次扣池/扣容量
+                if (tank.massKg != 0.0)
+                {
+                    tank.massKg = 0.0;   // 已漏过：读档后残骸再被命中也不二次扣池/扣容量
+                    tankMassVersion++;
+                }
                 return;
             }
             tank.leaked = true;
@@ -1123,6 +1169,8 @@ namespace PioneerFramework
             double leakedMass = tank.massKg;
             double lostCapacity = tank.capacityKg;
             tank.massKg = 0.0;
+            if (leakedMass > 0.0)
+                tankMassVersion++;
 
             var def = ResolvePropellantDef(tank.propellantDefName);
             if (def == null) return;

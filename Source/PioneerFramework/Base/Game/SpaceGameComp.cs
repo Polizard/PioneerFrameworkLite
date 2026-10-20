@@ -588,7 +588,12 @@ namespace PioneerFramework
             // 细网格：注册群组到战斗网格
             var combatGrid = Current.Game?.GetComponent<CombatGrid>();
             if (combatGrid != null && group.IsCollidable)
+            {
                 combatGrid.AddShip(group);
+                // 碰撞扫掠需要"出生位置"作为第一步的上一位置；否则新船首步跨过对方时检测不到。
+                // 只在确实入网格时播种，避免"有 lastPos 但不在网格"的错配。
+                Current.Game?.GetComponent<CombatManager>()?.NoteGroupSpawned(group);
+            }
 
             if (group.CelestialBodyId >= 0)
             {
@@ -3815,8 +3820,12 @@ namespace PioneerFramework
             }
         }
 
+        /// <summary>仅用于 FinalizeInit 的 JIT 预热：入口处返回，方法体已被完整编译。</summary>
+        private static bool warmupPhysicsStep;
+
         protected virtual void UpdateAllMovements(TimeScaleManager timeScaleManager)
         {
+            if (warmupPhysicsStep) return;   // JIT 预热调用：编译完方法体即返回，不碰状态
             // ★ 2026-10-01 第三轮：**从函数第一行起**计时（此前只圈 `ApplySteering` 之后 ⇒
             //   `dt/physicsTick` 与 `celestialRef.Get()` 这段"未计时头"不在任何阶段里 —— 实测有一条
             //   3.16 ms 的步（t=27782，燃烧中）五段合计只有 78 µs，时间就落在这类缝里）。
@@ -3842,11 +3851,15 @@ namespace PioneerFramework
             PerfProbe.PhaseClockEnd(PerfProbe.PhaseSteer, phSteer);
 
             // ── [A8] 解析搬运：每步记账（`m·dv/ve`，与悬浮解析档同一个消耗口）+ 到达清单 ──
+            long phTransfer = PerfProbe.PhaseClockStart();
             ApplyAnalyticTransfer(dtSeconds, physicsTick, celestialMgr);
+            PerfProbe.PhaseClockEnd(PerfProbe.PhaseAnalyticTransfer, phTransfer);
 
             // ── [A7] 悬浮控制（每物理步，主线程）：定点误差 → 全矢量推力 → 冲量 + 扣料 ──
             //    放这里与操舵同相：冲量进 `pendingImpulse` ⇒ 下一行的 `ApplyPendingImpulses` 本步立即生效。
+            long phHover = PerfProbe.PhaseClockStart();
             ApplyHover(dtSeconds, physicsTick, celestialMgr);
+            PerfProbe.PhaseClockEnd(PerfProbe.PhaseHover, phHover);
 
             // ── 物理步首：统一施加上一步累积的合冲量（burn/碰撞动量交换/爆炸/手动 ΔV），
             //    然后清零。并行区此后只累积新冲量，不直接改速度。──
@@ -4246,10 +4259,16 @@ namespace PioneerFramework
                 // 这里不再写副本（实测滞后 ≤ 一步、月球档 ≈1.8 km，与交会门同阶 ⇒ 读现算值才是对的）。
                 // `result.SyncBodyPos/Vel` 仍留给下面的巡检探针用（它是那一步的系统系偏移）。
 
-                LogNonRootRendezvousState(group, physicsTick,
-                    dtSeconds > 0.0 ? result.OrbitKeepingDvCost / dtSeconds : 0.0,
-                    result.SyncBodyPos, result.SyncBodyVel);   // 批5.C 巡检探针（"全打上"版）
-                MoonRendezvousAcceptanceRunner.Tick(physicsTick, this);   // 绕月交会：自动判定（每步查一次）
+                // 调用点先判：绝大多数编队没有交会引导/验收场景，没必要每步付组件/天体查询，
+                // 也避免为无关编队首次触发这两条调试路径的 JIT（2026-10-19 尖峰归因：块①c 2.8ms）。
+                if (group.HasRendezvousGuidance)
+                {
+                    LogNonRootRendezvousState(group, physicsTick,
+                        dtSeconds > 0.0 ? result.OrbitKeepingDvCost / dtSeconds : 0.0,
+                        result.SyncBodyPos, result.SyncBodyVel);   // 批5.C 巡检探针（"全打上"版）
+                }
+                if (MoonRendezvousAcceptanceRunner.IsArmed)
+                    MoonRendezvousAcceptanceRunner.Tick(physicsTick, this);   // 绕月交会：自动判定（每步查一次）
                 PerfProbe.ApplySubClockEnd(PerfProbe.ApplySubBurnProbe, apBp);
 
                 groupsToCheck.Add(group.GroupId);
@@ -5028,6 +5047,7 @@ namespace PioneerFramework
         /// <summary>本拍预取的阶梯计划（`UpdateRendezvousGuidance` 开头调一次；主循环里消费）。</summary>
         private void PrefetchLadderPlans(double physicsTick)
         {
+            long pfClock = Prefs.DevMode ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             ladderPrefetch.Clear();
             var mgr = celestialRef.Get();
             if (mgr == null) return;
@@ -5089,6 +5109,21 @@ namespace PioneerFramework
                     nodes = nodesArr[k],
                     status = statusArr[k],
                 };
+
+            // 慢预取读数（2026-10-19）：2.1ms 引导尖峰到底是一份重几何，还是多组同拍重规划。
+            if (pfClock != 0)
+            {
+                double pfMs = (System.Diagnostics.Stopwatch.GetTimestamp() - pfClock) * 1000.0
+                              / System.Diagnostics.Stopwatch.Frequency;
+                if (pfMs > 2.0)
+                {
+                    var sb = new System.Text.StringBuilder();
+                    sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"[阶梯·预取] {pfMs:F1} ms｜{n} 份");
+                    for (int k = 0; k < n; k++)
+                        sb.Append(System.Globalization.CultureInfo.CurrentCulture, $" G{ids[k]}/{rungs[k]}");
+                    Log.Message(sb.ToString());
+                }
+            }
         }
 
         /// <summary>
@@ -5895,6 +5930,11 @@ namespace PioneerFramework
                         || ladRung == RendezvousLadder.Rung.PhasingOrbit
                         || ladRung == RendezvousLadder.Rung.Circularize;
                     ladSw.Stop();
+                    // 远端立轨道级（Hohmann/Phasing）的窗口以分钟计：30s 重算纯属浪费。
+                    // 实测 G2 PhasingOrbit 9.2ms / Hohmann 6.9ms（2026-10-19 22:30 日志）；终端/拦截级
+                    // 仍保持 30s（需要密闭环），这里只把下一次到期推后 90s（总 120s）。
+                    if (ladRung == RendezvousLadder.Rung.Hohmann || ladRung == RendezvousLadder.Rung.PhasingOrbit)
+                        group.ladderLastPlanTick += 90.0;
                     // ★ 慢调用探针（**只在超过阈值时打印** ⇒ 不刷屏、也不改行为）：这就是"尖峰"的分段计时。
                     //   实测基线：同轨 ~0.5~3 ms、大半径差（走霍曼搜索）9~21 ms ⇒ 阈值取 2 ms 能把后者抓出来。
                     if (Prefs.DevMode && !ladPrefetched && ladSw.Elapsed.TotalMilliseconds > 2.0)
@@ -6046,10 +6086,11 @@ namespace PioneerFramework
         private static void LogNonRootRendezvousState(SpaceEntityGroup group, double physicsTick, double keepingAccMps2,
             DVector3 syncPos, DVector3 syncVel)
         {
+            // 最便宜的闸门先走：没有交会引导的编队连组件/天体表都不查（调用点已先筛，这里是双保险）。
+            if (!group.HasRendezvousGuidance) return;
             var cm = Current.Game?.GetComponent<CelestialBodyManager>();
             var cd = cm?.GetBodyById(group.CelestialBodyId);
             if (cm == null || cd == null || cd.bodyType == CelestialBodyType.Planet) return;
-            if (!group.HasRendezvousGuidance) return;
             if (NonRootProbeNextTick.TryGetValue(group.GroupId, out double next) && physicsTick < next) return;
             NonRootProbeNextTick[group.GroupId] = physicsTick + 300.0;
             if (!OrbitAdapter.TryToOrbitView(group, cm, physicsTick, out OrbitView ov)) return;
@@ -7001,6 +7042,7 @@ namespace PioneerFramework
         public IPropulsionSource? GetGroupPropulsionSource(SpaceEntityGroup group)
         {
             // B6：先看本组有多少张图 —— 多图/图+无图实体都走多源聚合；一图也走（口径统一）。
+            // P0-1：走 SpaceEntity 的图链缓存（只随挂图/解挂/主图变化失效），不再每次扫全部 part。
             int mapStamp = group.entitySetVersion;
             int mapCount = 0;
             foreach (int eid in group.GetEntityIds())
@@ -7009,12 +7051,11 @@ namespace PioneerFramework
                 if (e == null) continue;
                 if (e.HasPropulsionData)
                     mapStamp = mapStamp * 31 + e.PropulsionVersion;
-                var parts = e.Parts;
-                for (int i = 0; i < parts.Count; i++)
+                mapStamp = mapStamp * 31 + e.mapLinkVersion;
+                var mapIds = e.GetPartLinkedMapIdsCached();
+                for (int i = 0; i < mapIds.Count; i++)
                 {
-                    var p = parts[i];
-                    if (p == null || p.linkedMapId < 0) continue;
-                    var mc = e.GetMapComp(p.linkedMapId);
+                    var mc = e.GetMapComp(mapIds[i]);
                     if (mc == null) continue;
                     mapCount++;
                     mapStamp = mapStamp * 31 + mc.NetworksVersion;
@@ -7034,12 +7075,10 @@ namespace PioneerFramework
                     {
                         var e = GetEntityById(eid);
                         if (e == null) continue;
-                        var parts = e.Parts;
-                        for (int i = 0; i < parts.Count; i++)
+                        var mapIds = e.GetPartLinkedMapIdsCached();
+                        for (int i = 0; i < mapIds.Count; i++)
                         {
-                            var p = parts[i];
-                            if (p == null || p.linkedMapId < 0) continue;
-                            var mc = e.GetMapComp(p.linkedMapId);
+                            var mc = e.GetMapComp(mapIds[i]);
                             if (mc != null && seenMaps.Add(mc.map.uniqueID)) sources.Add(mc);
                         }
                         if (e.HasPropulsionData) sources.Add(e);
@@ -7221,6 +7260,65 @@ namespace PioneerFramework
             SpacecraftMapRegistry.Reconcile();
         }
 
+        /// <summary>
+        /// 读档/新局收尾后预热（2026-10-19 尖峰归因）：
+        /// 实测第一次碰撞帧 11.2ms 里碰撞本身只有 1.1ms；2.5ms 是引力源表**首次构建**、
+        /// 1.3ms 是 apply 块里调试/巡检路径首次 JIT。这类一次性成本必须放在 **FinalizeInit**
+        /// 而不是 `ExposeData(PostLoadInit)`：`CelestialBodyManager.ExposeData` 会在 PostLoadInit
+        /// 把 `initialized` 置回 false，早于它的预热会被随后的重建吃掉（2026-10-19 13:20 日志实证）。
+        /// 失败只告警：预热是优化，不是读档依赖。
+        /// </summary>
+        public override void FinalizeInit()
+        {
+            base.FinalizeInit();
+            try
+            {
+                var warmMgr = Current.Game?.GetComponent<CelestialBodyManager>();
+                if (warmMgr != null)
+                {
+                    double warmTick = TimeScaleManager.GetPhysicsTickSafe();
+                    warmMgr.PrefetchSystemSources(1, warmTick);   // 1 = 地球（与调试场景同值）
+                    ApplyAnalyticTransfer(0.0, warmTick, warmMgr);
+                    ApplyHover(0.0, warmTick, warmMgr);
+
+                    // 最大的一笔：`UpdateAllMovements` 自身（~千行）的首次 JIT 落在第一个物理步的
+                    // "阶段之前"（步钟已启动、第一个阶段钟还没开始）⇒ 实测 12–13ms 残差。
+                    // 这里用 early-return 预热：方法体在入口处已被完整编译，随后立刻返回，不碰任何状态。
+                    warmupPhysicsStep = true;
+                    // 形参在标志检查之后才会被碰 ⇒ 传 null! 安全（只为触发方法体 JIT）
+                    try { UpdateAllMovements(Current.Game?.GetComponent<TimeScaleManager>()!); }
+                    finally { warmupPhysicsStep = false; }
+
+                    // 合成组预热：`ComputeGroupPhysics` 的首次 JIT / 天体场路径只在“有组的第一步”付
+                    // （2026-10-19 13:32 日志：碰撞帧的组物理 4,326µs，扣掉引力/源表后 ~3.6ms 是首次路径）。
+                    // 临时组不注册进 groups / 细网格、不可碰撞、远场；结果丢弃，不落盘。
+                    var warmGroup = new SpaceEntityGroup(-1, 0)
+                    {
+                        IsActive = true,
+                        IsMovable = true,
+                        IsCollidable = false,
+                        CelestialBodyId = 1,
+                        CurrentOrbit = new OrbitState
+                        {
+                            positionSystem = (SystemVec3)new DVector3(1.0e9, 0.0, 0.0),
+                            velocitySystem = (SystemVec3)new DVector3(0.0, 3000.0, 0.0),
+                            rotation = DQuaternion.identity
+                        }
+                    };
+                    ComputeGroupPhysics(warmGroup, 0.0, warmTick, warmMgr, new GravityScratch(), 1);
+
+                    // 碰撞纯函数预热（2026-10-19 P0）：实测隔离冷启动 CollectPartContacts 1.8–2.3ms、
+                    // TryFindDeepestPartPair 0.5–0.7ms、CollisionSolver 4.4–5.6ms。纯静态、无组/实体/
+                    // 地图状态；10 km/s 的爆炸/伤害路径不覆盖（需另案隔离预热）。
+                    CombatManager.WarmupCollisionPaths();
+                }
+            }
+            catch (System.Exception e)
+            {
+                Log.Warning($"[Prefetch] 初始化预热失败（不影响读档）：{e.GetType().Name}: {e.Message}");
+            }
+        }
+
         public override void ExposeData()
         {
             base.ExposeData();
@@ -7243,6 +7341,7 @@ namespace PioneerFramework
                         groupLastCoarsePos[group.GroupId] = group.Position;
                     }
                 }
+
             }
         }
 

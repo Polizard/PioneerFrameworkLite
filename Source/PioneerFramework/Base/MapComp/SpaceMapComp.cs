@@ -402,7 +402,8 @@ namespace PioneerFramework
 
         /// <summary>B6：被切断的系统位（推进/传感器；工质仍作为质量计入）。运行时改推进位会推进 `NetworksVersion`。</summary>
         public MapSystemFlags disabledSystems;
-        /// <summary>B6：本图未覆写部件的默认供油组/优先级（0/0 = 主网、无优先级；逐件可覆写）。</summary>
+        /// <summary>B6：本图未覆写储罐的默认供油组/优先级（0/0 = 主网、无优先级；逐罐可覆写）。
+        /// **只影响储罐**；引擎仍按本图/实体推进聚合取油。</summary>
         public int defaultFuelGroupId;
         public byte defaultFuelPriority;
         /// <summary>网络聚合版本：引擎注册/注销、推进开关变化时自增（多图聚合缓存指纹）。</summary>

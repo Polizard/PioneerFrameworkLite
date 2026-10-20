@@ -855,7 +855,7 @@ namespace PioneerFramework
                 long apColUs = ApplySubDelta(ApplySubCollision);
                 long apTsUs = ApplySubDelta(ApplySubTimeScale);
                 long apManUs = ApplySubDelta(ApplySubManeuver);
-                Log.Message($"[步耗时·尖峰] 本步={us:F0}µs（第{StepClocks}步 / t={tickNow}）｜**阶段**：操舵={ToMicros(PhaseDelta(PhaseSteer)):F0} 冲量={ToMicros(PhaseDelta(PhaseImpulse)):F0} 组物理={ToMicros(PhaseDelta(PhaseGroupPhysics)):F0} 主循环应用={ToMicros(PhaseDelta(PhaseApply)):F0} 引导={ToMicros(PhaseDelta(PhaseGuidance)):F0}｜子段：引力场={ToMicros(grav):F0}µs 采样{segs}｜解析源表={ToMicros(seg):F1}｜预取建表={ToMicros(pf):F1}｜**残差={us - ToMicros(grav) - ToMicros(seg) - ToMicros(pf):F0}µs**｜GC 本步={g0 - _spikeLastGc0}/{g1 - _spikeLastGc1}/{g2 - _spikeLastGc2}｜步均={(StepClocks > 0 ? ToMicros(StepTicksTotal) / StepClocks : 0.0):F1}µs｜**本步CPU={(cpuOk ? cpuUs : -1.0):F0}µs**｜**墙钟−CPU={(cpuOk ? us - cpuUs : -1.0):F0}µs**{(cpuOk ? "" : "（CPU 栏不可用）")}｜**apply细分**：燃烧/工质={ToMicros(apBurnUs):F0} 碰撞={ToMicros(apColUs):F0} 时标={ToMicros(apTsUs):F0} 机动={ToMicros(apManUs):F0} **余={ToMicros(PhaseDelta(PhaseApply) - apBurnUs - apColUs - apTsUs - apManUs):F0}**｜**块①细分**：诊断日志={ToMicros(ApplySubDelta(ApplySubBurnDiag)):F0} 工质账={ToMicros(ApplySubDelta(ApplySubBurnFuel)):F0} 探针/验收={ToMicros(ApplySubDelta(ApplySubBurnProbe)):F0} **余={ToMicros(apBurnUs - ApplySubDelta(ApplySubBurnDiag) - ApplySubDelta(ApplySubBurnFuel)
+                Log.Message($"[步耗时·尖峰] 本步={us:F0}µs（第{StepClocks}步 / t={tickNow}）｜**阶段**：操舵={ToMicros(PhaseDelta(PhaseSteer)):F0} 冲量={ToMicros(PhaseDelta(PhaseImpulse)):F0} 组物理={ToMicros(PhaseDelta(PhaseGroupPhysics)):F0} 主循环应用={ToMicros(PhaseDelta(PhaseApply)):F0} 引导={ToMicros(PhaseDelta(PhaseGuidance)):F0} 搬运={ToMicros(PhaseDelta(PhaseAnalyticTransfer)):F0} 悬浮={ToMicros(PhaseDelta(PhaseHover)):F0}｜子段：引力场={ToMicros(grav):F0}µs 采样{segs}｜解析源表={ToMicros(seg):F1}｜预取建表={ToMicros(pf):F1}｜**残差={us - ToMicros(grav) - ToMicros(seg) - ToMicros(pf):F0}µs**｜GC 本步={g0 - _spikeLastGc0}/{g1 - _spikeLastGc1}/{g2 - _spikeLastGc2}｜步均={(StepClocks > 0 ? ToMicros(StepTicksTotal) / StepClocks : 0.0):F1}µs｜**本步CPU={(cpuOk ? cpuUs : -1.0):F0}µs**｜**墙钟−CPU={(cpuOk ? us - cpuUs : -1.0):F0}µs**{(cpuOk ? "" : "（CPU 栏不可用）")}｜**apply细分**：燃烧/工质={ToMicros(apBurnUs):F0} 行星碰撞={ToMicros(apColUs):F0} 时标={ToMicros(apTsUs):F0} 机动={ToMicros(apManUs):F0} **余={ToMicros(PhaseDelta(PhaseApply) - apBurnUs - apColUs - apTsUs - apManUs):F0}**｜**块①细分**：诊断日志={ToMicros(ApplySubDelta(ApplySubBurnDiag)):F0} 工质账={ToMicros(ApplySubDelta(ApplySubBurnFuel)):F0} 探针/验收={ToMicros(ApplySubDelta(ApplySubBurnProbe)):F0} **余={ToMicros(apBurnUs - ApplySubDelta(ApplySubBurnDiag) - ApplySubDelta(ApplySubBurnFuel)
                              - ApplySubDelta(ApplySubBurnProbe)):F0}**");
                 _spikeLastGc0 = g0; _spikeLastGc1 = g1; _spikeLastGc2 = g2;
             }
@@ -880,16 +880,19 @@ namespace PioneerFramework
         // ── 步内**阶段**计时（2026-10-01）：上一版的尖峰行只给了"残差"（= 本步 − 已计时子段）⇒ 残差≈整步时
         //   只知道"不在引力/预取那几段里"，还不知道在哪一段。这里把 `UpdateAllMovements` 的五个阶段各自圈起来，
         //   尖峰行就能直接指认。**只在主线程**（阶段边界都在主线程；并行体内部的计时另有 GravityClock）。
-        public const int PhaseSteer = 0, PhaseImpulse = 1, PhaseGroupPhysics = 2, PhaseApply = 3, PhaseGuidance = 4, PhaseCount = 5;
+        // 续轮（2026-10-19）：补上 `UpdateAllMovements` 里两个**未计时**段（解析搬运 / 悬浮）——
+        //   第一次物理步的 13ms 残差就落在这类"阶段之间的缝"里，没有这两格只能继续猜。
+        public const int PhaseSteer = 0, PhaseImpulse = 1, PhaseGroupPhysics = 2, PhaseApply = 3, PhaseGuidance = 4,
+            PhaseAnalyticTransfer = 5, PhaseHover = 6, PhaseCount = 7;
         private static readonly long[] _phaseTicks = new long[PhaseCount];
-        private static readonly string[] _phaseNames = ["操舵", "冲量", "组物理", "主循环应用", "引导"];
+        private static readonly string[] _phaseNames = ["操舵", "冲量", "组物理", "主循环应用", "引导", "解析搬运", "悬浮"];
 
         // ── apply 段**内部**细分（2026-10-01 第二轮）：apply 是五阶段里最大的一个（~830 行）──
         // 背景：本轮实测 apply 有 **~490 tick 周期**的 5–7 ms 尖峰、一次 **108 ms**（GC=0、
         //   组物理/引导都只有几十 µs ⇒ 与引力数学、与并行无关）。这一层把它切成四个**代码上
         //   可切开**的块 —— 下一次游戏内重跑就能指认是哪一块（不用再猜）。
         public const int ApplySubBurn = 0;        // 第一个循环：燃烧诊断/日志 + 工质账 + EndBurn + 巡检探针
-        public const int ApplySubCollision = 1;   // 碰撞检查循环（CheckPlanetCollision）
+        public const int ApplySubCollision = 1;   // **行星表面**碰撞循环（CheckPlanetCollision），不是船-船
         public const int ApplySubTimeScale = 2;   // 240 真实 tick 块：时标/降档/收尾强制
         public const int ApplySubManeuver = 3;    // 机动/节点处理循环（意图重解 / 预对准 / 点火）
         // 块①**再切三刀**（2026-10-01 第三轮）：上一轮实测 5–7 ms 的尖峰**全部**落在块①，
@@ -923,6 +926,74 @@ namespace PioneerFramework
 
         /// <summary>阶段名（尖峰行用）。</summary>
         public static string PhaseName(int slot) => _phaseNames[slot];
+
+        // ── 船-船碰撞子段（2026-10-19，P0）──────────────────────────────────────────
+        // 之前 `[碰撞链成本]` 只有 4 段（射弹/武器/同步/船对），船对内部的"配对枚举/缓存/球扫/
+        // 窄相/接触/解算/投影/CCD/爆炸"没有读数 ⇒ 优化只能猜。这里补一层**可关**的子段钟：
+        // · 默认 false（生产零成本，只多一次静态 bool 读）；
+        // · 开发者模式由 CombatManager 打开（`chainReport`），读数随 `[碰撞链成本]` 同一行输出；
+        // · 首次执行单独打一行 `[碰撞子段·首次]`，把 JIT 与稳态分开（避免再把 5.6ms JIT 当算法）。
+        // ⚠ 子段钟本身有成本：10 段 × 2 次 Stopwatch ≈ 0.4µs，会把 0.8µs 的空场船对读数抬高 ~50%
+        //   ⇒ 只在 DevMode/诊断时开，不要并进常驻步钟。
+        public const int ColStagePairLoop = 0, ColStageCache = 1, ColStageSphere = 2, ColStageSweep = 3,
+            ColStageNarrow = 4, ColStageContacts = 5, ColStageSolve = 6, ColStageProjection = 7,
+            ColStageCcd = 8, ColStageExplosion = 9, ColStageCcdRefine = 10,
+            ColStageCcdTranslate = 11, ColStageCcdOverlap = 12, ColStageCount = 13;
+        private static readonly string[] _colStageNames =
+            ["配对循环", "组缓存", "球快筛", "扫掠盒", "最深对", "接触收集", "解算", "位置投影", "CCD", "爆炸", "CCD细化", "CCD平移", "CCD重叠"];
+        private static readonly long[] _colStageTicks = new long[ColStageCount];
+        private static readonly long[] _colStageMax = new long[ColStageCount];
+        private static readonly long[] _colStageCount = new long[ColStageCount];
+        private static readonly bool[] _colStageFirstSeen = new bool[ColStageCount];
+
+        /// <summary>船-船碰撞子段计时开关（默认关；DevMode 由 CombatManager 每步同步）。</summary>
+        public static bool CollisionStagesEnabled;
+
+        public static long CollisionStageStart()
+            => CollisionStagesEnabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
+
+        public static void CollisionStageEnd(int slot, long start)
+        {
+            if (!CollisionStagesEnabled || start == 0L) return;
+            long dt = System.Diagnostics.Stopwatch.GetTimestamp() - start;
+            _colStageTicks[slot] += dt;
+            _colStageCount[slot]++;
+            if (dt > _colStageMax[slot]) _colStageMax[slot] = dt;
+            if (!_colStageFirstSeen[slot])
+            {
+                _colStageFirstSeen[slot] = true;
+                Log.Message($"[碰撞子段·首次] {_colStageNames[slot]}={dt * 1_000_000.0 / System.Diagnostics.Stopwatch.Frequency:F1}µs");
+            }
+        }
+
+        /// <summary>子段读数（平均/最慢 µs；无样本返回空串）。由 `[碰撞链成本]` 同一行消费。</summary>
+        public static string CollisionStageReport()
+        {
+            var sb = new StringBuilder(160);
+            bool any = false;
+            for (int i = 0; i < ColStageCount; i++)
+            {
+                if (_colStageCount[i] == 0) continue;
+                if (any) sb.Append(' ');
+                else any = true;
+                double avg = _colStageTicks[i] * 1_000_000.0 / System.Diagnostics.Stopwatch.Frequency / _colStageCount[i];
+                double max = _colStageMax[i] * 1_000_000.0 / System.Diagnostics.Stopwatch.Frequency;
+                sb.Append(_colStageNames[i]).Append(System.Globalization.CultureInfo.InvariantCulture,
+                    $"={avg:F1}/{max:F1}");
+            }
+            return any ? sb.ToString() : "";
+        }
+
+        /// <summary>清零子段累加器（保留 first-seen；与 `[碰撞链成本]` 打印同拍）。</summary>
+        public static void ResetCollisionStages()
+        {
+            for (int i = 0; i < ColStageCount; i++)
+            {
+                _colStageTicks[i] = 0;
+                _colStageMax[i] = 0;
+                _colStageCount[i] = 0;
+            }
+        }
         private static int _stepSpikeLines;
         private static long _spikeLastGrav, _spikeLastSeg, _spikeLastPf;
         private static long _spikeLastGravSegs;

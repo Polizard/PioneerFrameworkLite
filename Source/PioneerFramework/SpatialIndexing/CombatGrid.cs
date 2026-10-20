@@ -9,6 +9,13 @@ namespace PioneerFramework.Combat
     {
         public const double FINE_CELL_SIZE = 20000.0;
         public const int FINE_EMPTY_TTL = 600;
+
+        /// <summary>
+        /// 单船扫掠注册的格盒体积上限。超过即视为**位置跳变**（地图转移/调试传送/读档落位），
+        /// 只注册当前格、不注册路径：真实飞行一步最多十几格，而传送可能一步跨几千格，
+        /// 按矩形盒扫掠会瞬间注册数万格并产出海量假候选。
+        /// </summary>
+        private const int MAX_SWEPT_CELLS = 4096;
         private const int FULL_SWEEP_INTERVAL = 600;   // 全量兜底扫描周期（真实 tick，10s 一次，避免周期尖峰）
         private int lastFullSweepTick = -1;
 
@@ -66,10 +73,68 @@ namespace PioneerFramework.Combat
 
             /// <summary>格数（用于调试/统计）。</summary>
             public int CellCount => (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+
+            /// <summary>格数（long 口径：传送跳变的跨度可能让 int 乘法溢出）。</summary>
+            public long CellCountLong =>
+                (long)(maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+
+            /// <summary>返回覆盖两个格盒的轴对齐格盒（闭区间）。</summary>
+            public static CoverBox Union(CoverBox a, CoverBox b)
+            {
+                return new CoverBox
+                {
+                    minX = System.Math.Min(a.minX, b.minX),
+                    maxX = System.Math.Max(a.maxX, b.maxX),
+                    minY = System.Math.Min(a.minY, b.minY),
+                    maxY = System.Math.Max(a.maxY, b.maxY),
+                    minZ = System.Math.Min(a.minZ, b.minZ),
+                    maxZ = System.Math.Max(a.maxZ, b.maxZ)
+                };
+            }
         }
 
-        // 每艘船当前覆盖的细网格格盒（多格注册：AABB 覆盖 2x2x2=最多 8 格，母舰几十格）
+        // 每艘船本物理步注册的细网格格盒（多格注册）。语义 = **扫掠覆盖**：
+        // 上一步的当前 AABB 覆盖格 ∪ 本步的当前 AABB 覆盖格。
+        // 只按当前格注册会漏掉"两船一步对穿相邻格"的高速对：步末 AABB 分处两格、
+        // 当前覆盖格不共享 ⇒ EnumerateShipPairs 根本不产出这对，后面的球/扫掠/TOI 全部没机会跑。
         private readonly Dictionary<SpaceEntityGroup, CoverBox> shipCoveredCells = new();
+
+        // 每艘船的上一步/本步**精确**世界 AABB（米）。格盒只负责粗筛，
+        // 同格内再用精确扫掠 AABB 过滤：256 艘 500m 间距同格时格内 32,640 对里
+        // 真实可能相交的是 0 对，旧实现却把 32,640 对全送进逐对几何判定（实测 4–8ms/步）。
+        private struct ShipAabb
+        {
+            public DVector3 prevMin, prevMax;
+            public DVector3 curMin, curMax;
+        }
+
+        private readonly Dictionary<SpaceEntityGroup, ShipAabb> shipAabb = new();
+
+        // 格内 SAP：按扫掠 AABB 的 minX 排序后扫描。复用缓冲区，避免每步分配。
+        private struct SapEntry : System.IComparable<SapEntry>
+        {
+            public double minX, maxX, minY, maxY, minZ, maxZ;
+            public int origIndex;
+            public bool singleCell;   // 预计算：单格-单格对天然唯一，不需要 pair 哈希
+            public SpaceEntityGroup ship;
+
+            public int CompareTo(SapEntry other)
+            {
+                if (minX < other.minX) return -1;
+                if (minX > other.minX) return 1;
+                return origIndex.CompareTo(other.origIndex);
+            }
+        }
+
+        private SapEntry[] sapScratch = new SapEntry[64];
+
+        // 每艘船**上一步的当前 AABB 覆盖格**（扫掠并集的基准；与 shipCoveredCells 分开存，
+        // 保证下一步求并时不会把更早的路径格累积进来）。
+        private readonly Dictionary<SpaceEntityGroup, CoverBox> shipCurrentCells = new();
+
+        // 扫掠盒仍大于当前盒（本步跨了格）的船：下一步若不再移动，由 SettleSweptBox 收缩回当前盒。
+        // 不这样做的话，停船会永久保留最后一步的多余格（正确性无害，但候选对白跑）。
+        private readonly HashSet<SpaceEntityGroup> sweepSettlePending = new();
 
         // #4：EnumerateShipPairs 的船对去重缓冲（复用，避免每 2 tick 分配 HashSet）
         private readonly HashSet<long> pairScratch = new();
@@ -133,10 +198,122 @@ namespace PioneerFramework.Combat
         {
             var bounds = GetGroupBoundsSystem(ship);
             var box = CoverBoxOf(bounds.min, bounds.max);
-            int frameId = GetFrameId(ship);
-            var grid = GetOrCreateSystem(frameId);
+            var grid = GetOrCreateSystem(GetFrameId(ship));
 
-            // 内联三重循环（闭区间）注册到每个覆盖格，零 List 分配
+            AddShipToCells(grid, ship, box);
+
+            shipCoveredCells[ship] = box;
+            shipCurrentCells[ship] = box;
+            shipAabb[ship] = new ShipAabb
+            {
+                prevMin = bounds.min, prevMax = bounds.max,
+                curMin = bounds.min, curMax = bounds.max
+            };
+            sweepSettlePending.Remove(ship);
+        }
+
+        public void RemoveShip(SpaceEntityGroup ship)
+        {
+            if (!shipCoveredCells.TryGetValue(ship, out var box))
+                return;
+
+            var grid = GetOrCreateSystem(GetFrameId(ship));
+            RemoveShipFromCells(grid, ship, box);
+
+            shipCoveredCells.Remove(ship);
+            shipCurrentCells.Remove(ship);
+            shipAabb.Remove(ship);
+            sweepSettlePending.Remove(ship);
+        }
+
+        /// <summary>
+        /// 位置更新（每物理步一次）：把船的注册格盒推进到 **扫掠覆盖**
+        /// = 上一步的当前覆盖格 ∪ 本步的当前覆盖格。
+        /// 旧路径格在上一步的当前盒之外，因此下一步求并时不会累积。
+        /// </summary>
+        public void UpdateShipPosition(SpaceEntityGroup ship, DVector3 oldPosMeters)
+        {
+            var newBounds = GetGroupBoundsSystem(ship);
+            var newCurrentBox = CoverBoxOf(newBounds.min, newBounds.max);
+
+            if (!shipCoveredCells.TryGetValue(ship, out var oldSweptBox))
+            {
+                AddShip(ship);
+                return;
+            }
+
+            if (!shipCurrentCells.TryGetValue(ship, out var oldCurrentBox))
+                oldCurrentBox = oldSweptBox; // 旧档/异常状态兜底：无当前盒时至少不丢已注册格
+
+            var newSweptBox = CoverBox.Union(oldCurrentBox, newCurrentBox);
+
+            // 位置跳变（地图转移/调试传送/读档落位）不是物理飞行路径：只注册当前格。
+            // 不做这层保护的话，一次 1e9 m 的传送会注册 ~5 万格并让同场所有船对白跑。
+            bool teleported = newSweptBox.CellCountLong > MAX_SWEPT_CELLS;
+            if (teleported)
+                newSweptBox = newCurrentBox;
+
+            // 精确 AABB 同步推进：平移扫掠 = 上一步当前 AABB ∪ 本步当前 AABB。
+            // 传送按“不扫掠”处理（prev=cur），与格注册的跳变保护保持一致。
+            if (shipAabb.TryGetValue(ship, out var aabb))
+            {
+                aabb.prevMin = teleported ? newBounds.min : aabb.curMin;
+                aabb.prevMax = teleported ? newBounds.max : aabb.curMax;
+                aabb.curMin = newBounds.min;
+                aabb.curMax = newBounds.max;
+                shipAabb[ship] = aabb;
+            }
+            else
+            {
+                shipAabb[ship] = new ShipAabb
+                {
+                    prevMin = newBounds.min, prevMax = newBounds.max,
+                    curMin = newBounds.min, curMax = newBounds.max
+                };
+            }
+
+            if (oldSweptBox.Equals(newSweptBox)) // O(1) 盒比较，替代 O(k²) 列表逐元素比较
+            {
+                shipCurrentCells[ship] = newCurrentBox;
+                return;
+            }
+
+#if DEBUG
+            debugCellCrossCount++;
+#endif
+
+            var grid = GetOrCreateSystem(GetFrameId(ship));
+            ReplaceShipCells(grid, ship, oldSweptBox, newSweptBox);
+
+            shipCoveredCells[ship] = newSweptBox;
+            shipCurrentCells[ship] = newCurrentBox;
+
+            // 本步跨格 ⇒ 扫掠盒大于当前盒；下一步若原地不动，由 SettleSweptBox 收缩。
+            if (newSweptBox.Equals(newCurrentBox))
+                sweepSettlePending.Remove(ship);
+            else
+                sweepSettlePending.Add(ship);
+        }
+
+        /// <summary>
+        /// 船停下后收缩扫掠注册：把 "上一步当前格 ∪ 本步当前格" 中的旧格移除，只保留当前格。
+        /// 同步器在"本步位置未变"时调用；无待收缩状态时 O(1) 返回（不重算 AABB）。
+        /// </summary>
+        public void SettleSweptBox(SpaceEntityGroup ship)
+        {
+            if (!sweepSettlePending.Remove(ship)) return;
+            if (!shipCoveredCells.TryGetValue(ship, out var sweptBox)) return;
+            if (!shipCurrentCells.TryGetValue(ship, out var currentBox)) return;
+            if (sweptBox.Equals(currentBox)) return;
+
+            var grid = GetOrCreateSystem(GetFrameId(ship));
+            ReplaceShipCells(grid, ship, sweptBox, currentBox);
+            shipCoveredCells[ship] = currentBox;
+        }
+
+        /// <summary>把船注册到格盒覆盖的每个细网格格（闭区间，零 List 分配）。</summary>
+        private static void AddShipToCells(SystemGrid grid, SpaceEntityGroup ship, CoverBox box)
+        {
             for (int x = box.minX; x <= box.maxX; x++)
                 for (int y = box.minY; y <= box.maxY; y++)
                     for (int z = box.minZ; z <= box.maxZ; z++)
@@ -159,44 +336,19 @@ namespace PioneerFramework.Combat
                             fCell.emptyTick = -1;
                         }
                     }
-
-            shipCoveredCells[ship] = box;
         }
 
-        public void RemoveShip(SpaceEntityGroup ship)
+        private void RemoveShipFromCells(SystemGrid grid, SpaceEntityGroup ship, CoverBox box)
         {
-            if (!shipCoveredCells.TryGetValue(ship, out var box))
-                return;
-
-            var grid = GetOrCreateSystem(GetFrameId(ship));
             for (int x = box.minX; x <= box.maxX; x++)
                 for (int y = box.minY; y <= box.maxY; y++)
                     for (int z = box.minZ; z <= box.maxZ; z++)
                         RemoveShipFromCell(grid, ship, (x, y, z));
-
-            shipCoveredCells.Remove(ship);
         }
 
-        public void UpdateShipPosition(SpaceEntityGroup ship, DVector3 oldPosMeters)
+        /// <summary>把注册格盒从 oldBox 差集推进到 newBox（移除 old−new，加入 new−old）。</summary>
+        private void ReplaceShipCells(SystemGrid grid, SpaceEntityGroup ship, CoverBox oldBox, CoverBox newBox)
         {
-            var newBounds = GetGroupBoundsSystem(ship);
-            var newBox = CoverBoxOf(newBounds.min, newBounds.max);
-
-            if (!shipCoveredCells.TryGetValue(ship, out var oldBox))
-            {
-                AddShip(ship);
-                return;
-            }
-
-            if (oldBox.Equals(newBox)) // O(1) 盒比较，替代 O(k²) 列表逐元素比较
-                return;
-
-#if DEBUG
-            debugCellCrossCount++;
-#endif
-
-            var grid = GetOrCreateSystem(GetFrameId(ship));
-
             // 移除：旧盒中不在新盒内的格
             for (int x = oldBox.minX; x <= oldBox.maxX; x++)
                 for (int y = oldBox.minY; y <= oldBox.maxY; y++)
@@ -231,8 +383,6 @@ namespace PioneerFramework.Combat
                             fCell.emptyTick = -1;
                         }
                     }
-
-            shipCoveredCells[ship] = newBox;
         }
 
         /// <summary>
@@ -298,45 +448,164 @@ namespace PioneerFramework.Combat
         }
 
         /// <summary>
-        /// 枚举所有共享至少一个覆盖格的船对（去重）。用于同格两两碰撞检测，
-        /// 由"重叠必共享覆盖格"保证完备。
-        /// 只遍历与船相关的覆盖格（而非全部格子），与网格膨胀解耦：
-        /// 复杂度 O(Σ 船覆盖格 × 格内船数)，不随空格数增长。
+        /// 枚举所有**本步扫掠 AABB 真相交**的船对（去重）。用于船-船碰撞候选。
+        /// 格注册只做粗筛；每格内再按精确扫掠 AABB 过滤（格内 SAP），
+        /// 避免把 20km 格里 32,640 个“同格但对向不可能相交”的船对全送进逐对几何判定。
+        /// 完备性：平移扫掠体相交 ⇒ 两船精确扫掠 AABB 必相交；精确盒覆盖相对路径。
+        ///
+        /// 2026-10-20：混合格也走同一 SAP（不再有“格内有跨格船 ⇒ 整格 O(n²) 回退”的悬崖）。
+        /// 单格-单格对天然只在一个格出现，不需要 pair 哈希；涉及跨格扫掠船的对仍用哈希去重。
         /// </summary>
         public IEnumerable<(SpaceEntityGroup a, SpaceEntityGroup b)> EnumerateShipPairs()
         {
             var checkedPairs = pairScratch;
             checkedPairs.Clear();
 
-            foreach (var kv in shipCoveredCells)
+            foreach (var kvGrid in systemGrids)
             {
-                var shipA = kv.Key;
-                // GetFrameId 每船一次（多格船从每格一次降为每船一次）
-                if (!systemGrids.TryGetValue(GetFrameId(shipA), out var grid))
-                    continue;
+                foreach (var kvCell in kvGrid.Value.cells)
+                {
+                    var ships = kvCell.Value.ships;
+                    int n = ships.Count;
+                    if (n < 2) continue;
 
-                var boxA = kv.Value;
-                for (int x = boxA.minX; x <= boxA.maxX; x++)
-                    for (int y = boxA.minY; y <= boxA.maxY; y++)
-                        for (int z = boxA.minZ; z <= boxA.maxZ; z++)
-                        {
-                            if (!grid.cells.TryGetValue((x, y, z), out var fCell))
-                                continue;
-
-                            var ships = fCell.ships;
-                            for (int i = 0; i < ships.Count; i++)
+                    if (n <= 8)
+                    {
+                        for (int i = 0; i < n; i++)
+                            for (int j = i + 1; j < n; j++)
                             {
-                                var shipB = ships[i];
-                                if (ReferenceEquals(shipB, shipA)) continue;
-
-                                int minId = shipA.GroupId < shipB.GroupId ? shipA.GroupId : shipB.GroupId;
-                                int maxId = shipA.GroupId < shipB.GroupId ? shipB.GroupId : shipA.GroupId;
-                                long key = ((long)minId << 32) | (uint)maxId;
-                                if (checkedPairs.Add(key))
-                                    yield return (shipA, shipB);
+                                var a = ships[i];
+                                var b = ships[j];
+                                if (!SweptAabbOverlap(a, b)) continue;
+                                bool single = IsSingleCell(a) && IsSingleCell(b);
+                                if (single || TryMarkPair(a, b, checkedPairs))
+                                    yield return OrderPair(a, b);
                             }
+                        continue;
+                    }
+
+                    // 格内 SAP：按扫掠 AABB minX 排序，扫描到 minX > maxX 即停。
+                    // 256 艘 500m 间距同格：真实相交 0 对（旧实现产出 32,640 对）。
+                    EnsureSapCapacity(n);
+                    var entries = sapScratch;
+                    for (int s = 0; s < n; s++)
+                        entries[s] = BuildSapEntry(ships[s], s);
+
+                    System.Array.Sort(entries, 0, n);
+
+                    for (int i = 0; i < n; i++)
+                    {
+                        var ei = entries[i];
+                        for (int j = i + 1; j < n; j++)
+                        {
+                            var ej = entries[j];
+                            if (ej.minX > ei.maxX) break;
+                            if (ei.minY > ej.maxY || ej.minY > ei.maxY) continue;
+                            if (ei.minZ > ej.maxZ || ej.minZ > ei.maxZ) continue;
+
+                            var a = ei.ship;
+                            var b = ej.ship;
+                            bool single = ei.singleCell && ej.singleCell;
+                            if (single || TryMarkPair(a, b, checkedPairs))
+                                yield return OrderPair(a, b);
                         }
+                    }
+                }
             }
+        }
+
+        /// <summary>该船本步只覆盖一个格（单格-单格对天然只在一个格出现）。</summary>
+        private bool IsSingleCell(SpaceEntityGroup ship)
+        {
+            return shipCoveredCells.TryGetValue(ship, out var box) && box.CellCountLong == 1;
+        }
+
+        private static bool TryMarkPair(SpaceEntityGroup a, SpaceEntityGroup b, HashSet<long> checkedPairs)
+        {
+            int minId = a.GroupId < b.GroupId ? a.GroupId : b.GroupId;
+            int maxId = a.GroupId < b.GroupId ? b.GroupId : a.GroupId;
+            return checkedPairs.Add(((long)minId << 32) | (uint)maxId);
+        }
+
+        /// <summary>固定按 GroupId 小者在前，保证同一对在多个格出现时方向一致。</summary>
+        private static (SpaceEntityGroup a, SpaceEntityGroup b) OrderPair(SpaceEntityGroup a, SpaceEntityGroup b)
+        {
+            return a.GroupId <= b.GroupId ? (a, b) : (b, a);
+        }
+
+        private void EnsureSapCapacity(int n)
+        {
+            if (sapScratch.Length >= n) return;
+            int cap = sapScratch.Length;
+            while (cap < n) cap *= 2;
+            sapScratch = new SapEntry[cap];
+        }
+
+        private SapEntry BuildSapEntry(SpaceEntityGroup ship, int origIndex)
+        {
+            bool singleCell = IsSingleCell(ship);
+            if (shipAabb.TryGetValue(ship, out var a))
+            {
+                return new SapEntry
+                {
+                    minX = System.Math.Min(a.prevMin.x, a.curMin.x),
+                    maxX = System.Math.Max(a.prevMax.x, a.curMax.x),
+                    minY = System.Math.Min(a.prevMin.y, a.curMin.y),
+                    maxY = System.Math.Max(a.prevMax.y, a.curMax.y),
+                    minZ = System.Math.Min(a.prevMin.z, a.curMin.z),
+                    maxZ = System.Math.Max(a.prevMax.z, a.curMax.z),
+                    origIndex = origIndex,
+                    singleCell = singleCell,
+                    ship = ship
+                };
+            }
+
+            // 缺 AABB 的船（异常/旧档兜底）：按无穷大盒处理，保守地与所有船配对。
+            return new SapEntry
+            {
+                minX = double.NegativeInfinity, maxX = double.PositiveInfinity,
+                minY = double.NegativeInfinity, maxY = double.PositiveInfinity,
+                minZ = double.NegativeInfinity, maxZ = double.PositiveInfinity,
+                origIndex = origIndex,
+                singleCell = singleCell,
+                ship = ship
+            };
+        }
+
+        /// <summary>两船本步扫掠精确 AABB 是否相交（闭区间）。缺状态时保守返回 true。</summary>
+        private bool SweptAabbOverlap(SpaceEntityGroup a, SpaceEntityGroup b)
+        {
+            if (!shipAabb.TryGetValue(a, out var sa) || !shipAabb.TryGetValue(b, out var sb))
+                return true;
+
+            return System.Math.Min(sa.prevMin.x, sa.curMin.x) <= System.Math.Max(sb.prevMax.x, sb.curMax.x)
+                && System.Math.Min(sb.prevMin.x, sb.curMin.x) <= System.Math.Max(sa.prevMax.x, sa.curMax.x)
+                && System.Math.Min(sa.prevMin.y, sa.curMin.y) <= System.Math.Max(sb.prevMax.y, sb.curMax.y)
+                && System.Math.Min(sb.prevMin.y, sb.curMin.y) <= System.Math.Max(sa.prevMax.y, sa.curMax.y)
+                && System.Math.Min(sa.prevMin.z, sa.curMin.z) <= System.Math.Max(sb.prevMax.z, sb.curMax.z)
+                && System.Math.Min(sb.prevMin.z, sb.curMin.z) <= System.Math.Max(sa.prevMax.z, sa.curMax.z);
+        }
+
+        /// <summary>诊断：当前有多艘船的扫掠覆盖格 &gt;1（会让全单格快速路径整体关闭）。</summary>
+        internal int DebugMultiCellShipCount()
+        {
+            int n = 0;
+            foreach (var kv in shipCoveredCells)
+                if (kv.Value.CellCountLong > 1) n++;
+            return n;
+        }
+
+        /// <summary>诊断：格内 i&lt;j 的原始对数（不按精确 AABB 过滤，多格船会重复计数）。</summary>
+        internal int DebugRawCellPairCount()
+        {
+            int n = 0;
+            foreach (var kvGrid in systemGrids)
+                foreach (var kvCell in kvGrid.Value.cells)
+                {
+                    int c = kvCell.Value.ships.Count;
+                    n += c * (c - 1) / 2;
+                }
+            return n;
         }
 
         private void RemoveShipFromCell(SystemGrid grid, SpaceEntityGroup ship, (int cx, int cy, int cz) cell)
@@ -576,7 +845,7 @@ namespace PioneerFramework.Combat
 
         private void EnqueueEmpty(SystemGrid grid, (int cx, int cy, int cz) coord, FineCell cell)
         {
-            cell.emptyTick = Find.TickManager.TicksGame; // 刷新 TTL（无论是否已在队列）
+            cell.emptyTick = Find.TickManager?.TicksGame ?? 0; // 刷新 TTL（无论是否已在队列；headless 无 TickManager）
             if (grid.queuedEmpties.Add(coord))
                 grid.emptyQueue.Enqueue(coord);
         }

@@ -79,6 +79,34 @@ namespace PioneerFramework.Tests
 
 
         [Fact]
+        public void EntityConsume_DoesNotDirtyPartStats_ButBumpsTankMassVersion()
+        {
+            var def = new PropellantDef { defName = "P" };
+            var a = Tank(1, 0, 0, 50, 100);
+            var b = Tank(2, 0, 0, 100, 100);
+            var e = new SpaceEntity(2, 0);
+            e.SetParts(new List<SpacePart> { a, b });
+            e.AddPropulsion(new PropulsionData
+            {
+                propellant = def, ve = 3000f, massFlow = 10f, mass = 150.0, capacity = 200.0
+            });
+            e.InvalidateFuelPlans();
+
+            // 先把功能 stats 算出来（之后不应因油量变化重算）
+            double massBefore = e.AggregatedStats.mass;
+            int partVersionBefore = e.partSetVersion;
+            int tankVersionBefore = e.tankMassVersion;
+
+            double got = e.TryConsumePropellant(def, 30.0);
+
+            Assert.Equal(30.0, got, 6);
+            Assert.Equal(partVersionBefore, e.partSetVersion);       // P0-2：不再全量 InvalidateStats
+            Assert.True(e.tankMassVersion > tankVersionBefore);      // COM/惯量专用版本必须动
+            Assert.Equal(massBefore, e.AggregatedStats.mass, 6);     // 工质不在 ShipStats.mass
+            Assert.Equal(120.0, e.GetPropellantMass(def), 6);        // 池仍正确扣减
+        }
+
+        [Fact]
         public void EntityConsume_UsesPlanPriority_AndReducesOwnMass()
         {
             var def = new PropellantDef { defName = "P" };

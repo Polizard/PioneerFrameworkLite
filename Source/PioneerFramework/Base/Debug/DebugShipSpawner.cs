@@ -26,6 +26,9 @@ namespace PioneerFramework
         /// <summary>B8 表现验收按钮生成过的组（清场只清这些，不碰玩家船）。</summary>
         private static readonly List<int> b8DemoGroupIds = new();
 
+        /// <summary>256 件飞行/对撞、多part 交会按钮生成过的组（独立清场）。</summary>
+        private static readonly List<int> stressDemoGroupIds = new();
+
         // ── 碰撞测试距离探针（自证物理是否推进；部署时设置，CompTick 每 2 秒打一条）──
         // 暂停时 CompTick 不跑 → 无探针日志 = 时间未推进；距离递减 = 物理正常等 [ShipCollision]。
         private static int probeGroupA = -1;
@@ -288,6 +291,39 @@ namespace PioneerFramework
 
         /// <summary>高速对撞（80 m/s）：仍走爆炸分支。</summary>
         public static void SpawnHighSpeedCollisionDemo() => SpawnCollisionDemo(80f);
+
+        /// <summary>极端高速：只要求组级扫掠命中（撞了就算），不追 part 精确 TOI。</summary>
+        public static void SpawnExtremeSpeedCollisionDemo() => SpawnCollisionDemo(10000f);
+
+        /// <summary>
+        /// 相邻格对穿（相对 10 km/s，dt=2s ⇒ 一步相对位移 20 km）：
+        /// 两船起点分处相邻 20 km 格，步末仍分处相邻格（左右互换），路径中途相撞。
+        /// 只按"当前覆盖格"配对的实现会整对漏掉 —— 本按钮是 EnumerateShipPairs 完备性的游戏内回归。
+        /// </summary>
+        public static void SpawnAdjacentCellCrossingDemo()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            ForceNormalTime();
+
+            // 场地隔离：高速场在 +Y 1e8、低速场在 0，本场景放 -Y 1e8。
+            // x 基准 1e9 正好是 20 km 格边界：+15 km 在格 50000、+25 km 在格 50001。
+            DVector3 basePos = new DVector3(1.0e9, -1.0e8, 0);
+            const float speed = 5000f; // 各 5 km/s，相对 10 km/s
+
+            var a = CreateShipNoMap(spaceGame, Faction.OfPlayer?.loadID ?? 0,
+                basePos + new DVector3(15000, 0, 0), new DVector3(10, 10, 10),
+                Quaternion.identity, "相邻格A", new DVector3(speed, 0, 0), dryMass: 1000f);
+            var b = CreateShipNoMap(spaceGame, (Faction.OfPlayer?.loadID ?? 0) + 1,
+                basePos + new DVector3(25000, 0, 0), new DVector3(6, 6, 6),
+                Quaternion.identity, "相邻格B", new DVector3(-speed, 0, 0), dryMass: 1000f);
+
+            CombatManager.DebugDetailedCollision = true;
+            collisionDemoLogOffTick = Find.TickManager.TicksGame + 1800; // 30s（1×）后自动关
+            Log.Message($"[碰撞演示·相邻格] A=G{a.GroupId}@格50000 B=G{b.GroupId}@格50001｜各 {speed / 1000f:F0} km/s 对开（相对 10 km/s）｜一步 20 km 对穿 ⇒ 判据：[爆炸]/[TOI诊断]");
+            Messages.Message("已布置相邻格对穿（相对 10 km/s）：两船一步互换格位，应命中爆炸。",
+                MessageTypeDefOf.TaskCompletion, false);
+        }
 
         private static void SpawnCollisionDemo(float relSpeed)
         {
@@ -1303,6 +1339,8 @@ namespace PioneerFramework
                 MaxPhasingOrbits = 5.0,
                 // ⚠ `LadderPilot` 那套默认参数是**地球尺度**（MinRadius=5.1e6）⇒ 月球档必须显式给
                 MinRadius = moon.radius + 100_000.0,
+                // 调试扫相位要看"计划到达偏差"（独立 Shepperd 复算）⇒ 保留诊断
+                IncludeDiagnostics = true,
             };
             double bestPhiDeg = 0.0, bestPlanSpan = double.PositiveInfinity, bestDvSum = 0.0;
             string bestStatus = "（扫遍 0..360° 没有直接霍曼 ⇒ 本几何是病理档）";
@@ -1680,6 +1718,397 @@ namespace PioneerFramework
             entity.SetParts(new List<SpacePart> { hull, left, right });
             Log.Message($"[多part调试船] G{group.GroupId} E{entityId} 已放置：3 件 part（3000+800+200 kg）｜{group.InertiaDebugString()}");
             return group;
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        //  256 件飞行/对撞 + 多part 交会（2026-10-18 用户要按钮）
+        // ══════════════════════════════════════════════════════════════════
+
+        private static void TrackStressDemo(int groupId)
+        {
+            if (groupId >= 0 && !stressDemoGroupIds.Contains(groupId))
+                stressDemoGroupIds.Add(groupId);
+        }
+
+        /// <summary>装配器的 256 件标准件（舱盒 + 255 stage；与 B7 基准船同一套）。</summary>
+        private static List<SpacePart> Build256Parts()
+        {
+            var spec = new RocketDesignSpec
+            {
+                parts = new List<DesignPartSpec>
+                {
+                    new() { defName = "PF_ShipPart_Stage_Debug", category = "stage", quantity = 255 }
+                }
+            };
+            return DesignPartAssembler.BuildParts(spec, 40, 40, out _, includeUnknownDefs: true);
+        }
+
+        /// <summary>给无 Map 船换成 3 件多part（与「多part 调试船」同一套质量/形状；不带引擎组件）。</summary>
+        private static void ReplaceWithMultiPart3(SpaceEntity entity)
+        {
+            var hull = new SpacePart
+            {
+                partId = 1, defName = "PF_ShipPart_Cube", positionShip = DVector3.zero,
+                boundsSizeShip = new DVector3(10, 6, 40), hp = 200f
+            };
+            hull.AddComponent(new HullMassComponent { mass = 3000f });
+
+            var left = new SpacePart
+            {
+                partId = 2, defName = "PF_ShipPart_Cube", positionShip = new DVector3(8, 0, -10),
+                boundsSizeShip = new DVector3(4, 4, 8), hp = 100f
+            };
+            left.AddComponent(new HullMassComponent { mass = 800f });
+
+            var right = new SpacePart
+            {
+                partId = 3, defName = "PF_ShipPart_Cube", positionShip = new DVector3(-6, 2, 12),
+                boundsSizeShip = new DVector3(3, 6, 3), hp = 100f,
+                shape = InertiaTensor.Shape.Cylinder,
+            };
+            right.AddComponent(new HullMassComponent { mass = 200f });
+            right.AddComponent(new PartInertiaComponent
+            {
+                shape = InertiaTensor.Shape.Cylinder,
+                dims = new DVector3(3, 6, 0)
+            });
+
+            entity.SetParts(new List<SpacePart> { hull, left, right });
+            entity.mainAxisShip = new DVector3(0, 0, -1);
+        }
+
+        /// <summary>
+        /// 紧凑 256 件（8×8×4，2m 立方件，间距 2.2m）——专门触发 256×256 part 级 CCD。
+        /// `oy/oz` 给第二艘一个 phase，使两船的 part 网格在 Y/Z 各错开 2.2m（互不重叠），
+        /// 从而在组级扫掠相交时走满采样循环，而不是在组停点就 `PartsOverlap=true`。
+        /// </summary>
+        private static void ReplaceWithCompact256(SpaceEntity entity, double oy = 0.0, double oz = 0.0)
+        {
+            var parts = new List<SpacePart>(256);
+            int id = 1;
+            for (int iz = 0; iz < 4; iz++)
+                for (int iy = 0; iy < 8; iy++)
+                    for (int ix = 0; ix < 8; ix++)
+                    {
+                        var part = new SpacePart
+                        {
+                            partId = id++,
+                            defName = "PF_ShipPart_Cube",
+                            positionShip = new DVector3(
+                                (ix - 3.5) * 6.0,
+                                (iy - 3.5) * 6.0 + oy,
+                                (iz - 1.5) * 6.0 + oz),
+                            boundsSizeShip = new DVector3(2, 2, 2),
+                            hp = 100f,
+                            isIndestructible = false
+                        };
+                        part.AddComponent(new HullMassComponent { mass = 100f });
+                        parts.Add(part);
+                    }
+            entity.SetParts(parts);
+        }
+
+        /// <summary>
+        /// 256 件紧凑高速近失（part 级 CCD 验收入口）：
+        /// 两艘 8×8×4=256 件（2m 件、minHalf=1m，间距 6m ⇒ 件间空隙 4m），
+        /// 间距 50m、相对 49.5m/s（一步 99m）；起点/步末组 AABB 均不重叠、路径对穿。
+        /// 第二艘 part 网格 Y/Z 各错开 3m（半个间距）⇒ 正好落在第一艘的 4m 空隙里，part 不接触。
+        /// 期望：`nA*nB=65,536` 不被护栏挡回，`samples=ceil(99/2)=50` ⇒ 走满 256×256 三轴 SAP + 50 次采样；
+        /// 日志看 `[碰撞子段] CCD=` 与新增的 `CCD细化=`。
+        /// </summary>
+        public static void SpawnCompact256CcdDemo()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            ForceNormalTime();
+
+            DVector3 basePos = new(1.0e9, -2.0e8, 0);
+            const float speed = 24.75f;   // 相对 49.5 m/s，低于 50 m/s 爆炸阈值
+            var a = CreateShipNoMap(spaceGame, Faction.OfPlayer?.loadID ?? 0,
+                basePos + new DVector3(-25, 0, 0), new DVector3(2, 2, 2),
+                Quaternion.identity, "紧凑256A", new DVector3(speed, 0, 0), dryMass: 0f);
+            var b = CreateShipNoMap(spaceGame, (Faction.OfPlayer?.loadID ?? 0) + 1,
+                basePos + new DVector3(25, 0, 0), new DVector3(2, 2, 2),
+                Quaternion.identity, "紧凑256B", new DVector3(-speed, 0, 0), dryMass: 0f);
+            if (a == null || b == null) return;
+
+            var ea = spaceGame.GetEntityById(FirstEntityId(a));
+            var eb = spaceGame.GetEntityById(FirstEntityId(b));
+            if (ea == null || eb == null) return;
+            ReplaceWithCompact256(ea);
+            ReplaceWithCompact256(eb, oy: 3.0, oz: 3.0);
+            TrackStressDemo(a.GroupId);
+            TrackStressDemo(b.GroupId);
+
+            CombatManager.DebugDetailedCollision = true;
+            collisionDemoLogOffTick = Find.TickManager.TicksGame + 1800;
+            Log.Message($"[紧凑256·近失] A=G{a.GroupId} B=G{b.GroupId}｜8×8×4=256 件/艘（2m 件、间距 6m）｜" +
+                $"间距 50m、相对 49.5m/s（一步 99m）｜part 网格 Y/Z 各错开 3m ⇒ 落在 4m 空隙、part 不接触；" +
+                $"期望 samples≈50；看 [碰撞子段] CCD= / CCD细化= 与 [TOI诊断]。");
+            Messages.Message("紧凑 256 件高速近失已布置：预期触发 256×256 part 级 CCD（无爆炸）。看日志 CCD=/CCD细化=。",
+                MessageTypeDefOf.TaskCompletion, false);
+        }
+
+        /// <summary>256 件船飞行：无 Map、圆轨、自动顺行点火 15 m/s（看物理/渲染/推进全链）。</summary>
+        public static void Spawn256PartFlightDemo()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            ForceNormalTime();
+
+            double mu = spaceGame.GetBodyGM(EARTH_BODY_ID);
+            double radius = SpaceConstants.PlanetRadiusMeters + 2_400_000.0;
+            double vCirc = System.Math.Sqrt(mu / radius);
+            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
+            DVector3 radial = EquatorialRadial(physicsTick);
+            var group = CreateNoMapShipGroup(spaceGame, EARTH_BODY_ID, radial * radius,
+                ProgradeEquatorialTangent(radial) * vCirc, out int entityId, overThrust: true, circularOrbit: true);
+            if (group == null) return;
+
+            var entity = spaceGame.GetEntityById(entityId);
+            if (entity == null) return;
+            entity.SetParts(Build256Parts());
+            TrackStressDemo(group.GroupId);
+
+            DVector3 burnDir = group.CurrentOrbit.velocitySystem.v.normalized;
+            group.StartBurn(burnDir * 15.0);
+            Log.Message($"[256件·飞行] G{group.GroupId} E{entityId} 已放置：{entity.Parts.Count} 件｜" +
+                $"质量={entity.AggregatedStats.mass / 1000.0:F1} t｜圆轨 r={radius / 1000.0:F0}km｜" +
+                $"已顺行点火 15 m/s；看轨道变化/PFView 渲染/物理步耗时。");
+            Messages.Message($"256 件飞行船 G{group.GroupId} 已布置并点火 15 m/s；选中看 PFView 与轨道。",
+                MessageTypeDefOf.TaskCompletion, false);
+        }
+
+        /// <summary>
+        /// 同格 256 艘**独立单 part 船**（P5 宽相验收）：全部落在同一个 20 km 格内、
+        /// 互相不重叠（500 m 间距），专门压同格精确 AABB/SAP 过滤：
+        /// 格内原始对 32,640，真实相交应为 0。
+        /// 按钮打印原始对/SAP 候选/耗时；后续物理步可在 [碰撞链成本] 看配对循环。
+        /// </summary>
+        public static void SpawnDenseSameCellDemo()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            // 先清掉之前 256/10km/s/多part 场景留下的跨格船；否则 AllShipsSingleCell()
+            // 会因为别的船是扫掠多格而整体退回旧路径，这个场景就测不到快速路径。
+            CleanupStressDemos();
+            ForceNormalTime();
+            CombatManager.DebugDetailedCollision = false;
+
+            const int n = 256;
+            const int cols = 16;
+            const double spacing = 500.0;
+            var basePos = new DVector3(7_010_000, 10_000, 10_000);   // x/y/z 全落同一格
+            int added = 0;
+            for (int i = 0; i < n; i++)
+            {
+                double ox = (i % cols) * spacing - (cols - 1) * spacing * 0.5;
+                double oy = ((i / cols) % cols) * spacing - (cols - 1) * spacing * 0.5;
+                double oz = ((i / (cols * cols)) % cols) * spacing - (cols - 1) * spacing * 0.5;
+                var pos = basePos + new DVector3(ox, oy, oz);
+                var group = CreateNoMapShipGroup(spaceGame, EARTH_BODY_ID, pos, DVector3.zero,
+                    out _, overThrust: false, circularOrbit: false);
+                if (group == null) continue;
+                TrackStressDemo(group.GroupId);
+                added++;
+            }
+
+            int pairCount = 0;
+            var grid = Current.Game?.GetComponent<CombatGrid>();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            if (grid != null)
+                foreach (var _ in grid.EnumerateShipPairs()) pairCount++;
+            sw.Stop();
+            Log.Message($"[同格演示] 独立单part船 {added}/{n} 艘已放置（500m 间距，同一 20km 格）｜" +
+                $"多格船={grid?.DebugMultiCellShipCount() ?? -1}｜" +
+                $"格内原始对={grid?.DebugRawCellPairCount() ?? -1}｜" +
+                $"SAP 候选={pairCount} 对 / {sw.Elapsed.TotalMilliseconds * 1000.0:F1} µs；" +
+                $"后续看 [碰撞链成本] 配对循环/船对。");
+            Messages.Message("同格 256 艘已放置：同一 20km 格、互不重叠；看 [同格演示] 与 [碰撞链成本]。",
+                MessageTypeDefOf.TaskCompletion, false);
+        }
+
+        /// <summary>256 件对撞：两艘 256 件船、间距 60m、相对 6 m/s（约 3s；低速近距避免 tunneling 捕获）。</summary>
+        public static void Spawn256PartCollisionDemo()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            ForceNormalTime();
+
+            DVector3 basePos = new(1.0e9, 0, 0);
+            var a = CreateShipNoMap(spaceGame, Faction.OfPlayer?.loadID ?? 0, basePos,
+                new DVector3(40, 560, 40), Quaternion.identity, "256对撞A", DVector3.zero, dryMass: 0f);
+            var b = CreateShipNoMap(spaceGame, (Faction.OfPlayer?.loadID ?? 0) + 1,
+                basePos + new DVector3(60, 0, 0), new DVector3(40, 560, 40), Quaternion.identity,
+                "256对撞B", new DVector3(-6, 0, 0), dryMass: 0f);
+            if (a == null || b == null) return;
+
+            var ea = spaceGame.GetEntityById(FirstEntityId(a));
+            var eb = spaceGame.GetEntityById(FirstEntityId(b));
+            if (ea == null || eb == null) return;
+            ea.SetParts(Build256Parts());
+            eb.SetParts(Build256Parts());
+            TrackStressDemo(a.GroupId);
+            TrackStressDemo(b.GroupId);
+
+            CombatManager.DebugDetailedCollision = true;
+            collisionDemoLogOffTick = Find.TickManager.TicksGame + 1800;
+            Log.Message($"[256件·对撞] A=G{a.GroupId}({ea.AggregatedStats.mass / 1000.0:F1}t) B=G{b.GroupId}({eb.AggregatedStats.mass / 1000.0:F1}t)｜" +
+                $"间距=60m 相对速度=6m/s ⇒ 约 3s（1×）｜**保持 560m 长条 256 件设计**；" +
+                $"看 part 窄相/冲量/一次撞击，不再用紧凑件回避几何。");
+            Messages.Message("256 件对撞已布置（1×，约 3 秒；6 m/s 低速撞击）；看日志 [ShipCollision]。",
+                MessageTypeDefOf.TaskCompletion, false);
+        }
+
+        /// <summary>
+        /// 多part 多点对撞：两艘 3 件船侧靠错位（12m 间距/4m/s），第一拍就有多个 part 对，
+        /// 专门触发 `ResolveContacts` 的多接触求解路径（不是 256 长条场景）。
+        /// </summary>
+        public static void SpawnMultipartMultiContactDemo()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            ForceNormalTime();
+
+            DVector3 basePos = new(1.0e9, 2.0e8, 0);
+            var a = CreateShipNoMap(spaceGame, Faction.OfPlayer?.loadID ?? 0, basePos,
+                new DVector3(20, 20, 20), Quaternion.identity, "多点对撞A", DVector3.zero, dryMass: 0f);
+            var b = CreateShipNoMap(spaceGame, (Faction.OfPlayer?.loadID ?? 0) + 1,
+                basePos + new DVector3(12, 0, 0), new DVector3(20, 20, 20), Quaternion.identity,
+                "多点对撞B", new DVector3(-4, 0, 0), dryMass: 0f);
+            if (a == null || b == null) return;
+
+            var ea = spaceGame.GetEntityById(FirstEntityId(a));
+            var eb = spaceGame.GetEntityById(FirstEntityId(b));
+            if (ea == null || eb == null) return;
+            ReplaceWithMultiPart3(ea);
+            ReplaceWithMultiPart3(eb);
+            TrackStressDemo(a.GroupId);
+            TrackStressDemo(b.GroupId);
+
+            CombatManager.DebugDetailedCollision = true;
+            collisionDemoLogOffTick = Find.TickManager.TicksGame + 1800;
+            Log.Message($"[多part·多点对撞] A=G{a.GroupId} B=G{b.GroupId}｜两艘 3 件、间距 12m、-4m/s｜" +
+                $"首拍应有多个 part 对 ⇒ 看 `多接触求解`（不是单接触 `撞击等效`）。");
+            Messages.Message("多part 多点对撞已布置：两艘 3 件船侧靠，专门看多接触求解日志。",
+                MessageTypeDefOf.TaskCompletion, false);
+        }
+
+        /// <summary>形状接触测试用：hull Box + 一件 Sphere + 一件 Box。</summary>
+        private static List<SpacePart> BuildShapeContactParts()
+        {
+            var hull = new SpacePart
+            {
+                partId = 1, defName = "PF_ShipPart_Cube", positionShip = DVector3.zero,
+                boundsSizeShip = new DVector3(10, 6, 40), hp = 200f
+            };
+            hull.AddComponent(new HullMassComponent { mass = 3000f });
+
+            var sphere = new SpacePart
+            {
+                partId = 2, defName = "PF_ShipPart_Cube", positionShip = new DVector3(12, 0, 0),
+                boundsSizeShip = new DVector3(4, 4, 4), hp = 100f,
+                shape = InertiaTensor.Shape.Sphere,
+            };
+            sphere.AddComponent(new HullMassComponent { mass = 200f });
+
+            var box = new SpacePart
+            {
+                partId = 3, defName = "PF_ShipPart_Cube", positionShip = new DVector3(-6, 0, 0),
+                boundsSizeShip = new DVector3(4, 6, 4), hp = 100f,
+                shape = InertiaTensor.Shape.Cylinder,
+            };
+            box.AddComponent(new HullMassComponent { mass = 200f });
+
+            return new List<SpacePart> { hull, sphere, box };
+        }
+
+        /// <summary>形状接触：两艘 3 件船，Sphere/Box 混合，低速对撞，验证解析接触路径。</summary>
+        public static void SpawnShapeContactDemo()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            ForceNormalTime();
+
+            DVector3 basePos = new(1.0e9, 3.0e8, 0);
+            var a = CreateShipNoMap(spaceGame, Faction.OfPlayer?.loadID ?? 0, basePos,
+                new DVector3(20, 20, 20), Quaternion.identity, "形状对撞A", DVector3.zero, dryMass: 0f);
+            var b = CreateShipNoMap(spaceGame, (Faction.OfPlayer?.loadID ?? 0) + 1,
+                basePos + new DVector3(14, 0, 0), new DVector3(20, 20, 20), Quaternion.identity,
+                "形状对撞B", new DVector3(-4, 0, 0), dryMass: 0f);
+            if (a == null || b == null) return;
+
+            var ea = spaceGame.GetEntityById(FirstEntityId(a));
+            var eb = spaceGame.GetEntityById(FirstEntityId(b));
+            if (ea == null || eb == null) return;
+            ea.SetParts(BuildShapeContactParts());
+            eb.SetParts(BuildShapeContactParts());
+            TrackStressDemo(a.GroupId);
+            TrackStressDemo(b.GroupId);
+
+            CombatManager.DebugDetailedCollision = true;
+            collisionDemoLogOffTick = Find.TickManager.TicksGame + 1800;
+            Log.Message($"[形状接触] A=G{a.GroupId} B=G{b.GroupId}｜两艘 3 件（hull Box + Sphere + Cylinder），间距 14m、-4m/s｜看解析 Sphere–Box/Cylinder–Cylinder 接触。");
+            Messages.Message("形状接触已布置：Sphere/Box 混合，低速对撞；看 [ShipCollision]。",
+                MessageTypeDefOf.TaskCompletion, false);
+        }
+
+        /// <summary>多part 交会：3 件追击 → 3 件目标（同轨 30° 相位，走阶梯）。</summary>
+        public static void SpawnMultipartRendezvousDemo()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (spaceGame == null || mgr == null) return;
+            ForceNormalTime();
+            SpaceGameComp.UseNewRendezvousLaw = true;
+
+            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
+            double mu = spaceGame.GetBodyGM(EARTH_BODY_ID);
+            double radius = SpaceConstants.PlanetRadiusMeters + 500_000.0;
+            DVector3 radialChaser = EquatorialRadial(physicsTick);
+            double vCirc = System.Math.Sqrt(mu / radius);
+            DVector3 radialTarget = RotateAboutUp(radialChaser, 30.0 * System.Math.PI / 180.0);
+
+            var target = CreateNoMapShipGroup(spaceGame, EARTH_BODY_ID, radialTarget * radius,
+                ProgradeEquatorialTangent(radialTarget) * vCirc, out int targetEid, overThrust: false);
+            var chaser = CreateNoMapShipGroup(spaceGame, EARTH_BODY_ID, radialChaser * radius,
+                ProgradeEquatorialTangent(radialChaser) * vCirc, out int chaserEid, overThrust: false);
+            if (target == null || chaser == null) return;
+
+            var targetEntity = spaceGame.GetEntityById(targetEid);
+            var chaserEntity = spaceGame.GetEntityById(chaserEid);
+            if (targetEntity == null || chaserEntity == null) return;
+            ReplaceWithMultiPart3(targetEntity);
+            ReplaceWithMultiPart3(chaserEntity);
+            TrackStressDemo(target.GroupId);
+            TrackStressDemo(chaser.GroupId);
+
+            chaser.RegisterRendezvousGuidance(target.GroupId, physicsTick, prograde: true, useNetworks: null);
+            chaser.ArmRendezvousGuidance();
+            double dvBudget = spaceGame.GetGroupDeltaV(chaser).remainingDv;
+            Log.Message($"[多part·交会] 追击=G{chaser.GroupId}(3 件，{chaserEntity.AggregatedStats.mass:F0}kg) → " +
+                $"目标=G{target.GroupId}(3 件，{targetEntity.AggregatedStats.mass:F0}kg)｜同轨 30° 相位｜" +
+                $"预算 {dvBudget:F0} m/s｜看 [阶梯]/[交会·收尾] 与两者多part 惯量/姿态。");
+            Messages.Message($"多part 交会 G{chaser.GroupId} → G{target.GroupId} 已登记（30° 相位）；看日志 [阶梯]。",
+                MessageTypeDefOf.TaskCompletion, false);
+        }
+
+        /// <summary>清掉本组 256/多part 演示（不碰玩家船）。</summary>
+        public static void CleanupStressDemos()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return;
+            int removed = 0;
+            for (int i = 0; i < stressDemoGroupIds.Count; i++)
+            {
+                int gid = stressDemoGroupIds[i];
+                if (spaceGame.GetGroupById(gid) == null) continue;
+                spaceGame.DestroyGroup(gid, "256/多part 演示清场");
+                removed++;
+            }
+            int tracked = stressDemoGroupIds.Count;
+            stressDemoGroupIds.Clear();
+            Log.Message($"[256/多part 演示] 清场：移除 {removed}/{tracked} 组。");
         }
 
         // ══════════════════════════════════════════════════════════════════

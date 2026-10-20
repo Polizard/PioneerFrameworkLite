@@ -39,6 +39,10 @@ namespace PioneerFramework
         //   ① 收口（游戏自己的判据成立）⇒ PASS；② 任一方消失（撞毁会销毁实体）⇒ FAIL(撞毁)；
         //   ③ 超过截止时刻 ⇒ 未达（附读数）。⇒ **人不需要掐点**。
         private static bool _armed;
+
+        /// <summary>是否已布设验收场景（未布设时调用方直接跳过 Tick，避免为无关编队 JIT/付每步调用）。</summary>
+        public static bool IsArmed => _armed;
+
         private static int _chaserId = -1, _targetId = -1;
         private static double _startTick, _deadlineTick;
         private static float _armRealTime, _nextProgressRealTime;

@@ -189,7 +189,9 @@ namespace PioneerFramework
             return result;
         }
 
-        /// <summary>指纹：群实体集版本 ⊕ Σ 各实体 partSetVersion（`SpaceEntity.InvalidateStats` 里自增）。</summary>
+        /// <summary>指纹：群实体集版本 ⊕ Σ 各实体 (partSetVersion, tankMassVersion)。
+        /// 罐内工质质量不进功能 stats，但进 COM/惯量 ⇒ 单独用 tankMassVersion 触发重算，
+        /// 避免燃烧每步把 `InvalidateStats` 的 stats/群信号也一起打脏。</summary>
         private int CalcInertiaStamp(SpaceGameComp comp)
         {
             int stamp = entitySetVersion * 397;
@@ -197,7 +199,7 @@ namespace PioneerFramework
             {
                 var e = comp.GetEntityById(eid);
                 if (e != null)
-                    stamp ^= e.partSetVersion * 31;
+                    stamp ^= e.partSetVersion * 31 ^ e.tankMassVersion * 17;
             }
             return stamp;
         }

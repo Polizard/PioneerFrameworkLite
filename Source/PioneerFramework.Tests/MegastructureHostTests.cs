@@ -86,7 +86,7 @@ namespace PioneerFramework.Tests
             var previous=Current.Game;var game=(Game)RuntimeHelpers.GetUninitializedObject(typeof(Game));
             var simulation=new SpaceGameComp(game);var manager=new MegastructureManager(game);game.components=new System.Collections.Generic.List<GameComponent> {simulation,manager};
             AccessTools.Field(typeof(Game),"maps").SetValue(game,new System.Collections.Generic.List<Map>());
-            var group=new SpaceEntityGroup(7,3) {CurrentOrbit=new OrbitState {positionSystem=new SystemVec3(new DVector3(100,0,0)),velocitySystem=new SystemVec3(new DVector3(0,20,0)),rotation=UnityEngine.Quaternion.identity}};
+            var group=new SpaceEntityGroup(7,3) {CurrentOrbit=new OrbitState {positionSystem=new SystemVec3(new DVector3(100,0,0)),velocitySystem=new SystemVec3(new DVector3(0,20,0)),rotation=DQuaternion.identity}};
             var entity=new SpaceEntity(11,3) {GroupId=7};var part=new SpacePart();part.components.Add(new PioneerFramework.Components.RoomComponentData {dryMass=5000});entity.SetParts(new System.Collections.Generic.List<SpacePart> {part},false);
             entity.AddPropulsion(new PropulsionData {propellant=new PropellantDef {defName="framework-fuel"},ve=4000,massFlow=4,mass=1000,capacity=1000});group.GetEntityIds().Add(11);
             ((System.Collections.Generic.Dictionary<int,SpaceEntity>)AccessTools.Field(typeof(SpaceGameComp),"entities").GetValue(simulation)).Add(11,entity);
