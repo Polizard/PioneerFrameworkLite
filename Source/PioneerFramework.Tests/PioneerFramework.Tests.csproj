@@ -46,6 +46,13 @@
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.GUI.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.GUI.cs" CopyToOutputDirectory="PreserveNewest" />
     <!-- 2026-10-18 视图系统 v2：新增 partial/纯核/补丁也进扫描面（只许加覆盖） -->
     <None Include="..\PioneerFramework\PFView\PFViewCameraCore.cs" Link="Source\PioneerFramework\PFView\PFViewCameraCore.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewPilotCameraCore.cs" Link="Source\PioneerFramework\PFView\PFViewPilotCameraCore.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.PilotCamera.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.PilotCamera.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Piloting.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Piloting.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\Base\Game\SteeringInputCore.cs" Link="Source\PioneerFramework\Base\Game\SteeringInputCore.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\Base\Game\SteeringInputHost.cs" Link="Source\PioneerFramework\Base\Game\SteeringInputHost.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\Base\Core\PioneerFrameworkLiteSettings.Piloting.cs" Link="Source\PioneerFramework\Base\Core\PioneerFrameworkLiteSettings.Piloting.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\Base\Buildings\Window_PFViewBindings.cs" Link="Source\PioneerFramework\Base\Buildings\Window_PFViewBindings.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Camera.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Camera.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Feedback.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Feedback.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\Window_PFViewHelp.cs" Link="Source\PioneerFramework\PFView\Window_PFViewHelp.cs" CopyToOutputDirectory="PreserveNewest" />

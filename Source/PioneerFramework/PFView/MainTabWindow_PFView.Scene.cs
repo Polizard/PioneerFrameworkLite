@@ -8,6 +8,7 @@ using PioneerFramework.Launch;   // GetSurfaceState（天体→PlanetLayer）
 using RimWorld.Planet;            // PlanetLayer（自转自检的参数类型）
 using RimWorld;
 using PioneerFramework.Combat;
+using PioneerFramework.ShipSkin;
 
 namespace PioneerFramework
 {
@@ -16,6 +17,9 @@ namespace PioneerFramework
         /// <summary>每帧更新方向光，使其从恒星方向照射到行星</summary>
         /// <summary>太阳方向上一条读数的时间戳（限频日志用）。</summary>
         private double lastSunLogTick = double.MinValue;
+
+        /// <summary>蒙皮在"无 Map 编队"路径上的首次命中读数（只打一次）。</summary>
+        private static bool loggedPartSkin;
 
         /// <summary>
         /// PFView 场景里的**太阳方向**（`toSun`：从天体中心**指向太阳**，PFView 的**惯性系**）。
@@ -79,6 +83,9 @@ namespace PioneerFramework
                 //   这里把缓存的地表材质逐个一起刷新（天体数个，成本可忽略）。
                 foreach (var m in patchMaterials.Values) if (m != null) ApplySunUniforms(m, toSun, sc);
                 foreach (var m in baseSphereMaterials.Values) if (m != null) ApplySunUniforms(m, toSun, sc);
+                // 2026-10-19 蒙皮：独立材质同样收不到 renderMat 的每帧刷新 —— 同一个坑，同一个修法
+                // （另外把相机位置一起喂进去，rim 要用；全在视图系）。
+                ShipSkinAssets.ApplyLighting(toSun, sc, GetCameraViewPos());
             }
 
             if (tick - lastSunLogTick > 300.0)
@@ -519,6 +526,10 @@ namespace PioneerFramework
             Quaternion gRot = viewFrameRot * group.CurrentOrbit.rotation;   // 姿态同过参考系（固连档下"相对地面"的姿态）
             float scale = DebugScaleParts ? 200f : 1f;
             bool drewRelief = false;
+            // 2026-10-19 蒙皮：阵营 tint 每帧算一次（同组所有实体共用）；蒙皮不可用 ⇒ null = 旧常量色。
+            Color? skinTint = ShipSkinSettings.Enabled && ShipSkinAssets.Available
+                ? ShipSkinPalette.PartTint(group.FactionId)
+                : (Color?)null;
 
             foreach (int eid in group.GetEntityIds())
             {
@@ -540,7 +551,7 @@ namespace PioneerFramework
 
                 // 单 part 化：无设计数据分支，统一按运行时 Parts 绘制盒体（§5.4 C4）
                 if (entity.Parts.Count > 0)
-                    DrawRuntimeParts(entity, eVp, gRot, scale);
+                    DrawRuntimeParts(entity, eVp, gRot, scale, skinTint);
             }
 
             // 有 Map 的编队不画黄棒（用户 2026-10-02："把那个黄色的指示取消掉"）：船体本身的形体
@@ -588,10 +599,22 @@ namespace PioneerFramework
         /// （材质 = Toon 优先 / 网格 / 层 / 米→视图换算 / 共享 matBlock）。矩阵与画法的口径全在绘制段那边
         /// —— 本函数不表达任何"怎么画"，只表达"PFView 用哪套资源画"。
         /// </summary>
-        private static void DrawRuntimeParts(SpaceEntity entity, Vector3 eVp, Quaternion gRot, float scale = 1f)
+        private static void DrawRuntimeParts(SpaceEntity entity, Vector3 eVp, Quaternion gRot, float scale,
+            Color? skinTint)
         {
-            ShipModelRenderer.DrawParts(entity, eVp, gRot, scale, cubeMesh, ToonMat ?? renderMat, matBlock,
-                ToonMat != null, MetersToView, SceneLayer);
+            // 2026-10-19 蒙皮：可用且开 = PF_ShipSkin + 阵营 tint；否则逐字回到旧路径（Toon 优先/单色）。
+            // 蒙皮用**硬法线**立方体（三平面投影/几何边亮棱需要面法线恒定）；旧路径仍用平滑法线 cubeMesh。
+            Material? skin = ShipSkinSettings.Enabled ? ShipSkinAssets.Material : null;
+            Material mat = skin ?? (ToonMat ?? renderMat);
+            Mesh mesh = skin != null ? cubeMeshHard : cubeMesh;
+            if (skin != null && !loggedPartSkin)
+            {
+                loggedPartSkin = true;
+                Log.Message("[PFView·蒙皮] 首次用于无 Map 编队：贴图=" + (ShipSkinAssets.TextureLoaded ? "OK" : "缺失→白图")
+                    + "｜" + ShipSkinAssets.StatusText);
+            }
+            ShipModelRenderer.DrawParts(entity, eVp, gRot, scale, mesh, mat, matBlock,
+                skin == null && ToonMat != null, MetersToView, SceneLayer, skin == null ? null : skinTint);
         }
 
         private void DrawProjectiles(DVector3 origin, double tick)

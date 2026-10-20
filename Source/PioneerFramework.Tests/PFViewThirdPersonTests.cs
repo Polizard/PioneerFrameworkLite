@@ -207,8 +207,8 @@ public class PFViewThirdPersonTests
         var update = PFViewUiIntegrationTests.ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("UpdateCamera", Flags)).ToList();
         Assert.Contains(update, m => m.Name == "get_IsThirdPersonView");
         Assert.Contains(update, m => m.Name == "ThirdPersonDistances");
-        Assert.Contains(update, m => m.Name == "ClampYaw");
-        Assert.Contains(update, m => m.Name == "ClampPitch");
+        Assert.Contains(update, m => m.Name == "LookYaw");
+        Assert.Contains(update, m => m.Name == "LookPitch");
     }
 
     [Fact]

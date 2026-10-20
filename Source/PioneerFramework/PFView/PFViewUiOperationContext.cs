@@ -1,5 +1,11 @@
 namespace PioneerFramework
 {
+    internal readonly record struct PFViewUiTarget(int GroupId, int DecoyId)
+    {
+        public static PFViewUiTarget None => new(-1, -1);
+        public bool IsSet => (GroupId >= 0) != (DecoyId >= 0);
+    }
+
     /// <summary>武器面板的命令来源。查看状态完全由窗口管理，不进入命令来源计算。</summary>
     internal sealed class PFViewUiOperationContext
     {
@@ -41,6 +47,11 @@ namespace PioneerFramework
         public static bool CanFire(int sourceId, int targetId, bool sourceOperable,
             bool targetKnownAndActive, bool weaponReady)
             => sourceId >= 0 && targetId >= 0 && sourceId != targetId
+               && sourceOperable && targetKnownAndActive && weaponReady;
+
+        public static bool CanFire(int sourceId, PFViewUiTarget target, bool sourceOperable,
+            bool targetKnownAndActive, bool weaponReady)
+            => sourceId >= 0 && target.IsSet && target.GroupId != sourceId
                && sourceOperable && targetKnownAndActive && weaponReady;
     }
 }

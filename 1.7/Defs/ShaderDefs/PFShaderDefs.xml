@@ -113,4 +113,18 @@
       <flipTextureST>false</flipTextureST>
     </shaderProgram>
   </ShaderDef>
+
+  <!-- 2026-10-19：舰船"极简硬表面"蒙皮（用户裁定：只做板缝/倒角/阵营色，不改几何/UV）。
+       三平面投影采样一张中性灰装甲板贴图；受光口径与 PFLit 完全一致（半兰伯特 + 两段昼夜混色），
+       阵营 tint 走 `_Color`。不透明、写深度；纹理不存在时 C# 回退旧材质（PFLit/Toon）。 -->
+  <ShaderDef>
+    <defName>PF_ShipSkin</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_ShipSkin.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_ShipSkin.frag.glsl</fragmentShaderFileName>
+      <depthWrite>true</depthWrite>
+      <renderQueue>2000</renderQueue>
+      <flipTextureST>false</flipTextureST>
+    </shaderProgram>
+  </ShaderDef>
 </Defs>

@@ -120,6 +120,7 @@
 
   <ItemGroup>
     <Compile Include="..\PioneerFramework\PFView\PFViewUiPolicy.cs" Link="Pure\PFViewUiPolicy.cs" />
+    <Compile Include="..\PioneerFramework\Base\Game\SteeringInputCore.cs" Link="Pure\SteeringInputCore.cs" />
     <Compile Include="..\PioneerFramework\PFView\PFViewUiOperationContext.cs" Link="Pure\PFViewUiOperationContext.cs" />
     <Compile Include="..\PioneerFramework\PFView\PFViewUiLayoutCore.cs" Link="Pure\PFViewUiLayoutCore.cs" />
   </ItemGroup>

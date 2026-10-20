@@ -215,7 +215,7 @@ namespace PioneerFramework
 
         /// <summary>把单位向量 <paramref name="from" /> 转到 <paramref name="to" /> 的最小旋转四元数。
         /// 180° 反平行时绕 <paramref name="fallbackUp" /> 翻（保持滚转基准）；退化轴回落到世界 +Y。</summary>
-        private static Quaternion MinimalRotation(Vector3 from, Vector3 to, Vector3 fallbackUp)
+        internal static Quaternion MinimalRotation(Vector3 from, Vector3 to, Vector3 fallbackUp)
         {
             float dot = Mathf.Clamp(Vector3.Dot(from, to), -1f, 1f);
             if (dot >= 1f - 1e-6f) return Quaternion.identity;
@@ -239,7 +239,7 @@ namespace PioneerFramework
             return frame * new Quaternion(cy * sp, sy * cp, -sy * sp, cy * cp);
         }
 
-        private static Quaternion UnitRotation(Quaternion q)
+        internal static Quaternion UnitRotation(Quaternion q)
         {
             float length = Mathf.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
             return length > 1e-6f && float.IsFinite(length)

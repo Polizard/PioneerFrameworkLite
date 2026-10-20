@@ -9,7 +9,7 @@ namespace PioneerFramework
     /// <summary>
     /// PFView 布局与仪表（V-1，2026-10-02 用户裁定①）：
     ///   顶部工具条 / 左侧文字堆（编队列表 + 接触列表 + 选中组读数）/ 下边中央姿态球（KSP 式）/
-    ///   右侧雷达（以选中编队为中心，**只显示、不做功能**）。
+    ///   右侧雷达（以选中编队为中心，点击观测接触可设为武器目标）。
     ///
     /// 视觉纪律（裁定③）：全套灰度走 <see cref="PFViewPalette"/>——层级靠明度与线宽、状态靠符号，
     /// 不用色相。面板/角标装饰复用 <c>UiKit.SpacecraftUIDecor</c>（同一份程序化画笔）。
@@ -35,8 +35,9 @@ namespace PioneerFramework
         private Rect rStatus;
         private Rect rInspector;
         private Rect rSteeringStrip;
+        private Rect rPilotPanel;
         private PFViewUiLayout uiLayout;
-        private (float width, float height, bool details, PFViewUiVisibility visibility) layoutKey;
+        private (float width, float height, bool details, PFViewUiVisibility visibility, bool piloting) layoutKey;
         private bool layoutCached;
         private Rect viewportRect;
 
@@ -54,10 +55,10 @@ namespace PioneerFramework
         private void ComputeLayout(Rect inRect)
         {
             viewportRect = inRect;
-            var key = (inRect.width, inRect.height, WantsInspector, instrumentVisibility);
+            var key = (inRect.width, inRect.height, WantsInspector, instrumentVisibility, SteeringController.IsOpen);
             if (!layoutCached || key != layoutKey)
             {
-                uiLayout = PFViewUiLayoutCore.Compute(key.width, key.height, key.Item3, instrumentVisibility);
+                uiLayout = PFViewUiLayoutCore.Compute(key.width, key.height, key.Item3, instrumentVisibility, key.Item5);
                 layoutKey = key;
                 layoutCached = true;
             }
@@ -68,6 +69,7 @@ namespace PioneerFramework
             rNavball = FromUiRect(uiLayout.Navball, inRect);
             rStatus = FromUiRect(uiLayout.Status, inRect);
             rSteeringStrip = FromUiRect(uiLayout.SteeringStrip, inRect);
+            rPilotPanel = FromUiRect(uiLayout.PilotPanel, inRect);
             RegisterUiRect(rToolbar);
             RegisterUiRect(rLeftCol);
             RegisterUiRect(rInspector);
@@ -76,6 +78,7 @@ namespace PioneerFramework
             if (rNavball.width > 0) RegisterUiRect(new(rNavball.x, rNavball.y - 24f, rNavball.width, 24f));
             RegisterUiRect(rStatus);
             RegisterUiRect(rSteeringStrip);
+            RegisterUiRect(rPilotPanel);
         }
 
         private static Rect FromUiRect(PFViewUiRect rect, Rect origin)
@@ -286,6 +289,9 @@ namespace PioneerFramework
             // 扫描线 + 尾迹（2026-10-18）：真实波束联动；**先于接触点**绘制（余辉要读本帧扫过的区间）
             DrawRadarSweep(c, radius, g, radial, pro);
 
+            bool pick = Event.current.type == EventType.MouseDown && Event.current.button == 0 && r.Contains(Event.current.mousePosition);
+            int picked = -1;
+            float bestPickDistance = 12f * 12f;
             // 接触 blip（灰度：形状/明度表态，不靠色相）
             for (int i = 0; i < contactBuf.Count; i++)
             {
@@ -306,6 +312,21 @@ namespace PioneerFramework
                 if (flash > 0f) col = Color.Lerp(col, PFViewPalette.SweepLine, flash * BlipFlashPeak);
                 float half = 1.75f + flash * 1.1f;
                 Widgets.DrawBoxSolid(new Rect(p.x - half, p.y - half, half * 2f, half * 2f), col);
+                TooltipHandler.TipRegion(new Rect(p.x - 8, p.y - 8, 16, 16),
+                    ContactDisplayLabel(cc) + "\n" + "PFV_RadarTargetHint".Translate());
+                if (weaponTarget.IsSet && weaponTarget.GroupId == cc.targetGroupId && weaponTarget.DecoyId == cc.decoyId)
+                {
+                    Widgets.DrawBox(new Rect(p.x - 6, p.y - 6, 12, 12));
+                    MiniLabel(new Rect(p.x + 9, p.y - 10, 110, 20), ContactDisplayLabel(cc), PFViewPalette.TextPrimary);
+                }
+                float pickDistance = (Event.current.mousePosition - p).sqrMagnitude;
+                if (pick && !cc.isDecoy && pickDistance < bestPickDistance)
+                { picked = i; bestPickDistance = pickDistance; }
+            }
+            if (picked >= 0)
+            {
+                SetTargetContact(contactBuf[picked]);
+                Event.current.Use();
             }
 
             // 中心 = 选中编队

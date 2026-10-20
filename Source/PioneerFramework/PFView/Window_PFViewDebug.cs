@@ -1,3 +1,4 @@
+using PioneerFramework.ShipSkin;
 using UnityEngine;
 using Verse;
 
@@ -13,7 +14,7 @@ namespace PioneerFramework
     {
         private readonly MainTabWindow_PFView win;
 
-        public override Vector2 InitialSize => new Vector2(390f, 330f);
+        public override Vector2 InitialSize => new Vector2(390f, 420f);
 
         public Window_PFViewDebug(MainTabWindow_PFView win)
         {
@@ -64,6 +65,26 @@ namespace PioneerFramework
             before = v;
             Widgets.CheckboxLabeled(new Rect(0f, y, w, 24f), "地图浮雕（有 Map 的编队）", ref v);
             if (v != before) win.DebugMapRelief = v;
+            y += 26f;
+
+            // 2026-10-19 舰船蒙皮：只加表面层（板缝/倒角/阵营色），不改形体；关 = 旧纯色盒体/三色浮雕。
+            v = ShipSkinSettings.Enabled;
+            before = v;
+            Widgets.CheckboxLabeled(new Rect(0f, y, w, 24f), "舰船蒙皮：极简硬表面（关 = 旧纯色）", ref v);
+            if (v != before) ShipSkinSettings.Enabled = v;
+            y += 24f;
+
+            // 现场读数：是"没加载"还是"加载了但看不见"——这张行文字就是判据。
+            Text.Font = GameFont.Tiny;
+            GUI.color = new Color(0.62f, 0.68f, 0.78f);
+            Widgets.Label(new Rect(4f, y, w - 4f, 18f), "蒙皮状态：" + ShipSkinAssets.StatusText);
+            GUI.color = Color.white;
+            y += 20f;
+
+            v = ShipSkinAssets.DebugHighFrequency;
+            before = v;
+            Widgets.CheckboxLabeled(new Rect(0f, y, w, 24f), "蒙皮调试：高频板缝（验证贴图是否生效）", ref v);
+            if (v != before) ShipSkinAssets.SetDebugHighFrequency(v);
             y += 26f;
 
             v = win.DebugSettlements;

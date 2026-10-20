@@ -34,11 +34,14 @@ namespace PioneerFramework
             var content = new Rect(0, 0, outer.width - 18, contentHeight);
             Widgets.BeginScrollView(outer, ref scroll, content);
             float y = 0;
-            foreach (string name in new[] { "Camera", "CameraModes", "Tasks", "Subjects", "Time", "Known", "Limits" })
+            foreach (string name in new[] { "Camera", "CameraModes", "Piloting", "Tasks", "Subjects", "Time", "Known", "Limits" })
             {
                 Widgets.Label(new Rect(0, y, content.width, 26), ("PFV_Help" + name + "Title").Translate());
                 y += 28;
-                string body = ("PFV_Help" + name).Translate();
+                string body = name == "Camera" ? "PFV_Pilot_CameraKeys".Translate(
+                    SteeringInputHost.Label(SteeringAction.ResetCamera), SteeringInputHost.Label(SteeringAction.FocusControl))
+                    : name == "Piloting" ? Window_Steering.DrivingHelp() + "\n" + Window_Steering.TranslationHelp()
+                    : ("PFV_Help" + name).Translate();
                 float height = Text.CalcHeight(body, content.width);
                 Widgets.Label(new Rect(0, y, content.width, height), body);
                 y += height + 16;

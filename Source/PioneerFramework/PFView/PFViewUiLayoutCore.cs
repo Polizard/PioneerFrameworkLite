@@ -17,7 +17,10 @@ namespace PioneerFramework
 
     internal readonly record struct PFViewUiLayout(PFViewUiRect Toolbar, PFViewUiRect ObjectList,
         PFViewUiRect Details, PFViewUiRect Radar, PFViewUiRect Navball, PFViewUiRect Status,
-        PFViewUiRect SteeringStrip, bool Compact, bool CompactNavballReadouts, bool RequiresInstrumentDrawer);
+        PFViewUiRect SteeringStrip, bool Compact, bool CompactNavballReadouts, bool RequiresInstrumentDrawer)
+    {
+        public PFViewUiRect PilotPanel { get; init; }
+    }
 
     /// <summary>仅计算逻辑 UI 像素；不触碰相机、投影、宿主或 UI 全局状态。</summary>
     internal static class PFViewUiLayoutCore
@@ -68,18 +71,18 @@ namespace PioneerFramework
                 0 => layout.Toolbar, 1 => layout.ObjectList, 2 => layout.Details, 3 => layout.Radar,
                 4 => layout.Navball.Width > 0 ? new(layout.Navball.X, layout.Navball.Y - 24,
                     layout.Navball.Width, layout.Navball.Height + 24) : default,
-                5 => layout.Status, _ => layout.SteeringStrip
+                5 => layout.Status, 6 => layout.SteeringStrip, _ => layout.PilotPanel
             };
             bool Free(PFViewUiRect rect)
             {
-                for (int i = 0; i < 7; i++) if (rect.Overlaps(Obstacle(i))) return false;
+                for (int i = 0; i < 8; i++) if (rect.Overlaps(Obstacle(i))) return false;
                 return true;
             }
             var initial = Clamp(desired.X, desired.Y);
             if (Free(initial)) return initial;
             PFViewUiRect best = default;
             float bestDistance = float.PositiveInfinity;
-            for (int i = 0; i < 7; i++)
+            for (int i = 0; i < 8; i++)
             {
                 var obstacle = Obstacle(i);
                 if (obstacle.Width <= 0 || obstacle.Height <= 0) continue;
@@ -102,7 +105,7 @@ namespace PioneerFramework
             return best;
         }
 
-        public static PFViewUiLayout Compute(float width, float height, bool detailsVisible, PFViewUiVisibility visibility)
+        public static PFViewUiLayout Compute(float width, float height, bool detailsVisible, PFViewUiVisibility visibility, bool piloting = false)
         {
             if (!float.IsFinite(width) || !float.IsFinite(height) || width <= 0 || height <= 0) return default;
             float toolbarH = Math.Min(height, ToolbarHeight(width, false, false));
@@ -147,8 +150,17 @@ namespace PioneerFramework
             if (visibility.ShowSteeringStrip && !visibility.ShowNavball && centerW > 0)
                 strip = new(centerLeft, Math.Max(top, bottom - 32f), centerW, Math.Min(32f, bodyH));
 
+            PFViewUiRect pilot = default;
+            if (piloting && centerW > 0)
+            {
+                float pilotBottom = nav.Width > 0 ? nav.Y - 24f - Pad : bottom;
+                if (strip.Width > 0) pilotBottom = Math.Min(pilotBottom, strip.Y - Pad);
+                float pilotH = Math.Min(112f, Math.Max(0, pilotBottom - top));
+                float pilotW = Math.Min(522f, centerW);
+                if (pilotH >= 72f) pilot = new(centerLeft + (centerW - pilotW) * .5f, top, pilotW, pilotH);
+            }
             return new(new(0, 0, width, toolbarH), objects, details, radar, nav,
-                new(0, height - statusH, width, statusH), strip, compact, compactReadouts, drawer);
+                new(0, height - statusH, width, statusH), strip, compact, compactReadouts, drawer) { PilotPanel = pilot };
         }
     }
 }

@@ -79,7 +79,7 @@ namespace PioneerFramework
         /// </summary>
         public static void DrawParts(SpaceEntity entity, Vector3 viewPos, Quaternion rotation, float scale,
             Mesh mesh, Material material, MaterialPropertyBlock block, bool toonOutline,
-            float metersToView, int layer)
+            float metersToView, int layer, Color? tint = null)
         {
             if (entity == null || mesh == null || material == null || block == null) return;
             if (toonOutline)
@@ -88,7 +88,8 @@ namespace PioneerFramework
             // 2026-10-16 合批（"渲染线优化审查"第二批）：全部零件**同网格同材质同色**（`PartColor` 是常量）
             // ⇒ 一个实体并成**一次**提交（原来是每零件一次 —— 站体动辄数百零件，编队还要乘船数）。
             // 位置/尺寸都在各自矩阵里、批内顺序 = 零件顺序 ⇒ 外观不变。
-            block.SetColor("_Color", PartColor);     // 常量色；原在循环内逐零件设（冗余）
+            // 2026-10-19 蒙皮：tint 非空 = 用阵营色（蒙皮材质走 `_Color`）；空 = 旧常量色（逐字不变）。
+            block.SetColor("_Color", tint ?? PartColor);
             WorldQuadBatch.Reset();
             foreach (var part in entity.Parts)
             {
@@ -160,7 +161,7 @@ namespace PioneerFramework
         /// </summary>
         public static void DrawRelief(Mesh?[] meshes, Vector3 viewPos, Quaternion rotation, float scale,
             Material material, MaterialPropertyBlock block, bool toonOutline,
-            float metersToView, int layer)
+            float metersToView, int layer, Color? tint = null)
         {
             if (meshes == null || material == null || block == null) return;
 
@@ -172,7 +173,8 @@ namespace PioneerFramework
             {
                 Mesh? mesh = meshes[c];
                 if (mesh == null) continue;
-                block.SetColor("_Color", ReliefColors[c]);
+                // 2026-10-19 蒙皮：tint 非空 = 三档明度向阵营色靠 28%（仍有结构层次）；空 = 旧三色逐字不变。
+                block.SetColor("_Color", tint.HasValue ? Color.Lerp(ReliefColors[c], tint.Value, 0.28f) : ReliefColors[c]);
                 Graphics.DrawMesh(mesh, mtx, material, layer, null, 0, block);
             }
         }

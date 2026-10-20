@@ -77,7 +77,7 @@ namespace PioneerFramework.SpaceAI
             SpaceEntityGroup shooter, SpaceEntity entity, Thing building, WeaponInstance weapon,
             ContactTarget target, int count = 1)
         {
-            if (!shooter.IsActive || !shooter.IsMovable || building.Destroyed || !building.Spawned ||
+            if (!shooter.IsActive || !AiShipAdapter.Operational(building) ||
                 entity.IsMapArchived || weapon == null || !weapon.CanFire()) return false;
             double now = TimeScaleManager.GetPhysicsTickSafe();
             if (!TryResolve(sensor, game, shooter.FactionId, target, now, out var contact) || contact.isDecoy) return false;

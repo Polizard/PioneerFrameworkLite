@@ -26,11 +26,14 @@
   <PFV_State>Status</PFV_State>
   <PFV_Error>Position error</PFV_Error>
   <PFV_ObservationAge>Observation age</PFV_ObservationAge>
-  <PFV_ContactReadOnly>This is an observation. Unidentified contacts do not expose entity details or entity focus.</PFV_ContactReadOnly>
+  <PFV_ContactReadOnly>Observed contacts can be targeted using their known position and uncertainty. Unidentified contacts do not expose entity details or entity focus.</PFV_ContactReadOnly>
   <PFV_Region>Region</PFV_Region>
   <PFV_Speed>Orbital speed</PFV_Speed>
   <PFV_Focus>Focus this object</PFV_Focus>
   <PFV_SetTarget>Set as target</PFV_SetTarget>
+  <PFV_TargetSelected>Target: {0}</PFV_TargetSelected>
+  <PFV_TargetShortcut>Shift+click: set target and keep the current inspection and controls.</PFV_TargetShortcut>
+  <PFV_RadarTargetHint>Click this contact to set it as target.</PFV_RadarTargetHint>
   <PFV_StopSteering>Stop steering {0}</PFV_StopSteering>
   <PFV_StartSteering>Steer {0}</PFV_StartSteering>
   <PFV_OpenWeapons>Open {0} weapons</PFV_OpenWeapons>
@@ -82,7 +85,7 @@
   <PFV_ViewLimit>Group framing limit reached. Use Planet view for a wider view.</PFV_ViewLimit>
   <PFV_HelpTitle>PFView controls</PFV_HelpTitle>
   <PFV_HelpCameraTitle>Inspection and camera</PFV_HelpCameraTitle>
-  <PFV_HelpCamera>Click to inspect; double-click to focus. Right drag rotates; in free view, middle or Shift+right drag pans. Wheel up zooms out, down zooms in. R/Home resets; Back view restores one previous view.</PFV_HelpCamera>
+  <PFV_HelpCamera>Click to inspect; double-click to focus. Right-drag to look around; middle-drag or Shift+right-drag to pan in free view. Keyboard shortcuts follow your custom bindings.</PFV_HelpCamera>
   <PFV_HelpTasksTitle>Contextual instruments</PFV_HelpTasksTitle>
   <PFV_HelpTasks>Steering opens attitude instruments; weapon operation opens radar. Display options can pin visibility for this session. Reopening restores automatic visibility. Radar is display-only.</PFV_HelpTasks>
   <PFV_HelpSubjectsTitle>Inspection and operation</PFV_HelpSubjectsTitle>
@@ -114,5 +117,90 @@
   <PFV_SettingsFocusMode>Default view on double-click / focus: {0}</PFV_SettingsFocusMode>
   <PFV_SettingsFocusModeTip>Applies to future double-clicks and Focus actions. The current camera stays in place. You can also switch modes in the PFView toolbar.</PFV_SettingsFocusModeTip>
   <PFV_HelpCameraModesTitle>Free and two third-person views</PFV_HelpCameraModesTitle>
-  <PFV_HelpCameraModes>Mod settings choose the default mode on double-click / Focus. Hull forward follows above and behind the hull, including turns and roll. Velocity forward points the camera along the current velocity direction (falling back to the hull direction when velocity is zero) while using the hull's up direction as the roll reference (the up direction transitions when velocity and nose differ in pitch), so drifting sideways or flying backwards still shows the motion direction. Both third-person modes look up to 60° either side, with pitch from −10° to 45°. The wheel zooms; pan is disabled. Home restores the default view 15° above the tail. Switch between the three modes in the toolbar; each mode retains its own pose and zoom.</PFV_HelpCameraModes>
+  <PFV_HelpCameraModes>Free, hull-forward and velocity-forward views remember their own poses. Hull-forward follows the tail; velocity-forward uses system inertial velocity and falls back to the hull heading at zero speed. Camera roll is stabilized by default; hull-roll following is optional in Mod settings. Third-person look covers a full circle with pitch limited to -85..85 degrees, safe distances and no panning. Look angles remain after release unless automatic recentering is enabled. Camera defaults apply on the next explicit focus.</PFV_HelpCameraModes>
+  <PFV_Pilot_Settings>PFView piloting and observation</PFV_Pilot_Settings>
+  <PFV_Pilot_Assist>Stop rotation after releasing steering keys (off: retain angular inertia)</PFV_Pilot_Assist>
+  <PFV_Pilot_InvertPitch>Invert keyboard pitch</PFV_Pilot_InvertPitch>
+  <PFV_Pilot_Precision>Precision input scale: {0}%</PFV_Pilot_Precision>
+  <PFV_Pilot_FollowRoll>Camera follows hull roll</PFV_Pilot_FollowRoll>
+  <PFV_Pilot_InvertMouse>Invert mouse look vertical axis</PFV_Pilot_InvertMouse>
+  <PFV_Pilot_InvertWheel>Invert zoom wheel (default: forward zooms in)</PFV_Pilot_InvertWheel>
+  <PFV_Pilot_Recenter>Recenter third-person look after releasing drag</PFV_Pilot_Recenter>
+  <PFV_Pilot_Sensitivity>Mouse look sensitivity: {0}x</PFV_Pilot_Sensitivity>
+  <PFV_Pilot_Smoothing>Camera follow smoothing: {0} seconds</PFV_Pilot_Smoothing>
+  <PFV_Pilot_Activation>Steering assistance and precision scale apply on the next takeover; camera options apply on the next focus. After rebinding, release held keys before pressing them again.</PFV_Pilot_Activation>
+  <PFV_Pilot_Bindings>PFView key bindings</PFV_Pilot_Bindings>
+  <PFV_Pilot_Unbound>Unbound</PFV_Pilot_Unbound>
+  <PFV_Pilot_Edit>Edit</PFV_Pilot_Edit>
+  <PFV_Pilot_Clear>Clear</PFV_Pilot_Clear>
+  <PFV_Pilot_Reset>Default</PFV_Pilot_Reset>
+  <PFV_Pilot_ResetAll>Restore all default bindings</PFV_Pilot_ResetAll>
+  <PFV_Pilot_ReleaseFirst>Release held keys first. Esc cancels recording.</PFV_Pilot_ReleaseFirst>
+  <PFV_Pilot_PressKey>Press a key or chord. A standalone modifier is recorded on release. Esc cancels.</PFV_Pilot_PressKey>
+  <PFV_Pilot_Swap>Swap the two bindings</PFV_Pilot_Swap>
+  <PFV_Pilot_Cancel>Cancel edit</PFV_Pilot_Cancel>
+  <PFV_Pilot_Overlap>This chord overlaps existing inputs and cannot be swapped directly. Change or clear the conflicting binding first.</PFV_Pilot_Overlap>
+  <PFV_Pilot_Conflict>Conflicts with "{0}". Swap bindings or cancel this edit.</PFV_Pilot_Conflict>
+  <PFV_Pilot_NativeConflict>Conflicts with the native "{0}" binding. Choose another chord or change the native key settings.</PFV_Pilot_NativeConflict>
+  <PFV_Pilot_Action_PitchUp>Pitch up</PFV_Pilot_Action_PitchUp>
+  <PFV_Pilot_Action_PitchDown>Pitch down</PFV_Pilot_Action_PitchDown>
+  <PFV_Pilot_Action_YawLeft>Yaw left</PFV_Pilot_Action_YawLeft>
+  <PFV_Pilot_Action_YawRight>Yaw right</PFV_Pilot_Action_YawRight>
+  <PFV_Pilot_Action_RollLeft>Roll left</PFV_Pilot_Action_RollLeft>
+  <PFV_Pilot_Action_RollRight>Roll right</PFV_Pilot_Action_RollRight>
+  <PFV_Pilot_Action_Forward>Forward thrust</PFV_Pilot_Action_Forward>
+  <PFV_Pilot_Action_Back>Backward thrust</PFV_Pilot_Action_Back>
+  <PFV_Pilot_Action_Left>Translate left</PFV_Pilot_Action_Left>
+  <PFV_Pilot_Action_Right>Translate right</PFV_Pilot_Action_Right>
+  <PFV_Pilot_Action_Up>Translate up</PFV_Pilot_Action_Up>
+  <PFV_Pilot_Action_Down>Translate down</PFV_Pilot_Action_Down>
+  <PFV_Pilot_Action_Precision>Hold precision input</PFV_Pilot_Action_Precision>
+  <PFV_Pilot_Action_ResetCamera>Reset current focus framing</PFV_Pilot_Action_ResetCamera>
+  <PFV_Pilot_Action_FocusControl>Focus controlled ship</PFV_Pilot_Action_FocusControl>
+  <PFV_Pilot_Action_Group1>Toggle action group 1</PFV_Pilot_Action_Group1>
+  <PFV_Pilot_Action_Group2>Toggle action group 2</PFV_Pilot_Action_Group2>
+  <PFV_Pilot_Action_Group3>Toggle action group 3</PFV_Pilot_Action_Group3>
+  <PFV_Pilot_Action_Group4>Toggle action group 4</PFV_Pilot_Action_Group4>
+  <PFV_Pilot_Action_Group5>Toggle action group 5</PFV_Pilot_Action_Group5>
+  <PFV_Pilot_Action_Group6>Toggle action group 6</PFV_Pilot_Action_Group6>
+  <PFV_Pilot_Action_Group7>Toggle action group 7</PFV_Pilot_Action_Group7>
+  <PFV_Pilot_Action_Group8>Toggle action group 8</PFV_Pilot_Action_Group8>
+  <PFV_Pilot_Action_Group9>Toggle action group 9</PFV_Pilot_Action_Group9>
+  <PFV_Pilot_Assisted>Rotation assist</PFV_Pilot_Assisted>
+  <PFV_Pilot_Inertial>Angular inertia</PFV_Pilot_Inertial>
+  <PFV_Pilot_Manual>Manual steering</PFV_Pilot_Manual>
+  <PFV_Pilot_Takeover>Manual steering engaged</PFV_Pilot_Takeover>
+  <PFV_Pilot_ActualThrust>Actual thrust {0} kN</PFV_Pilot_ActualThrust>
+  <PFV_Pilot_Spin>Angular rate {0} deg/s</PFV_Pilot_Spin>
+  <PFV_Pilot_Details>Details</PFV_Pilot_Details>
+  <PFV_Pilot_Focus>Focus ship</PFV_Pilot_Focus>
+  <PFV_Pilot_NoThrust>No thrust is currently available in the requested direction; check engines, propellant and action groups.</PFV_Pilot_NoThrust>
+  <PFV_Pilot_Axis>Main thrust axis</PFV_Pilot_Axis>
+  <PFV_Pilot_Groups>Action groups</PFV_Pilot_Groups>
+  <PFV_Pilot_Directions>Nose / main thrust / velocity</PFV_Pilot_Directions>
+  <PFV_Pilot_DriveKeys>Steer {0}/{1}/{2}/{3} · Roll {4}/{5} · Precision {6}</PFV_Pilot_DriveKeys>
+  <PFV_Pilot_TranslateKeys>Fore/aft {0}/{1} · Left/right {2}/{3} · Up/down {4}/{5} (release stops thrust; velocity is retained)</PFV_Pilot_TranslateKeys>
+  <PFV_Pilot_CameraKeys>Right-drag looks around; middle-drag or Shift+right-drag pans in free view. Wheel zooms. Reset {0}; controlled ship {1}.</PFV_Pilot_CameraKeys>
+  <PFV_Pilot_Suspended>Input suspended: release held keys before pressing them again.</PFV_Pilot_Suspended>
+  <PFV_HelpPilotingTitle>Piloting and custom bindings</PFV_HelpPilotingTitle>
+  <PFV_Pilot_AvailableThrust>Available directional thrust</PFV_Pilot_AvailableThrust>
+  <PFV_Pilot_RateLimit>Angular rate limit {0} deg/s</PFV_Pilot_RateLimit>
+  <PFV_Pilot_SasTitle>SAS (align the main thrust axis)</PFV_Pilot_SasTitle>
+  <PFV_Pilot_ExitHint>Esc ends piloting. Effective manual commands take over and clear the maneuver queue.</PFV_Pilot_ExitHint>
+  <PFV_Pilot_PanelHint>Esc closes this panel. Use the dedicated button to end piloting.</PFV_Pilot_PanelHint>
+  <PFV_Pilot_ConfigNormalized>{0} invalid or duplicate bindings were repaired or disabled. Check the current bindings.</PFV_Pilot_ConfigNormalized>
+  <PFV_Pilot_Axis_Auto>Auto</PFV_Pilot_Axis_Auto>
+  <PFV_Pilot_Axis_Forward>F Fore</PFV_Pilot_Axis_Forward>
+  <PFV_Pilot_Axis_Back>B Aft</PFV_Pilot_Axis_Back>
+  <PFV_Pilot_Axis_Left>L Left</PFV_Pilot_Axis_Left>
+  <PFV_Pilot_Axis_Right>R Right</PFV_Pilot_Axis_Right>
+  <PFV_Pilot_Axis_Up>U Up</PFV_Pilot_Axis_Up>
+  <PFV_Pilot_Axis_Down>D Down</PFV_Pilot_Axis_Down>
+  <PFV_Pilot_Sas_None>Manual</PFV_Pilot_Sas_None>
+  <PFV_Pilot_Sas_Prograde>Prograde</PFV_Pilot_Sas_Prograde>
+  <PFV_Pilot_Sas_Retrograde>Retrograde</PFV_Pilot_Sas_Retrograde>
+  <PFV_Pilot_Sas_Normal>Normal</PFV_Pilot_Sas_Normal>
+  <PFV_Pilot_Sas_Antinormal>Antinormal</PFV_Pilot_Sas_Antinormal>
+  <PFV_Pilot_Sas_RadialOut>Radial out</PFV_Pilot_Sas_RadialOut>
+  <PFV_Pilot_Sas_RadialIn>Radial in</PFV_Pilot_Sas_RadialIn>
 </LanguageData>

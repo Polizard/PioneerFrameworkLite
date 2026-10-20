@@ -15,7 +15,7 @@ namespace PioneerFramework
     /// ⇒ **镜头一进壳（船落地/低空时背景相机在舱底外侧）就整片露出** ⇒ 只"补画"不"停用"会出现**两个太阳**（2026-10-11 用户实测报回）；
     /// 只"停用"不"补画"则天上什么都没有。⇒ 两条腿只有一个开关。
     /// </summary>
-    public class PioneerFrameworkLiteSettings : ModSettings
+    public partial class PioneerFrameworkLiteSettings : ModSettings
     {
         /// <summary>是否用本模组的太阳/星空**替换**原版（**默认开**）。</summary>
         public bool replaceWorldSky = true;
@@ -47,6 +47,7 @@ namespace PioneerFramework
             int storedMode = Scribe.mode == LoadSaveMode.LoadingVars ? -1 : (int)pfviewFocusCameraMode;
             Scribe_Values.Look(ref storedMode, "pfviewFocusCameraMode", -1);
             pfviewFocusCameraMode = PFViewGroupCameraCore.MigrateMode(storedMode, legacyThirdPersonOnFocus);
+            ExposePilotSettings();
         }
     }
 
@@ -55,7 +56,7 @@ namespace PioneerFramework
     /// 2026-10-11 为"要不要替换世界视图的太阳与星空"这个玩家开关而加。
     /// 设置读写走标准通道：`GetSettings&lt;T&gt;()` / `WriteSettings()` ⇒ 存在 RimWorld 的配置里（跨局保留）。
     /// </summary>
-    public class PioneerFrameworkLiteMod : Mod
+    public partial class PioneerFrameworkLiteMod : Mod
     {
         /// <summary>设置实例（`Mod` 构造时建立）。headless/未构造时为 null ⇒ 各处一律按"默认开"处理
         /// （见 `VanillaSkySuppression.ReplaceEnabled`：`?? true`）。</summary>
@@ -72,8 +73,10 @@ namespace PioneerFramework
         {
             if (Settings == null) return;
 
+            var content = new Rect(0, 0, inRect.width - 20f, pilotSettingsHeight);
+            Widgets.BeginScrollView(inRect, ref pilotSettingsScroll, content);
             var listing = new Listing_Standard();
-            listing.Begin(inRect);
+            listing.Begin(content);
             // ⚠ 只用最小且确定的 API（`CheckboxLabeled(2 参)` / `Label`）——不确定的签名不猜（仓库纪律）
             listing.CheckboxLabeled("替换世界视图的太阳与星空（默认开）", ref Settings.replaceWorldSky);
             listing.CheckboxLabeled("PF_AI_RandomEncounters".Translate(), ref Settings.spaceAiRandomEncounters);
@@ -95,7 +98,10 @@ namespace PioneerFramework
                 Find.WindowStack.Add(new FloatMenu(options));
             }
             listing.Label("PFV_SettingsFocusModeTip".Translate());
+            DrawPilotSettings(listing);
+            pilotSettingsHeight = listing.CurHeight + 12f;
             listing.End();
+            Widgets.EndScrollView();
         }
 
         public override void WriteSettings()

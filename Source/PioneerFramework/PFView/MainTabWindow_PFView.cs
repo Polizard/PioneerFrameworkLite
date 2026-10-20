@@ -58,7 +58,9 @@ namespace PioneerFramework
         private Vector2 lastMousePos;
 
         private int selectedGroupId = -1;
-        private int targetGroupId = -1;   // 手动标记的攻击目标（射手 = selectedGroupId）
+        private PFViewUiTarget weaponTarget = PFViewUiTarget.None;
+        // 保留实体目标的既有相机/调试入口；设定或清除实体目标时同时替换接触目标。
+        private int targetGroupId { get => weaponTarget.GroupId; set => weaponTarget = new(value, -1); }
 
 
         // 调试窗口用的实例开关（2026-10-18 用户：调试选项放回 PFView）
@@ -123,6 +125,7 @@ namespace PioneerFramework
         private static Mesh sphereMeshLOD1 = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;   // 中精：24×18
         private static Mesh sphereMeshLOD2 = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;   // 低精：12×9
         private static Mesh cubeMesh = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        private static Mesh cubeMeshHard = null!;   // 棱边硬法线版（舰船蒙皮专用；旧路径仍用 cubeMesh 平滑法线）
         private static Mesh quadMesh = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
         private static Material renderMat = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
@@ -207,6 +210,7 @@ namespace PioneerFramework
         {
             base.PostOpen();
             ResetUiSession();
+            SteeringInputHost.Rearm();
             EnsureResources();
             // 2026-10-13（P2-b）：原挂 RenderPipelineManager.endCameraRendering 画轨道线；
             // 1.7 无该类型（且 GL 已退化为 2D）⇒ 轨道线改在 RenderScene 里以 mesh 提交，钩子整个删除。
@@ -215,6 +219,7 @@ namespace PioneerFramework
         public override void WindowUpdate()
         {
             base.WindowUpdate();
+            if (!Application.isFocused) ResetCameraDrag();
             if (!resourcesCreated) EnsureResources();
         }
 
@@ -222,6 +227,8 @@ namespace PioneerFramework
         {
             if (!resourcesCreated) EnsureResources();
             ResolveUiContext();
+            if (!SteeringController.IsOpen || FindSteeringWindow() == null)
+                SteeringInputHost.Poll(HasInputFocus() && !HasTextInputFocus);
 
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (mgr != null)
@@ -261,6 +268,7 @@ namespace PioneerFramework
 
         public override void PreClose()
         {
+            if (SteeringController.IsOpen && SteeringController.FromPFView) EndSteering();
             SaveCameraMemory();
             ResetUiSession();
             CleanupResources();

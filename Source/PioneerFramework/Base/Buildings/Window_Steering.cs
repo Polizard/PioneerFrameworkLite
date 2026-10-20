@@ -5,8 +5,8 @@ using RimWorld;
 namespace PioneerFramework
 {
     /// <summary>
-    /// 手动操舵 HUD 窗口（KSP 式）：绑定固定键位控制飞船平移/旋转/动作组/姿态对准。
-    /// 打开时读键（Input.GetKey 保持态 + Event.current 离散态），状态写 SteeringController，
+    /// 手动操舵详细窗口：通过共享输入适配器控制飞船平移/旋转/动作组/姿态对准。
+    /// 打开时发布可配置按键与指针保持态，状态写 SteeringController，
     /// 由 SpaceGameComp 每物理步应用。ESC 关闭。
     ///
     /// 两个打开入口（同一条路：`SteeringController.Open` + 本窗口）：
@@ -20,13 +20,19 @@ namespace PioneerFramework
     /// </summary>
     public class Window_Steering : Window
     {
-        public override Vector2 InitialSize => new(372f, 470f);
+        public override Vector2 InitialSize => new(Mathf.Min(540f, UI.screenWidth - 32f), Mathf.Min(650f, UI.screenHeight - 32f));
 
         private const float RowH = 24f;
         private static readonly Color bgColor = new(0.05f, 0.05f, 0.08f, 0.55f);
+        private readonly bool ownsControl;
+        private Vector2 detailsScroll;
+        private float detailsHeight = 820f;
 
-        public Window_Steering(bool absorbAroundWindow = true)
+        public Window_Steering(bool absorbAroundWindow = true) : this(absorbAroundWindow, true) { }
+
+        internal Window_Steering(bool absorbAroundWindow, bool ownsControl)
         {
+            this.ownsControl = ownsControl;
             closeOnAccept = false;
             closeOnCancel = false;
             doCloseX = true;
@@ -34,7 +40,7 @@ namespace PioneerFramework
             // false（PFView 那条路）= 鼠标留给 3D 相机（旋转/平移/缩放）。
             absorbInputAroundWindow = absorbAroundWindow;
             forcePause = false;          // 操舵时游戏保持运行（物理推进/转动）
-            preventCameraMotion = false;
+            preventCameraMotion = true;
             draggable = true;
             resizeable = false;
         }
@@ -42,19 +48,28 @@ namespace PioneerFramework
         public override void PostClose()
         {
             base.PostClose();
-            StopControl();
+            if (ownsControl) StopControl();
+            else ClearHeldKeys();
+            SteeringInputHost.Rearm();
         }
 
         internal static void StopControl()
         {
-            var mapComp = GetCurrentMapComp();
+            var mapComp = SteeringController.IsOpen ? GetCurrentMapComp() : null;
             SteeringController.Close();
             mapComp?.SetThrustersBurning(false);
         }
 
+        public override void WindowUpdate()
+        {
+            base.WindowUpdate();
+            SteeringInputHost.UpdatePointer(Input.GetMouseButton(0), CanReadKeyboard());
+        }
+
         public override void DoWindowContents(Rect inRect)
         {
-            Widgets.DrawBoxSolid(inRect, bgColor);
+            Widgets.DrawBoxSolid(inRect, PFViewPalette.PanelBg);
+            if (!SteeringController.IsOpen) { Close(); return; }
 
             // 有效性：窗口开着但 group 失效 / 船上操舵台被拆 → 自动关闭。
             // 准入判据 = **船自己的图**上有完好操舵台（2026-10-02 起 PFView 左栏也能操舵，
@@ -69,39 +84,86 @@ namespace PioneerFramework
             }
 
             // ── 读键：平移/旋转保持态（每帧刷新）；动作组/ESC 离散态 ──
+            SteeringInputHost.UpdatePointer(Input.GetMouseButton(0), CanReadKeyboard());
             ReadKeys();
+            if (!SteeringController.IsOpen) return;
+
+            var content = new Rect(0, 0, inRect.width - 18f, detailsHeight);
+            Widgets.BeginScrollView(inRect, ref detailsScroll, content);
+            inRect = content;
 
             float y = 4f;
             Text.Font = GameFont.Small;
 
             // ── 姿态区 ──
-            DrawSectionTitle(inRect, ref y, "姿态");
+            DrawSectionTitle(inRect, ref y, "PFV_Pilot_Details".Translate());
             DrawAttitudeInfo(inRect, ref y, group);
+            DrawHint(inRect, ref y, DrivingHelp());
+            DrawHint(inRect, ref y, TranslationHelp());
+            DrawPointerButtons(inRect, ref y);
 
             // ── 平移区 ──
-            DrawSectionTitle(inRect, ref y, "平移（W/S/A/D + R/F，按住持续）");
+            DrawSectionTitle(inRect, ref y, "PFV_Pilot_AvailableThrust".Translate());
             DrawAxisThrusts(inRect, ref y, mapComp);
 
             // ── 旋转区 ──
-            DrawSectionTitle(inRect, ref y, "旋转（Q/E 滚转 · 方向键 偏航/俯仰）");
             DrawRotationInfo(inRect, ref y, group);
 
             // ── 主推进方向 ──
-            DrawSectionTitle(inRect, ref y, "主推进方向");
+            DrawSectionTitle(inRect, ref y, "PFV_Pilot_Axis".Translate());
             DrawMainAxisSelector(inRect, ref y, mapComp);
 
             // ── 动作组 ──
-            DrawSectionTitle(inRect, ref y, "动作组（1-9 切换武装，只影响手动指令）");
+            DrawSectionTitle(inRect, ref y, "PFV_Pilot_Groups".Translate());
             DrawActionGroups(inRect, ref y, mapComp);
 
             // ── SAS ──
-            DrawSectionTitle(inRect, ref y, "姿态对准 SAS（主推进轴 → 目标）");
+            DrawSectionTitle(inRect, ref y, "PFV_Pilot_SasTitle".Translate());
             DrawSasButtons(inRect, ref y);
+            if (SteeringController.ThrustUnavailable) DrawHint(inRect, ref y, "PFV_Pilot_NoThrust".Translate());
+            DrawHint(inRect, ref y, (ownsControl ? "PFV_Pilot_ExitHint" : "PFV_Pilot_PanelHint").Translate());
+            detailsHeight = y + 12f;
+            Text.Font = GameFont.Small;
+            Widgets.EndScrollView();
+        }
 
-            // 键位提示
+        internal static string DrivingHelp() => "PFV_Pilot_DriveKeys".Translate(
+            SteeringInputHost.Label(SteeringAction.PitchUp), SteeringInputHost.Label(SteeringAction.PitchDown),
+            SteeringInputHost.Label(SteeringAction.YawLeft), SteeringInputHost.Label(SteeringAction.YawRight),
+            SteeringInputHost.Label(SteeringAction.RollLeft), SteeringInputHost.Label(SteeringAction.RollRight),
+            SteeringInputHost.Label(SteeringAction.Precision));
+
+        internal static string TranslationHelp() => "PFV_Pilot_TranslateKeys".Translate(
+            SteeringInputHost.Label(SteeringAction.Forward), SteeringInputHost.Label(SteeringAction.Back),
+            SteeringInputHost.Label(SteeringAction.Left), SteeringInputHost.Label(SteeringAction.Right),
+            SteeringInputHost.Label(SteeringAction.Up), SteeringInputHost.Label(SteeringAction.Down));
+
+        internal static string SasLabel(SasTargetKind kind) => ("PFV_Pilot_Sas_" + kind).Translate();
+
+        private static void DrawHint(Rect rect, ref float y, string text)
+        {
+            Text.Font = GameFont.Small;
+            float height = Text.CalcHeight(text, rect.width - 16f);
+            Widgets.Label(new(rect.x + 8, y, rect.width - 16, height), text);
+            y += height + 6;
+        }
+
+        private void DrawPointerButtons(Rect rect, ref float y)
+        {
+            float width = (rect.width - 24f) / 4;
             Text.Font = GameFont.Tiny;
-            Widgets.Label(new Rect(inRect.x + 6f, inRect.yMax - 20f, inRect.width - 12f, 18f),
-                "ESC 关闭 · 任意操舵输入会清空机动队列（手动接管）");
+            for (int i = 0; i < 12; i++)
+            {
+                var action = (SteeringAction)i;
+                var button = new Rect(rect.x + 6 + i % 4 * (width + 4), y + i / 4 * 38, width, 34);
+                var e = Event.current;
+                if (GUI.enabled && e.type == EventType.MouseDown && e.button == 0 && button.Contains(e.mousePosition))
+                    SteeringInputHost.BeginPointer(action);
+                Widgets.ButtonText(button, PFViewBindingUtility.ActionLabel(action) + "\n" + SteeringInputHost.Label(action));
+            }
+            SteeringInputHost.PublishPointer();
+            y += 118;
+            Text.Font = GameFont.Small;
         }
 
         private void DrawSectionTitle(Rect inRect, ref float y, string title)
@@ -117,14 +179,16 @@ namespace PioneerFramework
             Text.Font = GameFont.Tiny;
             float w = (float)group.angularVelocity.magnitude;
             Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH),
-                $"角速度: {w * Mathf.Rad2Deg:F2} °/s  姿态(欧拉): ({group.CurrentOrbit.rotation.eulerAngles.x:F0}, {group.CurrentOrbit.rotation.eulerAngles.y:F0}, {group.CurrentOrbit.rotation.eulerAngles.z:F0})");
+                "PFV_Pilot_Spin".Translate((w * Mathf.Rad2Deg).ToString("F2")) + " · "
+                + (SteeringController.AssistedStop ? "PFV_Pilot_Assisted" : "PFV_Pilot_Inertial").Translate()
+                + " · " + SasLabel(SteeringController.SasKind));
             y += RowH - 2f;
         }
 
         private void DrawAxisThrusts(Rect inRect, ref float y, SpaceMapComp mapComp)
         {
             Text.Font = GameFont.Tiny;
-            string[] names = ["F 前", "B 后", "L 左", "R 右", "U 上", "D 下"];
+            string[] names = AxisLabels();
             for (int i = 0; i < 6; i++)
             {
                 Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH),
@@ -137,28 +201,25 @@ namespace PioneerFramework
         {
             Text.Font = GameFont.Tiny;
             Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH),
-                $"动量轮限速: {SpaceEntityGroup.DefaultMaxAngularRate * Mathf.Rad2Deg:F1} °/s");
+                "PFV_Pilot_RateLimit".Translate((group.MaxAngularRate * Mathf.Rad2Deg).ToString("F1")));
             y += RowH - 2f;
         }
 
         private void DrawMainAxisSelector(Rect inRect, ref float y, SpaceMapComp mapComp)
         {
-            string[] names = ["自动", "F 前", "B 后", "L 左", "R 右", "U 上", "D 下"];
-            float bw = 44f, gap = 6f;
+            var axes = AxisLabels();
+            string[] names = ["PFV_Pilot_Axis_Auto".Translate(), axes[0], axes[1], axes[2], axes[3], axes[4], axes[5]];
+            float gap = 4f, bw = (inRect.width - 12f - gap * 6) / 7;
             for (int i = 0; i < names.Length; i++)
             {
                 int sel = mapComp.mainThrustAxisIndex + 1; // 0=自动, 1..6=六向
                 bool isSel = sel == i;
                 var rect = new Rect(inRect.x + 6f + i * (bw + gap), y, bw, RowH - 4f);
                 var prev = GUI.color;
-                GUI.color = isSel ? new Color(0.2f, 0.9f, 0.4f) : prev;
+                GUI.color = isSel ? PFViewPalette.Accent : PFViewPalette.TextSecondary;
                 if (Widgets.ButtonText(rect, names[i]))
                 {
                     mapComp.mainThrustAxisIndex = i - 1; // 自动=-1，六向 0..5
-                    if (i > 0)
-                        Messages.Message("主推进方向 → " + names[i], MessageTypeDefOf.NeutralEvent);
-                    else
-                        Messages.Message("主推进方向 → 自动（推力最大轴向）", MessageTypeDefOf.NeutralEvent);
                 }
                 GUI.color = prev;
             }
@@ -174,54 +235,46 @@ namespace PioneerFramework
                 bool armed = (mapComp.armedGroupsMask & (1 << g)) != 0;
                 var rect = new Rect(inRect.x + 6f + g * (bw + gap), y, bw, RowH - 4f);
                 var prev = GUI.color;
-                GUI.color = armed ? new Color(0.2f, 0.9f, 0.4f) : new Color(0.4f, 0.4f, 0.4f, 0.9f);
+                GUI.color = armed ? PFViewPalette.Accent : PFViewPalette.TextSecondary;
                 if (Widgets.ButtonText(rect, (g + 1).ToString()))
                 {
                     mapComp.armedGroupsMask ^= (1 << g);
-                    Messages.Message("动作组 " + (g + 1) + (armed ? " 解除武装" : " 武装"), MessageTypeDefOf.NeutralEvent);
                 }
                 GUI.color = prev;
+                TooltipHandler.TipRegion(rect, SteeringInputHost.Label(SteeringAction.Group1 + g));
             }
             y += RowH + 2f;
         }
 
         private void DrawSasButtons(Rect inRect, ref float y)
         {
-            string[] names = ["关", "顺向", "逆向", "法向", "反法向", "径外", "径内"];
-            float bw = 46f, gap = 6f;
-            for (int i = 0; i < names.Length; i++)
+            float gap = 4f, bw = (inRect.width - 12f - gap * 6) / 7;
+            for (int i = 0; i < 7; i++)
             {
                 bool isSel = (int)SteeringController.SasKind == i;
                 var rect = new Rect(inRect.x + 6f + i * (bw + gap), y, bw, RowH - 4f);
                 var prev = GUI.color;
-                GUI.color = isSel ? new Color(0.2f, 0.9f, 0.4f) : prev;
-                if (Widgets.ButtonText(rect, names[i]))
+                GUI.color = isSel ? PFViewPalette.Accent : PFViewPalette.TextSecondary;
+                if (Widgets.ButtonText(rect, SasLabel((SasTargetKind)i)))
                     SteeringController.SasKind = (SasTargetKind)i;
                 GUI.color = prev;
             }
+            y += RowH + 4;
         }
+
+        private static string[] AxisLabels() => ["PFV_Pilot_Axis_Forward".Translate(), "PFV_Pilot_Axis_Back".Translate(),
+            "PFV_Pilot_Axis_Left".Translate(), "PFV_Pilot_Axis_Right".Translate(),
+            "PFV_Pilot_Axis_Up".Translate(), "PFV_Pilot_Axis_Down".Translate()];
 
         private void ReadKeys()
         {
             if (!CanReadKeyboard())
             {
                 ClearHeldKeys();
+                SteeringInputHost.Poll(false);
                 return;
             }
-            // 平移（保持态）
-            SteeringController.KeyForward = Input.GetKey(KeyCode.W);
-            SteeringController.KeyBack = Input.GetKey(KeyCode.S);
-            SteeringController.KeyLeft = Input.GetKey(KeyCode.A);
-            SteeringController.KeyRight = Input.GetKey(KeyCode.D);
-            SteeringController.KeyUp = Input.GetKey(KeyCode.R);
-            SteeringController.KeyDown = Input.GetKey(KeyCode.F);
-            // 旋转（保持态）
-            SteeringController.KeyRollL = Input.GetKey(KeyCode.Q);
-            SteeringController.KeyRollR = Input.GetKey(KeyCode.E);
-            SteeringController.KeyYawL = Input.GetKey(KeyCode.LeftArrow);
-            SteeringController.KeyYawR = Input.GetKey(KeyCode.RightArrow);
-            SteeringController.KeyPitchU = Input.GetKey(KeyCode.UpArrow);
-            SteeringController.KeyPitchD = Input.GetKey(KeyCode.DownArrow);
+            SteeringInputHost.Poll(true);
 
             // 离散态
             if (Event.current.type == EventType.KeyDown)
@@ -232,22 +285,17 @@ namespace PioneerFramework
                     Event.current.Use();
                     return;
                 }
-                for (int g = 0; g < 9; g++)
-                {
-                    if (Event.current.keyCode == KeyCode.Alpha1 + g)
-                    {
-                        var mapComp = GetCurrentMapComp();
-                        if (mapComp != null)
-                            mapComp.armedGroupsMask ^= (1 << g);
-                        Event.current.Use();
-                        break;
-                    }
-                }
+                if (SteeringInputHost.HandleGroupShortcut(Event.current)) return;
+                var view = Find.WindowStack?.WindowOfType<MainTabWindow_PFView>();
+                if (view != null && view.HandlePilotCameraShortcut(Event.current)) return;
+                if (view != null && SteeringInputHost.AcceptNativeTimeKey(Event.current) && view.HandleTimeSpeedKeys())
+                    Event.current.Use();
             }
         }
 
         private bool CanReadKeyboard()
         {
+            if (!Application.isFocused) return false;
             var stack = Find.WindowStack;
             var view = stack?.WindowOfType<MainTabWindow_PFView>();
             if (view?.HasTextInputFocus == true) return false;
@@ -260,10 +308,7 @@ namespace PioneerFramework
         internal static void ClearHeldKeys()
         {
             // 文本输入或上层弹窗仅暂停手动按键，保留操舵对象与 SAS。
-            SteeringController.KeyForward = SteeringController.KeyBack = SteeringController.KeyLeft =
-                SteeringController.KeyRight = SteeringController.KeyUp = SteeringController.KeyDown = false;
-            SteeringController.KeyRollL = SteeringController.KeyRollR = SteeringController.KeyYawL =
-                SteeringController.KeyYawR = SteeringController.KeyPitchU = SteeringController.KeyPitchD = false;
+            SteeringController.ClearHeldInput();
         }
 
         private static SpaceMapComp? GetCurrentMapComp()

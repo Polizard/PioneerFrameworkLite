@@ -335,6 +335,7 @@ namespace PioneerFramework
         /// <summary>Map → Entity：此地图所属的 SpaceEntity ID。</summary>
         public int ownerEntityId = -1;
         private readonly List<Thing> spaceWeapons = new();
+        internal IReadOnlyList<Thing> SpaceWeapons => spaceWeapons;
         public void RegisterSpaceWeapon(Thing building)
         { if (!spaceWeapons.Contains(building)) spaceWeapons.Add(building); }
         public void UnregisterSpaceWeapon(Thing building) => spaceWeapons.Remove(building);

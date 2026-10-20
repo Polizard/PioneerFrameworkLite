@@ -162,17 +162,25 @@ namespace PioneerFramework
                 string secondary = row.Status + " · " + (row.DistanceMeters.HasValue
                     ? PFViewUiObjectListCore.FormatDistance(row.DistanceMeters.Value) : "—");
                 MiniLabel(new(5, rr.y + 27, rr.width - 10, 20), secondary, PFViewPalette.TextSecondary);
-                TooltipHandler.TipRegion(rr, row.Label + "\n" + secondary);
+                TooltipHandler.TipRegion(rr, row.Label + "\n" + secondary + "\n" + "PFV_TargetShortcut".Translate());
                 if (!Mouse.IsOver(rr) || Event.current.type != EventType.MouseDown || Event.current.button != 0) continue;
                 bool doubleClick = Event.current.clickCount >= 2;
                 if (row.Kind == PFViewUiObjectKind.Contact)
                 {
-                    if (visibleContacts.TryGetValue(row.Key, out Contact contact)) SelectContactForInspection(contact, Faction.OfPlayer.loadID);
+                    if (visibleContacts.TryGetValue(row.Key, out Contact contact))
+                    {
+                        if (Event.current.shift) SetTargetContact(contact);
+                        else SelectContactForInspection(contact, Faction.OfPlayer.loadID);
+                    }
                 }
                 else
                 {
-                    SelectGroupForInspection(row.GroupId);
-                    if (doubleClick && row.CanFocus) FocusGroup(row.GroupId);
+                    if (Event.current.shift) SetTargetGroup(row.GroupId);
+                    else
+                    {
+                        SelectGroupForInspection(row.GroupId);
+                        if (doubleClick && row.CanFocus) FocusGroup(row.GroupId);
+                    }
                 }
                 Event.current.Use();
             }

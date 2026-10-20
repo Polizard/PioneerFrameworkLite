@@ -5,6 +5,25 @@ namespace PioneerFramework.Pure.Tests;
 
 public class PFViewUiOperationContextTests
 {
+    [Theory]
+    [InlineData(8, -1, true, true)]
+    [InlineData(-1, 9, true, true)]
+    [InlineData(-1, 9, false, false)]
+    [InlineData(3, -1, true, false)]
+    [InlineData(-1, -1, true, false)]
+    [InlineData(8, 9, true, false)]
+    public void ContactTargetsDoNotRequireExposingAnEntity(int group, int decoy, bool known, bool expected)
+    {
+        var context = new PFViewUiOperationContext();
+        context.TryOpenWeapons(3, true, -1);
+        Assert.Equal(expected, PFViewUiOperationContext.CanFire(context.ResolveSource(-1),
+            new PFViewUiTarget(group, decoy), true, known, true));
+        Assert.False(PFViewUiOperationContext.CanFire(-1, new PFViewUiTarget(group, decoy), true, true, true));
+        Assert.False(PFViewUiOperationContext.CanFire(3, new PFViewUiTarget(group, decoy), false, true, true));
+        Assert.False(PFViewUiOperationContext.CanFire(3, new PFViewUiTarget(group, decoy), true, true, false));
+        Assert.Equal(3, context.ResolveSource(-1));
+    }
+
     [Fact]
     public void OpeningWeaponsLatchesSourceUntilExplicitClose()
     {

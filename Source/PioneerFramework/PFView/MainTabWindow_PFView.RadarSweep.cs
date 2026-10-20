@@ -13,6 +13,8 @@ namespace PioneerFramework
     ///   · **只做 2D 雷达盘面**（独立「雷达」仪器窗与主窗共用同一份 `DrawRadarPanel` ⇒ 两处自动同步）；
     ///   · **完全联动真实雷达**：扫掠模式 ⇒ 前导线 = `RadarBoresight` 在盘面基底上的投影，
     ///     转速即 `RadarCap.scanRateDegPerSec`；跟踪 / 手选方位 ⇒ 线停在真实指向上；
+    ///   · **视觉角速度有上限**（2026-10-19 用户要求）：显示层最多 `SweepMaxDegPerRealSecond` = 1 圈/**真实**秒；
+    ///     Normal 档本来就 ≈1 圈/秒（原速），Fast/更高倍速不再变成 8 圈/秒的糊线。物理波束不受影响；
     ///   · **亮线 + 60° 渐隐尾迹扇区**；接触点被扫过时闪一下并留短余辉，
     ///     余辉长度按**扫描线走过的角度**（40°）衰减，不按真实秒 —— 这样 Normal（≈1 圈/秒）与
     ///     Combat（≈60 秒/圈）下都是"扫过 ⇒ 亮一下 ⇒ 落回"，不会一个亮半圈、一个看不见；
@@ -32,7 +34,13 @@ namespace PioneerFramework
     ///   不读敌方真值、不写任何模拟状态 —— 纯表现层，可随时整段删掉而不影响模拟。
     ///
     /// ⚠ 2D/3D 一致性：3D 波束锥（`SpaceGroupVisualManager.DrawBeamCone`）与本文件吃**同一个**
-    ///   `RadarBoresight` + `GetRenderTick` ⇒ 盘面扫描线与场景里的锥同向同速（同一物理量的两种表示）。
+    ///   `RadarBoresight` + `GetRenderTick` ⇒ 低倍速下盘面线与场景里的锥同向同速。
+    ///   **高速档例外**：盘面被 `SweepMaxDegPerRealSecond` 限速后可能落后于 3D 锥（用户裁定要上限，
+    ///   接受这份"显示滞后"；要改上限只动那一个常量，180 / 90 分别是 2 秒 / 4 秒一圈）。
+    ///
+    /// ⚠ 暂停（2026-10-19 修）：`GetRenderTick()` 在暂停时会丢掉子 tick 相位 ⇒ 同一帧算出的角度会**回跳**
+    ///   最多一个 tick。所以显示相位用 `NextDisplayTick`（只允许前进、暂停时 dt=0 冻结），
+    ///   旋向更新也要连续 3 帧反向才翻转 —— 否则单帧回跳会把尾迹翻到前导线前方。
     /// </summary>
     public partial class MainTabWindow_PFView
     {
@@ -45,6 +53,11 @@ namespace PioneerFramework
         private const float SweepStandbyWidth = 1f;
         private const float SweepStandbySeconds = 8f;      // 待机扫描一圈（真实秒；暂停冻结）
         private const float SweepStandbyTrailAlpha = 0.26f; // 待机尾迹比真实扫掠暗一档
+
+        // ── 显示限速（2026-10-19 用户要求：高倍速时间流逝下雷达线不能失控）──
+        private const float SweepMaxDegPerRealSecond = 360f; // 视觉角速度上限（真实秒）= 1 圈/秒：Normal 档原速，Fast/更高倍速不再更快
+        private const float SweepDisplayResyncSeconds = 0.5f; // 超过这么久没画（面板关过）⇒ 直接对齐真实相位，不做慢速追赶
+        private const int SweepDirFlipFrames = 3;             // 视在旋向要连续这么多帧反向才翻转（防暂停/恢复的单帧跳变）
 
         private const float SweepBreathSeconds = 2.4f;    // 跟踪/手选模式下"呼吸"周期（真实秒）
         private const float SweepBreathMin = 0.60f;
@@ -78,6 +91,11 @@ namespace PioneerFramework
         // 视觉钟（真实秒，暂停时不前进）：余辉与呼吸都挂它 ⇒ 用户裁定的"随游戏暂停一起停"
         private float radarVisualClock;
         private int radarVisualClockFrame = int.MinValue;
+        private float radarVisualClockDelta;      // 本帧前进的真实秒（0 = 暂停 / 同帧二次绘制）
+        private double radarDisplayTick;          // 视觉用的波束时刻（被速率上限夹过；只增不减）
+        private bool radarDisplayTickPrimed;
+        private float radarLastClock;             // 上一帧的视觉钟（判"面板是不是刚被关过"）
+        private int radarSweepDirFlipFrames;      // 连续反向帧数（旋向防抖）
 
         /// <summary>
         /// 画一次扫描线（含尾迹）。**必须在接触点循环之前调用**：接触点余辉靠本方法写下的
@@ -99,6 +117,8 @@ namespace PioneerFramework
                 radarSweepDir = 0f;
                 radarSweeping = false;
                 radarSweepTravelDeg = 0f;
+                radarSweepDirFlipFrames = 0;
+                radarDisplayTickPrimed = false;
                 radarBlipSweptAt.Clear();
             }
 
@@ -112,6 +132,7 @@ namespace PioneerFramework
                 // 只作视觉锚点（"没有真雷达也要看得见特效"）。用真实秒驱动 ⇒ 暂停即冻结；固定顺时针、
                 // 从"顺行/正上"起，约 8 秒一圈。它**不代表**真实雷达状态（真雷达一律优先）。
                 radarSweeping = false;
+                radarDisplayTickPrimed = false;   // 下次真雷达开机时重新对齐真实相位
                 radarSweepFromDeg = radarSweepAngleDeg;
                 radarSweepAngleDeg = Mathf.Repeat(-90f + radarVisualClock * (360f / SweepStandbySeconds), 360f);
                 DrawSweepTrail(c, radius, radarSweepAngleDeg, 1f, SweepStandbyTrailAlpha);
@@ -119,26 +140,19 @@ namespace PioneerFramework
                 return;
             }
 
-            // 真实波束方向 → 盘面基底（右 = 径外向、上 = 顺行）：与接触点同一套投影 ⇒ 2D 线与 3D 锥同向
-            float targetDeg = radarSweepAngleDeg;
-            DVector3 b = g.RadarBoresight(RadarTickNow());
-            float right = (float)DVector3.Dot(b, radial);
-            float up = (float)DVector3.Dot(b, pro);
-            float mag = Mathf.Sqrt(right * right + up * up);
-            if (mag > SweepProjectionEpsilon) targetDeg = Mathf.Atan2(-up, right) * Mathf.Rad2Deg;
-            // 退化（波束几乎垂直于盘面，例如极轨里的赤道平面波束）：保留上一有效角。
-            // 真投影在零点附近本来就是"线翻面"，强行画只会乱跳；用户裁定的"回退"落成"保持上一角度"。
-
             if (scanning)
             {
                 radarSweeping = true;
                 radarSweepFromDeg = radarSweepAngleDeg;
-                radarSweepAngleDeg = targetDeg;
+                // 视觉相位：跟随真实波束，但**限速**（Fast 档 8 圈/秒 ⇒ 最多 1 圈/秒；Normal 档正好原速）
+                radarSweepAngleDeg = ProjectBoresight(g, NextDisplayTick(g), radial, pro, radarSweepAngleDeg);
                 float step = Mathf.DeltaAngle(radarSweepFromDeg, radarSweepAngleDeg);
                 float absStep = Mathf.Abs(step);
-                if (absStep > 1e-3f && absStep <= SweepMaxFlashArcDeg)
-                    radarSweepDir = Mathf.Sign(step);
-                if (absStep <= SweepMaxFlashArcDeg) radarSweepTravelDeg += absStep;   // 丢帧/切组不计（否则一帧清空余辉）
+                if (absStep <= SweepMaxFlashArcDeg)
+                {
+                    if (absStep > 1e-3f) UpdateSweepDirection(step);
+                    radarSweepTravelDeg += absStep;   // 丢帧/切组不计（否则一帧清空余辉）
+                }
                 radarSweepAlpha = 1f;
                 DrawSweepTrail(c, radius, radarSweepAngleDeg, radarSweepDir, SweepTrailPeakAlpha);
             }
@@ -146,13 +160,83 @@ namespace PioneerFramework
             {
                 // 跟踪/手选：线指真实方位、不转，但要"活着" —— 轻微呼吸（真实时间，暂停即停）
                 radarSweeping = false;
+                radarDisplayTickPrimed = false;   // 回到扫掠模式时重新对齐真实相位
                 radarSweepFromDeg = radarSweepAngleDeg;
-                radarSweepAngleDeg = targetDeg;
+                radarSweepAngleDeg = ProjectBoresight(g, RadarTickNow(), radial, pro, radarSweepAngleDeg);
                 float phase = radarVisualClock * (Mathf.PI * 2f / SweepBreathSeconds);
                 radarSweepAlpha = Mathf.Lerp(SweepBreathMin, SweepBreathMax, 0.5f + 0.5f * Mathf.Sin(phase));
             }
 
             DrawSweepLine(c, radius, radarSweepAngleDeg, radarSweepAlpha);
+        }
+
+        /// <summary>
+        /// 视觉用的波束时刻：跟随真实时刻，但**每真实秒最多走 `SweepMaxDegPerRealSecond`**。
+        /// Normal 档 6°/s × 60 = 360°/真实秒 ⇒ 正好等于上限、保持原速；Fast 档（×8）被夹到 1 圈/秒。
+        /// · 暂停：`radarVisualClockDelta = 0` ⇒ 不前进（线冻结，也**不会**因渲染时钟回落而倒退）；
+        /// · 面板关过 / 首次：直接对齐真实相位（不做慢速追赶）；
+        /// · 落后超过一整圈：折掉整圈 —— 波束相位是周期函数，所以角度不变、只是不无限累积。
+        /// </summary>
+        private double NextDisplayTick(SpaceEntityGroup g)
+        {
+            double nowTick = RadarTickNow();
+            double rateDeg = g.RadarCap.scanRateDegPerSec > 0f ? g.RadarCap.scanRateDegPerSec : 6.0;
+            double periodTicks = 360.0 / rateDeg;
+
+            if (!radarDisplayTickPrimed || radarVisualClock - radarLastClock > SweepDisplayResyncSeconds)
+            {
+                radarDisplayTick = nowTick;
+                radarDisplayTickPrimed = true;
+            }
+            else if (radarVisualClockDelta > 0f && nowTick > radarDisplayTick)
+            {
+                double maxStep = (SweepMaxDegPerRealSecond / rateDeg) * radarVisualClockDelta;
+                radarDisplayTick += System.Math.Min(nowTick - radarDisplayTick, maxStep);
+            }
+            radarLastClock = radarVisualClock;
+
+            double lag = nowTick - radarDisplayTick;
+            if (lag >= periodTicks)
+                radarDisplayTick += System.Math.Floor(lag / periodTicks) * periodTicks;
+            return radarDisplayTick;
+        }
+
+        /// <summary>
+        /// 波束方向 → 盘面角（右 = 径外向、上 = 顺行；屏幕 atan2：+x=0、+y 向下为正）。
+        /// 投影模长过小（波束几乎垂直于盘面）时保留上一有效角 —— 真投影在零点附近本来就是"线翻面"。
+        /// </summary>
+        private static float ProjectBoresight(SpaceEntityGroup g, double tick, DVector3 radial, DVector3 pro, float fallbackDeg)
+        {
+            DVector3 b = g.RadarBoresight(tick);
+            float right = (float)DVector3.Dot(b, radial);
+            float up = (float)DVector3.Dot(b, pro);
+            float mag = Mathf.Sqrt(right * right + up * up);
+            return mag > SweepProjectionEpsilon ? Mathf.Atan2(-up, right) * Mathf.Rad2Deg : fallbackDeg;
+        }
+
+        /// <summary>
+        /// 视在旋向（决定尾迹画在前导线哪一侧）。**必须防单帧跳变**：暂停/恢复时渲染时钟会回跳/跳前，
+        /// 单帧大跨角会把旋向翻反 ⇒ 暂停时尾迹跑到线前方（2026-10-19 报障）。
+        /// 规则：连续 `SweepDirFlipFrames` 帧反向才翻转（真反向由投影几何产生，会持续多帧）。
+        /// </summary>
+        private void UpdateSweepDirection(float stepDeg)
+        {
+            if (radarSweepDir == 0f)
+            {
+                radarSweepDir = Mathf.Sign(stepDeg);
+                radarSweepDirFlipFrames = 0;
+                return;
+            }
+            if (stepDeg * radarSweepDir >= 0f)
+            {
+                radarSweepDirFlipFrames = 0;
+                return;
+            }
+            if (++radarSweepDirFlipFrames >= SweepDirFlipFrames)
+            {
+                radarSweepDir = -radarSweepDir;
+                radarSweepDirFlipFrames = 0;
+            }
         }
 
         /// <summary>真实扫描的前导线（+ 外发光 + 线头方块）。</summary>
@@ -256,11 +340,16 @@ namespace PioneerFramework
         /// </summary>
         private void AdvanceRadarVisualClock()
         {
+            radarVisualClockDelta = 0f;
             if (radarVisualClockFrame == RealTime.frameCount) return;
             radarVisualClockFrame = RealTime.frameCount;
             if (Find.TickManager != null && Find.TickManager.CurTimeSpeed == TimeSpeed.Paused) return;
             float dt = RealTime.deltaTime;
-            if (dt > 0f && dt < 0.5f) radarVisualClock += dt;
+            if (dt > 0f && dt < 0.5f)
+            {
+                radarVisualClock += dt;
+                radarVisualClockDelta = dt;
+            }
         }
 
         /// <summary>

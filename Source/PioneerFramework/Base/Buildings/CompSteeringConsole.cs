@@ -72,6 +72,9 @@ namespace PioneerFramework
                 return;
             }
 
+            var old = Find.WindowStack.WindowOfType<Window_Steering>();
+            old?.Close();
+            if (SteeringController.IsOpen) Window_Steering.StopControl();
             SteeringController.Open(groupId);
             Find.WindowStack.Add(new Window_Steering());
         }

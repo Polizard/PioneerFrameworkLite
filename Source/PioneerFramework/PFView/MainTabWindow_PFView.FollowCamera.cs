@@ -41,6 +41,7 @@ namespace PioneerFramework
                         lastThirdPersonFrame = PFViewCameraCore.GroupVelocityOrbitFrame(hullInView, velocityInView);
                     }
                     else lastThirdPersonFrame = PFViewCameraCore.GroupOrbitFrame(hullInView);
+                    lastThirdPersonFrame = ResolvePilotFollowFrame(group, lastThirdPersonFrame);
                 }
                 return lastThirdPersonFrame;
             }
@@ -59,6 +60,7 @@ namespace PioneerFramework
             hasDisplayedCameraPose = false;
             hullGroupId = -1;
             groupCameraMode = PFViewGroupCameraMode.Free;
+            ResetPilotCamera();
         }
 
         private void ApplyCameraPose(CameraPose pose)
@@ -70,6 +72,14 @@ namespace PioneerFramework
             camFocusOffset = pose.Pan;
             frozenCameraPose = pose.Frozen;
             frozenFreeFrameSystem = pose.FrozenFrameSystem;
+            pilotCameraOptions = pose.PilotOptions;
+            stableHeadingSystem = pose.StableHeading;
+            displayedFollowSystem = pose.FollowHeading;
+            hasPilotFollowFrame = pose.HasPilotFrame;
+            pilotFollowGroup = focusGroupId;
+            pilotFollowMode = groupCameraMode;
+            pilotFollowFrame = -1;
+            pilotLookReturning = pose.LookReturning;
         }
 
         private void InitializeGroupCameraPose(SpaceEntityGroup group, PFViewFocusKind oldKind, CameraPose? oldPose)
@@ -107,6 +117,7 @@ namespace PioneerFramework
             groupCameraMode = mode;
             ResetCameraDrag();
             if (!TryLoadPose()) InitializeGroupCameraPose(group, PFViewFocusKind.Group, oldPose);
+            RefreshPilotCameraOptions();
             BeginTransition(oldOrigin, oldPose);
         }
 

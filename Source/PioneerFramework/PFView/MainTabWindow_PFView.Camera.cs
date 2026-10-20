@@ -30,6 +30,11 @@ namespace PioneerFramework
             public Quaternion Frame = Quaternion.identity;
             public FrozenCameraPose? Frozen;
             public Quaternion FrozenFrameSystem = Quaternion.identity;
+            public PFViewPilotCameraOptions PilotOptions = PFViewPilotCameraOptions.Default;
+            public Quaternion StableHeading = Quaternion.identity;
+            public Quaternion FollowHeading = Quaternion.identity;
+            public bool HasPilotFrame;
+            public bool LookReturning;
         }
 
         private sealed record PreviousView(Game? Game, PFViewFocusKind Kind, int GroupId, int BodyId,
@@ -132,6 +137,7 @@ namespace PioneerFramework
             cameraGame = Current.Game;
 
             if (cameraInitialized) return;
+            RefreshPilotCameraOptions();
 
             camYaw = 0f;
             camPitch = PFViewCameraCore.DefaultPitch;
@@ -182,6 +188,11 @@ namespace PioneerFramework
             Frame = ResolveOrbitFrame(),
             Frozen = frozenCameraPose,
             FrozenFrameSystem = frozenFreeFrameSystem,
+            PilotOptions = pilotCameraOptions,
+            StableHeading = stableHeadingSystem,
+            FollowHeading = displayedFollowSystem,
+            HasPilotFrame = hasPilotFollowFrame,
+            LookReturning = pilotLookReturning,
         };
 
         private bool TryLoadPose()
@@ -214,7 +225,16 @@ namespace PioneerFramework
             PFViewGroupCameraMode requestedMode = DefaultGroupCameraMode();
             if (focusKind == PFViewFocusKind.Group && focusGroupId == groupId)
             {
-                SwitchGroupCameraMode(requestedMode);
+                if (requestedMode != groupCameraMode) SwitchGroupCameraMode(requestedMode);
+                else if (ReadPilotCameraOptions() != pilotCameraOptions)
+                {
+                    RememberPreviousView();
+                    SaveCameraMemory();
+                    var optionsOrigin = ResolveFocusOrigin();
+                    var optionsPose = CapturePose();
+                    RefreshPilotCameraOptions();
+                    BeginTransition(optionsOrigin, optionsPose);
+                }
                 return;
             }
 
@@ -239,6 +259,7 @@ namespace PioneerFramework
             {
                 InitializeGroupCameraPose(g, oldKind, oldPose);
             }
+            RefreshPilotCameraOptions();
 
             BeginTransition(oldOrigin, oldPose);
             objectsDirty = true;
@@ -246,7 +267,7 @@ namespace PioneerFramework
 
         internal void FocusBody(int bodyId)
         {
-            if (focusKind == PFViewFocusKind.Body && focusBodyId == bodyId) return;
+            if (focusKind == PFViewFocusKind.Body && focusBodyId == bodyId) { RefreshPilotCameraOptions(); return; }
 
             if (Current.Game?.GetComponent<CelestialBodyManager>()?.GetBodyById(bodyId) == null) return;
             RememberPreviousView();
@@ -266,6 +287,7 @@ namespace PioneerFramework
                 camFocusOffset = Vector3.zero;
                 camDistance = DefaultBodyDistance();
             }
+            RefreshPilotCameraOptions();
 
             BeginTransition(oldOrigin, oldPose);
         }
@@ -302,13 +324,12 @@ namespace PioneerFramework
                 QueueToast("已清除目标");
                 return;
             }
-            if (groupId == ResolveOperationGroup()?.GroupId || !TryGetKnownContact(groupId, out _))
+            if (!TryGetKnownContact(groupId, out var contact))
             {
                 QueueToast("PFV_CannotFire".Translate());
                 return;
             }
-            targetGroupId = groupId;
-            QueueToast($"目标：编队 G{groupId}");
+            SetTargetContact(contact);
         }
 
         /// <summary>R / Home：复位到当前焦点的默认机位（带过渡）。</summary>
@@ -486,8 +507,9 @@ namespace PioneerFramework
 
             if (IsThirdPersonView)
             {
-                camYaw = PFViewGroupCameraCore.ClampYaw(camYaw);
-                camPitch = PFViewGroupCameraCore.ClampPitch(camPitch);
+                AdvancePilotLook();
+                camYaw = PFViewPilotCameraCore.LookYaw(camYaw);
+                camPitch = PFViewPilotCameraCore.LookPitch(camPitch);
                 camDistance = ThirdPersonDistances().ClampMeters(camDistance * ViewToMeters) * MetersToView;
                 camFocusOffset = Vector3.zero;
             }
@@ -598,7 +620,7 @@ namespace PioneerFramework
         /// 原版数字键时间档（2026-10-18 用户：像原版一样数字键控制时间）。
         /// 1/2/3/4 = 正常/快速/超快/极速，Space = 暂停（均读 KeyBindingDef，可被玩家重绑）。
         /// </summary>
-        private bool HandleTimeSpeedKeys()
+        internal bool HandleTimeSpeedKeys()
         {
             if (KeyBindingDefOf.TogglePause.KeyDownEvent)
             {
@@ -632,6 +654,7 @@ namespace PioneerFramework
         {
             var e = Event.current;
             if (e == null) return;
+            if (!Application.isFocused) { ResetCameraDrag(); return; }
             if (EndCameraDrag(e, inRect)) return;
 
             // 键盘只在「最上层窗口就是本窗口」时处理，避免改名/搜索窗里按 R 复位相机
@@ -640,20 +663,18 @@ namespace PioneerFramework
                 if (KeyBindingDefOf.Cancel.KeyDownEvent)
                 {
                     if (GUI.GetNameOfFocusedControl() == "PFViewSearch") GUI.FocusControl(null);
+                    else if (SteeringController.IsOpen) EndSteering();
                     else if (WantsInspector) preferObjectList = true;
                     else Close();
                     e.Use();
                     return;
                 }
                 if (GUI.GetNameOfFocusedControl() == "PFViewSearch") return;
-                if (HandleTimeSpeedKeys())
+                if (SteeringInputHost.HandleGroupShortcut(e)) return;
+                if (HandlePilotCameraShortcut(e)) return;
+                if (e.type == EventType.Used) return;
+                if (SteeringInputHost.AcceptNativeTimeKey(e) && HandleTimeSpeedKeys())
                 {
-                    e.Use();
-                    return;
-                }
-                if (e.keyCode == KeyCode.Home || (e.keyCode == KeyCode.R && !SteeringController.IsOpen))
-                {
-                    ResetCamera();
                     e.Use();
                     return;
                 }
@@ -665,7 +686,8 @@ namespace PioneerFramework
             if (e.type == EventType.ScrollWheel)
             {
                 CancelTransition();
-                camDistance = PFViewCameraCore.WheelTargetDistance(camDistance, camDisplayDistance, e.delta.y);
+                camDistance = PFViewCameraCore.WheelTargetDistance(camDistance, camDisplayDistance,
+                    e.delta.y * (pilotCameraOptions.InvertWheel ? -1 : 1));
                 if (IsThirdPersonView)
                     camDistance = ThirdPersonDistances().ClampMeters(camDistance * ViewToMeters) * MetersToView;
                 else
@@ -683,6 +705,7 @@ namespace PioneerFramework
             {
                 if (IsThirdPersonView && (e.button == 2 || e.shift)) { e.Use(); return; }
                 CancelTransition();
+                pilotLookReturning = false;
                 dragState.Begin(e.button == 2 || e.shift);
                 rightMouseDownPos = e.mousePosition;
                 lastMousePos = e.mousePosition;
@@ -693,9 +716,11 @@ namespace PioneerFramework
             {
                 if ((e.mousePosition - rightMouseDownPos).magnitude > 3f) dragState.MarkMoved();
                 Vector2 d = e.mousePosition - lastMousePos;
-                camYaw = IsThirdPersonView ? PFViewGroupCameraCore.ClampYaw(camYaw - d.x * OrbitSensitivity) : camYaw - d.x * OrbitSensitivity;
-                camPitch = IsThirdPersonView ? PFViewGroupCameraCore.ClampPitch(camPitch - d.y * OrbitSensitivity)
-                    : PFViewCameraCore.ResolvePitch(focusKind, camPitch - d.y * OrbitSensitivity);
+                var look = PFViewPilotCameraCore.LookDrag(camYaw, camPitch, d.x, d.y,
+                    OrbitSensitivity * pilotCameraOptions.Sensitivity, pilotCameraOptions.InvertMouseY);
+                camYaw = IsThirdPersonView ? PFViewPilotCameraCore.LookYaw(look.Yaw) : look.Yaw;
+                camPitch = IsThirdPersonView ? PFViewPilotCameraCore.LookPitch(look.Pitch)
+                    : PFViewCameraCore.ResolvePitch(focusKind, look.Pitch);
                 lastMousePos = e.mousePosition;
                 e.Use();
             }
@@ -707,7 +732,8 @@ namespace PioneerFramework
                 {
                     float worldPerPx = 2f * camDisplayDistance * Mathf.Tan(renderCamera.fieldOfView * 0.5f * Mathf.Deg2Rad)
                                        / Mathf.Max(1f, renderCamera.pixelHeight);
-                    camFocusOffset -= (renderCamera.transform.right * d.x + renderCamera.transform.up * d.y) * worldPerPx;
+                    camFocusOffset += PFViewPilotCameraCore.PanDelta(renderCamera.transform.right,
+                        renderCamera.transform.up, d.x, d.y, worldPerPx);
                     if (focusKind == PFViewFocusKind.Group && camFocusOffset.magnitude > PFViewCameraLimits.GroupPanMaxMeters * MetersToView)
                         NotifyViewLimit();
                 }
@@ -721,9 +747,12 @@ namespace PioneerFramework
         {
             if (e.rawType != EventType.MouseUp || (e.button != 1 && e.button != 2)) return false;
             bool active = isDraggingRight || isDraggingPan;
+            bool moved = dragState.Moved;
             bool click = dragState.End();
             bool menu = active && e.button == 1 && click;
             ResetCameraDrag();
+            if (active && moved && e.button == 1 && IsThirdPersonView && pilotCameraOptions.Recenter)
+                pilotLookReturning = true;
             if (!active) return false;
             if (menu && MouseInViewport(inRect)) ShowContextMenu(e.mousePosition, inRect);
             if (e.type != EventType.Used) e.Use();

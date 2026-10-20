@@ -6,6 +6,7 @@ using UnityEngine.Rendering;
 using Verse;
 using RimWorld;
 using PioneerFramework.Combat;
+using PioneerFramework.ShipSkin;
 
 namespace PioneerFramework
 {
@@ -22,6 +23,7 @@ namespace PioneerFramework
             sphereMeshLOD2 = BuildSphereMesh(12, 9);
             atmosphereDayCapMesh = BuildDoubleSidedDayCapMesh(48, 36);  // 大气壳：受光半球（双面 ⇒ 边缘自然叠两层 = 辉光贴边）
             cubeMesh = BuildCubeMesh();
+            cubeMeshHard = BuildCubeHardMesh();
             quadMesh = BuildQuadMesh();
 
             // 2026-10-13（P2-c）：1.6 用 Standard；1.7 上 `Find("Standard")`=null ⇒ 用自写 GLSL `PFLit`
@@ -109,6 +111,70 @@ namespace PioneerFramework
             return m;
         }
 
+        /// <summary>
+        /// 单位立方体的**硬法线**版（24 顶点/6 面，每面独立法线）。
+        /// 舰船蒙皮专用：三平面投影需要"每个面法线恒定"，且屏幕空间几何边（fwidth）靠面交界法线突变；
+        /// 平滑法线的 `cubeMesh` 会让盒子边缘糊掉、贴图投影在棱角处混色。
+        /// **旧路径仍用 `cubeMesh`** ⇒ 关掉蒙皮后外观逐字不变。
+        /// </summary>
+        private static Mesh BuildCubeHardMesh()
+        {
+            var m = new Mesh();
+            // 角点索引沿用 BuildCubeMesh：0(-,-,-) 1(+,-,-) 2(+,+,-) 3(-,+,-) 4(-,-,+) 5(+,-,+) 6(+,+,+) 7(-,+,+)
+            Vector3[] corners =
+            [
+                new(-0.5f, -0.5f, -0.5f), new(0.5f, -0.5f, -0.5f),
+                new(0.5f, 0.5f, -0.5f), new(-0.5f, 0.5f, -0.5f),
+                new(-0.5f, -0.5f, 0.5f), new(0.5f, -0.5f, 0.5f),
+                new(0.5f, 0.5f, 0.5f), new(-0.5f, 0.5f, 0.5f),
+            ];
+            // 每面（quad 四角按 BuildCubeMesh 的三角形顺序排好）+ 面法线
+            (int[] quad, Vector3 normal)[] faces =
+            [
+                (new[] { 0, 1, 2, 3 }, new Vector3(0f, 0f, -1f)),
+                (new[] { 4, 5, 6, 7 }, new Vector3(0f, 0f, 1f)),
+                (new[] { 0, 1, 5, 4 }, new Vector3(0f, -1f, 0f)),
+                (new[] { 2, 3, 7, 6 }, new Vector3(0f, 1f, 0f)),
+                (new[] { 1, 2, 6, 5 }, new Vector3(1f, 0f, 0f)),
+                (new[] { 3, 0, 4, 7 }, new Vector3(-1f, 0f, 0f)),
+            ];
+            var verts = new Vector3[24];
+            var normals = new Vector3[24];
+            var uvs = new Vector2[24];
+            var tris = new int[36];
+            int vi = 0, ti = 0;
+            for (int f = 0; f < faces.Length; f++)
+            {
+                (int[] quad, Vector3 normal) = faces[f];
+                Vector2[] faceUv = [new(0f, 0f), new(1f, 0f), new(1f, 1f), new(0f, 1f)];
+                for (int k = 0; k < 4; k++)
+                {
+                    verts[vi] = corners[quad[k]];
+                    normals[vi] = normal;
+                    uvs[vi] = faceUv[k];
+                    vi++;
+                }
+                int b = vi - 4;
+                if (f == 0)
+                {
+                    // -Z 面沿用 BuildCubeMesh 的绕序：0,2,1 / 0,3,2
+                    tris[ti++] = b; tris[ti++] = b + 2; tris[ti++] = b + 1;
+                    tris[ti++] = b; tris[ti++] = b + 3; tris[ti++] = b + 2;
+                }
+                else
+                {
+                    tris[ti++] = b; tris[ti++] = b + 1; tris[ti++] = b + 2;
+                    tris[ti++] = b; tris[ti++] = b + 2; tris[ti++] = b + 3;
+                }
+            }
+            m.vertices = verts;
+            m.normals = normals;
+            m.uv = uvs;
+            m.triangles = tris;
+            m.RecalculateBounds();
+            return m;
+        }
+
         // ════════════════════════════════════════════════════
         //  运行时资源
         // ════════════════════════════════════════════════════
@@ -153,6 +219,13 @@ namespace PioneerFramework
 
             BuildSystemList();
             RestoreOrInitCamera();
+
+            // 2026-10-19 舰船蒙皮：每次开窗都确保材质就绪（Cleanup 会销毁它；静态构造器只在首次跑）。
+            // 取不到 shader/贴图 ⇒ 自动回退旧材质，不抛异常。
+            if (!ShipSkinAssets.EnsureInitialized(MetersToView) && ShipSkinSettings.Enabled)
+                Log.Warning("[PFView·蒙皮] 不可用（" + (ShipSkinAssets.Failure ?? "未知原因")
+                    + "）⇒ 舰船回退 PFLit/Toon 旧材质");
+
             resourcesCreated = true;
         }
 
@@ -174,6 +247,7 @@ namespace PioneerFramework
         private void CleanupResources()
         {
             DestroyAllReliefMeshes();   // 浮雕网格是运行时 Mesh：不显式销毁会跟着会话泄漏
+            ShipSkinAssets.Destroy();   // 舰船蒙皮材质（2026-10-19；贴图由 ContentFinder 持有）
             DestroySurfaceResources();  // 基底球材质 + 补丁网格/材质同上
             DestroyAtmosphereShellMaterials();  // 大气壳材质同上（网格是静态资源，不销毁）
             DestroyCloudResources();

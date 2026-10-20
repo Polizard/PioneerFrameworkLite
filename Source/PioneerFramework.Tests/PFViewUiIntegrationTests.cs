@@ -12,6 +12,15 @@ namespace PioneerFramework.Tests
     {
         private const BindingFlags Flags = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static;
 
+        [Theory]
+        [InlineData("DrawInspector")]
+        [InlineData("DrawRadarPanel")]
+        public void ObservedContactHasExplicitTargetAction(string method)
+        {
+            Assert.Contains(ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod(method, Flags)),
+                member => member.Name == "SetTargetContact");
+        }
+
         // These guards exercise compiled routing boundaries; rendering/input still require the game.
         [Fact]
         public void WeaponSubmissionUsesExplicitSourceAndRevalidatesBeforeHostDispatch()
@@ -22,7 +31,8 @@ namespace PioneerFramework.Tests
             var members = ReferencedMembers(method).ToArray();
             Assert.DoesNotContain(members, m => m is FieldInfo && m.Name == "selectedGroupId");
             Assert.Contains(members, m => m.DeclaringType == typeof(PFViewUiOperationContext) && m.Name == "CanFire");
-            Assert.Contains(members, m => m.DeclaringType == typeof(CombatManager) && m.Name == "FireWeapon");
+            Assert.Contains(members, m => m.DeclaringType == typeof(CombatManager) && m.Name == "TryGetMapWeaponMount");
+            Assert.Contains(members, m => m.DeclaringType == typeof(PioneerFramework.SpaceAI.ContactTargetService) && m.Name == "TryFire");
         }
 
         [Fact]
@@ -33,7 +43,7 @@ namespace PioneerFramework.Tests
             var members = ReferencedMembers(method).ToArray();
             Assert.DoesNotContain(members, m => m.DeclaringType == typeof(SteeringController));
             Assert.DoesNotContain(members, m => m.Name == "FocusGroup" || m.Name == "FocusBody");
-            Assert.DoesNotContain(members, m => m is FieldInfo && m.Name == "targetGroupId");
+            Assert.DoesNotContain(members, WritesWeaponTarget);
         }
 
         [Theory]
@@ -54,7 +64,7 @@ namespace PioneerFramework.Tests
             Assert.NotNull(method);
             var members = ReferencedMembers(method).ToArray();
             Assert.DoesNotContain(members, m => m.Name == "FocusGroup" || m.Name == "FocusBody");
-            Assert.DoesNotContain(members, m => m is FieldInfo && m.Name == "targetGroupId");
+            Assert.DoesNotContain(members, WritesWeaponTarget);
         }
 
         [Fact]
@@ -117,8 +127,11 @@ namespace PioneerFramework.Tests
         {
             var calls = ReferencedMembers(typeof(Window_Steering).GetMethod("ReadKeys", Flags)).ToList();
             Assert.Contains(calls, m => m.Name == "CanReadKeyboard");
-            Assert.True(calls.FindIndex(m => m.Name == "CanReadKeyboard") < calls.FindIndex(m => m.Name == "GetKey"));
+            Assert.Contains(calls, m => m.Name == "Poll");
+            Assert.True(calls.FindIndex(m => m.Name == "CanReadKeyboard") < calls.FindIndex(m => m.Name == "Poll"));
             Assert.Contains(calls, m => m.Name == "ClearHeldKeys");
+            var poll = typeof(SteeringInputHost).GetMethod("Poll", Flags);
+            Assert.Contains(ReferencedMembers(poll), m => m.Name == "ProcessSnapshot");
             var gate = typeof(Window_Steering).GetMethod("CanReadKeyboard", Flags);
             Assert.Contains(ReferencedMembers(gate), m => m.Name == "get_HasTextInputFocus");
             Assert.Contains(ReferencedMembers(gate), m => m.Name == "get_Windows");
@@ -199,6 +212,33 @@ namespace PioneerFramework.Tests
             Assert.Contains(ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("EndSteering", Flags)), m => m.Name == "StopControl");
         }
 
+        [Theory]
+        [InlineData(typeof(MainTabWindow_PFView), "ToggleManualSteering")]
+        [InlineData(typeof(CompSteeringConsole), "OpenSteeringWindow")]
+        public void SwitchingControlStopsTheOldSessionBeforeOpeningTheNewOne(Type owner, string method)
+        {
+            var calls = ReferencedMembers(owner.GetMethod(method, Flags)).ToList();
+            int stop = calls.FindIndex(m => m.Name == "StopControl");
+            int open = calls.FindIndex(m => m.DeclaringType == typeof(SteeringController) && m.Name == "Open");
+            Assert.True(stop >= 0 && open > stop);
+        }
+
+        [Fact]
+        public void RefocusingAMemorizedBodyAppliesCurrentOptionsAfterLoadingItsPose()
+        {
+            var calls = ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("FocusBody", Flags)).ToList();
+            int load = calls.FindIndex(m => m.Name == "TryLoadPose");
+            int refresh = calls.FindLastIndex(m => m.Name == "RefreshPilotCameraOptions");
+            Assert.True(load >= 0 && refresh > load);
+        }
+
+        [Fact]
+        public void BothInputOwnersDispatchTheSameCameraShortcuts()
+        {
+            foreach (var pair in new[] { (typeof(MainTabWindow_PFView), "HandleInput"), (typeof(Window_Steering), "ReadKeys") })
+                Assert.Contains(ReferencedMembers(pair.Item1.GetMethod(pair.Item2, Flags)), m => m.Name == "HandlePilotCameraShortcut");
+        }
+
         [Fact]
         public void InspectionLossExplainsCleanupWithoutChangingOtherSubjects()
         {
@@ -208,7 +248,7 @@ namespace PioneerFramework.Tests
             Assert.Contains(members, m => m.Name == "ClearInspection");
             Assert.Contains(members, m => m.Name == "QueueToast");
             Assert.DoesNotContain(members, m => m.DeclaringType == typeof(SteeringController)
-                || m.Name == "FocusGroup" || m.Name == "targetGroupId");
+                || m.Name == "FocusGroup" || WritesWeaponTarget(m));
             Assert.Contains(ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("ResolveUiContext", Flags)), m => m.Name == "InvalidateInspection");
         }
 
@@ -235,6 +275,10 @@ namespace PioneerFramework.Tests
             Assert.Contains(render, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "OrbitUp");
             Assert.Contains(render, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "InterpolateOrbit");
         }
+
+        private static bool WritesWeaponTarget(MemberInfo member)
+            => member.Name == "set_targetGroupId"
+               || member is FieldInfo && (member.Name == "targetGroupId" || member.Name == "weaponTarget");
 
         internal static IEnumerable<MemberInfo> ReferencedMembers(MethodBase method)
         {

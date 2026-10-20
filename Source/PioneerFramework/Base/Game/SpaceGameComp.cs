@@ -2890,6 +2890,7 @@ namespace PioneerFramework
         private void ApplySteering(double dtSeconds)
         {
             if (!SteeringController.IsOpen) return;
+            SteeringInputHost.EnsureInputSafety();
             var group = GetGroupById(SteeringController.GroupId);
             if (group == null || !group.IsActive || !group.IsMovable)
             {
@@ -2947,6 +2948,7 @@ namespace PioneerFramework
                     ApplyMapThrustGates(group, steerMgr, group.CurrentOrbit.positionSystem.v,
                         group.CurrentOrbit.velocitySystem.v, steerSrc, dtSeconds, slices, ref f, ref mf);
                 }
+                SteeringController.ScaleManualThrust(ref f, ref mf);
                 bool burning = false;
                 if (f > 0f && mf > 0f)
                 {
@@ -2963,6 +2965,8 @@ namespace PioneerFramework
                     burning = true;
                 }
                 mapComp.SetThrustersBurning(burning);
+                SteeringController.ActualThrust = burning ? f : 0f;
+                SteeringController.ThrustUnavailable = !burning;
                 if (DebugDetailedSteering && Find.TickManager.TicksGame >= nextSteerLogTick)
                 {
                     DVector3 dirN = transDir.normalized;
@@ -2970,15 +2974,16 @@ namespace PioneerFramework
                     nextSteerLogTick = Find.TickManager.TicksGame + 10;
                 }
             }
-            else if (!SteeringController.AnyRotation && SteeringController.SasKind == SasTargetKind.None)
+            else
             {
-                // 无任何操舵输入：熄火表现（清掉上一步手动平移留下的喷焰）
+                SteeringController.ActualThrust = 0f;
+                SteeringController.ThrustUnavailable = false;
+                // 清掉上一步手动平移留下的喷焰。
                 mapComp.SetThrustersBurning(false);
             }
 
-            // ② 手动旋转：动量轮直设角速度（无输入不动 angularVelocity → 自由自转）
-            if (SteeringController.AnyRotation)
-                group.angularVelocity = SteeringController.GetRotationWorldAngularVelocity(group);
+            // 手动转向先接管 SAS；松键按本次会话设置处理角速度。
+            SteeringController.ApplyManualRotation(group, dtSeconds);
 
             // ③ 手动 SAS：主推进轴对准目标（复用 AlignMainAxis；对准后消旋保持姿态）
             if (SteeringController.SasKind != SasTargetKind.None)

@@ -52,11 +52,11 @@ namespace PioneerFramework
             var source = ResolveOperationGroup();
             int weapons = operationContext.WeaponsOpen && source != null ? combat?.GetGroupWeapons(source.GroupId).Count ?? 0 : 0;
             bool own = CanOperateGroup(selected, false, out _);
-            float height = inspectedContactKey != null ? 328f : selected == null ? 0f : 123f;
+            float height = inspectedContactKey != null ? 361f : selected == null ? 0f : 123f;
             if (selected != null && selected.GroupId != source?.GroupId) height += 33f;
             if (own) height += 99f + (source != null && source.GroupId != selected!.GroupId ? 33f : 0f)
                 + (showInspectorRooms ? inspectorRooms.Count * 33f : 0);
-            if (operationContext.WeaponsOpen) height += 133f + (targetGroupId >= 0 ? 33f : 0f) + weapons * 33f;
+            if (operationContext.WeaponsOpen) height += 133f + (weaponTarget.IsSet ? 33f : 0f) + weapons * 33f;
             height += 16f;
             var outer = new Rect(rect.x + 8, rect.y + 42, rect.width - 16, Mathf.Max(1, rect.height - 50));
             var content = new Rect(0, 0, outer.width - 18, Mathf.Max(height, outer.height));
@@ -67,6 +67,7 @@ namespace PioneerFramework
                 string id = contactDisplayIds[inspectedContactKey];
                 Widgets.Label(new(0, y, content.width, 28), "PFV_Contact".Translate(id));
                 y += 32;
+                if (!contact.isDecoy && InspectorButton(content, ref y, "PFV_SetTarget".Translate())) SetTargetContact(contact);
                 DrawContactDetails(content, ref y, contact);
             }
             else if (selected != null && TryGetKnownContact(selected.GroupId, out Contact known))
@@ -153,18 +154,18 @@ namespace PioneerFramework
             y += 8;
             Widgets.Label(new(0, y, rect.width, 28), "PFV_Operating".Translate("G" + source.GroupId));
             y += 32;
-            Widgets.Label(new(0, y, rect.width, 44), "PFV_WeaponTarget".Translate(targetGroupId >= 0 ? "G" + targetGroupId : "—"));
+            Widgets.Label(new(0, y, rect.width, 44), "PFV_WeaponTarget".Translate(WeaponTargetLabel));
             y += 48;
             if (InspectorButton(rect, ref y, "PFV_CloseWeapons".Translate())) { CloseWeaponsPanel(); return; }
-            if (targetGroupId >= 0 && InspectorButton(rect, ref y, "PFV_ClearTarget".Translate())) SetTargetGroup(-1);
+            if (weaponTarget.IsSet && InspectorButton(rect, ref y, "PFV_ClearTarget".Translate())) SetTargetGroup(-1);
             var weapons = combat.GetGroupWeapons(source.GroupId);
             for (int i = 0; i < weapons.Count; i++)
             {
                 var weapon = weapons[i];
                 string state = (weapon.isOverheated ? "PFV_Overheated" : weapon.CanFire() ? "PFV_Ready" : "PFV_NotReady").Translate();
                 Widgets.Label(new(0, y, rect.width - 58, 27), weapon.def.LabelCap + " · " + state);
-                bool enabled = PFViewUiOperationContext.CanFire(source.GroupId, targetGroupId, true,
-                    TryGetKnownContact(targetGroupId, out _), weapon.CanFire());
+                bool enabled = PFViewUiOperationContext.CanFire(source.GroupId, weaponTarget, true,
+                    TryGetWeaponTarget(out _), weapon.CanFire());
                 bool old = GUI.enabled;
                 GUI.enabled = old && enabled;
                 if (Widgets.ButtonText(new(rect.width - 54, y, 54, 27), "PFV_Fire".Translate())) TryFireAtTarget(source.GroupId, weapon);

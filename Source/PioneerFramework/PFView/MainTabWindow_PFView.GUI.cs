@@ -107,8 +107,9 @@ namespace PioneerFramework
             DrawInspector(rInspector);
             // 仪表基准 = 当前选中的编队（2026-10-18 用户裁定③；操作编队只决定命令来源）
             if (rRadar.width > 0) DrawRadarPanel(ResolveInstrumentGroup());
-            if (rNavball.width > 0) DrawNavballPanel(ResolveInstrumentGroup());
+            if (rNavball.width > 0) DrawNavballPanel(ResolveNavballGroup());
             DrawSteeringStrip();
+            DrawPilotPanel();
             DrawStatusLine();
 
             // 视图内 toast 最后画（必须在所有面板之上）
@@ -277,9 +278,9 @@ namespace PioneerFramework
             Window_Steering? open = FindSteeringWindow();
 
             // 已在操舵本编队 ⇒ 再按 = 解除（关窗；PostClose 里 Close + 推进器熄火）
-            if (open != null && SteeringController.IsOpen && SteeringController.GroupId == g.GroupId)
+            if (SteeringController.IsOpen && SteeringController.GroupId == g.GroupId)
             {
-                open.Close();
+                EndSteering();
                 return;
             }
 
@@ -292,10 +293,8 @@ namespace PioneerFramework
             if (open != null)
                 open.Close();
 
-            SteeringController.Open(g.GroupId);
-            // absorbAroundWindow: false —— PFView 这条路上鼠标要留给 3D 相机（旋转/平移/缩放）；
-            // 船上操舵台那条路仍是 true（操舵时别让点击漏到地图上误下命令）。
-            Find.WindowStack.Add(new Window_Steering(absorbAroundWindow: false));
+            if (SteeringController.IsOpen) Window_Steering.StopControl();
+            SteeringController.Open(g.GroupId, true);
         }
 
         private static Window_Steering? FindSteeringWindow()
