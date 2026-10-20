@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Building_DecoyEmitter.label>欺骗诱饵发射器</PF_Building_DecoyEmitter.label>
+  <PF_Building_DecoyEmitter.description>携带六份欺骗载荷的电子战设备。制造虚假接触，干扰对方主动雷达下的搜索、选靶和导弹制导。每次使用消耗一份载荷，冷却二十模拟秒。初始载荷包含在制造材料中，用尽后需要重建。</PF_Building_DecoyEmitter.description>
+</LanguageData>

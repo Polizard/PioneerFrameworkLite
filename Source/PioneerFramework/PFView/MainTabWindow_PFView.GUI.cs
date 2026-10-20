@@ -1,13 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Verse;
 using RimWorld;
 using PioneerFramework.Combat;
-using PioneerFramework.Components;
+using PioneerFramework.SpaceAI;
 
 namespace PioneerFramework
 {
@@ -24,38 +23,55 @@ namespace PioneerFramework
 
             // 点在 UI 或上层窗口上时不点选（画 UI 在前、控件已消费自己身上的左键；本判据是第二道保险）
             if (e.type == EventType.MouseDown && e.button == 0 && !isDraggingRight && MouseInViewport(inRect))
+                HandleViewportClick(e, inRect);
+        }
+
+        /// <summary>
+        /// 3D 视口左键（2026-10-18 视图系统 v2）：
+        /// · 单击 = 只改选中（不动相机）；
+        /// · 双击 = 选中 + 聚焦（唯一会动相机的鼠标单击动作）；
+        /// · Shift+左键 = 设为目标（不改选中、不动相机）；
+        /// · 空白 = 取消选中（相机也**不动**）。
+        /// </summary>
+        private void HandleViewportClick(Event e, Rect inRect)
+        {
+            Vector2 mouseInView = e.mousePosition - inRect.position;
+            if (TryPickGroup(mouseInView, inRect.size, out int bestId))
             {
-                TrySelectGroup(e.mousePosition - inRect.position, inRect.size);
+                if (e.shift) { SetTargetGroup(bestId); return; }
+                SelectGroupForInspection(bestId);
+                if (e.clickCount >= 2) FocusGroup(bestId);
+                return;
             }
 
-            // 相机复位键让位于操舵：操舵键位里 R = "上"（见 Window_Steering 键位表），
-            // 若两处都认，按一次 R 会"一边上升一边把相机拽回复位"（用户 2026-10-02 起 PFView 也能操舵）。
-            if (e.type == EventType.KeyDown && e.keyCode == KeyCode.R && !SteeringController.IsOpen)
+            if (TrySelectMegastructure(mouseInView, inRect.size, float.MaxValue)) return;
+
+            if (!e.shift)
             {
-                InitCameraForCurrentBody();
+                ClearInspection();
             }
         }
 
-        private void TrySelectGroup(Vector2 mouseInView, Vector2 viewSize)
+        /// <summary>屏幕拾取最近的可见编队。与渲染**同钟**（U19：连续渲染时钟，不是阶梯 physicsTick）。</summary>
+        private bool TryPickGroup(Vector2 mouseInView, Vector2 viewSize, out int bestId)
         {
+            bestId = -1;
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            if (spaceGame == null || mgr == null || renderCamera == null) return;
+            if (spaceGame == null || mgr == null || renderCamera == null) return false;
 
-            // 拾取必须与**渲染**用同一个 tick：physicsTick 单位是秒，取整会带来最多半秒的位移
-            // （几 km/s 的船上就是几 km），相机拉近到船附近时这点偏差等于整屏——船会点不中。
-            double tick = TimeScaleManager.GetPhysicsTickSafe();
-            DVector3 origin = GetRenderOrigin();
+            double tick = RenderTick();
+            DVector3 origin = GetRenderOrigin(tick);
 
             var sysIds = GetCurrentSystemBodyIds(mgr); // 第 12 条：记忆化复用（此前每帧新建 HashSet + 填卫星）
             var sensor = Current.Game?.GetComponent<SensorManager>();   // [V3] 列表准入（本方法低频，直接取组件）
 
             float best = float.MaxValue;
-            int bestId = -1;
 
             foreach (var g in spaceGame.GetAllGroups())
             {
                 if (!g.IsActive || !sysIds.Contains(g.CelestialBodyId)) continue;
+                if (!CanInspectEntity(g)) continue;
                 if (sensor != null && !sensor.PlayerCanSee(g)) continue;   // [V3]/S4c：列表只列看得见的
 
                 DVector3 gAbs = GetGroupPosAbs(g, tick);
@@ -73,12 +89,7 @@ namespace PioneerFramework
                 }
             }
 
-            if (TrySelectMegastructure(mouseInView, viewSize, best)) return;
-            if (bestId >= 0)
-            {
-                selectedGroupId = bestId;
-                InitCameraForCurrentBody();
-            }
+            return bestId >= 0;
         }
 
         private void DrawOverlay(Rect inRect)
@@ -87,14 +98,22 @@ namespace PioneerFramework
 
             ComputeLayout(inRect);   // V-1：五分区（工具条 / 左栏 / 雷达 / 姿态球 / 状态行）
 
-            // 边缘天体指示先画：被面板盖住的部分自然隐藏（面板后画）
+            // 边缘天体指示 + 世界标记先画（面板后画 ⇒ 自然遮挡）
             DrawBodyDirectionIndicators(inRect);
+            DrawWorldMarkers(inRect);
 
             DrawToolbar();
-            DrawLeftColumn();
-            DrawRadarPanel();
-            DrawNavballPanel();
+            DrawObjectList(rLeftCol);
+            DrawInspector(rInspector);
+            // 仪表基准 = 当前选中的编队（2026-10-18 用户裁定③；操作编队只决定命令来源）
+            if (rRadar.width > 0) DrawRadarPanel(ResolveInstrumentGroup());
+            if (rNavball.width > 0) DrawNavballPanel(ResolveNavballGroup());
+            DrawSteeringStrip();
+            DrawPilotPanel();
             DrawStatusLine();
+
+            // 视图内 toast 最后画（必须在所有面板之上）
+            DrawToasts(inRect);
         }
 
         private void DrawBodyDirectionIndicators(Rect inRect)
@@ -118,8 +137,8 @@ namespace PioneerFramework
 
             foreach (var body in bodies)
             {
-                // 锚定天体时不显示自身指示器
-                if (selectedGroupId < 0 && body.bodyId == currentSystemBodyId) continue;
+                // 焦点是天体时不显示自身指示器
+                if (focusKind == PFViewFocusKind.Body && body.bodyId == focusBodyId) continue;
 
                 DVector3 wp = mgr.GetBodyPositionAbs(body.bodyId, tick);
                 Vector3 vp = AbsToView(wp, origin);
@@ -154,14 +173,7 @@ namespace PioneerFramework
                 edge.y = Mathf.Clamp(edge.y, inRect.y + 14f, inRect.yMax - 14f);
 
                 string label = mgr.GetBodyName(body.bodyId);
-                Color bodyColor = body.bodyType switch
-                {
-                    CelestialBodyType.Star => Color.yellow,
-                    CelestialBodyType.Planet => new Color(0.3f, 0.6f, 1f),
-                    _ => Color.gray
-                };
-                GUI.color = bodyColor;
-                Widgets.Label(new Rect(edge.x - 30, edge.y - 10, 60, 20), label);
+                DrawTag(new Vector2(edge.x - 30f, edge.y - 10f), label, PFViewPalette.TextSecondary);
                 GUI.color = Color.white;
             }
         }
@@ -179,14 +191,14 @@ namespace PioneerFramework
             foreach (var g in spaceGame.GetAllGroups())
             {
                 if (!g.IsActive || !sysIds.Contains(g.CelestialBodyId)) continue;
+                if (!CanInspectEntity(g)) continue;
                 if (sensor != null && !sensor.PlayerCanSee(g)) continue;   // [V3]/S4c：列表只列看得见的
                 var gg = g;
                 int entityCount = gg.GetEntityIds()?.Count ?? 0;
                 string label = $"编队 {gg.GroupId}（{entityCount} 个实体）";
                 opts.Add(new FloatMenuOption(label, () =>
                 {
-                    selectedGroupId = gg.GroupId;
-                    InitCameraForCurrentBody();
+                    SelectGroupForInspection(gg.GroupId);
                 }));
             }
 
@@ -204,323 +216,52 @@ namespace PioneerFramework
                 var bb = b;
                 opts.Add(new FloatMenuOption(bb.label, () =>
                 {
-                    currentSystemBodyId = bb.bodyId;
-                    selectedGroupId = -1;
-                    InitCameraForCurrentBody();
+                    FocusBody(bb.bodyId);
+                    objectsDirty = true;
                 }));
             }
             Find.WindowStack.Add(new FloatMenu(opts));
         }
 
         /// <summary>选中组读数面板（V-1：搬进左栏底部；宽度取左栏宽，高度按内容累加）。</summary>
-        private void DrawInfoPanel(Rect colRect, float width)
+        private void ShowContextMenu(Vector2 mouseInRect, Rect inRect)
+        {
+            Vector2 mouseInView = mouseInRect - inRect.position;
+            TryPickGroup(mouseInView, inRect.size, out int hit);
+            var opts = new List<FloatMenuOption>();
+            if (hit >= 0)
+            {
+                opts.Add(new FloatMenuOption($"选中 G{hit}", () => SelectGroupForInspection(hit)));
+                opts.Add(new FloatMenuOption($"聚焦 G{hit}", () => { SelectGroupForInspection(hit); FocusGroup(hit); }));
+                opts.Add(new FloatMenuOption($"设为目标 G{hit}", () => SetTargetGroup(hit)));
+            }
+            opts.Add(new FloatMenuOption("取消选中", ClearInspection));
+            opts.Add(new FloatMenuOption("行星视角", FocusCurrentBody));
+            Find.WindowStack.Add(new FloatMenu(opts));
+        }
+
+        // ── DebugTabMenu_PFL 入口（玩家 UI 不再直接暴露） ──
+        internal void DebugDeployCombatPair() => DeployCombatTestPair();
+        internal void DebugTeleportTarget() => TeleportTargetHere();
+        internal void DebugAdjustTargetSpeed(double dv) => AdjustTargetSpeed(dv);
+
+        internal void DebugPregenerateRoomMaps()
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
-            if (spaceGame == null) return;
-            var g = spaceGame.GetGroupById(selectedGroupId);
-            if (g == null) { selectedGroupId = -1; return; }
-
-            var combatManager = Current.Game?.GetComponent<CombatManager>();
-            var weapons = combatManager != null ? combatManager.GetGroupWeapons(selectedGroupId) : new List<WeaponInstance>();
-            int shownWeapons = Mathf.Min(weapons.Count, 4);
-
-            // 收集本编队的“可进入件”：房间模块（可现生成图）**或**已挂图件（B6 多图。
-            // 旧实现只收 RoomComponentData 件；双舱室/多图船的普通舱盒会被漏掉。
-            var roomEntities = new List<SpaceEntity>();
-            var roomParts = new List<SpacePart>();
+            var g = selectedGroupId >= 0 ? spaceGame?.GetGroupById(selectedGroupId) : null;
+            if (g == null) { QueueToast("先选中一个编队"); return; }
+            int count = 0;
             foreach (int eid in g.GetEntityIds())
             {
-                var e = spaceGame.GetEntityById(eid);
-                if (e == null) continue;
-                foreach (var part in e.Parts)
+                var ent = spaceGame?.GetEntityById(eid);
+                if (ent == null) continue;
+                foreach (var part in ent.Parts)
                 {
-                    if (part == null || part.isDestroyed) continue;
-                    if (part.IsRoomModulePart || part.linkedMapId >= 0 || e.GetArchivedMapForPart(part.partId) >= 0)
-                    {
-                        roomEntities.Add(e);
-                        roomParts.Add(part);
-                    }
+                    if (!part.IsRoomModulePart) continue;
+                    if (SpaceMapGenerator.GenerateRoomMap(ent, part) != null) count++;
                 }
             }
-            var tankEntries = new List<(SpaceEntity entity, SpacePart part)>();
-            foreach (int eid in g.GetEntityIds())
-            {
-                var e = spaceGame.GetEntityById(eid);
-                if (e == null) continue;
-                foreach (var part in e.Parts)
-                {
-                    if (part == null || part.isDestroyed) continue;
-                    if (part.GetComponent<PropellantTankComponentData>() != null)
-                        tankEntries.Add((e, part));
-                }
-            }
-            float roomSectionH = roomParts.Count > 0 ? 20 + roomParts.Count * 46 + 26 : 0;
-            float fuelSectionH = tankEntries.Count > 0 ? 20 + tankEntries.Count * 24 + 26 : 0;
-
-            var target = targetGroupId >= 0 ? spaceGame.GetGroupById(targetGroupId) : null;
-            var mapMassComp = g.GetLinkedMapComp();   // 2026-10-17：Map 质量读数（有图编队才有）
-
-            // 面板高度 = 下面逐行累加的行高之和（旧版是手写常数 195 + …，与实际画出的行对不上：
-            // 无目标时底部空出一大块，而"目标被销毁"时又按 80 预留 → 高度与内容长期错位）。
-            const float RowTitle = 22f, RowText = 18f, RowBtn = 30f, RowTiny = 15f;
-            const float InertiaH = 18f + RowTiny * 4f + 4f;   // 标题 + 三行惯量 + 一行限速 + 间距
-            float pw = width;
-            float ph = 5                                             // 上留白
-                     + RowTitle                                      // 标题
-                     + InertiaH                                      // 惯量读数（批 0）
-                     + (mapMassComp != null ? RowTiny + 4f : 0f)     // 地图质量（2026-10-17）
-                     + RowText + RowBtn                              // 目标行 + 设为目标
-                     + RowBtn                                        // 手动操舵开关
-                     + shownWeapons * 22 + (weapons.Count > shownWeapons ? RowText : 0) + 4 + RowBtn
-                     + (target != null ? 26 + 30 : 0)                 // 传送 + 调速
-                     + roomSectionH + fuelSectionH
-                     + RowBtn + 6;                                    // 取消选中
-            Rect p = new Rect(colRect.xMax - pw, colRect.yMax - ph, pw, ph);
-
-            // 并入左栏（不再是一扇独立小窗）：面板底 + 顶部分割线；标题去掉旧标签「（射手）」
-            //（那是"手动开火射手"时代的叫法，现在它就是"当前选中编队"；V-1.1，用户 2026-10-02）。
-            // 姿态/主推轴两行已挪到姿态球两侧（同一份数据只显示一处）。
-            Widgets.DrawBoxSolid(p, PFViewPalette.PanelBg);
-            UiKit.SpacecraftUIDecor.DrawDivider(p, p.y, p.width, PFViewPalette.Divider);
-            uiBlockRects.Add(p);
-
-            float x = p.x + 5;
-            float w = pw - 10;
-            float y = p.y + 5;
-
-            MiniLabel(new Rect(x, y, w, RowTitle), $"编队 {g.GroupId}", PFViewPalette.TextPrimary);
-            y += RowTitle;
-
-            // ── 惯量读数（批 0）──
-            // 无Map 编队没有操舵台（`Window_Steering` 的准入要求船图上有完好操舵台）⇒
-            // PFView 的选中面板就是它的读数面；与操舵窗同一出处（`InertiaDebugLines`，禁止第二份格式化）。
-            MiniLabel(new Rect(x, y, w, 16f), "惯量（质心主轴·降序 / 绕原点）", PFViewPalette.TextSecondary);
-            y += 18f;
-            g.InertiaDebugLines(out string il1, out string il2, out string il3);
-            MiniLabel(new Rect(x, y, w, RowTiny), il1, PFViewPalette.TextPrimary);
-            y += RowTiny;
-            if (!string.IsNullOrEmpty(il2))
-            {
-                MiniLabel(new Rect(x, y, w, RowTiny), il2, PFViewPalette.TextPrimary);
-                y += RowTiny;
-            }
-            if (!string.IsNullOrEmpty(il3))
-            {
-                MiniLabel(new Rect(x, y, w, RowTiny), il3, PFViewPalette.TextPrimary);
-                y += RowTiny;
-            }
-            // 批 1：魔法档限速（NoMap 船的唯一读数面；与操舵窗同一公式、不同排版）
-            if (g.maxAngularRate > 0f)
-            {
-                MiniLabel(new Rect(x, y, w, RowTiny),
-                    $"限速 {g.MaxAngularRate * Mathf.Rad2Deg:F1} °/s（def 覆盖）", PFViewPalette.TextSecondary);
-            }
-            else
-            {
-                float slowR = g.MaxAngularRate * Mathf.Rad2Deg;
-                float rollR = g.MaxAngularRateAboutBodyAxis(0, 0, 1) * Mathf.Rad2Deg;
-                float yawR = g.MaxAngularRateAboutBodyAxis(0, 1, 0) * Mathf.Rad2Deg;
-                float pitchR = g.MaxAngularRateAboutBodyAxis(1, 0, 0) * Mathf.Rad2Deg;
-                MiniLabel(new Rect(x, y, w, RowTiny),
-                    $"限速 {slowR:F1} °/s（最慢轴）｜滚 {rollR:F1} · 偏 {yawR:F1} · 俯 {pitchR:F1}",
-                    PFViewPalette.TextSecondary);
-            }
-            y += RowTiny + 4f;
-
-            // ── 地图质量（2026-10-17 用户裁定：建筑生成/拆除、屋顶覆盖/拆除、工质加注/消耗）──
-            if (mapMassComp != null)
-            {
-                var (buildingKg, roofCells, propellantKg, totalKg) = mapMassComp.MapMassSnapshot();
-                MiniLabel(new Rect(x, y, w, RowTiny),
-                    "地图质量 " + totalKg.ToString("0", CultureInfo.InvariantCulture) + " kg（建筑 "
-                    + buildingKg.ToString("0", CultureInfo.InvariantCulture) + " · 屋顶 " + roofCells.ToString(CultureInfo.InvariantCulture)
-                    + " 格 · 工质 " + propellantKg.ToString("0", CultureInfo.InvariantCulture) + "）",
-                    PFViewPalette.TextSecondary);
-                y += RowTiny + 4f;
-            }
-
-            if (target != null)
-            {
-                double dist = (GetGroupRelPos(g) - GetGroupRelPos(target)).magnitude;
-                Widgets.Label(new Rect(x, y, w, RowText), $"目标 编队 {target.GroupId}　距离 {dist / 1000.0:F0} km");
-            }
-            else
-            {
-                Widgets.Label(new Rect(x, y, w, RowText), "目标: 无（选中目标编队后按钮设置）");
-            }
-            y += RowText;
-
-            if (Widgets.ButtonText(new Rect(x, y, w, 24), targetGroupId == selectedGroupId ? "清除目标" : "设为目标"))
-            {
-                targetGroupId = targetGroupId == selectedGroupId ? -1 : selectedGroupId;
-            }
-            y += RowBtn;
-
-            // ── 手动操舵开关（用户 2026-10-02："操舵开关集成到左边；按下进入手动操舵，再按解除"）──
-            //    按下 = 打开操舵 HUD（`Window_Steering`，键位/SAS/动作组都在那儿），再按 = 关窗解除。
-            bool steeringThis = SteeringController.IsOpen && SteeringController.GroupId == g.GroupId;
-            if (Widgets.ButtonText(new Rect(x, y, w, 24),
-                    steeringThis ? "◼ 手动操舵（再按解除）" : "手动操舵"))
-            {
-                ToggleManualSteering(g);
-            }
-            y += RowBtn;
-
-            // 武器列表（逐把开火）
-            for (int i = 0; i < shownWeapons; i++)
-            {
-                var wp = weapons[i];
-                string wState = wp.isOverheated ? "过热" : (wp.cooldownRemaining > 0 ? "冷却" + wp.cooldownRemaining : "就绪");
-                Widgets.Label(new Rect(x, y, w - 60, RowText), $"W{i} {wp.def.defName} [{wState}]");
-                if (Widgets.ButtonText(new Rect(x + w - 55, y, 50, RowText), "开火"))
-                    FireAtTarget(wp);
-                y += 22;
-            }
-            if (weapons.Count > shownWeapons)
-            {
-                Widgets.Label(new Rect(x, y, w, RowText - 2), $"... +{weapons.Count - shownWeapons} 把武器");
-                y += RowText;
-            }
-            y += 4;
-
-            if (Widgets.ButtonText(new Rect(x, y, w, 24), "全部开火"))
-            {
-                if (target != null)
-                    foreach (var wp in weapons)
-                        if (wp.CanFire())
-                            FireAtTarget(wp);
-            }
-            y += RowBtn;
-
-            // 目标操作
-            if (target != null)
-            {
-                if (Widgets.ButtonText(new Rect(x, y, w, 24), "把目标传送到正前方 1km"))
-                    TeleportTargetHere();
-                y += 26;
-                if (Widgets.ButtonText(new Rect(x, y, w * 0.48f, 24), "目标 +100 m/s"))
-                    AdjustTargetSpeed(100.0);
-                if (Widgets.ButtonText(new Rect(x + w * 0.52f, y, w * 0.48f, 24), "目标 -100 m/s"))
-                    AdjustTargetSpeed(-100.0);
-                y += RowBtn;
-            }
-
-            // 舱室/地图操作：每张图一个入口（B6）；房间模块可现生成图，普通挂图舱盒直接进已有图。
-            if (roomParts.Count > 0)
-            {
-                Widgets.Label(new Rect(x, y, w, 18), "<b>舱室/地图:</b>");
-                y += 20;
-                for (int i = 0; i < roomParts.Count; i++)
-                {
-                    var rp = roomParts[i];
-                    var ent = roomEntities[i];
-                    int archivedMapId = ent.GetArchivedMapForPart(rp.partId);
-                    string label = rp.RoomTypeDef != null
-                        ? rp.RoomTypeDef.label + " P" + rp.partId
-                        : (rp.linkedMapId >= 0 ? "地图" + rp.linkedMapId + " P" + rp.partId : "舱室 P" + rp.partId);
-                    bool hasMap = rp.linkedMapId >= 0 && SpaceMapGenerator.FindPocketMap(rp.linkedMapId) != null;
-                    if (hasMap) label += " (已生成)";
-                    if (rp.isSealed) label += " [封闭]";
-                    if (archivedMapId >= 0) label = "存档地图" + archivedMapId + " P" + rp.partId + " [已封存]";
-
-                    float mainW = hasMap ? w * 0.68f : w;
-                    if (Widgets.ButtonText(new Rect(x, y, mainW, 22),
-                            archivedMapId >= 0 ? "取档 " + label : "进入 " + label))
-                    {
-                        if (archivedMapId >= 0)
-                        {
-                            spaceGame.BeginRestoreMap(ent, archivedMapId, rp.partId);
-                        }
-                        else
-                        {
-                            Map? m = rp.linkedMapId >= 0 ? SpaceMapGenerator.FindPocketMap(rp.linkedMapId) : null;
-                            if (m == null && rp.IsRoomModulePart)
-                                m = SpaceMapGenerator.GenerateRoomMap(ent, rp);   // 普通挂图件没有房间模板，不现生成
-                            if (m != null) SpaceMapGenerator.EnterPocketMap(m);
-                        }
-                    }
-                    if (hasMap && Widgets.ButtonText(new Rect(x + w * 0.70f, y, w * 0.30f, 22), "封存"))
-                        spaceGame.BeginArchiveMap(ent, rp.linkedMapId);   // B6：逐图封存
-                    y += 26;
-
-                    // B6：逐图系统开关（减小多图管理压力）；只对活图显示。
-                    if (hasMap && rp.linkedMapId >= 0)
-                    {
-                        var mc = ent.GetMapComp(rp.linkedMapId);
-                        if (mc != null)
-                        {
-                            bool propOn = mc.PropulsionEnabled;
-                            bool sensorOn = mc.SensorsEnabled;
-                            if (Widgets.ButtonText(new Rect(x, y, w * 0.48f, 20),
-                                    "推进: " + (propOn ? "开" : "关")))
-                                mc.SetSystemEnabled(MapSystemFlags.Propulsion, !propOn);
-                            if (Widgets.ButtonText(new Rect(x + w * 0.52f, y, w * 0.48f, 20),
-                                    "传感: " + (sensorOn ? "开" : "关")))
-                                mc.SetSystemEnabled(MapSystemFlags.Sensors, !sensorOn);
-                            y += 20;
-                        }
-                    }
-                }
-                if (Widgets.ButtonText(new Rect(x, y, w, 22), "预生成所有舱室地图（测试）"))
-                {
-                    for (int i = 0; i < roomParts.Count; i++)
-                        if (roomParts[i].IsRoomModulePart)
-                            SpaceMapGenerator.GenerateRoomMap(roomEntities[i], roomParts[i]);
-                }
-                y += 26;
-            }
-
-            // B6：燃料罐——供油组/优先级（逐件）；切出只隔离该罐，质量仍计入物理学
-            if (tankEntries.Count > 0)
-            {
-                Widgets.Label(new Rect(x, y, w, 18), "<b>燃料罐:</b>");
-                y += 20;
-                for (int i = 0; i < tankEntries.Count; i++)
-                {
-                    var ent = tankEntries[i].entity;
-                    var rp = tankEntries[i].part;
-                    var tank = rp.GetComponent<PropellantTankComponentData>();
-                    if (tank == null) continue;
-                    string group = rp.fuelGroupId == 0 ? "主" : rp.fuelGroupId.ToString();
-                    Widgets.Label(new Rect(x, y, w * 0.52f, 22),
-                        $"P{rp.partId} 组{group} 优{rp.fuelPriority} {tank.massKg:F0}/{tank.capacityKg:F0}kg");
-                    if (Widgets.ButtonText(new Rect(x + w * 0.54f, y, w * 0.20f, 20),
-                            rp.fuelGroupId == 0 ? "切出" : "接回"))
-                    {
-                        rp.fuelGroupId = rp.fuelGroupId == 0 ? rp.partId : 0;
-                        rp.InvalidateStats();
-                        ent.InvalidateFuelPlans();
-                    }
-                    if (Widgets.ButtonText(new Rect(x + w * 0.76f, y, w * 0.10f, 20), "-"))
-                    {
-                        if (rp.fuelPriority > 0) rp.fuelPriority--;
-                        ent.InvalidateFuelPlans();
-                    }
-                    if (Widgets.ButtonText(new Rect(x + w * 0.88f, y, w * 0.12f, 20), "+"))
-                    {
-                        if (rp.fuelPriority < 9) rp.fuelPriority++;
-                        ent.InvalidateFuelPlans();
-                    }
-                    y += 24;
-                }
-                if (Widgets.ButtonText(new Rect(x, y, w, 22), "全部接回主网"))
-                {
-                    for (int i = 0; i < tankEntries.Count; i++)
-                    {
-                        tankEntries[i].part.fuelGroupId = 0;
-                        tankEntries[i].part.InvalidateStats();
-                        tankEntries[i].entity.InvalidateFuelPlans();
-                    }
-                }
-                y += 26;
-            }
-
-            if (Widgets.ButtonText(new Rect(x, y, w, 24), "取消选中"))
-            {
-                selectedGroupId = -1;
-                targetGroupId = -1;
-                InitCameraForCurrentBody();
-            }
+            QueueToast($"预生成舱室地图：{count} 张");
         }
 
         /// <summary>
@@ -537,27 +278,23 @@ namespace PioneerFramework
             Window_Steering? open = FindSteeringWindow();
 
             // 已在操舵本编队 ⇒ 再按 = 解除（关窗；PostClose 里 Close + 推进器熄火）
-            if (open != null && SteeringController.IsOpen && SteeringController.GroupId == g.GroupId)
+            if (SteeringController.IsOpen && SteeringController.GroupId == g.GroupId)
             {
-                open.Close();
+                EndSteering();
+                return;
+            }
+
+            if (!CanOperateGroup(g, true, out string reason))
+            {
+                QueueToast(reason);
                 return;
             }
 
             if (open != null)
-                open.Close();   // 换船：先解除旧的（见上面注释的顺序陷阱）
+                open.Close();
 
-            Map? shipMap = g.GetLinkedMapComp()?.map;
-            if (!CompSteeringConsole.HasConsole(shipMap))
-            {
-                Messages.Message("本编队没有可用的操舵台（未安装 / 已损坏 / 被拆）——手动操舵需要船上有操舵台。",
-                    MessageTypeDefOf.RejectInput, false);
-                return;
-            }
-
-            SteeringController.Open(g.GroupId);
-            // absorbAroundWindow: false —— PFView 这条路上鼠标要留给 3D 相机（旋转/平移/缩放）；
-            // 船上操舵台那条路仍是 true（操舵时别让点击漏到地图上误下命令）。
-            Find.WindowStack.Add(new Window_Steering(absorbAroundWindow: false));
+            if (SteeringController.IsOpen) Window_Steering.StopControl();
+            SteeringController.Open(g.GroupId, true);
         }
 
         private static Window_Steering? FindSteeringWindow()
@@ -592,13 +329,7 @@ namespace PioneerFramework
 
         private void FireAtTarget(WeaponInstance weapon)
         {
-            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
-            var combatManager = Current.Game?.GetComponent<CombatManager>();
-            var target = targetGroupId >= 0 ? spaceGame?.GetGroupById(targetGroupId) : null;
-            if (combatManager == null || target == null) return;
-
-            DVector3 targetPos = GetGroupRelPos(target);
-            combatManager.FireWeapon(selectedGroupId, weapon, targetPos);
+            TryFireAtTarget(ResolveOperationGroup()?.GroupId ?? -1, weapon);
         }
 
         private void TeleportTargetHere()
@@ -652,68 +383,67 @@ namespace PioneerFramework
             Log.Message($"[PFView] G{target.GroupId} 速度沿射向 G{shooter.GroupId} 方向调整 {dv:+#;-#;0} m/s");
         }
 
-        /// <summary>部署一对 100m 间距的交火测试船（敌对 faction），绕当前系统天体 500km 轨道。</summary>
+        /// <summary>部署一对配有实际设备和内景的交火测试船，间距 200m、高度 500km。</summary>
         private void DeployCombatTestPair()
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return;
-
-            int gidA = spaceGame.AllocGroupId();
-            int gidB = gidA + 1;
-            int eidA = spaceGame.AllocEntityId();
-            int eidB = eidA + 1;
-
+            var source = SpaceMapGenerator.GetAnchorMap();
+            var enemy = IncidentWorker_SpaceEncounter.FindEnemy();
+            var template = DefDatabase<SpaceShipTemplateDef>.GetNamedSilentFail("PF_Debug_CombatShip");
+            if (source == null || enemy == null || template == null)
+            { QueueToast("需要锚点地图、敌对势力和交火测试舰模板"); return; }
+            var session = Current.Game;
             int bodyId = currentSystemBodyId;
-            double orbitRadius = SpaceConstants.PlanetRadiusMeters + 500000.0;
-            double angle = Find.TickManager.TicksGame * 0.001;
-            DVector3 basePos = new DVector3(System.Math.Cos(angle) * orbitRadius, 0, System.Math.Sin(angle) * orbitRadius);
-            double mu = spaceGame.GetBodyGM(bodyId);
-            double speed = System.Math.Sqrt(mu / orbitRadius);
-            DVector3 vel = new DVector3(-System.Math.Sin(angle) * speed, 0, System.Math.Cos(angle) * speed);
-
-            CreateTestShip(spaceGame, gidA, eidA, basePos, vel, Faction.OfPlayer.loadID, bodyId);   // [V12] 真阵营 id
-            CreateTestShip(spaceGame, gidB, eidB, basePos + new DVector3(200, 0, 0), vel, FactionResolver.HostileFactionIdForPlayer(), bodyId);
-
-            selectedGroupId = gidA;
-            targetGroupId = gidB;
-            InitCameraForCurrentBody();
-
-            Log.Message($"[PFView] 部署交火测试对: G{gidA}(f0) vs G{gidB}(f1) 间距200m @ {orbitRadius / 1000.0:F0}km 轨道");
+            LongEventHandler.QueueLongEvent(() =>
+            {
+                if (!ReferenceEquals(session, Current.Game)) return;
+                using var creation = new EncounterBuildTransaction(id => spaceGame.DestroyGroup(id, "交火测试部署回滚"));
+                double tick = TimeScaleManager.GetPhysicsTickSafe();
+                double orbitRadius = spaceGame.GetBodySurfaceRadius(bodyId) + 500000.0;
+                double angle = tick * 0.001;
+                double speed = System.Math.Sqrt(spaceGame.GetBodyGM(bodyId) / orbitRadius);
+                var reference = new SpaceEntityGroup(-1, Faction.OfPlayer.loadID) { CelestialBodyId = bodyId };
+                var center = reference.GetCentralBodyOffset(tick);
+                var centerVelocity = reference.GetCentralBodyVelocity((int)System.Math.Round(tick));
+                DVector3 basePos = FrameConvert.BodyToSystem((BodyVec3)new DVector3(
+                    System.Math.Cos(angle) * orbitRadius, 0, System.Math.Sin(angle) * orbitRadius), center);
+                DVector3 vel = FrameConvert.BodyToSystemVelocity((BodyVec3)new DVector3(
+                    -System.Math.Sin(angle) * speed, 0, System.Math.Cos(angle) * speed), centerVelocity);
+                var first = CreateTestShip(template, source, basePos, vel, Faction.OfPlayer, bodyId, creation);
+                var second = CreateTestShip(template, source, basePos + new DVector3(200, 0, 0), vel, enemy, bodyId, creation);
+                creation.Commit();
+                selectedGroupId = first.GroupId;
+                targetGroupId = second.GroupId;
+                FocusGroup(first.GroupId);
+                Log.Message($"[PFView] 部署完整交火测试对: G{first.GroupId}(f{first.FactionId}) vs G{second.GroupId}(f{second.FactionId}) 间距200m @ {orbitRadius / 1000.0:F0}km 轨道；传感器/主动雷达/武器/燃料已就绪");
+            }, "GeneratingMap", false, e => Log.Error("[PFView] 交火测试部署失败：" + e));
         }
 
-        /// <summary>创建单 part 测试船（Lite 裁剪：无 Ship3D 蓝本，直接构造唯一 part 盒体）。</summary>
-        private static void CreateTestShip(SpaceGameComp spaceGame, int groupId, int entityId,
-            DVector3 pos, DVector3 vel, int factionId, int bodyId)
+        /// <summary>测试舰复用遭遇舰船生成与设备投影，保持玩家可操作的普通建筑。</summary>
+        private static SpaceEntityGroup CreateTestShip(SpaceShipTemplateDef template, Map source,
+            DVector3 pos, DVector3 vel, Faction faction, int bodyId, EncounterBuildTransaction creation)
         {
-            var group = new SpaceEntityGroup(groupId, factionId)
-            {
-                IsMovable = true,
-                IsCollidable = true,
-                CelestialBodyId = bodyId
-            };
-            group.CurrentOrbit = new OrbitState { positionSystem = (SystemVec3)pos, velocitySystem = (SystemVec3)vel, rotation = DQuaternion.identity };
-            spaceGame.RegisterGroup(group);
+            var group = EncounterShipFactory.Create(template, faction, source, pos, vel, bodyId);
+            creation.Add(group.GroupId);
+            group.IsStealth = false;
+            group.ActivePingEnabled = true;
             group.EnterCircularOrbit(Find.TickManager.TicksGame, bodyId);
-
-            var entity = new SpaceEntity(entityId, factionId)
+            var spaceGame = Current.Game.GetComponent<SpaceGameComp>();
+            foreach (int eid in group.GetEntityIds())
             {
-                GroupId = groupId,
-                IsCollidable = true,
-                IsMovable = true,
-                IsAffectedByGravity = true
-            };
-            entity.SetPositionVelocity(DVector3.zero, DVector3.zero);
-            entity.SetRotation(Quaternion.identity);
-            entity.SetParts(new List<SpacePart>
-            {
-                new() {
-                    partId = 1,
-                    defName = "PF_TestShip",
-                    positionShip = DVector3.zero,
-                    boundsSizeShip = new DVector3(100.0, 40.0, 100.0)
+                var map = SpaceMapGenerator.FindPocketMap(spaceGame.GetEntityById(eid)!.MapId);
+                if (map == null) continue;
+                Thing? designator = map.spawnedThings.FirstOrDefault(t => t.TryGetComp<CompMapDesignator>() != null);
+                if (designator == null) continue;
+                foreach (var thing in map.spawnedThings)
+                {
+                    var turret = thing.TryGetComp<CompMapTurret>();
+                    if (turret?.Mount != null && designator.TryGetComp<CompMapDesignator>().RegisterTurret(thing))
+                        turret.Mount.boundDesignator = designator;
                 }
-            });
-            spaceGame.RegisterEntity(entity);
+            }
+            return group;
         }
     }
 }

@@ -24,7 +24,7 @@ namespace PioneerFramework
     /// 导弹发射器（独立建筑类型，2026-09-06 重构：不复用炮塔 CompMapTurret / 定位机 CompMapDesignator——
     /// 发射器不是炮塔，没有转动炮头/射界/绑定语义；也不是定位机）。
     /// 职责：
-    ///   武器驱动（WeaponInstance：冷却/弹药，载入冷启动重建——同炮塔口径）；
+    ///   武器驱动（WeaponInstance：冷却/弹药，载入时恢复状态并绑定 Def）；
     ///   目标管理（Auto = 最近敌对 / Manual = 玩家指定，武器 orbitalEngageRange 射程）；
     ///   出膛发射（出膛点 = 炮口射线 ∩ 本船 AABB 六面，复用 F2 几何 → FireFromMapBuilding，
     ///   释放导弹 Mission=Following——目标跟随本发射器、不立即进终末）；
@@ -97,15 +97,20 @@ namespace PioneerFramework
 
         public override void PostSpawnSetup(bool respawningAfterLoad)
         {
+            parent.Map?.GetComponent<SpaceMapComp>()?.RegisterSpaceWeapon(parent);
             base.PostSpawnSetup(respawningAfterLoad);
-            BuildWeapon();
+            if (weapon == null) BuildWeapon();
         }
 
         public override void PostExposeData()
         {
             base.PostExposeData();
+            Scribe_Deep.Look(ref weapon, "weapon");
             if (Scribe.mode == LoadSaveMode.LoadingVars)
-                BuildWeapon(); // 武器状态机冷启动（冷却重置可接受；弹药默认无限），同炮塔口径
+            {
+                if (weapon == null) BuildWeapon();
+                else weapon.def = DefDatabase<WeaponDef>.GetNamedSilentFail(Props.weaponDefName);
+            }
             // 手动目标/模式 + 精确打击点（2026-09-07 补：此前发射器运行状态不存盘，读档后回 Auto 重扫）
             Scribe_Values.Look(ref autoFire, "autoFire", true);
             Scribe_Values.Look(ref volleyCount, "volleyCount", 0);
@@ -189,7 +194,11 @@ namespace PioneerFramework
             if (manualTargetGroupId < 0) return null;
             var g = sg.GetGroupById(manualTargetGroupId);
             if (g == null || !g.IsActive || !IsHostile(g, myGroup)) return null;
-            if ((cm.GetGroupPos(g) - myPos).magnitude > range) return null;
+            var sensor = sensorMgrRef.Get();
+            if (sensor != null && !sensor.TryGetKnownState(myGroup.FactionId, g, out _)) return null;
+            DVector3 knownPos = sensor != null && sensor.TryGetKnownState(myGroup.FactionId, g, out var observed)
+                ? ContactMemory.CoastedPosition(observed, TimeScaleManager.GetPhysicsTickSafe()) : cm.GetGroupPos(g);
+            if ((knownPos - myPos).magnitude > range) return null;
             // [V3]（S3b）：**开火前过认知层** —— 看不见就不许开火（"分配是意图、捕获是认知"）。
             //   与视图用**同一条**准入判据（`SensorManager.PlayerCanSee`）⇒ 能看到才打得到，不会出现
             //   "列表里没有、却能开火"这种自相矛盾。接触丢而复得 ⇒ 自动继续（与 K6"目标失活即中止"同构）。
@@ -205,7 +214,8 @@ namespace PioneerFramework
         private bool CanEngage(SpaceEntityGroup g)
         {
             var sensor = sensorMgrRef.Get();
-            return sensor == null || sensor.PlayerCanSee(g);
+            var own = GetMyGroup();
+            return own != null && (sensor == null || sensor.TryGetKnownState(own.FactionId, g, out _));
         }
 
         private static bool IsHostile(SpaceEntityGroup g, SpaceEntityGroup myGroup)
@@ -308,6 +318,13 @@ namespace PioneerFramework
             DVector3 myPos = cm.GetGroupPos(myGroup);
             DVector3 targetPos = cm.GetGroupPos(tgt);
             DVector3 targetVel = cm.GetGroupVelocity(tgt);
+            var sensor = sensorMgrRef.Get();
+            if (sensor != null)
+            {
+                if (!sensor.TryGetKnownState(myGroup.FactionId, tgt, out var contact)) return;
+                targetPos = ContactMemory.CoastedPosition(contact, TimeScaleManager.GetPhysicsTickSafe());
+                targetVel = contact.velocity;
+            }
 
             UnityEngine.Vector3 muzzleShip = MapCoordMapper.MapCellToShip(parent.Map, parent.Position);
             UnityEngine.Vector3 targetShip = MapCoordMapper.SystemToShip(entity, myPos, targetPos);

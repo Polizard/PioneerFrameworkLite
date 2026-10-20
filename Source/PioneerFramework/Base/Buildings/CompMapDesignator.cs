@@ -134,7 +134,8 @@ namespace PioneerFramework
         private bool CanEngage(SpaceEntityGroup g)
         {
             var sensor = sensorMgrRef.Get();
-            return sensor == null || sensor.PlayerCanSee(g);
+            var own = GetMyGroup();
+            return own != null && (sensor == null || sensor.TryGetKnownState(own.FactionId, g, out _));
         }
 
         private bool IsHostile(SpaceEntityGroup g)
@@ -151,7 +152,7 @@ namespace PioneerFramework
             var cm = GetCombatManager();
             var myGroup = GetMyGroup();
             if (cm == null || myGroup == null) return false;
-            return (cm.GetGroupPos(g) - cm.GetGroupPos(myGroup)).magnitude <= GetEffectiveRange();
+            return (GetAimTargetPosition(g) - cm.GetGroupPos(myGroup)).magnitude <= GetEffectiveRange();
         }
 
         /// <summary>本定位机射程 = 全部绑定炮塔武器 orbitalEngageRange 的最大值。</summary>
@@ -195,6 +196,10 @@ namespace PioneerFramework
         private DVector3 GetAimTargetPosition(SpaceEntityGroup target)
         {
             DVector3 centerPos = GetCombatManager()?.GetGroupPos(target) ?? DVector3.zero;
+            var own = GetMyGroup();
+            var sensor = sensorMgrRef.Get();
+            if (own != null && sensor != null && sensor.TryGetKnownState(own.FactionId, target, out var known))
+                centerPos = ContactMemory.CoastedPosition(known, TimeScaleManager.GetPhysicsTickSafe());
             if (preciseStrikeGroupId != target.GroupId || !preciseStrikeCell.IsValid) return centerPos;
 
             var tEntity = GetTargetEntity(target);
@@ -277,6 +282,12 @@ namespace PioneerFramework
             DVector3 myPos = cm.GetGroupPos(myGroup);
             DVector3 targetPos = GetAimTargetPosition(target);
             DVector3 targetVel = cm.GetGroupVelocity(target);
+            var sensor = sensorMgrRef.Get();
+            if (sensor != null)
+            {
+                if (!sensor.TryGetKnownState(myGroup.FactionId, target, out var known)) return;
+                targetVel = known.velocity;
+            }
 
             // 精确炮击日志（详细日志）：瞄准点相对船心的偏移量
             if (CombatManager.DebugDetailedCombat && preciseStrikeGroupId == target.GroupId && HasPreciseStrike)

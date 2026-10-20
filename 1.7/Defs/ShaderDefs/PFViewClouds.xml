@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- 地球云层：独立半透明球面；深度测试保留飞船遮挡，不写深度。 -->
+  <ShaderDef>
+    <defName>PF_PlanetClouds</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_PlanetClouds.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_PlanetClouds.frag.glsl</fragmentShaderFileName>
+      <blendMode>Alpha</blendMode>
+      <depthTest>true</depthTest>
+      <depthWrite>false</depthWrite>
+      <cullMode>Back</cullMode>
+      <renderQueue>2850</renderQueue>
+      <flipTextureST>false</flipTextureST>
+      <textureWrapOverrides>
+        <li><key>_NoiseTex</key><value>Repeat</value></li>
+        <li><key>_CloudTex</key><value>Repeat</value></li>
+        <li><key>_SunsetColorRamp</key><value>Clamp</value></li>
+      </textureWrapOverrides>
+    </shaderProgram>
+  </ShaderDef>
+</Defs>

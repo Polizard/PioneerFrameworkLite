@@ -553,6 +553,7 @@ namespace PioneerFramework
         // ── 主动燃烧（缓释 dV） ──
         /// <summary>是否有正在执行的主动燃烧。</summary>
         public bool HasActiveBurn ;
+        public long BurnCommandVersion;
         /// <summary>燃烧方向单位向量（**系统系**；S1 命名：系标记进名字，见计划稿 §11.2）。</summary>
         public DVector3 burnDirectionSystem;
         /// <summary>本次燃烧剩余 dV (m/s)。</summary>
@@ -1414,6 +1415,7 @@ namespace PioneerFramework
         {
             // B5：关键件损毁 ⇒ 失能，不再接受新点火（已有点火由 MarkPartDestroyed 的 EndBurn 熄掉）。
             if (IsCrippled) return;
+            BurnCommandVersion++;
             HasActiveBurn = true;
             burnTargetReached = false;
             // ⚠ **信号失效点之一**：点火会让 SignalStrength 跃升（[V8] 的 burning 项）——
@@ -1469,6 +1471,7 @@ namespace PioneerFramework
         /// </summary>
         public void EndBurn()
         {
+            BurnCommandVersion++;
             HasActiveBurn = false;
             derivedDirty = true;   // 失效点之一（熄火 ⇒ burning 项归零），与 StartBurn 成对
             remainingBurnDV = 0.0;
@@ -2131,6 +2134,7 @@ namespace PioneerFramework
             Scribe_Values.Look(ref LandingTaskId, "landingTaskId", string.Empty);
             Scribe_Values.Look(ref GroupId, "groupId");
             Scribe_Values.Look(ref FactionId, "factionId");
+            Scribe_Values.Look(ref BurnCommandVersion, "burnCommandVersion");
             Scribe_Values.Look(ref IsActive, "isActive", true);
             Scribe_Values.Look(ref IsMovable, "isMovable", true);
             Scribe_Values.Look(ref IsCollidable, "isCollidable", true);

@@ -538,6 +538,7 @@ namespace PioneerFramework
                 group.AddEntity(entity.EntityId);
 
             entities[entity.EntityId] = entity;
+            nextEntityId = Math.Max(nextEntityId, entity.EntityId + 1);
 
             if (group.CelestialBodyId >= 0)
             {
@@ -569,6 +570,7 @@ namespace PioneerFramework
                 return;
             }
             groups[group.GroupId] = group;
+            nextGroupId = Math.Max(nextGroupId, group.GroupId + 1);
 
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             int frameId = mgr?.GetReferenceFrameId(group.CelestialBodyId) ?? -1;
@@ -805,6 +807,7 @@ namespace PioneerFramework
         public int AllocGroupId()
         {
             if (nextGroupId <= 0) nextGroupId = MaxLiveId(groups.Keys) + 1;
+            while (groups.ContainsKey(nextGroupId)) nextGroupId++;
             return nextGroupId++;
         }
 
@@ -812,6 +815,7 @@ namespace PioneerFramework
         public int AllocEntityId()
         {
             if (nextEntityId <= 0) nextEntityId = MaxLiveId(entities.Keys) + 1;
+            while (entities.ContainsKey(nextEntityId)) nextEntityId++;
             return nextEntityId++;
         }
 
@@ -1299,6 +1303,7 @@ namespace PioneerFramework
                 long avmClock = PerfProbe.ExtraClockStart();
                 avmRef.Get()?.OnPhysicsStepCompleted();
                 PerfProbe.ExtraClockEnd(PerfProbe.ExtraClockAvm, avmClock);
+                Current.Game?.GetComponent<SpaceAI.SpaceAiManager>()?.OnPhysicsStepCompleted();
                 // [V7] 验收状态机放在投影**之后**：它读的就是本步刚投影进去的值（不然会差一拍）。
                 //
                 // ⚠ **[2026-10-08 加固] 这一整段跑批器/框架是"一荣俱荣、一损俱损"的**：它们同处每步块，
@@ -1350,7 +1355,10 @@ namespace PioneerFramework
             foreach (var mc in mapComponents.Values)
             {
                 if (mc is SpaceMapComp smc)
+                {
                     smc.TickPropellantTankSync();
+                    smc.TickSpaceWeapons(currentTick);
+                }
             }
 
             // 游戏内架构验证测试（burn 差值同步/合冲量/推进器状态）——空闲时零开销
@@ -3018,6 +3026,7 @@ namespace PioneerFramework
         private void ApplySteering(double dtSeconds)
         {
             if (!SteeringController.IsOpen) return;
+            SteeringInputHost.EnsureInputSafety();
             var group = GetGroupById(SteeringController.GroupId);
             if (group == null || !group.IsActive || !group.IsMovable)
             {
@@ -3075,6 +3084,7 @@ namespace PioneerFramework
                     ApplyMapThrustGates(group, steerMgr, group.CurrentOrbit.positionSystem.v,
                         group.CurrentOrbit.velocitySystem.v, steerSrc, dtSeconds, slices, ref f, ref mf);
                 }
+                SteeringController.ScaleManualThrust(ref f, ref mf);
                 bool burning = false;
                 if (f > 0f && mf > 0f)
                 {
@@ -3091,6 +3101,8 @@ namespace PioneerFramework
                     burning = true;
                 }
                 mapComp.SetThrustersBurning(burning);
+                SteeringController.ActualThrust = burning ? f : 0f;
+                SteeringController.ThrustUnavailable = !burning;
                 if (DebugDetailedSteering && Find.TickManager.TicksGame >= nextSteerLogTick)
                 {
                     DVector3 dirN = transDir.normalized;
@@ -3098,15 +3110,16 @@ namespace PioneerFramework
                     nextSteerLogTick = Find.TickManager.TicksGame + 10;
                 }
             }
-            else if (!SteeringController.AnyRotation && SteeringController.SasKind == SasTargetKind.None)
+            else
             {
-                // 无任何操舵输入：熄火表现（清掉上一步手动平移留下的喷焰）
+                SteeringController.ActualThrust = 0f;
+                SteeringController.ThrustUnavailable = false;
+                // 清掉上一步手动平移留下的喷焰。
                 mapComp.SetThrustersBurning(false);
             }
 
-            // ② 手动旋转：动量轮直设角速度（无输入不动 angularVelocity → 自由自转）
-            if (SteeringController.AnyRotation)
-                group.angularVelocity = SteeringController.GetRotationWorldAngularVelocity(group);
+            // 手动转向先接管 SAS；松键按本次会话设置处理角速度。
+            SteeringController.ApplyManualRotation(group, dtSeconds);
 
             // ③ 手动 SAS：主推进轴对准目标（复用 AlignMainAxis；对准后消旋保持姿态）
             if (SteeringController.SasKind != SasTargetKind.None)
@@ -6786,6 +6799,23 @@ namespace PioneerFramework
             string bodyName = mgr?.GetBodyName(group.CelestialBodyId) ?? "天体";
             int groupId = group.GroupId;
 
+            // 导弹沿用 AVM 的在册身份；触地即结算弹头，避免进入舰船的安全着陆通知。
+            var vehicleManager = Current.Game?.GetComponent<AutonomousVehicleManager>();
+            var missile = vehicleManager?.GetRecord(groupId);
+            if (missile != null && !string.IsNullOrEmpty(missile.missileDefName))
+            {
+                Log.Message($"[Collision] Missile G{groupId} IMPACT on {bodyName} at ({spot}) — ground-relative speed {impactSpeed:F1} m/s.");
+                var combat = Current.Game?.GetComponent<CombatManager>();
+                if (combat != null)
+                    combat.ExplodeMissileAt(group, missile, this);
+                else
+                {
+                    vehicleManager!.UnregisterGroup(groupId);
+                    DestroyGroup(groupId, $"导弹撞击{bodyName}（{spot}）");
+                }
+                return;
+            }
+
             // 判据本体 = `SpaceConstants.IsSafeLandingSpeed`（唯一权威、可纯测；本处只调用）
             if (!SpaceConstants.IsSafeLandingSpeed(impactSpeed))
             {
@@ -6864,8 +6894,8 @@ namespace PioneerFramework
                 if (map == null) return;
                 int buildings = map.listerThings.ThingsInGroup(ThingRequestGroup.BuildingArtificial).Count;
                 int pawns = map.mapPawns.AllPawnsSpawned.Count;
+                SpaceMapGenerator.DestroyShipMap(map);
                 Log.Message($"[地图] G{groupId} 销毁 ⇒ **船上地图 {mapId} 已清场**：{buildings} 个建筑、{pawns} 个小人（按原版「地图关闭」处理）｜原因：{(string.IsNullOrEmpty(reason) ? "未给（DestroyGroup 调用点未传）" : reason)}");
-                Current.Game.DeinitAndRemoveMap(map, notifyPlayer: true);
             }
             catch (Exception ex)
             {
@@ -7328,6 +7358,8 @@ namespace PioneerFramework
             Scribe_Values.Look(ref nextEntityId, "nextEntityId", 0);
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
+                nextGroupId = Math.Max(nextGroupId,MaxLiveId(groups.Keys)+1);
+                nextEntityId = Math.Max(nextEntityId,MaxLiveId(entities.Keys)+1);
                 planetGrids = new Dictionary<int, SpatialGrid3D<ISpatialEntity>>();
                 groupLastCoarsePos = new Dictionary<int, DVector3>();
                 hoverActiveCount = 0;   // [A7] 静态计数**按档重数**（静态量跨会话 ⇒ 不重数就会与档差一位）

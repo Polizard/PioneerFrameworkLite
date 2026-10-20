@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Building_DecoyEmitter.label>deception decoy emitter</PF_Building_DecoyEmitter.label>
+  <PF_Building_DecoyEmitter.description>Electronic warfare equipment containing six deception charges. Creates false contacts that can distract active radar and missile guidance. Each use consumes one charge and has a cooldown of twenty simulation seconds. Initial charges are included in its construction cost; rebuild when depleted.</PF_Building_DecoyEmitter.description>
+</LanguageData>

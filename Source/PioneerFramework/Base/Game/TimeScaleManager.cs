@@ -163,6 +163,7 @@ namespace PioneerFramework
         //       的注释就写着"支持子tick"），积分轨按速度外推（`SpaceGameComp.LastPhysicsStepTick`）。
         // ⚠ 只做**相位平滑**，不改时间基准：平均值仍严格等于物理 tick（相位有界 [0, scale]）。
         private int renderClockTicksGame = int.MinValue;
+        private int renderClockFrame = int.MinValue;
         private double renderClockFrac;                      // 当前真实 tick 内已过的比例（[0,1]）
         private double renderClockSecPerTick = 1.0 / 60.0;   // 实测（滑均）：一个真实 tick ≈ 多少秒
 
@@ -175,7 +176,16 @@ namespace PioneerFramework
             EnsureCalendarBaseline();
             int tg = Find.TickManager.TicksGame;
 
-            double dt = RealTime.deltaTime;   // 本帧真实时长（秒）；RimWorld 自己的帧钟，不必引 UnityEngine
+            // 2026-10-18：同帧有多个消费者（相机、天体、射弹、HUD），只能累计一次 dt。
+            // 重复累计会让防穿入与实际绘制使用不同的天体位置，切掉近侧球面。
+            double dt = renderClockFrame != RealTime.frameCount ? RealTime.deltaTime : 0.0;
+            renderClockFrame = RealTime.frameCount;
+            if (Find.TickManager.CurTimeSpeed == TimeSpeed.Paused)
+            {
+                renderClockTicksGame = tg;
+                renderClockFrac = 0.0;
+                return GetPhysicsTick();
+            }
             if (dt > 0.0 && dt < 0.5) renderClockFrac += dt / renderClockSecPerTick;
 
             if (tg != renderClockTicksGame)

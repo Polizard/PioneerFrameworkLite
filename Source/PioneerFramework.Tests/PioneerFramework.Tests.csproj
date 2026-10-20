@@ -30,6 +30,8 @@
 
   <ItemGroup>
     <None Include="..\..\Shaders\*.shader" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\1.7\Shaders\PF_PlanetClouds.*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Clouds.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Clouds.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Defs\**\*.xml" Link="Defs\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Patches\**\*.xml" Link="Patches\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\GameReferences.props" Link="Source\GameReferences.props" CopyToOutputDirectory="PreserveNewest" />
@@ -42,10 +44,56 @@
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Render.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Render.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Scene.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Scene.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.GUI.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.GUI.cs" CopyToOutputDirectory="PreserveNewest" />
+    <!-- 2026-10-18 视图系统 v2：新增 partial/纯核/补丁也进扫描面（只许加覆盖） -->
+    <None Include="..\PioneerFramework\PFView\PFViewCameraCore.cs" Link="Source\PioneerFramework\PFView\PFViewCameraCore.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewPilotCameraCore.cs" Link="Source\PioneerFramework\PFView\PFViewPilotCameraCore.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.PilotCamera.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.PilotCamera.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Piloting.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Piloting.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\Base\Game\SteeringInputCore.cs" Link="Source\PioneerFramework\Base\Game\SteeringInputCore.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\Base\Game\SteeringInputHost.cs" Link="Source\PioneerFramework\Base\Game\SteeringInputHost.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\Base\Core\PioneerFrameworkLiteSettings.Piloting.cs" Link="Source\PioneerFramework\Base\Core\PioneerFrameworkLiteSettings.Piloting.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\Base\Buildings\Window_PFViewBindings.cs" Link="Source\PioneerFramework\Base\Buildings\Window_PFViewBindings.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Camera.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Camera.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Feedback.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Feedback.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\Window_PFViewHelp.cs" Link="Source\PioneerFramework\PFView\Window_PFViewHelp.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\Window_PFViewDebug.cs" Link="Source\PioneerFramework\PFView\Window_PFViewDebug.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewDebugActions.cs" Link="Source\PioneerFramework\PFView\PFViewDebugActions.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewHudPatches.cs" Link="Source\PioneerFramework\PFView\PFViewHudPatches.cs" CopyToOutputDirectory="PreserveNewest" />
     <!-- D-1（2026-10-11）：画船代码从 Scene/MapRelief 抽到 ShipModelRenderer ⇒ 扫描面一并覆盖（同 V-0 拆文件的连坐纪律：只许加覆盖） -->
     <None Include="..\PioneerFramework\PFView\ShipModelRenderer.cs" Link="Source\PioneerFramework\PFView\ShipModelRenderer.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\ToonOutline\PFViewOutlineContracts.cs" Link="Source\PioneerFramework\PFView\ToonOutline\PFViewOutlineContracts.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\ToonOutline\PFViewOutlineAssetBundleProvider.cs" Link="Source\PioneerFramework\PFView\ToonOutline\PFViewOutlineAssetBundleProvider.cs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\PioneerFramework\PFView\PFViewUiPolicy.cs" Link="Source\PioneerFramework\PFView\PFViewUiPolicy.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewUiOperationContext.cs" Link="Source\PioneerFramework\PFView\PFViewUiOperationContext.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Context.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Context.cs" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\PioneerFramework\PFView\PFViewUiLayoutCore.cs" Link="Source\PioneerFramework\PFView\PFViewUiLayoutCore.cs" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\PioneerFramework\PFView\PFViewUiObjectListCore.cs" Link="Source\PioneerFramework\PFView\PFViewUiObjectListCore.cs" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Layout.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Layout.cs" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Objects.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Objects.cs" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Inspector.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Inspector.cs" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\PioneerFramework\PFView\Window_PFViewInstrument.cs" Link="Source\PioneerFramework\PFView\Window_PFViewInstrument.cs" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\PioneerFramework\PFView\PFViewUiViewHistory.cs" Link="Source\PioneerFramework\PFView\PFViewUiViewHistory.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewGroupCameraCore.cs" Link="Source\PioneerFramework\PFView\PFViewGroupCameraCore.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.FollowCamera.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.FollowCamera.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\Base\Core\PioneerFrameworkLiteMod.cs" Link="Source\PioneerFramework\Base\Core\PioneerFrameworkLiteMod.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewUiDragState.cs" Link="Source\PioneerFramework\PFView\PFViewUiDragState.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\Base\Buildings\Window_Steering.cs" Link="Source\PioneerFramework\Base\Buildings\Window_Steering.cs" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

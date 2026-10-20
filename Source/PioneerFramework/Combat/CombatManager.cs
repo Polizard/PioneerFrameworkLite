@@ -4012,9 +4012,7 @@ namespace PioneerFramework.Combat
 
         private void UpdateWeapons(int currentTick)
         {
-            // Lite 裁剪（§5.5）：实体级武器收集（WeaponMountComponentData 链路）已删除，
-            // groupWeapons 暂为空容器，等待 M4 的 Map 炮塔桥接新接口填充。
-            // 仅对既有武器实例做每 tick 冷却/过热更新。
+            // 玩家武器列表引用实际地图设备；Update 按真实 tick 幂等，可与隐藏地图更新共用。
             var spaceGame = GetSpaceGameComp();
             if (spaceGame != null)
             {
@@ -4168,13 +4166,48 @@ namespace PioneerFramework.Combat
 
         public List<WeaponInstance> GetGroupWeapons(int groupId)
         {
-            if (groupWeapons.TryGetValue(groupId, out var weapons))
-                return weapons;
+            var game = GetSpaceGameComp();
+            var group = game?.GetGroupById(groupId);
+            if (group == null || !group.IsActive) return EmptyWeaponList;
+            if (!groupWeapons.TryGetValue(groupId, out var weapons))
+                groupWeapons[groupId] = weapons = new List<WeaponInstance>();
+            weapons.Clear();
+            foreach (int eid in group.GetEntityIds())
+            {
+                var entity = game!.GetEntityById(eid);
+                if (entity == null || entity.GroupId != groupId || entity.IsMapArchived) continue;
+                var map = game.GetMapComponent<SpaceMapComp>(entity.MapId);
+                if (map == null || map.ownerEntityId != eid) continue;
+                foreach (var building in map.SpaceWeapons)
+                {
+                    var weapon = MapWeapon(building);
+                    if (weapon != null && !weapons.Contains(weapon)) weapons.Add(weapon);
+                }
+            }
+            return weapons;
+        }
 
-            // Lite 裁剪（§5.5）：实体级武器收集已删除；M4 前恒空（Map 炮塔桥接填充后立即可用）。
-            // 第 7 条：返回共享空实例——此前每步每组都 new 一个空 List 再扔掉（战斗期每组每步一次分配）。
-            if (PerfProbe.Enabled) PerfProbe.NoteEmptyWeaponListHit();
-            return EmptyWeaponList;
+        private static WeaponInstance? MapWeapon(Thing building) => building.Destroyed || !building.Spawned ? null
+            : building.TryGetComp<CompMissileLauncher>()?.Weapon ?? building.TryGetComp<CompMapTurret>()?.Mount?.weapon;
+
+        internal bool TryGetMapWeaponMount(int groupId, WeaponInstance weapon, out SpaceEntity? entity, out Thing? building)
+        {
+            entity = null; building = null;
+            if (weapon == null) return false;
+            var game = GetSpaceGameComp();
+            var group = game?.GetGroupById(groupId);
+            if (group == null || !group.IsActive) return false;
+            foreach (int eid in group.GetEntityIds())
+            {
+                var candidate = game!.GetEntityById(eid);
+                if (candidate == null || candidate.GroupId != groupId || candidate.IsMapArchived) continue;
+                var map = game.GetMapComponent<SpaceMapComp>(candidate.MapId);
+                if (map == null || map.ownerEntityId != eid) continue;
+                foreach (var mount in map.SpaceWeapons)
+                    if (ReferenceEquals(MapWeapon(mount), weapon))
+                    { entity = candidate; building = mount; return true; }
+            }
+            return false;
         }
 
         /// <param name="targetVelocity">目标当前世界系速度（用于提前量计算）。null = 瞄准当前位置。</param>
@@ -4184,6 +4217,18 @@ namespace PioneerFramework.Combat
         /// <param name="aimOffsetShip">导弹弹着偏置（目标局部米，y=0，§10 精确打击；零 = 瞄目标质心）。射弹/射线忽略。</param>
         /// <param name="volleyCount">导弹齐射枚数（弹群实体数；null = 武器 Def.missileCount）。射弹/射线忽略。</param>
         public void FireWeapon(int groupId, WeaponInstance weapon, DVector3 targetPosition, DVector3? spawnPosition = null, DVector3? targetVelocity = null, int? targetGroupId = null, bool missileFollowMode = false, DVector3 aimOffsetShip = default, int? volleyCount = null)
+            => FireWeaponCore(groupId, weapon, targetPosition, spawnPosition, targetVelocity, targetGroupId,
+                missileFollowMode, aimOffsetShip, volleyCount, null, false);
+
+        /// <summary>Fire at an observed contact, including one with no physical entity.</summary>
+        public void FireContactWeapon(int groupId, WeaponInstance weapon, Contact contact, DVector3 spawn, int count = 1)
+            => FireWeaponCore(groupId, weapon, ContactMemory.CoastedPosition(contact, TimeScaleManager.GetPhysicsTickSafe()),
+                spawn, contact.velocity, contact.targetGroupId >= 0 ? contact.targetGroupId : null,
+                false, DVector3.zero, count, contact.decoyId >= 0 ? contact.decoyId : null, true);
+
+        private void FireWeaponCore(int groupId, WeaponInstance weapon, DVector3 targetPosition,
+            DVector3? spawnPosition, DVector3? targetVelocity, int? targetGroupId, bool missileFollowMode,
+            DVector3 aimOffsetShip, int? volleyCount, int? targetDecoyId, bool contactOnlyAim)
         {
             // [N6]/S4 **开火揭示**：非导弹开火 ⇒ 开火者自身信号抬升一个窗口（`SignalModel.RevealMultiplier`）。
             // 依据设计稿 A4/§4.3：**导弹发射器开火不算暴露**（冷发射；弹体点火才是暴露源）⇒ 按武器类型分流。
@@ -4246,6 +4291,8 @@ namespace PioneerFramework.Combat
             }
             DVector3 direction = aimDelta.normalized;
 
+            if (weapon.def.weaponType == WeaponType.Missile)
+                volleyCount = weapon.AvailableVolleyCount(volleyCount ?? weapon.def.missileCount, MaxVolleyCount);
             weapon.Fire();
 
             if (weapon.def.weaponType == WeaponType.Ray)
@@ -4258,7 +4305,7 @@ namespace PioneerFramework.Combat
             // 不切 Combat 档（分支内无 SetCombatModeImmediate）、不做弹道提前量（上方 aimPos 已排除）。
             if (weapon.def.weaponType == WeaponType.Missile)
             {
-                FireMissileWeapon(group, spaceGame, groupId, weapon, spawnPos, direction, groupVelocity, targetGroupId, missileFollowMode, aimOffsetShip, volleyCount);
+                FireMissileWeapon(group, spaceGame, groupId, weapon, spawnPos, direction, groupVelocity, targetGroupId, missileFollowMode, aimOffsetShip, volleyCount, targetDecoyId, contactOnlyAim);
                 return;
             }
 
@@ -4361,7 +4408,7 @@ namespace PioneerFramework.Combat
         /// volleyCount = 齐射枚数（null = 武器 Def.missileCount）。
         /// </summary>
         private void FireMissileWeapon(SpaceEntityGroup launcherGroup, SpaceGameComp spaceGame, int launcherGroupId,
-            WeaponInstance weapon, DVector3 spawnPos, DVector3 direction, DVector3 groupVelocity, int? targetGroupId, bool followMode = false, DVector3 aimOffsetShip = default, int? volleyCount = null)
+            WeaponInstance weapon, DVector3 spawnPos, DVector3 direction, DVector3 groupVelocity, int? targetGroupId, bool followMode = false, DVector3 aimOffsetShip = default, int? volleyCount = null, int? targetDecoyId = null, bool contactOnlyAim = false)
         {
             var wdef = weapon.def;
             var missileDef = DefDatabase<MissileDef>.GetNamedSilentFail(wdef.missileDefName);
@@ -4430,13 +4477,15 @@ namespace PioneerFramework.Combat
             // 玩家在合适时机从面板下 Attack）；其他来源有目标 → Attack（fire-and-forget 基线）；
             // 无目标 → Standby（K7，等待玩家/AI 指令）
             int volleyId = manager.AllocVolleyId();
-            var mission = !targetGroupId.HasValue
+            var mission = !targetGroupId.HasValue && !targetDecoyId.HasValue
                 ? AutonomousVehicleManager.MissionType.Standby
                 : followMode
                     ? AutonomousVehicleManager.MissionType.Following
                     : AutonomousVehicleManager.MissionType.Attack;
-            manager.RegisterMissileLeader(missileGroupId, missileEntityId, volleyId, launcherGroupId,
+            var contactRecord = manager.RegisterMissileLeader(missileGroupId, missileEntityId, volleyId, launcherGroupId,
                 logicalCount, missileDef.defName, wdef.defName, mission, targetGroupId ?? -1, aimOffsetShip);
+            contactRecord.targetDecoyId = targetDecoyId ?? -1;
+            contactRecord.contactOnlyAim = contactOnlyAim;
 
             // ── 发射摘要（无条件，一次齐射一条）：出生点 / 速度继承分解 / Mission ──
             Log.Message($"[导弹发射] G{launcherGroupId} volley={volleyId} N={logicalCount} 领弹G{missileGroupId}/E{missileEntityId} 目标G{(targetGroupId ?? -1)} Mission={mission} 出生=({birthPos.x:F0},{birthPos.y:F0},{birthPos.z:F0})m 出膛方向=({direction.x:F3},{direction.y:F3},{direction.z:F3}) 继承船速={groupVelocity.magnitude:F0}m/s 出膛速={muzzleSpeed:F0}m/s 合速={birthVelocity.magnitude:F0}m/s 主工质={missileDef.fuelMass:F0}kg RCS={missileDef.rcsFuelMass:F0}kg");

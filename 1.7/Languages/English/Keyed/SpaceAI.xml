@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_AI_RandomEncounters>Allow storyteller space encounters (off by default)</PF_AI_RandomEncounters>
+  <PF_AI_DecoyEmit>Emit deception decoy</PF_AI_DecoyEmit>
+  <PF_AI_DecoyDescription>Spend one charge to create a false contact lasting 45 simulation seconds. Affects opponents using active radar. Cooldown: 20 simulation seconds.</PF_AI_DecoyDescription>
+  <PF_AI_DecoyCharges>Deception charges: {0}</PF_AI_DecoyCharges>
+  <PF_AI_EncounterLabel>Space attack</PF_AI_EncounterLabel>
+  <PF_AI_EncounterText>A hostile fleet has entered a nearby orbit. Maintain observation and prepare to respond.</PF_AI_EncounterText>
+</LanguageData>

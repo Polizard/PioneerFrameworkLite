@@ -98,9 +98,7 @@ namespace PioneerFramework
 
             // 壳的可见性：**观察中的编队若在壳下（大气里）就不画壳**（天空盒照旧按高度变蓝）。
             shellHiddenBodyId = -1;
-            var spaceGameForShell = Current.Game?.GetComponent<SpaceGameComp>();
-            var watched = selectedGroupId >= 0 && spaceGameForShell != null
-                ? spaceGameForShell.GetGroupById(selectedGroupId) : null;
+            var watched = GetFocusGroup();
             if (watched != null)
             {
                 var wb = mgr.GetBodyById(watched.CelestialBodyId);

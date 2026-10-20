@@ -9,7 +9,7 @@ namespace PioneerFramework
     /// <summary>
     /// PFView 布局与仪表（V-1，2026-10-02 用户裁定①）：
     ///   顶部工具条 / 左侧文字堆（编队列表 + 接触列表 + 选中组读数）/ 下边中央姿态球（KSP 式）/
-    ///   右侧雷达（以选中编队为中心，**只显示、不做功能**）。
+    ///   右侧雷达（以选中编队为中心，点击观测接触可设为武器目标）。
     ///
     /// 视觉纪律（裁定③）：全套灰度走 <see cref="PFViewPalette"/>——层级靠明度与线宽、状态靠符号，
     /// 不用色相。面板/角标装饰复用 <c>UiKit.SpacecraftUIDecor</c>（同一份程序化画笔）。
@@ -33,6 +33,13 @@ namespace PioneerFramework
         private Rect rRadar;
         private Rect rNavball;
         private Rect rStatus;
+        private Rect rInspector;
+        private Rect rSteeringStrip;
+        private Rect rPilotPanel;
+        private PFViewUiLayout uiLayout;
+        private (float width, float height, bool details, PFViewUiVisibility visibility, bool piloting) layoutKey;
+        private bool layoutCached;
+        private Rect viewportRect;
 
         // 列表缓冲（追加式，免每帧分配；[M3] 硬规则：不用 IEnumerable）
         private readonly List<Contact> contactBuf = new();
@@ -42,27 +49,45 @@ namespace PioneerFramework
         private static Texture2D? pfvDiscTex;
 
         // 中键/Shift+右键平移拖拽中
-        private bool isDraggingPan;
+        private bool isDraggingPan => dragState.Pan;
 
         /// <summary>算出本帧五分区并登记占位矩形（挡 3D 输入）。</summary>
         private void ComputeLayout(Rect inRect)
         {
-            rToolbar = new Rect(inRect.x, inRect.y, inRect.width, ToolbarH);
+            viewportRect = inRect;
+            var key = (inRect.width, inRect.height, WantsInspector, instrumentVisibility, SteeringController.IsOpen);
+            if (!layoutCached || key != layoutKey)
+            {
+                uiLayout = PFViewUiLayoutCore.Compute(key.width, key.height, key.Item3, instrumentVisibility, key.Item5);
+                layoutKey = key;
+                layoutCached = true;
+            }
+            rToolbar = FromUiRect(uiLayout.Toolbar, inRect);
+            rLeftCol = FromUiRect(uiLayout.ObjectList, inRect);
+            rInspector = FromUiRect(uiLayout.Details, inRect);
+            rRadar = FromUiRect(uiLayout.Radar, inRect);
+            rNavball = FromUiRect(uiLayout.Navball, inRect);
+            rStatus = FromUiRect(uiLayout.Status, inRect);
+            rSteeringStrip = FromUiRect(uiLayout.SteeringStrip, inRect);
+            rPilotPanel = FromUiRect(uiLayout.PilotPanel, inRect);
+            RegisterUiRect(rToolbar);
+            RegisterUiRect(rLeftCol);
+            RegisterUiRect(rInspector);
+            RegisterUiRect(rRadar);
+            RegisterUiRect(rNavball);
+            if (rNavball.width > 0) RegisterUiRect(new(rNavball.x, rNavball.y - 24f, rNavball.width, 24f));
+            RegisterUiRect(rStatus);
+            RegisterUiRect(rSteeringStrip);
+            RegisterUiRect(rPilotPanel);
+        }
 
-            float top = inRect.y + ToolbarH + PanelPad;
-            rLeftCol = new Rect(inRect.x + PanelPad, top, LeftColW, inRect.yMax - top - PanelPad);
-            rRadar = new Rect(inRect.xMax - RadarW - PanelPad, top, RadarW, RadarW);
-            // 姿态球面板：球居中，左右各留一条文字区（读数 + 图例）
-            rNavball = new Rect(inRect.center.x - NavballPanelW * 0.5f, inRect.yMax - NavballD - PanelPad, NavballPanelW, NavballD);
-            // 状态行：左缘起，宽度钳到姿态球面板左缘之前（球放大后不再重叠）
-            float statusW = Mathf.Max(200f, rNavball.x - inRect.x - 16f);
-            rStatus = new Rect(inRect.x + PanelPad, inRect.yMax - 22f, statusW, 20f);
+        private static Rect FromUiRect(PFViewUiRect rect, Rect origin)
+            => rect.Width > 0 && rect.Height > 0
+                ? new(origin.x + rect.X, origin.y + rect.Y, rect.Width, rect.Height) : default;
 
-            uiBlockRects.Add(rToolbar);
-            uiBlockRects.Add(rLeftCol);
-            uiBlockRects.Add(rRadar);
-            uiBlockRects.Add(rNavball);
-            uiBlockRects.Add(rStatus);
+        private void RegisterUiRect(Rect rect)
+        {
+            if (rect.width > 0 && rect.height > 0) uiBlockRects.Add(rect);
         }
 
         // ════════════════════════════════════════════════════
@@ -74,170 +99,113 @@ namespace PioneerFramework
             var r = rToolbar;
             Widgets.DrawBoxSolid(r, PFViewPalette.BarBg);
             UiKit.SpacecraftUIDecor.DrawDivider(r, r.yMax - 1f, r.width, PFViewPalette.Divider);
-
-            const float bh = 24f;
-            float by = r.y + (r.height - bh) * 0.5f;
-            float x = r.x + 6f;
-
-            if (Widgets.ButtonText(new Rect(x, by, 96f, bh), "选择编队")) ShowGroupMenu();
-            x += 100f;
-            if (Widgets.ButtonText(new Rect(x, by, 96f, bh), "切换星系")) ShowSystemMenu();
-            x += 100f;
-            if (Widgets.ButtonText(new Rect(x, by, 132f, bh), "部署交火测试对")) DeployCombatTestPair();
-            x += 140f;
-
-            Widgets.CheckboxLabeled(new Rect(x, by, 108f, bh), "放大部件", ref debugScaleParts);
-            x += 110f;
-            Widgets.CheckboxLabeled(new Rect(x, by, 132f, bh), "太阳标记", ref debugShowSunMarker);
-            x += 134f;
-            Widgets.CheckboxLabeled(new Rect(x, by, 132f, bh), "地图浮雕", ref debugMapRelief);
-            x += 134f;
-            Widgets.CheckboxLabeled(new Rect(x, by, 108f, bh), "定居点", ref debugSettlements);   // D-2：实时层（含夜灯）
-            x += 116f;
-            // 参考系档位（2026-10-12「按场景选」）：点击循环 自动 → 惯性 → 固连；换档下一帧生效并立打读数
-            if (Widgets.ButtonText(new Rect(x, by, 132f, bh), "参考系: " + PFViewFrameCore.ModeName(viewFrameMode)))
+            Text.Font = GameFont.Small;
+            float by = 4f;
+            float x = 6f;
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Group), "PFV_SelectGroup".Translate(), "PFV_SelectGroupTip".Translate()))
+                ShowGroupMenu();
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Navigate), "PFV_Navigate".Translate(), "PFV_NavigateTip".Translate()))
+                ShowSystemMenu();
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Body), "PFV_BodyView".Translate(), "PFV_BodyViewTip".Translate()))
+                FocusCurrentBody();
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Previous), "PFV_PreviousView".Translate(), "PFV_PreviousViewTip".Translate()))
+                RestorePreviousView();
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Display), "PFV_Display".Translate(), "PFV_DisplayTip".Translate()))
+                ShowDisplayMenu();
+            bool previousEnabled = GUI.enabled;
+            GUI.enabled = previousEnabled && focusKind == PFViewFocusKind.Group;
+            // 工具条按钮宽度固定（PFViewUiLayoutCore: Camera=144）⇒ 用短名；全名留给模式菜单与设置窗口。
+            string cameraMode = ("PFV_CameraShort_" + (focusKind == PFViewFocusKind.Group ? groupCameraMode : PFViewGroupCameraMode.Free)).Translate();
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Camera), "PFV_CameraMode".Translate(cameraMode), "PFV_CameraModeTip".Translate()))
+                ShowCameraModeMenu();
+            GUI.enabled = previousEnabled;
+            string frame = ("PFV_Frame_" + viewFrameMode).Translate();
+            string resolved = (viewFrameIsFixed ? "PFV_Frame_Fixed" : "PFV_Frame_Inertial").Translate();
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Frame), frame + " · " + resolved, "PFV_FrameTip".Translate()))
             {
                 viewFrameMode = (PFViewFrameMode)(((int)viewFrameMode + 1) % 3);
                 lastFrameLogTick = double.MinValue;
             }
+            Rect time = NextToolbarRect(ref x, ref by, PFViewToolbarItem.Time);
+            DrawTimeSpeedButtons(time.x, time.y, time.height);
+            var source = ResolveOperationGroup();
+            if (source != null && ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Weapons),
+                    "PFV_Weapons".Translate("G" + source.GroupId), "PFV_OpenOperationsTip".Translate()))
+                TryOpenWeaponsFor(source.GroupId);
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Help), "?", "PFV_Help".Translate()))
+                Find.WindowStack.Add(new Window_PFViewHelp());
+            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Debug), "PFV_Debug".Translate(), "PFV_DebugTip".Translate()))
+                Window_PFViewDebug.Toggle(this);
+            if (uiLayout.RequiresInstrumentDrawer)
+            {
+                if (instrumentVisibility.ShowNavball && Widgets.ButtonText(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Navball), "PFV_Navball".Translate()))
+                    OpenInstrumentWindow(PFViewUiInstrument.Navball);
+                if (instrumentVisibility.ShowRadar && Widgets.ButtonText(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Radar), "PFV_Radar".Translate()))
+                    OpenInstrumentWindow(PFViewUiInstrument.Radar);
+            }
+        }
 
-            string anchor = selectedGroupId >= 0
-                ? $"锚定 编队 {selectedGroupId}"
-                : "未选中编队（点左栏列表或 3D 里左键拾取）";
-            UiKit.SpacecraftUIDecor.DrawColoredLabel(
-                new Rect(r.xMax - 430f, r.y + 4f, 420f, r.height - 8f),
-                anchor, PFViewPalette.TextSecondary, GameFont.Tiny, TextAnchor.MiddleRight);
+        private Rect NextToolbarRect(ref float x, ref float y, PFViewToolbarItem item)
+        {
+            return FromUiRect(PFViewUiLayoutCore.NextToolbarRect(rToolbar.width, ref x, ref y, item), rToolbar);
+        }
+
+        private static bool ToolbarButton(Rect rr, string label, string tip)
+        {
+            TooltipHandler.TipRegion(rr, tip);
+            return Widgets.ButtonText(rr, label);
+        }
+
+        /// <summary>玩家向显示开关（调试项已移到 DebugTabMenu_PFL）。</summary>
+        private void ShowDisplayMenu()
+        {
+            var opts = new List<FloatMenuOption>
+            {
+                new((debugMapRelief ? "✓ " : "   ") + "地图浮雕", () => debugMapRelief = !debugMapRelief),
+                new((debugSettlements ? "✓ " : "   ") + "定居点（含夜灯）", () => debugSettlements = !debugSettlements),
+                new("PFV_Navball".Translate() + " ▸", () => ShowInstrumentModeMenu(PFViewUiInstrument.Navball)),
+                new("PFV_Radar".Translate() + " ▸", () => ShowInstrumentModeMenu(PFViewUiInstrument.Radar)),
+                new("PFV_NavballReadouts".Translate(), () => OpenInstrumentWindow(PFViewUiInstrument.Navball)),
+            };
+            Find.WindowStack.Add(new FloatMenu(opts));
+        }
+
+
+        /// <summary>
+        /// PFView 内的游戏时间速度控制（2026-10-18 用户：视图内仍要能控制时间流逝）。
+        /// 宿主 HUD 的时间档按钮被 PFView 的 HUD 隔离补丁挡住（视觉上也被全屏视图盖住），
+        /// 所以这里直接操作 TickManager.CurTimeSpeed，档位/倍率与原版一致。
+        /// </summary>
+        private void DrawTimeSpeedButtons(float x, float by, float bh)
+        {
+            const float w = 30f;
+            const float gap = 2f;
+            DrawTimeSpeedButton(new Rect(x, by, w, bh), "II", TimeSpeed.Paused, "暂停");
+            x += w + gap;
+            DrawTimeSpeedButton(new Rect(x, by, w, bh), "1×", TimeSpeed.Normal, "正常速度（1×）");
+            x += w + gap;
+            DrawTimeSpeedButton(new Rect(x, by, w, bh), "3×", TimeSpeed.Fast, "快速（3×）");
+            x += w + gap;
+            DrawTimeSpeedButton(new Rect(x, by, w, bh), "6×", TimeSpeed.Superfast, "超快（6×；无地图时可到 12/18×）");
+            x += w + gap;
+            DrawTimeSpeedButton(new Rect(x, by, w, bh), "15×", TimeSpeed.Ultrafast, "极速（15×；无地图时可到 150×）");
+        }
+
+        private static void DrawTimeSpeedButton(Rect rr, string label, TimeSpeed speed, string tip)
+        {
+            TooltipHandler.TipRegion(rr, tip);
+            bool active = Find.TickManager.CurTimeSpeed == speed;
+            Color prev = GUI.color;
+            GUI.color = active ? Color.white : new Color(0.62f, 0.62f, 0.62f);
+            if (Widgets.ButtonText(rr, label))
+                SetGameSpeed(speed);
+            GUI.color = prev;
         }
 
         // ════════════════════════════════════════════════════
         //  左侧文字堆：编队 / 接触 / 选中组读数
         // ════════════════════════════════════════════════════
 
-        private void DrawLeftColumn()
-        {
-            var r = rLeftCol;
-            Widgets.DrawBoxSolid(r, PFViewPalette.PanelBg);
-            UiKit.SpacecraftUIDecor.DrawCornerLBrackets(r, PFViewPalette.Border);
-
-            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
-            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            if (spaceGame == null || mgr == null) return;
-
-            var sensor = Current.Game?.GetComponent<SensorManager>();
-            var player = Faction.OfPlayer;
-            int playerFid = player?.loadID ?? 0;
-
-            double tick = TimeScaleManager.GetPhysicsTickSafe();
-            DVector3 origin = GetRenderOrigin(tick);
-
-            float x = r.x + 8f;
-            float w = r.width - 16f;
-            float y = r.y + 8f;
-
-            // ── 编队 ──
-            groupListBuf.Clear();
-            var sysIds = GetCurrentSystemBodyIds(mgr);
-            foreach (var g in spaceGame.GetAllGroups())
-            {
-                if (g == null || !g.IsActive) continue;
-                if (!sysIds.Contains(g.CelestialBodyId)) continue;
-                if (sensor != null && !sensor.PlayerCanSee(g)) continue;
-                groupListBuf.Add(g);
-            }
-
-            MiniLabel(new Rect(x, y, w, 16f), $"编队 ({groupListBuf.Count})", PFViewPalette.TextSecondary);
-            y += 18f;
-
-            const int maxGroupRows = 10;
-            int groupShown = Mathf.Min(groupListBuf.Count, maxGroupRows);
-            for (int i = 0; i < groupShown; i++)
-            {
-                var g = groupListBuf[i];
-                bool own = g.FactionId == playerFid;
-                float distKm = (float)((GetGroupPosAbs(g, tick) - origin).magnitude / 1000.0);
-                string label = $"{((own) ? "●" : "○")} G{g.GroupId}  {distKm:F0} km  {EntityCountOf(g, spaceGame)}实体";
-                if (ListRow(new Rect(x, y, w, 18f), g.GroupId == selectedGroupId, label,
-                        own ? PFViewPalette.TextPrimary : PFViewPalette.TextSecondary, out bool dbl))
-                {
-                    selectedGroupId = g.GroupId;
-                    if (dbl) InitCameraForCurrentBody();
-                }
-                y += 18f;
-            }
-            if (groupListBuf.Count > groupShown)
-            {
-                MiniLabel(new Rect(x, y, w, 14f), $"... 其余 {groupListBuf.Count - groupShown} 个（用工具条「选择编队」）", PFViewPalette.TextMuted);
-                y += 16f;
-            }
-            y += 6f;
-
-            // ── 接触（只列情报类：匿踪接触 + 假接触；公开/我方已在上面的编队表）──
-            contactBuf.Clear();
-            sensor?.AppendVisible(playerFid, contactBuf);
-            int intelCount = 0;
-            for (int i = 0; i < contactBuf.Count; i++)
-                if (IsIntelContact(contactBuf[i], spaceGame)) intelCount++;
-
-            MiniLabel(new Rect(x, y, w, 16f), $"接触 ({intelCount})", PFViewPalette.TextSecondary);
-            y += 18f;
-
-            var selGroup = selectedGroupId >= 0 ? spaceGame.GetGroupById(selectedGroupId) : null;
-            DVector3 refRel = selGroup != null ? GetGroupRelPos(selGroup) : DVector3.zero;
-
-            const int maxContactRows = 8;
-            int contactShown = 0;
-            for (int i = 0; i < contactBuf.Count && contactShown < maxContactRows; i++)
-            {
-                var c = contactBuf[i];
-                if (!IsIntelContact(c, spaceGame)) continue;
-                contactShown++;
-
-                string glyph;
-                string tag;
-                Color col;
-                if (c.IsForged)
-                {
-                    // 假接触：识破与否是**观测者粒度**（`isDecoy` 只表示"已识破"）
-                    glyph = c.isDecoy ? "✕" : "◌";
-                    col = c.isDecoy ? PFViewPalette.StateDead : PFViewPalette.StateWarn;
-                    tag = c.isDecoy ? $"d{c.decoyId} 已识破" : $"d{c.decoyId} 假";
-                }
-                else
-                {
-                    var phase = sensor != null ? sensor.ContactPhaseOf(playerFid, c.targetGroupId) : TrackPhase.Live;
-                    glyph = phase == TrackPhase.Shadow ? "◐" : "●";
-                    col = phase == TrackPhase.Shadow ? PFViewPalette.StateWarn : PFViewPalette.StateOk;
-                    tag = $"G{c.targetGroupId}{(phase == TrackPhase.Shadow ? " 影子" : "")}";
-                }
-
-                string distStr = "—";
-                if (selGroup != null)
-                {
-                    bool sameBody = c.IsForged || ContactBodyMatches(c, selGroup, spaceGame);
-                    if (sameBody)
-                        distStr = $"{(float)((c.position - refRel).magnitude / 1000.0):F0} km";
-                }
-                string sigmaStr = c.positionSigma > 0.5 ? $"  σ {c.positionSigma / 1000.0:F1} km" : "";
-                string label = $"{glyph} {tag}  {distStr}{sigmaStr}";
-
-                if (ListRow(new Rect(x, y, w, 18f), false, label, col, out _))
-                {
-                    // 真接触：选中它（可继续用"设为目标"）；假接触没有实体，仅提示
-                    if (!c.IsForged) { selectedGroupId = c.targetGroupId; }
-                }
-                y += 18f;
-            }
-            if (intelCount > contactShown)
-            {
-                MiniLabel(new Rect(x, y, w, 14f), $"... 其余 {intelCount - contactShown} 条", PFViewPalette.TextMuted);
-            }
-
-            // ── 选中组读数（原 DrawInfoPanel 内容搬进左栏底部）──
-            if (selectedGroupId >= 0)
-                DrawInfoPanel(rLeftCol, LeftColW - 8f);
-        }
-
-        /// <summary>情报类接触判定：假接触，或"目标组是匿踪组"（公开/我方不进接触表）。</summary>
         private static bool IsIntelContact(in Contact c, SpaceGameComp sg)
         {
             if (c.IsForged) return true;
@@ -262,14 +230,14 @@ namespace PioneerFramework
         //  右侧雷达（只显示：以选中编队为中心，不做交互）
         // ════════════════════════════════════════════════════
 
-        private void DrawRadarPanel()
+        private void DrawRadarPanel(SpaceEntityGroup? g)
         {
             var r = rRadar;
             Widgets.DrawBoxSolid(r, PFViewPalette.PanelBg);
             UiKit.SpacecraftUIDecor.DrawCornerLBrackets(r, PFViewPalette.Border);
 
-            MiniLabel(new Rect(r.x + 8f, r.y + 4f, r.width - 16f, 16f),
-                "雷达 · 相对选中编队（只显示）", PFViewPalette.TextSecondary);
+            MiniLabel(new Rect(r.x + 8f, r.y + 4f, r.width - 16f, 20f),
+                "PFV_RadarSource".Translate(g != null ? "G" + g.GroupId : "—"), PFViewPalette.TextSecondary);
 
             Vector2 c = new Vector2(r.center.x, r.center.y + 8f);
             float radius = Mathf.Min(r.width, r.height) * 0.5f - 28f;
@@ -285,10 +253,9 @@ namespace PioneerFramework
 
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             var sensor = Current.Game?.GetComponent<SensorManager>();
-            var g = (spaceGame != null && selectedGroupId >= 0) ? spaceGame.GetGroupById(selectedGroupId) : null;
             if (g == null || sensor == null || spaceGame == null)
             {
-                MiniLabel(new Rect(r.x + 8f, r.yMax - 22f, r.width - 16f, 16f), "未选中编队", PFViewPalette.TextMuted, TextAnchor.MiddleCenter);
+                MiniLabel(new Rect(r.x + 8f, r.yMax - 22f, r.width - 16f, 16f), "PFV_NoSelection".Translate(), PFViewPalette.TextSecondary, TextAnchor.MiddleCenter);
                 return;
             }
 
@@ -311,7 +278,7 @@ namespace PioneerFramework
             for (int i = 0; i < contactBuf.Count; i++)
             {
                 var cc = contactBuf[i];
-                if (cc.targetGroupId == selectedGroupId) continue;
+                if (cc.targetGroupId == g.GroupId) continue;
                 DVector3 rel = cc.position - center;
                 float up = (float)DVector3.Dot(rel, pro);
                 float right = (float)DVector3.Dot(rel, radial);
@@ -319,11 +286,17 @@ namespace PioneerFramework
             }
             float scale = radius * 0.92f / maxR;
 
+            // 扫描线 + 尾迹（2026-10-18）：真实波束联动；**先于接触点**绘制（余辉要读本帧扫过的区间）
+            DrawRadarSweep(c, radius, g, radial, pro);
+
+            bool pick = Event.current.type == EventType.MouseDown && Event.current.button == 0 && r.Contains(Event.current.mousePosition);
+            int picked = -1;
+            float bestPickDistance = 12f * 12f;
             // 接触 blip（灰度：形状/明度表态，不靠色相）
             for (int i = 0; i < contactBuf.Count; i++)
             {
                 var cc = contactBuf[i];
-                if (cc.targetGroupId == selectedGroupId) continue;
+                if (cc.targetGroupId == g.GroupId) continue;
 
                 DVector3 rel = cc.position - center;
                 float up = (float)DVector3.Dot(rel, pro);
@@ -331,29 +304,29 @@ namespace PioneerFramework
                 Vector2 p = c + new Vector2(right, -up) * scale;
                 if ((p - c).magnitude > radius * 1.02f) continue;
 
-                Color col;
-                float sz;
-                bool stealth = false;
-                if (cc.IsForged)
+                // 被扫描线扫过 ⇒ 提亮 + 微微放大 + 短余辉（灰度：仍是明度差，不用色相）
+                int blipKey = cc.targetGroupId >= 0 ? cc.targetGroupId : -1 - cc.decoyId;
+                RegisterBlipSweep(blipKey, Mathf.Atan2(p.y - c.y, p.x - c.x) * Mathf.Rad2Deg);
+                float flash = BlipFlashOf(blipKey);
+                Color col = cc.isDecoy ? PFViewPalette.StateDead : PFViewPalette.StateWarn;
+                if (flash > 0f) col = Color.Lerp(col, PFViewPalette.SweepLine, flash * BlipFlashPeak);
+                float half = 1.75f + flash * 1.1f;
+                Widgets.DrawBoxSolid(new Rect(p.x - half, p.y - half, half * 2f, half * 2f), col);
+                TooltipHandler.TipRegion(new Rect(p.x - 8, p.y - 8, 16, 16),
+                    ContactDisplayLabel(cc) + "\n" + "PFV_RadarTargetHint".Translate());
+                if (weaponTarget.IsSet && weaponTarget.GroupId == cc.targetGroupId && weaponTarget.DecoyId == cc.decoyId)
                 {
-                    col = cc.isDecoy ? PFViewPalette.StateDead : PFViewPalette.StateWarn;
-                    sz = 3.5f;
+                    Widgets.DrawBox(new Rect(p.x - 6, p.y - 6, 12, 12));
+                    MiniLabel(new Rect(p.x + 9, p.y - 10, 110, 20), ContactDisplayLabel(cc), PFViewPalette.TextPrimary);
                 }
-                else
-                {
-                    var phase = sensor.ContactPhaseOf(playerFid, cc.targetGroupId);
-                    var gg = spaceGame.GetGroupById(cc.targetGroupId);
-                    stealth = gg != null && gg.IsStealth;
-                    col = phase == TrackPhase.Live
-                        ? (stealth ? PFViewPalette.StateOk : PFViewPalette.StateWarn)
-                        : PFViewPalette.StateDead;
-                    sz = stealth ? 4f : 2.5f;
-                }
-
-                if (stealth || cc.IsForged)
-                    Widgets.DrawBoxSolid(new Rect(p.x - sz * 0.5f, p.y - sz * 0.5f, sz, sz), col);
-                else
-                    Widgets.DrawBoxSolid(new Rect(p.x - 1f, p.y - 1f, 2f, 2f), col);
+                float pickDistance = (Event.current.mousePosition - p).sqrMagnitude;
+                if (pick && !cc.isDecoy && pickDistance < bestPickDistance)
+                { picked = i; bestPickDistance = pickDistance; }
+            }
+            if (picked >= 0)
+            {
+                SetTargetContact(contactBuf[picked]);
+                Event.current.Use();
             }
 
             // 中心 = 选中编队
@@ -361,7 +334,7 @@ namespace PioneerFramework
             Widgets.DrawLine(new Vector2(c.x, c.y - 5f), new Vector2(c.x, c.y + 5f), PFViewPalette.Accent, 1f);
 
             MiniLabel(new Rect(r.x + 8f, r.yMax - 18f, r.width - 16f, 14f),
-                $"满环 {maxR / 1000.0:F0} km", PFViewPalette.TextMuted);
+                "PFV_RadarRange".Translate(PFViewUiObjectListCore.FormatDistance(maxR)), PFViewPalette.TextSecondary);
         }
 
         private static void DrawScreenCircle(Vector2 c, float r, Color col)
@@ -381,9 +354,12 @@ namespace PioneerFramework
         //  下边中央姿态球（KSP 式）
         // ════════════════════════════════════════════════════
 
-        private void DrawNavballPanel()
+        private void DrawNavballPanel(SpaceEntityGroup? g)
         {
             var r = rNavball;
+            var title = new Rect(r.x, r.y - 24f, r.width, 24f);
+            Widgets.DrawBoxSolid(title, PFViewPalette.PanelBg);
+            Widgets.Label(title, "PFV_NavballSource".Translate(g != null ? "G" + g.GroupId : "—"));
             Widgets.DrawBoxSolid(r, PFViewPalette.BarBg);
             UiKit.SpacecraftUIDecor.DrawCornerLBrackets(r, PFViewPalette.Border);
 
@@ -397,10 +373,9 @@ namespace PioneerFramework
             GUI.color = Color.white;
 
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
-            var g = (spaceGame != null && selectedGroupId >= 0) ? spaceGame.GetGroupById(selectedGroupId) : null;
             if (g == null || spaceGame == null)
             {
-                MiniLabel(new Rect(r.x, c.y - 8f, r.width, 16f), "未选中编队", PFViewPalette.TextMuted, TextAnchor.MiddleCenter);
+                MiniLabel(new Rect(r.x, c.y - 8f, r.width, 16f), "PFV_NoSelection".Translate(), PFViewPalette.TextSecondary, TextAnchor.MiddleCenter);
                 return;
             }
 
@@ -428,7 +403,7 @@ namespace PioneerFramework
                 DrawNavballMarker(c, radius, qi, (Vector3)thrust.normalized, "T", PFViewPalette.Accent);
 
             // 左右文字区（左：姿态/主推轴；右：速度 + 记号图例）——球放大 1.5× 后放两侧
-            DrawNavballFlanks(r, c, radius, g, spaceGame, vel);
+            if (r.width >= 500f) DrawNavballFlanks(r, c, radius, g, spaceGame, vel);
         }
 
         /// <summary>姿态球两侧文字读数（V-1.1）：左 = 姿态/角速度/主推轴；右 = 速度 + 记号图例。</summary>
@@ -574,16 +549,20 @@ namespace PioneerFramework
 
         private void DrawStatusLine()
         {
-            double tick = TimeScaleManager.GetPhysicsTickSafe();
-            // 操舵中：R 让位给"上升"（键位在操舵窗里），相机复位暂停 —— 提示里说清楚，别让玩家以为坏了
-            string keys = SteeringController.IsOpen
-                ? "滚轮缩放 · 右键旋转 · 中键平移 · 操舵中：R = 上升（相机复位暂停）"
-                : "滚轮缩放 · 右键旋转 · 中键平移 · R 复位";
-            string s = $"相机 {camDistance * ViewToMeters / 1000f:F0} km｜t {tick:F0} s｜{keys}";
-            MiniLabel(rStatus, s, PFViewPalette.TextMuted);
+            string viewed = inspectedContactKey != null && contactDisplayIds.TryGetValue(inspectedContactKey, out string? contactId)
+                ? contactId : selectedGroupId >= 0 ? "G" + selectedGroupId : "—";
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            string focus = focusKind == PFViewFocusKind.Group ? "G" + focusGroupId
+                : focusKind == PFViewFocusKind.Frozen ? "PFV_Frozen".Translate().ToString() : mgr?.GetBodyName(focusBodyId) ?? "—";
+            string source = ResolveOperationGroup() is { } group ? "G" + group.GroupId : "—";
+            string target = targetGroupId >= 0 ? "G" + targetGroupId : "—";
+            string distance = PFViewUiObjectListCore.FormatDistance(camDisplayDistance * ViewToMeters);
+            string text = "PFV_Status".Translate(viewed, focus, source, target, distance);
+            Widgets.DrawBoxSolid(rStatus, PFViewPalette.BarBg);
+            Text.Font = GameFont.Small;
+            Widgets.Label(new(rStatus.x + 8, rStatus.y, rStatus.width - 16, rStatus.height), text);
+            TooltipHandler.TipRegion(rStatus, text);
         }
-
-        /// <summary>列表行：单击选中（返回 true），双击聚焦（doubleClicked）。</summary>
         private static bool ListRow(Rect rr, bool selected, string text, Color color, out bool doubleClicked)
         {
             doubleClicked = false;

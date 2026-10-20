@@ -1,8 +1,10 @@
 ﻿using UnityEngine;
 
+using Verse;
+
 namespace PioneerFramework.Combat
 {
-    public class WeaponInstance
+    public class WeaponInstance : IExposable
     {
         public const int AmmoInfinite = -1;
 
@@ -15,14 +17,29 @@ namespace PioneerFramework.Combat
         public bool isFiring ;
         public int ammo = AmmoInfinite;
         public bool isDisabled ;
+        private int lastUpdateTick = -1;
+
+        // Def 由设施 Comp 重新绑定；其余字段保留真实弹药和状态机进度。
+        public void ExposeData()
+        {
+            Scribe_Values.Look(ref ammo, "ammo", AmmoInfinite);
+            Scribe_Values.Look(ref cooldownRemaining, "cooldownRemaining");
+            Scribe_Values.Look(ref overheatCounter, "overheatCounter");
+            Scribe_Values.Look(ref isOverheated, "isOverheated");
+            Scribe_Values.Look(ref isDisabled, "isDisabled");
+            Scribe_Values.Look(ref lastUpdateTick, "lastUpdateTick", -1);
+        }
 
         public void Update(int currentTick)
         {
+            if (lastUpdateTick == currentTick) return;
+            int elapsed = lastUpdateTick < 0 ? 1 : System.Math.Max(0, currentTick - lastUpdateTick);
+            lastUpdateTick = currentTick;
             if (isDisabled) return;
 
             if (isOverheated)
             {
-                cooldownRemaining--;
+                cooldownRemaining -= elapsed;
                 if (cooldownRemaining <= 0)
                 {
                     isOverheated = false;
@@ -33,7 +50,7 @@ namespace PioneerFramework.Combat
 
             if (cooldownRemaining > 0)
             {
-                cooldownRemaining--;
+                cooldownRemaining = System.Math.Max(0, cooldownRemaining - elapsed);
             }
 
             UpdateTurretRotation();
@@ -66,6 +83,12 @@ namespace PioneerFramework.Combat
             if (cooldownRemaining > 0) return false;
             if (ammo == 0) return false;
             return true;
+        }
+
+        public int AvailableVolleyCount(int requested, int maximum)
+        {
+            int count = System.Math.Clamp(requested, 1, maximum);
+            return ammo >= 0 ? System.Math.Min(count, ammo) : count;
         }
 
         public void Fire()

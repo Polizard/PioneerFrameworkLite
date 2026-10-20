@@ -129,6 +129,24 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
+        public void RenderScene_ClampsCameraInTheFrameUsedToDrawBodies()
+        {
+            var renderScene = typeof(MainTabWindow_PFView).GetMethod("RenderScene", AllFlags);
+            var calls = GetCalledMethods(renderScene).Select(call => call.Name).ToList();
+            int frame = calls.IndexOf("UpdateViewFrame");
+            int camera = calls.IndexOf("UpdateCamera");
+            int draw = calls.IndexOf("DrawAllObjects");
+            Assert.True(frame >= 0 && camera > frame && draw > camera,
+                "先确定本帧参考系，再用同帧原点/时钟夹取相机，最后绘制天体。");
+
+            var updateCamera = typeof(MainTabWindow_PFView).GetMethod("UpdateCamera", AllFlags);
+            var cameraCalls = GetCalledMethods(updateCamera).Select(call => call.Name).ToList();
+            Assert.DoesNotContain("RenderTick", cameraCalls);
+            Assert.DoesNotContain("ResolveFocusOrigin", cameraCalls);
+            Assert.Single(calls, name => name == "RenderTick");
+        }
+
+        [Fact]
         public void RenderScene_KeepsExactlyOneDirectCameraRenderCall()
         {
             var renderScene = typeof(MainTabWindow_PFView).GetMethod(

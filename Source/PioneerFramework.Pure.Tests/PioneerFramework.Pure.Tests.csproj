@@ -36,6 +36,7 @@
     <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Pure\DVector3.cs" />
     <!-- 批 0（2026-10-17）：**惯量张量**（形状预设 / 合成 / 主轴 / 分类器）。纯数学（只 System）⇒ 链进来钉解析样本。 -->
     <Compile Include="..\PioneerFramework\Base\Core\InertiaTensor.cs" Link="Pure\InertiaTensor.cs" />
+    <Compile Include="..\PioneerFramework\SpaceAI\Core\*.cs" Link="SpaceAI\%(Filename)%(Extension)" />
     <Compile Include="..\PioneerFramework\RingWorld\Core\*.cs" Link="RingWorld\%(Filename)%(Extension)" />
     <Compile Include="..\PioneerFramework\Megastructures\Core\**\*.cs" Link="Megastructures\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\PioneerFramework\Launch\LaunchTransitPath.cs" Link="Pure\LaunchTransitPath.cs" />
@@ -119,4 +120,19 @@
 
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\PioneerFramework\PFView\PFViewUiPolicy.cs" Link="Pure\PFViewUiPolicy.cs" />
+    <Compile Include="..\PioneerFramework\Base\Game\SteeringInputCore.cs" Link="Pure\SteeringInputCore.cs" />
+    <Compile Include="..\PioneerFramework\PFView\PFViewUiOperationContext.cs" Link="Pure\PFViewUiOperationContext.cs" />
+    <Compile Include="..\PioneerFramework\PFView\PFViewUiLayoutCore.cs" Link="Pure\PFViewUiLayoutCore.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\PioneerFramework\PFView\PFViewUiObjectListCore.cs" Link="Pure\PFViewUiObjectListCore.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\PioneerFramework\PFView\PFViewUiViewHistory.cs" Link="Pure\PFViewUiViewHistory.cs" />
+    <Compile Include="..\PioneerFramework\PFView\PFViewUiDragState.cs" Link="Pure\PFViewUiDragState.cs" />
+    <Compile Include="..\PioneerFramework\PFView\PFViewGroupCameraCore.cs" Link="Pure\PFViewGroupCameraCore.cs" />
+    <Compile Include="..\PioneerFramework\PFView\PFViewClouds.cs" Link="Pure\PFViewClouds.cs" />
+  </ItemGroup>
 </Project>

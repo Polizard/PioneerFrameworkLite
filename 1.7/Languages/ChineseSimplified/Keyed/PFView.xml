@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PFV_NotOperable>该编队当前不可操作。</PFV_NotOperable>
+  <PFV_NoConsole>本编队没有可用的操舵台。</PFV_NoConsole>
+  <PFV_SourceLost>操作编队已失效，武器操作已结束。</PFV_SourceLost>
+  <PFV_TargetLost>目标已失效或失去接触。</PFV_TargetLost>
+  <PFV_KeepOperator>请先明确更换操控编队；查看对象不会切换操作来源。</PFV_KeepOperator>
+  <PFV_CannotFire>无法开火：请检查操作编队、目标与武器状态。</PFV_CannotFire>
+  <PFV_Group>编队 {0}</PFV_Group>
+  <PFV_Own>我方</PFV_Own>
+  <PFV_Visible>公开对象</PFV_Visible>
+  <PFV_Contact>接触 {0}</PFV_Contact>
+  <PFV_Unidentified>未识别</PFV_Unidentified>
+  <PFV_DecoyIdentified>已识破的诱饵</PFV_DecoyIdentified>
+  <PFV_ContactLost>所查看的接触已失效。</PFV_ContactLost>
+  <PFV_Objects>可见对象（{0}）</PFV_Objects>
+  <PFV_DistanceReference>距离基准：{0}</PFV_DistanceReference>
+  <PFV_Filter_All>筛选：全部</PFV_Filter_All>
+  <PFV_Filter_OwnGroups>筛选：我方</PFV_Filter_OwnGroups>
+  <PFV_Filter_OtherGroups>筛选：其他</PFV_Filter_OtherGroups>
+  <PFV_Filter_Contacts>筛选：接触</PFV_Filter_Contacts>
+  <PFV_Sort_Name>名称排序</PFV_Sort_Name>
+  <PFV_Sort_Distance>距离排序</PFV_Sort_Distance>
+  <PFV_BackToList>返回对象列表</PFV_BackToList>
+  <PFV_Collapse>收起</PFV_Collapse>
+  <PFV_State>状态</PFV_State>
+  <PFV_Error>位置误差</PFV_Error>
+  <PFV_ObservationAge>观测距今</PFV_ObservationAge>
+  <PFV_ContactReadOnly>可将观测接触设为目标。瞄准使用已知位置和误差；未识别接触不提供实体详情或实体聚焦。</PFV_ContactReadOnly>
+  <PFV_Region>所在区域</PFV_Region>
+  <PFV_Speed>轨道速度</PFV_Speed>
+  <PFV_Focus>聚焦此对象</PFV_Focus>
+  <PFV_SetTarget>设为目标</PFV_SetTarget>
+  <PFV_TargetSelected>目标：{0}</PFV_TargetSelected>
+  <PFV_TargetShortcut>Shift+左键：设为目标，保留当前查看与操控。</PFV_TargetShortcut>
+  <PFV_RadarTargetHint>点击接触点设为目标。</PFV_RadarTargetHint>
+  <PFV_StopSteering>结束 {0} 操舵</PFV_StopSteering>
+  <PFV_StartSteering>操舵 {0}</PFV_StartSteering>
+  <PFV_OpenWeapons>打开 {0} 武器</PFV_OpenWeapons>
+  <PFV_ChangeOperator>改为操作 {0}</PFV_ChangeOperator>
+  <PFV_Rooms>舱室（{0}）</PFV_Rooms>
+  <PFV_Room>舱室</PFV_Room>
+  <PFV_EnterRoom>进入 {0}</PFV_EnterRoom>
+  <PFV_Operating>操作编队 {0}</PFV_Operating>
+  <PFV_WeaponTarget>目标：{0}</PFV_WeaponTarget>
+  <PFV_CloseWeapons>结束武器操作</PFV_CloseWeapons>
+  <PFV_ClearTarget>清除目标</PFV_ClearTarget>
+  <PFV_Overheated>过热</PFV_Overheated>
+  <PFV_Ready>就绪</PFV_Ready>
+  <PFV_NotReady>未就绪</PFV_NotReady>
+  <PFV_Fire>开火</PFV_Fire>
+  <PFV_SelectGroup>查看编队</PFV_SelectGroup>
+  <PFV_SelectGroupTip>单击只查看详情；双击列表或使用聚焦按钮调整镜头。</PFV_SelectGroupTip>
+  <PFV_Navigate>天体导航</PFV_Navigate>
+  <PFV_NavigateTip>选择观察天体，保留查看对象、操作编队与目标。</PFV_NavigateTip>
+  <PFV_BodyView>行星视角</PFV_BodyView>
+  <PFV_BodyViewTip>返回当前天体的远景，保留其他交互状态。</PFV_BodyViewTip>
+  <PFV_Display>显示 ▾</PFV_Display>
+  <PFV_DisplayTip>仪表显示方式、地图浮雕与定居点。</PFV_DisplayTip>
+  <PFV_Frame_Auto>自动</PFV_Frame_Auto>
+  <PFV_Frame_Inertial>惯性</PFV_Frame_Inertial>
+  <PFV_Frame_Fixed>固连</PFV_Frame_Fixed>
+  <PFV_FrameTip>前项是选择，后项是实际参考系。点击切换自动、惯性、固连；自动在低空使用固连系。</PFV_FrameTip>
+  <PFV_Weapons>武器 {0}</PFV_Weapons>
+  <PFV_OpenOperationsTip>打开当前操作编队的武器面板，不更换操控对象。</PFV_OpenOperationsTip>
+  <PFV_Help>操作说明</PFV_Help>
+  <PFV_Debug>调试</PFV_Debug>
+  <PFV_DebugTip>PFView 调试开关与测试动作。</PFV_DebugTip>
+  <PFV_Navball>姿态仪表</PFV_Navball>
+  <PFV_Radar>雷达</PFV_Radar>
+  <PFV_RadarSource>雷达 · {0} · 只显示</PFV_RadarSource>
+  <PFV_RadarRange>满环距离 {0}</PFV_RadarRange>
+  <PFV_NoSelection>尚未选中编队</PFV_NoSelection>
+  <PFV_NavballSource>姿态仪表 · {0}</PFV_NavballSource>
+  <PFV_EndSteering>结束操舵</PFV_EndSteering>
+  <PFV_Panel_Automatic>自动：按当前任务展开</PFV_Panel_Automatic>
+  <PFV_Panel_Expanded>本次会话保持展开</PFV_Panel_Expanded>
+  <PFV_Panel_Collapsed>本次会话保持收起</PFV_Panel_Collapsed>
+  <PFV_Frozen>冻结机位</PFV_Frozen>
+  <PFV_Status>查看 {0} · 跟随 {1} · 操作 {2} · 目标 {3} ｜ 相机视距 {4}</PFV_Status>
+  <PFV_PreviousView>上一视角</PFV_PreviousView>
+  <PFV_PreviousViewTip>返回上一次有效机位；保留查看对象与操作编队。</PFV_PreviousViewTip>
+  <PFV_NoPreviousView>没有可返回的上一视角。</PFV_NoPreviousView>
+  <PFV_ViewUnavailable>上一视角的对象已失效，保留当前取景。</PFV_ViewUnavailable>
+  <PFV_ViewLimit>已到编队取景限制；需要看远景时使用“行星视角”。</PFV_ViewLimit>
+  <PFV_HelpTitle>PFView 操作说明</PFV_HelpTitle>
+  <PFV_HelpCameraTitle>观察与镜头</PFV_HelpCameraTitle>
+  <PFV_HelpCamera>单击查看、双击聚焦；右键环视；自由视角下中键或 Shift+右键平移。键盘快捷键以当前自定义绑定为准。</PFV_HelpCamera>
+  <PFV_HelpTasksTitle>按场景展开</PFV_HelpTasksTitle>
+  <PFV_HelpTasks>操舵时展开姿态仪表，武器操作时展开雷达。显示菜单可临时固定展开或收起；重开恢复自动。雷达只显示。</PFV_HelpTasks>
+  <PFV_HelpSubjectsTitle>查看与操作</PFV_HelpSubjectsTitle>
+  <PFV_HelpSubjects>底部依次显示查看、跟随、操作编队、目标。查看其他对象或收起详情不会切换操控编队。Shift+左键设目标；开火前需明确打开操作编队的武器面板。</PFV_HelpSubjects>
+  <PFV_HelpTimeTitle>游戏时间</PFV_HelpTimeTitle>
+  <PFV_HelpTime>工具条控制暂停与时间档。默认数字键 1/2/3/4 调整速度，Space 暂停，沿用原版可重绑键位。搜索和上层窗口优先占用输入。</PFV_HelpTime>
+  <PFV_HelpKnownTitle>接触与仪表</PFV_HelpKnownTitle>
+  <PFV_HelpKnown>未识别接触只显示观测记录与误差。姿态球记号：P 顺行、A 逆行、R/r 径外/径内、N/S 法向/反法向、T 主推轴。</PFV_HelpKnown>
+  <PFV_HelpLimitsTitle>取景与调试</PFV_HelpLimitsTitle>
+  <PFV_HelpLimits>自由编队视角的视距为 300 m–3 km，平移不超过 2 km；第三人称按编队尺寸设置独立的安全缩放范围。远景使用行星视角。</PFV_HelpLimits>
+  <PFV_Close>关闭</PFV_Close>
+  <PFV_Search>搜索名称或编号</PFV_Search>
+  <PFV_NoObjects>没有符合条件的可见对象。</PFV_NoObjects>
+  <PFV_NavballReadouts>姿态球与完整读数…</PFV_NavballReadouts>
+  <PFV_InspectionLost>所查看的编队已失效或失去接触。</PFV_InspectionLost>
+  <PFV_Tracking>跟踪记录</PFV_Tracking>
+  <PFV_TrackLive>当前观测</PFV_TrackLive>
+  <PFV_TrackRecord>保留的观测记录</PFV_TrackRecord>
+  <PFV_ObservedPosition>观测坐标（参考系未知）</PFV_ObservedPosition>
+  <PFV_Camera_Free>自由视角</PFV_Camera_Free>
+  <PFV_Camera_ThirdPersonHull>第三人称·船体正向</PFV_Camera_ThirdPersonHull>
+  <PFV_Camera_ThirdPersonVelocity>第三人称·速度正向</PFV_Camera_ThirdPersonVelocity>
+  <PFV_CameraShort_Free>自由</PFV_CameraShort_Free>
+  <PFV_CameraShort_ThirdPersonHull>船体正向</PFV_CameraShort_ThirdPersonHull>
+  <PFV_CameraShort_ThirdPersonVelocity>速度正向</PFV_CameraShort_ThirdPersonVelocity>
+  <PFV_CameraMode>视角：{0}</PFV_CameraMode>
+  <PFV_CameraModeTip>切换聚焦编队的镜头模式：自由环绕／第三人称·船体正向／第三人称·速度正向。三种模式分别保留机位与缩放。</PFV_CameraModeTip>
+  <PFV_SettingsCamera>PFView 编队镜头</PFV_SettingsCamera>
+  <PFV_SettingsFocusMode>双击／聚焦时的默认视角：{0}</PFV_SettingsFocusMode>
+  <PFV_SettingsFocusModeTip>只影响之后双击编队或点击“聚焦”。当前镜头保持不变；也可在 PFView 工具条临时切换视角。</PFV_SettingsFocusModeTip>
+  <PFV_HelpCameraModesTitle>自由与两种第三人称</PFV_HelpCameraModesTitle>
+  <PFV_HelpCameraModes>自由环绕、船体正向、速度正向分别保存机位。船体正向从船尾跟随；速度正向沿系统惯性速度方向跟随，零速时退回船体方向。默认抑制船体滚转带动整屏旋转，可在 Mod 设置中开启随船滚转。第三人称支持全周环视，俯仰限制在 −85°～85°，保持安全距离并禁用平移。环视默认松手保留，可设置松手回正。修改镜头默认项在下一次聚焦时应用。</PFV_HelpCameraModes>
+  <PFV_Pilot_Settings>PFView 驾驶与观察</PFV_Pilot_Settings>
+  <PFV_Pilot_Assist>松开转向键后辅助止转（关闭则保留惯性旋转）</PFV_Pilot_Assist>
+  <PFV_Pilot_InvertPitch>反转键盘俯仰方向</PFV_Pilot_InvertPitch>
+  <PFV_Pilot_Precision>精细操作比例：{0}%</PFV_Pilot_Precision>
+  <PFV_Pilot_FollowRoll>镜头随船体滚转</PFV_Pilot_FollowRoll>
+  <PFV_Pilot_InvertMouse>反转鼠标观察纵轴</PFV_Pilot_InvertMouse>
+  <PFV_Pilot_InvertWheel>反转滚轮缩放（默认向前拉近）</PFV_Pilot_InvertWheel>
+  <PFV_Pilot_Recenter>第三人称环视松手后自动回正</PFV_Pilot_Recenter>
+  <PFV_Pilot_Sensitivity>鼠标观察灵敏度：{0} 倍</PFV_Pilot_Sensitivity>
+  <PFV_Pilot_Smoothing>镜头跟随平滑时间：{0} 秒</PFV_Pilot_Smoothing>
+  <PFV_Pilot_Activation>转向辅助和精细比例在下一次接管时生效；镜头选项在下一次聚焦时生效。改键后须先松开按键，再重新按下。</PFV_Pilot_Activation>
+  <PFV_Pilot_Bindings>PFView 键位设置</PFV_Pilot_Bindings>
+  <PFV_Pilot_Unbound>未绑定</PFV_Pilot_Unbound>
+  <PFV_Pilot_Edit>修改</PFV_Pilot_Edit>
+  <PFV_Pilot_Clear>清除</PFV_Pilot_Clear>
+  <PFV_Pilot_Reset>默认</PFV_Pilot_Reset>
+  <PFV_Pilot_ResetAll>全部恢复默认键位</PFV_Pilot_ResetAll>
+  <PFV_Pilot_ReleaseFirst>请先松开当前按住的键。Esc 取消录入。</PFV_Pilot_ReleaseFirst>
+  <PFV_Pilot_PressKey>请按新键或组合键；独立修饰键在松开时录入。Esc 取消。</PFV_Pilot_PressKey>
+  <PFV_Pilot_Swap>交换两个动作的绑定</PFV_Pilot_Swap>
+  <PFV_Pilot_Cancel>取消修改</PFV_Pilot_Cancel>
+  <PFV_Pilot_Overlap>该组合与现有输入重叠，无法直接交换。请先修改或清除冲突项。</PFV_Pilot_Overlap>
+  <PFV_Pilot_Conflict>与“{0}”冲突。可交换绑定，或取消本次修改。</PFV_Pilot_Conflict>
+  <PFV_Pilot_NativeConflict>与原版“{0}”键位冲突。请换一个组合，或到原版键位设置中修改。</PFV_Pilot_NativeConflict>
+  <PFV_Pilot_Action_PitchUp>抬头</PFV_Pilot_Action_PitchUp>
+  <PFV_Pilot_Action_PitchDown>低头</PFV_Pilot_Action_PitchDown>
+  <PFV_Pilot_Action_YawLeft>向左转头</PFV_Pilot_Action_YawLeft>
+  <PFV_Pilot_Action_YawRight>向右转头</PFV_Pilot_Action_YawRight>
+  <PFV_Pilot_Action_RollLeft>向左滚转</PFV_Pilot_Action_RollLeft>
+  <PFV_Pilot_Action_RollRight>向右滚转</PFV_Pilot_Action_RollRight>
+  <PFV_Pilot_Action_Forward>向前推力</PFV_Pilot_Action_Forward>
+  <PFV_Pilot_Action_Back>向后推力</PFV_Pilot_Action_Back>
+  <PFV_Pilot_Action_Left>向左平移</PFV_Pilot_Action_Left>
+  <PFV_Pilot_Action_Right>向右平移</PFV_Pilot_Action_Right>
+  <PFV_Pilot_Action_Up>向上平移</PFV_Pilot_Action_Up>
+  <PFV_Pilot_Action_Down>向下平移</PFV_Pilot_Action_Down>
+  <PFV_Pilot_Action_Precision>按住精细操作</PFV_Pilot_Action_Precision>
+  <PFV_Pilot_Action_ResetCamera>重置当前焦点取景</PFV_Pilot_Action_ResetCamera>
+  <PFV_Pilot_Action_FocusControl>回到操控船</PFV_Pilot_Action_FocusControl>
+  <PFV_Pilot_Action_Group1>切换动作组 1</PFV_Pilot_Action_Group1>
+  <PFV_Pilot_Action_Group2>切换动作组 2</PFV_Pilot_Action_Group2>
+  <PFV_Pilot_Action_Group3>切换动作组 3</PFV_Pilot_Action_Group3>
+  <PFV_Pilot_Action_Group4>切换动作组 4</PFV_Pilot_Action_Group4>
+  <PFV_Pilot_Action_Group5>切换动作组 5</PFV_Pilot_Action_Group5>
+  <PFV_Pilot_Action_Group6>切换动作组 6</PFV_Pilot_Action_Group6>
+  <PFV_Pilot_Action_Group7>切换动作组 7</PFV_Pilot_Action_Group7>
+  <PFV_Pilot_Action_Group8>切换动作组 8</PFV_Pilot_Action_Group8>
+  <PFV_Pilot_Action_Group9>切换动作组 9</PFV_Pilot_Action_Group9>
+  <PFV_Pilot_Assisted>辅助止转</PFV_Pilot_Assisted>
+  <PFV_Pilot_Inertial>惯性旋转</PFV_Pilot_Inertial>
+  <PFV_Pilot_Manual>手动转向</PFV_Pilot_Manual>
+  <PFV_Pilot_Takeover>已手动接管转向</PFV_Pilot_Takeover>
+  <PFV_Pilot_ActualThrust>实际推力 {0} kN</PFV_Pilot_ActualThrust>
+  <PFV_Pilot_Spin>角速度 {0}°/s</PFV_Pilot_Spin>
+  <PFV_Pilot_Details>详细操舵</PFV_Pilot_Details>
+  <PFV_Pilot_Focus>回操控船</PFV_Pilot_Focus>
+  <PFV_Pilot_NoThrust>所需方向当前没有可用推力；请检查推进器、工质和动作组。</PFV_Pilot_NoThrust>
+  <PFV_Pilot_Axis>主推进轴</PFV_Pilot_Axis>
+  <PFV_Pilot_Groups>动作组</PFV_Pilot_Groups>
+  <PFV_Pilot_Directions>船头 / 主推 / 速度</PFV_Pilot_Directions>
+  <PFV_Pilot_DriveKeys>转向 {0}/{1}/{2}/{3} · 滚转 {4}/{5} · 精细 {6}</PFV_Pilot_DriveKeys>
+  <PFV_Pilot_TranslateKeys>前后 {0}/{1} · 左右 {2}/{3} · 上下 {4}/{5}（松开停推，已有速度保留）</PFV_Pilot_TranslateKeys>
+  <PFV_Pilot_CameraKeys>右键环视；自由视角中键或 Shift+右键平移；滚轮缩放。复位 {0}，回操控船 {1}。</PFV_Pilot_CameraKeys>
+  <PFV_Pilot_Suspended>输入已暂停：请松开按键，再重新按下。</PFV_Pilot_Suspended>
+  <PFV_HelpPilotingTitle>驾驶与自定义键位</PFV_HelpPilotingTitle>
+  <PFV_Pilot_AvailableThrust>各向可用推力</PFV_Pilot_AvailableThrust>
+  <PFV_Pilot_RateLimit>转向限速 {0}°/s</PFV_Pilot_RateLimit>
+  <PFV_Pilot_RateAxes>滚 {0} · 偏 {1} · 俯 {2} °/s</PFV_Pilot_RateAxes>
+  <PFV_Pilot_SasTitle>姿态对准 SAS（主推进轴对准所选方向）</PFV_Pilot_SasTitle>
+  <PFV_Pilot_ExitHint>Esc 结束操舵。有效手动指令会接管并清空机动队列。</PFV_Pilot_ExitHint>
+  <PFV_Pilot_PanelHint>Esc 关闭详细面板；结束操舵使用主界面的独立按钮。</PFV_Pilot_PanelHint>
+  <PFV_Pilot_ConfigNormalized>已修复或停用 {0} 项无效/重复绑定；请检查当前键位。</PFV_Pilot_ConfigNormalized>
+  <PFV_Pilot_Axis_Auto>自动</PFV_Pilot_Axis_Auto>
+  <PFV_Pilot_Axis_Forward>F 前</PFV_Pilot_Axis_Forward>
+  <PFV_Pilot_Axis_Back>B 后</PFV_Pilot_Axis_Back>
+  <PFV_Pilot_Axis_Left>L 左</PFV_Pilot_Axis_Left>
+  <PFV_Pilot_Axis_Right>R 右</PFV_Pilot_Axis_Right>
+  <PFV_Pilot_Axis_Up>U 上</PFV_Pilot_Axis_Up>
+  <PFV_Pilot_Axis_Down>D 下</PFV_Pilot_Axis_Down>
+  <PFV_Pilot_Sas_None>手动</PFV_Pilot_Sas_None>
+  <PFV_Pilot_Sas_Prograde>顺向</PFV_Pilot_Sas_Prograde>
+  <PFV_Pilot_Sas_Retrograde>逆向</PFV_Pilot_Sas_Retrograde>
+  <PFV_Pilot_Sas_Normal>法向</PFV_Pilot_Sas_Normal>
+  <PFV_Pilot_Sas_Antinormal>反法向</PFV_Pilot_Sas_Antinormal>
+  <PFV_Pilot_Sas_RadialOut>径外</PFV_Pilot_Sas_RadialOut>
+  <PFV_Pilot_Sas_RadialIn>径内</PFV_Pilot_Sas_RadialIn>
+</LanguageData>

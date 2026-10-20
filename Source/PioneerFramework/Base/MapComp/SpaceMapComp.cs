@@ -396,6 +396,21 @@ namespace PioneerFramework
 
         /// <summary>Map → Entity：此地图所属的 SpaceEntity ID。</summary>
         public int ownerEntityId = -1;
+        private readonly List<Thing> spaceWeapons = new();
+        internal IReadOnlyList<Thing> SpaceWeapons => spaceWeapons;
+        public void RegisterSpaceWeapon(Thing building)
+        { if (!spaceWeapons.Contains(building)) spaceWeapons.Add(building); }
+        public void UnregisterSpaceWeapon(Thing building) => spaceWeapons.Remove(building);
+        public void TickSpaceWeapons(int tick)
+        {
+            for (int i = spaceWeapons.Count - 1; i >= 0; i--)
+            {
+                var building = spaceWeapons[i];
+                if (building.Destroyed || !building.Spawned) { spaceWeapons.RemoveAt(i); continue; }
+                var weapon = building.TryGetComp<CompMissileLauncher>()?.Weapon ?? building.TryGetComp<CompMapTurret>()?.Mount?.weapon;
+                weapon?.Update(tick);
+            }
+        }
 
         /// <summary>Map → Part：此地图对应的 SpacePart.partId（在 ownerEntity 的 Parts 列表中）。-1 = 未绑定（旧档/单图兜底）。</summary>
         public int ownerPartId = -1;

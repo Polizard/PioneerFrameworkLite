@@ -20,6 +20,7 @@ namespace PioneerFramework
     ///   大气壳 1950          ← **排在行星之前**（这是修球缘闪的关键：壳先画、行星随后**覆盖**它的盘面部分，
     ///                          于是"壳 vs 行星"根本不进深度比较 ⇒ 没有可翻的边）
     /// 行星（基底球 + 烘焙补丁）／飞船零件／浮雕 2000（Standard 的默认 Geometry 队列，不透明、写深度）
+    /// 云层 2850（Alpha 混合，保留深度测试；仅画面向相机的一侧）
     /// ```
     /// ⚠ **已知代价（写在明处）**：壳排在行星之前 ⇒ 行星（不透明、后画）会把壳在**盘面内**的那部分盖掉 ⇒
     /// **盘面那层 18% 蓝雾没有了**（天空里与球缘那圈照旧，球缘的"两倍浓"也在）。原因：Unity 的 `ZTest`/`Offset`
@@ -47,13 +48,17 @@ namespace PioneerFramework
         /// <summary>行星（基底球 + 烘焙补丁）与飞船零件/浮雕所在的不透明队列（Standard 默认 2000；此处只作读数）。</summary>
         public const int PlanetAndShips = 2000;
 
+        /// <summary>云层在不透明场景之后混合，仍由深度测试保留近处飞船的遮挡。</summary>
+        public const int Clouds = 2850;
+
         /// <summary>
         /// 分层次序自检（**画序必须严格递增**）—— 用例钉的就是这条：层次一旦写乱，
         /// "谁挡谁"就重新变成深度竞争，球缘闪会回来。
         /// </summary>
         public static bool IsLayeredInOrder()
         {
-            return Starfield < SunDisc && SunDisc < AtmosphereShell && AtmosphereShell < PlanetAndShips;
+            return Starfield < SunDisc && SunDisc < AtmosphereShell && AtmosphereShell < PlanetAndShips
+                && PlanetAndShips < Clouds;
         }
     }
 }
