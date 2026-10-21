@@ -112,7 +112,7 @@ namespace PioneerFramework
                     linearNormal.Apply(false, false);
                     linearNormal.wrapMode = TextureWrapMode.Repeat;
                     mat.SetTexture("_NormalTex", linearNormal);
-                    mat.SetVector("_NormalParams", new Vector4(0.8f, 0f, 0f, 0f));
+                    mat.SetVector("_NormalParams", new Vector4(0.9f, 0f, 0f, 0f));
                 }
                 else
                 {
@@ -127,6 +127,7 @@ namespace PioneerFramework
                 mat.SetVector("_Color", new Vector4(1f, 1f, 1f, 1f));
                 mat.SetVector("_SunDir", new Vector4(1f, 0f, 0f, 0f));
                 mat.SetVector("_SunColor", new Vector4(1f, 0.98f, 0.9f, 1f));
+                mat.SetVector("_CamPos", new Vector4(0f, 0f, 0f, 1f));
                 material = mat;
                 Log.Message("[PFView·联盟号] asset material ready, shader=" + shader.name
                     + ", normalMap=" + (hasNormalMapShader && normal != null ? "OK" : "off"));
@@ -134,12 +135,13 @@ namespace PioneerFramework
             }
         }
 
-        internal static void ApplyLighting(Vector3 toSun, Color sunColor)
+        internal static void ApplyLighting(Vector3 toSun, Color sunColor, Vector3 cameraViewPos)
         {
             Material? mat = material;
             if (mat == null) return;
             mat.SetVector("_SunDir", new Vector4(toSun.x, toSun.y, toSun.z, 0f));
             mat.SetVector("_SunColor", new Vector4(sunColor.r, sunColor.g, sunColor.b, 1f));
+            mat.SetVector("_CamPos", new Vector4(cameraViewPos.x, cameraViewPos.y, cameraViewPos.z, 1f));
         }
 
         internal static bool TryDraw(

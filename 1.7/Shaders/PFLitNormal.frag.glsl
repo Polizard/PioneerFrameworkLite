@@ -25,6 +25,7 @@ layout(set = 2, binding = 0) uniform MaterialUniforms
     vec4 _Emission;   // @default = vec4(0.0, 0.0, 0.0, 1.0)
     vec4 _MainTex_ST; // @default = vec4(0.0, 0.0, 1.0, 1.0)
     vec4 _NormalParams; // @default = vec4(0.0, 0.0, 0.0, 0.0) x = normal strength
+    vec4 _CamPos;     // @default = vec4(0.0, 0.0, 0.0, 1.0) xyz = view-space camera position
 } uMaterial;
 
 layout(set = 2, binding = 1) uniform sampler2D _MainTex;
@@ -70,5 +71,17 @@ void main()
     vec3 dayNight = sunDiffuseLight(n, uMaterial._SunDir.xyz) * uMaterial._SunColor.rgb;
     vec4 tex = texture(_MainTex, vUv * uMaterial._MainTex_ST.zw + uMaterial._MainTex_ST.xy);
     vec3 color = uMaterial._Color.rgb * tex.rgb * dayNight + uMaterial._Emission.rgb * tex.rgb;
+
+    // Restrained hard-surface response: the normal map should be visible on
+    // large panels without turning the test asset into a glossy plastic toy.
+    vec3 toCam = uMaterial._CamPos.xyz - vWorldPos;
+    float camLen = length(toCam);
+    vec3 viewDir = camLen > 1e-6 ? toCam / camLen : vec3(0.0, 0.0, 1.0);
+    vec3 sunDir = normalize(uMaterial._SunDir.xyz + vec3(1e-6, 0.0, 0.0));
+    vec3 halfDir = normalize(sunDir + viewDir);
+    float specular = pow(max(dot(n, halfDir), 0.0), 28.0) * 0.12;
+    float rim = pow(clamp(1.0 - abs(dot(n, viewDir)), 0.0, 1.0), 4.0) * 0.08;
+    color += (vec3(specular) + vec3(0.45, 0.64, 1.0) * rim) * dayNight;
+
     outColor = vec4(color, uMaterial._Color.a * tex.a);
 }

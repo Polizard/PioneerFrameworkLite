@@ -86,7 +86,7 @@ namespace PioneerFramework
                 // 2026-10-19 蒙皮：独立材质同样收不到 renderMat 的每帧刷新 —— 同一个坑，同一个修法
                 // （另外把相机位置一起喂进去，rim 要用；全在视图系）。
                 ShipSkinAssets.ApplyLighting(toSun, sc, GetCameraViewPos());
-                SoyuzModelAssets.ApplyLighting(toSun, sc);
+                SoyuzModelAssets.ApplyLighting(toSun, sc, GetCameraViewPos());
 
             }
 

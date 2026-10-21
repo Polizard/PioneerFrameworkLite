@@ -27,7 +27,7 @@ This asset is a deliberately hard-surface, low-poly Soyuz-style test model for P
 - Vertices: 545
 - Triangles: 1,014
 - Material slots: 1
-- UV layer: 1 (box projection, 16 m texture period)
+- UV layer: 1 (box projection, 24 m texture period; four panels per tile => 6 m panels on the surface)
 - Native size: X = 10.2 m, Y = 10.2 m, Z = 50.51 m in final PFL axes
 - Unit mesh: 1.0 x 1.0 x 1.0 around the origin
 - Final axes: Y up, +Z nose/forward
@@ -49,6 +49,6 @@ The asset intentionally tests the prism/detail-bake rules rather than reproducin
 ## Runtime notes (2026-10-21 branch)
 
 - `PFLitNormal.vert.glsl` applies the inverse-transpose model normal matrix.
-- `PFLitNormal.frag.glsl` decodes the normal map and reconstructs a tangent basis from screen-space derivatives of world position and UV.
+- `PFLitNormal.frag.glsl` decodes the normal map and reconstructs a tangent basis from screen-space derivatives of world position and UV. Runtime normal strength is 0.9; a restrained view-dependent specular/rim response makes the panel seams readable at PFView distance.
 - The normal PNG is authored as raw data (Blender Non-Color). At runtime `SoyuzModelAssets` copies its pixels into a linear `Texture2D` before binding it to `_NormalTex`, preventing accidental sRGB gamma decoding.
 - Preview: `D:\PJ\Blender-MCP-Test\PFL_Assets\Soyuz\Soyuz_Prism_Preview.png`
