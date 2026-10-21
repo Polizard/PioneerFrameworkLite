@@ -46,5 +46,20 @@ namespace PioneerFramework
             if (w == null) { Log.Message("[PFView·调试] 先打开 PFView 页签"); return; }
             w.DebugPregenerateRoomMaps();
         }
+
+        public static void SpawnSoyuzPrism()
+        {
+            var group = DebugShipSpawner.SpawnSoyuzPrismDemo();
+            if (group == null) return;
+            var w = Window;
+            if (w == null)
+            {
+                Log.Message("[PFView·调试] 联盟号已生成 G" + group.GroupId
+                    + "；打开 PFView 后再在对象列表选择/聚焦该组。");
+                return;
+            }
+            w.DebugSelectAndFocusGroup(group.GroupId);
+        }
+
     }
 }

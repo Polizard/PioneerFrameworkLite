@@ -42,6 +42,13 @@ namespace PioneerFramework
             preferObjectList = false;
         }
 
+        internal void DebugSelectAndFocusGroup(int groupId)
+        {
+            SelectGroupForInspection(groupId);
+            FocusGroup(groupId);
+        }
+
+
         private void SelectContactForInspection(in Contact contact, int observerFactionId)
         {
             if (Faction.OfPlayer?.loadID != observerFactionId) return;

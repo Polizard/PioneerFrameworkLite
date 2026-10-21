@@ -53,7 +53,7 @@ namespace PioneerFramework
                     Log.Message(p != null ? "[PFView·截图] 已写出：" + p : "[PFView·截图] 失败：PFView 未打开或无 RT");
                 }, null);
             AddAction("PFView·联盟号棱柱测试资产（12/16 棱柱 + 8 棱小件 + 法线贴图）",
-                "20 视图/表现", 58, delegate { DebugShipSpawner.SpawnSoyuzPrismDemo(); }, null);
+                "20 视图/表现", 58, PFViewDebugActions.SpawnSoyuzPrism, null);
 
 
             // PFView 视图系统 v2（2026-10-18）：原先挂在玩家工具条/面板上的测试与作弊项，统一收进这里。
