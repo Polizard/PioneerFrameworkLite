@@ -222,7 +222,7 @@ namespace PioneerFramework
 
             // 2026-10-19 舰船蒙皮：每次开窗都确保材质就绪（Cleanup 会销毁它；静态构造器只在首次跑）。
             // 取不到 shader/贴图 ⇒ 自动回退旧材质，不抛异常。
-            if (!ShipSkinAssets.EnsureInitialized(MetersToView) && ShipSkinSettings.Enabled)
+            if (!ShipSkinAssets.EnsureInitialized() && ShipSkinSettings.Enabled)
                 Log.Warning("[PFView·蒙皮] 不可用（" + (ShipSkinAssets.Failure ?? "未知原因")
                     + "）⇒ 舰船回退 PFLit/Toon 旧材质");
 

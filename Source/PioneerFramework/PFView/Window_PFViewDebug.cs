@@ -70,7 +70,7 @@ namespace PioneerFramework
             // 2026-10-19 舰船蒙皮：只加表面层（板缝/倒角/阵营色），不改形体；关 = 旧纯色盒体/三色浮雕。
             v = ShipSkinSettings.Enabled;
             before = v;
-            Widgets.CheckboxLabeled(new Rect(0f, y, w, 24f), "舰船蒙皮：极简硬表面（关 = 旧纯色）", ref v);
+            Widgets.CheckboxLabeled(new Rect(0f, y, w, 24f), "舰船蒙皮：工业装甲（关 = 旧纯色）", ref v);
             if (v != before) ShipSkinSettings.Enabled = v;
             y += 24f;
 

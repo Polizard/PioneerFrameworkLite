@@ -16,8 +16,10 @@ namespace PioneerFramework
         private static int nativeSignature;
         private static SteeringModifiers currentModifiers;
         private static readonly SteeringPointerHold pointer = new();
+        private static bool precisionLatched;
 
         internal static void Rearm() { gate.Rearm(); pointer.Cancel(); }
+        internal static void ResetPrecision() => precisionLatched = false;
 
         internal static void UpdatePointer(bool held, bool enabled) => pointer.Update(held, enabled && SteeringController.IsOpen);
         internal static void BeginPointer(SteeringAction action) => pointer.Press(action);
@@ -75,26 +77,30 @@ namespace PioneerFramework
             activeProfile = profile;
             currentModifiers = modifiers;
             gate.Update(held, enabled);
+            if (!activeProfile[SteeringAction.Precision].IsBound) precisionLatched = false;
             if (!enabled || !SteeringController.IsOpen)
             {
                 pointer.Cancel();
                 SteeringController.ClearHeldInput();
                 return;
             }
-            bool precision = IsHeld(SteeringAction.Precision, false);
-            SteeringController.PrecisionHeld = precision;
-            SteeringController.KeyPitchU = IsHeld(SteeringAction.PitchUp, precision);
-            SteeringController.KeyPitchD = IsHeld(SteeringAction.PitchDown, precision);
-            SteeringController.KeyYawL = IsHeld(SteeringAction.YawLeft, precision);
-            SteeringController.KeyYawR = IsHeld(SteeringAction.YawRight, precision);
-            SteeringController.KeyRollL = IsHeld(SteeringAction.RollLeft, precision);
-            SteeringController.KeyRollR = IsHeld(SteeringAction.RollRight, precision);
-            SteeringController.KeyForward = IsHeld(SteeringAction.Forward, precision);
-            SteeringController.KeyBack = IsHeld(SteeringAction.Back, precision);
-            SteeringController.KeyLeft = IsHeld(SteeringAction.Left, precision);
-            SteeringController.KeyRight = IsHeld(SteeringAction.Right, precision);
-            SteeringController.KeyUp = IsHeld(SteeringAction.Up, precision);
-            SteeringController.KeyDown = IsHeld(SteeringAction.Down, precision);
+            bool precisionKeyHeld = IsHeld(SteeringAction.Precision, false);
+            if (SteeringController.PrecisionToggle && precisionKeyHeld && gate.TryPress(activeProfile[SteeringAction.Precision].Key))
+                precisionLatched = !precisionLatched;
+            SteeringController.PrecisionHeld = SteeringController.PrecisionToggle ? precisionLatched : precisionKeyHeld;
+            // Ignore the precision chord's modifiers only while that chord is physically held.
+            SteeringController.KeyPitchU = IsHeld(SteeringAction.PitchUp, precisionKeyHeld);
+            SteeringController.KeyPitchD = IsHeld(SteeringAction.PitchDown, precisionKeyHeld);
+            SteeringController.KeyYawL = IsHeld(SteeringAction.YawLeft, precisionKeyHeld);
+            SteeringController.KeyYawR = IsHeld(SteeringAction.YawRight, precisionKeyHeld);
+            SteeringController.KeyRollL = IsHeld(SteeringAction.RollLeft, precisionKeyHeld);
+            SteeringController.KeyRollR = IsHeld(SteeringAction.RollRight, precisionKeyHeld);
+            SteeringController.KeyForward = IsHeld(SteeringAction.Forward, precisionKeyHeld);
+            SteeringController.KeyBack = IsHeld(SteeringAction.Back, precisionKeyHeld);
+            SteeringController.KeyLeft = IsHeld(SteeringAction.Left, precisionKeyHeld);
+            SteeringController.KeyRight = IsHeld(SteeringAction.Right, precisionKeyHeld);
+            SteeringController.KeyUp = IsHeld(SteeringAction.Up, precisionKeyHeld);
+            SteeringController.KeyDown = IsHeld(SteeringAction.Down, precisionKeyHeld);
         }
 
         private static bool IsHeld(SteeringAction action, bool precision)

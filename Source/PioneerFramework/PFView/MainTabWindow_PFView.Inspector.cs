@@ -52,7 +52,9 @@ namespace PioneerFramework
             var source = ResolveOperationGroup();
             int weapons = operationContext.WeaponsOpen && source != null ? combat?.GetGroupWeapons(source.GroupId).Count ?? 0 : 0;
             bool own = CanOperateGroup(selected, false, out _);
+            bool hasMap = selected != null && RefreshNavigableGroupMaps(selected.GroupId);
             float height = inspectedContactKey != null ? 361f : selected == null ? 0f : 123f;
+            if (hasMap) height += 33f;
             if (selected != null && selected.GroupId != source?.GroupId) height += 33f;
             if (own) height += 99f + (source != null && source.GroupId != selected!.GroupId ? 33f : 0f)
                 + (showInspectorRooms ? inspectorRooms.Count * 33f : 0);
@@ -78,6 +80,7 @@ namespace PioneerFramework
                 InspectorLine(content, ref y, "PFV_Region".Translate(), body);
                 InspectorLine(content, ref y, "PFV_Speed".Translate(), PFViewUiObjectListCore.FormatSpeed(known.velocity.magnitude));
                 if (InspectorButton(content, ref y, "PFV_Focus".Translate())) FocusGroup(selected.GroupId);
+                if (hasMap && InspectorButton(content, ref y, "PFV_EnterMap".Translate())) ShowGroupMapMenu(selected.GroupId);
                 if (selected.GroupId != source?.GroupId
                     && InspectorButton(content, ref y, "PFV_SetTarget".Translate())) SetTargetGroup(selected.GroupId);
                 if (CanOperateGroup(selected, false, out _))

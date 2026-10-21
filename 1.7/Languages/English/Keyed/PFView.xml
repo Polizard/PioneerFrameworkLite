@@ -30,6 +30,9 @@
   <PFV_Region>Region</PFV_Region>
   <PFV_Speed>Orbital speed</PFV_Speed>
   <PFV_Focus>Focus this object</PFV_Focus>
+  <PFV_EnterMap>Enter map</PFV_EnterMap>
+  <PFV_GroupMapChoice>{0} (map {1})</PFV_GroupMapChoice>
+  <PFV_MapUnavailable>Cannot enter map: the group cannot be operated or the map was unloaded.</PFV_MapUnavailable>
   <PFV_SetTarget>Set as target</PFV_SetTarget>
   <PFV_TargetSelected>Target: {0}</PFV_TargetSelected>
   <PFV_TargetShortcut>Shift+click: set target and keep the current inspection and controls.</PFV_TargetShortcut>
@@ -87,7 +90,7 @@
   <PFV_HelpCameraTitle>Inspection and camera</PFV_HelpCameraTitle>
   <PFV_HelpCamera>Click to inspect; double-click to focus. Right-drag to look around; middle-drag or Shift+right-drag to pan in free view. Keyboard shortcuts follow your custom bindings.</PFV_HelpCamera>
   <PFV_HelpTasksTitle>Contextual instruments</PFV_HelpTasksTitle>
-  <PFV_HelpTasks>Steering opens attitude instruments; weapon operation opens radar. Display options can pin visibility for this session. Reopening restores automatic visibility. Radar is display-only.</PFV_HelpTasks>
+  <PFV_HelpTasks>Steering opens attitude instruments; weapon operation opens radar. Display options can pin visibility for this session. Reopening restores automatic visibility. Radar is display-only. For player groups with loaded maps, choose Enter map in the details panel or right-click menu. Groups with multiple maps offer a choice.</PFV_HelpTasks>
   <PFV_HelpSubjectsTitle>Inspection and operation</PFV_HelpSubjectsTitle>
   <PFV_HelpSubjects>The bottom bar shows inspection, follow, operator and target. Inspecting another object or hiding details keeps the operator. Shift+click sets a target; open the operating group's weapon panel before firing.</PFV_HelpSubjects>
   <PFV_HelpTimeTitle>Game time</PFV_HelpTimeTitle>
@@ -122,13 +125,20 @@
   <PFV_Pilot_Assist>Stop rotation after releasing steering keys (off: retain angular inertia)</PFV_Pilot_Assist>
   <PFV_Pilot_InvertPitch>Invert keyboard pitch</PFV_Pilot_InvertPitch>
   <PFV_Pilot_Precision>Precision input scale: {0}%</PFV_Pilot_Precision>
+  <PFV_Pilot_PrecisionMode>Precision activation: {0}</PFV_Pilot_PrecisionMode>
+  <PFV_Pilot_PrecisionHold>Hold (default)</PFV_Pilot_PrecisionHold>
+  <PFV_Pilot_PrecisionToggle>Press to toggle</PFV_Pilot_PrecisionToggle>
+  <PFV_Pilot_PrecisionHoldHelp>Precision: hold {0}</PFV_Pilot_PrecisionHoldHelp>
+  <PFV_Pilot_PrecisionToggleHelp>Precision: press {0} to toggle</PFV_Pilot_PrecisionToggleHelp>
+  <PFV_Pilot_PrecisionOn>Precision {0}%</PFV_Pilot_PrecisionOn>
+  <PFV_Pilot_PrecisionOff>Normal steering</PFV_Pilot_PrecisionOff>
   <PFV_Pilot_FollowRoll>Camera follows hull roll</PFV_Pilot_FollowRoll>
   <PFV_Pilot_InvertMouse>Invert mouse look vertical axis</PFV_Pilot_InvertMouse>
   <PFV_Pilot_InvertWheel>Invert zoom wheel (default: forward zooms in)</PFV_Pilot_InvertWheel>
   <PFV_Pilot_Recenter>Recenter third-person look after releasing drag</PFV_Pilot_Recenter>
   <PFV_Pilot_Sensitivity>Mouse look sensitivity: {0}x</PFV_Pilot_Sensitivity>
   <PFV_Pilot_Smoothing>Camera follow smoothing: {0} seconds</PFV_Pilot_Smoothing>
-  <PFV_Pilot_Activation>Steering assistance and precision scale apply on the next takeover; camera options apply on the next focus. After rebinding, release held keys before pressing them again.</PFV_Pilot_Activation>
+  <PFV_Pilot_Activation>Steering assistance, precision activation and scale apply on the next takeover; camera options apply on the next focus. Toggled precision lasts for the current control session and resets when ending control or switching ships. After rebinding, release held keys before pressing them again.</PFV_Pilot_Activation>
   <PFV_Pilot_Bindings>PFView key bindings</PFV_Pilot_Bindings>
   <PFV_Pilot_Unbound>Unbound</PFV_Pilot_Unbound>
   <PFV_Pilot_Edit>Edit</PFV_Pilot_Edit>
@@ -154,7 +164,7 @@
   <PFV_Pilot_Action_Right>Translate right</PFV_Pilot_Action_Right>
   <PFV_Pilot_Action_Up>Translate up</PFV_Pilot_Action_Up>
   <PFV_Pilot_Action_Down>Translate down</PFV_Pilot_Action_Down>
-  <PFV_Pilot_Action_Precision>Hold precision input</PFV_Pilot_Action_Precision>
+  <PFV_Pilot_Action_Precision>Precision steering</PFV_Pilot_Action_Precision>
   <PFV_Pilot_Action_ResetCamera>Reset current focus framing</PFV_Pilot_Action_ResetCamera>
   <PFV_Pilot_Action_FocusControl>Focus controlled ship</PFV_Pilot_Action_FocusControl>
   <PFV_Pilot_Action_Group1>Toggle action group 1</PFV_Pilot_Action_Group1>
@@ -178,7 +188,7 @@
   <PFV_Pilot_Axis>Main thrust axis</PFV_Pilot_Axis>
   <PFV_Pilot_Groups>Action groups</PFV_Pilot_Groups>
   <PFV_Pilot_Directions>Nose / main thrust / velocity</PFV_Pilot_Directions>
-  <PFV_Pilot_DriveKeys>Steer {0}/{1}/{2}/{3} · Roll {4}/{5} · Precision {6}</PFV_Pilot_DriveKeys>
+  <PFV_Pilot_DriveKeys>Steer {0}/{1}/{2}/{3} · Roll {4}/{5} · {6}</PFV_Pilot_DriveKeys>
   <PFV_Pilot_TranslateKeys>Fore/aft {0}/{1} · Left/right {2}/{3} · Up/down {4}/{5} (release stops thrust; velocity is retained)</PFV_Pilot_TranslateKeys>
   <PFV_Pilot_CameraKeys>Right-drag looks around; middle-drag or Shift+right-drag pans in free view. Wheel zooms. Reset {0}; controlled ship {1}.</PFV_Pilot_CameraKeys>
   <PFV_Pilot_Suspended>Input suspended: release held keys before pressing them again.</PFV_Pilot_Suspended>

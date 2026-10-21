@@ -1,53 +1,47 @@
 #version 450
 
-// PF_ShipSkin.frag.glsl —— 舰船"极简硬表面"蒙皮（2026-10-19）。
-//
-// 口径（用户裁定）：只做**板缝 + 倒角 + 阵营色**，不画舱窗/发光带/铆钉/做旧。
-//   · 三平面投影采一张中性灰、四边无缝的装甲板贴图（`ShipSkinPlates.png`），
-//     现有网格没有 UV 也能覆盖（盒体/地图浮雕共用同一套规则）；
-//   · 受光口径与 PFLit **完全一致**（半兰伯特 + 两段昼夜混色 + `_SunColor`），
-//     所以蒙皮后的船与行星/其它物体在同一盏太阳下；
-//   · 阵营色 = `_Color`（C# 按阵营算好，乘在灰底上）；倒角亮棱已烘在贴图里（对称、无方向光），
-//     另加一条很克制的轮廓 rim（silhouette 分离用，不发光）。
-
-layout(location = 0) in vec3 vSkinPos;
-layout(location = 1) in vec3 vNormal;
-layout(location = 2) in vec3 vWorldPos;
-
+// 2026-10-20：工业装甲蒙皮。保留原几何/提交数，使用 image2 板面与局部蓝色涂装遮罩。
+// 灰度只提供板面明度与浅凹槽；蓝色区域由 _Color 换成阵营色，主体保持中性金属。
+layout(location = 0) in vec3 vNormal;
+layout(location = 1) in vec3 vWorldPos;
 layout(location = 0) out vec4 outColor;
 
 layout(set = 2, binding = 0) uniform MaterialUniforms
 {
-    vec4 _Color;      // @color @default = vec4(1.0, 1.0, 1.0, 1.0)   阵营 tint（乘在灰底贴图上）
-    vec4 _SunDir;     // @default = vec4(1.0, 0.0, 0.0, 0.0)          xyz = 指向太阳（视图系单位向量）
-    vec4 _SunColor;   // @default = vec4(1.0, 0.98, 0.9, 1.0)         太阳灯色（不含强度）
-    vec4 _CamPos;     // @default = vec4(0.0, 0.0, 0.0, 1.0)          视图系相机位置（rim 用）
-    vec4 _SkinParams; // @default = vec4(0.625, 1.0, 0.18, 0.35)      x=每视图单位的贴图重复数 y=板面细节保真 z=rim 强度 w=几何边亮棱强度
+    vec4 _Color;        // @color @default = vec4(0.76, 0.80, 0.86, 1.0)
+    vec4 _SunDir;       // @default = vec4(1.0, 0.0, 0.0, 0.0)
+    vec4 _SunColor;     // @default = vec4(1.0, 0.98, 0.9, 1.0)
+    vec4 _CamPos;       // @default = vec4(0.0, 0.0, 0.0, 1.0)
+    vec4 _SkinParams;   // @default = vec4(0.0625, 1.0, 0.08, 0.025) x=每米重复数 y=细节 z=rim w=凹槽高度(米)
+    vec4 _SkinOrigin;   // @default = vec4(0.0, 0.0, 0.0, 10.0) xyz=舰体视图系原点 w=视图单位转物理米
+    vec4 _SkinRotation; // @default = vec4(0.0, 0.0, 0.0, 1.0) 视图系转舰体系的单位四元数
+    vec4 _HullColor;    // @color @default = vec4(0.74, 0.77, 0.80, 1.0)
+    vec4 _SkinSurface;  // @default = vec4(0.0, 0.76, 0.0, 0.0) x=零件合批(法线仍在舰体系) y=粗糙度
 } uMaterial;
 
 layout(set = 2, binding = 1) uniform sampler2D _SkinTex;
-
-// 与 PFLit 同源的昼夜混色常量（照抄，别改：改了就与行星光照分家）
 const vec3 NightColor = vec3(0.482, 0.603, 0.682);
 const vec3 DayColor = vec3(1.0, 1.0, 1.0);
 
-// 三平面投影：按法线权重混合三个轴向投影（贴图本身四边无缝，任何朝向都连续）
-float triplanar(vec3 p, vec3 n)
+vec3 rotateVector(vec4 q, vec3 v)
+{
+    return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+}
+
+// 纹理使用引擎 MirroredRepeat；保留未折叠 UV，硬件正确处理镜像边界的梯度和过滤核。
+vec3 triplanar(vec3 p, vec3 n)
 {
     vec3 w = abs(n);
-    w = w * w * w;                 // 更锐利的投影切换，避免斜面"三张图糊在一起"
+    w = w * w * w;
     w /= max(w.x + w.y + w.z, 1e-5);
-    float x = texture(_SkinTex, p.yz).r;
-    float y = texture(_SkinTex, p.xz).r;
-    float z = texture(_SkinTex, p.xy).r;
-    return x * w.x + y * w.y + z * w.z;
+    return texture(_SkinTex, p.yz).rgb * w.x
+        + texture(_SkinTex, p.xz).rgb * w.y
+        + texture(_SkinTex, p.xy).rgb * w.z;
 }
 
 vec3 sunDiffuse(vec3 normal, vec3 toSun)
 {
-    if (dot(toSun, toSun) < 1e-6)
-        return DayColor;           // 无太阳（未喂方向）：全亮口径，与 PFLit 一致
-
+    if (dot(toSun, toSun) < 1e-6) return DayColor;
     float incidence = dot(normal, normalize(toSun)) * 0.5 + 0.5;
     float t = clamp((incidence - 0.45) / 0.10, 0.0, 1.0);
     return mix(NightColor, DayColor, t);
@@ -55,30 +49,59 @@ vec3 sunDiffuse(vec3 normal, vec3 toSun)
 
 void main()
 {
+    vec4 inverseRotation = uMaterial._SkinRotation;
+    vec4 forwardRotation = vec4(-inverseRotation.xyz, inverseRotation.w);
     vec3 N = normalize(vNormal);
-    vec3 sunDir = uMaterial._SunDir.xyz;
+    // WorldQuadBatch 只变换了位置；轴对齐盒体的局部面法线在此恢复到同一盏太阳的视图系。
+    if (uMaterial._SkinSurface.x > 0.5)
+        N = rotateVector(forwardRotation, N);
 
-    // 板面：中性灰贴图 × 阵营 tint（y = 1 时保留全部板缝细节；将来可整体压平）
-    float plate = triplanar(vSkinPos * uMaterial._SkinParams.x, N);
-    float detail = mix(1.0, plate, clamp(uMaterial._SkinParams.y, 0.0, 1.0));
-    vec3 albedo = uMaterial._Color.rgb * detail;
+    vec3 shipMeters = rotateVector(inverseRotation, vWorldPos - uMaterial._SkinOrigin.xyz)
+        * uMaterial._SkinOrigin.w;
+    vec3 shipNormal = rotateVector(inverseRotation, N);
+    vec3 tex = triplanar(shipMeters * uMaterial._SkinParams.x, shipNormal);
+    float luminance = dot(tex, vec3(0.299, 0.587, 0.114));
+    float paint = smoothstep(0.045, 0.14, tex.b - tex.r);
 
-    // 受光：与 PFLit 同一口径
-    vec3 light = sunDiffuse(N, sunDir) * uMaterial._SunColor.rgb;
-    vec3 color = albedo * light;
+    // 距离由物理米/像素决定，兼容跟随镜头、参考系切换和调试放大；远处减弱细节。
+    float footprint = length(fwidth(shipMeters));
+    float fineDetail = 1.0 - smoothstep(0.15, 1.25, footprint);
+    float detail = clamp(uMaterial._SkinParams.y, 0.0, 1.0);
+    float plate = mix(0.90, clamp(luminance * 1.55, 0.30, 1.10), detail * mix(0.4, 1.0, fineDetail));
+    vec3 base = uMaterial._HullColor.rgb * plate;
+    vec3 coating = uMaterial._Color.rgb * mix(0.82, 1.0, clamp(plate, 0.0, 1.0));
+    vec3 albedo = mix(base, coating, paint);
 
-    // 克制的轮廓 rim：把船从深空里"剥"出来，不做发光（强度默认 0.18）
+    // 从凹槽高度的屏幕导数恢复表面梯度，仅扰动着色法线；顶点和剪影保持原样。
+    vec3 dpdx = dFdx(vWorldPos) * uMaterial._SkinOrigin.w;
+    vec3 dpdy = dFdy(vWorldPos) * uMaterial._SkinOrigin.w;
+    float height = smoothstep(0.25, 0.58, luminance) * max(uMaterial._SkinParams.w, 0.0);
+    vec3 r1 = cross(dpdy, N);
+    vec3 r2 = cross(N, dpdx);
+    float determinant = dot(dpdx, r1);
+    vec3 gradient = (r1 * dFdx(height) + r2 * dFdy(height))
+        * sign(determinant) / max(abs(determinant), 1e-7);
+    vec3 shadedNormal = normalize(N - gradient * fineDetail * detail);
+
     vec3 toCam = uMaterial._CamPos.xyz - vWorldPos;
-    float camLen = length(toCam);
-    vec3 V = (camLen > 1e-6) ? (toCam / camLen) : vec3(0.0, 0.0, 1.0);
+    vec3 V = toCam / max(length(toCam), 1e-6);
+    vec3 light = sunDiffuse(shadedNormal, uMaterial._SunDir.xyz) * uMaterial._SunColor.rgb;
+    vec3 color = albedo * light;
     float rim = pow(clamp(1.0 - abs(dot(N, V)), 0.0, 1.0), 4.0);
-    color += uMaterial._Color.rgb * rim * max(uMaterial._SkinParams.z, 0.0) * light;
+    color += uMaterial._HullColor.rgb * rim * max(uMaterial._SkinParams.z, 0.0) * light;
 
-    // 屏幕空间"几何边"亮棱（2026-10-19 游戏内实拍修正）：盒体/浮雕的面交界处法线突变，
-    // fwidth 在两面之间给出 1–2 px 的尖峰 ⇒ 给现有几何描一条不随距离消失的倒角亮棱。
-    // "不改几何"前提下，这是把方块读成硬表面的关键（贴图缝在 300 m 外会被 mip 抹平）。
-    float edge = smoothstep(0.05, 0.6, length(fwidth(N)));
-    color += uMaterial._Color.rgb * light * edge * max(uMaterial._SkinParams.w, 0.0);
+    // 单盏太阳的宽弱高光；无需环境贴图或额外渲染通道。背光面不产生镜面亮斑。
+    vec3 sun = uMaterial._SunDir.xyz;
+    if (dot(sun, sun) > 1e-6)
+    {
+        vec3 L = normalize(sun);
+        vec3 halfVector = L + V;
+        vec3 H = halfVector / max(length(halfVector), 1e-6);
+        float roughness = clamp(uMaterial._SkinSurface.y - paint * 0.10 + (plate - 0.90) * 0.12, 0.45, 0.95);
+        float specular = pow(max(dot(shadedNormal, H), 0.0), mix(52.0, 10.0, roughness))
+            * max(dot(shadedNormal, L), 0.0) * 0.10;
+        color += uMaterial._SunColor.rgb * specular;
+    }
 
     outColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }

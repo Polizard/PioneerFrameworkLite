@@ -30,6 +30,9 @@
   <PFV_Region>所在区域</PFV_Region>
   <PFV_Speed>轨道速度</PFV_Speed>
   <PFV_Focus>聚焦此对象</PFV_Focus>
+  <PFV_EnterMap>进入地图</PFV_EnterMap>
+  <PFV_GroupMapChoice>{0}（地图 {1}）</PFV_GroupMapChoice>
+  <PFV_MapUnavailable>无法进入地图：编队已不可操作或地图已卸载。</PFV_MapUnavailable>
   <PFV_SetTarget>设为目标</PFV_SetTarget>
   <PFV_TargetSelected>目标：{0}</PFV_TargetSelected>
   <PFV_TargetShortcut>Shift+左键：设为目标，保留当前查看与操控。</PFV_TargetShortcut>
@@ -87,7 +90,7 @@
   <PFV_HelpCameraTitle>观察与镜头</PFV_HelpCameraTitle>
   <PFV_HelpCamera>单击查看、双击聚焦；右键环视；自由视角下中键或 Shift+右键平移。键盘快捷键以当前自定义绑定为准。</PFV_HelpCamera>
   <PFV_HelpTasksTitle>按场景展开</PFV_HelpTasksTitle>
-  <PFV_HelpTasks>操舵时展开姿态仪表，武器操作时展开雷达。显示菜单可临时固定展开或收起；重开恢复自动。雷达只显示。</PFV_HelpTasks>
+  <PFV_HelpTasks>操舵时展开姿态仪表，武器操作时展开雷达。显示菜单可临时固定展开或收起；重开恢复自动。雷达只显示。有已加载地图的我方编队，可在详情或右键菜单选择“进入地图”；多个地图会列出供选择。</PFV_HelpTasks>
   <PFV_HelpSubjectsTitle>查看与操作</PFV_HelpSubjectsTitle>
   <PFV_HelpSubjects>底部依次显示查看、跟随、操作编队、目标。查看其他对象或收起详情不会切换操控编队。Shift+左键设目标；开火前需明确打开操作编队的武器面板。</PFV_HelpSubjects>
   <PFV_HelpTimeTitle>游戏时间</PFV_HelpTimeTitle>
@@ -121,14 +124,21 @@
   <PFV_Pilot_Settings>PFView 驾驶与观察</PFV_Pilot_Settings>
   <PFV_Pilot_Assist>松开转向键后辅助止转（关闭则保留惯性旋转）</PFV_Pilot_Assist>
   <PFV_Pilot_InvertPitch>反转键盘俯仰方向</PFV_Pilot_InvertPitch>
-  <PFV_Pilot_Precision>精细操作比例：{0}%</PFV_Pilot_Precision>
+  <PFV_Pilot_Precision>精确操舵比例：{0}%</PFV_Pilot_Precision>
+  <PFV_Pilot_PrecisionMode>精确操舵触发方式：{0}</PFV_Pilot_PrecisionMode>
+  <PFV_Pilot_PrecisionHold>按住生效（默认）</PFV_Pilot_PrecisionHold>
+  <PFV_Pilot_PrecisionToggle>按一次切换</PFV_Pilot_PrecisionToggle>
+  <PFV_Pilot_PrecisionHoldHelp>精确操舵：按住 {0}</PFV_Pilot_PrecisionHoldHelp>
+  <PFV_Pilot_PrecisionToggleHelp>精确操舵：按 {0} 切换开关</PFV_Pilot_PrecisionToggleHelp>
+  <PFV_Pilot_PrecisionOn>精确 {0}%</PFV_Pilot_PrecisionOn>
+  <PFV_Pilot_PrecisionOff>常规操舵</PFV_Pilot_PrecisionOff>
   <PFV_Pilot_FollowRoll>镜头随船体滚转</PFV_Pilot_FollowRoll>
   <PFV_Pilot_InvertMouse>反转鼠标观察纵轴</PFV_Pilot_InvertMouse>
   <PFV_Pilot_InvertWheel>反转滚轮缩放（默认向前拉近）</PFV_Pilot_InvertWheel>
   <PFV_Pilot_Recenter>第三人称环视松手后自动回正</PFV_Pilot_Recenter>
   <PFV_Pilot_Sensitivity>鼠标观察灵敏度：{0} 倍</PFV_Pilot_Sensitivity>
   <PFV_Pilot_Smoothing>镜头跟随平滑时间：{0} 秒</PFV_Pilot_Smoothing>
-  <PFV_Pilot_Activation>转向辅助和精细比例在下一次接管时生效；镜头选项在下一次聚焦时生效。改键后须先松开按键，再重新按下。</PFV_Pilot_Activation>
+  <PFV_Pilot_Activation>转向辅助、精确操舵触发方式和比例在下一次接管时生效；镜头选项在下一次聚焦时生效。切换式精确操舵在本次接管期间保持，结束或换船时关闭。改键后须先松开按键，再重新按下。</PFV_Pilot_Activation>
   <PFV_Pilot_Bindings>PFView 键位设置</PFV_Pilot_Bindings>
   <PFV_Pilot_Unbound>未绑定</PFV_Pilot_Unbound>
   <PFV_Pilot_Edit>修改</PFV_Pilot_Edit>
@@ -154,7 +164,7 @@
   <PFV_Pilot_Action_Right>向右平移</PFV_Pilot_Action_Right>
   <PFV_Pilot_Action_Up>向上平移</PFV_Pilot_Action_Up>
   <PFV_Pilot_Action_Down>向下平移</PFV_Pilot_Action_Down>
-  <PFV_Pilot_Action_Precision>按住精细操作</PFV_Pilot_Action_Precision>
+  <PFV_Pilot_Action_Precision>精确操舵</PFV_Pilot_Action_Precision>
   <PFV_Pilot_Action_ResetCamera>重置当前焦点取景</PFV_Pilot_Action_ResetCamera>
   <PFV_Pilot_Action_FocusControl>回到操控船</PFV_Pilot_Action_FocusControl>
   <PFV_Pilot_Action_Group1>切换动作组 1</PFV_Pilot_Action_Group1>
@@ -178,7 +188,7 @@
   <PFV_Pilot_Axis>主推进轴</PFV_Pilot_Axis>
   <PFV_Pilot_Groups>动作组</PFV_Pilot_Groups>
   <PFV_Pilot_Directions>船头 / 主推 / 速度</PFV_Pilot_Directions>
-  <PFV_Pilot_DriveKeys>转向 {0}/{1}/{2}/{3} · 滚转 {4}/{5} · 精细 {6}</PFV_Pilot_DriveKeys>
+  <PFV_Pilot_DriveKeys>转向 {0}/{1}/{2}/{3} · 滚转 {4}/{5} · {6}</PFV_Pilot_DriveKeys>
   <PFV_Pilot_TranslateKeys>前后 {0}/{1} · 左右 {2}/{3} · 上下 {4}/{5}（松开停推，已有速度保留）</PFV_Pilot_TranslateKeys>
   <PFV_Pilot_CameraKeys>右键环视；自由视角中键或 Shift+右键平移；滚轮缩放。复位 {0}，回操控船 {1}。</PFV_Pilot_CameraKeys>
   <PFV_Pilot_Suspended>输入已暂停：请松开按键，再重新按下。</PFV_Pilot_Suspended>

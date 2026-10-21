@@ -4,7 +4,7 @@ using Verse;
 namespace PioneerFramework.ShipSkin
 {
     /// <summary>
-    /// 舰船蒙皮的运行时资源（2026-10-19）：一个 `PF_ShipSkin` 材质 + 一张中性灰装甲板贴图。
+    /// 舰船蒙皮的运行时资源（2026-10-20）：一个 `PF_ShipSkin` 材质 + image2 工业装甲贴图。
     ///
     /// 设计约束（用户裁定）：
     ///   · **不改几何/不加 UV**：三平面投影在 shader 里完成，现有盒体/地图浮雕直接套；
@@ -27,10 +27,10 @@ namespace PioneerFramework.ShipSkin
         internal const float PlateDetail = 1f;
 
         /// <summary>轮廓 rim 强度（很克制，只做剪影分离）。</summary>
-        internal const float RimStrength = 0.18f;
+        internal const float RimStrength = 0.08f;
 
-        /// <summary>屏幕空间几何边亮棱强度（把盒体/浮雕的面交界描成 1–2 px 倒角；不随距离消失）。</summary>
-        internal const float EdgeStrength = 0.35f;
+        /// <summary>浅板缝的着色高度（米）；只扰动法线，不改变几何。</summary>
+        internal const float BumpHeightMeters = 0.025f;
 
         /// <summary>调试用高频板缝的贴图周期（米）：2 m 一块 ⇒ 贴图若生效会一眼看到密集板缝。</summary>
         private const float DebugHighFrequencyTileMeters = 2f;
@@ -41,7 +41,6 @@ namespace PioneerFramework.ShipSkin
         private static Material? material;
         private static string? failure;
         private static bool textureLoaded;
-        private static float metersToView = 0.1f;
         private static bool debugHighFrequency;
 
         /// <summary>蒙皮材质是否可用（false ⇒ 调用方回退旧材质）。</summary>
@@ -69,12 +68,11 @@ namespace PioneerFramework.ShipSkin
         internal static bool TextureLoaded => textureLoaded;
 
         /// <summary>
-        /// 初始化（幂等）。`metersToView` = PFView 的米→视图单位系数（本类不复制那个常量，由调用方给）。
+        /// 初始化（幂等）。板面周期采用物理米；每次绘制显式提供舰体的米→视图换算。
         /// 返回 true = 蒙皮可用。
         /// </summary>
-        internal static bool EnsureInitialized(float viewMetersToView)
+        internal static bool EnsureInitialized()
         {
-            metersToView = Mathf.Max(viewMetersToView, 1e-4f);
             if (tried) return material != null;
             tried = true;
 
@@ -89,20 +87,29 @@ namespace PioneerFramework.ShipSkin
             Texture2D? texture = ContentFinder<Texture2D>.Get(TexturePath, reportFailure: false);
             textureLoaded = texture != null;
             if (texture != null)
-                texture.wrapMode = TextureWrapMode.Repeat;
+            {
+                // 引擎映射为 MirroredRepeat：保留原始 UV 导数与跨边界过滤，避免接缝和远景闪动。
+                texture.wrapMode = TextureWrapMode.Mirror;
+                texture.filterMode = FilterMode.Trilinear;
+                texture.anisoLevel = 4;
+            }
             else
-                failure = "贴图缺失：" + TexturePath + "（回退白图）";
+            {
+                failure = "贴图缺失：" + TexturePath;
+                Log.Warning("[PFView·蒙皮] " + failure + " ⇒ 回退旧材质");
+                return false;
+            }
 
             var mat = new Material(shader) { color = Color.white };
             // ⚠ 必须显式绑到 shader 的采样器名 `_SkinTex`；`mainTexture` 只对应 `_MainTex`（首版事故根因）。
-            mat.SetTexture("_SkinTex", texture != null ? texture : Texture2D.whiteTexture);
-            mat.mainTexture = texture != null ? texture : Texture2D.whiteTexture;   // 兼容兜底：某些引擎按 mainTexture 绑第一个 sampler
+            mat.SetTexture("_SkinTex", texture);
+            // 兼容某些引擎按 mainTexture 绑定第一个 sampler 的路径。
+            mat.mainTexture = texture;
             material = mat;
             RefreshSkinParams();
 
             Log.Message("[PFView·蒙皮] 就绪：" + StatusText
-                + "｜边棱=" + EdgeStrength + "｜rim=" + RimStrength
-                + (textureLoaded ? "" : "｜⚠ 贴图为白图 ⇒ 画面上不会有板缝"));
+                + "｜板缝高度=" + BumpHeightMeters + "m｜rim=" + RimStrength);
             return true;
         }
 
@@ -112,8 +119,8 @@ namespace PioneerFramework.ShipSkin
             Material? mat = material;
             if (mat == null) return;
             float tile = debugHighFrequency ? DebugHighFrequencyTileMeters : PanelTileMeters;
-            float repeatsPerViewUnit = 1f / (tile * metersToView);
-            mat.SetVector("_SkinParams", new Vector4(repeatsPerViewUnit, PlateDetail, RimStrength, EdgeStrength));
+            float repeatsPerMeter = 1f / tile;
+            mat.SetVector("_SkinParams", new Vector4(repeatsPerMeter, PlateDetail, RimStrength, BumpHeightMeters));
         }
 
         /// <summary>调试开关当前值（调试窗复选框用）。</summary>

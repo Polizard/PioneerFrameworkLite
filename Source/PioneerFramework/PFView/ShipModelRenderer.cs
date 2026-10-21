@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Rendering;
+using PioneerFramework.ShipSkin;
 
 namespace PioneerFramework
 {
@@ -90,6 +91,12 @@ namespace PioneerFramework
             // 位置/尺寸都在各自矩阵里、批内顺序 = 零件顺序 ⇒ 外观不变。
             // 2026-10-19 蒙皮：tint 非空 = 用阵营色（蒙皮材质走 `_Color`）；空 = 旧常量色（逐字不变）。
             block.SetColor("_Color", tint ?? PartColor);
+            if (tint.HasValue)
+            {
+                ShipSkinFrame.Apply(block, viewPos, rotation, metersToView, scale);
+                block.SetColor("_HullColor", ShipSkinPalette.HullColor(0));
+                block.SetVector("_SkinSurface", new Vector4(1f, ShipSkinPalette.Roughness(0), 0f, 0f));
+            }
             WorldQuadBatch.Reset();
             foreach (var part in entity.Parts)
             {
@@ -166,6 +173,8 @@ namespace PioneerFramework
             if (meshes == null || material == null || block == null) return;
 
             Matrix4x4 mtx = ReliefMatrix(viewPos, rotation, metersToView, scale);
+            if (tint.HasValue)
+                ShipSkinFrame.Apply(block, viewPos, rotation, metersToView, scale);
             if (toonOutline)
                 block.SetFloat("_OutlineWidth", ReliefOutlineWidth);
 
@@ -173,8 +182,13 @@ namespace PioneerFramework
             {
                 Mesh? mesh = meshes[c];
                 if (mesh == null) continue;
-                // 2026-10-19 蒙皮：tint 非空 = 三档明度向阵营色靠 28%（仍有结构层次）；空 = 旧三色逐字不变。
-                block.SetColor("_Color", tint.HasValue ? Color.Lerp(ReliefColors[c], tint.Value, 0.28f) : ReliefColors[c]);
+                // 2026-10-20：阵营色仅进入贴图的涂装遮罩；三类结构各自保留底色/粗糙度。
+                block.SetColor("_Color", tint ?? ReliefColors[c]);
+                if (tint.HasValue)
+                {
+                    block.SetColor("_HullColor", ShipSkinPalette.HullColor(c));
+                    block.SetVector("_SkinSurface", new Vector4(0f, ShipSkinPalette.Roughness(c), 0f, 0f));
+                }
                 Graphics.DrawMesh(mesh, mtx, material, layer, null, 0, block);
             }
         }

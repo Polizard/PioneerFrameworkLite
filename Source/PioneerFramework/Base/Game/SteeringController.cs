@@ -46,7 +46,9 @@ namespace PioneerFramework
 
         public static bool AnyTranslation => KeyForward != KeyBack || KeyLeft != KeyRight || KeyUp != KeyDown;
         public static bool AnyRotation => KeyRollL != KeyRollR || KeyYawL != KeyYawR || KeyPitchU != KeyPitchD;
+        // Effective precision state; toggle mode can remain active after the key is released.
         internal static bool PrecisionHeld;
+        internal static bool PrecisionToggle { get; private set; }
         internal static bool FromPFView { get; private set; }
         internal static bool AssistedStop { get; private set; } = true;
         internal static bool InvertPitch { get; private set; }
@@ -69,6 +71,7 @@ namespace PioneerFramework
             AssistedStop = settings?.pfviewAssistStop ?? true;
             InvertPitch = settings?.pfviewInvertPitch ?? false;
             PrecisionScale = settings?.pfviewPrecisionScale ?? .25f;
+            PrecisionToggle = settings?.pfviewPrecisionToggle ?? false;
             SteeringInputHost.Rearm();
         }
 
@@ -84,6 +87,7 @@ namespace PioneerFramework
         private static void ResetInput()
         {
             ClearHeldInput();
+            SteeringInputHost.ResetPrecision();
             SasKind = SasTargetKind.None;
             manualTurnStarted = false;
             ActualThrust = 0;

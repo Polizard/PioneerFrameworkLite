@@ -61,6 +61,8 @@
     <None Include="..\PioneerFramework\PFView\PFViewHudPatches.cs" Link="Source\PioneerFramework\PFView\PFViewHudPatches.cs" CopyToOutputDirectory="PreserveNewest" />
     <!-- D-1（2026-10-11）：画船代码从 Scene/MapRelief 抽到 ShipModelRenderer ⇒ 扫描面一并覆盖（同 V-0 拆文件的连坐纪律：只许加覆盖） -->
     <None Include="..\PioneerFramework\PFView\ShipModelRenderer.cs" Link="Source\PioneerFramework\PFView\ShipModelRenderer.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\ShipSkin\*.cs" Link="Source\PioneerFramework\PFView\ShipSkin\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\1.7\Shaders\PF_ShipSkin.*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\ToonOutline\PFViewOutlineContracts.cs" Link="Source\PioneerFramework\PFView\ToonOutline\PFViewOutlineContracts.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\ToonOutline\PFViewOutlineAssetBundleProvider.cs" Link="Source\PioneerFramework\PFView\ToonOutline\PFViewOutlineAssetBundleProvider.cs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
@@ -84,6 +86,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Inspector.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Inspector.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.MapNavigation.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.MapNavigation.cs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\PioneerFramework\PFView\Window_PFViewInstrument.cs" Link="Source\PioneerFramework\PFView\Window_PFViewInstrument.cs" CopyToOutputDirectory="PreserveNewest" />

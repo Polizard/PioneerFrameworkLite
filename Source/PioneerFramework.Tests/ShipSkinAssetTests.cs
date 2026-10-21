@@ -25,8 +25,8 @@ public class ShipSkinAssetTests
     }
 
     [Theory]
-    [InlineData("PF_ShipSkin.vert.glsl", new[] { "#version 450", "push.modelMatrix[3].xyz", "vSkinPos" })]
-    [InlineData("PF_ShipSkin.frag.glsl", new[] { "#version 450", "_SkinTex", "triplanar", "_CamPos", "fwidth", "0.482", "0.603", "0.682" })]
+    [InlineData("PF_ShipSkin.vert.glsl", new[] { "#version 450", "push.modelMatrix", "vWorldPos", "vNormal" })]
+    [InlineData("PF_ShipSkin.frag.glsl", new[] { "#version 450", "_SkinTex", "triplanar", "_CamPos", "fwidth", "_SkinOrigin", "_SkinRotation", "_HullColor", "_SkinSurface", "0.482", "0.603", "0.682" })]
     public void ShaderFilesExistAndFollowContract(string file, string[] tokens)
     {
         string path = Path.Combine(Root(), "1.7", "Shaders", file);
