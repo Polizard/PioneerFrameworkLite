@@ -16,6 +16,8 @@ layout(push_constant) uniform Push { mat4 modelMatrix; } push;
 layout(location = 0) out vec3 vNormal;
 layout(location = 1) out vec2 vUv;
 layout(location = 2) out vec3 vWorldPos;
+layout(location = 3) out vec3 vSurfacePos;
+
 
 layout(set = 0, binding = 0) uniform VertexUniforms
 {
@@ -31,4 +33,7 @@ void main()
     vNormal = normalize(transpose(inverse(model3)) * inNormal);
     vUv = inUv0.xy;
     vWorldPos = world.xyz;
+    // Translation-free model-space position in view units: stable triplanar
+    // coordinates that rotate/scale with the ship instead of sliding with it.
+    vSurfacePos = world.xyz - push.modelMatrix[3].xyz;
 }

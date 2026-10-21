@@ -112,7 +112,9 @@ namespace PioneerFramework
                     linearNormal.Apply(false, false);
                     linearNormal.wrapMode = TextureWrapMode.Repeat;
                     mat.SetTexture("_NormalTex", linearNormal);
-                    mat.SetVector("_NormalParams", new Vector4(0.9f, 0f, 0f, 0f));
+                    // x = normal strength; y = triplanar scale in inverse view units
+                    // (24 m texture period × 0.1 m→view = 2.4 view units).
+                    mat.SetVector("_NormalParams", new Vector4(0.9f, 1f / 2.4f, 0f, 0f));
                 }
                 else
                 {

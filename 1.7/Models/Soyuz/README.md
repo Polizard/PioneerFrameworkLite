@@ -52,3 +52,11 @@ The asset intentionally tests the prism/detail-bake rules rather than reproducin
 - `PFLitNormal.frag.glsl` decodes the normal map and reconstructs a tangent basis from screen-space derivatives of world position and UV. Runtime normal strength is 0.9; a restrained view-dependent specular/rim response makes the panel seams readable at PFView distance.
 - The normal PNG is authored as raw data (Blender Non-Color). At runtime `SoyuzModelAssets` copies its pixels into a linear `Texture2D` before binding it to `_NormalTex`, preventing accidental sRGB gamma decoding.
 - Preview: `D:\PJ\Blender-MCP-Test\PFL_Assets\Soyuz\Soyuz_Prism_Preview.png`
+
+## Follow-up texture-alignment pass (2026-10-21)
+
+- The runtime albedo and normal detail now use **triplanar projection** over translation-free model-space coordinates. This removes the UV-seam misalignment visible on the close-up prism faces.
+- The texture period stays at **24 m**, so the four panels per texture tile remain approximately **6 m** on the hull.
+- The normal strength remains **0.9**.
+- The generic yellow `DrawHeadingBar` is suppressed for groups rendered with the Soyuz custom model. The large yellow rectangular volume at the tail in the old PFView screenshots was the main-thrust heading bar, not an engine flame or part of the OBJ.
+- The runtime debug DLL in the working tree is a local Debug build; it is intentionally not part of the committed source changes.

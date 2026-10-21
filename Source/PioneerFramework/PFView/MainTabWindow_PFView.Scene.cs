@@ -528,6 +528,7 @@ namespace PioneerFramework
             Quaternion gRot = viewFrameRot * group.CurrentOrbit.rotation.ToQuaternion();   // 姿态同过参考系（固连档下"相对地面"的姿态）
             float scale = DebugScaleParts ? 200f : 1f;
             bool drewRelief = false;
+            bool drewCustomModel = false;
             // 2026-10-19 蒙皮：阵营 tint 每帧算一次（同组所有实体共用）；蒙皮不可用 ⇒ null = 旧常量色。
             Color? skinTint = ShipSkinSettings.Enabled && ShipSkinAssets.Available
                 ? ShipSkinPalette.PartTint(group.FactionId)
@@ -552,13 +553,13 @@ namespace PioneerFramework
                 }
 
                 // 单 part 化：无设计数据分支，统一按运行时 Parts 绘制盒体（§5.4 C4）
-                if (entity.Parts.Count > 0)
-                    DrawRuntimeParts(entity, eVp, gRot, scale, skinTint);
+                if (entity.Parts.Count > 0 && DrawRuntimeParts(entity, eVp, gRot, scale, skinTint))
+                    drewCustomModel = true;
             }
 
             // 有 Map 的编队不画黄棒（用户 2026-10-02："把那个黄色的指示取消掉"）：船体本身的形体
             // 就是朝向读数，那根棒是旧"雪糕"的残留；主推轴读数仍在姿态球（T 记号）与左栏文字里。
-            if (drewRelief)
+            if (drewRelief || drewCustomModel)
                 return;
 
             // 朝向指示棒长：以本组包围盒对角线的 0.7 倍为准（"放大部件"调试模式下同比放大），
@@ -601,11 +602,11 @@ namespace PioneerFramework
         /// （材质 = Toon 优先 / 网格 / 层 / 米→视图换算 / 共享 matBlock）。矩阵与画法的口径全在绘制段那边
         /// —— 本函数不表达任何"怎么画"，只表达"PFView 用哪套资源画"。
         /// </summary>
-        private static void DrawRuntimeParts(SpaceEntity entity, Vector3 eVp, Quaternion gRot, float scale,
+        private static bool DrawRuntimeParts(SpaceEntity entity, Vector3 eVp, Quaternion gRot, float scale,
             Color? skinTint)
         {
             if (SoyuzModelAssets.TryDraw(entity, eVp, gRot, scale, SceneLayer, matBlock, MetersToView))
-                return;
+                return true;
 
             // 2026-10-19 蒙皮：可用且开 = PF_ShipSkin + 阵营 tint；否则逐字回到旧路径（Toon 优先/单色）。
             // 蒙皮用**硬法线**立方体（三平面投影/几何边亮棱需要面法线恒定）；旧路径仍用平滑法线 cubeMesh。
@@ -620,6 +621,7 @@ namespace PioneerFramework
             }
             ShipModelRenderer.DrawParts(entity, eVp, gRot, scale, mesh, mat, matBlock,
                 skin == null && ToonMat != null, MetersToView, SceneLayer, skin == null ? null : skinTint);
+            return false;
         }
 
         private void DrawProjectiles(DVector3 origin, double tick)
