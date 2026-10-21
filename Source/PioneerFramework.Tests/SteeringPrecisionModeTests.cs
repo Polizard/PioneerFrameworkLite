@@ -148,7 +148,7 @@ public sealed class SteeringPrecisionModeTests : IDisposable
     {
         var group = new SpaceEntityGroup(71)
         {
-            CurrentOrbit = new OrbitState { rotation = Quaternion.identity }, maxAngularRate = .02f
+            CurrentOrbit = new OrbitState { rotation = DQuaternion.identity }, maxAngularRate = .02f
         };
         Assert.True(SteeringController.KeyPitchU);
         Assert.Equal(-expected, SteeringController.GetRotationWorldAngularVelocity(group).x, 7);
