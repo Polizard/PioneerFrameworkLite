@@ -54,7 +54,7 @@ else {
         }
     }
     Write-Host "Gate green: Release built, 1.7 package present." -ForegroundColor Green
-    $subDirs = @("1.7\Defs", "1.7\Textures", "1.7\Patches", "1.7\Shaders", "1.7\AssetBundles")
+    $subDirs = @("1.7\Defs", "1.7\Textures", "1.7\Patches", "1.7\Shaders", "1.7\AssetBundles", "1.7\Models")
     $dllSrc = "1.7\Assemblies\PioneerFrameworkLite.dll"
     $modSubfolder = "1.7"
     $rootDirs = @("About")

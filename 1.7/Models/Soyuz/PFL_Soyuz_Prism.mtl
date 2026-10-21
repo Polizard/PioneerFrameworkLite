@@ -1,0 +1,14 @@
+# Blender 4.2.0 MTL File: 'Soyuz_Prism_Build.blend'
+# www.blender.org
+
+newmtl PFL_Soyuz_Prism_Hull
+Ns 435.599945
+Ka 0.620000 0.620000 0.620000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 3
+map_Kd ../../Textures/PFView/Ships/Soyuz/SoyuzAlbedo.png
+map_Bump -bm 1.000000 ../../Textures/PFView/Ships/Soyuz/SoyuzNormal.png
+

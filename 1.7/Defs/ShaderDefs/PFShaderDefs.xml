@@ -20,6 +20,21 @@
     </shaderProgram>
   </ShaderDef>
 
+  <!-- 2026-10-21: Soyuz prism asset normal-map path.
+       Same lighting as PFLit; adds a normal sampler and derivative-based TBN
+       so the existing single-submesh WorldQuadBatch path needs no tangents. -->
+  <ShaderDef>
+    <defName>PFLitNormal</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PFLitNormal.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PFLitNormal.frag.glsl</fragmentShaderFileName>
+      <depthWrite>true</depthWrite>
+      <renderQueue>2000</renderQueue>
+      <flipTextureST>true</flipTextureST>
+    </shaderProgram>
+  </ShaderDef>
+
+
   <!-- P2-e（2026-10-15）：三渲二 + 描边，保真移植自 1.6 `Shaders/PF_Toon.shader`（V-1.4 四阶量化）。
        1.6 = ShaderLab 单材质双 pass 经 AssetBundle 交付；1.7 一个 ShaderDef 只有**一个 pass**、
        且 bundle 只认 Vulkan/SPIR-V ⇒ 描边独立成 `PF_ToonOutline`（inverted hull：顶点沿法线挤出 +

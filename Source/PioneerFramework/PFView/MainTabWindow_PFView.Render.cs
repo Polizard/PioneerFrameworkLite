@@ -248,6 +248,8 @@ namespace PioneerFramework
         {
             DestroyAllReliefMeshes();   // 浮雕网格是运行时 Mesh：不显式销毁会跟着会话泄漏
             ShipSkinAssets.Destroy();   // 舰船蒙皮材质（2026-10-19；贴图由 ContentFinder 持有）
+            SoyuzModelAssets.Destroy(); // 联盟号测试资产材质（OBJ 由引擎文件缓存持有）
+
             DestroySurfaceResources();  // 基底球材质 + 补丁网格/材质同上
             DestroyAtmosphereShellMaterials();  // 大气壳材质同上（网格是静态资源，不销毁）
             DestroyCloudResources();

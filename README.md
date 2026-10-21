@@ -19,7 +19,7 @@
 
 ```text
 About/                 Mod 元数据
-1.7/                   运行时数据（Assemblies / Defs / Patches / AssetBundles / Textures）
+1.7/                   运行时数据（Assemblies / Defs / Patches / AssetBundles / Textures / Models）
 Shaders/               PFView 描边 Shader 源文件
 Source/PioneerFramework/ 主 C# 工程
 Source/PioneerFramework.Tests/ 游戏集成 xUnit 测试（net10.0）

@@ -1666,6 +1666,51 @@ namespace PioneerFramework
             return group;
         }
 
+        /// <summary>
+        /// 2026-10-21: PFView 联盟号棱柱测试资产。
+        /// 单 part 船，外部 OBJ / normal map 由 SoyuzModelAssets 在 PFView 内加载。
+        /// </summary>
+        public static SpaceEntityGroup? SpawnSoyuzPrismDemo()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            if (spaceGame == null) return null;
+
+            int bodyId = EARTH_BODY_ID;
+            double mu = spaceGame.GetBodyGM(bodyId);
+            double radius = SpaceConstants.PlanetRadiusMeters + 1_800_000.0;
+            double vCirc = System.Math.Sqrt(mu / radius);
+            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
+            DVector3 radial = EquatorialRadial(physicsTick);
+            DVector3 pos = radial * radius;
+            DVector3 vel = ProgradeEquatorialTangent(radial) * vCirc;
+
+            var group = CreateNoMapShipGroup(spaceGame, bodyId, pos, vel, out int entityId,
+                overThrust: false, circularOrbit: true);
+            if (group == null) return null;
+            var entity = spaceGame.GetEntityById(entityId);
+            if (entity == null) return null;
+
+            var part = new SpacePart
+            {
+                partId = 1,
+                defName = SoyuzModelAssets.PartDefName,
+                positionShip = DVector3.zero,
+                boundsSizeShip = new DVector3(10.2f, 10.2f, 50.51f),
+                hp = 1000f,
+                isIndestructible = false,
+                shape = InertiaTensor.Shape.Box
+            };
+            part.AddComponent(new HullMassComponent { mass = 50000f });
+            entity.SetParts(new List<SpacePart> { part });
+
+            Messages.Message("PFView 联盟号棱柱测试资产已放置（法线贴图）。",
+                MessageTypeDefOf.TaskCompletion, false);
+            Log.Message("[PFView·联盟号] G" + group.GroupId + " E" + entityId
+                + " 已放置；bounds=(10.2,10.2,50.51)m；part=" + part.defName);
+            return group;
+        }
+
+
         public static SpaceEntityGroup? SpawnMultiPartDebugShip()
         {
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();

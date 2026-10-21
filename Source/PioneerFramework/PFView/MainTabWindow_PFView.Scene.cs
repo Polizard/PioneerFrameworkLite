@@ -86,6 +86,8 @@ namespace PioneerFramework
                 // 2026-10-19 蒙皮：独立材质同样收不到 renderMat 的每帧刷新 —— 同一个坑，同一个修法
                 // （另外把相机位置一起喂进去，rim 要用；全在视图系）。
                 ShipSkinAssets.ApplyLighting(toSun, sc, GetCameraViewPos());
+                SoyuzModelAssets.ApplyLighting(toSun, sc);
+
             }
 
             if (tick - lastSunLogTick > 300.0)
@@ -602,6 +604,9 @@ namespace PioneerFramework
         private static void DrawRuntimeParts(SpaceEntity entity, Vector3 eVp, Quaternion gRot, float scale,
             Color? skinTint)
         {
+            if (SoyuzModelAssets.TryDraw(entity, eVp, gRot, scale, SceneLayer, matBlock, MetersToView))
+                return;
+
             // 2026-10-19 蒙皮：可用且开 = PF_ShipSkin + 阵营 tint；否则逐字回到旧路径（Toon 优先/单色）。
             // 蒙皮用**硬法线**立方体（三平面投影/几何边亮棱需要面法线恒定）；旧路径仍用平滑法线 cubeMesh。
             Material? skin = ShipSkinSettings.Enabled ? ShipSkinAssets.Material : null;

@@ -46,4 +46,20 @@
     <boundsZ>2</boundsZ>
     <stackLengthMeters>2</stackLengthMeters>
   </ShipPartDef>
+
+  <!-- 2026-10-21: PFView 联盟号棱柱测试船体。
+       几何口径：16/12 边主级棱柱，12 边助推器，8 边小发动机；
+       所有圆柱/圆锥均以正 N 边形截面替代；薄板/小倒角由法线贴图表达。 -->
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Soyuz</defName>
+    <label>联盟号棱柱测试船体</label>
+    <category>hull</category>
+    <massKg>50000</massKg>
+    <boundsX>10.2</boundsX>
+    <boundsY>10.2</boundsY>
+    <boundsZ>50.51</boundsZ>
+    <stackLengthMeters>50.51</stackLengthMeters>
+    <shape>Box</shape>
+  </ShipPartDef>
+
 </Defs>
