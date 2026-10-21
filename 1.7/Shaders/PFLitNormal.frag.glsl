@@ -54,8 +54,16 @@ void main()
     float triplanarMode = step(1e-5, triplanarScale);
 
     vec3 p = vSurfacePos * triplanarScale;
-    vec3 weights = pow(abs(baseNormal), vec3(4.0));
-    weights /= max(weights.x + weights.y + weights.z, 1e-5);
+    // Hard-surface facets should use one projection plane, not a blend of two
+    // planes; blending was the source of the triangular panel artifacts.
+    vec3 an = abs(baseNormal);
+    vec3 weights = vec3(0.0);
+    if (an.x >= an.y && an.x >= an.z)
+        weights.x = 1.0;
+    else if (an.y >= an.x && an.y >= an.z)
+        weights.y = 1.0;
+    else
+        weights.z = 1.0;
 
     // Triplanar albedo: no UV seams across the prism facets or the component
     // joints. The UV path remains as a fallback for future PFLitNormal users.
@@ -123,8 +131,8 @@ void main()
     vec3 viewDir = camLen > 1e-6 ? toCam / camLen : vec3(0.0, 0.0, 1.0);
     vec3 sunDir = normalize(uMaterial._SunDir.xyz + vec3(1e-6, 0.0, 0.0));
     vec3 halfDir = normalize(sunDir + viewDir);
-    float specular = pow(max(dot(n, halfDir), 0.0), 28.0) * 0.12;
-    float rim = pow(clamp(1.0 - abs(dot(n, viewDir)), 0.0, 1.0), 4.0) * 0.08;
+    float specular = pow(max(dot(n, halfDir), 0.0), 28.0) * 0.08;
+    float rim = pow(clamp(1.0 - abs(dot(n, viewDir)), 0.0, 1.0), 4.0) * 0.06;
     color += (vec3(specular) + vec3(0.45, 0.64, 1.0) * rim) * dayNight;
 
     outColor = vec4(color, uMaterial._Color.a * tex.a);

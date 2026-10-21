@@ -60,3 +60,8 @@ The asset intentionally tests the prism/detail-bake rules rather than reproducin
 - The normal strength remains **0.9**.
 - The generic yellow `DrawHeadingBar` is suppressed for groups rendered with the Soyuz custom model. The large yellow rectangular volume at the tail in the old PFView screenshots was the main-thrust heading bar, not an engine flame or part of the OBJ.
 - The runtime debug DLL in the working tree is a local Debug build; it is intentionally not part of the committed source changes.
+## Alignment follow-up 2 (2026-10-21)
+
+- Triplanar projection now uses a single dominant projection plane per flat facet instead of blending multiple projections. The mixed-plane blend caused the visible triangular panel distortions at close range.
+- Normal strength lowered slightly to 0.8 and the view-dependent highlight/rim was reduced so normal-map projection boundaries cannot produce bright triangular patches.
+- `SoyuzModelAssets` now carries `[StaticConstructorOnStartup]`; this removes the RimWorld startup warning about its static `Material` field.

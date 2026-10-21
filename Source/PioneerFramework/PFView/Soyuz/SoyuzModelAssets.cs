@@ -14,6 +14,7 @@ namespace PioneerFramework
     /// PFLitNormal uses a derivative-rebuilt TBN, so this path works through the
     /// normal WorldQuadBatch attributes (position/normal/UV) without tangents.
     /// </summary>
+    [StaticConstructorOnStartup]
     internal static class SoyuzModelAssets
     {
         internal const string PartDefName = "PF_ShipPart_Soyuz";
@@ -114,7 +115,7 @@ namespace PioneerFramework
                     mat.SetTexture("_NormalTex", linearNormal);
                     // x = normal strength; y = triplanar scale in inverse view units
                     // (24 m texture period × 0.1 m→view = 2.4 view units).
-                    mat.SetVector("_NormalParams", new Vector4(0.9f, 1f / 2.4f, 0f, 0f));
+                    mat.SetVector("_NormalParams", new Vector4(0.8f, 1f / 2.4f, 0f, 0f));
                 }
                 else
                 {
