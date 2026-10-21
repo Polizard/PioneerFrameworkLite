@@ -60,7 +60,7 @@ namespace PioneerFramework.Tests
             {
                 positionSystem = (SystemVec3)new DVector3(0, 0, 90),
                 velocitySystem = (SystemVec3)new DVector3(1, 0, 0),
-                rotation = Quaternion.identity
+                rotation = DQuaternion.identity
             };
 
             Assert.False(LaunchTransitService.TryValidateTarget(orbit, DVector3.zero, 100, out string reason));

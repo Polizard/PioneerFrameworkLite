@@ -56,13 +56,31 @@ namespace PioneerFramework
         /// </summary>
         public static MapRestoreOperation? BeginRestoreMap(SpaceEntity entity)
         {
-            if (entity == null || entity.MapId < 0)
+            if (entity == null)
+            {
+                Log.Error("[MapArchive] BeginRestoreMap: invalid entity");
+                return null;
+            }
+            // 单图兼容：无主图时用最近封存的图 id/part；多图应走显式重载（按归档列表选）。
+            int mapId = entity.MapId >= 0 ? entity.MapId : entity.ArchivedMapId;
+            int partId = entity.MapId >= 0
+                ? entity.GetPartForMap(entity.MapId)?.partId ?? -1
+                : entity.ArchivedPartId;
+            return BeginRestoreMap(entity, mapId, partId);
+        }
+
+        /// <summary>
+        /// **B6：按 mapId/partId 取档**——多图船可恢复指定的那一张，并挂回原件。
+        /// </summary>
+        public static MapRestoreOperation? BeginRestoreMap(SpaceEntity entity, int mapId, int partId)
+        {
+            if (entity == null || mapId < 0)
             {
                 Log.Error("[MapArchive] BeginRestoreMap: invalid entity or mapId");
                 return null;
             }
 
-            string filePath = GetArchivePath(entity.MapId);
+            string filePath = GetArchivePath(mapId);
             if (!File.Exists(filePath))
             {
                 Log.Error($"[MapArchive] Archive file not found: {filePath}");
@@ -91,6 +109,8 @@ namespace PioneerFramework
             var op = new MapRestoreOperation
             {
                 TargetEntity = entity,
+                SourceMapId = mapId,
+                TargetPartId = partId,
                 NewMap = map,
                 BuildingRecords = buildingRecords,
                 TerrainRecords = terrainRecords,
@@ -106,7 +126,7 @@ namespace PioneerFramework
             ApplyTerrain(map, terrainRecords);
             ApplyCompressedThings(map, compressedData);
 
-            Log.Message($"[MapArchive] Restore initiated for map {entity.MapId}: {buildingRecords.Count} buildings, size {mapWidth}x{mapHeight}");
+            Log.Message($"[MapArchive] Restore initiated for map {mapId} → Part{partId}: {buildingRecords.Count} buildings, size {mapWidth}x{mapHeight}");
 
             return op;
         }
@@ -151,10 +171,21 @@ namespace PioneerFramework
             List<TerrainRecord> terrainRecords = BuildTerrainRecords(map);
             string tmpPath = Path.GetTempFileName();
 
+            int ownerPartId = -1;
+            var mapComp = map.GetComponent<SpaceMapComp>();
+            if (mapComp != null && mapComp.ownerPartId >= 0)
+                ownerPartId = mapComp.ownerPartId;
+            else
+            {
+                var linked = entity.GetPartForMap(map.uniqueID);
+                if (linked != null) ownerPartId = linked.partId;
+            }
+
             var op = new MapArchiveOperation
             {
                 TargetEntity = entity,
                 SourceMap = map,
+                OwnerPartId = ownerPartId,
                 CompressedData = compressedData,
                 TerrainRecords = terrainRecords,
                 BuildingsToProcess = buildings,
@@ -240,10 +271,10 @@ namespace PioneerFramework
             int mapId = op.SourceMap.uniqueID;
             SpaceMapGenerator.DestroyPocketMap(op.SourceMap);
 
-            // 标记实体
-            op.TargetEntity.MapId = mapId;
-            op.TargetEntity.HasMap = false;
-            op.TargetEntity.IsMapArchived = true;
+            // B6：只清这一张图的 Part→Map 指针；还有其他图 ⇒ 实体继续存在、主图顺延。
+            op.TargetEntity.OnMapRemoved(mapId);
+            op.TargetEntity.AddArchivedMap(mapId, op.OwnerPartId);
+            op.TargetEntity.IsMapArchived = !op.TargetEntity.HasMap;
 
             // 清理临时文件
             if (File.Exists(op.TempFilePath))
@@ -614,6 +645,7 @@ namespace PioneerFramework
     {
         public SpaceEntity TargetEntity = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         public Map SourceMap = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public int OwnerPartId = -1;   // B6：封存前这张图挂在哪件 part（取档回原位）
         public byte[] CompressedData = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         public List<TerrainRecord> TerrainRecords = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         public List<BuildingRecord> BuildingRecords = new();
@@ -641,6 +673,8 @@ namespace PioneerFramework
     public class MapRestoreOperation
     {
         public SpaceEntity TargetEntity;
+        public int SourceMapId = -1;   // B6：被封存的原地图 id（新图会拿到新 uniqueID）
+        public int TargetPartId = -1;   // B6：取档后挂回哪件 part（-1 = 自动找空位）
         public Map NewMap = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         public List<BuildingRecord> BuildingRecords = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         public List<TerrainRecord> TerrainRecords;

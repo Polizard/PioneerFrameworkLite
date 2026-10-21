@@ -195,6 +195,7 @@
   <PFV_HelpPilotingTitle>Piloting and custom bindings</PFV_HelpPilotingTitle>
   <PFV_Pilot_AvailableThrust>Available directional thrust</PFV_Pilot_AvailableThrust>
   <PFV_Pilot_RateLimit>Angular rate limit {0} deg/s</PFV_Pilot_RateLimit>
+  <PFV_Pilot_RateAxes>Roll {0} · Yaw {1} · Pitch {2} deg/s</PFV_Pilot_RateAxes>
   <PFV_Pilot_SasTitle>SAS (align the main thrust axis)</PFV_Pilot_SasTitle>
   <PFV_Pilot_ExitHint>Esc ends piloting. Effective manual commands take over and clear the maneuver queue.</PFV_Pilot_ExitHint>
   <PFV_Pilot_PanelHint>Esc closes this panel. Use the dedicated button to end piloting.</PFV_Pilot_PanelHint>

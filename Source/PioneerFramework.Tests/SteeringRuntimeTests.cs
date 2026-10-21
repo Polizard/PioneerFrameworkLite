@@ -15,7 +15,7 @@ public class SteeringRuntimeTests : IDisposable
 
     private static SpaceEntityGroup Group() => new(71)
     {
-        CurrentOrbit = new OrbitState { rotation = Quaternion.identity }, maxAngularRate = .02f
+        CurrentOrbit = new OrbitState { rotation = DQuaternion.identity }, maxAngularRate = .02f
     };
 
     [Fact]

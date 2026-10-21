@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 using PioneerFramework.ShipSkin;
@@ -44,6 +45,12 @@ namespace PioneerFramework
         /// <summary>零件盒体颜色（船体素色；明暗由场景方向光给，本类不表态光从哪来）。</summary>
         public static readonly Color PartColor = new(0.3f, 0.6f, 1.0f);
 
+        /// <summary>B8：损毁件盒体颜色（暗红残骸）。损毁件仍画，只换色以区别于可用件。</summary>
+        public static readonly Color DamagedPartColor = new(0.42f, 0.16f, 0.12f);
+
+        /// <summary>零件盒体颜色选择（纯函数，headless 可测）。</summary>
+        public static Color PartColorFor(bool isDestroyed) => isDestroyed ? DamagedPartColor : PartColor;
+
         /// <summary>
         /// 单个零件的**视图变换**（纯算术：headless 可测 —— 「零件矩阵组装」判据的落点）：
         /// 位置 = 视图系位置 + 姿态 ×（局部偏移 × metersToView × scale）；
@@ -68,10 +75,19 @@ namespace PioneerFramework
         /// <see cref="PartViewTransform"/> 那两个读数，矩阵构造本身只在游戏里跑。</summary>
         public static Matrix4x4 PartMatrix(Vector3 viewPos, Quaternion rotation,
             DVector3 positionShip, DVector3 boundsSizeShip, float metersToView, float scale)
+            => PartMatrix(viewPos, rotation, DQuaternion.identity, positionShip, boundsSizeShip,
+                metersToView, scale);
+
+        /// <summary>B3：带零件自身姿态的矩阵；identity 时保持旧矩阵逐位不变。</summary>
+        public static Matrix4x4 PartMatrix(Vector3 viewPos, Quaternion rotation, DQuaternion partRotation,
+            DVector3 positionShip, DVector3 boundsSizeShip, float metersToView, float scale)
         {
             PartViewTransform(viewPos, rotation, positionShip, boundsSizeShip, metersToView, scale,
                 out Vector3 p, out Vector3 s);
-            return Matrix4x4.TRS(p, rotation, s);
+            Quaternion renderRot = partRotation == DQuaternion.identity
+                ? rotation
+                : rotation * partRotation.ToQuaternion();
+            return Matrix4x4.TRS(p, renderRot, s);
         }
 
         /// <summary>
@@ -80,16 +96,13 @@ namespace PioneerFramework
         /// </summary>
         public static void DrawParts(SpaceEntity entity, Vector3 viewPos, Quaternion rotation, float scale,
             Mesh mesh, Material material, MaterialPropertyBlock block, bool toonOutline,
-            float metersToView, int layer, Color? tint = null)
+            float metersToView, int layer, Color? tint = null, HashSet<int>? skipPartIds = null)
         {
             if (entity == null || mesh == null || material == null || block == null) return;
             if (toonOutline)
                 block.SetFloat("_OutlineWidth", PartOutlineWidth);
 
-            // 2026-10-16 合批（"渲染线优化审查"第二批）：全部零件**同网格同材质同色**（`PartColor` 是常量）
-            // ⇒ 一个实体并成**一次**提交（原来是每零件一次 —— 站体动辄数百零件，编队还要乘船数）。
-            // 位置/尺寸都在各自矩阵里、批内顺序 = 零件顺序 ⇒ 外观不变。
-            // 2026-10-19 蒙皮：tint 非空 = 用阵营色（蒙皮材质走 `_Color`）；空 = 旧常量色（逐字不变）。
+            // 健康件：同网格同材质同色 ⇒ 一次提交；蒙皮 tint 非空时用阵营色。
             block.SetColor("_Color", tint ?? PartColor);
             if (tint.HasValue)
             {
@@ -100,12 +113,28 @@ namespace PioneerFramework
             WorldQuadBatch.Reset();
             foreach (var part in entity.Parts)
             {
-                if (part.isDestroyed) continue;
-
-                WorldQuadBatch.AddMesh(mesh, PartMatrix(viewPos, rotation, part.positionShip, part.boundsSizeShip,
-                    metersToView, scale));
+                if (part == null || part.isDestroyed) continue;
+                if (skipPartIds != null && skipPartIds.Contains(part.partId)) continue;
+                Mesh? source = PartShapeMeshes.For(part.shape, mesh);
+                if (source == null) continue;
+                WorldQuadBatch.AddMesh(source, PartMatrix(viewPos, rotation, part.rotationShip,
+                    part.positionShip, part.boundsSizeShip, metersToView, scale));
             }
+            if (WorldQuadBatch.ItemCount > 0)
+                WorldQuadBatch.Flush(material, block, layer);
 
+            // B5/B8：损毁件仍可见（残骸占位），单独一批暗红残骸色。
+            block.SetColor("_Color", DamagedPartColor);
+            WorldQuadBatch.Reset();
+            foreach (var part in entity.Parts)
+            {
+                if (part == null || !part.isDestroyed) continue;
+                if (skipPartIds != null && skipPartIds.Contains(part.partId)) continue;
+                Mesh? source = PartShapeMeshes.For(part.shape, mesh);
+                if (source == null) continue;
+                WorldQuadBatch.AddMesh(source, PartMatrix(viewPos, rotation, part.rotationShip,
+                    part.positionShip, part.boundsSizeShip, metersToView, scale));
+            }
             if (WorldQuadBatch.ItemCount > 0)
                 WorldQuadBatch.Flush(material, block, layer);
         }

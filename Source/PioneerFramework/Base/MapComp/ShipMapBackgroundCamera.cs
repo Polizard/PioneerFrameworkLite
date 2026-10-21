@@ -159,7 +159,7 @@ namespace PioneerFramework
             DVector3 groupSystem = group.IsCircularOrbit
                 ? group.GetCircularPositionAtTick(tick)
                 : group.CurrentOrbit.positionSystem.v;
-            Quaternion attitude = SanitizeRotation(group.CurrentOrbit.rotation);
+            Quaternion attitude = SanitizeRotation(group.CurrentOrbit.rotation.ToQuaternion());
 
             double hullHalfY = entity.BoundsSize.y * 0.5;
             if (!(hullHalfY > 0.0) || hullHalfY > 500.0) hullHalfY = 25.0;   // 兜底 = 站体 50 m 厚的一半

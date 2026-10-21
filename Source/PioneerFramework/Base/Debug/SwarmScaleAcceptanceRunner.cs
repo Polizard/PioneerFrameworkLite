@@ -474,7 +474,7 @@ namespace PioneerFramework
                     //    ⚠ 不对准的话 `AlignMainAxis` 要转 180°（默认角速率下 ~36 s > 本窗口 30 s）
                     //      ⇒ `fTotal` 恒 0 ⇒ 燃烧"发生过但没推力" ⇒ 正对照会把它抓出来（见 Deliberate）。
                     tangent = tangent.normalized;
-                    group.CurrentOrbit.rotation = Quaternion.FromToRotation(
+                    group.CurrentOrbit.rotation = (DQuaternion)Quaternion.FromToRotation(
                         new Vector3(0f, 0f, -1f), new Vector3((float)tangent.x, (float)tangent.y, (float)tangent.z));
 
                     // ② 点火：走得是**每步重取方向**的 RTN 退路律（`burnHasTargetV=false`）——

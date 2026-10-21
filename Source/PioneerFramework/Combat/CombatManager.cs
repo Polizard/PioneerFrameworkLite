@@ -1,4 +1,6 @@
+using System.Buffers;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using UnityEngine;
 using Verse;
 using System.Text;
@@ -45,7 +47,16 @@ namespace PioneerFramework.Combat
 
         // 船-船碰撞参数（可配置）──
         public const float CollisionExplosionSpeedThreshold = 50f;   // m/s：低于此值按撞击等效（动量交换），高于触发真爆炸
-        public const float CollisionRestitution = 0f;                // 弹性系数（撞击等效用，默认完全非弹性）
+        public const float CollisionRestitution = 0.2f;              // 弹性系数（2026-10-17 批 3 碰7：汽车撞汽车 ≈0.2；低于阈值时按完全非弹性）
+        /// <summary>碰7：接近速度低于此值视为完全非弹性（避免接触瞬间抖动）。</summary>
+        public const float CollisionRestitutionMinSpeed = 1.0f;
+        /// <summary>生产多接触求解的库仑摩擦系数（单接触旧路径不启用，验收采集不受影响）。</summary>
+        public const float CollisionFriction = 0.25f;
+        /// <summary>CCD part 细化只在“一步相对位移不超过此值”时做；更高速只要求组级命中，不追精确 part TOI。</summary>
+        public const double CcdPartRefineMaxStepMeters = 2000.0;
+        /// <summary>CCD part 细化的件数乘积上限。三轴预排序 SAP 后放开到 256×256；
+        /// 超过此值仍回退组级（异常件数/防病态数据）。</summary>
+        internal const long CcdPartRefineMaxPartPairs = 256L * 256L;
         public const double CollisionExplosionBaseRadius = 8000.0;   // 爆炸基础半径 m
         public const double CollisionExplosionRadiusK = 2.0;         // R = base + K·E^(1/3)
         public const double CollisionExplosionDamageK = 0.005;       // D0 = K·√E（中心损伤，随距离衰减）
@@ -55,6 +66,21 @@ namespace PioneerFramework.Combat
         private readonly System.Diagnostics.Stopwatch collisionStopwatch = new();
         private double collisionMsAccum ;
         private int collisionSamples ;
+
+        // ── 船-船链 300 步窗口（2026-10-19，DevMode 输出）────────────────────────────
+        // ⚠ `[步耗时]` 的 `碰撞=` 是 `CheckPlanetCollision`（行星表面碰撞），**不是船-船**；
+        //   船-船链在 `OnPhysicsStepCompleted`（位于步钟之外）⇒ 这里单独量四段并每 300 步打一行。
+        private const int ChainReportSteps = 300;
+        private readonly System.Diagnostics.Stopwatch chainSectionStopwatch = new();
+        private readonly System.Diagnostics.Stopwatch chainTotalStopwatch = new();
+        private int chainSteps;
+        private readonly double[] chainAccumMs = new double[4];   // 0 射弹 1 武器 2 同步 3 船对
+        private readonly double[] chainMaxMs = new double[4];
+        private readonly int[] chainMaxStep = new int[4];
+        private readonly int[] chainMaxTick = new int[4];
+        private long chainPairCandidates;   // 本窗口进入逐对几何的候选数（验证 SAP 是否真的过滤）
+        private double chainTotalAccumMs, chainTotalMaxMs;
+        private int chainTotalMaxStep, chainTotalMaxTick;
 
         /// <summary>是否处于交战状态。原为 `activeProjectiles.Count > 0 || TargetingSystem != null`，
         /// 而 `TargetingSystem` 恒为 null（死代码，2026-09-16 随 [V9] 删除）⇒ 语义等价退化为弹量判断。</summary>
@@ -72,12 +98,123 @@ namespace PioneerFramework.Combat
         private readonly Dictionary<int, DVector3> shipPrevPositions = new();
 
         // #2 性能优化：CheckShipCollisions 本 tick 组级缓存（位置/半径/当前盒/上一步盒每组只算一次，
-        // 消除每对重复的 GetAabbSystem 旋转计算——原先每对最多 6 次）
+        // 消除每对重复的 GetAabbSystem 旋转计算——原先每对最多 6 次）。
+        // 2026-10-17：缓存改为**跨 tick 复用对象 + epoch 失效**（不再每 tick Clear 重建），
+        // 并把逐 part AABB 列表一起缓存 ⇒ 同一组与多个对手窄相时只收集一次。
         private readonly Dictionary<int, GroupCollisionCache> groupCollisionCache = new();
+        private int collisionCacheEpoch;
+        private int collisionCachePruneAt;
+        private readonly List<int> collisionPruneScratch = new();
+        private readonly List<CollisionContactPoint> contactScratch = new();
+        private readonly List<PartAabb> iterPartsA = new();
+        private readonly List<PartAabb> iterPartsB = new();
+        private readonly List<PartAabb> contactFilterA = new();
+        private readonly List<PartAabb> contactFilterB = new();
 
-        /// <summary>船对碰撞检测的组级缓存条目（每 tick 重建）。</summary>
-        private struct GroupCollisionCache
+        /// <summary>窄相用：part 的世界系轴对齐盒（相对量已并入）。Order = 收集顺序，用于并列深度时的确定性。
+        /// B3b：带自身姿态的 part 额外保存 OBB（Center/Half/Rotation），窄相走精确 SAT；
+        /// 旧构造器（无姿态）保持 AABB 路径逐位不变。</summary>
+        internal readonly struct PartAabb
         {
+            public readonly DVector3 Min;
+            public readonly DVector3 Max;
+            public readonly int Order;
+
+            public readonly DVector3 Center;
+            public readonly DVector3 Half;
+            public readonly DQuaternion Rotation;
+            public readonly bool UseObb;
+            public readonly InertiaTensor.Shape Shape;
+
+            public PartAabb(DVector3 min, DVector3 max, int order = 0,
+                InertiaTensor.Shape shape = InertiaTensor.Shape.Box)
+            {
+                Min = min; Max = max; Order = order;
+                Center = (min + max) * 0.5;
+                Half = (max - min) * 0.5;
+                Rotation = DQuaternion.identity;
+                UseObb = false;
+                Shape = shape;
+            }
+
+            /// <summary>B3b：世界 OBB；AABB 由投影得到（广播/裁剪仍用它）。</summary>
+            public PartAabb(DVector3 center, DVector3 half, DQuaternion rotation, int order = 0,
+                InertiaTensor.Shape shape = InertiaTensor.Shape.Box)
+            {
+                Center = center;
+                Half = half;
+                Rotation = PartGeometry.EffectiveRotation(rotation);
+                Order = order;
+                DVector3 rh = PartGeometry.ProjectedHalfExtents(Rotation, half);
+                Min = center - rh;
+                Max = center + rh;
+                UseObb = true;
+                Shape = shape;
+            }
+
+            /// <summary>
+            /// P1（2026-10-19）：带**已缓存的投影半尺寸**的 OBB 构造器。缓存值由同一
+            /// `ProjectedHalfExtents(Rotation, half)` 在几何缓存构建时算得；平移时只重算
+            /// `center = entityPos + centerOffset`，`Min/Max = center ∓ projectedHalf`，
+            /// 运算次序与原构造器一致 ⇒ 逐位等价。
+            /// </summary>
+            internal PartAabb(DVector3 center, DVector3 half, DQuaternion rotation,
+                DVector3 projectedHalf, int order, InertiaTensor.Shape shape)
+            {
+                Center = center;
+                Half = half;
+                Rotation = PartGeometry.EffectiveRotation(rotation);
+                Order = order;
+                Min = center - projectedHalf;
+                Max = center + projectedHalf;
+                UseObb = true;
+                Shape = shape;
+            }
+
+            /// <summary>CCD 采样平移：整体移动世界 AABB，不重算投影/旋转。
+            /// 平移量很小（≤2km），double 误差 ~1e-11m；采样循环每 16 步重收集一次防漂移。</summary>
+            internal PartAabb Translated(in DVector3 delta)
+            {
+                return new PartAabb(Min + delta, Max + delta, Center + delta,
+                    Half, Rotation, UseObb, Shape, Order);
+            }
+
+            private PartAabb(DVector3 min, DVector3 max, DVector3 center, DVector3 half,
+                DQuaternion rotation, bool useObb, InertiaTensor.Shape shape, int order)
+            {
+                Min = min;
+                Max = max;
+                Center = center;
+                Half = half;
+                Rotation = rotation;
+                UseObb = useObb;
+                Shape = shape;
+                Order = order;
+            }
+        }
+
+        /// <summary>
+        /// P1：part 的**实体系相对几何**，只服务当前 `collisionCacheEpoch` 内的
+        /// 投影轮 / CCD 采样平移；不跨物理步复用（日志实测 256 旋转船复用=0）。
+        /// 平移时只做 `groupPos + EntityPosition [+ CenterOffset]`，不重算四元数。
+        /// </summary>
+        internal struct PartRelGeom
+        {
+            public DVector3 EntityPosition;
+            public bool Identity;
+            public DVector3 RelMin, RelMax;       // identity：相对 entity 原点
+            public DVector3 CenterOffset;         // OBB：相对 entity 原点
+            public DVector3 Half;
+            public DVector3 ProjectedHalf;
+            public DQuaternion WorldRot;
+            public int Order;
+            public InertiaTensor.Shape Shape;
+        }
+
+        /// <summary>船对碰撞检测的组级缓存条目（跨 tick 复用；epoch 标记本步是否已刷新）。</summary>
+        internal sealed class GroupCollisionCache
+        {
+            public int epoch;
             public DVector3 pos;
             public double radius;
             public DVector3 curMin;
@@ -86,12 +223,120 @@ namespace PioneerFramework.Combat
             public DVector3 prevPos;
             public DVector3 prevMin;
             public DVector3 prevMax;
+
+            /// <summary>本组逐 part 世界 AABB（收集顺序；按需构建，位置变化后由 Invalidate 清空）。</summary>
+            public readonly List<PartAabb> parts = new();
+            public bool partsBuilt;
+            /// <summary>B1：构建缓存时的部件集指纹（entitySetVersion ⊕ 各实体 partSetVersion）。
+            /// 原地改 part（不移动组）不会走 InvalidateCollisionCache，靠它发现并重建。</summary>
+            public int partsVersion = -1;
+
+            /// <summary>P1：与 `parts` 同一次构建的相对几何（仅本 epoch 内平移用）。</summary>
+            public readonly List<PartRelGeom> relParts = new();
+
+            /// <summary>CCD part 级 any-overlap：按相对 AABB 的 X/Y/Z min 预排序的下标。
+            /// 平移不改变顺序 ⇒ 同一 epoch 内所有 CCD 采样复用。null = 尚未构建（回退全量）。</summary>
+            public int[]? orderX, orderY, orderZ;
+
+            /// <summary>相对几何重建后刷新三轴排序（每 epoch 一次，O(n log n)）。</summary>
+            public void RebuildAxisOrders()
+            {
+                int n = relParts.Count;
+                if (n == 0)
+                {
+                    orderX = System.Array.Empty<int>();
+                    orderY = System.Array.Empty<int>();
+                    orderZ = System.Array.Empty<int>();
+                    return;
+                }
+                orderX = BuildAxisOrder(0);
+                orderY = BuildAxisOrder(1);
+                orderZ = BuildAxisOrder(2);
+            }
+
+            private int[] BuildAxisOrder(int axis)
+            {
+                int n = relParts.Count;
+                var keys = new double[n];
+                var idx = new int[n];
+                for (int i = 0; i < n; i++)
+                {
+                    idx[i] = i;
+                    var r = relParts[i];
+                    double entity = axis == 0 ? r.EntityPosition.x
+                        : axis == 1 ? r.EntityPosition.y : r.EntityPosition.z;
+                    double center = axis == 0 ? r.CenterOffset.x
+                        : axis == 1 ? r.CenterOffset.y : r.CenterOffset.z;
+                    double half = axis == 0 ? r.ProjectedHalf.x
+                        : axis == 1 ? r.ProjectedHalf.y : r.ProjectedHalf.z;
+                    keys[i] = r.Identity
+                        ? entity + (axis == 0 ? r.RelMin.x : axis == 1 ? r.RelMin.y : r.RelMin.z)
+                        : entity + center - half;
+                }
+                System.Array.Sort(keys, idx);
+                return idx;
+            }
+
+            public void EnsureAxisOrders()
+            {
+                if (orderX != null && orderX.Length == relParts.Count) return;
+                RebuildAxisOrders();
+            }
+
+            /// <summary>本组可用 part 数（collidable、非 noCollide；不依赖位置/姿态）。
+            /// 用于“找不到 part 对时是否回退组级 AABB”，避免为计数做全量几何收集。</summary>
+            public int usablePartCount;
+
+            /// <summary>P1：按组位置平移生成世界 AABB；不重算四元数/投影（逐位等价，见台架）。</summary>
+            public void CollectPartsAt(DVector3 groupPos, List<PartAabb> into)
+            {
+                into.Clear();
+                for (int i = 0; i < relParts.Count; i++)
+                {
+                    var r = relParts[i];
+                    DVector3 entityPos = groupPos + r.EntityPosition;
+                    if (r.Identity)
+                    {
+                        into.Add(new PartAabb(entityPos + r.RelMin, entityPos + r.RelMax, r.Order, r.Shape));
+                    }
+                    else
+                    {
+                        DVector3 center = entityPos + r.CenterOffset;
+                        into.Add(new PartAabb(center, r.Half, r.WorldRot, r.ProjectedHalf, r.Order, r.Shape));
+                    }
+                }
+            }
         }
 
         /// <summary>详细碰撞日志开关（调试测试场景置 true；正式玩法保持 false）。</summary>
         public static bool DebugDetailedCollision ;
         private int detailedLogNextTick ;
         private int detailPairNextTick ;
+
+        /// <summary>碰撞记录采集（仅验收场景打开；生产 false，零采集开销）。</summary>
+        internal static bool CaptureCollisionRecords;
+        private readonly List<CollisionDebugRecord> debugCollisionRecords = new();
+        private const int MaxDebugCollisionRecords = 64;
+
+        /// <summary>一次低速撞击的完整输入/输出（验收用：冲量公式、角冲量、角动量守恒）。</summary>
+        internal struct CollisionDebugRecord
+        {
+            public int tick;
+            public int aGroup, bGroup;
+            public DVector3 pa, pb;          // 撞击时组原点（世界系）
+            public Quaternion rotA, rotB;     // 撞击时姿态（角动量/惯量换算用）
+            public DVector3 va, vb;          // 撞击前速度
+            public DVector3 vaAfter, vbAfter; // 冲量后应有速度（pendingImpulse 应用后的目标）
+            public DVector3 n;                // 冲击法线（A→B）
+            public DVector3 contact;          // 接触点（世界系）
+            public double j, vRel;
+            public DVector3 wA0, wB0;        // 撞击前角速度（世界系）
+            public DVector3 dwA, dwB;         // 角冲量带来的 Δω（世界系）
+            public bool usedPartPair;         // true = 走的是 part 窄相；false = 组级回退
+        }
+
+        internal void ClearDebugCollisionRecords() => debugCollisionRecords.Clear();
+        internal IReadOnlyList<CollisionDebugRecord> DebugCollisionRecords => debugCollisionRecords;
 
         /// <summary>炮塔战斗全链详细日志开关（开火/出膛/视觉弹/命中/贯穿，调试测试场景自动开启）。</summary>
         public static bool DebugDetailedCombat ;
@@ -160,6 +405,14 @@ namespace PioneerFramework.Combat
         internal void OnPhysicsStepCompleted()
         {
             int currentTick = Find.TickManager.TicksGame;
+            bool chainReport = Prefs.DevMode;
+            PerfProbe.CollisionStagesEnabled = chainReport;   // 子段钟只在 DevMode 开（生产零成本）
+            int chainStep = 0;
+            if (chainReport)
+            {
+                chainStep = chainSteps + 1;
+                chainTotalStopwatch.Restart();
+            }
 
             var combatGrid = GetCombatGrid();
             if (combatGrid != null)
@@ -168,7 +421,13 @@ namespace PioneerFramework.Combat
 #if DEBUG
             stageStopwatch.Restart();
 #endif
+            if (chainReport) chainSectionStopwatch.Restart();
             UpdateProjectiles();
+            if (chainReport)
+            {
+                chainSectionStopwatch.Stop();
+                RecordChain(0, chainSectionStopwatch.Elapsed.TotalMilliseconds, chainStep, currentTick);
+            }
             // 射弹飞行状态探针：每 N tick 打印全部在飞射弹（验证出膛点/弹道/寿命）
             if (DebugProjectileProbeInterval > 0 && currentTick >= probeNextTick)
             {
@@ -180,13 +439,25 @@ namespace PioneerFramework.Combat
             projMsAccum += stageStopwatch.Elapsed.TotalMilliseconds;
             stageStopwatch.Restart();
 #endif
+            if (chainReport) chainSectionStopwatch.Restart();
             UpdateWeapons(currentTick);
+            if (chainReport)
+            {
+                chainSectionStopwatch.Stop();
+                RecordChain(1, chainSectionStopwatch.Elapsed.TotalMilliseconds, chainStep, currentTick);
+            }
 #if DEBUG
             stageStopwatch.Stop();
             weaponsMsAccum += stageStopwatch.Elapsed.TotalMilliseconds;
             stageStopwatch.Restart();
 #endif
+            if (chainReport) chainSectionStopwatch.Restart();
             SyncAllShipsToGrid();
+            if (chainReport)
+            {
+                chainSectionStopwatch.Stop();
+                RecordChain(2, chainSectionStopwatch.Elapsed.TotalMilliseconds, chainStep, currentTick);
+            }
 #if DEBUG
             stageStopwatch.Stop();
             syncMsAccum += stageStopwatch.Elapsed.TotalMilliseconds;
@@ -197,9 +468,73 @@ namespace PioneerFramework.Combat
             collisionStopwatch.Stop();
             collisionMsAccum += collisionStopwatch.Elapsed.TotalMilliseconds;
             collisionSamples++;
+            if (chainReport)
+                RecordChain(3, collisionStopwatch.Elapsed.TotalMilliseconds, chainStep, currentTick);
             ManageProjectileTimeScale();
             LogGridStats(currentTick);
+
+            if (chainReport)
+            {
+                chainTotalStopwatch.Stop();
+                double totalMs = chainTotalStopwatch.Elapsed.TotalMilliseconds;
+                chainTotalAccumMs += totalMs;
+                if (totalMs > chainTotalMaxMs)
+                {
+                    chainTotalMaxMs = totalMs;
+                    chainTotalMaxStep = chainStep;
+                    chainTotalMaxTick = currentTick;
+                }
+                chainSteps++;
+                if (chainSteps >= ChainReportSteps)
+                    LogChainCost();
+            }
         }
+
+        private void RecordChain(int slot, double ms, int step, int tick)
+        {
+            chainAccumMs[slot] += ms;
+            if (ms > chainMaxMs[slot])
+            {
+                chainMaxMs[slot] = ms;
+                chainMaxStep[slot] = step;
+                chainMaxTick[slot] = tick;
+            }
+        }
+
+        /// <summary>船-船链 300 步窗口读数（DevMode）：平均/最慢 + 四段分解。</summary>
+        private void LogChainCost()
+        {
+            if (chainSteps <= 0) return;
+            var sb = new StringBuilder(220);
+            sb.Append("[碰撞链成本] 步数=").Append(chainSteps)
+              .Append(System.Globalization.CultureInfo.CurrentCulture, $" 总 平均={(chainTotalAccumMs / chainSteps) * 1000.0:F1}µs 最慢={chainTotalMaxMs * 1000.0:F1}µs（第{chainTotalMaxStep}步/t={chainTotalMaxTick}）")
+              .Append("｜射弹=").Append(ChainPart(0))
+              .Append(" 武器=").Append(ChainPart(1))
+              .Append(" 同步=").Append(ChainPart(2))
+              .Append(" 船对=").Append(ChainPart(3))
+              .Append(System.Globalization.CultureInfo.CurrentCulture, $"（平均/最慢 µs）｜船对最慢@第{chainMaxStep[3]}步/t={chainMaxTick[3]}");
+            if (PerfProbe.CollisionStagesEnabled)
+            {
+                string stages = PerfProbe.CollisionStageReport();
+                if (stages.Length > 0)
+                    sb.Append("｜子段(平均/最慢 µs)：").Append(stages);
+                sb.Append("｜候选=").Append(chainPairCandidates)
+                  .Append(" 多格船=").Append(GetCombatGrid()?.DebugMultiCellShipCount() ?? -1);
+                PerfProbe.ResetCollisionStages();
+            }
+            Log.Message(sb.ToString());
+
+            chainPairCandidates = 0;
+            chainSteps = 0;
+            chainTotalAccumMs = 0; chainTotalMaxMs = 0; chainTotalMaxStep = 0; chainTotalMaxTick = 0;
+            for (int i = 0; i < chainAccumMs.Length; i++)
+            {
+                chainAccumMs[i] = 0; chainMaxMs[i] = 0; chainMaxStep[i] = 0; chainMaxTick[i] = 0;
+            }
+        }
+
+        private string ChainPart(int slot)
+            => System.FormattableString.Invariant($"{(chainAccumMs[slot] / chainSteps) * 1000.0:F1}/{(chainMaxMs[slot]) * 1000.0:F1}");
 
         /// <summary>
         /// 射弹飞行状态探针：单行汇总全部在飞射弹的位置/速度/距生成点/寿命。
@@ -301,6 +636,9 @@ namespace PioneerFramework.Combat
                     shipPrevPositions[gid] = lastPos;
                     if (!lastPos.Equals(currentPos))
                         combatGrid.UpdateShipPosition(group, lastPos);
+                    else
+                        // 本步没动：把上一步跨格留下的扫掠格收缩回当前格（无待收缩时 O(1) 早退）
+                        combatGrid.SettleSweptBox(group);
                 }
 
                 shipLastPositions[gid] = currentPos;
@@ -519,6 +857,40 @@ namespace PioneerFramework.Combat
             proj.fineCz = nextCell.cz;
         }
 
+        /// <summary>
+        /// **在实体 AABB 内选最近命中的 part**（多 part 命中链，批 3；局部系 slab）。
+        /// 线段 = 盒内区间 `boxEntry → boxEntry + dir*maxDist`；`t` 为归一化参数（0..1），微负取 0。
+        /// 多件重叠时取最小进入参数（先撞到的那件）；全部未命中 ⇒ false（AABB 命中但零件缝里穿过）。
+        /// 调用方负责把 `partEnterT * maxDist` 换成命中点；图内映射只对 `linkedMapId >= 0` 的挂图件做。
+        /// </summary>
+        internal static bool TryPickHitPart(SpaceEntity entity, DVector3 boxEntry, DVector3 dirShip, double maxDistShip,
+            out int partIndex, out SpacePart hitPart, out double partEnterT)
+        {
+            partIndex = -1;
+            hitPart = null!;                 // null!：调用方只在返回 true 时使用（N2 可空族家规）
+            partEnterT = double.MaxValue;
+            if (!(maxDistShip > 0.0)) return false;
+
+            DVector3 end = boxEntry + dirShip * maxDistShip;
+            for (int i = 0; i < entity.Parts.Count; i++)
+            {
+                var p = entity.Parts[i];
+                // B5 / D-P7：损毁残骸仍可被命中（子弹打在残骸上，不再“穿过空气”）。
+                if (p == null) continue;
+                if (!PartGeometry.RayObb(boxEntry, end, p.positionShip, p.rotationShip, p.boundsSizeShip,
+                        out double tEntry))
+                    continue;
+                double enter = tEntry < 0.0 ? 0.0 : tEntry;
+                if (enter < partEnterT)
+                {
+                    partEnterT = enter;
+                    partIndex = i;
+                    hitPart = p;
+                }
+            }
+            return partIndex >= 0;
+        }
+
         private bool CheckSegmentGroupHit(ProjectileInstance proj, SpaceEntityGroup group)
         {
             var spaceGame = GetSpaceGameComp();
@@ -621,7 +993,7 @@ namespace PioneerFramework.Combat
                     Log.Message($"[命中详情] proj={proj.id}(G{proj.sourceGroupId})→G{group.GroupId} slab HIT tEntry={tEntry:F3} tExit={tExit:F3} 线段长={segmentLength:F0}m 射弹速=({proj.velocity.x:F0},{proj.velocity.y:F0},{proj.velocity.z:F0})m/s 目标pos=({groupPos.x:F0},{groupPos.y:F0},{groupPos.z:F0})");
                 }
 
-                // Entity AABB 被命中，检查 Part 级碰撞（单 part 化：唯一 part slab 直判，§5.3）。
+                // Entity AABB 被命中，检查 Part 级碰撞（多 part：**逐 part slab 取最近 tEntry**，§5.3/批 3）。
                 // 线段基准 = 粗检测进入点（shipLocal）：part 检测从盒进入点扫盒内区间，
                 // 而不是从射弹线段起点扫（起点在盒外时永远 miss）。
                 if (entity.Parts.Count > 0 && segmentLength > 0.001)
@@ -630,23 +1002,14 @@ namespace PioneerFramework.Combat
                     DVector3 entryPoint = startShip + dirShip * (tEntry * segmentLength);
                     double maxDistShip = (tExit - tEntry) * segmentLength;
 
-                    var hitPart = entity.Parts[0];
-                    DVector3 partMin = hitPart.positionShip - hitPart.boundsSizeShip * 0.5;
-                    DVector3 partMax = hitPart.positionShip + hitPart.boundsSizeShip * 0.5;
-                    bool partHit = CombatGrid.RaySlabIntersection(entryPoint, entryPoint + dirShip * maxDistShip,
-                        partMin, partMax, out double partTEntry, out double partTExit, out _);
-                    // partTEntry 可为微负：盒入口恰在 part 盒表面时浮点抖动（±1e-7 级）或起点已在盒内。
-                    // 命中参数取 max(0, ·)——否则"起点在盒内"被误判 miss，直射 AABB 表面时交替命中/未命中。
-                    // RaySlabIntersection 已保证 tFar>=0 且区间与 [0,1] 有交集，去掉 >=0 检查安全。
-                    partHit = partHit && partTEntry <= maxDistShip;
-                    double partEnterT = partTEntry < 0 ? 0 : partTEntry;
+                    bool partHit = TryPickHitPart(entity, entryPoint, dirShip, maxDistShip,
+                        out int firstHitPartIndex, out var hitPart, out double partEnterT);
 #if DEBUG
                     if (verboseHit)
-                        Log.Message($"[命中调试] PartSlab origin=({entryPoint.x:F0},{entryPoint.y:F0},{entryPoint.z:F0}) dir=({dirShip.x:F3},{dirShip.y:F3},{dirShip.z:F3}) maxDist={maxDistShip:F0} partHit={partHit} t={partTEntry:F3}");
+                        Log.Message($"[命中调试] PartSlab origin=({entryPoint.x:F0},{entryPoint.y:F0},{entryPoint.z:F0}) dir=({dirShip.x:F3},{dirShip.y:F3},{dirShip.z:F3}) maxDist={maxDistShip:F0} partHit={partHit} t={partEnterT:F3}");
 #endif
                     if (partHit)
                     {
-                        var firstHitPartIndex = 0;
                         var firstHitT = partEnterT;
                         DVector3 entityPosSystem = groupPos + entity.Position;
                         lastHitPosition = proj.position.v;
@@ -670,17 +1033,19 @@ namespace PioneerFramework.Combat
 
                         // F3 命中 → Map 落点瞬爆：命中点已在船体局部系（含旋转），
                         // part 局部 = 地图 1:1，直接映射即可。
+                        // 多 part：只有命中**挂图舱盒**才做图内映射；打到引擎/储罐等非挂图件时跳过（§6M 边缘小项）。
                         DVector3 hitPointSystem = proj.position.v; // 兜底：步末点
-                        if (entity.MapId >= 0)
+                        // B6：按**命中 part 的 linkedMapId** 选图（多舱室船可能挂多图；不再用实体主图）。
+                        if (hitPart.linkedMapId >= 0)
                         {
-                            Map targetMap = SpaceMapGenerator.FindPocketMap(entity.MapId);
+                            Map targetMap = SpaceMapGenerator.FindPocketMap(hitPart.linkedMapId);
                             if (targetMap != null)
                             {
                                 DVector3 hitShip = entryPoint + dirShip * (partEnterT * maxDistShip);
                                 if (DebugDetailedCombat)
                                 {
                                     DVector3 penDir = hitShip - entryPoint;
-                                    Log.Message($"[命中详情] proj={proj.id}→G{group.GroupId} Entity{entityId} partT={partTEntry:F3} 船壳入口局部=({entryPoint.x:F1},{entryPoint.y:F1},{entryPoint.z:F1}) 命中局部=({hitShip.x:F1},{hitShip.y:F1},{hitShip.z:F1})m 贯穿长度={penDir.magnitude:F1}m 贯穿方向=({penDir.x / Math.Max(penDir.magnitude, 0.001):F3},{penDir.y / Math.Max(penDir.magnitude, 0.001):F3},{penDir.z / Math.Max(penDir.magnitude, 0.001):F3})");
+                                    Log.Message($"[命中详情] proj={proj.id}→G{group.GroupId} Entity{entityId} partT={partEnterT:F3} 船壳入口局部=({entryPoint.x:F1},{entryPoint.y:F1},{entryPoint.z:F1}) 命中局部=({hitShip.x:F1},{hitShip.y:F1},{hitShip.z:F1})m 贯穿长度={penDir.magnitude:F1}m 贯穿方向=({penDir.x / Math.Max(penDir.magnitude, 0.001):F3},{penDir.y / Math.Max(penDir.magnitude, 0.001):F3},{penDir.z / Math.Max(penDir.magnitude, 0.001):F3})");
                                 }
                                 SpawnPenetrationMote(entity, targetMap, hitShip);
                                 // 弹头 Map 范围爆炸（§10 收尾，2026-09-07）：以命中映射格为心在目标地图上
@@ -747,8 +1112,13 @@ namespace PioneerFramework.Combat
             var combatGrid = GetCombatGrid();
             if (spaceGame == null || combatGrid == null) return;
 
-            // #2：每 tick 重建组级缓存
-            groupCollisionCache.Clear();
+            // #2：epoch 推进（缓存对象跨 tick 复用；每 600 步清一次已死/久未用的组，防字典无界增长）
+            collisionCacheEpoch++;
+            if (collisionCacheEpoch >= collisionCachePruneAt)
+            {
+                PruneCollisionCache(spaceGame);
+                collisionCachePruneAt = collisionCacheEpoch + 600;
+            }
 
             // 转化交接待销毁导弹群：统一在 pair 循环外执行（EnumerateShipPairs 是字典懒迭代器，
             // 迭代体内 DestroyGroup 会并发修改抛异常）。HashSet 防同一导弹本 tick 与多个目标接触时重复转化。
@@ -758,6 +1128,7 @@ namespace PioneerFramework.Combat
             // 导弹识别管理器：pair 循环外取一次（GetComponent 线性查组件表，不能每对被拒 pair 都调）
             var missileMgr = GetAvm();
 
+            long colPairClock = PerfProbe.CollisionStageStart();
             foreach (var (a, b) in combatGrid.EnumerateShipPairs())
             {
                 if (!a.IsActive || !b.IsActive || !a.IsCollidable || !b.IsCollidable) continue;
@@ -765,6 +1136,7 @@ namespace PioneerFramework.Combat
 
                 // P49 读数（只量不改）：到这里才算"候选对"（前面两个 continue 是枚举器层面的粗筛）
                 if (PerfProbe.Enabled) PerfProbe.PairCandidates++;
+                if (PerfProbe.CollisionStagesEnabled) chainPairCandidates++;
 
                 // 枚举对诊断：确认 G1/G2/G3 是否被枚举到（限频）
                 if (DebugDetailedCollision && Find.TickManager.TicksGame >= detailPairNextTick)
@@ -776,8 +1148,10 @@ namespace PioneerFramework.Combat
                 }
 
                 // #2 组级缓存：每组本 tick 只算一次（位置/球半径/当前盒/上一步盒），每对直接复用
+                long colCacheClock = PerfProbe.CollisionStageStart();
                 var ca = GetOrBuildCollisionCache(a, spaceGame);
                 var cb = GetOrBuildCollisionCache(b, spaceGame);
+                PerfProbe.CollisionStageEnd(PerfProbe.ColStageCache, colCacheClock);
                 DVector3 pa = ca.pos;
                 DVector3 pb = cb.pos;
 
@@ -785,37 +1159,46 @@ namespace PioneerFramework.Combat
                 // "相对步长 > 球区跨度"时失效：导弹整步从目标一侧穿到另一侧（0.7km/接近率479，
                 // 单步相对位移 958m > 目标球区 ±57m），步末已在另一侧 209m → 误拒 → 扫掠/段级
                 // 复核全部没机会执行（收敛直撞线零碰撞）。导弹对改由下方段级时间对齐复核权威判定。
-                double ra = ca.radius;
-                double rb = cb.radius;
-                double rr = ra + rb;
-                if ((pb - pa).sqrMagnitude > rr * rr)
+                // 当前实际盒（curOverlap 判定与分离量的基准）
+                DVector3 curAMin = ca.curMin, curAMax = ca.curMax;
+                DVector3 curBMin = cb.curMin, curBMax = cb.curMax;
+
+                // **相对**扫掠盒（2026-10-17 关键修）：只把 B 的盒沿**相对位移**扩展（A 固定在当前），
+                // 而不是"当前 ∪ 上一步"的绝对并集。绝对并集会把两船的共同轨道/自由落体运动
+                // （一步几 km）算成重叠 ⇒ 共轨/同落体船假 tunneling（日志实测：G1/G2 每一步
+                // 扫掠盒都重叠、当前盒不重叠 ⇒ 只停位置不反速度 ⇒ 用户看到的"一段段靠近又远离"）。
+                DVector3 prevPa = ca.hasPrev ? ca.prevPos : pa;
+                DVector3 prevPb = cb.hasPrev ? cb.prevPos : pb;
+                DVector3 relStart = prevPb - prevPa;
+                DVector3 relEnd = pb - pa;
+                DVector3 relDelta = relEnd - relStart;
+
+                // 球快筛必须看**本步相对路径到原点的最近距离**，不能只看步末距离：
+                // 10 km/s 一步跨 20 km，步末已在另一侧 19.2 km 外 ⇒ 旧判据把真实穿越整对拒掉
+                // （2026-10-19 日志实证：G1/G2 从 800m 直接跳到 19200m 并继续远离，无爆炸）。
+                double rr = ca.radius + cb.radius;
+                long colSphereClock = PerfProbe.CollisionStageStart();
+                bool sphereHit = SegmentHitsSphere(relStart, relEnd, rr * rr);
+                PerfProbe.CollisionStageEnd(PerfProbe.ColStageSphere, colSphereClock);
+                if (!sphereHit)
                 {
                     bool anyMissile = missileMgr != null
                         && (missileMgr.GetRecord(a.GroupId) != null || missileMgr.GetRecord(b.GroupId) != null);
                     if (!anyMissile) continue;
                 }
-
-                // 当前实际盒（curOverlap 判定与分离量的基准）
-                DVector3 curAMin = ca.curMin, curAMax = ca.curMax;
-                DVector3 curBMin = cb.curMin, curBMax = cb.curMax;
-
-                // 扫掠膨胀盒：当前 AABB ∪ 上一步 AABB（覆盖两步间运动路径，消除 tunneling）
                 DVector3 aMin = curAMin, aMax = curAMax;
-                DVector3 bMin = curBMin, bMax = curBMax;
-                DVector3 prevPa = ca.hasPrev ? ca.prevPos : pa; // 无上一步记录时并集 = 当前盒（首拍退化）
-                if (ca.hasPrev)
-                {
-                    aMin = new DVector3(Math.Min(aMin.x, ca.prevMin.x), Math.Min(aMin.y, ca.prevMin.y), Math.Min(aMin.z, ca.prevMin.z));
-                    aMax = new DVector3(Math.Max(aMax.x, ca.prevMax.x), Math.Max(aMax.y, ca.prevMax.y), Math.Max(aMax.z, ca.prevMax.z));
-                }
-                DVector3 prevPb = cb.hasPrev ? cb.prevPos : pb;
-                if (cb.hasPrev)
-                {
-                    bMin = new DVector3(Math.Min(bMin.x, cb.prevMin.x), Math.Min(bMin.y, cb.prevMin.y), Math.Min(bMin.z, cb.prevMin.z));
-                    bMax = new DVector3(Math.Max(bMax.x, cb.prevMax.x), Math.Max(bMax.y, cb.prevMax.y), Math.Max(bMax.z, cb.prevMax.z));
-                }
+                long colSweepClock = PerfProbe.CollisionStageStart();
+                DVector3 bMin = new DVector3(
+                    Math.Min(curBMin.x, curBMin.x - relDelta.x),
+                    Math.Min(curBMin.y, curBMin.y - relDelta.y),
+                    Math.Min(curBMin.z, curBMin.z - relDelta.z));
+                DVector3 bMax = new DVector3(
+                    Math.Max(curBMax.x, curBMax.x - relDelta.x),
+                    Math.Max(curBMax.y, curBMax.y - relDelta.y),
+                    Math.Max(curBMax.z, curBMax.z - relDelta.z));
 
                 bool sweptHit = AabbOverlap(aMin, aMax, bMin, bMax, out double ox, out double oy, out double oz);
+                PerfProbe.CollisionStageEnd(PerfProbe.ColStageSweep, colSweepClock);
                 // 注意：本日志全局 30 tick 门控——09-07 诊断期曾临时无门控（穿越窗口 2-4 tick），
                 // Combat 档（1/60）下现实 30Hz × 每对刷屏 8725 行/次测试拖垮内存，使命完成后恢复门控。
                 if (DebugDetailedCollision && Find.TickManager.TicksGame >= detailedLogNextTick)
@@ -866,20 +1249,79 @@ namespace PioneerFramework.Combat
                 // 否则用当前实际盒重叠量分离（扫掠盒 oz 含运动路径长度，直接分离会把船推飞）
                 if (!AabbOverlap(curAMin, curAMax, curBMin, curBMax, out ox, out oy, out oz))
                 {
-                    ResolveTunneled(b, prevPb, curBMin, curBMax, curAMin, curAMax, a.GroupId);
+                    // CCD 的 part 细化需要本步相对几何；tunneling 分支不经过 TryFindDeepestPartPair，
+                    // 这里显式构建一次（同 epoch 内后续复用 cache.parts）。
+                    EnsurePartBoxes(ca, a, spaceGame);
+                    EnsurePartBoxes(cb, b, spaceGame);
+                    long colCcdClock = PerfProbe.CollisionStageStart();
+                    ResolveTunneled(a, b, ca, cb, prevPa, prevPb, curAMin, curAMax, curBMin, curBMax, destroyedMissiles);
+                    PerfProbe.CollisionStageEnd(PerfProbe.ColStageCcd, colCcdClock);
                     InvalidateCollisionCache(a, b); // B 位置已改变
                     continue;
                 }
 
-                DVector3 nDir = pb - pa;
-                double nLen = nDir.magnitude;
-                if (nLen < 1e-6)
-                    nDir = new DVector3(1, 0, 0);
+                // 批 3（2026-10-17）：窄相取**最深 part 对** ⇒ 最小穿透轴 / 深度 / 接触点。
+                // 组级并集盒的重叠只是广播相：找不到 part 对时按碰 3 修订（用户裁 A）处理。
+                DVector3 nDir;
+                DVector3 contactPoint;
+                long colNarrowClock = PerfProbe.CollisionStageStart();
+                bool usedPartPair = TryFindDeepestPartPair(a, b, ca, cb, spaceGame,
+                    out nDir, out _, out contactPoint);
+                PerfProbe.CollisionStageEnd(PerfProbe.ColStageNarrow, colNarrowClock);
+                if (!usedPartPair)
+                {
+                    // 空角 = 并集盒重叠但没有任何零件接触。两支都有可用 part ⇒ 物理上尚未接触，
+                    // 不解析、继续接近；只有一方完全没有可用 part（无实体/全毁/noCollide）才回退组级盒。
+                    if (!ShouldFallbackToGroupAabb(ca.usablePartCount, cb.usablePartCount))
+                    {
+                        if (DebugDetailedCollision && Find.TickManager.TicksGame >= detailedLogNextTick)
+                        {
+                            detailedLogNextTick = Find.TickManager.TicksGame + 30;
+                            Log.Message($"[ShipCollision] G{a.GroupId} vs G{b.GroupId} 组盒重叠但无 part 对（空角），跳过等待零件接触");
+                        }
+                        continue;
+                    }
+
+                    nDir = MinPenetrationAxis(ox, oy, oz, pa, pb, out _);
+                    DVector3 oMin = DVector3.Max(curAMin, curBMin);
+                    DVector3 oMax = DVector3.Min(curAMax, curBMax);
+                    contactPoint = (oMin + oMax) * 0.5;
+                }
+
+                if (usedPartPair)
+                {
+                    long colContactsClock = PerfProbe.CollisionStageStart();
+                    CollectPartContacts(ca.parts, cb.parts,
+                        DVector3.Max(curAMin, curBMin), DVector3.Min(curAMax, curBMax),
+                        contactScratch, maxContacts: 8, contactFilterA, contactFilterB);
+                    PerfProbe.CollisionStageEnd(PerfProbe.ColStageContacts, colContactsClock);
+                }
                 else
-                    nDir /= nLen;
+                {
+                    contactScratch.Clear();
+                }
 
                 DVector3 va = GetGroupVelocity(a);
                 DVector3 vb = GetGroupVelocity(b);
+
+                // 组级法线符号归一（2026-10-17 S1 间歇性回归）：part 窄相法线是"最深 part 对 A→B"，
+                // 两船零件交错、或接触盒中心完全重合（SAT 的 delta≈0）时，轴符号会退化成与**组心连线**
+                // 相反（S1 对称侧件恰好对心：delta=0 ⇒ 取轴序 +X，而枚举顺序可能让 A 是右船）。
+                // 后果：① vRel<0 ⇒ 正在接近被当成分离，只位置分离不给冲量（继续深穿透）；
+                //       ② 沿反方向分离 = 把两船推进彼此怀里 ⇒ 下一次深穿透补撞（实测记录 3 条、
+                //          撞击后速度差 0.15 m/s）。组级冲量/分离必须按组心连线定向。
+                nDir = AlignImpactNormal(nDir, pb - pa);
+
+                // 一步跨过检测（2026-10-17）：高速时 B 可能在**一步内**从 A 的 +X 侧穿到 -X 侧，
+                // 当前盒仍重叠、但"当前中心连线"法线指向已穿过去的一侧 ⇒ vRel 为负、被当成"分离中"，
+                // 结果不爆炸、下一步继续假 tunneling。用 prev→cur 在法线上的侧别翻转把法线翻回入射侧。
+                DVector3 relPrev = prevPb - prevPa;
+                DVector3 relCur = pb - pa;
+                double sidePrev = DVector3.Dot(relPrev, nDir);
+                double sideCur = DVector3.Dot(relCur, nDir);
+                if (sidePrev < 0.0 && sideCur >= 0.0)
+                    nDir = -nDir;
+
                 double vRel = DVector3.Dot(va - vb, nDir); // >0 正在接近
 
                 // 跳帮接舷分支（§9）：一方是跳帮单位且低速对准落点 → 消费碰撞（不弹飞/不爆炸，
@@ -894,16 +1336,26 @@ namespace PioneerFramework.Combat
 
                 if (vRel >= CollisionExplosionSpeedThreshold)
                 {
-                    TriggerExplosion(a, b, pa, pb, va, vb, nDir, vRel, ox, oy, oz, destroyedMissiles);
+                    long colExplosionClock = PerfProbe.CollisionStageStart();
+                    TriggerExplosion(a, b, pa, pb, va, vb, nDir, vRel, contactPoint, destroyedMissiles);
+                    PerfProbe.CollisionStageEnd(PerfProbe.ColStageExplosion, colExplosionClock);
                 }
                 else if (vRel > 0)
                 {
-                    ResolveImpact(a, b, pa, pb, va, vb, nDir, vRel, ox, oy, oz);
+                    // 单接触/验收采集仍走原路径：验收器按单接触冲量公式核对 j；
+                    // 生产 part 碰撞统一走迭代接触求解（单/多接触都由 ResolveContacts 处理）。
+                    if (usedPartPair && !CaptureCollisionRecords)
+                        ResolveContacts(a, b, ca, cb, pa, pb, va, vb, nDir, vRel, contactPoint);
+                    else
+                        ResolveImpact(a, b, pa, pb, va, vb, nDir, vRel, contactPoint, usedPartPair);
                 }
                 else
                 {
-                    // 正在分离但 AABB 仍重叠：仅位置分离防卡死
-                    SeparatePositions(a, b, ox, oy, oz);
+                    // 正在分离但仍有重叠：生产 part 碰撞仍用迭代位置投影；组级回退才做一次 AABB 分离。
+                    if (usedPartPair && !CaptureCollisionRecords)
+                        ResolveContacts(a, b, ca, cb, pa, pb, va, vb, nDir, 0.0, contactPoint);
+                    else
+                        SeparateByContacts(a, b);
                     if (DebugDetailedCollision)
                     {
                         Log.Message($"[ShipCollision] G{a.GroupId} vs G{b.GroupId} 分离中重叠，仅位置分离 重叠=({ox:F0},{oy:F0},{oz:F0})m");
@@ -912,6 +1364,7 @@ namespace PioneerFramework.Combat
                 // 任何碰撞解决都可能改变 a/b 位置 → 失效缓存，后续对该组的对重建
                 InvalidateCollisionCache(a, b);
             }
+            PerfProbe.CollisionStageEnd(PerfProbe.ColStagePairLoop, colPairClock);
 
             // 转化交接统一销毁（pair 循环外：字典懒迭代器内 DestroyGroup 抛异常）
             if (destroyedMissiles.Count > 0)
@@ -926,57 +1379,611 @@ namespace PioneerFramework.Combat
             }
         }
 
+        /// <summary>
+        /// **加载期碰撞纯函数预热**（2026-10-19，P0）。
+        ///
+        /// 实测隔离冷启动：`CollectPartContacts` 1.8–2.3 ms、`TryFindDeepestPartPair` 0.5–0.7 ms、
+        /// `CollisionSolver.Resolve` 4.4–5.6 ms。把这些纯函数在 `FinalizeInit` 调几十次，把 tier-0/tier-1
+        /// 的 JIT 从“第一次真碰撞”移到读档期；**不碰任何组/实体/地图状态**，因此无副作用。
+        ///
+        /// 不覆盖：`ResolveTunneled`/`RefineTunneledStopToParts`/`TriggerExplosion`/AoE 伤害（需要组/实体/
+        /// 伤害上下文，且会写日志/伤害/销毁）——10 km/s 的 7.7 ms 首撞仍可能尖峰，另案隔离预热。
+        /// </summary>
+        internal static void WarmupCollisionPaths()
+        {
+            try
+            {
+                static List<PartAabb> Boxes(int n, double offsetX)
+                {
+                    var list = new List<PartAabb>(n);
+                    for (int i = 0; i < n; i++)
+                    {
+                        double y = -i * 2.0;
+                        list.Add(new PartAabb(
+                            new DVector3(offsetX - 20, y - 1, -20),
+                            new DVector3(offsetX + 20, y + 1, 20), i));
+                    }
+                    return list;
+                }
+
+                var a = Boxes(64, 0);
+                var b = Boxes(64, 30);
+                var clipMin = DVector3.Max(a[0].Min, b[0].Min);
+                var clipMax = DVector3.Min(a[0].Max, b[0].Max);
+                var contacts = new List<CollisionContactPoint>(8);
+                var filterA = new List<PartAabb>(64);
+                var filterB = new List<PartAabb>(64);
+
+                var a8 = a.GetRange(0, 8);
+                var b8 = b.GetRange(0, 8);
+                var clip8Min = DVector3.Max(a8[0].Min, b8[0].Min);
+                var clip8Max = DVector3.Min(a8[0].Max, b8[0].Max);
+
+                // 小列表：嵌套循环
+                for (int i = 0; i < 32; i++)
+                {
+                    CollectPartContacts(a8, b8, clip8Min, clip8Max, contacts, 8);
+                    TryFindDeepestPartPair(a8, b8, clip8Min, clip8Max, out _, out _, out _);
+                }
+
+                // 大列表：SAP（穷举；双指针 sorted 已因区间包含漏对被删除）
+                for (int i = 0; i < 16; i++)
+                {
+                    CollectPartContacts(a, b, clipMin, clipMax, contacts, 8);
+                    TryFindDeepestPartPair(a, b, clipMin, clipMax, out _, out _, out _);
+                }
+
+                // 大列表 + 乱序：SAP 回退（单纯 Reverse 仍是单调，必须真正打乱相邻项）
+                var bShuffled = new List<PartAabb>(b);
+                for (int i = 0; i + 1 < bShuffled.Count; i += 2)
+                {
+                    var tmp = bShuffled[i];
+                    bShuffled[i] = bShuffled[i + 1];
+                    bShuffled[i + 1] = tmp;
+                }
+                for (int i = 0; i < 16; i++)
+                {
+                    CollectPartContacts(a, bShuffled, clipMin, clipMax, contacts, 8);
+                    TryFindDeepestPartPair(a, bShuffled, clipMin, clipMax, out _, out _, out _);
+                }
+
+                // 预过滤缓存版
+                for (int i = 0; i < 16; i++)
+                    CollectPartContacts(a, b, clipMin, clipMax, contacts, 8, filterA, filterB);
+
+                // OBB SAT
+                var rotA = DQuaternion.AngleAxis(0.7, new DVector3(0.2, 0.5, 0.84).normalized);
+                var rotB = DQuaternion.AngleAxis(1.1, new DVector3(0.7, 0.2, 0.68).normalized);
+                var oa = new List<PartAabb>
+                {
+                    new(new DVector3(0, 0, 0), new DVector3(2, 2, 2), rotA, 0),
+                };
+                var ob = new List<PartAabb>
+                {
+                    new(new DVector3(1.2, 0.3, 0.2), new DVector3(2, 2, 2), rotB, 0),
+                };
+                var ocMin = DVector3.Max(oa[0].Min, ob[0].Min);
+                var ocMax = DVector3.Min(oa[0].Max, ob[0].Max);
+                for (int i = 0; i < 16; i++)
+                {
+                    CollectPartContacts(oa, ob, ocMin, ocMax, contacts, 8);
+                    TryFindDeepestPartPair(oa, ob, ocMin, ocMax, out _, out _, out _);
+                }
+
+                // 解析形状（Sphere / Cylinder）
+                var sa = new List<PartAabb>
+                {
+                    new(new DVector3(-1, -1, -1), new DVector3(1, 1, 1), 0, InertiaTensor.Shape.Sphere),
+                };
+                var sb = new List<PartAabb>
+                {
+                    new(new DVector3(0.5, -1, -1), new DVector3(2.5, 1, 1), 0, InertiaTensor.Shape.Cylinder),
+                };
+                for (int i = 0; i < 16; i++)
+                    CollectPartContacts(sa, sb, new DVector3(-2, -2, -2), new DVector3(3, 3, 3), contacts, 8);
+
+                // Solver：8 接触 × 6 迭代
+                var bodyA = new CollisionBodyState
+                {
+                    Mass = 1000,
+                    Inertia = new InertiaTensor.InertiaResult
+                    {
+                        HasData = true, mass = 1000,
+                        p1 = 1000, p2 = 1000, p3 = 1000,
+                        r00 = 1, r11 = 1, r22 = 1,
+                    },
+                    Rotation = DQuaternion.identity,
+                    Position = DVector3.zero,
+                    Velocity = new DVector3(4, 0, 0),
+                };
+                var bodyB = bodyA;
+                bodyB.Position = new DVector3(2, 0, 0);
+                bodyB.Velocity = new DVector3(-4, 0, 0);
+                Span<CollisionContactPoint> solverContacts = stackalloc CollisionContactPoint[8];
+                for (int i = 0; i < solverContacts.Length; i++)
+                    solverContacts[i] = new CollisionContactPoint
+                    {
+                        Point = new DVector3(1, i * 0.2 - 0.7, 0),
+                        Normal = DVector3.right,
+                        Penetration = 0.1,
+                    };
+                for (int i = 0; i < 64; i++)
+                {
+                    var aa = bodyA;
+                    var bb = bodyB;
+                    CollisionSolver.Resolve(ref aa, ref bb, solverContacts, 0.2, 0.25, 6);
+                }
+            }
+            catch (System.Exception e)
+            {
+                Log.Warning($"[Prefetch] 碰撞纯函数预热失败（不影响读档）：{e.GetType().Name}: {e.Message}");
+            }
+        }
+
         /// <summary>本 tick 组级碰撞缓存：每组只算一次位置/球半径/当前盒/上一步盒，每对重复时直接复用。</summary>
         private GroupCollisionCache GetOrBuildCollisionCache(SpaceEntityGroup group, SpaceGameComp spaceGame)
         {
-            if (groupCollisionCache.TryGetValue(group.GroupId, out var c))
+            if (groupCollisionCache.TryGetValue(group.GroupId, out var c) && c.epoch == collisionCacheEpoch)
                 return c;
 
-            DVector3 pos = GetGroupPos(group);
-            double radius = GetGroupRadius(group);
-            GetGroupAabbSystem(group, pos, spaceGame, out var curMin, out var curMax);
-            var cache = new GroupCollisionCache
+            if (c == null)
             {
-                pos = pos,
-                radius = radius,
-                curMin = curMin,
-                curMax = curMax
-            };
+                c = new GroupCollisionCache();
+                groupCollisionCache[group.GroupId] = c;
+            }
+
+            c.epoch = collisionCacheEpoch;
+            c.pos = GetGroupPos(group);
+            c.radius = GetGroupRadius(group);
+            c.usablePartCount = CountUsableParts(group, spaceGame);
+            GetGroupAabbSystem(group, c.pos, spaceGame, out c.curMin, out c.curMax);
+            c.hasPrev = false;
+            // 每个 epoch 重收集一次；同 epoch 内多对手复用 cache.parts。
+            c.partsBuilt = false;
+            c.parts.Clear();
             if (shipPrevPositions.TryGetValue(group.GroupId, out var prevPos))
             {
-                cache.hasPrev = true;
-                cache.prevPos = prevPos;
-                GetGroupAabbSystem(group, prevPos, spaceGame, out var pMin, out var pMax);
-                cache.prevMin = pMin;
-                cache.prevMax = pMax;
+                c.hasPrev = true;
+                c.prevPos = prevPos;
+                GetGroupAabbSystem(group, prevPos, spaceGame, out c.prevMin, out c.prevMax);
             }
-            groupCollisionCache[group.GroupId] = cache;
-            return cache;
+            return c;
         }
 
-        /// <summary>碰撞解决（改变位置/销毁）后使 a/b 的组缓存失效，下次访问重建。</summary>
+        /// <summary>碰撞解决（改变位置/销毁）后使 a/b 的组缓存失效，下次访问重建（对象保留复用）。</summary>
         private void InvalidateCollisionCache(SpaceEntityGroup a, SpaceEntityGroup b)
         {
-            groupCollisionCache.Remove(a.GroupId);
-            groupCollisionCache.Remove(b.GroupId);
+            InvalidateCollisionCacheEntry(a.GroupId);
+            InvalidateCollisionCacheEntry(b.GroupId);
         }
+
+        private void InvalidateCollisionCacheEntry(int groupId)
+        {
+            if (groupCollisionCache.TryGetValue(groupId, out var c))
+            {
+                c.epoch = -1;
+                c.partsBuilt = false;
+                c.parts.Clear();
+            }
+        }
+
+        /// <summary>每 600 步清理已死/久未访问的组缓存条目（对象跨 tick 复用的代价：字典不会无界增长）。</summary>
+        private void PruneCollisionCache(SpaceGameComp spaceGame)
+        {
+            collisionPruneScratch.Clear();
+            int cutoff = collisionCacheEpoch - 600;
+            foreach (var kv in groupCollisionCache)
+            {
+                var g = spaceGame.GetGroupById(kv.Key);
+                if (g == null || !g.IsActive || kv.Value.epoch < cutoff)
+                    collisionPruneScratch.Add(kv.Key);
+            }
+            for (int i = 0; i < collisionPruneScratch.Count; i++)
+                groupCollisionCache.Remove(collisionPruneScratch[i]);
+        }
+
+        /// <summary>
+        /// CCD 的 part 级细化：A 固定在当前位姿，B 沿 prevRel→curRel 的相对路径；
+        /// 从组扫掠停点 t0 到 1 扫 8 个采样，找第一个 part AABB 重叠，再二分 8 次。
+        /// 件数乘积 &gt; 4096 时回退组级停点（性能护栏）。
+        /// </summary>
+        private DVector3 RefineTunneledStopToParts(SpaceEntityGroup a, SpaceEntityGroup b,
+            GroupCollisionCache ca, GroupCollisionCache cb,
+            DVector3 curA, DVector3 prevRel, DVector3 curRel, DVector3 groupStopRel)
+        {
+            DVector3 delta = curRel - prevRel;
+            double d2 = delta.sqrMagnitude;
+            if (d2 < 1e-12) return groupStopRel;
+            if (delta.magnitude > CcdPartRefineMaxStepMeters) return groupStopRel;
+
+            double t0 = DVector3.Dot(groupStopRel - prevRel, delta) / d2;
+            if (t0 < 0.0) t0 = 0.0;
+            else if (t0 > 1.0) t0 = 1.0;
+
+            ca.CollectPartsAt(curA, iterPartsA);
+            if (iterPartsA.Count == 0) return groupStopRel;
+
+            DVector3 bAtStop = curA + groupStopRel;
+            cb.CollectPartsAt(bAtStop, iterPartsB);
+            if (iterPartsB.Count == 0) return groupStopRel;
+            if ((long)iterPartsA.Count * iterPartsB.Count > CcdPartRefineMaxPartPairs) return groupStopRel;
+            if (PartsOverlap(ca, cb)) return groupStopRel;   // 组停点处已真实接触
+
+            // 整条采样路径的轴预检：B 相对 A 平移 delta，任一轴在整个扫掠范围内
+            // 都没有区间重叠 ⇒ 不可能在任何采样点接触，直接回退组停点。
+            // 这能把“横向始终不相交”的 near-miss 从 50 次采样降到 1 次 O(n) 检查。
+            if (SweptAxisEarlyOut(ca, cb, delta)) return groupStopRel;
+
+            // 采样密度按最小件尺寸自适应：一步越界越大，需要越多采样；
+            // >64 采样直接回退组级（极端速度只要求撞上）。
+            double minHalf = double.MaxValue;
+            for (int i = 0; i < iterPartsA.Count; i++)
+            {
+                var h = iterPartsA[i].Half;
+                minHalf = Math.Min(minHalf, Math.Min(h.x, Math.Min(h.y, h.z)));
+            }
+            for (int i = 0; i < iterPartsB.Count; i++)
+            {
+                var h = iterPartsB[i].Half;
+                minHalf = Math.Min(minHalf, Math.Min(h.x, Math.Min(h.y, h.z)));
+            }
+            if (!(minHalf > 1e-6)) return groupStopRel;
+
+            int samples = (int)Math.Ceiling(delta.magnitude / (2.0 * minHalf));
+            if (samples > 64) return groupStopRel;
+            if (samples < 8) samples = 8;
+
+            if (!ccdRefineLogged)
+            {
+                ccdRefineLogged = true;
+                Log.Message($"[CCD细化] nA={iterPartsA.Count} nB={iterPartsB.Count} samples={samples} " +
+                    $"delta={delta.magnitude:F1}m minHalf={minHalf:F2}m paRatio={(long)iterPartsA.Count * iterPartsB.Count}");
+            }
+
+            double lastNo = t0;
+            double firstYes = -1.0;
+            DVector3 lastBp = bAtStop;
+            int sinceRecollect = 0;
+            for (int k = 1; k <= samples; k++)
+            {
+                double t = t0 + (1.0 - t0) * (k / (double)samples);
+                DVector3 bp = curA + prevRel + delta * t;
+
+                // 采样只做整体平移：不重新生成 256 件世界 AABB（25µs/次 → ~1-2µs）。
+                // 每 16 步重收集一次，把 double 增量误差压回零（45 采样只需额外 2 次收集）。
+                long trClock = PerfProbe.CollisionStageStart();
+                if (sinceRecollect >= 16)
+                {
+                    cb.CollectPartsAt(bp, iterPartsB);
+                    sinceRecollect = 0;
+                }
+                else
+                {
+                    TranslatePartsInPlace(iterPartsB, bp - lastBp);
+                    sinceRecollect++;
+                }
+                PerfProbe.CollisionStageEnd(PerfProbe.ColStageCcdTranslate, trClock);
+                lastBp = bp;
+
+                long ovClock = PerfProbe.CollisionStageStart();
+                bool hit = PartsOverlap(ca, cb);
+                PerfProbe.CollisionStageEnd(PerfProbe.ColStageCcdOverlap, ovClock);
+                if (hit)
+                {
+                    firstYes = t;
+                    break;
+                }
+                lastNo = t;
+            }
+            if (firstYes < 0.0) return groupStopRel;
+
+            for (int it = 0; it < 8; it++)
+            {
+                double mid = 0.5 * (lastNo + firstYes);
+                DVector3 bp = curA + prevRel + delta * mid;
+                long trClock = PerfProbe.CollisionStageStart();
+                TranslatePartsInPlace(iterPartsB, bp - lastBp);
+                PerfProbe.CollisionStageEnd(PerfProbe.ColStageCcdTranslate, trClock);
+                lastBp = bp;
+                long ovClock = PerfProbe.CollisionStageStart();
+                bool hit = PartsOverlap(ca, cb);
+                PerfProbe.CollisionStageEnd(PerfProbe.ColStageCcdOverlap, ovClock);
+                if (hit) firstYes = mid;
+                else lastNo = mid;
+            }
+            return prevRel + delta * firstYes;
+        }
+
+        /// <summary>CCD 采样整体平移（O(n) 结构体复制，不重算旋转/投影）。</summary>
+        internal static void TranslatePartsInPlace(List<PartAabb> parts, DVector3 delta)
+        {
+            var span = CollectionsMarshal.AsSpan(parts);
+            for (int i = 0; i < span.Length; i++)
+                span[i] = span[i].Translated(delta);
+        }
+
+        /// <summary>
+        /// CCD 采样处的 part 级 any-overlap。旧实现 O(nA×nB) 全扫（64×64 约 0.76ms/次，
+        /// 64 采样最坏 ~49ms）。现在用按相对 AABB 预排序的三轴下标：
+        /// 先数三轴各自的一维区间候选数（任一轴为 0 ⇒ 必不相交，直接 false），
+        /// 再在候选最少的轴上做双指针扫描，只对一维重叠的对做完整 AABB 判定。
+        /// 平移不改变相对顺序 ⇒ 排序每 epoch 建一次，所有 CCD 采样复用。
+        /// </summary>
+        private bool PartsOverlap(GroupCollisionCache ca, GroupCollisionCache cb)
+            => PartsOverlapCore(ca, cb, iterPartsA, iterPartsB);
+
+        private static bool partsOverlapBruteLogged;
+        private static bool partsOverlapStatsLogged;
+        private static bool ccdRefineLogged;
+        private static bool ccdSweptLogged;
+
+        internal static bool PartsOverlapCore(GroupCollisionCache ca, GroupCollisionCache cb,
+            List<PartAabb> a, List<PartAabb> b)
+        {
+            int na = a.Count, nb = b.Count;
+            if (na <= 8 || nb <= 8)
+                return PartsOverlapBrute(a, b);
+
+            var oax = ca.orderX; var oay = ca.orderY; var oaz = ca.orderZ;
+            var obx = cb.orderX; var oby = cb.orderY; var obz = cb.orderZ;
+            bool invalid = oax == null || oay == null || oaz == null
+                || obx == null || oby == null || obz == null
+                || oax.Length != na || oay.Length != na || oaz.Length != na
+                || obx.Length != nb || oby.Length != nb || obz.Length != nb;
+            if (invalid)
+            {
+                // 轴序缺失/长度不对时按需重建，不要直接退回 O(nA×nB)。
+                ca.EnsureAxisOrders();
+                cb.EnsureAxisOrders();
+                oax = ca.orderX; oay = ca.orderY; oaz = ca.orderZ;
+                obx = cb.orderX; oby = cb.orderY; obz = cb.orderZ;
+                invalid = oax == null || oay == null || oaz == null
+                    || obx == null || oby == null || obz == null
+                    || oax.Length != na || oay.Length != na || oaz.Length != na
+                    || obx.Length != nb || oby.Length != nb || obz.Length != nb;
+            }
+            if (invalid)
+            {
+                if (!partsOverlapBruteLogged)
+                {
+                    partsOverlapBruteLogged = true;
+                    Log.Message($"[PartsOverlap] brute fallback：na={na} nb={nb} " +
+                        $"relA={ca.relParts.Count} relB={cb.relParts.Count} " +
+                        $"ordA={ca.orderX?.Length}/{ca.orderY?.Length}/{ca.orderZ?.Length} " +
+                        $"ordB={cb.orderX?.Length}/{cb.orderY?.Length}/{cb.orderZ?.Length}");
+                }
+                return PartsOverlapBrute(a, b);
+            }
+
+            bool hx = HasAxisOverlap(a, b, oax, obx, 0);
+            if (!hx)
+            {
+                LogPartsOverlapStats(na, nb, false, false, false);
+                return false;
+            }
+            bool hy = HasAxisOverlap(a, b, oay, oby, 1);
+            if (!hy)
+            {
+                LogPartsOverlapStats(na, nb, true, false, false);
+                return false;
+            }
+            bool hz = HasAxisOverlap(a, b, oaz, obz, 2);
+            if (!hz)
+            {
+                LogPartsOverlapStats(na, nb, true, true, false);
+                return false;
+            }
+            LogPartsOverlapStats(na, nb, true, true, true);
+
+            // 三轴都有区间重叠 ⇒ 用 X 轴（长轴/稀疏轴）扫描 + 完整 AABB；任何轴都正确。
+            return PartsOverlapSweep(a, b, oax, obx, 0);
+        }
+
+        private static void LogPartsOverlapStats(int na, int nb, bool x, bool y, bool z)
+        {
+            if (partsOverlapStatsLogged) return;
+            partsOverlapStatsLogged = true;
+            Log.Message($"[PartsOverlap] SAP na={na} nb={nb} 轴区间重叠 X={x} Y={y} Z={z}");
+        }
+
+        private static bool PartsOverlapBrute(List<PartAabb> a, List<PartAabb> b)
+        {
+            for (int i = 0; i < a.Count; i++)
+            {
+                var pa = a[i];
+                for (int j = 0; j < b.Count; j++)
+                {
+                    var pb = b[j];
+                    if (AabbOverlap(pa.Min, pa.Max, pb.Min, pb.Max, out _, out _, out _))
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>整条采样路径的轴预检：任一轴在整个 delta 扫掠范围内无区间重叠 ⇒ 不可能接触。</summary>
+        private bool SweptAxisEarlyOut(GroupCollisionCache ca, GroupCollisionCache cb, DVector3 delta)
+        {
+            int na = iterPartsA.Count, nb = iterPartsB.Count;
+            var oax = ca.orderX; var oay = ca.orderY; var oaz = ca.orderZ;
+            var obx = cb.orderX; var oby = cb.orderY; var obz = cb.orderZ;
+            if (oax == null || oay == null || oaz == null
+                || obx == null || oby == null || obz == null
+                || oax.Length != na || oay.Length != na || oaz.Length != na
+                || obx.Length != nb || oby.Length != nb || obz.Length != nb)
+                return false;
+
+            if (!HasSweptAxisOverlap(iterPartsA, iterPartsB, oax, obx, 0, delta.x))
+            {
+                LogSweptEarlyOut(0, delta);
+                return true;
+            }
+            if (!HasSweptAxisOverlap(iterPartsA, iterPartsB, oay, oby, 1, delta.y))
+            {
+                LogSweptEarlyOut(1, delta);
+                return true;
+            }
+            if (!HasSweptAxisOverlap(iterPartsA, iterPartsB, oaz, obz, 2, delta.z))
+            {
+                LogSweptEarlyOut(2, delta);
+                return true;
+            }
+            return false;
+        }
+
+        private void LogSweptEarlyOut(int axis, DVector3 delta)
+        {
+            if (ccdSweptLogged) return;
+            ccdSweptLogged = true;
+            Log.Message($"[CCD细化] 扫掠轴预检 early-out 轴={(axis == 0 ? "X" : axis == 1 ? "Y" : "Z")} " +
+                $"nA={iterPartsA.Count} nB={iterPartsB.Count} delta=({delta.x:F1},{delta.y:F1},{delta.z:F1})");
+        }
+
+        /// <summary>B 沿该轴平移 deltaAxis 的整段扫掠区间，是否与 A 有任何区间重叠。</summary>
+        internal static bool HasSweptAxisOverlap(List<PartAabb> a, List<PartAabb> b,
+            int[] oa, int[] ob, int axis, double deltaAxis)
+        {
+            double dMin = Math.Min(0.0, deltaAxis);
+            double dMax = Math.Max(0.0, deltaAxis);
+            int j = 0;
+            for (int i = 0; i < oa.Length; i++)
+            {
+                var pa = a[oa[i]];
+                double amin = MinOnAxis(pa, axis), amax = MaxOnAxis(pa, axis);
+                while (j < ob.Length && MaxOnAxis(b[ob[j]], axis) + dMax < amin) j++;
+                for (int k = j; k < ob.Length; k++)
+                {
+                    var pb = b[ob[k]];
+                    double bmin = MinOnAxis(pb, axis) + dMin;
+                    if (bmin > amax) break;
+                    if (MaxOnAxis(pb, axis) + dMax >= amin) return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>该轴是否存在任何区间重叠（布尔早退；不是全量候选计数）。
+        /// 关键：near-miss 时某一轴为 0 就应立即返回，不能先把长轴的 O(n²) 候选数数完。</summary>
+        private static bool HasAxisOverlap(List<PartAabb> a, List<PartAabb> b,
+            int[] oa, int[] ob, int axis)
+        {
+            int j = 0;
+            for (int i = 0; i < oa.Length; i++)
+            {
+                var pa = a[oa[i]];
+                double amin = MinOnAxis(pa, axis), amax = MaxOnAxis(pa, axis);
+                while (j < ob.Length && MaxOnAxis(b[ob[j]], axis) < amin) j++;
+                for (int k = j; k < ob.Length; k++)
+                {
+                    var pb = b[ob[k]];
+                    double bmin = MinOnAxis(pb, axis);
+                    if (bmin > amax) break;
+                    if (MaxOnAxis(pb, axis) >= amin) return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>有序一维扫描 + 完整 AABB 判定（internal 供台架做随机等价对拍）。</summary>
+        internal static bool PartsOverlapSweep(List<PartAabb> a, List<PartAabb> b,
+            int[] oa, int[] ob, int axis)
+        {
+            int j = 0;
+            for (int i = 0; i < oa.Length; i++)
+            {
+                var pa = a[oa[i]];
+                double amin = MinOnAxis(pa, axis), amax = MaxOnAxis(pa, axis);
+                while (j < ob.Length && MaxOnAxis(b[ob[j]], axis) < amin) j++;
+                for (int k = j; k < ob.Length; k++)
+                {
+                    var pb = b[ob[k]];
+                    double bmin = MinOnAxis(pb, axis);
+                    if (bmin > amax) break;
+                    if (MaxOnAxis(pb, axis) < amin) continue;
+                    if (AabbOverlap(pa.Min, pa.Max, pb.Min, pb.Max, out _, out _, out _))
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        private static double MinOnAxis(in PartAabb p, int axis)
+            => axis == 0 ? p.Min.x : axis == 1 ? p.Min.y : p.Min.z;
+
+        private static double MaxOnAxis(in PartAabb p, int axis)
+            => axis == 0 ? p.Max.x : axis == 1 ? p.Max.y : p.Max.z;
+
 
         /// <summary>
         /// 纯 tunneling 响应：B 的当前盒与 A 盒不重叠，但扫掠路径相交（B 一步从 A 一侧穿到另一侧）。
         /// 用「B 中心射线 vs A 膨胀盒（+B 半宽）」求接触时刻，把 B 精确停在接触点（留 0.1m 余量防嵌入）。
-        /// 若无法求交（无上一步记录）→ 退回上一步位置保守处理。
+        /// 求交失败（无上一步记录 / 起点已在膨胀盒内）⇒ **不做任何停位**——当前盒已不重叠，
+        /// 没有可解的穿透；旧回退 `ApplyTunneledStop(b, pbPrev)` 会把 B 钉回上一位置，
+        /// 与残余 0.1m 叠成每 tick 一次的黏着回环（2026-10-17 实测）。
         /// </summary>
-        private void ResolveTunneled(SpaceEntityGroup b, DVector3 prevB, DVector3 curBMin, DVector3 curBMax,
-            DVector3 aMin, DVector3 aMax, int aGroupId)
+        private void ResolveTunneled(SpaceEntityGroup a, SpaceEntityGroup b,
+            GroupCollisionCache ca, GroupCollisionCache cb,
+            DVector3 prevA, DVector3 prevB,
+            DVector3 curAMin, DVector3 curAMax, DVector3 curBMin, DVector3 curBMax,
+            HashSet<int>? destroyedMissiles = null)
         {
-            DVector3 curCenter = (curBMin + curBMax) * 0.5;
-            if (TryComputeTunneledStop(prevB, curCenter, curBMin, curBMax, aMin, aMax, out var stopPos))
+            // **相对** TOI（与相对扫掠同一口径）：B 相对 A 的位移，而不是 B 的绝对位移。
+            DVector3 curA = GetGroupPos(a);
+            DVector3 curB = GetGroupPos(b);
+            DVector3 prevCenterRel = prevB - prevA;
+            DVector3 curCenterRel = curB - curA;
+            DVector3 bMinRel = curBMin - curB;
+            DVector3 bMaxRel = curBMax - curB;
+            DVector3 aMinRel = curAMin - curA;
+            DVector3 aMaxRel = curAMax - curA;
+
+            if (TryComputeTunneledStopWithNormal(prevCenterRel, curCenterRel, bMinRel, bMaxRel,
+                    aMinRel, aMaxRel, out var stopRel, out var normal))
             {
-                ApplyTunneledStop(b, stopPos, aGroupId);
+                // CCD 第二层：组扫掠命中后，再用 part AABB 沿相对路径找第一个真实接触。
+                // 组盒停点可能落在两船的空当里；part 级细化把它推到真正的零件接触面。
+                long colCcdRefineClock = PerfProbe.CollisionStageStart();
+                stopRel = RefineTunneledStopToParts(a, b, ca, cb, curA, prevCenterRel, curCenterRel, stopRel);
+                PerfProbe.CollisionStageEnd(PerfProbe.ColStageCcdRefine, colCcdRefineClock);
+                // 碰6（2026-10-17）：TOI 命中点**也要走碰撞响应**——只停位置不反速度会让 B 每步重新撞进来，
+                // 形成"靠近→被停→再靠近"的锯齿（用户看到的"一段一段地远离"即此）。
+                DVector3 va = GetGroupVelocity(a);
+                DVector3 vb = GetGroupVelocity(b);
+                double vRel = DVector3.Dot(va - vb, normal);
+                if (vRel <= 0.0)
+                {
+                    // 已在分离：绝不能再 ApplyTunneledStop（会把 B 拖到 A 的新表面，形成黏着）。
+                    if (DebugDetailedCollision)
+                    {
+                        Log.Message($"[TOI诊断] G{a.GroupId}→G{b.GroupId} prevRel=({prevCenterRel.x:F1},{prevCenterRel.y:F1},{prevCenterRel.z:F1}) curRel=({curCenterRel.x:F1},{curCenterRel.y:F1},{curCenterRel.z:F1}) stopRel=({stopRel.x:F1},{stopRel.y:F1},{stopRel.z:F1}) n=({normal.x:F2},{normal.y:F2},{normal.z:F2}) vRel={vRel:F2} ⇒ 分离中，跳过停位");
+                    }
+                    return;
+                }
+
+                ApplyTunneledStop(b, curA + stopRel, a.GroupId);
+
+                if (DebugDetailedCollision)
+                {
+                    Log.Message($"[TOI诊断] G{a.GroupId}→G{b.GroupId} prevRel=({prevCenterRel.x:F1},{prevCenterRel.y:F1},{prevCenterRel.z:F1}) curRel=({curCenterRel.x:F1},{curCenterRel.y:F1},{curCenterRel.z:F1}) stopRel=({stopRel.x:F1},{stopRel.y:F1},{stopRel.z:F1}) n=({normal.x:F2},{normal.y:F2},{normal.z:F2}) vRel={vRel:F2} ⇒ {(vRel >= CollisionExplosionSpeedThreshold ? "爆炸" : "撞击")}");
+                }
+
+                DVector3 halfB = (curBMax - curBMin) * 0.5;
+                double support = System.Math.Abs(normal.x) * halfB.x
+                               + System.Math.Abs(normal.y) * halfB.y
+                               + System.Math.Abs(normal.z) * halfB.z;
+                DVector3 contact = curA + stopRel - normal * support;
+                DVector3 pa = GetGroupPos(a);
+                DVector3 pb = GetGroupPos(b);
+                if (vRel >= CollisionExplosionSpeedThreshold)
+                {
+                    long colExplosionClock = PerfProbe.CollisionStageStart();
+                    TriggerExplosion(a, b, pa, pb, va, vb, normal, vRel, contact, destroyedMissiles);
+                    PerfProbe.CollisionStageEnd(PerfProbe.ColStageExplosion, colExplosionClock);
+                }
+                else
+                    ResolveImpact(a, b, pa, pb, va, vb, normal, vRel, contact, false);
                 return;
             }
-            if (shipPrevPositions.TryGetValue(b.GroupId, out var pbPrev))
-                ApplyTunneledStop(b, pbPrev, aGroupId);
         }
 
         /// <summary>
@@ -986,17 +1993,54 @@ namespace PioneerFramework.Combat
         /// </summary>
         internal static bool TryComputeTunneledStop(DVector3 prevCenter, DVector3 curCenter,
             DVector3 curBMin, DVector3 curBMax, DVector3 aMin, DVector3 aMax, out DVector3 stopPos)
+            => TryComputeTunneledStopWithNormal(prevCenter, curCenter, curBMin, curBMax, aMin, aMax,
+                out stopPos, out _);
+
+        /// <summary>
+        /// 同 <see cref="TryComputeTunneledStop"/>，并给出**接触面外法线**（A→B，世界系；碰6 响应用）。
+        /// 法线 = 射线进入膨胀盒时的那个面（与运动方向反向）；歧义时退化为"B 中心 − A 中心"。
+        /// </summary>
+        internal static bool TryComputeTunneledStopWithNormal(DVector3 prevCenter, DVector3 curCenter,
+            DVector3 curBMin, DVector3 curBMax, DVector3 aMin, DVector3 aMax,
+            out DVector3 stopPos, out DVector3 normal)
         {
             stopPos = default;
-            DVector3 dir = curCenter - prevCenter; // 实际位移向量：t 即位移比例 [0,1]
+            normal = DVector3.zero;
+            DVector3 dir = curCenter - prevCenter;
             double dirLen = dir.magnitude;
-            if (dirLen <= 0.01) return false; // 静止/无位移 → 无法求交
+            if (dirLen <= 0.01) return false;
             DVector3 halfB = (curBMax - curBMin) * 0.5;
             DVector3 expandMin = aMin - halfB;
             DVector3 expandMax = aMax + halfB;
+
+            // 起点已在膨胀盒内 ⇒ 没有"进入面"。这是上一步停在接触点（留 0.1m 余量）的接续帧，
+            // 不是新的 tunneling；若继续算，RayAabb 会以 t=0 命中、把 B 反复钉回旧相对位置
+            // （2026-10-17 实测：爆炸把 A 推走时，B 每步被拖行 ≈536m，表现为"黏着"）。
+            if (prevCenter.x > expandMin.x && prevCenter.x < expandMax.x
+                && prevCenter.y > expandMin.y && prevCenter.y < expandMax.y
+                && prevCenter.z > expandMin.z && prevCenter.z < expandMax.z)
+                return false;
+
             if (!RayAabb(prevCenter, dir, expandMin, expandMax, out double tHit)) return false;
-            double tStop = Math.Max(0.0, tHit - 0.1 / dirLen); // 留 0.1m 余量防嵌入
+            double tStop = Math.Max(0.0, tHit - 0.1 / dirLen);
             stopPos = prevCenter + dir * tStop;
+
+            DVector3 entry = prevCenter + dir * tHit;
+            double dx = Math.Min(System.Math.Abs(entry.x - expandMin.x), System.Math.Abs(entry.x - expandMax.x));
+            double dy = Math.Min(System.Math.Abs(entry.y - expandMin.y), System.Math.Abs(entry.y - expandMax.y));
+            double dz = Math.Min(System.Math.Abs(entry.z - expandMin.z), System.Math.Abs(entry.z - expandMax.z));
+            if (dx <= dy && dx <= dz)
+                normal = new DVector3(entry.x >= (expandMin.x + expandMax.x) * 0.5 ? 1.0 : -1.0, 0, 0);
+            else if (dy <= dz)
+                normal = new DVector3(0, entry.y >= (expandMin.y + expandMax.y) * 0.5 ? 1.0 : -1.0, 0);
+            else
+                normal = new DVector3(0, 0, entry.z >= (expandMin.z + expandMax.z) * 0.5 ? 1.0 : -1.0);
+
+            if (normal.sqrMagnitude < 0.5)
+            {
+                DVector3 fallback = curCenter - (aMin + aMax) * 0.5;
+                normal = fallback.sqrMagnitude > 1e-12 ? fallback.normalized : (-dir).normalized;
+            }
             return true;
         }
 
@@ -1068,10 +2112,14 @@ namespace PioneerFramework.Combat
         internal static bool AabbOverlap(DVector3 aMin, DVector3 aMax, DVector3 bMin, DVector3 bMax,
             out double ox, out double oy, out double oz)
         {
+            // 窄相内层是 nA×nB 次调用，绝大多数 part 对在 X 轴就分开 ⇒ 逐轴早退（少 2/3 的
+            // min/max 运算）。false 时 oy/oz 不保证有值；现有调用方都只在 true 分支读它们。
             ox = Math.Min(aMax.x, bMax.x) - Math.Max(aMin.x, bMin.x);
+            if (ox <= 0) { oy = 0; oz = 0; return false; }
             oy = Math.Min(aMax.y, bMax.y) - Math.Max(aMin.y, bMin.y);
+            if (oy <= 0) { oz = 0; return false; }
             oz = Math.Min(aMax.z, bMax.z) - Math.Max(aMin.z, bMin.z);
-            return ox > 0 && oy > 0 && oz > 0;
+            return oz > 0;
         }
 
         private double GetGroupRadius(SpaceEntityGroup group)
@@ -1127,6 +2175,13 @@ namespace PioneerFramework.Combat
             return group.CurrentOrbit.velocitySystem.v;   // 批6 S3-3c：读带系字段
         }
 
+        /// <summary>
+        /// 碰撞动量交换用的质量（2026-10-17 用户裁定：**燃料参与碰撞动量交换**）：
+        /// 干质量（部件结构） + 推进源当前工质质量；下限 1 kg。
+        /// </summary>
+        internal static double CollisionMassKg(double dryMassKg, double propellantMassKg)
+            => Math.Max(dryMassKg + propellantMassKg, 1.0);
+
         private double GetGroupMass(SpaceEntityGroup group)
         {
             var spaceGame = GetSpaceGameComp();
@@ -1139,8 +2194,12 @@ namespace PioneerFramework.Combat
                     if (entity == null) continue;
                     m += entity.TotalMass;
                 }
+                // 燃料参与碰撞动量交换（2026-10-17 用户裁定）；有图/无图推进源都由聚合器统一给出。
+                var src = spaceGame.GetGroupPropulsionSource(group);
+                if (src != null)
+                    m += src.TotalPropellantMass;
             }
-            return Math.Max(m, 1.0);
+            return CollisionMassKg(m, 0.0);
         }
 
         /// <summary>
@@ -1161,19 +2220,1301 @@ namespace PioneerFramework.Combat
         /// AABB 位置分离：三轴同时推开（各推 overlap/2），一次收敛。
         /// 只推最短轴会导致其他轴仍重叠、下一帧重复触发（刷屏 + 重复冲量）。
         /// </summary>
-        private void SeparatePositions(SpaceEntityGroup a, SpaceEntityGroup b, double ox, double oy, double oz)
+        /// <summary>
+        /// 组级 AABB 最小穿透轴（碰1；part 对找不到时回退）。返回单位轴（A→B 方向），`depth` = 该轴重叠量。
+        /// 与"质心连线"不同：贴在斜面上时法线由**接触几何**决定，而不是两船中心连线。
+        /// </summary>
+        internal static DVector3 MinPenetrationAxis(double ox, double oy, double oz, DVector3 pa, DVector3 pb, out double depth)
+        {
+            if (ox <= oy && ox <= oz)
+            {
+                depth = ox;
+                return new DVector3(pb.x >= pa.x ? 1.0 : -1.0, 0.0, 0.0);
+            }
+            if (oy <= oz)
+            {
+                depth = oy;
+                return new DVector3(0.0, pb.y >= pa.y ? 1.0 : -1.0, 0.0);
+            }
+            depth = oz;
+            return new DVector3(0.0, 0.0, pb.z >= pa.z ? 1.0 : -1.0);
+        }
+
+        /// <summary>
+        /// 碰 3 修订（2026-10-17 用户裁 A）：找不到 part 对时是否必须回退组级并集盒。
+        /// 两支都有可用 part ⇒ **不回退**（并集盒空角不算接触）；只有一方没有可用 part 才回退。
+        /// </summary>
+        internal static bool ShouldFallbackToGroupAabb(int usablePartsA, int usablePartsB)
+            => usablePartsA <= 0 || usablePartsB <= 0;
+
+        /// <summary>
+        /// 组级冲击法线符号归一（2026-10-17 S1 间歇性回归的治本）：
+        /// part 窄相返回的是"最深 part 对 A→B"法线，但当两侧零件**交错**、或接触盒中心
+        /// **完全重合**（SAT 的 `delta≈0`，轴符号按轴序退化）时，这个法线可能与组心连线相反。
+        /// 组级冲量与位置分离都以组心连线（`centerDelta = posB - posA`）为准；
+        /// 组心重合（`centerDelta≈0`）时无方向可依，保留原法线交给"一步跨过"/相对速度判据。
+        /// </summary>
+        internal static DVector3 AlignImpactNormal(DVector3 normal, DVector3 centerDelta)
+        {
+            if (centerDelta.sqrMagnitude > 0.0 && DVector3.Dot(normal, centerDelta) < 0.0)
+                return -normal;
+            return normal;
+        }
+
+        /// <summary>
+        /// 球快筛的扫掠版：相对路径线段 `start→end` 到原点（A 参考系）的最近距离是否 ≤ 半径和。
+        /// 只看步末距离会在「一步跨过」时把真实穿越整对拒掉（10 km/s / 2 s 步 = 20 km）。
+        /// </summary>
+        internal static bool SegmentHitsSphere(DVector3 start, DVector3 end, double radiusSquared)
+        {
+            if (!(radiusSquared > 0.0)) return false;
+            DVector3 d = end - start;
+            double dd = d.sqrMagnitude;
+            double t = dd > 1e-18 ? -DVector3.Dot(start, d) / dd : 0.0;
+            if (t < 0.0) t = 0.0;
+            else if (t > 1.0) t = 1.0;
+            DVector3 closest = start + d * t;
+            return closest.sqrMagnitude <= radiusSquared;
+        }
+
+        /// <summary>
+        /// **船-船窄相：找最深重叠的 part 对**（批 3；碰1/碰3/碰8）。
+        /// 遍历两侧实体的全部部件（含损毁残骸，B5 / D-P7）、排除 `noCollide`，取 AABB 三轴重叠量的最小值（穿透深度）最大的一对；
+        /// 法线 = 该对的最小穿透轴（A→B 符号），接触点 = 重叠盒中心。找不到 ⇒ false（组级并集盒的缝隙）。
+        /// </summary>
+        private bool TryFindDeepestPartPair(SpaceEntityGroup a, SpaceEntityGroup b,
+            GroupCollisionCache ca, GroupCollisionCache cb, SpaceGameComp spaceGame,
+            out DVector3 normal, out double depth, out DVector3 contact)
+        {
+            // clip 负结果门实验已回退（2026-10-20 日志：256 稳态 60–81 → 128–287 µs）。
+            // 原因：clip 小列表嵌套判 true 后回退全量，而全量默认算法在同状态返回 false，
+            // 每步白付 clip+全量两次收集。保留原全量路径作为唯一权威。
+            EnsurePartBoxes(ca, a, spaceGame);
+            EnsurePartBoxes(cb, b, spaceGame);
+            DVector3 clipMin = DVector3.Max(ca.curMin, cb.curMin);
+            DVector3 clipMax = DVector3.Min(ca.curMax, cb.curMax);
+            return TryFindDeepestPartPair(ca.parts, cb.parts, clipMin, clipMax,
+                out normal, out depth, out contact);
+        }
+
+        /// <summary>按需构建本组的 part AABB 缓存（同一物理步内与多个对手窄相只构建一次）。
+        /// 跨步不复用：日志实测 256 旋转船 `相对缓存=复用0/重建368`，hoisted 全量重建更快。</summary>
+        internal static void EnsurePartBoxes(GroupCollisionCache cache, SpaceEntityGroup group, SpaceGameComp spaceGame)
+        {
+            int version = GroupPartsVersion(group, spaceGame);
+            if (cache.partsBuilt && cache.partsVersion == version)
+            {
+                cache.EnsureAxisOrders();
+                return;
+            }
+            CollectPartAabbs(group, cache.pos, spaceGame, cache.parts, cache.relParts);
+            cache.partsBuilt = true;
+            cache.partsVersion = version;
+            cache.RebuildAxisOrders();
+        }
+
+        /// <summary>B1：部件集指纹（实体集版本 ⊕ 各实体 partSetVersion）。原地增删/改 part 都会变。</summary>
+        private static int GroupPartsVersion(SpaceEntityGroup group, SpaceGameComp spaceGame)
+        {
+            int stamp = group.entitySetVersion * 397;
+            foreach (int eid in group.GetEntityIds())
+            {
+                var entity = spaceGame.GetEntityById(eid);
+                stamp = stamp * 31 + (entity?.partSetVersion ?? 0);
+                // P1.1：裸 parts 列表若被直接增删（绕开 OnPartsChanged），partSetVersion 不变；
+                // 把件数也纳入指纹，至少能发现“件数变了”这一类。
+                stamp = stamp * 31 + (entity?.Parts.Count ?? 0);
+            }
+            return stamp;
+        }
+
+        /// <summary>把一个组的可碰撞 part（含损毁残骸）的世界 AABB 收集进缓存（每件只做一次姿态变换）。
+        /// `relOut` 非空时同时填充 P1 的实体系相对几何（同一次遍历、同一运算次序）。</summary>
+        internal static void CollectPartAabbs(SpaceEntityGroup group, DVector3 groupPos,
+            SpaceGameComp spaceGame, List<PartAabb> into, List<PartRelGeom>? relOut = null)
+        {
+            into.Clear();
+            relOut?.Clear();
+            foreach (int eid in group.GetEntityIds())
+            {
+                var entity = spaceGame.GetEntityById(eid);
+                if (entity == null || !entity.IsCollidable) continue;
+
+                DVector3 entityPos = groupPos + entity.Position;
+                // P1.2a：实体的旋转矩阵/投影矩阵每实体只建一次（旧路径每个 identity part
+                // 都在 WorldAabb 里重建一次 9 元素矩阵）。
+                DQuaternion entityRot = PartGeometry.EffectiveRotation(entity.Rotation);
+                AbsRotationMatrix(entityRot, out double a00, out double a01, out double a02,
+                    out double a10, out double a11, out double a12,
+                    out double a20, out double a21, out double a22);
+                var parts = entity.Parts;
+                for (int i = 0; i < parts.Count; i++)
+                {
+                    var part = parts[i];
+                    // B5 / D-P7：损毁件仍参与碰撞（残骸可撞）；noCollide 仍豁免。
+                    if (part == null || part.noCollide) continue;
+                    if (PartGeometry.IsIdentityOrZero(part.rotationShip))
+                    {
+                        // identity part：与 PartGeometry.WorldAabb 同算式，但旋转矩阵已提到实体级。
+                        DVector3 half = part.boundsSizeShip * 0.5;
+                        DVector3 center = DVector3.Rotate(part.positionShip, entityRot);
+                        DVector3 rh = new(
+                            a00 * half.x + a01 * half.y + a02 * half.z,
+                            a10 * half.x + a11 * half.y + a12 * half.z,
+                            a20 * half.x + a21 * half.y + a22 * half.z);
+                        DVector3 relMin = center - rh;
+                        DVector3 relMax = center + rh;
+                        int order = into.Count;
+                        relOut?.Add(new PartRelGeom
+                        {
+                            EntityPosition = entity.Position,
+                            Identity = true,
+                            RelMin = relMin,
+                            RelMax = relMax,
+                            Order = order,
+                            Shape = part.shape,
+                        });
+                        into.Add(new PartAabb(entityPos + relMin, entityPos + relMax, order, part.shape));
+                    }
+                    else
+                    {
+                        // B3b：带自身姿态的 part 存世界 OBB；AABB 由投影得到（广播/裁剪仍用它）
+                        DVector3 centerOffset = DVector3.Rotate(part.positionShip, entityRot);
+                        DVector3 center = entityPos + centerOffset;
+                        DQuaternion worldRot = entityRot * PartGeometry.EffectiveRotation(part.rotationShip);
+                        DVector3 half = part.boundsSizeShip * 0.5;
+                        int order = into.Count;
+                        if (relOut != null)
+                        {
+                            DVector3 projectedHalf = PartGeometry.ProjectedHalfExtents(worldRot, half);
+                            relOut.Add(new PartRelGeom
+                            {
+                                EntityPosition = entity.Position,
+                                Identity = false,
+                                CenterOffset = centerOffset,
+                                Half = half,
+                                ProjectedHalf = projectedHalf,
+                                WorldRot = worldRot,
+                                Order = order,
+                                Shape = part.shape,
+                            });
+                            into.Add(new PartAabb(center, half, worldRot, projectedHalf, order, part.shape));
+                        }
+                        else
+                        {
+                            into.Add(new PartAabb(center, half, worldRot, order, part.shape));
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>本组可用 part 数（collidable、非 noCollide）；只数件，不做几何。</summary>
+        private static int CountUsableParts(SpaceEntityGroup group, SpaceGameComp spaceGame)
+        {
+            int count = 0;
+            foreach (int eid in group.GetEntityIds())
+            {
+                var entity = spaceGame.GetEntityById(eid);
+                if (entity == null || !entity.IsCollidable) continue;
+                var parts = entity.Parts;
+                for (int i = 0; i < parts.Count; i++)
+                {
+                    var part = parts[i];
+                    if (part != null && !part.noCollide) count++;
+                }
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// Clip-aware part 收集：先用保守球（part 半尺寸对角）剔除明显在组 AABB 交集外的件，
+        /// 再只对候选件构造世界 AABB。Order 仍按**完整列表**的收集顺序编号，保证并列裁决逐位不变。
+        /// 球预筛是 AABB 相交的必要条件 ⇒ 不会漏掉任何真实 part 对。
+        /// </summary>
+        internal static void CollectPartAabbsInClip(SpaceEntityGroup group, DVector3 groupPos,
+            SpaceGameComp spaceGame, DVector3 clipMin, DVector3 clipMax, List<PartAabb> into)
+        {
+            into.Clear();
+            if (clipMin.x >= clipMax.x || clipMin.y >= clipMax.y || clipMin.z >= clipMax.z) return;
+
+            int fullOrder = 0;
+            foreach (int eid in group.GetEntityIds())
+            {
+                var entity = spaceGame.GetEntityById(eid);
+                if (entity == null || !entity.IsCollidable) continue;
+
+                DVector3 entityPos = groupPos + entity.Position;
+                DQuaternion entityRot = PartGeometry.EffectiveRotation(entity.Rotation);
+                AbsRotationMatrix(entityRot, out double a00, out double a01, out double a02,
+                    out double a10, out double a11, out double a12,
+                    out double a20, out double a21, out double a22);
+                var parts = entity.Parts;
+                for (int i = 0; i < parts.Count; i++)
+                {
+                    var part = parts[i];
+                    if (part == null || part.noCollide) continue;
+
+                    DVector3 half = part.boundsSizeShip * 0.5;
+                    DVector3 centerLocal = DVector3.Rotate(part.positionShip, entityRot);
+                    double cx = entityPos.x + centerLocal.x;
+                    double cy = entityPos.y + centerLocal.y;
+                    double cz = entityPos.z + centerLocal.z;
+                    double radius = half.magnitude;   // 保守球：覆盖任意 OBB 投影
+                    int order = fullOrder++;
+                    if (cx + radius < clipMin.x || cx - radius > clipMax.x
+                        || cy + radius < clipMin.y || cy - radius > clipMax.y
+                        || cz + radius < clipMin.z || cz - radius > clipMax.z)
+                        continue;
+
+                    if (PartGeometry.IsIdentityOrZero(part.rotationShip))
+                    {
+                        DVector3 rh = new(
+                            a00 * half.x + a01 * half.y + a02 * half.z,
+                            a10 * half.x + a11 * half.y + a12 * half.z,
+                            a20 * half.x + a21 * half.y + a22 * half.z);
+                        // 与完整收集同样的运算次序：entityPos + (centerLocal ∓ rh)
+                        DVector3 relMin = centerLocal - rh;
+                        DVector3 relMax = centerLocal + rh;
+                        into.Add(new PartAabb(entityPos + relMin, entityPos + relMax, order, part.shape));
+                    }
+                    else
+                    {
+                        DVector3 center = entityPos + centerLocal;
+                        DQuaternion worldRot = entityRot * PartGeometry.EffectiveRotation(part.rotationShip);
+                        DVector3 projectedHalf = PartGeometry.ProjectedHalfExtents(worldRot, half);
+                        into.Add(new PartAabb(center, half, worldRot, projectedHalf, order, part.shape));
+                    }
+                }
+            }
+        }
+
+        /// <summary>实体旋转矩阵的绝对值（OBB→AABB 投影用）：每实体只建一次，identity part 共用。</summary>
+        private static void AbsRotationMatrix(DQuaternion rotation,
+            out double a00, out double a01, out double a02,
+            out double a10, out double a11, out double a12,
+            out double a20, out double a21, out double a22)
+        {
+            PartGeometry.Axes(rotation, out DVector3 ax, out DVector3 ay, out DVector3 az);
+            a00 = System.Math.Abs(ax.x); a10 = System.Math.Abs(ax.y); a20 = System.Math.Abs(ax.z);
+            a01 = System.Math.Abs(ay.x); a11 = System.Math.Abs(ay.y); a21 = System.Math.Abs(ay.z);
+            a02 = System.Math.Abs(az.x); a12 = System.Math.Abs(az.y); a22 = System.Math.Abs(az.z);
+        }
+
+        /// <summary>nA×nB 超过此值改走 sweep-and-prune（32×32 起实测更快；再小排序开销不划算）。</summary>
+        private const long SweepAndPruneThreshold = 512;
+
+        /// <summary>窄相核心（纯函数，可单测/台架）：取最深重叠 part 对，返回最小穿透轴/深度/接触点。
+        /// 小规模走两两比较；超阈值走 sweep-and-prune。此重载自行求两组 union 的交集作裁剪盒（测试/台架用）；
+        /// 生产走带 clip 的重载（组级 AABB 已缓存，省一次 union 扫描）。</summary>
+        internal static bool TryFindDeepestPartPair(List<PartAabb> boxesA, List<PartAabb> boxesB,
+            out DVector3 normal, out double depth, out DVector3 contact,
+            bool forceNested = false, bool forceSweep = false, bool forceBvh = false)
+        {
+            if (!TryGetUnion(boxesA, out DVector3 aMin, out DVector3 aMax)
+                || !TryGetUnion(boxesB, out DVector3 bMin, out DVector3 bMax))
+            {
+                normal = DVector3.zero;
+                depth = 0.0;
+                contact = DVector3.zero;
+                return false;
+            }
+            DVector3 clipMin = DVector3.Max(aMin, bMin);
+            DVector3 clipMax = DVector3.Min(aMax, bMax);
+            return TryFindDeepestPartPair(boxesA, boxesB, clipMin, clipMax,
+                out normal, out depth, out contact, forceNested, forceSweep, forceBvh);
+        }
+
+        /// <summary>带裁剪盒的窄相核心：只考虑与 clip 盒有正重叠的 part（clip = 组 AABB 交集）。</summary>
+        internal static bool TryFindDeepestPartPair(List<PartAabb> boxesA, List<PartAabb> boxesB,
+            DVector3 clipMin, DVector3 clipMax,
+            out DVector3 normal, out double depth, out DVector3 contact,
+            bool forceNested = false, bool forceSweep = false, bool forceBvh = false)
+        {
+            normal = DVector3.zero;
+            depth = 0.0;
+            contact = DVector3.zero;
+            if (boxesA.Count == 0 || boxesB.Count == 0) return false;
+            if (clipMin.x >= clipMax.x || clipMin.y >= clipMax.y || clipMin.z >= clipMax.z) return false;
+
+            long product = (long)boxesA.Count * boxesB.Count;
+            if (forceNested)
+                return DeepestNested(boxesA, boxesB, clipMin, clipMax, out normal, out depth, out contact);
+            if (forceBvh)
+                return DeepestByBvh(boxesA, boxesB, clipMin, clipMax, out normal, out depth, out contact);
+            if (forceSweep)
+                return DeepestBySweepAndPrune(boxesA, boxesB, clipMin, clipMax,
+                    out normal, out depth, out contact);
+            if (product > SweepAndPruneThreshold)
+            {
+                // 不要用双指针 sorted sweep：区间包含（一个长区间跨多个短区间）时会漏对，
+                // 已在 SortedSweep_ContainmentCase_MatchesNested 复现。SAP 是穷举的。
+                return DeepestBySweepAndPrune(boxesA, boxesB, clipMin, clipMax,
+                    out normal, out depth, out contact);
+            }
+            return DeepestNested(boxesA, boxesB, clipMin, clipMax, out normal, out depth, out contact);
+        }
+
+        /// <summary>
+        /// **第二刀：收集多接触点**（最多 `maxContacts` 个；只保留穿透最深的一批）。
+        /// 一个 part 对贡献一个接触点（法线 A→B）；AABB 路径取重叠盒中心，OBB 路径用 SAT 接触点。
+        /// 这是流形来源，不改变调用方是否使用单接触路径；接线由生产层决定。
+        /// </summary>
+        internal static void CollectPartContacts(List<PartAabb> boxesA, List<PartAabb> boxesB,
+            DVector3 clipMin, DVector3 clipMax, List<CollisionContactPoint> into, int maxContacts = 8)
+            => CollectPartContacts(boxesA, boxesB, clipMin, clipMax, into, maxContacts, null, null);
+
+        /// <summary>
+        /// 带预过滤缓存的版本（生产热路径）：先用组交集裁剪盒把 part 缩到少量，
+        /// 再对缩后的列表做窄相。256 件长堆叠的接触收集从 O(256²) 降到 O(k²)（k=裁剪盒内 part 数）。
+        /// 预过滤语义与逐对 `OverlapsClip` 完全等价，只是把同一判断从 n² 次降到 n 次。
+        /// </summary>
+        internal static void CollectPartContacts(List<PartAabb> boxesA, List<PartAabb> boxesB,
+            DVector3 clipMin, DVector3 clipMax, List<CollisionContactPoint> into, int maxContacts,
+            List<PartAabb>? filterA, List<PartAabb>? filterB, bool forceNested = false)
+        {
+            if (into == null) return;
+            into.Clear();
+            if (maxContacts <= 0 || boxesA.Count == 0 || boxesB.Count == 0) return;
+            if (clipMin.x >= clipMax.x || clipMin.y >= clipMax.y || clipMin.z >= clipMax.z) return;
+
+            bool filtered = filterA != null && filterB != null;
+            if (filtered)
+            {
+                filterA!.Clear();
+                for (int i = 0; i < boxesA.Count; i++)
+                    if (OverlapsClip(boxesA[i], clipMin, clipMax)) filterA.Add(boxesA[i]);
+                filterB!.Clear();
+                for (int j = 0; j < boxesB.Count; j++)
+                    if (OverlapsClip(boxesB[j], clipMin, clipMax)) filterB.Add(boxesB[j]);
+                boxesA = filterA;
+                boxesB = filterB;
+                if (boxesA.Count == 0 || boxesB.Count == 0) return;
+            }
+
+            // 大列表走 SAP（穷举）。双指针 sorted sweep 在区间包含时会漏接触，
+            // 已在 SortedSweep_ContainmentCase_MatchesNested 复现；小列表保持嵌套。
+            if (!forceNested && (long)boxesA.Count * boxesB.Count > SweepAndPruneThreshold)
+            {
+                CollectContactsBySweepAndPrune(boxesA, boxesB, clipMin, clipMax, filtered, into, maxContacts);
+                return;
+            }
+
+            for (int i = 0; i < boxesA.Count; i++)
+            {
+                PartAabb aBox = boxesA[i];
+                if (!filtered && !OverlapsClip(aBox, clipMin, clipMax)) continue;
+                for (int j = 0; j < boxesB.Count; j++)
+                {
+                    PartAabb bBox = boxesB[j];
+                    if (!filtered && !OverlapsClip(bBox, clipMin, clipMax)) continue;
+                    if (TryPartContact(aBox, bBox, out var contact))
+                        AddContact(into, maxContacts, contact);
+                }
+            }
+        }
+
+        /// <summary>单对 part 接触（形状解析 → OBB SAT → AABB），返回穿透深度 > 0 的接触点。</summary>
+        private static bool TryPartContact(in PartAabb aBox, in PartAabb bBox,
+            out CollisionContactPoint contact)
+        {
+            contact = default;
+            DVector3 normal = DVector3.zero;
+            double depth = 0.0;
+            DVector3 point = DVector3.zero;
+            bool handled = false;
+            bool specialShape = aBox.Shape != InertiaTensor.Shape.Box
+                || bBox.Shape != InertiaTensor.Shape.Box;
+            if (specialShape)
+                handled = TryShapeContact(aBox, bBox, out normal, out depth, out point);
+
+            if (!handled && (aBox.UseObb || bBox.UseObb))
+            {
+                if (!PartGeometry.ObbObbSat(aBox.Center, aBox.Half, aBox.Rotation,
+                        bBox.Center, bBox.Half, bBox.Rotation,
+                        out normal, out depth, out point))
+                    return false;
+            }
+            else if (!handled)
+            {
+                if (!AabbOverlap(aBox.Min, aBox.Max, bBox.Min, bBox.Max,
+                        out double ox, out double oy, out double oz))
+                    return false;
+                depth = Math.Min(ox, Math.Min(oy, oz));
+                normal = MinPenetrationAxis(ox, oy, oz, aBox.Center, bBox.Center, out _);
+                DVector3 oMin = DVector3.Max(aBox.Min, bBox.Min);
+                DVector3 oMax = DVector3.Min(aBox.Max, bBox.Max);
+                point = (oMin + oMax) * 0.5;
+            }
+
+            if (!(depth > 0.0)) return false;
+            contact = new CollisionContactPoint { Point = point, Normal = normal, Penetration = depth };
+            return true;
+        }
+
+        /// <summary>接触点入表：满后只保留更深的；同深度不替换（确定性）。</summary>
+        private static void AddContact(List<CollisionContactPoint> into, int maxContacts,
+            in CollisionContactPoint contact)
+        {
+            if (into.Count < maxContacts)
+            {
+                into.Add(contact);
+                return;
+            }
+
+            int minIndex = 0;
+            double minDepth = into[0].Penetration;
+            for (int k = 1; k < into.Count; k++)
+            {
+                if (into[k].Penetration < minDepth)
+                {
+                    minDepth = into[k].Penetration;
+                    minIndex = k;
+                }
+            }
+            if (contact.Penetration > minDepth)
+                into[minIndex] = contact;
+        }
+
+        /// <summary>接触收集的 SAP 版（与 `DeepestBySweepAndPrune` 同一事件序）：只在 X/Y/Z 中跨距最大的轴扫掠，
+        /// 活跃集内配对；`filtered=true` 时列表已按裁剪盒过滤，不再逐对做裁剪检查。</summary>
+        private static void CollectContactsBySweepAndPrune(List<PartAabb> boxesA, List<PartAabb> boxesB,
+            DVector3 clipMin, DVector3 clipMax, bool filtered,
+            List<CollisionContactPoint> into, int maxContacts)
+        {
+            int nA = boxesA.Count;
+            int nB = boxesB.Count;
+            int axis = PickSweepAxis(boxesA, boxesB);
+            SapEvent[] events = ArrayPool<SapEvent>.Shared.Rent(2 * (nA + nB));
+            int[] activeA = ArrayPool<int>.Shared.Rent(nA);
+            int[] activeB = ArrayPool<int>.Shared.Rent(nB);
+            int[] posA = ArrayPool<int>.Shared.Rent(nA);
+            int[] posB = ArrayPool<int>.Shared.Rent(nB);
+            // SAP 只负责找“轴重叠”的候选；接触按 (A.Order,B.Order) 顺序结算，
+            // 才能与嵌套穷举的接触列表逐位一致（事件序不是嵌套序）。
+            long pairCapacityLong = (long)nA * nB;
+            int pairCapacity = pairCapacityLong > int.MaxValue ? int.MaxValue : (int)pairCapacityLong;
+            if (pairCapacity < 1) pairCapacity = 1;
+            long[] pairKeys = ArrayPool<long>.Shared.Rent(pairCapacity);
+            long[] pairIds = ArrayPool<long>.Shared.Rent(pairCapacity);
+            int pairCount = 0;
+            try
+            {
+                int e = 0;
+                for (int i = 0; i < nA; i++)
+                {
+                    if (!filtered && !OverlapsClip(boxesA[i], clipMin, clipMax)) continue;
+                    events[e++] = new SapEvent(AxisMin(boxesA[i], axis), true, false, i);
+                    events[e++] = new SapEvent(AxisMax(boxesA[i], axis), false, false, i);
+                }
+                for (int j = 0; j < nB; j++)
+                {
+                    if (!filtered && !OverlapsClip(boxesB[j], clipMin, clipMax)) continue;
+                    events[e++] = new SapEvent(AxisMin(boxesB[j], axis), true, true, j);
+                    events[e++] = new SapEvent(AxisMax(boxesB[j], axis), false, true, j);
+                }
+                if (e == 0) return;
+                Array.Sort(events, 0, e, SapEventComparer.Instance);
+
+                Array.Fill(posA, -1, 0, nA);
+                Array.Fill(posB, -1, 0, nB);
+                int countA = 0, countB = 0;
+
+                for (int k = 0; k < e; k++)
+                {
+                    SapEvent ev = events[k];
+                    if (ev.IsStart)
+                    {
+                        if (!ev.IsB)
+                        {
+                            int i = ev.Index;
+                            for (int q = 0; q < countB; q++)
+                            {
+                                int j = activeB[q];
+                                if (pairCount >= pairCapacity) continue;
+                                pairKeys[pairCount] = ((long)boxesA[i].Order << 32) | (uint)boxesB[j].Order;
+                                pairIds[pairCount] = ((long)i << 32) | (uint)j;
+                                pairCount++;
+                            }
+                            posA[i] = countA;
+                            activeA[countA++] = i;
+                        }
+                        else
+                        {
+                            int j = ev.Index;
+                            for (int q = 0; q < countA; q++)
+                            {
+                                int i = activeA[q];
+                                if (pairCount >= pairCapacity) continue;
+                                pairKeys[pairCount] = ((long)boxesA[i].Order << 32) | (uint)boxesB[j].Order;
+                                pairIds[pairCount] = ((long)i << 32) | (uint)j;
+                                pairCount++;
+                            }
+                            posB[j] = countB;
+                            activeB[countB++] = j;
+                        }
+                    }
+                    else if (!ev.IsB)
+                    {
+                        int p = posA[ev.Index];
+                        if (p < 0) continue;
+                        int last = activeA[--countA];
+                        activeA[p] = last;
+                        posA[last] = p;
+                        posA[ev.Index] = -1;
+                    }
+                    else
+                    {
+                        int p = posB[ev.Index];
+                        if (p < 0) continue;
+                        int last = activeB[--countB];
+                        activeB[p] = last;
+                        posB[last] = p;
+                        posB[ev.Index] = -1;
+                    }
+                }
+
+                // 候选按 (A.Order,B.Order) 排序后再结算接触 ⇒ 与嵌套穷举同序。
+                Array.Sort(pairKeys, pairIds, 0, pairCount);
+                for (int p = 0; p < pairCount; p++)
+                {
+                    int i = (int)(pairIds[p] >> 32);
+                    int j = (int)(pairIds[p] & 0xFFFFFFFF);
+                    if (TryPartContact(boxesA[i], boxesB[j], out var contact))
+                        AddContact(into, maxContacts, contact);
+                }
+            }
+            finally
+            {
+                ArrayPool<SapEvent>.Shared.Return(events);
+                ArrayPool<int>.Shared.Return(activeA);
+                ArrayPool<int>.Shared.Return(activeB);
+                ArrayPool<int>.Shared.Return(posA);
+                ArrayPool<int>.Shared.Return(posB);
+                ArrayPool<long>.Shared.Return(pairKeys);
+                ArrayPool<long>.Shared.Return(pairIds);
+            }
+        }
+
+        /// <summary>形状解析接触：Sphere/Sphere、Sphere/Box、Cylinder(胶囊近似)/Cylinder/Sphere。
+        /// Cylinder–Box 返回 false，由调用方回退 OBB。</summary>
+        private static bool TryShapeContact(in PartAabb a, in PartAabb b,
+            out DVector3 normal, out double depth, out DVector3 point)
+        {
+            bool aSphere = a.Shape == InertiaTensor.Shape.Sphere;
+            bool bSphere = b.Shape == InertiaTensor.Shape.Sphere;
+            bool aCyl = a.Shape == InertiaTensor.Shape.Cylinder;
+            bool bCyl = b.Shape == InertiaTensor.Shape.Cylinder;
+
+            if (aSphere && bSphere)
+                return SphereSphere(a, b, out normal, out depth, out point);
+            if (aSphere && bCyl)
+                return SphereCapsule(a, b, out normal, out depth, out point);
+            if (aCyl && bSphere)
+            {
+                if (!SphereCapsule(b, a, out normal, out depth, out point)) return false;
+                normal = -normal;
+                return true;
+            }
+            if (aCyl && bCyl)
+                return CapsuleCapsule(a, b, out normal, out depth, out point);
+            if (aCyl)
+                return CapsuleBox(a, b, out normal, out depth, out point);
+            if (bCyl)
+            {
+                if (!CapsuleBox(b, a, out normal, out depth, out point)) return false;
+                normal = -normal;
+                return true;
+            }
+            if (aSphere)
+                return SphereBox(a, b, out normal, out depth, out point);
+            if (bSphere)
+            {
+                if (!SphereBox(b, a, out normal, out depth, out point)) return false;
+                normal = -normal;
+                return true;
+            }
+
+            normal = DVector3.zero;
+            depth = 0.0;
+            point = DVector3.zero;
+            return false;
+        }
+
+        private static double SphereRadius(in PartAabb box)
+            => Math.Min(box.Half.x, Math.Min(box.Half.y, box.Half.z));
+
+        private static bool SphereSphere(in PartAabb a, in PartAabb b,
+            out DVector3 normal, out double depth, out DVector3 point)
+        {
+            double ra = SphereRadius(a), rb = SphereRadius(b);
+            DVector3 delta = b.Center - a.Center;
+            double dist = delta.magnitude;
+            normal = dist > 1e-12 ? delta / dist : DVector3.right;
+            depth = ra + rb - dist;
+            point = a.Center + normal * ra;
+            return depth > 0.0;
+        }
+
+        private static bool SphereBox(in PartAabb sphere, in PartAabb box,
+            out DVector3 normal, out double depth, out DVector3 point)
+        {
+            double r = SphereRadius(sphere);
+            DQuaternion inv = DQuaternion.Inverse(box.Rotation);
+            DVector3 local = DVector3.Rotate(sphere.Center - box.Center, inv);
+            DVector3 closest = new(
+                Math.Max(-box.Half.x, Math.Min(box.Half.x, local.x)),
+                Math.Max(-box.Half.y, Math.Min(box.Half.y, local.y)),
+                Math.Max(-box.Half.z, Math.Min(box.Half.z, local.z)));
+            DVector3 diff = local - closest;
+            double dist2 = diff.sqrMagnitude;
+
+            if (dist2 > 1e-18)
+            {
+                if (dist2 > r * r)
+                {
+                    normal = DVector3.zero; depth = 0.0; point = DVector3.zero;
+                    return false;
+                }
+                double dist = Math.Sqrt(dist2);
+                normal = DVector3.Rotate(-diff / dist, box.Rotation);   // sphere → box
+                depth = r - dist;
+                point = box.Center + DVector3.Rotate(closest, box.Rotation);
+                return depth > 0.0;
+            }
+
+            // 球心在盒内：取最近面外法线，normal = 反向（sphere → box），把球沿外法线推出。
+            double dx = box.Half.x - Math.Abs(local.x);
+            double dy = box.Half.y - Math.Abs(local.y);
+            double dz = box.Half.z - Math.Abs(local.z);
+            DVector3 outward;
+            if (dx <= dy && dx <= dz) outward = new DVector3(local.x >= 0 ? 1 : -1, 0, 0);
+            else if (dy <= dz) outward = new DVector3(0, local.y >= 0 ? 1 : -1, 0);
+            else outward = new DVector3(0, 0, local.z >= 0 ? 1 : -1);
+
+            DVector3 face = new(
+                local.x + outward.x * dx,
+                local.y + outward.y * dy,
+                local.z + outward.z * dz);
+            normal = DVector3.Rotate(-outward, box.Rotation);
+            depth = r + Math.Min(dx, Math.Min(dy, dz));
+            point = box.Center + DVector3.Rotate(face, box.Rotation);
+            return depth > 0.0;
+        }
+
+        private static bool SphereCapsule(in PartAabb sphere, in PartAabb capsule,
+            out DVector3 normal, out double depth, out DVector3 point)
+        {
+            double rs = SphereRadius(sphere);
+            if (!CapsuleSegment(capsule, out DVector3 p0, out DVector3 p1, out double rc))
+            {
+                normal = DVector3.zero; depth = 0.0; point = DVector3.zero;
+                return false;
+            }
+
+            ClosestSegments(p0, p1, sphere.Center, sphere.Center, out DVector3 closest, out _);
+            DVector3 delta = closest - sphere.Center;
+            double dist = delta.magnitude;
+            normal = dist > 1e-12 ? delta / dist : DVector3.right;
+            depth = rs + rc - dist;
+            point = sphere.Center + normal * rs;
+            return depth > 0.0;
+        }
+
+        private static bool CapsuleCapsule(in PartAabb a, in PartAabb b,
+            out DVector3 normal, out double depth, out DVector3 point)
+        {
+            if (!CapsuleSegment(a, out DVector3 ap0, out DVector3 ap1, out double ra)
+                || !CapsuleSegment(b, out DVector3 bp0, out DVector3 bp1, out double rb))
+            {
+                normal = DVector3.zero; depth = 0.0; point = DVector3.zero;
+                return false;
+            }
+
+            ClosestSegments(ap0, ap1, bp0, bp1, out DVector3 ca, out DVector3 cb);
+            DVector3 delta = cb - ca;
+            double dist = delta.magnitude;
+            normal = dist > 1e-12 ? delta / dist : DVector3.right;
+            depth = ra + rb - dist;
+            point = ca + normal * ra;
+            return depth > 0.0;
+        }
+
+        /// <summary>Cylinder → 胶囊近似：轴 = part 局部 Y，半径 = min(half.x, half.z)。</summary>
+        private static bool CapsuleSegment(in PartAabb box, out DVector3 p0, out DVector3 p1, out double radius)
+        {
+            radius = Math.Min(box.Half.x, box.Half.z);
+            p0 = p1 = box.Center;
+            if (!(radius > 0.0)) return false;
+            DVector3 axis = DVector3.Rotate(DVector3.up, box.Rotation);
+            double halfLen = Math.Max(0.0, box.Half.y - radius);
+            p0 = box.Center - axis * halfLen;
+            p1 = box.Center + axis * halfLen;
+            return true;
+        }
+
+        /// <summary>Cylinder(胶囊) vs Box：沿胶囊轴取 5 个球心，对盒取最近点，取最深接触。
+        /// 是解析近似（不是精确圆柱面），但比整件 OBB 更贴近圆柱外形。</summary>
+        private static bool CapsuleBox(in PartAabb capsule, in PartAabb box,
+            out DVector3 normal, out double depth, out DVector3 point)
+        {
+            normal = DVector3.zero;
+            depth = 0.0;
+            point = DVector3.zero;
+            if (!CapsuleSegment(capsule, out DVector3 p0, out DVector3 p1, out double r))
+                return false;
+
+            bool found = false;
+            double best = 0.0;
+            DVector3 bestN = DVector3.zero, bestP = DVector3.zero;
+            const int samples = 5;
+            for (int i = 0; i < samples; i++)
+            {
+                double u = samples == 1 ? 0.0 : i / (double)(samples - 1);
+                DVector3 c = p0 + (p1 - p0) * u;
+                var sphere = new PartAabb(c, new DVector3(r, r, r), DQuaternion.identity, 0,
+                    InertiaTensor.Shape.Sphere);
+                if (!SphereBox(sphere, box, out DVector3 n, out double d, out DVector3 p))
+                    continue;
+                if (!found || d > best)
+                {
+                    found = true;
+                    best = d;
+                    bestN = n;
+                    bestP = p;
+                }
+            }
+
+            if (!found) return false;
+            normal = bestN;
+            depth = best;
+            point = bestP;
+            return true;
+        }
+
+        /// <summary>两个线段最近点（Ericson）；退化线段自然退化为点。</summary>
+        private static void ClosestSegments(DVector3 p1, DVector3 q1, DVector3 p2, DVector3 q2,
+            out DVector3 c1, out DVector3 c2)
+        {
+            DVector3 d1 = q1 - p1;
+            DVector3 d2 = q2 - p2;
+            DVector3 r = p1 - p2;
+            double a = DVector3.Dot(d1, d1);
+            double e = DVector3.Dot(d2, d2);
+            double f = DVector3.Dot(d2, r);
+            const double eps = 1e-12;
+            double s, t;
+
+            if (a <= eps && e <= eps)
+            {
+                s = t = 0.0;
+            }
+            else if (a <= eps)
+            {
+                s = 0.0;
+                t = Clamp01(f / e);
+            }
+            else
+            {
+                double c = DVector3.Dot(d1, r);
+                if (e <= eps)
+                {
+                    t = 0.0;
+                    s = Clamp01(-c / a);
+                }
+                else
+                {
+                    double b = DVector3.Dot(d1, d2);
+                    double denom = a * e - b * b;
+                    s = denom > eps ? Clamp01((b * f - c * e) / denom) : 0.0;
+                    t = (b * s + f) / e;
+                    if (t < 0.0) { t = 0.0; s = Clamp01(-c / a); }
+                    else if (t > 1.0) { t = 1.0; s = Clamp01((b - c) / a); }
+                }
+            }
+
+            c1 = p1 + d1 * s;
+            c2 = p2 + d2 * t;
+        }
+
+        private static double Clamp01(double v) => v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
+
+        private static bool TryGetUnion(List<PartAabb> boxes, out DVector3 min, out DVector3 max)
+        {
+            if (boxes.Count == 0)
+            {
+                min = max = DVector3.zero;
+                return false;
+            }
+            min = boxes[0].Min;
+            max = boxes[0].Max;
+            for (int i = 1; i < boxes.Count; i++)
+            {
+                min = DVector3.Min(min, boxes[i].Min);
+                max = DVector3.Max(max, boxes[i].Max);
+            }
+            return true;
+        }
+
+        /// <summary>part 盒与裁剪盒是否有正重叠（交集外的 part 不可能参与任何 part 对重叠）。</summary>
+        private static bool OverlapsClip(in PartAabb box, in DVector3 clipMin, in DVector3 clipMax)
+            => box.Max.x > clipMin.x && box.Min.x < clipMax.x
+            && box.Max.y > clipMin.y && box.Min.y < clipMax.y
+            && box.Max.z > clipMin.z && box.Min.z < clipMax.z;
+
+        private static bool DeepestNested(List<PartAabb> boxesA, List<PartAabb> boxesB,
+            DVector3 clipMin, DVector3 clipMax,
+            out DVector3 normal, out double depth, out DVector3 contact)
+        {
+            normal = DVector3.zero;
+            depth = 0.0;
+            contact = DVector3.zero;
+            double best = 0.0;
+            int bestA = int.MaxValue, bestB = int.MaxValue;
+
+            for (int i = 0; i < boxesA.Count; i++)
+            {
+                PartAabb aBox = boxesA[i];
+                if (!OverlapsClip(aBox, clipMin, clipMax)) continue;
+                for (int j = 0; j < boxesB.Count; j++)
+                {
+                    PartAabb bBox = boxesB[j];
+                    if (!OverlapsClip(bBox, clipMin, clipMax)) continue;
+                    ConsiderPartPair(aBox, bBox, ref best, ref bestA, ref bestB,
+                        ref normal, ref depth, ref contact);
+                }
+            }
+            return best > 0.0;
+        }
+
+        /// <summary>X 轴 sweep-and-prune：按 Min.X 排序起止事件，活跃集内配对（只对 X 重叠的对验 Y/Z）。
+        /// 事件/活跃下标数组走 ArrayPool ⇒ 每对零 GC。并列深度按 (A.Order,B.Order) 取最小，
+        /// 与嵌套循环的 A 主序/B 次序结果逐位一致。</summary>
+        private static bool DeepestBySweepAndPrune(List<PartAabb> boxesA, List<PartAabb> boxesB,
+            DVector3 clipMin, DVector3 clipMax,
+            out DVector3 normal, out double depth, out DVector3 contact)
+        {
+            normal = DVector3.zero;
+            depth = 0.0;
+            contact = DVector3.zero;
+            double best = 0.0;
+            int bestA = int.MaxValue, bestB = int.MaxValue;
+
+            int nA = boxesA.Count;
+            int nB = boxesB.Count;
+            int axis = PickSweepAxis(boxesA, boxesB);
+            int maxEvents = 2 * (nA + nB);
+            SapEvent[] events = ArrayPool<SapEvent>.Shared.Rent(maxEvents);
+            int[] activeA = ArrayPool<int>.Shared.Rent(nA);
+            int[] activeB = ArrayPool<int>.Shared.Rent(nB);
+            int[] posA = ArrayPool<int>.Shared.Rent(nA);
+            int[] posB = ArrayPool<int>.Shared.Rent(nB);
+            try
+            {
+                int e = 0;
+                for (int i = 0; i < nA; i++)
+                {
+                    PartAabb aBox = boxesA[i];
+                    if (!OverlapsClip(aBox, clipMin, clipMax)) continue;
+                    events[e++] = new SapEvent(AxisMin(aBox, axis), true, false, i);
+                    events[e++] = new SapEvent(AxisMax(aBox, axis), false, false, i);
+                }
+                for (int j = 0; j < nB; j++)
+                {
+                    PartAabb bBox = boxesB[j];
+                    if (!OverlapsClip(bBox, clipMin, clipMax)) continue;
+                    events[e++] = new SapEvent(AxisMin(bBox, axis), true, true, j);
+                    events[e++] = new SapEvent(AxisMax(bBox, axis), false, true, j);
+                }
+                if (e == 0) return false;
+                Array.Sort(events, 0, e, SapEventComparer.Instance);
+
+                Array.Fill(posA, -1, 0, nA);
+                Array.Fill(posB, -1, 0, nB);
+                int countA = 0, countB = 0;
+
+                for (int k = 0; k < e; k++)
+                {
+                    SapEvent ev = events[k];
+                    if (ev.IsStart)
+                    {
+                        if (!ev.IsB)
+                        {
+                            PartAabb aBox = boxesA[ev.Index];
+                            for (int q = 0; q < countB; q++)
+                                ConsiderPartPair(aBox, boxesB[activeB[q]], ref best, ref bestA, ref bestB,
+                                    ref normal, ref depth, ref contact);
+                            posA[ev.Index] = countA;
+                            activeA[countA++] = ev.Index;
+                        }
+                        else
+                        {
+                            PartAabb bBox = boxesB[ev.Index];
+                            for (int q = 0; q < countA; q++)
+                                ConsiderPartPair(boxesA[activeA[q]], bBox, ref best, ref bestA, ref bestB,
+                                    ref normal, ref depth, ref contact);
+                            posB[ev.Index] = countB;
+                            activeB[countB++] = ev.Index;
+                        }
+                    }
+                    else if (!ev.IsB)
+                    {
+                        int p = posA[ev.Index];
+                        if (p < 0) continue;
+                        int last = activeA[--countA];
+                        activeA[p] = last;
+                        posA[last] = p;
+                        posA[ev.Index] = -1;
+                    }
+                    else
+                    {
+                        int p = posB[ev.Index];
+                        if (p < 0) continue;
+                        int last = activeB[--countB];
+                        activeB[p] = last;
+                        posB[last] = p;
+                        posB[ev.Index] = -1;
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<SapEvent>.Shared.Return(events);
+                ArrayPool<int>.Shared.Return(activeA);
+                ArrayPool<int>.Shared.Return(activeB);
+                ArrayPool<int>.Shared.Return(posA);
+                ArrayPool<int>.Shared.Return(posB);
+            }
+            return best > 0.0;
+        }
+
+        // ── BVH（大件数窄相）────────────────────────────────────────────
+        // 判过不接（2026-10-17）：512×512 稀疏 SAP 49.7µs vs BVH 60.2µs；1024² SAP 118.6 vs 134.2；
+        // 稠密 512² SAP 112.0 vs BVH 158.7 ⇒ BVH 建树/查询在本工作负载下始终慢于 SAP。
+        // 保留实现仅供 `forceBvh` 台架复测；**生产默认不选它**。
+        private const int BvhLeafSize = 4;
+
+        private struct BvhNode
+        {
+            public DVector3 Min, Max;
+            public int Left, Right;   // -1 = 叶
+            public int Start, Count;  // 叶子在 idx 数组中的区间
+            public bool IsLeaf => Left < 0;
+        }
+
+        private static bool DeepestByBvh(List<PartAabb> boxesA, List<PartAabb> boxesB,
+            DVector3 clipMin, DVector3 clipMax,
+            out DVector3 normal, out double depth, out DVector3 contact)
+        {
+            normal = DVector3.zero;
+            depth = 0.0;
+            contact = DVector3.zero;
+
+            int[] idxA = ArrayPool<int>.Shared.Rent(boxesA.Count);
+            int[] idxB = ArrayPool<int>.Shared.Rent(boxesB.Count);
+            try
+            {
+                int nA = FillClipIndices(boxesA, clipMin, clipMax, idxA);
+                int nB = FillClipIndices(boxesB, clipMin, clipMax, idxB);
+                if (nA == 0 || nB == 0) return false;
+
+                BvhNode[] nodesA = ArrayPool<BvhNode>.Shared.Rent(2 * nA);
+                BvhNode[] nodesB = ArrayPool<BvhNode>.Shared.Rent(2 * nB);
+                try
+                {
+                    int countA = 0, countB = 0;
+                    int rootA = BuildBvh(boxesA, idxA, 0, nA, nodesA, ref countA, 0);
+                    int rootB = BuildBvh(boxesB, idxB, 0, nB, nodesB, ref countB, 0);
+
+                    double best = 0.0;
+                    int bestA = int.MaxValue, bestB = int.MaxValue;
+                    QueryBvh(rootA, rootB, nodesA, nodesB, idxA, idxB, boxesA, boxesB,
+                        ref best, ref bestA, ref bestB, ref normal, ref depth, ref contact);
+                    return best > 0.0;
+                }
+                finally
+                {
+                    ArrayPool<BvhNode>.Shared.Return(nodesA);
+                    ArrayPool<BvhNode>.Shared.Return(nodesB);
+                }
+            }
+            finally
+            {
+                ArrayPool<int>.Shared.Return(idxA);
+                ArrayPool<int>.Shared.Return(idxB);
+            }
+        }
+
+        private static int FillClipIndices(List<PartAabb> boxes, DVector3 clipMin, DVector3 clipMax, int[] idx)
+        {
+            int n = 0;
+            for (int i = 0; i < boxes.Count; i++)
+                if (OverlapsClip(boxes[i], clipMin, clipMax)) idx[n++] = i;
+            return n;
+        }
+
+        private static int BuildBvh(List<PartAabb> boxes, int[] idx, int start, int count,
+            BvhNode[] nodes, ref int nodeCount, int depth)
+        {
+            int node = nodeCount++;
+            ComputeBounds(boxes, idx, start, count, out DVector3 min, out DVector3 max);
+            nodes[node] = new BvhNode
+            {
+                Min = min, Max = max,
+                Left = -1, Right = -1,
+                Start = start, Count = count
+            };
+            if (count <= BvhLeafSize || depth >= 24) return node;
+
+            DVector3 ext = max - min;
+            int axis = ext.x >= ext.y && ext.x >= ext.z ? 0 : (ext.y >= ext.z ? 1 : 2);
+            int mid = start + (count >> 1);
+            NthElement(boxes, idx, start, start + count - 1, mid, axis);
+
+            int left = BuildBvh(boxes, idx, start, mid - start, nodes, ref nodeCount, depth + 1);
+            int right = BuildBvh(boxes, idx, mid, start + count - mid, nodes, ref nodeCount, depth + 1);
+            BvhNode n = nodes[node];
+            n.Left = left;
+            n.Right = right;
+            n.Start = 0;
+            n.Count = 0;
+            nodes[node] = n;
+            return node;
+        }
+
+        private static void ComputeBounds(List<PartAabb> boxes, int[] idx, int start, int count,
+            out DVector3 min, out DVector3 max)
+        {
+            min = boxes[idx[start]].Min;
+            max = boxes[idx[start]].Max;
+            for (int k = start + 1; k < start + count; k++)
+            {
+                PartAabb b = boxes[idx[k]];
+                min = DVector3.Min(min, b.Min);
+                max = DVector3.Max(max, b.Max);
+            }
+        }
+
+        /// <summary>按 part 中心第 axis 轴的 quickselect（就地重排 idx[start..end]，使 nth 落位）。</summary>
+        private static void NthElement(List<PartAabb> boxes, int[] idx, int left, int right, int nth, int axis)
+        {
+            while (left < right)
+            {
+                double pivot = Center(boxes[idx[(left + right) >> 1]], axis);
+                int i = left, j = right;
+                while (i <= j)
+                {
+                    while (Center(boxes[idx[i]], axis) < pivot) i++;
+                    while (Center(boxes[idx[j]], axis) > pivot) j--;
+                    if (i <= j)
+                    {
+                        int t = idx[i];
+                        idx[i] = idx[j];
+                        idx[j] = t;
+                        i++;
+                        j--;
+                    }
+                }
+                if (nth <= j) right = j;
+                else if (nth >= i) left = i;
+                else break;
+            }
+        }
+
+        private static double Center(in PartAabb box, int axis)
+            => axis == 0 ? (box.Min.x + box.Max.x) * 0.5
+             : axis == 1 ? (box.Min.y + box.Max.y) * 0.5
+             : (box.Min.z + box.Max.z) * 0.5;
+
+        private static void QueryBvh(int ai, int bi, BvhNode[] nodesA, BvhNode[] nodesB,
+            int[] idxA, int[] idxB, List<PartAabb> boxesA, List<PartAabb> boxesB,
+            ref double best, ref int bestA, ref int bestB,
+            ref DVector3 normal, ref double depth, ref DVector3 contact)
+        {
+            BvhNode a = nodesA[ai];
+            BvhNode b = nodesB[bi];
+            if (!AabbOverlap(a.Min, a.Max, b.Min, b.Max, out _, out _, out _)) return;
+
+            if (a.IsLeaf && b.IsLeaf)
+            {
+                int endA = a.Start + a.Count;
+                int endB = b.Start + b.Count;
+                for (int i = a.Start; i < endA; i++)
+                    for (int j = b.Start; j < endB; j++)
+                        ConsiderPartPair(boxesA[idxA[i]], boxesB[idxB[j]],
+                            ref best, ref bestA, ref bestB, ref normal, ref depth, ref contact);
+                return;
+            }
+            if (a.IsLeaf)
+            {
+                QueryBvh(ai, b.Left, nodesA, nodesB, idxA, idxB, boxesA, boxesB,
+                    ref best, ref bestA, ref bestB, ref normal, ref depth, ref contact);
+                QueryBvh(ai, b.Right, nodesA, nodesB, idxA, idxB, boxesA, boxesB,
+                    ref best, ref bestA, ref bestB, ref normal, ref depth, ref contact);
+                return;
+            }
+            if (b.IsLeaf)
+            {
+                QueryBvh(a.Left, bi, nodesA, nodesB, idxA, idxB, boxesA, boxesB,
+                    ref best, ref bestA, ref bestB, ref normal, ref depth, ref contact);
+                QueryBvh(a.Right, bi, nodesA, nodesB, idxA, idxB, boxesA, boxesB,
+                    ref best, ref bestA, ref bestB, ref normal, ref depth, ref contact);
+                return;
+            }
+            // 两边都是内部节点：下钻 A（树平衡，深度 O(log n)）
+            QueryBvh(a.Left, bi, nodesA, nodesB, idxA, idxB, boxesA, boxesB,
+                ref best, ref bestA, ref bestB, ref normal, ref depth, ref contact);
+            QueryBvh(a.Right, bi, nodesA, nodesB, idxA, idxB, boxesA, boxesB,
+                ref best, ref bestA, ref bestB, ref normal, ref depth, ref contact);
+        }
+
+        /// <summary>选扫描轴：取两侧 part 总包围盒**跨度最大**的轴，最小化活跃集（细长船沿长轴扫）。</summary>
+        private static int PickSweepAxis(List<PartAabb> boxesA, List<PartAabb> boxesB)
+        {
+            double minX = double.MaxValue, maxX = double.MinValue;
+            double minY = double.MaxValue, maxY = double.MinValue;
+            double minZ = double.MaxValue, maxZ = double.MinValue;
+
+            Accumulate(boxesA);
+            Accumulate(boxesB);
+
+            double spanX = maxX - minX;
+            double spanY = maxY - minY;
+            double spanZ = maxZ - minZ;
+            if (spanX >= spanY && spanX >= spanZ) return 0;
+            return spanY >= spanZ ? 1 : 2;
+
+            void Accumulate(List<PartAabb> boxes)
+            {
+                for (int i = 0; i < boxes.Count; i++)
+                {
+                    PartAabb box = boxes[i];
+                    if (box.Min.x < minX) minX = box.Min.x;
+                    if (box.Max.x > maxX) maxX = box.Max.x;
+                    if (box.Min.y < minY) minY = box.Min.y;
+                    if (box.Max.y > maxY) maxY = box.Max.y;
+                    if (box.Min.z < minZ) minZ = box.Min.z;
+                    if (box.Max.z > maxZ) maxZ = box.Max.z;
+                }
+            }
+        }
+
+        private static double AxisMin(in PartAabb box, int axis)
+            => axis == 0 ? box.Min.x : axis == 1 ? box.Min.y : box.Min.z;
+
+        private static double AxisMax(in PartAabb box, int axis)
+            => axis == 0 ? box.Max.x : axis == 1 ? box.Max.y : box.Max.z;
+
+        /// <summary>比较一对 part：更新最深重叠（并列深度按 (A.Order,B.Order) 字典序取最小，复现嵌套顺序）。</summary>
+        private static void ConsiderPartPair(in PartAabb aBox, in PartAabb bBox,
+            ref double best, ref int bestA, ref int bestB,
+            ref DVector3 normal, ref double depth, ref DVector3 contact)
+        {
+            // B3b：任一侧带自身姿态 ⇒ 精确 OBB-SAT；两侧都无姿态 ⇒ 旧 AABB 路径逐位不变。
+            if (aBox.UseObb || bBox.UseObb)
+            {
+                if (!PartGeometry.ObbObbSat(aBox.Center, aBox.Half, aBox.Rotation,
+                        bBox.Center, bBox.Half, bBox.Rotation,
+                        out DVector3 obbNormal, out double obbDepth, out DVector3 obbContact))
+                    return;
+                if (obbDepth < best) return;
+                if (obbDepth == best)
+                {
+                    bool earlierObb = aBox.Order < bestA || (aBox.Order == bestA && bBox.Order < bestB);
+                    if (!earlierObb) return;
+                }
+                best = obbDepth;
+                bestA = aBox.Order;
+                bestB = bBox.Order;
+                normal = obbNormal;
+                depth = obbDepth;
+                contact = obbContact;
+                return;
+            }
+
+            if (!AabbOverlap(aBox.Min, aBox.Max, bBox.Min, bBox.Max,
+                    out double ox, out double oy, out double oz))
+                return;
+            double d = Math.Min(ox, Math.Min(oy, oz));
+            if (d < best) return;
+            if (d == best)
+            {
+                bool earlier = aBox.Order < bestA || (aBox.Order == bestA && bBox.Order < bestB);
+                if (!earlier) return;
+            }
+
+            DVector3 ca = (aBox.Min + aBox.Max) * 0.5;
+            DVector3 cb = (bBox.Min + bBox.Max) * 0.5;
+            DVector3 axis = MinPenetrationAxis(ox, oy, oz, ca, cb, out _);
+            best = d;
+            bestA = aBox.Order;
+            bestB = bBox.Order;
+            normal = axis;
+            depth = d;
+            DVector3 oMin = DVector3.Max(aBox.Min, bBox.Min);
+            DVector3 oMax = DVector3.Min(aBox.Max, bBox.Max);
+            contact = (oMin + oMax) * 0.5;
+        }
+
+        private readonly struct SapEvent
+        {
+            public readonly double X;
+            public readonly bool IsStart;
+            public readonly bool IsB;
+            public readonly int Index;
+
+            public SapEvent(double x, bool isStart, bool isB, int index)
+            {
+                X = x; IsStart = isStart; IsB = isB; Index = index;
+            }
+        }
+
+        private sealed class SapEventComparer : IComparer<SapEvent>
+        {
+            public static readonly SapEventComparer Instance = new();
+            public int Compare(SapEvent x, SapEvent y)
+            {
+                int c = x.X.CompareTo(y.X);
+                if (c != 0) return c;
+                // 同一 X：起点先于终点（零重叠会在 AabbOverlap 里被 ox>0 拒掉，顺序不影响正确性，只求确定）
+                if (x.IsStart != y.IsStart) return x.IsStart ? -1 : 1;
+                if (x.IsB != y.IsB) return x.IsB ? 1 : -1;
+                return x.Index.CompareTo(y.Index);
+            }
+        }
+
+        private void SeparatePositions(SpaceEntityGroup a, SpaceEntityGroup b, DVector3 n, double depth)
         {
             if (PerfProbe.Enabled) PerfProbe.NoteContact(); // 探针：接触解算唯一收口（验收器碰撞阶段判据）
             if (a.IsCircularOrbit) a.ExitCircularOrbit();
             if (b.IsCircularOrbit) b.ExitCircularOrbit();
 
-            DVector3 push = new DVector3(ox * 0.5, oy * 0.5, oz * 0.5);
-            // 同系冲量（系统系）：带系字段与裸三分量之间显式跨界
-            a.CurrentOrbit.positionSystem = a.CurrentOrbit.positionSystem - (SystemVec3)push;
-            b.CurrentOrbit.positionSystem = b.CurrentOrbit.positionSystem + (SystemVec3)push;
+            // 碰5：质量反比分离（轻的多走、重的少走；总质量退化时各半）
+            double ma = GetGroupMass(a);
+            double mb = GetGroupMass(b);
+            double total = ma + mb;
+            double wa = total > 0 ? mb / total : 0.5;
+            double wb = total > 0 ? ma / total : 0.5;
+            DVector3 beforeA = a.CurrentOrbit.positionSystem.v;
+            DVector3 beforeB = b.CurrentOrbit.positionSystem.v;
+            a.CurrentOrbit.positionSystem = a.CurrentOrbit.positionSystem - (SystemVec3)(n * (depth * wa));
+            b.CurrentOrbit.positionSystem = b.CurrentOrbit.positionSystem + (SystemVec3)(n * (depth * wb));
 
             a.OrbitDirty = true;
             b.OrbitDirty = true;
+
+            if (DebugDetailedCollision)
+            {
+                DVector3 afterA = a.CurrentOrbit.positionSystem.v;
+                DVector3 afterB = b.CurrentOrbit.positionSystem.v;
+                Log.Message($"[分离诊断] G{a.GroupId}/G{b.GroupId} 轴=({n.x:F2},{n.y:F2},{n.z:F2}) 深度={depth:F3}m " +
+                    $"A前=({beforeA.x:F1},{beforeA.y:F1},{beforeA.z:F1}) A后=({afterA.x:F1},{afterA.y:F1},{afterA.z:F1}) " +
+                    $"B前=({beforeB.x:F1},{beforeB.y:F1},{beforeB.z:F1}) B后=({afterB.x:F1},{afterB.y:F1},{afterB.z:F1}) " +
+                    $"pending=({a.pendingImpulse.x:F2},{a.pendingImpulse.y:F2},{a.pendingImpulse.z:F2})/" +
+                    $"({b.pendingImpulse.x:F2},{b.pendingImpulse.y:F2},{b.pendingImpulse.z:F2}) " +
+                    $"v=({a.CurrentOrbit.velocitySystem.x:F2},{a.CurrentOrbit.velocitySystem.y:F2},{a.CurrentOrbit.velocitySystem.z:F2})/" +
+                    $"({b.CurrentOrbit.velocitySystem.x:F2},{b.CurrentOrbit.velocitySystem.y:F2},{b.CurrentOrbit.velocitySystem.z:F2})");
+            }
 
             // 分离后立即刷新扫掠基准：否则下拍并集含"分离前位置"，会误报重叠并反复分离。
             // 必须同时更新 shipLastPositions，否则下个 SyncAllShipsToGrid 会用分离前的旧值
@@ -1184,43 +3525,287 @@ namespace PioneerFramework.Combat
             shipLastPositions[b.GroupId] = b.CurrentOrbit.positionSystem.v;
         }
 
-        /// <summary>低速撞击等效：e=0 完全非弹性动量交换 + 位置分离，无损伤。</summary>
-        private void ResolveImpact(SpaceEntityGroup a, SpaceEntityGroup b, DVector3 pa, DVector3 pb,
-            DVector3 va, DVector3 vb, DVector3 nDir, double vRel, double ox, double oy, double oz)
+        /// <summary>
+        /// **碰撞位置分离唯一收口**：重新读取两组当前 AABB，选最小正重叠轴，按该轴全深度 + 0.01m
+        /// 推出。推完至少一轴重叠归零 ⇒ 组 AABB 不再重叠；不依赖 part 对法线/深度是否等于组盒剩余量。
+        /// </summary>
+        private void SeparateByGroupAabb(SpaceEntityGroup a, SpaceEntityGroup b)
         {
-            double ma = GetGroupMass(a);
-            double mb = GetGroupMass(b);
-            double e = CollisionRestitution;
-            double j = -(1.0 + e) * vRel / (1.0 / ma + 1.0 / mb);
+            var spaceGame = GetSpaceGameComp();
+            if (spaceGame == null) return;
+            DVector3 pa = GetGroupPos(a);
+            DVector3 pb = GetGroupPos(b);
+            GetGroupAabbSystem(a, pa, spaceGame, out DVector3 amin, out DVector3 amax);
+            GetGroupAabbSystem(b, pb, spaceGame, out DVector3 bmin, out DVector3 bmax);
+            if (!AabbOverlap(amin, amax, bmin, bmax, out double ox, out double oy, out double oz))
+                return;
 
-            ApplyGroupVelocity(a, va + nDir * (j / ma));
-            ApplyGroupVelocity(b, vb - nDir * (j / mb));
-            SeparatePositions(a, b, ox, oy, oz);
+            DVector3 axis = MinPenetrationAxis(ox, oy, oz, pa, pb, out double depth);
+            SeparatePositions(a, b, axis, depth + 0.01);
+        }
 
-            if (DebugDetailedCollision)
+        /// <summary>
+        /// 残余组盒分离：沿 X/Y/Z 每个**正重叠轴**各推一次（各推全重叠 + 0.01m）。
+        /// 只用于“仍有 part 接触、但单接触法线已推完”的残余，例如侧靠多 part 船；
+        /// 正常单接触/远场碰撞不会用到。
+        /// </summary>
+        private void SeparateByGroupAabbAllAxes(SpaceEntityGroup a, SpaceEntityGroup b)
+        {
+            var spaceGame = GetSpaceGameComp();
+            if (spaceGame == null) return;
+            DVector3 pa = GetGroupPos(a);
+            DVector3 pb = GetGroupPos(b);
+            GetGroupAabbSystem(a, pa, spaceGame, out DVector3 amin, out DVector3 amax);
+            GetGroupAabbSystem(b, pb, spaceGame, out DVector3 bmin, out DVector3 bmax);
+            if (!AabbOverlap(amin, amax, bmin, bmax, out double ox, out double oy, out double oz))
+                return;
+
+            if (ox > 0.0)
+                SeparatePositions(a, b, new DVector3(pb.x >= pa.x ? 1.0 : -1.0, 0, 0), ox + 0.01);
+            if (oy > 0.0)
+                SeparatePositions(a, b, new DVector3(0, pb.y >= pa.y ? 1.0 : -1.0, 0), oy + 0.01);
+            if (oz > 0.0)
+                SeparatePositions(a, b, new DVector3(0, 0, pb.z >= pa.z ? 1.0 : -1.0), oz + 0.01);
+        }
+
+        /// <summary>
+        /// 按当前 part 接触点做位置修正：每个接触点沿其法线推 `max(穿透, 0.001)m`。
+        /// 没有 contactScratch（组级回退）时退回组 AABB 分离。
+        /// </summary>
+        private void SeparateByContacts(SpaceEntityGroup a, SpaceEntityGroup b)
+        {
+            if (contactScratch.Count == 0)
             {
-                Log.Message($"[ShipCollision] 撞击等效 G{a.GroupId} vs G{b.GroupId} 接近速度={vRel:F1}m/s 质量={ma:F0}/{mb:F0}kg 冲量j={j:F2} 已分离");
+                SeparateByGroupAabb(a, b);
+                return;
+            }
+
+            for (int i = 0; i < contactScratch.Count; i++)
+            {
+                var c = contactScratch[i];
+                SeparatePositions(a, b, c.Normal, Math.Max(c.Penetration, 0.001));
             }
         }
 
-        /// <summary>高速真爆炸：范围损伤 + 径向冲量 + 爆炸视觉。
+        /// <summary>低速撞击等效：碰1/5/7（最小穿透轴、质量反比、e=0.2 + 低速阈值）+ 角冲量（经惯量张量）。</summary>
+        private void ResolveImpact(SpaceEntityGroup a, SpaceEntityGroup b, DVector3 pa, DVector3 pb,
+            DVector3 va, DVector3 vb, DVector3 nDir, double vRel,
+            DVector3 contactPoint, bool usedPartPair)
+        {
+            double ma = GetGroupMass(a);
+            double mb = GetGroupMass(b);
+            double e = vRel >= CollisionRestitutionMinSpeed ? CollisionRestitution : 0.0;
+            double j = -(1.0 + e) * vRel / (1.0 / ma + 1.0 / mb);
+
+            DVector3 vaAfter = va + nDir * (j / ma);
+            DVector3 vbAfter = vb - nDir * (j / mb);
+            ApplyGroupVelocity(a, vaAfter);
+            ApplyGroupVelocity(b, vbAfter);
+
+            // 角冲量：J 作用在接触点（世界系），Δω = I⁻¹ (r × J)（r 相对质心）
+            DVector3 impulse = nDir * j;
+            DVector3 wA0 = a.angularVelocity;
+            DVector3 wB0 = b.angularVelocity;
+            DVector3 dwA = ApplyCollisionAngularImpulse(a, contactPoint, impulse);
+            DVector3 dwB = ApplyCollisionAngularImpulse(b, contactPoint, -impulse);
+
+            SeparateByContacts(a, b);
+
+            if (CaptureCollisionRecords && debugCollisionRecords.Count < MaxDebugCollisionRecords)
+            {
+                debugCollisionRecords.Add(new CollisionDebugRecord
+                {
+                    tick = Find.TickManager?.TicksGame ?? 0,
+                    aGroup = a.GroupId,
+                    bGroup = b.GroupId,
+                    pa = pa,
+                    pb = pb,
+                    rotA = a.CurrentOrbit.rotation.ToQuaternion(),
+                    rotB = b.CurrentOrbit.rotation.ToQuaternion(),
+                    va = va,
+                    vb = vb,
+                    vaAfter = vaAfter,
+                    vbAfter = vbAfter,
+                    n = nDir,
+                    contact = contactPoint,
+                    j = j,
+                    vRel = vRel,
+                    wA0 = wA0,
+                    wB0 = wB0,
+                    dwA = dwA,
+                    dwB = dwB,
+                    usedPartPair = usedPartPair
+                });
+            }
+
+            if (DebugDetailedCollision)
+            {
+                Log.Message($"[ShipCollision] 撞击等效 G{a.GroupId} vs G{b.GroupId} 接近速度={vRel:F1}m/s 质量={ma:F0}/{mb:F0}kg e={e:F2} 冲量j={j:F2} 接触=({contactPoint.x:F0},{contactPoint.y:F0},{contactPoint.z:F0}) 已分离");
+                // 2026-10-17 用户报「碰撞后双方同向转」⇒ 两侧 Δω 必须可读数：
+                // 头对头（接触点/质心/法线共线）应 Δω≈0；点积 ≈0 = 无力矩，<0 = 反向。
+                double dot = DVector3.Dot(dwA, dwB);
+                Log.Message($"[碰撞角速度] G{a.GroupId}: ω前={FormatOmega(wA0)} Δω={FormatOmega(dwA)} | G{b.GroupId}: ω前={FormatOmega(wB0)} Δω={FormatOmega(dwB)} | ΔωA·ΔωB={dot:E2}（≈0 无力矩 / <0 反向） 接触=({contactPoint.x:F1},{contactPoint.y:F1},{contactPoint.z:F1}) 法线=({nDir.x:F2},{nDir.y:F2},{nDir.z:F2}) J=({impulse.x:F1},{impulse.y:F1},{impulse.z:F1}) 质心A=({a.InertiaResult.comX:F2},{a.InertiaResult.comY:F2},{a.InertiaResult.comZ:F2}) 质心B=({b.InertiaResult.comX:F2},{b.InertiaResult.comY:F2},{b.InertiaResult.comZ:F2})");
+            }
+        }
+
+        /// <summary>
+        /// 多接触点求解（第二刀）：用 `CollisionSolver` 处理同一 part 对集合上的 1–8 个接触点；
+        /// 相对速度含 ω×r、含摩擦；位置分离仍沿接触法线/组盒深度。生产仅在 part 窄相成功时走这里，
+        /// 组级回退/爆炸分支保持原路径。
+        /// </summary>
+        private void ResolveContacts(SpaceEntityGroup a, SpaceEntityGroup b,
+            GroupCollisionCache ca, GroupCollisionCache cb,
+            DVector3 pa, DVector3 pb, DVector3 va, DVector3 vb, DVector3 nDir, double vRel,
+            DVector3 contactPoint)
+        {
+            // 检测走 clip-aware 候选；位置投影需要本步完整 relParts，接触帧在这里补一次
+            // 全量构建（负结果帧不付这笔）。
+            var cacheGame = GetSpaceGameComp();
+            if (cacheGame != null)
+            {
+                EnsurePartBoxes(ca, a, cacheGame);
+                EnsurePartBoxes(cb, b, cacheGame);
+            }
+            double ma = GetGroupMass(a);
+            double mb = GetGroupMass(b);
+            DVector3 wA0 = a.angularVelocity;
+            DVector3 wB0 = b.angularVelocity;
+            var bodyA = new CollisionBodyState
+            {
+                Mass = ma,
+                Inertia = a.InertiaResult,
+                Rotation = a.CurrentOrbit.rotation,
+                Position = pa,
+                Velocity = va,
+                AngularVelocity = wA0,
+            };
+            var bodyB = new CollisionBodyState
+            {
+                Mass = mb,
+                Inertia = b.InertiaResult,
+                Rotation = b.CurrentOrbit.rotation,
+                Position = pb,
+                Velocity = vb,
+                AngularVelocity = wB0,
+            };
+
+            double e = vRel >= CollisionRestitutionMinSpeed ? CollisionRestitution : 0.0;
+            int initialContacts = contactScratch.Count;
+            DVector3 firstN = initialContacts > 0 ? contactScratch[0].Normal : nDir;
+            DVector3 firstPoint = initialContacts > 0 ? contactScratch[0].Point : contactPoint;
+            long colSolveClock = PerfProbe.CollisionStageStart();
+            CollisionSolver.Resolve(ref bodyA, ref bodyB, CollectionsMarshal.AsSpan(contactScratch),
+                restitution: e, friction: CollisionFriction, iterations: 6);
+            PerfProbe.CollisionStageEnd(PerfProbe.ColStageSolve, colSolveClock);
+
+            ApplyGroupVelocity(a, bodyA.Velocity);
+            ApplyGroupVelocity(b, bodyB.Velocity);
+            a.angularVelocity = bodyA.AngularVelocity;
+            b.angularVelocity = bodyB.AngularVelocity;
+
+            // 流形位置投影：同一 tick 内重收集接触 → 推 → 再收集，最多 8 轮。
+            // P1：组位置每轮只变平移 ⇒ 用 epoch 内的相对几何平移，不重算四元数/投影。
+            int posIters = 0;
+            long colProjectionClock = PerfProbe.CollisionStageStart();
+            for (; posIters < 8; posIters++)
+            {
+                DVector3 qa = GetGroupPos(a);
+                DVector3 qb = GetGroupPos(b);
+                ca.CollectPartsAt(qa, iterPartsA);
+                cb.CollectPartsAt(qb, iterPartsB);
+                if (!TryGetUnion(iterPartsA, out DVector3 amin, out DVector3 amax)
+                    || !TryGetUnion(iterPartsB, out DVector3 bmin, out DVector3 bmax))
+                    break;
+                DVector3 clipMin = DVector3.Max(amin, bmin);
+                DVector3 clipMax = DVector3.Min(amax, bmax);
+                if (clipMin.x >= clipMax.x || clipMin.y >= clipMax.y || clipMin.z >= clipMax.z)
+                    break;
+
+                CollectPartContacts(iterPartsA, iterPartsB, clipMin, clipMax, contactScratch, maxContacts: 8,
+                    contactFilterA, contactFilterB);
+                if (contactScratch.Count == 0) break;
+
+                for (int i = 0; i < contactScratch.Count; i++)
+                {
+                    var c = contactScratch[i];
+                    SeparatePositions(a, b, c.Normal, Math.Max(c.Penetration, 0.001));
+                }
+            }
+            PerfProbe.CollisionStageEnd(PerfProbe.ColStageProjection, colProjectionClock);
+
+            // 仍有 part 接触但单接触法线已推完：清组盒残余（侧靠多 part 船）。
+            if (contactScratch.Count > 0)
+                SeparateByGroupAabbAllAxes(a, b);
+
+            if (DebugDetailedCollision)
+            {
+                Log.Message($"[ShipCollision] 多接触求解 G{a.GroupId} vs G{b.GroupId} 初始接触={initialContacts} 末接触={contactScratch.Count} 位置迭代={posIters} " +
+                    $"接近速度={vRel:F1}m/s 质量={ma:F0}/{mb:F0}kg e={e:F2} " +
+                    $"首接触=({firstPoint.x:F0},{firstPoint.y:F0},{firstPoint.z:F0}) 首法线=({firstN.x:F2},{firstN.y:F2},{firstN.z:F2})");
+            }
+        }
+
+        /// <summary>
+        /// 把世界系冲量在接触点处的角冲量加到组的角速度上（`Δω = I⁻¹·(r × J)`）。
+        /// 惯量张量在**本体系**（主轴 + 方向矩阵）；r/J 先转进本体系，算完再转回世界系。
+        /// 无惯量数据（headless/无部件）⇒ 静默跳过（位置/线速度响应仍然生效）。
+        /// </summary>
+        private DVector3 ApplyCollisionAngularImpulse(SpaceEntityGroup group, DVector3 worldContact, DVector3 worldImpulse)
+        {
+            DVector3 dw = ComputeCollisionDeltaOmega(group.InertiaResult, group.CurrentOrbit.rotation,
+                GetGroupPos(group), worldContact, worldImpulse);
+            group.angularVelocity += dw;
+            return dw;
+        }
+
+        /// <summary>纯角冲量数学（静态、可单测）：`Δω = R·I_p⁻¹·(Rᵀ(r × J))`。</summary>
+        internal static DVector3 ComputeCollisionDeltaOmega(in InertiaTensor.InertiaResult r, DQuaternion rotation,
+            DVector3 groupPos, DVector3 worldContact, DVector3 worldImpulse)
+        {
+            if (!r.HasData || !(r.p1 > 0.0)) return DVector3.zero;
+
+            DVector3 comWorld = DVector3.Rotate(new DVector3(r.comX, r.comY, r.comZ), rotation);
+            DVector3 leverWorld = worldContact - groupPos - comWorld;
+            DQuaternion qInv = DQuaternion.Inverse(rotation);
+            DVector3 lever = DVector3.Rotate(leverWorld, qInv);
+            DVector3 impulse = DVector3.Rotate(worldImpulse, qInv);
+
+            DVector3 h = DVector3.Cross(lever, impulse);
+            DVector3 dwBody = InertiaTensor.InverseInertiaMultiply(r, h.x, h.y, h.z);
+            return DVector3.Rotate(dwBody, rotation);
+        }
+
+        private static string FormatOmega(DVector3 w)
+            => $"({w.x:F4},{w.y:F4},{w.z:F4})rad/s|{w.magnitude * Mathf.Rad2Deg:F2}°/s";
+
+        /// <summary>高速真爆炸：范围损伤 + 爆炸视觉（2026-10-17 用户裁定：撞击爆炸**不再施加径向冲量**）。
         /// deferredEmptyGroups：本调用处于 pair 迭代内，AoE 击毁导弹成员后变空的组延后销毁（C）。</summary>
         private void TriggerExplosion(SpaceEntityGroup a, SpaceEntityGroup b,
             DVector3 pa, DVector3 pb, DVector3 va, DVector3 vb, DVector3 nDir, double vRel,
-            double ox, double oy, double oz, HashSet<int>? deferredEmptyGroups = null)
+            DVector3 contactPoint, HashSet<int>? deferredEmptyGroups = null)
         {
             double ma = GetGroupMass(a);
             double mb = GetGroupMass(b);
             double mEff = ma * mb / (ma + mb);
             double E = 0.5 * mEff * vRel * vRel;
 
-            DVector3 hitPoint = (pa + pb) * 0.5;
+            // 碰 6 补（2026-10-17）：爆炸分支也必须**消费法向相对速度**。否则 80 m/s 对穿的两船
+            // 在爆炸后仍按原速度互穿，下一 tick 再进重叠/扫掠 ⇒ 反复爆炸（实测 G1/G2 连续 100+ 次
+            // "tunneling 捕获"后才靠爆风碰巧分开）。恢复系数与低速撞击同取 e=0.2：
+            // e=0（完全非弹性）会让两船以同一速度粘在一起（2026-10-17 实测"粘住"）。
+            double e = vRel >= CollisionRestitutionMinSpeed ? CollisionRestitution : 0.0;
+            double jn = -(1.0 + e) * vRel / (1.0 / ma + 1.0 / mb);
+            ApplyGroupVelocity(a, va + nDir * (jn / ma));
+            ApplyGroupVelocity(b, vb - nDir * (jn / mb));
+
+            DVector3 hitPoint = contactPoint.sqrMagnitude > 0.0 ? contactPoint : (pa + pb) * 0.5;
             double R = CollisionExplosionBaseRadius + CollisionExplosionRadiusK * Math.Pow(E, 1.0 / 3.0);
             double D0 = CollisionExplosionDamageK * Math.Sqrt(E);
 
             int frameId = GetCombatGrid()?.ResolveFrameId(a.CelestialBodyId) ?? -1;
             int damaged = ApplyExplosionDamage(frameId, hitPoint, R, D0, -1, deferredEmptyGroups);
-            int pushed = ApplyExplosionImpulse(frameId, hitPoint, R, E);
+            // 2026-10-17 用户裁定：**撞击爆炸只产生损伤，不再施加径向动量**。
+            // 动量交换由上一段的碰撞冲量（jn）完成；弹头爆炸仍走 ApplyExplosionImpulse（另一条路径）。
 
             // 视觉残留
             activeExplosions.Add(new ExplosionInstance
@@ -1232,11 +3817,11 @@ namespace PioneerFramework.Combat
                 systemBodyId = GetSpaceGameComp()?.ResolveReferenceFrameId(a.CelestialBodyId) ?? -1
             });
 
-            SeparatePositions(a, b, ox, oy, oz);
+            SeparateByContacts(a, b);
 
             if (DebugDetailedCollision)
             {
-                Log.Message($"[爆炸] G{a.GroupId} vs G{b.GroupId} 碰撞点=({hitPoint.x:F0},{hitPoint.y:F0},{hitPoint.z:F0}) 半径={R:F0}m 能量={E:F2}J vRel={vRel:F1}m/s 损伤Part={damaged} 冲量船={pushed}");
+                Log.Message($"[爆炸] G{a.GroupId} vs G{b.GroupId} 碰撞点=({hitPoint.x:F0},{hitPoint.y:F0},{hitPoint.z:F0}) 半径={R:F0}m 能量={E:F2}J vRel={vRel:F1}m/s 损伤Part={damaged}（撞击爆炸只损伤，无径向冲量）");
             }
         }
 
@@ -1945,7 +4530,7 @@ namespace PioneerFramework.Combat
             {
                 positionSystem = (SystemVec3)birthPos,
                 velocitySystem = (SystemVec3)birthVel,
-                rotation = birthRotation
+                rotation = (DQuaternion)birthRotation
             };
             spaceGame.RegisterGroup(group);
             // D15 转向率覆盖：默认 5°/s 对追导太慢（转 90° 要 18s），导弹用 MissileDef 敏捷值（20°/s）
@@ -2081,7 +4666,7 @@ namespace PioneerFramework.Combat
             {
                 positionSystem = (SystemVec3)(birthPos + axisDepth * mid),
                 velocitySystem = (SystemVec3)birthVel,
-                rotation = birthRotation
+                rotation = (DQuaternion)birthRotation
             };
             spaceGame.RegisterGroup(group);
             group.maxAngularRate = missileDef.maxAngularRateDegrees * Mathf.Deg2Rad;
@@ -2788,7 +5373,7 @@ namespace PioneerFramework.Combat
                         hitEntity = entity;
                         hitPartIndex = -1;
 
-                        // Part 级精确检测（单 part 化：唯一 part slab 直判，§5.3）。
+                        // Part 级精确检测（多 part：**逐 part slab 取最近 tEntry**，§5.3/批 3）。
                         // 线段基准 = 盒进入点（局部系）：part 检测从进入点扫盒内区间。
                         // 旋转保持长度，局部系 t 与世界系 t 一致 → 距离 = t × beamLength。
                         if (entity.Parts.Count > 0)
@@ -2796,20 +5381,11 @@ namespace PioneerFramework.Combat
                             DVector3 dirShip = (endShip - startShip).normalized;
                             DVector3 boxEntry = startShip + dirShip * (tEntry * beamLength);
                             double maxDistShip = (tExit - tEntry) * beamLength;
-                            var hitPart = entity.Parts[0];
-                            DVector3 partMin = hitPart.positionShip - hitPart.boundsSizeShip * 0.5;
-                            DVector3 partMax = hitPart.positionShip + hitPart.boundsSizeShip * 0.5;
-                            bool partHit = CombatGrid.RaySlabIntersection(boxEntry, boxEntry + dirShip * maxDistShip,
-                                partMin, partMax, out double partTEntry, out _, out _);
-                            // partTEntry 可为微负（盒入口恰在 part 盒表面时浮点抖动/起点已在盒内）：
-                            // 命中参数取 max(0, ·)，否则"起点在盒内"被误判 miss（直射 AABB 表面时交替命中/未命中）。
-                            // RaySlabIntersection 已保证 tFar>=0 且区间与 [0,1] 有交集，去掉 >=0 检查安全。
-                            partHit = partHit && partTEntry <= maxDistShip;
-                            if (partHit)
+                            if (TryPickHitPart(entity, boxEntry, dirShip, maxDistShip,
+                                    out int pickedIndex, out var hitPart, out double partEnterT))
                             {
-                                double partEnterT = partTEntry < 0 ? 0 : partTEntry;
-                                hitPartIndex = 0;
-                                // 注意：partTEntry 是归一化参数（0..1 对应 part 线段），命中距离 = partEnterT × maxDistShip
+                                hitPartIndex = pickedIndex;
+                                // 注意：partEnterT 是归一化参数（0..1 对应 part 线段），命中距离 = partEnterT × maxDistShip
                                 hitShip = boxEntry + dirShip * (partEnterT * maxDistShip);
                                 // 船壳入口（贯通视觉弹）：命中点沿入射方向反方向延长到 AABB 六面
                                 // （RayExitAabb 反向复用，与出膛点几何对称；命中点必在盒内 → 恒出射）
@@ -2820,7 +5396,7 @@ namespace PioneerFramework.Combat
                                 // part 详情（详细日志）：盒入口 / part 命中参数 / 命中局部点 / 船壳入口
                                 if (DebugDetailedCombat)
                                 {
-                                    Log.Message($"[激光part] G{groupId}→G{targetGroup.GroupId} E{entityId} 盒入口=({boxEntry.x:F1},{boxEntry.y:F1},{boxEntry.z:F1})m partT={partTEntry:F3} 命中局部=({hitShip.x:F1},{hitShip.y:F1},{hitShip.z:F1})m 船壳入口=({entryShip.x:F1},{entryShip.y:F1},{entryShip.z:F1})m 入射局部方向=({dirShip.x:F3},{dirShip.y:F3},{dirShip.z:F3})");
+                                    Log.Message($"[激光part] G{groupId}→G{targetGroup.GroupId} E{entityId} Part[{pickedIndex}] 盒入口=({boxEntry.x:F1},{boxEntry.y:F1},{boxEntry.z:F1})m partT={partEnterT:F3} 命中局部=({hitShip.x:F1},{hitShip.y:F1},{hitShip.z:F1})m 船壳入口=({entryShip.x:F1},{entryShip.y:F1},{entryShip.z:F1})m 入射局部方向=({dirShip.x:F3},{dirShip.y:F3},{dirShip.z:F3})");
                                 }
                             }
                         }
@@ -2856,9 +5432,11 @@ namespace PioneerFramework.Combat
                     }
 
                     // 定向能贯通视觉弹：命中目标有 Map → 从船壳入口贯穿到落点（光束切进船体）
-                    if (hitEntity.MapId >= 0)
+                    // 多 part：只有命中挂图舱盒才映射图内；非挂图件（引擎/储罐）不落图。
+                    // B6：按命中 part 的 linkedMapId 选图（多图船不再只能落在主图）。
+                    if (hitPart.linkedMapId >= 0)
                     {
-                        Map targetMap = SpaceMapGenerator.FindPocketMap(hitEntity.MapId);
+                        Map targetMap = SpaceMapGenerator.FindPocketMap(hitPart.linkedMapId);
                         if (targetMap != null)
                             SpawnPenetrationMote(hitEntity, targetMap, hitShip, entryShip);
                     }
@@ -2938,7 +5516,24 @@ namespace PioneerFramework.Combat
         {
             groupWeapons.Remove(groupId);
             shipLastPositions.Remove(groupId);
+            shipPrevPositions.Remove(groupId);
+            groupCollisionCache.Remove(groupId);
             // 射弹继续飞行，不清理
+        }
+
+        /// <summary>
+        /// 新组注册时把**出生位置**记为上一位置：否则 `SyncAllShipsToGrid` 第一次看到它时
+        /// 已经在本物理步末尾，扫掠段只剩当前点 ⇒ 一步跨过对方的新船（10 km/s 演示）永远不撞。
+        /// 已有记录不覆盖（正常注册的组不动）。
+        /// </summary>
+        internal void NoteGroupSpawned(SpaceEntityGroup group)
+        {
+            if (group == null) return;
+            int gid = group.GroupId;
+            if (!shipLastPositions.ContainsKey(gid))
+                shipLastPositions[gid] = GetGroupPos(group);
+            shipPrevPositions.Remove(gid);
+            groupCollisionCache.Remove(gid);
         }
 
         public override void ExposeData()

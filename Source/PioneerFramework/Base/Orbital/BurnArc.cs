@@ -44,7 +44,15 @@ namespace PioneerFramework
         /// · **50 步（2026-10-15）：精度账（net10 实测）Δe 1.43e-13 = 判别余量的 1.2e-10（长燃 LEO）/ 9.9e-16（月球）**；
         ///   相位 argmin 在 400/200/100/50 四档下 7 组几何全同（2026-09-30 台架 + net10 判据复跑）；成本再减半。
         ///   （同轮另判：泰勒 V2 判过不接——等效成本下比 RK4 精度差 ~5 个数量级，见总纲批 E。）
+        /// · **KSA-②（2026-10-17）：50 变成下限**——步长按**局部轨道周期**归一：
+        ///   `steps = clamp(ceil(970·t_b/T_loc), 50, 400)`，`T_loc = 2π√(r³/μ)`（r = 点火时刻半径）。
+        ///   短燃（典型 300 s LEO）仍 50 步 ⇒ 既有判据口径不变；长燃按 `(t_b/T)⁴` 放大的误差被抵消；
+        ///   上限 400（= 优化前旧值）防成本失控。
         internal const int Steps = 50;
+        /// <summary>步数上限（= 2026-09-30 优化前的旧默认 400）；长燃成本封顶。</summary>
+        internal const int MaxSteps = 400;
+        /// <summary>KSA-② 参考密度（步/局部周期）：970 ⇒ 典型 300 s LEO（r≈7e6，T_loc≈5.83e3 s）恰 50 步。</summary>
+        internal const double ReferenceStepDensity = 970.0;
 
         /// <summary>一条燃烧弧的预测结果。</summary>
         public readonly struct Result
@@ -92,7 +100,7 @@ namespace PioneerFramework
             double elapsedSeconds, double ignitionShiftSeconds, out Result result, out string reason)
         {
             double frac = Math.Max(0.0, Math.Min(1.0, elapsedSeconds / Math.Max(burnSeconds, 1e-9)));
-            return Predict(o, nodeUt, dv, burnSeconds, (int)Math.Round(Steps * frac), ignitionShiftSeconds,
+            return Predict(o, nodeUt, dv, burnSeconds, frac, ignitionShiftSeconds,
                 out result, out reason);
         }
 
@@ -124,9 +132,9 @@ namespace PioneerFramework
         /// </summary>
         public static bool TryPredict(OrbitView o, double nodeUt, V3 dv, double burnSeconds,
             double ignitionShiftSeconds, out Result result, out string reason)
-            => Predict(o, nodeUt, dv, burnSeconds, Steps, ignitionShiftSeconds, out result, out reason);
+            => Predict(o, nodeUt, dv, burnSeconds, 1.0, ignitionShiftSeconds, out result, out reason);
 
-        private static bool Predict(OrbitView o, double nodeUt, V3 dv, double burnSeconds, int stepsDone,
+        private static bool Predict(OrbitView o, double nodeUt, V3 dv, double burnSeconds, double fraction,
             double ignitionShiftSeconds, out Result result, out string reason)
         {
             result = default;
@@ -160,7 +168,11 @@ namespace PioneerFramework
             double nor = V3.Dot(dv, hhat0);
 
             // ② 积分（方向按当前 RTN 取 ⇒ "解不动、方向按时间取"）
-            double dt = burnSeconds / Steps;
+            // KSA-②：总步数按局部轨道周期归一（下限 Steps=50；上限 400）；短燃与旧版逐位相同。
+            int totalSteps = StepCountFor(o, startUt, burnSeconds);
+            int stepsDone = (int)Math.Round(totalSteps * Math.Max(0.0, Math.Min(1.0, fraction)));
+            if (stepsDone > totalSteps) stepsDone = totalSteps;
+            double dt = burnSeconds / totalSteps;
             V3 dirLast = default;
             for (int i = 0; i < stepsDone; i++)
             {
@@ -174,8 +186,26 @@ namespace PioneerFramework
             return true;
         }
 
-        private static (V3 r, V3 v) Rk4(double mu, V3 r, V3 v, double dt, double a, double rad, double tan, double nor)
+        /// <summary>该弧的**总步数**（KSA-②：按点火时刻的局部轨道周期归一；下限 50、上限 400）。</summary>
+        internal static int StepCountFor(OrbitView o, double nodeUt, double burnSeconds, double ignitionShiftSeconds)
+            => StepCountFor(o, nodeUt - 0.5 * burnSeconds + ignitionShiftSeconds, burnSeconds);
+
+        /// <summary>按**点火时刻**的状态取局部周期 `T_loc = 2π√(r³/μ)`，再 `steps = clamp(ceil(970·t_b/T_loc), 50, 400)`。
+        /// 参考密度 970 让典型 300 s LEO 燃恰为 50 步 ⇒ 短燃与旧版逐位相同；长燃自动加密。</summary>
+        internal static int StepCountFor(OrbitView o, double startUt, double burnSeconds)
         {
+            (V3 r, V3 _) = o.RightHandedStateVectorsAtUT(startUt);
+            double rmag = r.magnitude;
+            double mu = o.mu;
+            if (!(mu > 0.0) || !(rmag > 0.0) || !(burnSeconds > 0.0)) return Steps;
+            double localPeriod = 2.0 * Math.PI * Math.Sqrt(rmag * rmag * rmag / mu);
+            double n = ReferenceStepDensity * burnSeconds / localPeriod;
+            if (!(n > Steps)) return Steps;          // NaN 也走这里（保守）
+            if (n >= MaxSteps) return MaxSteps;
+            return (int)Math.Ceiling(n);
+        }
+
+        private static (V3 r, V3 v) Rk4(double mu, V3 r, V3 v, double dt, double a, double rad, double tan, double nor)        {
             (V3 dr1, V3 dv1) = Deriv(mu, r, v, a, rad, tan, nor);
             (V3 dr2, V3 dv2) = Deriv(mu, r + 0.5 * dt * dr1, v + 0.5 * dt * dv1, a, rad, tan, nor);
             (V3 dr3, V3 dv3) = Deriv(mu, r + 0.5 * dt * dr2, v + 0.5 * dt * dv2, a, rad, tan, nor);

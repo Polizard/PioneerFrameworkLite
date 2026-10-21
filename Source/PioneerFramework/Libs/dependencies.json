@@ -34,6 +34,10 @@
       "sha256": "FA944D6482126745A8D7C951D3D291BCAC972F23CA3D5E3A470D43447B0903EC"
     },
     {
+      "path": "RimWorld/Brutal.Core.Strings.dll",
+      "sha256": "2D9FB723597FA7C03CAAF05497C563FF6871430B38C4C43AFAE920F7AF94C7B2"
+    },
+    {
       "path": "0Harmony/0Harmony.dll",
       "sha256": "94DD929A06F720869F6A718A64BC6713A37DBE153C2F4C16C031B2587D7EE694"
     }
@@ -42,6 +46,10 @@
     {
       "path": "TestRuntime/Microsoft.Extensions.Logging.Abstractions.dll",
       "sha256": "A76A735B63E6EF3B0BF41FF92423CBD16103B8952E8306140A9BD650346034DC"
+    },
+    {
+      "path": "TestRuntime/Microsoft.Extensions.ObjectPool.dll",
+      "sha256": "87E94F06DDD2CE29C71C5F25AC74A1EFB69F1DDC4325F247B96C5289E9ADA8EE"
     },
     {
       "path": "TestRuntime/com.rlabrecque.steamworks.net.dll",

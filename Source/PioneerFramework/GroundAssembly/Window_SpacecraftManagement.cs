@@ -390,9 +390,9 @@ namespace PioneerFramework.GroundAssembly
             Rect btnRemovePart = new Rect(rect.x + 264f, y, 132f, ButtonHeight);
             bool hasParts = design.parts != null && design.parts.Count > 0;
             if (Widgets.ButtonText(btnAddThruster, "添加推进器", true))
-                OnAddPart(new RocketPartSpec { defName = "PF_RocketPart_Debug_Thruster", category = "thruster", quantity = 1, installPosition = "engine" });
+                OnAddPart(new DesignPartSpec { defName = "PF_ShipPart_Thruster_Debug", category = "thruster", quantity = 1, installPosition = "engine" });
             if (Widgets.ButtonText(btnAddTank, "添加储罐", true))
-                OnAddPart(new RocketPartSpec { defName = "PF_RocketPart_Debug_Tank", category = "tank", quantity = 1, installPosition = "body" });
+                OnAddPart(new DesignPartSpec { defName = "PF_ShipPart_Tank_Debug", category = "tank", quantity = 1, installPosition = "body" });
             if (Widgets.ButtonText(btnRemovePart, "移除最后一个", hasParts))
                 OnRemovePartLast();
             y += ButtonHeight + SectionGap;
@@ -1039,12 +1039,12 @@ namespace PioneerFramework.GroundAssembly
             padComp.Design.CabinType = type;
         }
 
-        protected virtual void OnAddPart(RocketPartSpec part)
+        protected virtual void OnAddPart(DesignPartSpec part)
         {
             if (padComp?.Design == null || part == null)
                 return;
 
-            padComp.Design.parts ??= new System.Collections.Generic.List<RocketPartSpec>();
+            padComp.Design.parts ??= new System.Collections.Generic.List<DesignPartSpec>();
             padComp.Design.parts.Add(part);
         }
 

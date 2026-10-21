@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using Verse;
 using RimWorld;
@@ -38,8 +39,11 @@ namespace PioneerFramework
         private static readonly Texture2D?[] settlementTexByTech = new Texture2D?[8];   // 索引 = (int)TechLevel
         private static readonly MaterialPropertyBlock settlementBlock = new();
 
-        private double lastSettlementLogTick = double.MinValue;
-        private int lastSettlementLogCount = -1;
+        /// <summary>每颗天体的读数限频状态（**必须按天体分开**：地球 92 座 / 月球 0 座交替绘制，
+        /// 共用一份"上次数量"会每帧判成"数量变了" ⇒ 实测 859 行 + 每条 10 行栈 / 45 秒，见 2026-10-17 日志）。</summary>
+        private struct SettlementLogState { public double tick; public int count; }
+
+        private readonly Dictionary<ushort, SettlementLogState> settlementLogByBody = new();
 
         /// <summary>
         /// 把**这一颗天体**上的定居点画到它的地表（实时；不烘）。由 `DrawCelestialBodiesCore` 在对该天体画完
@@ -108,14 +112,15 @@ namespace PioneerFramework
             LogSettlementReadout(body, shown, night, size, techMin, techMax);
         }
 
-        /// <summary>读数（限频：数量变化即打，或每 300 物理秒一行）——"画了几座、几座亮着、多大、科技亮度区间"。</summary>
+        /// <summary>读数（限频：**该天体**数量变化即打，或每 300 物理秒一行）——"画了几座、几座亮着、多大、科技亮度区间"。</summary>
         private void LogSettlementReadout(CelestialBodyDef body, int shown, int night, float sizeViewUnits,
             float techMin, float techMax)
         {
             double tick = TimeScaleManager.GetPhysicsTickSafe();
-            if (shown == lastSettlementLogCount && tick - lastSettlementLogTick < 300.0) return;
-            lastSettlementLogCount = shown;
-            lastSettlementLogTick = tick;
+            ushort key = body.shortHash;
+            if (settlementLogByBody.TryGetValue(key, out var st)
+                && shown == st.count && tick - st.tick < 300.0) return;
+            settlementLogByBody[key] = new SettlementLogState { tick = tick, count = shown };
             Log.Message($"[PFView·定居点] body={body.defName} 定居点 {shown} 座（夜面 {night} 座亮灯）｜标记 {sizeViewUnits:F0} 视图单位（{sizeViewUnits / MetersToView / 1000f:F0} km）｜科技强度 {(techMax < 0f ? 0f : techMin):F2}~{(techMax < 0f ? 0f : techMax):F2}（覆盖/密度/亮度三轴）");
         }
 

@@ -1,0 +1,339 @@
+[
+  {
+    "name": "M1-isIndestructible-scribe",
+    "why": "批 -1 修复 #1：撤掉落盘行 ⇒ Scribe 两条测试必须红",
+    "file": "Source/PioneerFramework/Base/Core/SpacePart.cs",
+    "oldText": "Scribe_Values.Look(ref isIndestructible, \"isIndestructible\", false);",
+    "newText": "// MUTATION: Scribe_Values.Look(ref isIndestructible, \"isIndestructible\", false);",
+    "testFilter": "FullyQualifiedName~SpacePartScribeTests",
+    "expectFail": [
+      "SpacePartScribeTests.LoadSide_ScalarFields_RoundTrip",
+      "SpacePartScribeTests.SaveSide_PinsIsIndestructible_AndFullFieldSet"
+    ]
+  },
+  {
+    "name": "M2-active-slots-aggregation",
+    "why": "批 -1 修复 #5b：撤掉实体层聚合行 ⇒ 两条聚合测试必须红",
+    "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
+    "oldText": "shipStats.activeGainBonus += ps.activeGainBonus;",
+    "newText": "// MUTATION: shipStats.activeGainBonus += ps.activeGainBonus;",
+    "testFilter": "FullyQualifiedName~SensorArrayComponentTests",
+    "expectFail": [
+      "SensorArrayComponentTests.ActiveSlots_FlowPartToEntity",
+      "SensorArrayComponentTests.TwoParts_AggregateAtEntityLevel"
+    ]
+  },
+  {
+    "name": "M3-sensor-exposedata-fields",
+    "why": "批 -1 修复 #5a：撤掉 ExposeData 三场之一 ⇒ 传感器写出物证测试必须红",
+    "file": "Source/PioneerFramework/Components/SensorArrayComponentData.cs",
+    "oldText": "Scribe_Values.Look(ref memorySeconds, \"memorySeconds\", 0f);",
+    "newText": "// MUTATION: Scribe_Values.Look(ref memorySeconds, \"memorySeconds\", 0f);",
+    "testFilter": "FullyQualifiedName~SpacePartScribeTests",
+    "expectFail": [
+      "SpacePartScribeTests.SaveSide_SensorComponent_WritesAllSixFields"
+    ]
+  },
+  {
+    "name": "M4-catalog-propulsion-authority",
+    "why": "批 5 余下：撤掉推进器的目录权威分支 ⇒ 目录值/加权 ve 测试必须红（回退 ThingDef 或旧兜底）",
+    "file": "Source/PioneerFramework/GroundAssembly/PartPropulsionResolver.cs",
+    "oldText": "                    s.thrusterCount += qty;\n                    if (catalogDef != null)",
+    "newText": "                    s.thrusterCount += qty;\n                    if (catalogDef != null && false)",
+    "testFilter": "FullyQualifiedName~PartPropulsionResolverTests",
+    "expectFail": [
+      "PartPropulsionResolverTests.Resolve_CatalogThrusterAndTank_UsesCatalogValues",
+      "PartPropulsionResolverTests.Resolve_CatalogWinsOverThingDef",
+      "PartPropulsionResolverTests.Resolve_CatalogEntryWithoutPropulsionData_ContributesNothing",
+      "PartPropulsionResolverTests.Resolve_MixedThrusters_WeightsExhaustVelocityByMassFlow"
+    ]
+  },
+  {
+    "name": "M5-group-box-fallback-gate",
+    "why": "碰 3 修订 A：两支都有 part 却没有 part 对时必须不回退 ⇒ 撤掉闸门后真值表测试必须红",
+    "file": "Source/PioneerFramework/Combat/CombatManager.cs",
+    "oldText": "            => usablePartsA <= 0 || usablePartsB <= 0;",
+    "newText": "            => true;   // MUTATION",
+    "testFilter": "FullyQualifiedName~CollisionPartMathTests",
+    "expectFail": [
+      "CollisionPartMathTests.GroupAabbFallback_OnlyWhenEitherSideHasNoUsableParts"
+    ]
+  },
+  {
+    "name": "M6-map-mass-unknown-default",
+    "why": "Map 质量口径：未知建筑质量必须兜底 1 kg（用户 2026-10-17 裁定）",
+    "file": "Source/PioneerFramework/Base/MapComp/SpaceMapComp.Mass.cs",
+    "oldText": "        public const double UnknownBuildingMassKg = 1.0;",
+    "newText": "        public const double UnknownBuildingMassKg = 0.0;   // MUTATION",
+    "testFilter": "FullyQualifiedName~MapMassMathTests",
+    "expectFail": [
+      "MapMassMathTests.UnknownBuilding_DefaultsToOneKg"
+    ]
+  },
+  {
+    "name": "M7-collision-wet-mass",
+    "why": "2026-10-17 用户裁定：燃料参与碰撞动量交换 ⇒ 撤掉工质项后测试必须红",
+    "file": "Source/PioneerFramework/Combat/CombatManager.cs",
+    "oldText": "            => Math.Max(dryMassKg + propellantMassKg, 1.0);",
+    "newText": "            => Math.Max(dryMassKg, 1.0);   // MUTATION",
+    "testFilter": "FullyQualifiedName~CollisionPartMathTests",
+    "expectFail": [
+      "CollisionPartMathTests.CollisionMass_IncludesPropellant"
+    ]
+  },
+  {
+    "name": "M8-part-aabb-cache-invalidation",
+    "why": "B1：Add/Remove/Move 必须显式失效 AABB 缓存（headless tick 恒 -1，只靠 tick 会读旧值）",
+    "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
+    "oldText": "            aabbDirty = true;\n            cachedAabbTick = -1;\n            NotifyMapLinksChanged();           // 部件集变化可能带来挂图件的增删/移动\n            InvalidateStats();                 // partSetVersion++ 与群组信号失效都在这里",
+    "newText": "            // MUTATION: aabbDirty = true;\n            cachedAabbTick = -1;\n            NotifyMapLinksChanged();           // 部件集变化可能带来挂图件的增删/移动\n            InvalidateStats();                 // partSetVersion++ 与群组信号失效都在这里",
+    "testFilter": "FullyQualifiedName~PartSetMutationTests",
+    "expectFail": [
+      "PartSetMutationTests.MovePart_InvalidatesAabbCache_EvenWithoutTickManager"
+    ]
+  },
+  {
+    "name": "M9-next-part-id-scribe",
+    "why": "B1：nextPartId 必须随存档往返，否则读档后 AddPart 复用旧 id",
+    "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
+    "oldText": "            Scribe_Values.Look(ref nextPartId, \"nextPartId\", 1);",
+    "newText": "            // MUTATION: Scribe_Values.Look(ref nextPartId, \"nextPartId\", 1);",
+    "testFilter": "FullyQualifiedName~SpaceEntityPartScribeTests",
+    "expectFail": [
+      "SpaceEntityPartScribeTests.NextPartId_RoundTrips_AndAllocatesAboveSavedValue"
+    ]
+  },
+  {
+    "name": "M10-dquaternion-rotate",
+    "why": "B2：DQuaternion 旋转必须与 Unity Quaternion 等价；把旋转核短路后测试必红",
+    "file": "Source/PioneerFramework/Base/Core/DVector3.cs",
+    "oldText": "            return v + q.w * t + Cross(new DVector3(q.x, q.y, q.z), t);",
+    "newText": "            return v;   // MUTATION",
+    "testFilter": "FullyQualifiedName~DQuaternionTests",
+    "expectFail": [
+      "DQuaternionTests.Rotate_MatchesUnityQuaternion"
+    ]
+  },
+  {
+    "name": "M11-part-rotation-aabb",
+    "why": "B3a：零件自身姿态必须进入 AABB 投影；忽略旋转 ⇒ 旋转盒测试必红",
+    "file": "Source/PioneerFramework/Base/Core/PartGeometry.cs",
+    "oldText": "            DQuaternion combined = rotationShip == DQuaternion.identity\n                ? entityRotation\n                : entityRotation * rotationShip;",
+    "newText": "            DQuaternion combined = entityRotation;   // MUTATION",
+    "testFilter": "FullyQualifiedName~PartGeometryTests",
+    "expectFail": [
+      "PartGeometryTests.RotatedBox_WorldAabb_SwapsExtents"
+    ]
+  },
+  {
+    "name": "M12-obb-sat-narrowphase",
+    "why": "B3b：带姿态的 part 必须走 OBB-SAT；把分支短路回 AABB ⇒ 窄相测试必红",
+    "file": "Source/PioneerFramework/Combat/CombatManager.cs",
+    "oldText": "            if (aBox.UseObb || bBox.UseObb)",
+    "newText": "            if (false)   // MUTATION",
+    "testFilter": "FullyQualifiedName~PartGeometryTests",
+    "expectFail": [
+      "PartGeometryTests.Narrowphase_RotatedPart_UsesObbSat"
+    ]
+  },
+  {
+    "name": "M13-tank-fuel-by-capacity",
+    "why": "B4a：油量按储罐容量比例分布；改成均分 ⇒ 分布测试必红",
+    "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
+    "oldText": "                double want = clamped * (tank.capacityKg / totalCapacity);",
+    "newText": "                double want = clamped * 0.5;   // MUTATION",
+    "testFilter": "FullyQualifiedName~PartPropulsionComponentTests",
+    "expectFail": [
+      "PartPropulsionComponentTests.SyncTankFuel_DistributesByCapacity_AndSumsToPool"
+    ]
+  },
+  {
+    "name": "M14-engine-torque-by-flow",
+    "why": "B4b：引擎推力按质量流率分摊；改成均分 ⇒ 偏心力矩测试必红",
+    "file": "Source/PioneerFramework/Base/Core/EngineThrust.cs",
+    "oldText": "                double weight = p.flow / totalFlow;",
+    "newText": "                double weight = 1.0 / points.Count;   // MUTATION",
+    "testFilter": "FullyQualifiedName~EngineThrustTests",
+    "expectFail": [
+      "EngineThrustTests.Torque_AllocatesByMassFlow"
+    ]
+  },
+  {
+    "name": "M15-impact-normal-align",
+    "why": "S1 回归：part 窄相法线必须按组心连线定符号；去掉归一 ⇒ 退化接触测试必红（枚举顺序反向时 vRel<0、反向分离）",
+    "file": "Source/PioneerFramework/Combat/CombatManager.cs",
+    "oldText": "            if (centerDelta.sqrMagnitude > 0.0 && DVector3.Dot(normal, centerDelta) < 0.0)\n                return -normal;\n            return normal;",
+    "newText": "            return normal;   // MUTATION",
+    "testFilter": "FullyQualifiedName~CollisionPartMathTests",
+    "expectFail": [
+      "CollisionPartMathTests.AlignImpactNormal_FlipsDegeneratePartNormalAgainstCenterLine",
+      "CollisionPartMathTests.S1DegenerateContact_CoincidentSideParts_NormalAlignedToGroupCenters"
+    ]
+  },
+  {
+    "name": "M16-destroyed-mass-counted",
+    "why": "B5/D2 乙：损毁件质量必须仍计入；恢复“跳过 destroyed” ⇒ 质量/包围盒测试必红",
+    "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
+    "oldText": "                shipStats.mass += ps.mass;\n                if (p.isDestroyed) continue;",
+    "newText": "                if (p.isDestroyed) continue;   // MUTATION\n                shipStats.mass += ps.mass;",
+    "testFilter": "FullyQualifiedName~DamagedPartSemanticsTests",
+    "expectFail": [
+      "DamagedPartSemanticsTests.DestroyedPart_StillCountsMassAndBounds_KeySemantics"
+    ]
+  },
+  {
+    "name": "M17-tank-leak-on-destroy",
+    "why": "B5：储罐损毁必须漏光（权威池同步扣减）；去掉 TryConsume ⇒ 漏光测试必红",
+    "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
+    "oldText": "            var ownerMap = GetPartOwningMapComp(part);\n            if (leakedMass > 0.0)\n            {",
+    "newText": "            var ownerMap = GetPartOwningMapComp(part);\n            if (false)   // MUTATION\n            {",
+    "testFilter": "FullyQualifiedName~DamagedPartSemanticsTests",
+    "expectFail": [
+      "DamagedPartSemanticsTests.DestroyedTank_LeaksPoolAndCapacity"
+    ]
+  },
+  {
+    "name": "M18-engine-loss-on-destroy",
+    "why": "B5：引擎件损毁必须扣掉该台流率；短路 DisableEnginePart ⇒ 引擎流率测试必红",
+    "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
+    "oldText": "            LeakTankPart(part);\n            DisableEnginePart(part);",
+    "newText": "            LeakTankPart(part);\n            // DisableEnginePart(part);   // MUTATION",
+    "testFilter": "FullyQualifiedName~DamagedPartSemanticsTests",
+    "expectFail": [
+      "DamagedPartSemanticsTests.DestroyedEngine_RemovesFlowAndRecomputesVe"
+    ]
+  },
+  {
+    "name": "M19-multimap-part-reverse-lookup",
+    "why": "B6：Part→Map 反查必须按 linkedMapId 区分；退化成首件 ⇒ 多图绑定测试必红",
+    "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
+    "oldText": "        public SpacePart? GetPartForMap(int mapId)\n        {\n            if (mapId < 0) return null;\n            for (int i = 0; i < parts.Count; i++)\n            {\n                var p = parts[i];\n                if (p != null && p.linkedMapId == mapId) return p;\n            }\n            return null;\n        }",
+    "newText": "        public SpacePart? GetPartForMap(int mapId)\n        {\n            if (mapId < 0) return null;\n            return parts.Count > 0 ? parts[0] : null;   // MUTATION\n        }",
+    "testFilter": "FullyQualifiedName~MultiMapBindingTests",
+    "expectFail": [
+      "MultiMapBindingTests.GetMapIds_ReturnsAllLinkedMaps_InPartOrder",
+      "MultiMapBindingTests.GetMapIds_LegacyFallback_UsesPrimaryMapId_WhenNoPartLinked"
+    ]
+  },
+  {
+    "name": "M22-fuel-plan-priority",
+    "why": "B6：FuelPlan 必须低优先级先烧；反向迭代 ⇒ 优先级消耗测试必红",
+    "file": "Source/PioneerFramework/Base/Core/FuelPlan.cs",
+    "oldText": "            for (int t = 0; t < tiers.Count && remaining > 1e-12; t++)",
+    "newText": "            for (int t = tiers.Count - 1; t >= 0 && remaining > 1e-12; t--)   // MUTATION",
+    "testFilter": "FullyQualifiedName~FuelPlanTests",
+    "expectFail": [
+      "FuelPlanTests.Consume_Priority_LowTierFirst"
+    ]
+  },
+  {
+    "name": "M21-multimap-source-consume",
+    "why": "B6：多源聚合必须沿所有源分摊消耗；退化成只吃第一个源 ⇒ 聚合消耗测试必红",
+    "file": "Source/PioneerFramework/Base/Core/CompositePropulsionSource.cs",
+    "oldText": "            for (int i = 0; i < sources.Count && remaining > 0.0; i++)\n            {\n                var src = sources[i];\n                if (src == null) continue;\n                remaining -= src.TryConsumePropellant(def, remaining);\n            }",
+    "newText": "            if (sources.Count > 0) remaining -= sources[0].TryConsumePropellant(def, remaining);   // MUTATION",
+    "testFilter": "FullyQualifiedName~MultiSourcePropulsionTests",
+    "expectFail": [
+      "MultiSourcePropulsionTests.Composite_ConsumesAcrossSources"
+    ]
+  },
+  {
+    "name": "M20-sealed-placeholder-mass",
+    "why": "B6：封闭件必须先计 100kg 占位；去掉 ⇒ 封闭质量测试必红",
+    "file": "Source/PioneerFramework/Base/Core/SpacePart.cs",
+    "oldText": "            if (isSealed)\n                cachedStats.mass += SealedPlaceholderMassKg;",
+    "newText": "            // if (isSealed)\n            //     cachedStats.mass += SealedPlaceholderMassKg;   // MUTATION",
+    "testFilter": "FullyQualifiedName~MultiMapBindingTests",
+    "expectFail": [
+      "MultiMapBindingTests.SealedPart_Adds100kgPlaceholder"
+    ]
+  },
+  {
+    "name": "M23-main-axis-rcs-exclusion",
+    "why": "B8：全矢量 RCS 不定义主推轴；去掉 isVectoredRcs 过滤 ⇒ RCS 聚合测试必红",
+    "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
+    "oldText": "                if (engine == null || engine.isVectoredRcs) continue;",
+    "newText": "                if (engine == null) continue;   // MUTATION",
+    "testFilter": "FullyQualifiedName~MainThrustAxisAggregationTests",
+    "expectFail": [
+      "MainThrustAxisAggregationTests.VectoredRcs_DoesNotDefineMainAxis"
+    ]
+  },
+  {
+    "name": "M24-damaged-part-color",
+    "why": "B8：损毁件必须换残骸色；恒返健康色 ⇒ 分色测试必红",
+    "file": "Source/PioneerFramework/PFView/ShipModelRenderer.cs",
+    "oldText": "        public static Color PartColorFor(bool isDestroyed) => isDestroyed ? DamagedPartColor : PartColor;",
+    "newText": "        public static Color PartColorFor(bool isDestroyed) => PartColor;   // MUTATION",
+    "testFilter": "FullyQualifiedName~ShipModelRendererTests",
+    "expectFail": [
+      "ShipModelRendererTests.PartColorFor_DamagedUsesWreckColor_HealthyUsesPartColor"
+    ]
+  },
+  {
+    "name": "M25-map-link-cache-invalidate",
+    "why": "P0-1：图链缓存必须在挂图变化时失效；把 Notify 改成空操作 ⇒ 缓存测试必红",
+    "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
+    "oldText": "            mapLinkVersion++;\n            cachedMapIdsVersion = -1;",
+    "newText": "            // MUTATION: NotifyMapLinksChanged is a no-op",
+    "testFilter": "FullyQualifiedName~MultiMapBindingTests",
+    "expectFail": [
+      "MultiMapBindingTests.MapIdCache_InvalidatesAfterLinkChange"
+    ]
+  },
+  {
+    "name": "M26-tank-mass-version",
+    "why": "P0-2：罐质量变化必须走 tankMassVersion；去掉自增 ⇒ 燃料失效测试必红",
+    "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
+    "oldText": "            actual = plan.Consume(kg);\n            if (actual > 0.0)\n                tankMassVersion++;   // 罐质量变了 ⇒ COM/惯量缓存失效；功能 stats/群信号不受影响",
+    "newText": "            actual = plan.Consume(kg);\n            if (actual > 0.0) { }   // MUTATION",
+    "testFilter": "FullyQualifiedName~FuelPlanTests",
+    "expectFail": [
+      "FuelPlanTests.EntityConsume_DoesNotDirtyPartStats_ButBumpsTankMassVersion"
+    ]
+  },
+  {
+    "name": "M27-swept-cover-union",
+    "why": "配对完备性：注册格盒必须是 上一步当前格 ∪ 本步当前格；退回只注册当前格 ⇒ 相邻格对穿台架必红",
+    "file": "Source/PioneerFramework/SpatialIndexing/CombatGrid.cs",
+    "oldText": "            var newSweptBox = CoverBox.Union(oldCurrentBox, newCurrentBox);",
+    "newText": "            var newSweptBox = newCurrentBox;   // MUTATION",
+    "testFilter": "FullyQualifiedName~CollisionPairEnumerationTests",
+    "expectFail": [
+      "CollisionPairEnumerationTests.AdjacentCell_SweptCrossing_IsPaired"
+    ]
+  },
+  {
+    "name": "M28-part-axis-order-entity-position",
+    "why": "CCD part SAP 轴序必须含 entity.Position；只按 RelMin 排序 ⇒ 多实体组顺序错，AxisOrders 测试必红",
+    "file": "Source/PioneerFramework/Combat/CombatManager.cs",
+    "oldText": "                    keys[i] = r.Identity\n                        ? entity + (axis == 0 ? r.RelMin.x : axis == 1 ? r.RelMin.y : r.RelMin.z)\n                        : entity + center - half;",
+    "newText": "                    keys[i] = r.Identity\n                        ? (axis == 0 ? r.RelMin.x : axis == 1 ? r.RelMin.y : r.RelMin.z)\n                        : entity + center - half;   // MUTATION",
+    "testFilter": "FullyQualifiedName~AxisOrders_IncludeEntityPosition",
+    "expectFail": [
+      "CollisionPlanValidationBench.CollisionCache_AxisOrders_IncludeEntityPosition"
+    ]
+  },
+  {
+    "name": "M29-ccd-part-pair-cap",
+    "why": "256×256 part 级细化的护栏；退回 4096 ⇒ 256 验收测试必红",
+    "file": "Source/PioneerFramework/Combat/CombatManager.cs",
+    "oldText": "        internal const long CcdPartRefineMaxPartPairs = 256L * 256L;",
+    "newText": "        internal const long CcdPartRefineMaxPartPairs = 4096L;   // MUTATION",
+    "testFilter": "FullyQualifiedName~CcdPartRefine_Allows256x256",
+    "expectFail": [
+      "CollisionPlanValidationBench.CcdPartRefine_Allows256x256"
+    ]
+  },
+  {
+    "name": "M30-ccd-part-translate",
+    "why": "CCD 采样原位平移必须真的加 delta；退化成原样返回 ⇒ 平移 vs 重收集测试必红",
+    "file": "Source/PioneerFramework/Combat/CombatManager.cs",
+    "oldText": "                return new PartAabb(Min + delta, Max + delta, Center + delta,\n                    Half, Rotation, UseObb, Shape, Order);",
+    "newText": "                return new PartAabb(Min, Max, Center, Half, Rotation, UseObb, Shape, Order);   // MUTATION",
+    "testFilter": "FullyQualifiedName~Translated_MatchesFresh",
+    "expectFail": [
+      "CollisionPlanValidationBench.PartAabb_Translated_MatchesFreshCollect_AndOverlap"
+    ]
+  }
+]

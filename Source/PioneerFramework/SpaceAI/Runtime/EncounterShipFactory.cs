@@ -27,7 +27,7 @@ namespace PioneerFramework.SpaceAI
             var group = new SpaceEntityGroup(gid, faction.loadID)
             {
                 CelestialBodyId = bodyId, IsStealth = true, IsMovable = true, IsCollidable = true,
-                CurrentOrbit = new OrbitState {positionSystem = (SystemVec3)position, velocitySystem = (SystemVec3)velocity, rotation = Quaternion.identity}
+                CurrentOrbit = new OrbitState {positionSystem = (SystemVec3)position, velocitySystem = (SystemVec3)velocity, rotation = DQuaternion.identity}
             };
             Map? map = null;
             bool registeredEntity = false;

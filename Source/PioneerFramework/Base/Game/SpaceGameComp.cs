@@ -99,6 +99,27 @@ namespace PioneerFramework
         /// <summary>无 Map 主推方向型机动详细日志（D15 新增改动验证）：每物理步输出网选择/对准角/RCS/燃料/燃尽抑制。</summary>
         public static bool DebugDetailedThrust ;
 
+        /// <summary>
+        /// 高频诊断日志的**抽样闸**（2026-10-17；用户令"多探针"的配套：保留读数、掐掉洪泛）。
+        ///
+        /// ## 治什么（实测账）
+        /// 验收/蜂群场景会把「燃烧·头步 / 燃烧·对账 / Thrust / 导弹制导」按物理步刷成十万行量级：
+        /// 2026-10-17 一键验收实测 **10 MB / 85 s**（头步 2413 + 对账 2412 + Thrust 2412 + 制导 2240，
+        /// 每条还带调用栈）⇒ 撞 `Verse` 的 "max messages limit" 后**日志断流**（验收只剩到 3/8 阶段）；
+        /// 且步尖峰细分直接量到 `诊断日志=2000µs / 本步 2419µs`——**日志 I/O 就是尖峰本身**。
+        ///
+        /// ## 语义（读数能力保留）
+        /// **小场景全量**（场景单位数 ≤ 8 ⇒ 单船/小规模调试一条不少）；
+        /// **大场景轮转抽样**（`(组号×素数) ⊕ 物理拍` 低 4 位 ⇒ 每 16 拍轮到一次，所有大组都会出现，速率降 16×）。
+        /// 只门控**高频诊断**；error/warning 与低频事件（窗口过/收尾/包线/燃尽/再捕获/接管…）不受影响。
+        /// </summary>
+        internal static bool DiagSamplingAllowed(int id, double physicsTick, int sceneUnits)
+        {
+            if (sceneUnits <= 8) return true;
+            int h = id * 486187739; // 质数散列
+            return ((h ^ (int)physicsTick) & 0xF) == 0;
+        }
+
         // 自动对准 / 手动操舵详细日志状态（主线程）
         private readonly Dictionary<int, bool> alignStateByGroup = new();
         private int nextAlignLogTick ;
@@ -569,7 +590,12 @@ namespace PioneerFramework
             // 细网格：注册群组到战斗网格
             var combatGrid = Current.Game?.GetComponent<CombatGrid>();
             if (combatGrid != null && group.IsCollidable)
+            {
                 combatGrid.AddShip(group);
+                // 碰撞扫掠需要"出生位置"作为第一步的上一位置；否则新船首步跨过对方时检测不到。
+                // 只在确实入网格时播种，避免"有 lastPos 但不在网格"的错配。
+                Current.Game?.GetComponent<CombatManager>()?.NoteGroupSpawned(group);
+            }
 
             if (group.CelestialBodyId >= 0)
             {
@@ -686,11 +712,21 @@ namespace PioneerFramework
                 return;
 
             // 0. **先收集"这艘船有哪些地图"**（第 3 步注销实体之后就问不到 MapId 了）
+            //    ★ 修复（2026-10-17 批 -1 · 多part 就绪）：除实体级 MapId 外，各 part 的 `linkedMapId`（舱室图）也要收
+            //    ——否则销毁一艘多舱船会留下孤儿舱室图（正是本收口点要消灭的静默数据损失）。按 id 去重（单part 时二者同值）。
             List<int>? doomedMapIds = null;
             foreach (int entityId in group.GetEntityIds())
             {
-                if (entities.TryGetValue(entityId, out var e) && e != null && e.MapId >= 0)
-                    (doomedMapIds ??= new List<int>()).Add(e.MapId);
+                if (!entities.TryGetValue(entityId, out var e) || e == null) continue;
+                // B6：GetMapIds = 全部挂图 part（去重；旧档无 Part→Map 指针时回退 MapId）
+                var mapIds = e.GetMapIds();
+                for (int i = 0; i < mapIds.Count; i++)
+                {
+                    int mapId = mapIds[i];
+                    if (mapId < 0) continue;
+                    doomedMapIds ??= new List<int>();
+                    if (!doomedMapIds.Contains(mapId)) doomedMapIds.Add(mapId);
+                }
             }
 
             // 1. 细网格移除（此时 group 状态仍有效）
@@ -834,7 +870,7 @@ namespace PioneerFramework
                 IsCollidable = true,
                 CelestialBodyId = 1   // EARTH_BODY_ID，确保空间站放入地球参考系网格
             };
-            group.CurrentOrbit = new OrbitState { positionSystem = (SystemVec3)initialPosition, velocitySystem = SystemVec3.zero, rotation = Quaternion.identity };
+            group.CurrentOrbit = new OrbitState { positionSystem = (SystemVec3)initialPosition, velocitySystem = SystemVec3.zero, rotation = DQuaternion.identity };
             RegisterGroup(group);
 
             // 用 Part 尺寸创建实体：mapWidth × 50m(厚度) × mapHeight
@@ -867,10 +903,14 @@ namespace PioneerFramework
 
         // ── 地图封存/取档 ──
 
-        /// <summary>开始封存操作（异步多 tick）。</summary>
-        public bool BeginArchiveMap(SpaceEntity entity)
+        /// <summary>开始封存操作（异步多 tick；单图入口）。</summary>
+        public bool BeginArchiveMap(SpaceEntity entity) => BeginArchiveMap(entity, entity?.MapId ?? -1);
+
+        /// <summary>**B6：按 mapId 封存指定的一张图**（多图船逐张封存）。</summary>
+        public bool BeginArchiveMap(SpaceEntity entity, int mapId)
         {
-            if (entity != null && !string.IsNullOrEmpty(GetGroupById(entity.GroupId)?.LandingTaskId)) return false;
+            if (entity == null || mapId < 0) return false;
+            if (!string.IsNullOrEmpty(GetGroupById(entity.GroupId)?.LandingTaskId)) return false;
             if (ActiveArchiveOperation != null)
             {
                 Messages.Message("已有地图正在封存中，请等待完成。", MessageTypeDefOf.RejectInput, false);
@@ -882,7 +922,7 @@ namespace PioneerFramework
                 return false;
             }
 
-            var map = SpaceMapGenerator.FindPocketMap(entity.MapId);
+            var map = SpaceMapGenerator.FindPocketMap(mapId);
             if (map == null) return false;
 
             var op = MapArchiveManager.BeginArchiveMap(map, entity);
@@ -893,8 +933,11 @@ namespace PioneerFramework
             return true;
         }
 
-        /// <summary>开始取档操作（异步多 tick）。</summary>
-        public bool BeginRestoreMap(SpaceEntity entity)
+        /// <summary>开始取档操作（异步多 tick；单图入口）。</summary>
+        public bool BeginRestoreMap(SpaceEntity entity) => BeginRestoreMap(entity, -1, -1);
+
+        /// <summary>**B6：按 mapId/partId 取档**（多图船恢复指定的一张）。</summary>
+        public bool BeginRestoreMap(SpaceEntity entity, int mapId, int partId)
         {
             if (ActiveRestoreOperation != null)
             {
@@ -907,7 +950,9 @@ namespace PioneerFramework
                 return false;
             }
 
-            var op = MapArchiveManager.BeginRestoreMap(entity);
+            var op = mapId >= 0
+                ? MapArchiveManager.BeginRestoreMap(entity, mapId, partId)
+                : MapArchiveManager.BeginRestoreMap(entity);
             if (op == null) return false;
 
             ActiveRestoreOperation = op;
@@ -964,12 +1009,17 @@ namespace PioneerFramework
             if (op == null) return;
 
             var entity = op.TargetEntity;
-            entity.MapId = op.NewMap.uniqueID;
-            entity.HasMap = true;
             entity.IsMapArchived = false;
 
-            // 恢复双向映射
-            SpaceMapGenerator.LinkEntityToMap(entity, op.NewMap);
+            // B6：优先挂回原 part；原件不在了才自动找空位。
+            if (op.TargetPartId >= 0 && entity.GetPartById(op.TargetPartId) != null
+                && entity.GetPartById(op.TargetPartId)!.linkedMapId < 0)
+                SpaceMapGenerator.LinkEntityToMap(entity, op.NewMap, op.TargetPartId);
+            else
+                SpaceMapGenerator.LinkEntityToMap(entity, op.NewMap);
+
+            entity.RemoveArchivedMap(op.SourceMapId);
+            entity.IsMapArchived = !entity.HasMap;
 
             // 删除封存文件
             if (op.ArchiveFilePath != null && File.Exists(op.ArchiveFilePath))
@@ -1007,19 +1057,67 @@ namespace PioneerFramework
         /// · 只在**物理步**里调（`UpdateAllMovements` 之后，与其它每物理步消费者同拍）⇒ 读的是当前态。
         /// ⚠ 写成"变了才置脏"的属性（`SpaceEntityGroup.BuildingTechBonus`）⇒ 值没变不会白刷派生缓存。
         /// </summary>
+        // ── [V7]/[E3] 建筑级投影 scratch（2026-10-17 批 -1：同组多图 ⇒ 归并后一次写入）──
+        // 加性字段求和、波束几何取最大（与 SpaceMapComp 内部合并规则同口径）；每组每步恰好写一次。
+        private readonly Dictionary<int, SensorTech> projTechAcc = new();
+        private readonly Dictionary<int, RadarCapability> projRadarAcc = new();
+        private readonly Dictionary<int, float> projJamAcc = new();
+
         private void ProjectBuildingDetectTech()
         {
             if (mapComponents.Count == 0) return;
+
+            projTechAcc.Clear();
+            projRadarAcc.Clear();
+            projJamAcc.Clear();
+
             foreach (var kv in mapComponents)
             {
                 if (!(kv.Value is SpaceMapComp mc) || mc.ownerEntityId < 0) continue;
+                if (!mc.SensorsEnabled) continue;   // B6：切断该图的传感器系统
                 var entity = GetEntityById(mc.ownerEntityId);
                 if (entity == null) continue;
                 var group = GetGroupById(entity.GroupId);
                 if (group == null) continue;
-                group.BuildingTechBonus = mc.SensorArrayTech();
-                group.RadarCap = mc.RadarCapability();   // [V7]/[E2] 主动雷达能力（同一投影节拍）
-                group.BuildingJamBonus = mc.JammerStrength();   // [E3] 干扰机建筑（同一投影节拍，按毁损折算）
+                int gid = group.GroupId;
+
+                // ★ 修复（2026-10-17 批 -1）：原实现逐图直接赋值 ⇒ 同组多图时**最后一张覆盖其余**；改按组归并。
+                var tech = mc.SensorArrayTech();
+                if (projTechAcc.TryGetValue(gid, out var tAcc))
+                {
+                    tAcc.sensitivityMeters += tech.sensitivityMeters;
+                    tAcc.memorySeconds += tech.memorySeconds;
+                    tAcc.ecmResist += tech.ecmResist;
+                    tAcc.eccmResist += tech.eccmResist;
+                    projTechAcc[gid] = tAcc;
+                }
+                else projTechAcc[gid] = tech;
+
+                var radar = mc.RadarCapability();
+                if (projRadarAcc.TryGetValue(gid, out var rAcc))
+                {
+                    rAcc.activeGainBonus += radar.activeGainBonus;
+                    rAcc.activeRadiation += radar.activeRadiation;
+                    if (radar.beamHalfAngleDeg > rAcc.beamHalfAngleDeg) rAcc.beamHalfAngleDeg = radar.beamHalfAngleDeg;
+                    if (radar.beamRangeMeters > rAcc.beamRangeMeters) rAcc.beamRangeMeters = radar.beamRangeMeters;
+                    if (radar.scanRateDegPerSec > rAcc.scanRateDegPerSec) rAcc.scanRateDegPerSec = radar.scanRateDegPerSec;
+                    projRadarAcc[gid] = rAcc;
+                }
+                else projRadarAcc[gid] = radar;
+
+                float jam = mc.JammerStrength();
+                projJamAcc[gid] = projJamAcc.TryGetValue(gid, out var jAcc) ? jAcc + jam : jam;
+            }
+
+            foreach (var kv in projTechAcc)
+            {
+                var group = GetGroupById(kv.Key);
+                if (group == null) continue;
+                group.BuildingTechBonus = kv.Value;
+                if (projRadarAcc.TryGetValue(kv.Key, out var radarCap))
+                    group.RadarCap = radarCap;
+                if (projJamAcc.TryGetValue(kv.Key, out var jamAcc))
+                    group.BuildingJamBonus = jamAcc;
             }
         }
 
@@ -1124,7 +1222,7 @@ namespace PioneerFramework
         /// <summary>
         /// 直接设置实体的位置/速度/旋转。不涉及网格更新（实体不入网格）。
         /// </summary>
-        public void MoveEntity(SpaceEntity entity, DVector3 newPositionMeters, DVector3 newVelocityMeters, Quaternion newRotation)
+        public void MoveEntity(SpaceEntity entity, DVector3 newPositionMeters, DVector3 newVelocityMeters, DQuaternion newRotation)
         {
             if (entity == null) return;
             entity.Position = newPositionMeters;
@@ -1223,6 +1321,7 @@ namespace PioneerFramework
                     // 电子战总控（2026-10-02）：按段推进已跑完的验收（空闲时零开销）
                     EwSystemAcceptanceRunner.Tick();
                     AtmosphereAcceptanceRunner.Tick();   // 大气/悬浮/档位（L1）：空闲时第一行返回
+                    ComplexCollisionAcceptanceRunner.Tick(); // 多part 复杂碰撞：等撞击记录后自动结算（空闲零成本）
                 }
                 catch (Exception ex)
                 {
@@ -1292,7 +1391,10 @@ namespace PioneerFramework
             /// <summary>本步是否发生姿态变化（角速度积分产生新 rotation）。</summary>
             public bool HasRotationChange;
             /// <summary>姿态积分后的新 rotation（并行区只算不写，主线程统一施加）。</summary>
-            public Quaternion NewRotation;
+            public DQuaternion NewRotation;
+            /// <summary>本步角速度是否由无外力矩物理改写（仅 torqueFreePhysics 演示组）。</summary>
+            public bool HasAngularVelocityChange;
+            public DVector3 NewAngularVelocity;
             public bool HasActiveBurn;
             public bool BurnExhausted;
             /// <summary>RCS 修正燃烧耗尽时不终结 burn（主网仍有料、可能仍在等对准），避免误终止（D15 弱 RCS）。</summary>
@@ -1844,6 +1946,9 @@ namespace PioneerFramework
                         // 算式与判据都在纯层（`BurnStep`），台架用**同一份**（唯一算式纪律）
                         BurnStep.DeficitToTargetV(vLiveUt, group.burnTargetV, group.burnDirectionSystem,
                             BurnTargetVFloor, out DVector3 defDir, out double defRem, out bool defRev);
+                        group.burnLastDeficit = defRem;
+                        group.burnLastVLiveUt = vLiveUt;
+                        group.burnLastDeficitDir = defDir;
                         // ★★ **差额小到"追它不如停手"⇒ 不发指令**（2026-09-21 定，同日两次更正）
                         //
                         // ## 为什么（"抽"的本体）
@@ -1873,6 +1978,7 @@ namespace PioneerFramework
                         }
                             if (defRem > 0.0)
                             {
+                                group.burnTargetReached = false;
                                 group.burnDirectionSystem = defDir;
                                 group.remainingBurnDV = defRem;   // 剩余量**由活状态重算**，不再逐拍递减
                                 group.burnComponentsInit = true;   // 靶律直接给方向 ⇒ 不需要 RTN 分解
@@ -1888,6 +1994,7 @@ namespace PioneerFramework
                             }
                             else
                             {
+                                group.burnTargetReached = true;
                                 group.remainingBurnDV = 0.0;   // 达标或反向 ⇒ 收工（下方 BurnStep 会报 exhausted）
                                 group.burnThrottleCap = 0.0;
                                 if (defRev) group.burnReversedStopCount++;
@@ -2240,7 +2347,9 @@ namespace PioneerFramework
                     if (group.burnHeadStepsLogged < 6)
                     {
                         group.burnHeadStepsLogged++;
-                        result.AddDiag($"[燃烧·头步] G{group.GroupId} 第{group.burnHeadStepsLogged}步 t={physicsTick:F0}：aCmd={aCmd:F4}｜可用a={accel:F4}｜份额={dvFullSafe(aCmd, accel):F4}｜mass={groupMass:F1}｜fTotal={fTotal:F0}｜网络={activeSlices.Count}");
+                        // 抽样闸（2026-10-17）：计数器照走，只门控**打印**（大场景降 16×，小场景全量）。
+                        if (DiagSamplingAllowed(group.GroupId, physicsTick, groups.Count))
+                            result.AddDiag($"[燃烧·头步] G{group.GroupId} 第{group.burnHeadStepsLogged}步 t={physicsTick:F0}：aCmd={aCmd:F4}｜可用a={accel:F4}｜份额={dvFullSafe(aCmd, accel):F4}｜mass={groupMass:F1}｜fTotal={fTotal:F0}｜网络={activeSlices.Count}");
                     }
                     // ★ **唯一算式**（`BurnStep.Compute`）：执行器与台架/纯测试共用同一份 ⇒
                     //   "台架 vs 游戏"的差只可能来自环境，不可能来自模型（本会话最大的教训）。
@@ -2253,10 +2362,16 @@ namespace PioneerFramework
                         : group.remainingBurnDV;
                     BurnStep.Result bs = BurnStep.Compute(aCmd, accel, mfTotal, dtSeconds, remainingForStep);
                     double burnDv = bs.Dv;
+                    group.burnLastAppliedDv = burnDv;
                     if (burnDv > 0.0)
                     {
                         result.HasActiveBurn = true;
                         result.BurnExhausted = bs.Exhausted;
+                        // 活靶律的“预算烧完”不等于靶达成：有限燃烧的重力项会让实际节点速度仍有差额。
+                        // 靶未达成且有推力 ⇒ 继续，下一步从活状态重算差额；靶已达成/无推力才允许结束。
+                        if (group.burnHasTargetV && !group.abFreezeDirection
+                            && !group.burnTargetReached && fTotal > 0f)
+                            result.BurnExhausted = false;
                         result.PropellantConsumed = bs.Propellant;
                         result.ActiveSlices = activeSlices; // 引用快照，主线程按切片流率比例分配扣除
                         // ⚠ 探针 `SliceAlias` 也搬出并行区（R2，2026-09-26）：它写静态计数 + 可能 `Mismatch`
@@ -2452,22 +2567,36 @@ namespace PioneerFramework
                 result.HasOrbitKeeping = true;
             }
 
-            // ── 姿态积分（魔法动量轮）──
+            // ── 姿态积分（魔法动量轮 / 演示用无外力矩物理）──
             // 角速度 → rotation 增量；大步长（物理步 2s）下按角度限幅分子步，避免肉眼可见跳变。
             // 并行区只计算新姿态，主线程在结果应用时统一写 CurrentOrbit.rotation。
-            if (group.angularVelocity.sqrMagnitude > 1e-12)
+            // torqueFreePhysics（仅贾尼别科夫演示组）：用多part惯量张量按 Euler 方程演化 ω，再积分姿态；
+            // 不手写旋转，翻转是方程自然结果。默认 false ⇒ 生产路径不变。
+            DQuaternion tfRot = default;
+            DVector3 tfOmega = default;
+            bool torqueFree = group.torqueFreePhysics
+                && TorqueFreeRotation.Step(group, dtSeconds, out tfOmega, out tfRot);
+            if (torqueFree)
+            {
+                result.HasAngularVelocityChange = true;
+                result.NewAngularVelocity = tfOmega;
+                result.HasRotationChange = true;
+                result.NewRotation = tfRot;
+                result.NeedsUpdate = true;
+            }
+            else if (group.angularVelocity.sqrMagnitude > 1e-12)
             {
                 double w = group.angularVelocity.magnitude;
                 DVector3 axis = group.angularVelocity / w;
                 double totalAngle = w * dtSeconds;
                 int steps = Math.Max(1, (int)Math.Ceiling(totalAngle / (10f * Mathf.Deg2Rad)));
                 steps = Math.Min(steps, 32);
-                DQuaternion rot = DQuaternion.FromQuaternion(group.CurrentOrbit.rotation);
+                DQuaternion rot = group.CurrentOrbit.rotation;
                 DQuaternion stepRot = DQuaternion.AngleAxis(totalAngle / steps, axis);
                 for (int i = 0; i < steps; i++)
                     rot = stepRot * rot;
                 result.HasRotationChange = true;
-                result.NewRotation = rot.ToQuaternion();
+                result.NewRotation = rot;
                 result.NeedsUpdate = true;
             }
 
@@ -2488,6 +2617,8 @@ namespace PioneerFramework
         /// 群级气动外形（[A2-2] 的无 Map 生产者；**有 Map 组走同一盒模型的显式 fallback** —— [补1]：
         /// map 组 part 的 `boundsSizeShip` = 地图足迹 (宽, 50, 高)，见 `SpaceMapGenerator`）。
         /// 逐 part 求盒模型三轴 `(Cd·A)` 再**相加**（不建模遮挡）——L1 的 LOD 就是"把外形降成三个数"。
+        /// **B8 明示口径：每件独立、无遮挡、无串列屏蔽**；遮挡模型单列后置（会改变存量船阻力，
+        /// 必须另走裁定，不随本批偷偷生效）。损毁件不再贡献气动面积。
         /// 并行区只读调用：只遍历实体/部件表，无分配、无写。
         /// </summary>
         private AeroShape GetGroupAeroShape(SpaceEntityGroup group)
@@ -2568,7 +2699,7 @@ namespace PioneerFramework
                 return DVector3.zero;
             }
 
-            Quaternion rot = group.CurrentOrbit.rotation;
+            DQuaternion rot = group.CurrentOrbit.rotation;
             DVector3 axisFwd = DVector3.Rotate(DVector3.forward, rot);
             DVector3 axisLeft = DVector3.Rotate(DVector3.left, rot);
             DVector3 axisUp = DVector3.Rotate(DVector3.up, rot);
@@ -2791,12 +2922,11 @@ namespace PioneerFramework
             var def = IntakeAirDef;
             if (def == null) return;
 
-            // [A3] 有 Map 侧：写进**地图的工质池**（与燃烧扣料同一个池子、同一条 API）
+            // [A3] 有 Map 侧：按供油计划加注（高层先加满），池 raw 记账
             var mapComp = group.GetLinkedMapComp();
             if (mapComp != null)
             {
-                double room = mapComp.GetPropellantRoom(def);
-                if (room > 0.0) mapComp.AddPropellantMass(def, Math.Min(kg, room));
+                mapComp.TryFillPropellant(def, kg);
                 return;
             }
 
@@ -2810,8 +2940,9 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 主推轴世界方向（D15）：Map = mapComp.MainThrustAxis 随 rotation 旋转；
-        /// 无 Map 主推方向型 = entity.mainAxisShip 随 rotation 旋转；全向类（无主推轴）= zero。
+        /// 主推轴世界方向（D15/B8）：Map = mapComp.MainThrustAxis 随 rotation 旋转；
+        /// 无 Map 主推方向型 = part 引擎按 `ve·ṁ` 聚合出的轴（`SpaceEntity.GetMainThrustAxisShip`），
+        /// 无引擎件时回退旧 `entity.mainAxisShip`；全向类（无主推轴）= zero。
         /// 并行区只读调用（与 GetGroupPropulsionSource 同纪律）。
         /// 只读公开给表现层（PFView 朝向指示）——**唯一出处**，视图不再复制一份"Map/无 Map"解析分支。
         /// </summary>
@@ -2825,9 +2956,11 @@ namespace PioneerFramework
             foreach (int eid in group.GetEntityIds())
             {
                 var e = GetEntityById(eid);
-                // HasMainAxis 的定义即 mainAxisShip.HasValue 且模长非零（SpaceEntity.cs:276）⇒ 非空断言有凭据
-                if (e != null && e.HasMainAxis)
-                    return DVector3.Rotate(e.mainAxisShip!.Value.normalized, group.CurrentOrbit.rotation);
+                if (e == null) continue;
+                // B8：part 引擎聚合优先；无引擎件 ⇒ 旧 mainAxisShip（D15）兜底。
+                DVector3 axisShip = e.GetMainThrustAxisShip();
+                if (axisShip.sqrMagnitude > 1e-12)
+                    return DVector3.Rotate(axisShip, group.CurrentOrbit.rotation);
             }
             return DVector3.zero;
         }
@@ -2874,8 +3007,11 @@ namespace PioneerFramework
             if (rotAxis.sqrMagnitude < 1e-12)
                 rotAxis = DVector3.Cross(currentAxisSystem, Math.Abs(currentAxisSystem.y) < 0.9 ? DVector3.up : DVector3.forward);
             DVector3 axisN = rotAxis.normalized;
+            // 批 1（2026-10-17）：限速按**这根旋转轴**的转动惯量取 `τ_ref/I_轴`（大船慢；
+            // 滚/偏/俯上限各不同；`maxAngularRate` def 覆盖优先——导弹读数不变）。
+            double maxRate = group.MaxAngularRateAboutWorldAxis(axisN);
             // 剩余夹角小于一步最大转角 → 降速收敛（避免越过目标震荡）
-            double rate = Math.Min(group.MaxAngularRate, error / Math.Max(dtSeconds, 1e-9));
+            double rate = Math.Min(maxRate, error / Math.Max(dtSeconds, 1e-9));
             group.angularVelocity = axisN * rate;
         }
 
@@ -3679,7 +3815,8 @@ namespace PioneerFramework
                     group.burnStepAuditCount++;
                     double got = group.pendingImpulse.magnitude;
                     group.appliedDvAudit += got;   // ⚠ 先累加**再**打印（上一版打的是"加本笔之前"的值 ⇒ 我据此误判过一次 ✗）
-                    if (burnAuditLinesThisStep < BurnAuditMaxLinesPerStep)
+                    if (burnAuditLinesThisStep < BurnAuditMaxLinesPerStep
+                        && DiagSamplingAllowed(group.GroupId, Find.TickManager.TicksGame, groups.Count))
                     {
                         burnAuditLinesThisStep++;
                         Log.Message($"[燃烧·对账] G{group.GroupId} 第{group.burnStepAuditCount}笔：命令={group.burnLastCmdDv:F5}｜实收={got:F5}｜差={(group.burnLastCmdDv > 1e-9 ? (got - group.burnLastCmdDv) / group.burnLastCmdDv * 100.0 : 0.0):F2}%｜**含本笔**累计实收={group.appliedDvAudit:F3} m/s");
@@ -3696,8 +3833,12 @@ namespace PioneerFramework
             }
         }
 
+        /// <summary>仅用于 FinalizeInit 的 JIT 预热：入口处返回，方法体已被完整编译。</summary>
+        private static bool warmupPhysicsStep;
+
         protected virtual void UpdateAllMovements(TimeScaleManager timeScaleManager)
         {
+            if (warmupPhysicsStep) return;   // JIT 预热调用：编译完方法体即返回，不碰状态
             // ★ 2026-10-01 第三轮：**从函数第一行起**计时（此前只圈 `ApplySteering` 之后 ⇒
             //   `dt/physicsTick` 与 `celestialRef.Get()` 这段"未计时头"不在任何阶段里 —— 实测有一条
             //   3.16 ms 的步（t=27782，燃烧中）五段合计只有 78 µs，时间就落在这类缝里）。
@@ -3723,11 +3864,15 @@ namespace PioneerFramework
             PerfProbe.PhaseClockEnd(PerfProbe.PhaseSteer, phSteer);
 
             // ── [A8] 解析搬运：每步记账（`m·dv/ve`，与悬浮解析档同一个消耗口）+ 到达清单 ──
+            long phTransfer = PerfProbe.PhaseClockStart();
             ApplyAnalyticTransfer(dtSeconds, physicsTick, celestialMgr);
+            PerfProbe.PhaseClockEnd(PerfProbe.PhaseAnalyticTransfer, phTransfer);
 
             // ── [A7] 悬浮控制（每物理步，主线程）：定点误差 → 全矢量推力 → 冲量 + 扣料 ──
             //    放这里与操舵同相：冲量进 `pendingImpulse` ⇒ 下一行的 `ApplyPendingImpulses` 本步立即生效。
+            long phHover = PerfProbe.PhaseClockStart();
             ApplyHover(dtSeconds, physicsTick, celestialMgr);
+            PerfProbe.PhaseClockEnd(PerfProbe.PhaseHover, phHover);
 
             // ── 物理步首：统一施加上一步累积的合冲量（burn/碰撞动量交换/爆炸/手动 ΔV），
             //    然后清零。并行区此后只累积新冲量，不直接改速度。──
@@ -4003,7 +4148,8 @@ namespace PioneerFramework
                 long apBp = PerfProbe.ApplySubClockStart();   // 块①c：调试日志 + 轨道保持 + 巡检探针 + 验收 Tick
                 // ── 无 Map 主推/RCS 机动详细日志（DebugDetailedThrust，D15 改动验证）──
                 // 每物理步：选网（主/RCS/兜底）、主推轴-目标夹角、Δv/余 dv、双罐燃料、燃尽抑制、转向角速度。
-                if (DebugDetailedThrust && result.NoMapThrust)
+                if (DebugDetailedThrust && result.NoMapThrust
+                    && DiagSamplingAllowed(group.GroupId, Find.TickManager.TicksGame, groups.Count))
                 {
                     double angleDeg = Mathf.Rad2Deg * Mathf.Acos((float)Math.Max(-1.0, Math.Min(1.0, result.MainDot)));
                     string sel = result.UseMainSel && result.UseRcsSel ? "主+RCS"
@@ -4037,6 +4183,9 @@ namespace PioneerFramework
                     }
                     alignStateByGroup[group.GroupId] = aligningNow;
                 }
+
+                if (result.HasAngularVelocityChange)
+                    group.angularVelocity = result.NewAngularVelocity;
 
                 if (result.NeedsUpdate)
                 {
@@ -4123,10 +4272,16 @@ namespace PioneerFramework
                 // 这里不再写副本（实测滞后 ≤ 一步、月球档 ≈1.8 km，与交会门同阶 ⇒ 读现算值才是对的）。
                 // `result.SyncBodyPos/Vel` 仍留给下面的巡检探针用（它是那一步的系统系偏移）。
 
-                LogNonRootRendezvousState(group, physicsTick,
-                    dtSeconds > 0.0 ? result.OrbitKeepingDvCost / dtSeconds : 0.0,
-                    result.SyncBodyPos, result.SyncBodyVel);   // 批5.C 巡检探针（"全打上"版）
-                MoonRendezvousAcceptanceRunner.Tick(physicsTick, this);   // 绕月交会：自动判定（每步查一次）
+                // 调用点先判：绝大多数编队没有交会引导/验收场景，没必要每步付组件/天体查询，
+                // 也避免为无关编队首次触发这两条调试路径的 JIT（2026-10-19 尖峰归因：块①c 2.8ms）。
+                if (group.HasRendezvousGuidance)
+                {
+                    LogNonRootRendezvousState(group, physicsTick,
+                        dtSeconds > 0.0 ? result.OrbitKeepingDvCost / dtSeconds : 0.0,
+                        result.SyncBodyPos, result.SyncBodyVel);   // 批5.C 巡检探针（"全打上"版）
+                }
+                if (MoonRendezvousAcceptanceRunner.IsArmed)
+                    MoonRendezvousAcceptanceRunner.Tick(physicsTick, this);   // 绕月交会：自动判定（每步查一次）
                 PerfProbe.ApplySubClockEnd(PerfProbe.ApplySubBurnProbe, apBp);
 
                 groupsToCheck.Add(group.GroupId);
@@ -4200,7 +4355,14 @@ namespace PioneerFramework
 
                 if (group.plannedManeuvers.Count == 0)
                 {
-                    group.pendingAlignDir = DVector3.zero; // 无待执行机动 → 取消预对准
+                    // 自动对准目标消失（清队列/取消机动）⇒ 消旋；手动旋转/SAS 开着时不碰 ω（随后会写）。
+                    bool hadAutoAlign = group.pendingAlignDir.sqrMagnitude > 1e-12;
+                    group.pendingAlignDir = DVector3.zero;
+                    bool manualRotation = SteeringController.IsOpen
+                        && SteeringController.GroupId == group.GroupId
+                        && (SteeringController.AnyRotation || SteeringController.SasKind != SasTargetKind.None);
+                    if (hadAutoAlign && !manualRotation)
+                        group.angularVelocity = DVector3.zero;
                     continue;
                 }
 
@@ -4898,6 +5060,7 @@ namespace PioneerFramework
         /// <summary>本拍预取的阶梯计划（`UpdateRendezvousGuidance` 开头调一次；主循环里消费）。</summary>
         private void PrefetchLadderPlans(double physicsTick)
         {
+            long pfClock = Prefs.DevMode ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             ladderPrefetch.Clear();
             var mgr = celestialRef.Get();
             if (mgr == null) return;
@@ -4959,6 +5122,21 @@ namespace PioneerFramework
                     nodes = nodesArr[k],
                     status = statusArr[k],
                 };
+
+            // 慢预取读数（2026-10-19）：2.1ms 引导尖峰到底是一份重几何，还是多组同拍重规划。
+            if (pfClock != 0)
+            {
+                double pfMs = (System.Diagnostics.Stopwatch.GetTimestamp() - pfClock) * 1000.0
+                              / System.Diagnostics.Stopwatch.Frequency;
+                if (pfMs > 2.0)
+                {
+                    var sb = new System.Text.StringBuilder();
+                    sb.Append(System.Globalization.CultureInfo.CurrentCulture, $"[阶梯·预取] {pfMs:F1} ms｜{n} 份");
+                    for (int k = 0; k < n; k++)
+                        sb.Append(System.Globalization.CultureInfo.CurrentCulture, $" G{ids[k]}/{rungs[k]}");
+                    Log.Message(sb.ToString());
+                }
+            }
         }
 
         /// <summary>
@@ -5765,6 +5943,11 @@ namespace PioneerFramework
                         || ladRung == RendezvousLadder.Rung.PhasingOrbit
                         || ladRung == RendezvousLadder.Rung.Circularize;
                     ladSw.Stop();
+                    // 远端立轨道级（Hohmann/Phasing）的窗口以分钟计：30s 重算纯属浪费。
+                    // 实测 G2 PhasingOrbit 9.2ms / Hohmann 6.9ms（2026-10-19 22:30 日志）；终端/拦截级
+                    // 仍保持 30s（需要密闭环），这里只把下一次到期推后 90s（总 120s）。
+                    if (ladRung == RendezvousLadder.Rung.Hohmann || ladRung == RendezvousLadder.Rung.PhasingOrbit)
+                        group.ladderLastPlanTick += 90.0;
                     // ★ 慢调用探针（**只在超过阈值时打印** ⇒ 不刷屏、也不改行为）：这就是"尖峰"的分段计时。
                     //   实测基线：同轨 ~0.5~3 ms、大半径差（走霍曼搜索）9~21 ms ⇒ 阈值取 2 ms 能把后者抓出来。
                     if (Prefs.DevMode && !ladPrefetched && ladSw.Elapsed.TotalMilliseconds > 2.0)
@@ -5916,10 +6099,11 @@ namespace PioneerFramework
         private static void LogNonRootRendezvousState(SpaceEntityGroup group, double physicsTick, double keepingAccMps2,
             DVector3 syncPos, DVector3 syncVel)
         {
+            // 最便宜的闸门先走：没有交会引导的编队连组件/天体表都不查（调用点已先筛，这里是双保险）。
+            if (!group.HasRendezvousGuidance) return;
             var cm = Current.Game?.GetComponent<CelestialBodyManager>();
             var cd = cm?.GetBodyById(group.CelestialBodyId);
             if (cm == null || cd == null || cd.bodyType == CelestialBodyType.Planet) return;
-            if (!group.HasRendezvousGuidance) return;
             if (NonRootProbeNextTick.TryGetValue(group.GroupId, out double next) && physicsTick < next) return;
             NonRootProbeNextTick[group.GroupId] = physicsTick + 300.0;
             if (!OrbitAdapter.TryToOrbitView(group, cm, physicsTick, out OrbitView ov)) return;
@@ -6887,6 +7071,54 @@ namespace PioneerFramework
         /// </summary>
         public IPropulsionSource? GetGroupPropulsionSource(SpaceEntityGroup group)
         {
+            // B6：先看本组有多少张图 —— 多图/图+无图实体都走多源聚合；一图也走（口径统一）。
+            // P0-1：走 SpaceEntity 的图链缓存（只随挂图/解挂/主图变化失效），不再每次扫全部 part。
+            int mapStamp = group.entitySetVersion;
+            int mapCount = 0;
+            foreach (int eid in group.GetEntityIds())
+            {
+                var e = GetEntityById(eid);
+                if (e == null) continue;
+                if (e.HasPropulsionData)
+                    mapStamp = mapStamp * 31 + e.PropulsionVersion;
+                mapStamp = mapStamp * 31 + e.mapLinkVersion;
+                var mapIds = e.GetPartLinkedMapIdsCached();
+                for (int i = 0; i < mapIds.Count; i++)
+                {
+                    var mc = e.GetMapComp(mapIds[i]);
+                    if (mc == null) continue;
+                    mapCount++;
+                    mapStamp = mapStamp * 31 + mc.NetworksVersion;
+                    mapStamp = mapStamp * 31 + (int)mc.disabledSystems;
+                    mapStamp = mapStamp * 31 + 1;   // 图数变化也进指纹
+                }
+            }
+
+            if (mapCount > 0)
+            {
+                var agg = group.cachedMapPropulsionAggregator;
+                if (agg == null || agg.SourceStamp != mapStamp)
+                {
+                    var sources = new List<IPropulsionSource>(mapCount + 2);
+                    var seenMaps = new HashSet<int>();
+                    foreach (int eid in group.GetEntityIds())
+                    {
+                        var e = GetEntityById(eid);
+                        if (e == null) continue;
+                        var mapIds = e.GetPartLinkedMapIdsCached();
+                        for (int i = 0; i < mapIds.Count; i++)
+                        {
+                            var mc = e.GetMapComp(mapIds[i]);
+                            if (mc != null && seenMaps.Add(mc.map.uniqueID)) sources.Add(mc);
+                        }
+                        if (e.HasPropulsionData) sources.Add(e);
+                    }
+                    agg = new CompositePropulsionSource(sources, mapStamp);
+                    group.cachedMapPropulsionAggregator = agg;
+                }
+                return agg;
+            }
+
             var mapComp = group.GetLinkedMapComp();
             if (mapComp != null) return mapComp;
             SpaceEntity? first = null;
@@ -7058,6 +7290,65 @@ namespace PioneerFramework
             SpacecraftMapRegistry.Reconcile();
         }
 
+        /// <summary>
+        /// 读档/新局收尾后预热（2026-10-19 尖峰归因）：
+        /// 实测第一次碰撞帧 11.2ms 里碰撞本身只有 1.1ms；2.5ms 是引力源表**首次构建**、
+        /// 1.3ms 是 apply 块里调试/巡检路径首次 JIT。这类一次性成本必须放在 **FinalizeInit**
+        /// 而不是 `ExposeData(PostLoadInit)`：`CelestialBodyManager.ExposeData` 会在 PostLoadInit
+        /// 把 `initialized` 置回 false，早于它的预热会被随后的重建吃掉（2026-10-19 13:20 日志实证）。
+        /// 失败只告警：预热是优化，不是读档依赖。
+        /// </summary>
+        public override void FinalizeInit()
+        {
+            base.FinalizeInit();
+            try
+            {
+                var warmMgr = Current.Game?.GetComponent<CelestialBodyManager>();
+                if (warmMgr != null)
+                {
+                    double warmTick = TimeScaleManager.GetPhysicsTickSafe();
+                    warmMgr.PrefetchSystemSources(1, warmTick);   // 1 = 地球（与调试场景同值）
+                    ApplyAnalyticTransfer(0.0, warmTick, warmMgr);
+                    ApplyHover(0.0, warmTick, warmMgr);
+
+                    // 最大的一笔：`UpdateAllMovements` 自身（~千行）的首次 JIT 落在第一个物理步的
+                    // "阶段之前"（步钟已启动、第一个阶段钟还没开始）⇒ 实测 12–13ms 残差。
+                    // 这里用 early-return 预热：方法体在入口处已被完整编译，随后立刻返回，不碰任何状态。
+                    warmupPhysicsStep = true;
+                    // 形参在标志检查之后才会被碰 ⇒ 传 null! 安全（只为触发方法体 JIT）
+                    try { UpdateAllMovements(Current.Game?.GetComponent<TimeScaleManager>()!); }
+                    finally { warmupPhysicsStep = false; }
+
+                    // 合成组预热：`ComputeGroupPhysics` 的首次 JIT / 天体场路径只在“有组的第一步”付
+                    // （2026-10-19 13:32 日志：碰撞帧的组物理 4,326µs，扣掉引力/源表后 ~3.6ms 是首次路径）。
+                    // 临时组不注册进 groups / 细网格、不可碰撞、远场；结果丢弃，不落盘。
+                    var warmGroup = new SpaceEntityGroup(-1, 0)
+                    {
+                        IsActive = true,
+                        IsMovable = true,
+                        IsCollidable = false,
+                        CelestialBodyId = 1,
+                        CurrentOrbit = new OrbitState
+                        {
+                            positionSystem = (SystemVec3)new DVector3(1.0e9, 0.0, 0.0),
+                            velocitySystem = (SystemVec3)new DVector3(0.0, 3000.0, 0.0),
+                            rotation = DQuaternion.identity
+                        }
+                    };
+                    ComputeGroupPhysics(warmGroup, 0.0, warmTick, warmMgr, new GravityScratch(), 1);
+
+                    // 碰撞纯函数预热（2026-10-19 P0）：实测隔离冷启动 CollectPartContacts 1.8–2.3ms、
+                    // TryFindDeepestPartPair 0.5–0.7ms、CollisionSolver 4.4–5.6ms。纯静态、无组/实体/
+                    // 地图状态；10 km/s 的爆炸/伤害路径不覆盖（需另案隔离预热）。
+                    CombatManager.WarmupCollisionPaths();
+                }
+            }
+            catch (System.Exception e)
+            {
+                Log.Warning($"[Prefetch] 初始化预热失败（不影响读档）：{e.GetType().Name}: {e.Message}");
+            }
+        }
+
         public override void ExposeData()
         {
             base.ExposeData();
@@ -7082,6 +7373,7 @@ namespace PioneerFramework
                         groupLastCoarsePos[group.GroupId] = group.Position;
                     }
                 }
+
             }
         }
 

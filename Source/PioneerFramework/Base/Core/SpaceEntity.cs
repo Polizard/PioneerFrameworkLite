@@ -5,6 +5,13 @@ using PioneerFramework.Components;
 
 namespace PioneerFramework
 {
+    /// <summary>移除挂图 part 的策略（B1 运行时 part API）：保留图（拒绝移除）或销毁图（默认）。</summary>
+    public enum PartRemovalPolicy
+    {
+        KeepMap,
+        DestroyMap
+    }
+
     /// <summary>
     /// 空间实体（载具：船/空间站 = 单 part + 可选内部地图；无 Map part 如导弹为纯物理实体）。
     /// Lite 裁剪：装配系统（Ship3D）已删除；武器缓存与 Morton 部件索引已删除（§5.4 C1）。
@@ -56,8 +63,8 @@ namespace PioneerFramework
         /// </summary>
         public void GetAabbSystem(out DVector3 min, out DVector3 max)
         {
-            int tick = Find.TickManager?.TicksGame ?? -1;
-            if (tick == cachedAabbTick)
+            int tick = Current.Game?.tickManager?.TicksGame ?? -1;   // headless：Find.TickManager 会 NRE
+            if (!aabbDirty && tick == cachedAabbTick)
             {
                 min = cachedAabbMin;
                 max = cachedAabbMax;
@@ -71,26 +78,12 @@ namespace PioneerFramework
             }
             else
             {
-                // 旋转矩阵分量（Unity Quaternion → 3x3，行优先）
-                Quaternion q = Rotation;
-                double x = q.x, y = q.y, z = q.z, w = q.w;
-                double r00 = 1 - 2 * (y * y + z * z), r01 = 2 * (x * y - z * w), r02 = 2 * (x * z + y * w);
-                double r10 = 2 * (x * y + z * w), r11 = 1 - 2 * (x * x + z * z), r12 = 2 * (y * z - x * w);
-                double r20 = 2 * (x * z - y * w), r21 = 2 * (y * z + x * w), r22 = 1 - 2 * (x * x + y * y);
-
                 min = new DVector3(double.MaxValue, double.MaxValue, double.MaxValue);
                 max = new DVector3(double.MinValue, double.MinValue, double.MinValue);
                 foreach (var part in Parts)
                 {
-                    DVector3 c = DVector3.Rotate(part.positionShip, Rotation);   // 旋转后中心
-                    DVector3 h = part.boundsSizeShip * 0.5;
-                    // OBB→AABB 投影：旋转后轴对齐半尺寸
-                    DVector3 rh = new DVector3(
-                        System.Math.Abs(r00) * h.x + System.Math.Abs(r01) * h.y + System.Math.Abs(r02) * h.z,
-                        System.Math.Abs(r10) * h.x + System.Math.Abs(r11) * h.y + System.Math.Abs(r12) * h.z,
-                        System.Math.Abs(r20) * h.x + System.Math.Abs(r21) * h.y + System.Math.Abs(r22) * h.z);
-                    DVector3 pMin = c - rh;
-                    DVector3 pMax = c + rh;
+                    PartGeometry.WorldAabb(part.positionShip, part.boundsSizeShip,
+                        Rotation, part.rotationShip, out DVector3 pMin, out DVector3 pMax);
                     min = DVector3.Min(min, pMin);
                     max = DVector3.Max(max, pMax);
                 }
@@ -98,10 +91,31 @@ namespace PioneerFramework
             cachedAabbTick = tick;
             cachedAabbMin = min;
             cachedAabbMax = max;
+            aabbDirty = false;
         }
 
         private int cachedAabbTick = -1;        // GetAabbSystem 每 tick 懒缓存（旋转/部件未变时同 tick 复用）
+        private bool aabbDirty = true;          // 显式失效：同 tick 内改 part/部件集时，tick 缓存不可靠（headless 恒 -1）
         private DVector3 cachedAabbMin, cachedAabbMax;
+
+
+        /// <summary>
+        /// **单个 part 的旋转后世界 AABB（相对实体原点）**——船-船窄相逐 part 检测用。
+        /// B5 / D-P7：损毁残骸仍参与碰撞 ⇒ 不因 `isDestroyed` 拒绝（`noCollide` 由调用方过滤）。
+        /// 与 <see cref="GetAabbSystem"/> 同一套 OBB→AABB 投影（行优先旋转矩阵）。
+        /// 不做 tick 缓存（窄相只在真接触时逐 part 调用，缓存会吞掉"哪一件最深"的信息）。
+        /// </summary>
+        public bool GetPartAabbSystem(int index, out DVector3 min, out DVector3 max)
+        {
+            min = max = DVector3.zero;
+            if (index < 0 || index >= Parts.Count) return false;
+            var part = Parts[index];
+            if (part == null) return false;
+
+            PartGeometry.WorldAabb(part.positionShip, part.boundsSizeShip,
+                Rotation, part.rotationShip, out min, out max);
+            return true;
+        }
 
         private int cachedRotInvTick = -1;      // RotationInverse 每 tick 懒缓存（同款模式）
         private DQuaternion cachedRotInv;
@@ -113,7 +127,7 @@ namespace PioneerFramework
         /// </summary>
         public DQuaternion RotationInverse()
         {
-            int tick = Find.TickManager?.TicksGame ?? -1;
+            int tick = Current.Game?.tickManager?.TicksGame ?? -1;   // headless：Find.TickManager 会 NRE
             if (tick == cachedRotInvTick)
             {
                 if (PerfProbe.Enabled)
@@ -122,14 +136,14 @@ namespace PioneerFramework
                     if (PerfProbe.ShadowChecks && PerfProbe.ShouldShadowRotInv())
                     {
                         // 影子校验：缓存值 vs 实时重算（姿态若在同 tick 内被改而未失效，此处必然抓到）
-                        var fresh = DQuaternion.Inverse(DQuaternion.FromQuaternion(rotation));
+                        var fresh = DQuaternion.Inverse(rotation);
                         PerfProbe.RotInvShadow(fresh.Equals(cachedRotInv),
                             $"entity={entityId} tick={tick} cached=({cachedRotInv.x:F6},{cachedRotInv.y:F6},{cachedRotInv.z:F6},{cachedRotInv.w:F6}) fresh=({fresh.x:F6},{fresh.y:F6},{fresh.z:F6},{fresh.w:F6})");
                     }
                 }
                 return cachedRotInv;
             }
-            cachedRotInv = DQuaternion.Inverse(DQuaternion.FromQuaternion(rotation));
+            cachedRotInv = DQuaternion.Inverse(rotation);
             cachedRotInvTick = tick;
             if (PerfProbe.Enabled) PerfProbe.RotInvMiss();
             return cachedRotInv;
@@ -137,7 +151,7 @@ namespace PioneerFramework
 
         private DVector3 positionMeters;
         private DVector3 velocityMeters;
-        private Quaternion rotation;
+        private DQuaternion rotation = DQuaternion.identity;   // B2：默认必须是 identity（零四元数与姿态相乘会退化）
 
         /// <summary>
         /// 当前剩余工质全部燃烧可获得的总 ΔV（显示值，Tsiolkovsky 理想公式）。
@@ -178,36 +192,240 @@ namespace PioneerFramework
         /// </summary>
         private IPropulsionSource? GetPropulsionSource()
         {
+            // B6：多图实体用群级聚合（所有图 + 无图实体源）；无组/无图再回退主图/自带。
+            var sg = Current.Game?.GetComponent<SpaceGameComp>();
+            if (sg != null && GroupId != 0)
+            {
+                var g = sg.GetGroupById(GroupId);
+                if (g != null)
+                {
+                    var src = sg.GetGroupPropulsionSource(g);
+                    if (src != null) return src;
+                }
+            }
             var mc = GetMapComp();
             if (mc != null) return mc;
             return HasPropulsionData ? this : null;
         }
 
-        /// <summary>实体 → 所属地图的 SpaceMapComp（无 Map 时返回 null）。</summary>
-        private SpaceMapComp? GetMapComp()
+        /// <summary>B6：一件 part 的工质/容量/引擎归属图——优先自身 linkedMapId；单图实体用它；
+        /// 多图且 part 未挂图时退回主图（无归属数据时的兼容口径）。</summary>
+        private SpaceMapComp? GetPartOwningMapComp(SpacePart part)
         {
-            if (MapId < 0) return null;
+            if (part != null && part.linkedMapId >= 0)
+                return GetMapComp(part.linkedMapId);
+            var maps = GetMapComps();
+            if (maps.Count == 1) return maps[0];
+            return GetMapComp();
+        }
+
+        /// <summary>实体 → 所属**主图**的 SpaceMapComp（无 Map 时返回 null）。</summary>
+        private SpaceMapComp? GetMapComp() => GetMapComp(MapId);
+
+        /// <summary>实体 → 指定地图的 SpaceMapComp（B6 多图；无图/未注册时返回 null）。</summary>
+        public SpaceMapComp? GetMapComp(int mapId)
+        {
+            if (mapId < 0) return null;
             var sg = Current.Game?.GetComponent<SpaceGameComp>();
-            var mc = sg?.GetMapComponent<SpaceMapComp>(MapId);
+            var mc = sg?.GetMapComponent<SpaceMapComp>(mapId);
             if (mc != null)
                 return mc;
 
             // mapComponents 不随存档恢复；兜底直接从地图取 SpaceMapComp。
-            Map map = SpaceMapGenerator.FindPocketMap(MapId);
+            Map map = SpaceMapGenerator.FindPocketMap(mapId);
             return map?.GetComponent<SpaceMapComp>();
         }
 
+        /// <summary>
+        /// **B6：本实体挂的全部地图 id**（按 part 顺序、去重；不含未挂图件）。
+        /// 兼容旧单图：若没有任何 part 记录 linkedMapId 但 MapId 有效，则返回主图。
+        /// P0-1：结果按 `mapLinkVersion` 缓存；返回**新副本**，调用方可安全修改。
+        /// </summary>
+        public List<int> GetMapIds()
+        {
+            var linked = GetPartLinkedMapIdsCached();
+            var ids = new List<int>(linked.Count + 1);
+            for (int i = 0; i < linked.Count; i++) ids.Add(linked[i]);
+            if (ids.Count == 0 && MapId >= 0) ids.Add(MapId);
+            return ids;
+        }
+
+        /// <summary>P0-1：只列**挂在 part 上**的图（不含 MapId 单图回退）；缓存，热路径只读。</summary>
+        internal IReadOnlyList<int> GetPartLinkedMapIdsCached()
+        {
+            EnsureMapIdCache();
+            return cachedPartLinkedMapIds;
+        }
+
+        /// <summary>P0-1：挂图/解挂/主图切换后调；只清图链缓存，不碰 stats/信号。</summary>
+        internal void NotifyMapLinksChanged()
+        {
+            mapLinkVersion++;
+            cachedMapIdsVersion = -1;
+        }
+
+        private void EnsureMapIdCache()
+        {
+            if (cachedMapIdsVersion == mapLinkVersion) return;
+            cachedPartLinkedMapIds.Clear();
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var p = parts[i];
+                if (p == null || p.linkedMapId < 0) continue;
+                bool seen = false;
+                for (int j = 0; j < cachedPartLinkedMapIds.Count; j++)
+                {
+                    if (cachedPartLinkedMapIds[j] == p.linkedMapId) { seen = true; break; }
+                }
+                if (!seen) cachedPartLinkedMapIds.Add(p.linkedMapId);
+            }
+            cachedMapIdsVersion = mapLinkVersion;
+        }
+
+        /// <summary>**B6：Part→Map 反查**——指定地图挂在哪件 part 上（未找到 null）。</summary>
+        public SpacePart? GetPartForMap(int mapId)
+        {
+            if (mapId < 0) return null;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var p = parts[i];
+                if (p != null && p.linkedMapId == mapId) return p;
+            }
+            return null;
+        }
+
+        /// <summary>主图对应的 part（`MapId` 的反查；无主图/未挂图时 null）。</summary>
+        public SpacePart? GetPrimaryMapPart() => GetPartForMap(MapId);
+
+        /// <summary>
+        /// **B6：某张图被销毁/封存后**清 Part→Map 指针，并把主图切到下一张仍链接的图。
+        /// （图本身由调用方先 Destroy；这里只维护实体侧指针，不碰地图。）
+        /// </summary>
+        internal void OnMapRemoved(int mapId)
+        {
+            if (mapId < 0) return;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var p = parts[i];
+                if (p != null && p.linkedMapId == mapId)
+                    p.linkedMapId = -1;
+            }
+            RecalculatePrimaryMap();
+        }
+
+        /// <summary>按 part 顺序重选主图（第一个仍链接的图；没有 ⇒ MapId=-1、HasMap=false）。</summary>
+        internal void RecalculatePrimaryMap()
+        {
+            int primary = -1;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var p = parts[i];
+                if (p != null && p.linkedMapId >= 0)
+                {
+                    primary = p.linkedMapId;
+                    break;
+                }
+            }
+            MapId = primary;
+            HasMap = primary >= 0;
+            NotifyMapLinksChanged();
+            // B6：主图切换后按**全部图**重算 tank 镜像（不再只取新主图）。
+            if (primary >= 0)
+                SyncCombinedTankFuel();
+        }
+
+        /// <summary>**B6：本实体的所有 SpaceMapComp**（按 GetMapIds 顺序；无效图跳过）。</summary>
+        public List<SpaceMapComp> GetMapComps()
+        {
+            var result = new List<SpaceMapComp>(2);
+            var ids = GetMapIds();
+            for (int i = 0; i < ids.Count; i++)
+            {
+                var mc = GetMapComp(ids[i]);
+                if (mc != null) result.Add(mc);
+            }
+            return result;
+        }
+
         public int MapId = -1;
+        /// <summary>B6：最近一次封存的地图 id / part id（单图兼容；多图归档列表见下）。</summary>
+        public int ArchivedMapId = -1;
+        public int ArchivedPartId = -1;
+        /// <summary>B6：**每图封存列表**（mapId ↔ 原 partId 并行；多图船可逐张取档）。</summary>
+        public List<int> archivedMapIds = new();
+        public List<int> archivedPartIds = new();
+
+        /// <summary>B6：登记一张已封存的图（同 mapId 去重；同步“最近一张”兼容字段）。</summary>
+        public void AddArchivedMap(int mapId, int partId)
+        {
+            if (mapId < 0) return;
+            archivedMapIds ??= new List<int>();
+            archivedPartIds ??= new List<int>();
+            int idx = archivedMapIds.IndexOf(mapId);
+            if (idx >= 0 && idx < archivedPartIds.Count)
+                archivedPartIds[idx] = partId;
+            else
+            {
+                archivedMapIds.Add(mapId);
+                archivedPartIds.Add(partId);
+            }
+            ArchivedMapId = mapId;
+            ArchivedPartId = partId;
+        }
+
+        /// <summary>B6：取档完成/取消后移除登记；返回是否找到。</summary>
+        public bool RemoveArchivedMap(int mapId)
+        {
+            if (mapId < 0 || archivedMapIds == null) return false;
+            int idx = archivedMapIds.IndexOf(mapId);
+            if (idx < 0) return false;
+            archivedMapIds.RemoveAt(idx);
+            if (archivedPartIds != null && idx < archivedPartIds.Count)
+                archivedPartIds.RemoveAt(idx);
+            ArchivedMapId = archivedMapIds.Count > 0 ? archivedMapIds[^1] : -1;
+            ArchivedPartId = archivedPartIds != null && archivedPartIds.Count > 0 ? archivedPartIds[^1] : -1;
+            return true;
+        }
+
+        /// <summary>B6：该 part 是否有已封存的图（返回 mapId；无 ⇒ -1）。</summary>
+        public int GetArchivedMapForPart(int partId)
+        {
+            if (archivedMapIds == null || archivedPartIds == null) return -1;
+            int n = System.Math.Min(archivedMapIds.Count, archivedPartIds.Count);
+            for (int i = 0; i < n; i++)
+                if (archivedPartIds[i] == partId) return archivedMapIds[i];
+            return -1;
+        }
 
         // ── 部件系统（单 part 化：载具至多一个 part，导弹等无 Map part 也走此列表）──
         private List<SpacePart> parts = new();
         public IReadOnlyList<SpacePart> Parts => parts;
 
+        /// <summary>下一个可用 partId（B1：持久单调、只增不复用；SetParts 会按现有最大 id 追平）。</summary>
+        private int nextPartId = 1;
+
         // ── 实体级 stats 缓存（kg 等，Parts / 组件变更时置脏）──
         private ShipStats shipStats;
         private bool statsDirty = true;
 
-        /// <summary>实体聚合属性：Σ 未摧毁部件的 ShipStats，双级缓存（部件级 cachedStats + 实体级聚合）。</summary>
+        /// <summary>部件集/组件可能变化的版本号（批 0：群级惯量缓存指纹读它；与 `PropulsionVersion` 同款模式）。
+        /// **唯一自增点 = `InvalidateStats`**（"部件集可能变化"的唯一既有收口）。</summary>
+        internal int partSetVersion;
+
+        /// <summary>P0-2：**罐内工质质量版本**。只影响 COM/惯量（燃料不进 `ShipStats.mass`），
+        /// 不进功能 stats、不打脏群信号。燃烧/加注/漏光只自增它，不再走 `InvalidateStats`。</summary>
+        internal int tankMassVersion;
+
+        /// <summary>P0-1：**图链版本**（挂图/解挂/主图切换/部件集变化）。`GetPartLinkedMapIdsCached` 的缓存指纹。</summary>
+        internal int mapLinkVersion;
+        private List<int> cachedPartLinkedMapIds = new(2);
+        private int cachedMapIdsVersion = -1;
+
+        /// <summary>B6：供油计划结构版本（部件集/切网/优先级/外部镜像重分配时自增；**质量变化不增**）。</summary>
+        internal int fuelPlanVersion;
+        private readonly Dictionary<(string defName, int group), FuelPlan> fuelPlans = new();
+
+        /// <summary>实体聚合属性：Σ 部件 ShipStats（质量含损毁件；功能项只算未毁件，见 B5）。</summary>
         public ShipStats AggregatedStats
         {
             get
@@ -218,7 +436,7 @@ namespace PioneerFramework
             }
         }
 
-        /// <summary>实体总质量（kg）：Σ 未摧毁部件质量，缓存防重复计算。</summary>
+        /// <summary>实体总质量（kg）：Σ 全部部件质量（**损毁件仍计入**，B5 的 D2 乙形态），缓存防重复计算。</summary>
         public float TotalMass => AggregatedStats.mass;
 
         private void RecalculateShipStats()
@@ -227,9 +445,11 @@ namespace PioneerFramework
             for (int i = 0; i < parts.Count; i++)
             {
                 var p = parts[i];
-                if (p.isDestroyed) continue;
+                if (p == null) continue;
                 var ps = p.Stats;
+                // B5 / D2 乙：损毁件**仍在、有质量**（残骸不凭空消失）；功能项在此后出局。
                 shipStats.mass += ps.mass;
+                if (p.isDestroyed) continue;
                 shipStats.thrust += ps.thrust;
                 shipStats.powerGen += ps.powerGen;
                 shipStats.powerDraw += ps.powerDraw;
@@ -247,7 +467,12 @@ namespace PioneerFramework
                 shipStats.jamStrength += ps.jamStrength;   // [E3] 干扰效力（同上：新增槽必须在此加一行）
                 shipStats.ecmResist += ps.ecmResist;
                 shipStats.eccmResist += ps.eccmResist;
+                shipStats.activeGainBonus += ps.activeGainBonus;   // ★ 修复（2026-10-17 批 -1）：曾漏聚合 ⇒ 群级主动增益恒 0
+                shipStats.activeRadiation += ps.activeRadiation;   // ★ 修复（2026-10-17 批 -1）：同上（主动辐射增量）
             }
+            // B8：整船质量 0 才兜底 1kg（不再每件 1kg ⇒ 256 件空壳不再凭空 +256kg）
+            if (shipStats.mass <= 0f)
+                shipStats.mass = 1f;
             statsDirty = false;
         }
 
@@ -255,6 +480,7 @@ namespace PioneerFramework
         public void InvalidateStats()
         {
             statsDirty = true;
+            partSetVersion++;   // 批 0：惯量缓存指纹（群级 `SpaceEntityGroup.Inertia` 读它；与 PropulsionVersion 同款模式）
             // 部件集变化 ⇒ 本船所属群组的派生信号（[V8]，吃 AggregatedStats 的热/电/尺寸项）也失效。
             // 本方法是"部件集可能变化"的**唯一既有收口**（AddComponent / RemoveComponent / 部件销毁都汇聚到这里），
             // 所以同步点放这里最省。⚠ 若将来新增改部件的路径绕开本方法，群组信号会静默过期
@@ -274,6 +500,47 @@ namespace PioneerFramework
         // 有值 = 主推方向型（导弹/火箭：只沿该 body 局部轴锥角内出力，需魔动量轮对准）。
         public DVector3? mainAxisShip;
         public bool HasMainAxis => mainAxisShip.HasValue && mainAxisShip.Value.sqrMagnitude > 1e-12;
+
+        /// <summary>
+        /// **B8：无 Map 实体由 part 引擎聚合出的主推轴**（船体系、单位向量）。
+        ///
+        /// 口径：
+        /// · 逐件读 `EngineComponentData`，**跳过损毁件与全矢量 RCS**（RCS 不定义主推方向）；
+        /// · 每台推力 = `ve × ṁ`，方向 = `thrustAxis`（part 局部）；引擎件带姿态时按 `rotationShip`
+        ///   旋进船体系，再按推力加权求和；
+        /// · 没有任何可用主引擎 / 矢量和退化（对称对消）⇒ 返回 `mainAxisShip`（D15 旧字段兼容），
+        ///   仍为空 ⇒ 零向量（全向，无对准语义）。
+        ///
+        /// 这是**无 Map** 侧的轴来源；有 Map 组仍以 `SpaceMapComp.MainThrustAxis` 为准（地图已按轴向
+        /// 引擎注册聚合）。只读、无分配，可在物理步/表现层调用。
+        /// </summary>
+        public DVector3 GetMainThrustAxisShip()
+        {
+            DVector3 sum = DVector3.zero;
+            bool anyEngine = false;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var part = parts[i];
+                if (part == null || part.isDestroyed) continue;
+                var engine = part.GetComponent<EngineComponentData>();
+                if (engine == null || engine.isVectoredRcs) continue;
+                if (engine.massFlowRate <= 0f || engine.exhaustVelocity <= 0f) continue;
+                int axisIndex = (int)engine.thrustAxis;
+                if (axisIndex < 0 || axisIndex >= 6) continue;
+
+                DVector3 axisShip = ((ThrustAxis)axisIndex).ShipVector();
+                if (part.rotationShip != DQuaternion.identity)
+                    axisShip = DVector3.Rotate(axisShip, part.rotationShip);
+                sum += axisShip * (engine.exhaustVelocity * engine.massFlowRate);
+                anyEngine = true;
+            }
+
+            if (anyEngine && sum.sqrMagnitude > 1e-12)
+                return sum.normalized;
+
+            // 旧字段兼容：导弹/调试船等仍可显式给主推轴；全向实体保持零向量。
+            return HasMainAxis ? mainAxisShip!.Value.normalized : DVector3.zero;
+        }
 
         // 运行时缓存（并行物理线程只读；propulsion 变更时重建）
         private List<PropellantNetwork> cachedPropulsionNetworks = new();
@@ -329,16 +596,30 @@ namespace PioneerFramework
         public double TryConsumePropellant(PropellantDef def, double kg)
         {
             if (def == null || kg <= 0.0) return 0.0;
+
+            // B6：有 tank part 的实体按供油计划消耗（优先级/切网生效）；无 tank 走旧条目路径。
+            if (TryConsumeViaPlan(def, 0, kg, out double planned, out bool handled))
+                return planned > 0.0 ? ConsumeOwnMassRaw(def, planned) : 0.0;
+
             // ⚠ 原来这里是"**扣第一个匹配的条目就 return**" ✗ —— 同一工质有多个条目（多罐同种料）时
             //   只烧得到第一罐，余量被**静默丢弃**（调用方会把剩余传给下一个**实体**，永不回头）⇒
             //   燃耗记不满、群质量掉不到位 ⇒ 燃烧按偏大的质量算 `a` ⇒ **多给 Δv**（2026-09-19 实测：
             //   `Σ(a·dt)=808` 而工质只够 749.6 ⇒ 白送 58 m/s）。
             // ⇒ 跨**全部**同工质条目扣足本次请求的量。
+            double consumed = ConsumeOwnMassRaw(def, kg);
+            if (consumed > 0.0)
+                SyncCombinedTankFuel();
+            return consumed;
+        }
+
+        /// <summary>只扣自带推进条目的质量，不碰 tank 镜像（计划已改罐时用）。</summary>
+        private double ConsumeOwnMassRaw(PropellantDef def, double kg)
+        {
             double consumed = 0.0;
             for (int i = 0; i < propulsion.Count && consumed < kg; i++)
             {
                 var d = propulsion[i];
-                if (d.propellant != def) continue;
+                if (d?.propellant != def) continue;
                 double take = System.Math.Min(kg - consumed, d.mass);
                 if (take <= 0.0) continue;
                 d.mass -= take;
@@ -358,6 +639,11 @@ namespace PioneerFramework
         public double TryFillPropellant(PropellantDef def, double kg)
         {
             if (def == null || kg <= 0.0 || propulsion == null) return 0.0;
+
+            // B6：有 tank part ⇒ 计划按高层先加满，再 raw 加自带池（不再全量重分配）。
+            if (TryFillViaPlan(def, 0, kg, out double planned, out bool handled))
+                return planned > 0.0 ? AddOwnMassRaw(def, planned) : 0.0;
+
             double added = 0.0;
             for (int i = 0; i < propulsion.Count && added < kg; i++)
             {
@@ -370,7 +656,10 @@ namespace PioneerFramework
                 added += take;
             }
             if (added > 0.0)
+            {
                 totalPropulsionMass += added;
+                SyncCombinedTankFuel();
+            }
             return added;
         }
 
@@ -409,11 +698,163 @@ namespace PioneerFramework
                     existing.mass += d.mass;
                     existing.capacity += d.capacity;
                     InvalidatePropulsion();
+                    SyncCombinedTankFuel();
                     return;
                 }
             }
             propulsion.Add(d);
             InvalidatePropulsion();
+            SyncCombinedTankFuel();
+        }
+
+        /// <summary>B6：切网/优先级/部件集变化后让供油计划失效（下次消耗重建）。</summary>
+        public void InvalidateFuelPlans()
+        {
+            fuelPlanVersion++;
+        }
+
+        private FuelPlan GetFuelPlan(string defName, int group)
+        {
+            var key = (defName, group);
+            if (!fuelPlans.TryGetValue(key, out var plan))
+            {
+                plan = new FuelPlan();
+                fuelPlans[key] = plan;
+            }
+            if (plan.Version != fuelPlanVersion)
+            {
+                plan.Build(parts, defName, group);
+                plan.Version = fuelPlanVersion;
+            }
+            return plan;
+        }
+
+        /// <summary>
+        /// **B6：按供油计划消耗**（低优先级先烧；组内按剩余质量比例）。
+        /// 返回 handled=false ⇒ 该组没有 tank 计划（调用方回退旧池路径，例如纯建筑站）。
+        /// handled=true 且 actual=0 ⇒ 该组被切出/无料，**不得**回退主池。
+        /// </summary>
+        public bool TryConsumeViaPlan(PropellantDef def, int group, double kg,
+            out double actual, out bool handled)
+        {
+            actual = 0.0;
+            handled = false;
+            if (def == null || kg <= 0.0) return false;
+            var plan = GetFuelPlan(def.defName, group);
+            handled = plan.HasTanks || group != 0;
+            if (!handled) return false;
+            if (plan.TotalMass <= 0.0) return true;
+            actual = plan.Consume(kg);
+            if (actual > 0.0)
+                tankMassVersion++;   // 罐质量变了 ⇒ COM/惯量缓存失效；功能 stats/群信号不受影响
+            return true;
+        }
+
+        /// <summary>B6：按供油计划加注（高层先加满）；handled 语义同消耗。</summary>
+        public bool TryFillViaPlan(PropellantDef def, int group, double kg,
+            out double actual, out bool handled)
+        {
+            actual = 0.0;
+            handled = false;
+            if (def == null || kg <= 0.0) return false;
+            var plan = GetFuelPlan(def.defName, group);
+            handled = plan.HasTanks || group != 0;
+            if (!handled) return false;
+            double room = plan.TotalCapacity - plan.TotalMass;
+            if (!(room > 0.0)) return true;
+            actual = plan.Fill(System.Math.Min(kg, room));
+            if (actual > 0.0)
+                tankMassVersion++;   // 罐质量变了 ⇒ COM/惯量缓存失效；功能 stats/群信号不受影响
+            return true;
+        }
+
+        /// <summary>只加自带推进条目质量，不碰 tank 镜像（计划已加罐时用）。</summary>
+        private double AddOwnMassRaw(PropellantDef def, double kg)
+        {
+            double added = 0.0;
+            for (int i = 0; i < propulsion.Count && added < kg; i++)
+            {
+                var d = propulsion[i];
+                if (d?.propellant != def) continue;
+                double room = d.capacity - d.mass;
+                if (!(room > 0.0)) continue;
+                double take = System.Math.Min(kg - added, room);
+                d.mass += take;
+                added += take;
+            }
+            if (added > 0.0)
+                totalPropulsionMass += added;
+            return added;
+        }
+
+        /// <summary>
+        /// **B6：把本实体所有图（SpaceMapComp）+ 自带 PropulsionData 的工质按工质汇总**，
+        /// 再按 tank 容量比例写回镜像。所有图的工质都作数（不再只主图）。
+        /// </summary>
+        public void SyncCombinedTankFuel()
+        {
+            var names = new List<string>(3);
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var tank = parts[i]?.GetComponent<PropellantTankComponentData>();
+                if (tank == null || string.IsNullOrEmpty(tank.propellantDefName)) continue;
+                if (!names.Contains(tank.propellantDefName)) names.Add(tank.propellantDefName);
+            }
+            if (names.Count == 0) return;
+
+            var maps = GetMapComps();
+            for (int i = 0; i < names.Count; i++)
+            {
+                string name = names[i];
+                var def = ResolvePropellantDef(name);
+                if (def == null) continue;
+                double total = GetPropellantMass(def);
+                for (int m = 0; m < maps.Count; m++)
+                    total += maps[m].GetPropellantMass(def);
+                SyncTankFuelDistribution(name, total);
+            }
+        }
+
+        /// <summary>
+        /// **B4a：把某工质的总存量按储罐容量比例写入 tank part 的分布镜像**（Σtank = 池）。
+        /// 权威池仍是推进源；这里只维护“燃料质量在哪件 part 上”，供 COM/惯量使用。
+        /// 任何差异都会 `tankMassVersion++` / `fuelPlanVersion++` ⇒ 群级惯量重算、计划质量基线失效；
+        /// **不**打脏功能 stats 或群信号。
+        /// </summary>
+        public void SyncTankFuelDistribution(string propellantDefName, double totalMass)
+        {
+            if (string.IsNullOrEmpty(propellantDefName)) return;
+
+            double totalCapacity = 0.0;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var part = parts[i];
+                if (part == null || part.isDestroyed) continue;
+                var tank = part.GetComponent<PropellantTankComponentData>();
+                if (tank == null || tank.propellantDefName != propellantDefName) continue;
+                if (tank.capacityKg > 0.0) totalCapacity += tank.capacityKg;
+            }
+            if (!(totalCapacity > 0.0)) return;
+
+            double clamped = System.Math.Max(0.0, totalMass);
+            bool changed = false;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var part = parts[i];
+                if (part == null || part.isDestroyed) continue;
+                var tank = part.GetComponent<PropellantTankComponentData>();
+                if (tank == null || tank.propellantDefName != propellantDefName) continue;
+                if (!(tank.capacityKg > 0.0)) continue;
+                double want = clamped * (tank.capacityKg / totalCapacity);
+                if (System.Math.Abs(tank.massKg - want) < 1e-9) continue;
+                tank.massKg = want;
+                changed = true;
+            }
+            if (changed)
+            {
+                fuelPlanVersion++;   // 外部镜像重分配 ⇒ 计划里的质量基线失效
+                tankMassVersion++;   // 只影响 COM/惯量；功能 stats/群信号不变
+            }
         }
 
         /// <summary>自带推进数据变更入口：重建网络缓存与总量。</summary>
@@ -444,11 +885,20 @@ namespace PioneerFramework
             set => velocityMeters = value;
         }
 
-        public Quaternion Rotation
+        public DQuaternion Rotation
         {
             get => rotation;
-            set => rotation = value;
+            set
+            {
+                rotation = value;
+                cachedAabbTick = -1;          // 旋转参与 GetAabbSystem → 失效缓存
+                aabbDirty = true;
+                cachedRotInvTick = -1;        // 姿态逆四元数随之失效
+            }
         }
+
+        /// <summary>Unity 渲染/UI 边界（B2：物理状态全程 DQuaternion，只有这里截断成 float）。</summary>
+        public Quaternion RotationUnity => rotation.ToQuaternion();
 
         // 辅助：Unity 世界坐标（用于渲染）
         public Vector3 PositionUnity => (Vector3)(positionMeters * SpaceConstants.UnitsPerMeter);
@@ -467,11 +917,15 @@ namespace PioneerFramework
             velocityMeters = velMeters;
         }
 
+        public void SetRotation(DQuaternion rot)
+        {
+            Rotation = rot;
+        }
+
+        /// <summary>Unity 边界的便捷入口（**截断**）；物理/姿态路径请用 <see cref="SetRotation(DQuaternion)"/>。</summary>
         public void SetRotation(Quaternion rot)
         {
-            rotation = rot;
-            cachedAabbTick = -1; // 旋转参与 GetAabbSystem → 失效缓存
-            cachedRotInvTick = -1; // 同上：姿态逆四元数随之失效
+            Rotation = (DQuaternion)rot;
         }
 
         // ── 部件管理 ──
@@ -482,10 +936,113 @@ namespace PioneerFramework
         public void SetParts(List<SpacePart> newParts, bool recalculateBounds = true)
         {
             parts = newParts ?? new List<SpacePart>();
+            fuelPlanVersion++;
+            SyncNextPartIdFromParts();
+            NotifyMapLinksChanged();
+            aabbDirty = true;
             cachedAabbTick = -1; // 部件参与 GetAabbSystem → 失效缓存
             InvalidateStats();
             if (recalculateBounds && parts.Count > 0)
                 RecalculateBoundsFromParts();
+        }
+
+        /// <summary>
+        /// **新增一个 part**（B1 运行时 API）：partId ≤ 0 时由分配器给出；显式 id 必须唯一且会推进分配器。
+        /// 所有缓存走 <see cref="OnPartsChanged"/> 单一收口。
+        /// </summary>
+        public bool AddPart(SpacePart part, bool recalculateBounds = true)
+        {
+            if (part == null) return false;
+            if (part.partId <= 0)
+            {
+                part.partId = AllocPartId();
+            }
+            else if (GetPartById(part.partId) != null)
+            {
+                Log.Warning($"[SpaceEntity] AddPart: duplicate partId {part.partId} on entity {entityId}; rejected.");
+                return false;
+            }
+            else
+            {
+                nextPartId = System.Math.Max(nextPartId, part.partId + 1);
+            }
+            parts.Add(part);
+            fuelPlanVersion++;
+            OnPartsChanged(recalculateBounds);
+            return true;
+        }
+
+        /// <summary>
+        /// **移除一个 part**（B1 运行时 API）。挂图 part 按 <see cref="PartRemovalPolicy"/>：
+        /// `KeepMap` = 拒绝；`DestroyMap` = 销毁其内部地图（默认，与 MarkPartDestroyed 同口径）。
+        /// </summary>
+        public bool RemovePart(int partId, PartRemovalPolicy policy = PartRemovalPolicy.DestroyMap)
+        {
+            int index = IndexOfPart(partId);
+            if (index < 0) return false;
+            SpacePart part = parts[index];
+            int removedMapId = part.linkedMapId;
+            if (removedMapId >= 0)
+            {
+                if (policy == PartRemovalPolicy.KeepMap)
+                {
+                    Log.Warning($"[SpaceEntity] RemovePart: part {partId} is map-linked; KeepMap policy refuses removal.");
+                    return false;
+                }
+                SpaceMapGenerator.DestroyRoomMap(removedMapId);   // B6：只毁这一张
+            }
+            part.DetachComponents();
+            parts.RemoveAt(index);
+            fuelPlanVersion++;
+            OnPartsChanged(true);
+            if (removedMapId >= 0)
+                RecalculatePrimaryMap();   // 主图若被移除 ⇒ 切到下一张；无图 ⇒ MapId=-1/HasMap=false
+            return true;
+        }
+
+        public SpacePart? GetPartById(int partId)
+        {
+            int index = IndexOfPart(partId);
+            return index >= 0 ? parts[index] : null;
+        }
+
+        /// <summary>移动 part（体坐标；part 自身姿态字段归 B3）。</summary>
+        public bool MovePart(int partId, DVector3 positionShip)
+        {
+            var part = GetPartById(partId);
+            if (part == null) return false;
+            part.positionShip = positionShip;
+            OnPartsChanged(false);
+            return true;
+        }
+
+        /// <summary>分配一个本实体唯一的 partId（持久单调，只增不复用）。</summary>
+        internal int AllocPartId() => nextPartId++;
+
+        /// <summary>**所有 part 集合变更的单一收口**：stats/版本 + AABB 缓存 + 可选包围盒。</summary>
+        private void OnPartsChanged(bool recalculateBounds)
+        {
+            aabbDirty = true;
+            cachedAabbTick = -1;
+            NotifyMapLinksChanged();           // 部件集变化可能带来挂图件的增删/移动
+            InvalidateStats();                 // partSetVersion++ 与群组信号失效都在这里
+            if (recalculateBounds)
+                RecalculateBoundsFromParts();
+        }
+
+        private int IndexOfPart(int partId)
+        {
+            for (int i = 0; i < parts.Count; i++)
+                if (parts[i] != null && parts[i].partId == partId) return i;
+            return -1;
+        }
+
+        private void SyncNextPartIdFromParts()
+        {
+            int max = 0;
+            for (int i = 0; i < parts.Count; i++)
+                if (parts[i] != null && parts[i].partId > max) max = parts[i].partId;
+            nextPartId = System.Math.Max(nextPartId, max + 1);
         }
 
         /// <summary>
@@ -500,7 +1057,8 @@ namespace PioneerFramework
 
             foreach (var part in parts)
             {
-                if (part.isDestroyed) continue;
+                if (part == null) continue;
+                // B5：损毁件仍在、仍有体积（残骸参与碰撞/包围盒）⇒ 不跳过。
                 DVector3 half = part.boundsSizeShip * 0.5;
                 double px = part.positionShip.x, py = part.positionShip.y, pz = part.positionShip.z;
                 if (px - half.x < minX) minX = px - half.x;
@@ -518,24 +1076,233 @@ namespace PioneerFramework
         }
 
         /// <summary>
+        /// **B5 关键件判定（§5 默认值）**：挂图件（舱盒）是关键件；没有挂图件时**首件**兜底
+        /// （单件 EVA/穿梭机/导弹，其唯一件就是关键件）。
+        /// 关键件损毁 ⇒ 整船失控/失能（不立即解体，R9 不裂）；非关键件只掉功能。
+        /// </summary>
+        public bool IsKeyPart(SpacePart part)
+        {
+            if (part == null) return false;
+            bool hasMapPart = false;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                if (parts[i] != null && parts[i].linkedMapId >= 0)
+                {
+                    hasMapPart = true;
+                    break;
+                }
+            }
+            if (hasMapPart) return part.linkedMapId >= 0;
+            return parts.Count > 0 && ReferenceEquals(parts[0], part);
+        }
+
+        /// <summary>是否还有存活的关键件（没有关键件可用 ⇒ 失能）。</summary>
+        public bool HasIntactKeyPart
+        {
+            get
+            {
+                if (parts.Count == 0) return false;
+                bool hasMapPart = false;
+                for (int i = 0; i < parts.Count; i++)
+                {
+                    if (parts[i] != null && parts[i].linkedMapId >= 0)
+                    {
+                        hasMapPart = true;
+                        if (!parts[i].isDestroyed) return true;
+                    }
+                }
+                if (hasMapPart) return false;
+                return parts[0] != null && !parts[0].isDestroyed;
+            }
+        }
+
+        /// <summary>储罐件容量合计（默认只算未毁件；验收/读数用）。</summary>
+        public double GetTankCapacitySum(string propellantDefName, bool includeDestroyed = false)
+        {
+            if (string.IsNullOrEmpty(propellantDefName)) return 0.0;
+            double sum = 0.0;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var part = parts[i];
+                if (part == null || (!includeDestroyed && part.isDestroyed)) continue;
+                var tank = part.GetComponent<PropellantTankComponentData>();
+                if (tank == null || tank.propellantDefName != propellantDefName) continue;
+                if (tank.capacityKg > 0.0) sum += tank.capacityKg;
+            }
+            return sum;
+        }
+
+        /// <summary>按 DefName 解析工质（DefDatabase 优先；测试/无图环境回退自带推进条目里的实例）。</summary>
+        private PropellantDef? ResolvePropellantDef(string propellantDefName)
+        {
+            if (string.IsNullOrEmpty(propellantDefName)) return null;
+            var def = DefDatabase<PropellantDef>.GetNamedSilentFail(propellantDefName);
+            if (def != null) return def;
+            for (int i = 0; i < propulsion.Count; i++)
+            {
+                var d = propulsion[i];
+                if (d?.propellant != null && d.propellant.defName == propellantDefName)
+                    return d.propellant;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// B5：储罐损毁漏光（D-P7）——镜像存量清零 + 从权威池扣掉同等燃料 + 容量出局。
+        /// 权威池可能是地图（`SpaceMapComp`）或无图实体（`this`），统一由 `GetPropulsionSource()` 选。
+        /// </summary>
+        private void LeakTankPart(SpacePart part)
+        {
+            var tank = part.GetComponent<PropellantTankComponentData>();
+            if (tank == null) return;
+            if (tank.leaked)
+            {
+                if (tank.massKg != 0.0)
+                {
+                    tank.massKg = 0.0;   // 已漏过：读档后残骸再被命中也不二次扣池/扣容量
+                    tankMassVersion++;
+                }
+                return;
+            }
+            tank.leaked = true;
+
+            double leakedMass = tank.massKg;
+            double lostCapacity = tank.capacityKg;
+            tank.massKg = 0.0;
+            if (leakedMass > 0.0)
+                tankMassVersion++;
+
+            var def = ResolvePropellantDef(tank.propellantDefName);
+            if (def == null) return;
+
+            var ownerMap = GetPartOwningMapComp(part);
+            if (leakedMass > 0.0)
+            {
+                double consumed = ownerMap != null
+                    ? ownerMap.TryConsumePropellant(def, leakedMass)
+                    : (HasPropulsionData ? TryConsumePropellant(def, leakedMass) : 0.0);
+                if (consumed < leakedMass)
+                    GetPropulsionSource()?.TryConsumePropellant(def, leakedMass - consumed);
+            }
+            if (lostCapacity <= 0.0) return;
+
+            if (ownerMap != null)
+            {
+                ownerMap.AddPropellantCapacity(def, -lostCapacity);
+                ownerMap.AddPropellantCapacity(-lostCapacity);
+                ownerMap.RemoveVirtualTankCapacity(lostCapacity);   // 读档重建时不许加回旧容量
+            }
+            else if (HasPropulsionData)
+            {
+                RemovePropellantCapacity(def, lostCapacity);
+            }
+        }
+
+        /// <summary>B5：引擎件损毁 ⇒ 该台的质量流率/推力出局（地图虚拟推进或无图 PropulsionData）。</summary>
+        private void DisableEnginePart(SpacePart part)
+        {
+            var engine = part.GetComponent<EngineComponentData>();
+            if (engine == null || engine.massFlowRate <= 0f) return;
+            var def = ResolvePropellantDef(engine.propellantDefName);
+            if (def == null) return;
+
+            var ownerMap = GetPartOwningMapComp(part);
+            if (ownerMap != null)
+                ownerMap.RemoveVirtualEngineFlow(def, engine.exhaustVelocity, engine.massFlowRate);
+            else if (HasPropulsionData)
+                RemoveEngineFlow(def, engine.exhaustVelocity, engine.massFlowRate, engine.isVectoredRcs);
+        }
+
+        /// <summary>无图实体：按工质/主-RCS 扣减引擎质量流率，并重算等效 ve（储罐/引擎损毁用）。</summary>
+        public float RemoveEngineFlow(PropellantDef def, float ve, float massFlow, bool isVectoredRcs)
+        {
+            if (def == null || massFlow <= 0f) return 0f;
+            float remaining = massFlow;
+            for (int i = 0; i < propulsion.Count && remaining > 0f; i++)
+            {
+                var d = propulsion[i];
+                if (d == null || d.propellant != def || d.isVectoredRcs != isVectoredRcs) continue;
+                float oldFlow = d.massFlow;
+                if (oldFlow <= 0f) continue;
+                float take = System.Math.Min(remaining, oldFlow);
+                float newFlow = oldFlow - take;
+                float newThrust = System.Math.Max(0f, d.ve * oldFlow - ve * take);
+                d.massFlow = newFlow;
+                d.ve = newFlow > 1e-6f ? newThrust / newFlow : 0f;
+                remaining -= take;
+            }
+            if (remaining < massFlow)
+                InvalidatePropulsion();
+            return massFlow - remaining;
+        }
+
+        /// <summary>无图实体：按工质扣减自带推进容量（储罐损毁用）。返回实际扣减量。</summary>
+        public double RemovePropellantCapacity(PropellantDef def, double kg)
+        {
+            if (def == null || kg <= 0.0) return 0.0;
+            double remaining = kg;
+            for (int i = 0; i < propulsion.Count && remaining > 0.0; i++)
+            {
+                var d = propulsion[i];
+                if (d == null || d.propellant != def) continue;
+                double take = System.Math.Min(remaining, d.capacity);
+                if (take <= 0.0) continue;
+                d.capacity -= take;
+                remaining -= take;
+            }
+            if (remaining < kg)
+                InvalidatePropulsion();   // totalPropulsionCapacity 按条目重算
+            return kg - remaining;
+        }
+
+        /// <summary>关键件刚损毁：**整船**失能但不解体（清单机动/引导/点火；R9 不裂）。
+        /// 只对单实体组生效——多实体组（弹群）里死一枚不等于整群失能。</summary>
+        private void DisableOnKeyPartDestroyed()
+        {
+            if (GroupId == 0) return;
+            var sg = Current.Game?.GetComponent<SpaceGameComp>();
+            var g = sg?.GetGroupById(GroupId);
+            if (g == null) return;
+
+            int entities = 0;
+            foreach (int _ in g.GetEntityIds())
+            {
+                if (++entities > 1) return;
+            }
+            g.IsCrippled = true;
+            g.ClearManeuvers();
+            g.EndBurn();
+        }
+
+        /// <summary>
         /// 标记部件被摧毁（惰性标记，不立即重建）。
+        /// B5：损毁件仍在/可见/有质量、参与碰撞；功能出局；储罐漏光；关键件损毁 ⇒ 失能。
         /// 舱室部件被毁时联动销毁其内部地图（先杀光内部 pawns）。
         /// </summary>
         public void MarkPartDestroyed(int partId)
         {
-            foreach (var part in parts)
+            int index = IndexOfPart(partId);
+            if (index < 0) return;
+            var part = parts[index];
+            if (part.destroyHandled) return;   // 残骸再被命中：善后已做过（防重复漏光/失能）
+            part.destroyHandled = true;
+            bool wasDestroyed = part.isDestroyed;
+            part.isDestroyed = true;
+            if (!wasDestroyed)
+                part.NotifyDestroyed();   // ApplyDamage 已通知过时不再重复
+            LeakTankPart(part);
+            DisableEnginePart(part);
+            fuelPlanVersion++;
+            OnPartsChanged(true);
+            // 舱室联动：只销毁这一件挂的图；实体还有其他图就继续存在（B6）
+            int removedMapId = part.linkedMapId;
+            if (removedMapId >= 0)
             {
-                if (part.partId == partId)
-                {
-                    part.isDestroyed = true;
-                    InvalidateStats();
-                    RecalculateBoundsFromParts();
-                    // 舱室联动：销毁内部地图（含 pawns 清除）
-                    if (part.linkedMapId >= 0)
-                        SpaceMapGenerator.DestroyRoomMap(part.linkedMapId);
-                    return;
-                }
+                SpaceMapGenerator.DestroyRoomMap(removedMapId);
+                OnMapRemoved(removedMapId);
             }
+            if (IsKeyPart(part))
+                DisableOnKeyPartDestroyed();
         }
 
         public void ExposeData()
@@ -550,8 +1317,14 @@ namespace PioneerFramework
             Scribe_Values.Look(ref IsAffectedByGravity, "isAffectedByGravity", true);
             DVector3.Scribe("positionMeters", ref positionMeters);
             DVector3.Scribe("velocityMeters", ref velocityMeters);
-            Scribe_Values.Look(ref rotation, "rotation");
+            DQuaternion.Scribe("rotation", ref rotation);
             Scribe_Values.Look(ref MapId, "mapId", -1);
+            Scribe_Values.Look(ref ArchivedMapId, "archivedMapId", -1);
+            Scribe_Values.Look(ref ArchivedPartId, "archivedPartId", -1);
+            Scribe_Collections.Look(ref archivedMapIds, "archivedMapIds", LookMode.Value);
+            Scribe_Collections.Look(ref archivedPartIds, "archivedPartIds", LookMode.Value);
+            if (archivedMapIds == null) archivedMapIds = new List<int>();
+            if (archivedPartIds == null) archivedPartIds = new List<int>();
             Scribe_Values.Look(ref IsMapArchived, "isMapArchived", false);
 
             // 无 Map 实体自带推进数据序列化
@@ -564,10 +1337,13 @@ namespace PioneerFramework
 
             // 部件列表序列化
             Scribe_Collections.Look(ref parts, "parts", LookMode.Deep);
+            Scribe_Values.Look(ref nextPartId, "nextPartId", 1);
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
                 if (parts == null) parts = new List<SpacePart>();
                 if (propulsion == null) propulsion = new List<PropulsionData>();
+                SyncNextPartIdFromParts();   // 首次引入 nextPartId 的旧档：按现有 id 追平
+                aabbDirty = true;
                 InvalidateStats();
                 foreach (var part in parts)
                 {

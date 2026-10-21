@@ -34,6 +34,8 @@
 
   <ItemGroup>
     <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Pure\DVector3.cs" />
+    <!-- 批 0（2026-10-17）：**惯量张量**（形状预设 / 合成 / 主轴 / 分类器）。纯数学（只 System）⇒ 链进来钉解析样本。 -->
+    <Compile Include="..\PioneerFramework\Base\Core\InertiaTensor.cs" Link="Pure\InertiaTensor.cs" />
     <Compile Include="..\PioneerFramework\SpaceAI\Core\*.cs" Link="SpaceAI\%(Filename)%(Extension)" />
     <Compile Include="..\PioneerFramework\RingWorld\Core\*.cs" Link="RingWorld\%(Filename)%(Extension)" />
     <Compile Include="..\PioneerFramework\Megastructures\Core\**\*.cs" Link="Megastructures\%(RecursiveDir)%(Filename)%(Extension)" />

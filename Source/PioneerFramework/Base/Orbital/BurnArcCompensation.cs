@@ -1,5 +1,6 @@
 using System;
 using MechJebLib.Primitives;
+using PioneerFramework.Burn;
 
 namespace PioneerFramework
 {
@@ -17,9 +18,13 @@ namespace PioneerFramework
     /// · **闭环**（下一步）：烧完**实测**终态 → 与目标比 → 一个小修正烧 ⇒ **对未知项免疫**。
     ///   两者叠加才是 MJ 式的做法（它两者都有）。
     ///
-    /// ## 解法定型
-    /// 两个自由度、目标 =（e → 0，a → 目标）：**网格 + 局部细化**（不引第三方优化器：本模块的规模
-    /// 与 MJ 的 18 个 Operation 不同，不需要 alglib 那一档 ✗）。`TryPredict` 是验证器也是目标函数 ✓。
+    /// ## 解法定型（2026-10-17 更新：KSA-① 牛顿搜索体）
+    /// 两个自由度、目标 =（e → 0，a → 目标）。
+    /// **搜索体 = `BurnRefineNewton`**（2 自由度牛顿 + 半步回溯；miss = **速度口径**
+    /// `v_final − v_circ(r_final)`，与 KSA `CircularOrbitGoal` 同语义；调用 5~8 次 vs 网格 156 次）。
+    /// **五护栏**在候迁件内（Δv 界 / 收敛状态 / 奇异 / 越界不静默钳位 / 只做搜索）。
+    /// **只接受 `Converged`**；越界/奇异/不收敛/预测失败一律回退到**原 9×9 + 3×5×5 网格**
+    /// （保留"最近可行解"语义——擂台 G2 实测界挡住时网格的 best-so-far 更好）。
     /// </summary>
     public static class BurnArcCompensation
     {
@@ -70,9 +75,49 @@ namespace PioneerFramework
             if (dvPlan.sqrMagnitude <= 0.0) { reason = "Δv 为零"; return false; }
             if (!(targetSma > 0.0)) { reason = "目标半长轴非正"; return false; }
 
+            // ── ① 牛顿搜索（KSA-①，2026-10-17）：速度口径 miss；只接受 Converged，其余回退旧网格 ──
+            // 初轨法向 = 目标圆轨的"顺行切向"基准（ĥ × r̂）；退化时取 +Z（与既有 OrbitView 约定一致）。
+            V3 h0 = V3.Cross(o.r, o.v);
+            double h0mag = h0.magnitude;
+            V3 normal0 = h0mag > 0.0 ? h0 / h0mag : new V3(0.0, 0.0, 1.0);
+
+            void Miss(double scale, double shift, ref Miss3 miss)
+            {
+                if (!BurnArc.TryPredict(o, nodeUt, dvPlan * scale, burnSeconds, shift,
+                        out BurnArc.Result r, out _))
+                {
+                    miss.X = miss.Y = miss.Z = 1e9;   // 预测失败 ⇒ 当作极差解（搜索会回溯/放弃）
+                    return;
+                }
+                var p = r.achieved;
+                double rmag = p.r.magnitude;
+                if (!(rmag > 0.0) || double.IsNaN(rmag) || double.IsInfinity(rmag))
+                {
+                    miss.X = miss.Y = miss.Z = 1e9;
+                    return;
+                }
+                V3 rhat = p.r / rmag;
+                V3 that = V3.Cross(normal0, rhat);       // 顺行切向
+                double vCirc = Math.Sqrt(p.mu / rmag);   // 圆轨速度（在该终态半径上）
+                V3 d = p.v - that * vCirc;
+                miss.X = d.x; miss.Y = d.y; miss.Z = d.z;
+            }
+
+            var refine = BurnRefineNewton.Refine(Miss, 1.0, 0.0,
+                BurnRefineNewton.DefaultTolerance, dvScaleRange, shiftRangeSeconds);
+            if (refine.Converged
+                && Evaluate(o, nodeUt, dvPlan, burnSeconds, targetSma, refine.Scale, refine.ShiftSeconds,
+                    out double ne, out double na))
+            {
+                result = new Solution(refine.Scale, refine.ShiftSeconds, ne, na, targetSma,
+                    ne + Math.Abs(na - targetSma) / targetSma);
+                return true;
+            }
+
+            // ── ② 兜底：原网格（语义与旧版逐条一致；README 迁移契约第 2 条）──
             double bestCost = double.MaxValue, bestScale = 1.0, bestShift = 0.0, bestE = 1.0, bestA = 0.0;
 
-            // ① 粗网格（9×9）：Δv 缩放 × 点火相位
+            // ① 粗网格（9×9）：Δv 缩放 × 点火相位（**兜底路径**，见上方牛顿块）
             for (int i = -4; i <= 4; i++)
             {
                 double scale = 1.0 + dvScaleRange * i / 4.0;

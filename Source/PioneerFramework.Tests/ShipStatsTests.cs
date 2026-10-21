@@ -47,8 +47,8 @@ namespace PioneerFramework.Tests
 
             Assert.True(part.RemoveComponent(room));
 
-            // With no components, the stats aggregator falls back to 1kg.
-            Assert.Equal(1f, part.Stats.mass, 3);
+            // B8：part 层不再逐个兜底 1kg（空 part = 0）；整船质量 0 时才在 SpaceEntity 层兜底。
+            Assert.Equal(0f, part.Stats.mass, 3);
         }
 
         [Fact]

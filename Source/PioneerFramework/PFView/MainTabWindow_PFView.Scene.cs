@@ -523,7 +523,7 @@ namespace PioneerFramework
             // 旧实现用**速度方向**做 LookRotation（船头永远朝轨道切线）：那是轨道运动的切线，不是船的
             // 朝向 —— 船转到任何姿态画面都一样，玩家看到的朝向与物理（主推对准 / 碰撞盒 / 命中几何，
             // 三者都消费同一个 rotation）毫无关系。改用真姿态后，船怎么转、画面就怎么转。
-            Quaternion gRot = viewFrameRot * group.CurrentOrbit.rotation;   // 姿态同过参考系（固连档下"相对地面"的姿态）
+            Quaternion gRot = viewFrameRot * group.CurrentOrbit.rotation.ToQuaternion();   // 姿态同过参考系（固连档下"相对地面"的姿态）
             float scale = DebugScaleParts ? 200f : 1f;
             bool drewRelief = false;
             // 2026-10-19 蒙皮：阵营 tint 每帧算一次（同组所有实体共用）；蒙皮不可用 ⇒ null = 旧常量色。

@@ -320,7 +320,17 @@ namespace PioneerFramework
                 return;
             }
             int targetGroupId = target.GroupId;
+            // B5：落点 part 优先取挂图舱盒（地图挂在它上面）；没有则退回首件（兼容无图目标）。
             int targetPartId = targetEntity.Parts[0].partId;
+            for (int i = 0; i < targetEntity.Parts.Count; i++)
+            {
+                var p = targetEntity.Parts[i];
+                if (p != null && p.linkedMapId >= 0 && !p.isDestroyed)
+                {
+                    targetPartId = p.partId;
+                    break;
+                }
+            }
 
             // 穿梭机乘客：选中 pawn 中停靠穿梭机 4 格内的（其余保持 EVA）
             var evaPawns = new HashSet<Pawn>(selectedPawns);

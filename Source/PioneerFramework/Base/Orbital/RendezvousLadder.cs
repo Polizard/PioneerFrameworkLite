@@ -116,6 +116,12 @@ namespace PioneerFramework
             /// <summary>调相轨道的**半径下限**（上游用 `主体半径 + 大气高度 + 3000`；我们没有大气口径 ⇒ 外部给）。</summary>
             public double MinRadius ;
 
+            /// <summary>
+            /// 是否计算**纯诊断**的独立 Shepperd 复算（拦截级：`closingTime/5` 步传播，781 s ≈ 156 步）。
+            /// 结果只写进 `status` 日志、**不参与选级/Δv 决策** ⇒ 生产默认 `false`；
+            /// 台架/需要看"计划到达偏差"时置 `true`（2026-10-19 引导计算量削减第一刀）。
+            /// </summary>
+            public bool IncludeDiagnostics;
         }
 
         /// <summary>计划里所有节点的 Δv 标量和（诊断/账单用；调用方不必自己再遍历一遍）。</summary>
@@ -264,7 +270,7 @@ namespace PioneerFramework
                 //   下一次还是只能猜"是规划错还是执行错"。这里用**计划自己**（打完那一发的轨道）
                 //   推进到到达时刻，与目标那一刻的位置量距离 ⇒ 一行读数定方向。
                 double arrivalMiss = double.NaN;
-                double arrivalMissIndep = double.NaN;   // 独立积分器复算（见下）
+                double arrivalMissIndep = double.NaN;   // 独立积分器复算（纯诊断，`IncludeDiagnostics` 控制）
                 {
                     V3 rAfter = afterBurn.RightHandedBCIPositionAtUT(arriveUt);
                     V3 rTgtAtArrival = target.RightHandedBCIPositionAtUT(arriveUt);
@@ -282,6 +288,10 @@ namespace PioneerFramework
                     //   本读数报 **4744 m** —— 而那与计划好坏无关（**两个解算器实测都在 1e-8 m 级**，
                     //   见 `InterceptSolverComparisonTests`）。⇒ 修法：**5 s 步走整段 + 余数一步**（总时长严格 = `closingTime`）。
                     //   教训：我曾拿这台读数当"计划是坏的"的证据（据此还试过一次换解算器、已撤）⇒ **红字先怀疑仪器**。
+                    //
+                    // ★ 2026-10-19：这段**纯诊断**（结果只进 status）在每次拦截规划要跑 `closingTime/5` 步
+                    //   （781 s ≈ 156 步），生产不需要 ⇒ 由 `Params.IncludeDiagnostics` 控制（默认关）。
+                    if (p.IncludeDiagnostics)
                     {
                         V3 rr = rTakeoff, vv = vTakeoff + dv1;
                         const double dtProbe = 5.0;
@@ -300,7 +310,9 @@ namespace PioneerFramework
                         arrivalMissIndep = (rr - rTgtAtArrival).magnitude;
                     }
                 }
-                status = $"很近（{dist:F0} m）：画拦截（{closingTime:F0} s 后到达，接近速度 {closingSpeed:F1} m/s）｜**计划到达偏差 {arrivalMiss:F0} m**｜**到达冲量 {dv2Arrive.magnitude:F2} m/s**（= 丢掉的那一发，`vf−transferVf`）｜**CA {caDist:F0} m @ T+{caUt - now:F0} s**｜**独立积分到达偏差 {arrivalMissIndep:F0} m**";
+                status = $"很近（{dist:F0} m）：画拦截（{closingTime:F0} s 后到达，接近速度 {closingSpeed:F1} m/s）｜**计划到达偏差 {arrivalMiss:F0} m**｜**到达冲量 {dv2Arrive.magnitude:F2} m/s**（= 丢掉的那一发，`vf−transferVf`）｜**CA {caDist:F0} m @ T+{caUt - now:F0} s**";
+                if (p.IncludeDiagnostics)
+                    status += $"｜**独立积分到达偏差 {arrivalMissIndep:F0} m**";
                 return Rung.Intercept;
             }
 

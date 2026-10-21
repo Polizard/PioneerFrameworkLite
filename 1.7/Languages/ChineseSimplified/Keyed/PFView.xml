@@ -195,6 +195,7 @@
   <PFV_HelpPilotingTitle>驾驶与自定义键位</PFV_HelpPilotingTitle>
   <PFV_Pilot_AvailableThrust>各向可用推力</PFV_Pilot_AvailableThrust>
   <PFV_Pilot_RateLimit>转向限速 {0}°/s</PFV_Pilot_RateLimit>
+  <PFV_Pilot_RateAxes>滚 {0} · 偏 {1} · 俯 {2} °/s</PFV_Pilot_RateAxes>
   <PFV_Pilot_SasTitle>姿态对准 SAS（主推进轴对准所选方向）</PFV_Pilot_SasTitle>
   <PFV_Pilot_ExitHint>Esc 结束操舵。有效手动指令会接管并清空机动队列。</PFV_Pilot_ExitHint>
   <PFV_Pilot_PanelHint>Esc 关闭详细面板；结束操舵使用主界面的独立按钮。</PFV_Pilot_PanelHint>

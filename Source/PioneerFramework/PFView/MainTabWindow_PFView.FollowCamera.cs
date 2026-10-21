@@ -34,7 +34,7 @@ namespace PioneerFramework
                 if (CanInspectEntity(group))
                 {
                     // 船体正向：船头为前向；速度正向：把同一船体帧的最小旋转搬到速度方向（见 PFViewCameraCore）。
-                    Quaternion hullInView = viewFrameRot * group.CurrentOrbit.rotation;
+                    Quaternion hullInView = viewFrameRot * group.CurrentOrbit.rotation.ToQuaternion();
                     if (groupCameraMode == PFViewGroupCameraMode.ThirdPersonVelocity)
                     {
                         Vector3 velocityInView = viewFrameRot * (Vector3)group.CurrentOrbit.velocitySystem.v;

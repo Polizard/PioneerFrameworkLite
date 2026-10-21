@@ -141,10 +141,16 @@ namespace PioneerFramework
         {
             double pitch = (KeyPitchU ? 1 : 0) - (KeyPitchD ? 1 : 0);
             if (InvertPitch) pitch = -pitch;
-            var local = SteeringMath.AngularCommand(pitch,
-                (KeyYawL ? 1 : 0) - (KeyYawR ? 1 : 0),
-                (KeyRollL ? 1 : 0) - (KeyRollR ? 1 : 0), g.MaxAngularRate,
-                PrecisionHeld ? PrecisionScale : 1);
+            double yaw = (KeyYawL ? 1 : 0) - (KeyYawR ? 1 : 0);
+            double roll = (KeyRollL ? 1 : 0) - (KeyRollR ? 1 : 0);
+
+            // 方向/符号沿用远端 SteeringMath；每轴再乘各自的 I 加权限速（批 1）。
+            var unit = SteeringMath.AngularCommand(pitch, yaw, roll, 1.0, 1.0);
+            var local = new DVector3(
+                unit.x * g.MaxAngularRateAboutBodyAxis(1, 0, 0),
+                unit.y * g.MaxAngularRateAboutBodyAxis(0, 1, 0),
+                unit.z * g.MaxAngularRateAboutBodyAxis(0, 0, 1));
+            if (PrecisionHeld) local = local * PrecisionScale;
             return DVector3.Rotate(local, g.CurrentOrbit.rotation);
         }
 

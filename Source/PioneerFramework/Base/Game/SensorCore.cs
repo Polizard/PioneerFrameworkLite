@@ -41,7 +41,8 @@ namespace PioneerFramework
     /// </summary>
     public struct SignalInputs
     {
-        /// <summary>实体 AABB 特征半径之和的等效值（m）。无实体 / 无几何时给 0。</summary>
+        /// <summary>**编队并集 AABB 半尺寸的模**（m，船体系、姿态无关；B8 定稿，与碰撞组并集盒同口径）。
+        /// 不是“各实体半对角线取 max”，也不是“特征半径之和”。无实体/无几何时给 0。</summary>
         public double rcsRadiusMeters;
         /// <summary>Σ(heatProduction + heatDissipation)（W）。今天恒为 0（无组件写入），组件就位后自动生效。</summary>
         public double heatWatts;

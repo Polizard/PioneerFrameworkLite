@@ -166,12 +166,13 @@ namespace PioneerFramework.Tests
                 {
                     double burnSeconds = baseBurn * bs;
 
-                    // 仪器自校验：复刻在**生产步数**下必须与生产逐位相等（e 与 sma 都查）
+                    // 仪器自校验：复刻在**生产步数**（KSA-② 起为自适应，下限 50）下必须与生产逐位相等（e 与 sma 都查）
+                    int prodSteps = BurnArc.StepCountFor(o, g.node, burnSeconds, delay);
                     var prod = ScanProduction(o, g.node, dv, burnSeconds, delay);
                     BurnArc.TryPredict(o, g.node, dv, burnSeconds, delay, out BurnArc.Result r1, out _);
-                    (double eRep, double smaRep) = Predict(o, g.node, dv, burnSeconds, delay, BurnArc.Steps);
+                    (double eRep, double smaRep) = Predict(o, g.node, dv, burnSeconds, delay, prodSteps);
                     Assert.True(eRep == r1.eccentricity && smaRep == r1.sma,
-                        $"复刻与生产在 {BurnArc.Steps} 步下不逐位相等（e {eRep:R} vs {r1.eccentricity:R}）⇒ 复刻不可信");
+                        $"复刻与生产在 {prodSteps} 步下不逐位相等（e {eRep:R} vs {r1.eccentricity:R}）⇒ 复刻不可信");
 
                     var reference = ScanReplica(o, g.node, dv, burnSeconds, delay, ReferenceSteps);
                     int iProd = Argmin(prod), iRef = Argmin(reference);
@@ -186,13 +187,14 @@ namespace PioneerFramework.Tests
                     if (iProd != iRef) worstArgmin = iProd;
 
                     sb.AppendLine($"    {g.name,-18} burn×{bs,5:F2}（{burnSeconds,7:F1}s）" +
-                                  $"dt/T≈{burnSeconds / BurnArc.Steps / (2 * Math.PI * Math.Sqrt(Math.Pow(g.r0, 3.0) / g.mu)):E2} " +
+                                  $"步数 {prodSteps,3}" +
+                                  $"｜dt/T≈{burnSeconds / prodSteps / (2 * Math.PI * Math.Sqrt(Math.Pow(g.r0, 3.0) / g.mu)):E2} " +
                                   $"｜argmin {iProd}/{iRef} {(iProd == iRef ? "✓" : "✗")}" +
                                   $"｜max|Δe| {maxDe:E3}｜余量 {gap:E3}｜比 {ratio:E2}");
                 }
             }
 
-            _out.WriteLine($"相位选择判据（生产 {BurnArc.Steps} 步 vs 参考 {ReferenceSteps} 步；几何 × 燃烧时长 共 {geoms.Length * burnScales.Length} 格）：");
+            _out.WriteLine($"相位选择判据（生产自适应步数（下限 {BurnArc.Steps}） vs 参考 {ReferenceSteps} 步；几何 × 燃烧时长 共 {geoms.Length * burnScales.Length} 格）：");
             _out.WriteLine(sb.ToString().TrimEnd());
             _out.WriteLine($"    汇总：argmin 不一致 {(worstArgmin < 0 ? "0 格 ✓" : $"{worstArgmin}（**要重核**）")}｜" +
                            $"最差 |Δe|/余量 = {worstRatio:E2}（判据 ≤ 1e-2）｜最小余量 {minGap:E3}");

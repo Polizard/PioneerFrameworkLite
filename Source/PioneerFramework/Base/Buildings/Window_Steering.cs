@@ -23,6 +23,7 @@ namespace PioneerFramework
         public override Vector2 InitialSize => new(Mathf.Min(540f, UI.screenWidth - 32f), Mathf.Min(650f, UI.screenHeight - 32f));
 
         private const float RowH = 24f;
+        /// <summary>键位提示固定画在**内容之后**（旧版锚在 yMax−20，内容一长就压住 SAS 按钮）。</summary>
         private static readonly Color bgColor = new(0.05f, 0.05f, 0.08f, 0.55f);
         private readonly bool ownsControl;
         private Vector2 detailsScroll;
@@ -108,6 +109,10 @@ namespace PioneerFramework
 
             // ── 旋转区 ──
             DrawRotationInfo(inRect, ref y, group);
+
+            // ── 惯量区（批 0 底座：读数；不参与任何控制——限速 I 化在批 1）──
+            DrawSectionTitle(inRect, ref y, "惯量（批 0：绕质心主轴 / 质心偏移 / 绕原点）");
+            DrawInertiaInfo(inRect, ref y, group);
 
             // ── 主推进方向 ──
             DrawSectionTitle(inRect, ref y, "PFV_Pilot_Axis".Translate());
@@ -213,9 +218,44 @@ namespace PioneerFramework
         private void DrawRotationInfo(Rect inRect, ref float y, SpaceEntityGroup group)
         {
             Text.Font = GameFont.Tiny;
+            float slow = group.MaxAngularRate * Mathf.Rad2Deg;
+            if (group.maxAngularRate > 0f)
+            {
+                Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH),
+                    "PFV_Pilot_RateLimit".Translate(slow.ToString("F1")));
+                y += RowH - 2f;
+                return;
+            }
+            // 批 1：I 加权——最慢轴 + 三根手操轴各自的上限（大船可能全压在地板上）
+            float roll = group.MaxAngularRateAboutBodyAxis(0, 0, 1) * Mathf.Rad2Deg;
+            float yaw = group.MaxAngularRateAboutBodyAxis(0, 1, 0) * Mathf.Rad2Deg;
+            float pitch = group.MaxAngularRateAboutBodyAxis(1, 0, 0) * Mathf.Rad2Deg;
             Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH),
-                "PFV_Pilot_RateLimit".Translate((group.MaxAngularRate * Mathf.Rad2Deg).ToString("F1")));
+                "PFV_Pilot_RateLimit".Translate(slow.ToString("F1")));
+            y += RowH - 4f;
+            Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH),
+                "PFV_Pilot_RateAxes".Translate(
+                    roll.ToString("F1"), yaw.ToString("F1"), pitch.ToString("F1")));
             y += RowH - 2f;
+        }
+
+        /// <summary>惯量读数（批 0：只显示，不控制；重算# = 事件惰性自证——静止时不涨）。</summary>
+        private void DrawInertiaInfo(Rect inRect, ref float y, SpaceEntityGroup group)
+        {
+            Text.Font = GameFont.Tiny;
+            group.InertiaDebugLines(out string line1, out string line2, out string line3);
+            Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH), line1);
+            y += RowH - 4f;
+            if (!string.IsNullOrEmpty(line2))
+            {
+                Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH), line2);
+                y += RowH - 4f;
+            }
+            if (!string.IsNullOrEmpty(line3))
+            {
+                Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH), line3);
+                y += RowH - 2f;
+            }
         }
 
         private void DrawMainAxisSelector(Rect inRect, ref float y, SpaceMapComp mapComp)
@@ -242,8 +282,10 @@ namespace PioneerFramework
         private void DrawActionGroups(Rect inRect, ref float y, SpaceMapComp mapComp)
         {
             Text.Font = GameFont.Tiny;
-            float bw = 32f, gap = 5f;
-            for (int g = 0; g < 9; g++)
+            const float gap = 5f;
+            const int count = 9;
+            float bw = (inRect.width - 12f - gap * (count - 1)) / count;   // 自适应
+            for (int g = 0; g < count; g++)
             {
                 bool armed = (mapComp.armedGroupsMask & (1 << g)) != 0;
                 var rect = new Rect(inRect.x + 6f + g * (bw + gap), y, bw, RowH - 4f);
