@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Shot_Select>Shot: {0}</PF_Shot_Select>
+  <PF_Shot_SelectDesc>Select this weapon's shot definition. Switching does not replenish ammunition or modify shots already in flight.</PF_Shot_SelectDesc>
+  <PF_Shot_Invalid>Invalid shot configuration</PF_Shot_Invalid>
+</LanguageData>

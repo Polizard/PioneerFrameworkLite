@@ -5,12 +5,19 @@ namespace PioneerFramework.Combat
 {
     public class ProjectileInstance : ISpatialEntity
     {
+        // 步间出生时，等物理世界结算到出生时间再绑定精确母船状态；射弹本身仍即时登记。
+        internal bool awaitingSourceState;
+        internal DVector3 birthOffsetShip;
+        internal DVector3 birthTargetPosition;
+        internal DVector3? birthTargetVelocity;
+        internal double birthMuzzleSpeed;
         private static int idCounter = 1;
 
         public int id;
         public int sourceGroupId;
         public int factionId;
         public WeaponDef weaponDef = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public ShotRuntime? shot;
         /// <summary>**系统系**位置（批6 S3-3c：类型承载系 —— 混系会编译不过，见 `FrameVec3.cs`）。</summary>
         public SystemVec3 position;
         /// <summary>**系统系**速度。</summary>
@@ -116,11 +123,27 @@ namespace PioneerFramework.Combat
         }
 
         /// <summary>无重力（线性）积分一步。引力射弹走 TaylorSegment 路径，不经过这里。</summary>
-        public void UpdatePosition(float deltaTime)
+        public void UpdatePosition(float deltaTime) => UpdatePosition((double)deltaTime);
+
+        public void UpdatePosition(double deltaTime)
         {
             BeginStep();
             position += velocity * deltaTime;
             AdvanceLife(deltaTime);
+        }
+
+        internal bool IsVisibleAt(double tick) => !awaitingSourceState && tick >= spawnPhysicsTick;
+
+        internal DVector3 RenderedPosition(double tick)
+        {
+            if (!affectedByGravity)
+                return spawnPosition.v + velocity.v * System.Math.Max(0, tick - spawnPhysicsTick);
+            if (tick < prevPhysicsTick && prevPhysicsTick > prevUpdatePhysicsTick)
+            {
+                double fraction = System.Math.Clamp((tick - prevUpdatePhysicsTick) / (prevPhysicsTick - prevUpdatePhysicsTick), 0, 1);
+                return prevPosition.v + (position.v - prevPosition.v) * fraction;
+            }
+            return position.v + velocity.v * System.Math.Max(0, tick - prevPhysicsTick);
         }
 
         /// <summary>按当前传播段在 physicsTick 处求值，写回位置/速度（段内插值飞行）。</summary>

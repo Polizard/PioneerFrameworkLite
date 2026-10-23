@@ -77,6 +77,15 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
+        public void CapturedCameraDragContinuesBeforeSidePanelsRejectNewInput()
+        {
+            var method = typeof(MainTabWindow_PFView).GetMethod("HandleInput", Flags);
+            var calls = ReferencedMembers(method).OfType<MethodBase>().Select(m => m.Name).ToList();
+            Assert.True(calls.IndexOf("HandleCameraDrag") >= 0);
+            Assert.True(calls.IndexOf("HandleCameraDrag") < calls.IndexOf("MouseInViewport"));
+        }
+
+        [Fact]
         public void LayoutChangesCannotResizeCameraOrRenderTexture()
         {
             var method = typeof(MainTabWindow_PFView).GetMethod("ComputeLayout", Flags);
@@ -268,8 +277,14 @@ namespace PioneerFramework.Tests
         public void CameraInputAndRenderingApplyFocusAwarePitchAndContinuousOrbitUp()
         {
             var input = ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("HandleInput", Flags)).ToArray();
-            Assert.Contains(input, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "ResolvePitch");
-            Assert.DoesNotContain(input, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "ClampPitch");
+            Assert.Contains(input, m => m.Name == "HandleCameraDrag");
+            var drag = ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("HandleCameraDrag", Flags)).ToArray();
+            Assert.Contains(drag, m => m.DeclaringType == typeof(PFViewOrbitDragState) && m.Name == "AddDrag");
+            var bounds = ReferencedMembers(typeof(PFViewOrbitDragState).GetMethod("AddDrag", Flags)).ToArray();
+            Assert.Contains(bounds, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "ResolvePitch");
+            Assert.Contains(bounds, m => m.DeclaringType == typeof(PFViewPilotCameraCore) && m.Name == "LookPitch");
+            foreach (var stage in new[] { input, drag, bounds })
+                Assert.DoesNotContain(stage, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "ClampPitch");
             var render = ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("UpdateCamera", Flags)).ToArray();
             Assert.Contains(render, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "ResolvePitch");
             Assert.Contains(render, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "OrbitUp");

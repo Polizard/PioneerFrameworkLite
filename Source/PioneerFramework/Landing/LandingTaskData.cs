@@ -5,8 +5,21 @@ using Verse;
 
 namespace PioneerFramework.Landing
 {
-    public enum LandingTransitStatus { InFlight, PreparingDestination, AwaitingPlacement, Transferring, Completing, Completed, FailedRecoverable, Blocked }
+    public enum LandingTransitStatus { InFlight, PreparingDestination, AwaitingPlacement, Transferring, Completing, Completed, FailedRecoverable, Blocked, AwaitingMapRequest }
     public enum LandingMapStatus { Pending, Transferred, Cleaned }
+
+    /// <summary>接地时刻的天体相对快照；等待访问期间不随轨道时钟重算。</summary>
+    public sealed class SurfaceTouchdownData : IExposable
+    {
+        public double PhysicsTick, GroundSpeed, LatitudeRad, LongitudeRad;
+        public DVector3 PositionBody, VelocityBody;
+        public void ExposeData()
+        {
+            Scribe_Values.Look(ref PhysicsTick, "physicsTick"); Scribe_Values.Look(ref GroundSpeed, "groundSpeed");
+            Scribe_Values.Look(ref LatitudeRad, "latitude"); Scribe_Values.Look(ref LongitudeRad, "longitude");
+            DVector3.Scribe("positionBody", ref PositionBody); DVector3.Scribe("velocityBody", ref VelocityBody);
+        }
+    }
 
     public sealed class LandingReport
     {
@@ -100,6 +113,8 @@ namespace PioneerFramework.Landing
         public PlanetTile TargetTile = PlanetTile.Invalid;
         public SystemVec3 DepartureCenter, StartPosition;
         public LandingTransitStatus Status, ResumeStage;
+        // 旧档缺少快照时仍表示主动降落。
+        public SurfaceTouchdownData? Touchdown;
         public LandingFuelReceipt FuelReceipt = new LandingFuelReceipt();
         public LandingSuspensionData Suspension = new LandingSuspensionData();
         public List<LandingSourceMapData> SourceMaps = new List<LandingSourceMapData>();
@@ -117,6 +132,7 @@ namespace PioneerFramework.Landing
                 (Status == LandingTransitStatus.AwaitingPlacement && next == LandingTransitStatus.Transferring) ||
                 (Status == LandingTransitStatus.Transferring && (next == LandingTransitStatus.AwaitingPlacement || next == LandingTransitStatus.Completing)) ||
                 (Status == LandingTransitStatus.Completing && next == LandingTransitStatus.Completed) ||
+                (Status == LandingTransitStatus.AwaitingMapRequest && next == LandingTransitStatus.PreparingDestination) ||
                 (Status == LandingTransitStatus.FailedRecoverable && next == ResumeStage);
             if (!allowed) { reasonKey = "PFL_LandingInvalidState"; return false; }
             Status = next; return true;
@@ -131,6 +147,7 @@ namespace PioneerFramework.Landing
             Scribe_Collections.Look(ref EntityIds, "entities", LookMode.Value); Scribe_Collections.Look(ref MaplessEntityIds, "maplessEntities", LookMode.Value);
             SystemVec3.Scribe("departureCenter", ref DepartureCenter); SystemVec3.Scribe("startPosition", ref StartPosition);
             Scribe_Values.Look(ref Status, "status"); Scribe_Values.Look(ref ResumeStage, "resumeStage");
+            Scribe_Deep.Look(ref Touchdown, "touchdown");
             Scribe_Deep.Look(ref FuelReceipt, "fuelReceipt"); Scribe_Deep.Look(ref Suspension, "suspension");
             Scribe_Collections.Look(ref SourceMaps, "sourceMaps", LookMode.Deep); Scribe_Deep.Look(ref Cleanup, "cleanup");
             Scribe_Values.Look(ref FailureReason, "failure");

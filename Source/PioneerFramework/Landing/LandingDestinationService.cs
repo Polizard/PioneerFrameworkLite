@@ -37,10 +37,19 @@ namespace PioneerFramework.Landing
 
         public static void BeginResolve(LandingTaskData task, Action<Map> ready, Action<LandingReport> failed)
         {
+            Game session = Current.Game;
+            string taskId = task.TaskId;
+            bool Pending() => ReferenceEquals(session, Current.Game) &&
+                ReferenceEquals(session.GetComponent<LandingTransitManager>()?.FindTask(taskId), task) &&
+                task.Status == LandingTransitStatus.PreparingDestination;
+            void Reject(LandingReport report) { if (Pending()) failed(SurfaceTouchdownService.DescribeDestinationFailure(task, report)); }
             LongEventHandler.QueueLongEvent(() =>
             {
+                if (!Pending()) return;
                 try
                 {
+                    var sourceCheck = CheckSourceIdentity(task);
+                    if (!sourceCheck.Success) { Reject(sourceCheck); return; }
                     var largest = new IntVec2(0, 0);
                     foreach (var source in task.SourceMaps)
                     {
@@ -50,13 +59,33 @@ namespace PioneerFramework.Landing
                     }
                     var size = RequiredMapSize(largest);
                     var check = Check(task.TargetTile, task.TargetBodyId, size);
-                    if (!check.Success) { failed(check); return; }
+                    if (!check.Success) { Reject(check); return; }
                     Map map = ResolveExisting(() => FindExisting(task.TargetTile), () => LandingDestinationRuntime.Generate(task, size));
+                    if (!Pending()) return;
                     task.DestinationMapId = map.uniqueID; task.DestinationParentId = map.Parent.ID;
                     ready(map);
                 }
-                catch (Exception e) { failed(LandingReport.Reject("PFL_LandingDestinationError", e.Message)); }
-            }, "PFL_LandingPreparing", false, e => failed(LandingReport.Reject("PFL_LandingDestinationError", e.Message)));
+                catch (Exception e) { Reject(LandingReport.Reject("PFL_LandingDestinationError", e.Message)); }
+            }, "PFL_LandingPreparing", false, e => Reject(LandingReport.Reject("PFL_LandingDestinationError", e.Message)));
+        }
+
+        private static LandingReport CheckSourceIdentity(LandingTaskData task)
+        {
+            var sg = Current.Game.GetComponent<SpaceGameComp>();
+            var group = sg.GetGroupById(task.GroupId);
+            if (group == null || group.LandingTaskId != task.TaskId ||
+                !group.GetEntityIds().OrderBy(id => id).SequenceEqual(task.EntityIds.OrderBy(id => id)))
+                return LandingReport.Reject("PFL_LandingSourceUnavailable", "Source group identity changed.");
+            if (!LandingSourceMapService.TryCollect(sg, group, out var maps, out var mapless, out var report)) return report;
+            if (maps.Count != task.SourceMaps.Count || !mapless.OrderBy(id => id).SequenceEqual(task.MaplessEntityIds.OrderBy(id => id)))
+                return LandingReport.Reject("PFL_LandingSourceUnavailable", "Source map identity changed.");
+            foreach (var source in task.SourceMaps)
+            {
+                var live = maps.FirstOrDefault(m => m.MapId == source.MapId);
+                if (live == null || !live.EntityIds.OrderBy(id => id).SequenceEqual(source.EntityIds.OrderBy(id => id)))
+                    return LandingReport.Reject("PFL_LandingSourceUnavailable", "Source map owner changed.");
+            }
+            return LandingReport.Ok();
         }
     }
 }

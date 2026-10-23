@@ -19,6 +19,8 @@ public class TimeScaleRenderClockTests
         WithClock((clock, _) =>
         {
             AccessTools.Field(typeof(TimeScaleManager), "currentLevel").SetValue(clock, level);
+            clock.GetPhysicsTick();
+            AccessTools.Field(typeof(TickManager), "ticksGameInt").SetValue(Find.TickManager, 2);
             double start = clock.GetRenderTick();
             RealTime.frameCount++;
             double first = clock.GetRenderTick();
@@ -39,6 +41,8 @@ public class TimeScaleRenderClockTests
         WithClock((clock, _) =>
         {
             AccessTools.Field(typeof(TimeScaleManager), "currentLevel").SetValue(clock, TimeScaleLevel.Fast);
+            clock.GetPhysicsTick();
+            AccessTools.Field(typeof(TickManager), "ticksGameInt").SetValue(Find.TickManager, 2);
             clock.GetRenderTick();
             RealTime.frameCount++;
 

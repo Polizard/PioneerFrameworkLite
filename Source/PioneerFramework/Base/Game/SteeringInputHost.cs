@@ -28,15 +28,27 @@ namespace PioneerFramework
             if (pointer.Action is { } action) SteeringController.HoldPointerAction(action);
         }
 
+        internal static Window? KeyboardForeground(IList<Window>? windows)
+        {
+            if (windows == null) return null;
+            for (int i = windows.Count - 1; i >= 0; i--)
+            {
+                var window = windows[i];
+                // 提示框也在窗口栈顶；被动绘制层不占键盘焦点，真实弹窗仍会暂停操舵。
+                if (window is ImmediateWindow && !window.focusWhenOpened && !window.absorbInputAroundWindow) continue;
+                return window;
+            }
+            return null;
+        }
+
         internal static bool CanReadKeyboard()
         {
             if (!Application.isFocused) return false;
             var stack = Find.WindowStack;
             var view = stack?.WindowOfType<MainTabWindow_PFView>();
             if (view?.HasTextInputFocus == true) return false;
-            var windows = stack?.Windows;
-            if (windows == null || windows.Count == 0) return false;
-            var foreground = windows[windows.Count - 1];
+            var foreground = KeyboardForeground(stack?.Windows);
+            if (foreground == null) return false;
             if (foreground is Window_Steering) return SteeringController.IsOpen;
             return SteeringController.IsOpen && !SteeringController.FromPFView
                 ? foreground is Window_Steering || view != null && ReferenceEquals(foreground, view)

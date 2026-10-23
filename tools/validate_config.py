@@ -263,7 +263,7 @@ def main():
         # ⇒ 出处：`RimWorld/CompProperties_Launchable.cs:25/28`（2026-10-15 核对）
         "CompProperties_Launchable_PF": {"activeTransporterDef", "skyfallerLeaving"},
     }
-    SIMPLE_DEF_TYPES = {"CelestialBodyDef", "PropellantDef"}
+    SIMPLE_DEF_TYPES = {"CelestialBodyDef", "PropellantDef", "ShotDef", "WeaponDef"}
     # ⚠ 2026-10-14：尾部允许**行尾注释**（`public string x = null!;  // null!：…`）。
     #   原式要求 `;\s*$` ⇒ "字段行带行尾注释"这类合法声明会被漏收（N2 可空族批加了注释才暴露）。
     #   判据不放宽：仍是"以 `;` 收尾的字段声明行"，只是允许其后跟注释。
@@ -316,6 +316,22 @@ def main():
                 continue
 
             declared = declared_fields(type_name)
+            if type_name.startswith("ShotCompProperties_"):
+                # Custom ShotComp properties do not inherit Verse.CompProperties fields.
+                # Restrict each node to its own class, rather than the file-wide field union.
+                source = (ROOT / "Source/PioneerFramework/Combat/Shots/ShotComponents.cs").read_text(encoding="utf-8")
+                block = re.search(r"class\s+" + re.escape(type_name) + r"\s*:\s*ShotCompProperties\s*\{", source)
+                if block is None:
+                    fail(f"{rel}: unknown built-in shot component {type_name}")
+                declared = set()
+                depth = 1
+                for line in source[block.end():].splitlines():
+                    if depth == 1 and (field := _field_re.match(line)):
+                        declared.add(field.group(1))
+                    depth += line.count("{") - line.count("}")
+                    if depth == 0:
+                        break
+                base_fields = set()
             if declared is None:
                 fail(f"{rel}: XML references type '{cls or node.tag}' but no class/struct "
                      f"'{type_name}' is declared under Source/")

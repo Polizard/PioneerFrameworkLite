@@ -209,6 +209,12 @@ namespace PioneerFramework
             AddAction("降落/撞击·判据（S3：报价·距离门·跨层错配·越界·缺表面·执行三件事 + 撞击事件）",
                 "05 场景 · 引力场(A0)", 74, RunLandingJudgments, null);
             AddAction("降落/撞击·判据中止", "05 场景 · 引力场(A0)", 73, LandingAcceptanceRunner.Abort, null);
+            AddAction("带图接地测试（20 m/s：仅登记落点，地图手动请求）", "05 场景 · 引力场(A0)", 72,
+                SurfaceTouchdownAcceptanceRunner.SpawnSafe, null);
+            AddAction("带图高速坠毁回归（300 m/s）", "05 场景 · 引力场(A0)", 71,
+                SurfaceTouchdownAcceptanceRunner.SpawnCrash, null);
+            AddAction("打印带图接地任务与到达内容", "05 场景 · 引力场(A0)", 70,
+                SurfaceTouchdownAcceptanceRunner.Report, null);
 
             // ═══ 场景 · 多part（批 0：惯量底座，2026-10-17）═══
             AddAction("多part 调试船",

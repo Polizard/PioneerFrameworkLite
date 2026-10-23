@@ -20,9 +20,12 @@ public class LandingPersistenceTests
     [InlineData(LandingTransitStatus.Completing)] [InlineData(LandingTransitStatus.Blocked)]
     [InlineData(LandingTransitStatus.PreparingDestination)] [InlineData(LandingTransitStatus.Transferring)]
     [InlineData(LandingTransitStatus.FailedRecoverable)]
+    [InlineData((LandingTransitStatus)8)]
     public void TaskScribeRoundTripRetainsStableOperationAndFuel(LandingTransitStatus status)
     {
-        var data = new LandingTaskData { TaskId = "saved", GroupId = 42, Status = status, DurationTicks = 180 };
+        var data = new LandingTaskData { TaskId = "saved", GroupId = 42, Status = status, DurationTicks = 180,
+            Touchdown = new SurfaceTouchdownData { PhysicsTick = 1234.5, GroundSpeed = 60,
+                PositionBody = new DVector3(1, 2, 3), VelocityBody = new DVector3(4, 5, 6), LatitudeRad = 0.25, LongitudeRad = -1.5 } };
         data.SourceMaps.Add(new LandingSourceMapData { SourceKey = "map-key", MapId = 84, Status = LandingMapStatus.Transferred });
         data.FuelReceipt.Committed = true; data.FuelReceipt.ConsumedKg = 12.5;
         string path = Path.Combine(Path.GetTempPath(), "pfl-landing-" + Guid.NewGuid() + ".xml");
@@ -40,6 +43,12 @@ public class LandingPersistenceTests
             Assert.Equal(status, restored.Status); Assert.True(restored.FuelReceipt.Committed);
             Assert.Equal(12.5, restored.FuelReceipt.ConsumedKg); Assert.Equal("landing:saved:map-key", restored.SourceMaps[0].OperationId(restored.TaskId));
             Assert.Equal(LandingMapStatus.Transferred, restored.SourceMaps[0].Status);
+            Assert.Equal(1234.5, restored.Touchdown.PhysicsTick);
+            Assert.Equal(60, restored.Touchdown.GroundSpeed);
+            Assert.Equal(3, restored.Touchdown.PositionBody.z);
+            Assert.Equal(6, restored.Touchdown.VelocityBody.z);
+            Assert.Equal(0.25, restored.Touchdown.LatitudeRad);
+            Assert.Equal(-1.5, restored.Touchdown.LongitudeRad);
         }
         finally { diagnostic.UnpatchAll(diagnostic.Id); Scribe.ForceStop(); prefs.SetValue(null, previous); if (File.Exists(path)) File.Delete(path); }
     }

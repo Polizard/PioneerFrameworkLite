@@ -354,9 +354,8 @@ namespace PioneerFramework
             var stack = Find.WindowStack;
             var view = stack?.WindowOfType<MainTabWindow_PFView>();
             if (view?.HasTextInputFocus == true) return false;
-            var windows = stack?.Windows;
-            if (windows == null || windows.Count == 0) return false;
-            var foreground = windows[windows.Count - 1];
+            var foreground = SteeringInputHost.KeyboardForeground(stack?.Windows);
+            if (foreground == null) return false;
             return ReferenceEquals(foreground, this) || (view != null && ReferenceEquals(foreground, view));
         }
 

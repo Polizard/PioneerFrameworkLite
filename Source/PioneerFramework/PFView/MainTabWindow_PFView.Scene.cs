@@ -436,6 +436,7 @@ namespace PioneerFramework
             foreach (var g in spaceGame.GetAllGroups())
             {
                 if (!g.IsActive) continue;
+                if (!spaceGame.GroupIsVisibleAt(g, tick)) continue;
                 if (!sysIds.Contains(g.CelestialBodyId)) continue;
                 if (!CanInspectEntity(g)) continue;
                 if (sensor != null && !sensor.PlayerCanSee(g)) continue;   // [V3]/S4c：列表只列看得见的
@@ -632,13 +633,11 @@ namespace PioneerFramework
 
             foreach (var proj in cm.ActiveProjectiles)
             {
+                if (!proj.IsVisibleAt(tick)) continue;
                 // 渲染位置解析化：无重力射弹位置 = spawnPos + velocity×(physicsTick - spawnPhysicsTick)，
                 // 是 physicsTick 的连续函数——任何渲染帧率下都平滑（不依赖每 2 tick 的离散步进点，
                 // 低帧率时渲染点与物理点重合会离散跳动呈折线）。重力射弹回退为物理点+外推插值。
-                double physicsNowT = tick;
-                DVector3 renderPos = proj.affectedByGravity
-                    ? (proj.position + proj.velocity * Math.Max(0, physicsNowT - proj.prevPhysicsTick)).v
-                    : (proj.spawnPosition + proj.velocity * (physicsNowT - proj.spawnPhysicsTick)).v;
+                DVector3 renderPos = proj.RenderedPosition(tick);
 
                 // 射弹位置是行星系相对坐标，渲染需转绝对（加所属行星世界偏移）
                 DVector3 bodyOff = GetBodyPosAbs(proj.systemBodyId, tick);
@@ -649,10 +648,13 @@ namespace PioneerFramework
                 float headSize = Mathf.Max(4f, dist * 0.008f);
                 // 尾迹必须远细于弹头，否则立方体端面在视觉上像第二个球
                 float trailWidth = Mathf.Max(1f, headSize * 0.15f);
+                var shotVisual = proj.shot?.Profile;
+                if (shotVisual?.HasVisual == true)
+                    trailWidth = Mathf.Max(shotVisual.MinimumViewWidth, shotVisual.WidthMeters * (float)SpaceConstants.UnitsPerMeter);
 
                 // 弹头
                 Matrix4x4 mtx = Matrix4x4.TRS(vp, Quaternion.identity, Vector3.one * headSize);
-                matBlock.SetColor("_Color", new Color(1f, 0.9f, 0.2f));
+                matBlock.SetColor("_Color", proj.shot?.Profile.Color ?? new Color(1f, 0.9f, 0.2f));
                 Graphics.DrawMesh(sphereMeshLOD1, mtx, renderMat, SceneLayer, null, 0, matBlock);
 
 #if DEBUG
@@ -671,10 +673,11 @@ namespace PioneerFramework
                 debugLiveProjectileIds.Add(proj.id);
 #endif
 
-                // 尾迹：沿 velocity 反方向固定延伸 1 个物理步（长度恒定、端点连续）。
+                // 尾迹使用固定历史时长，XML 可覆写；端点随渲染位置连续变化。
                 // 原实现连接 proj.prevPosition（物理上一步，每 2 tick 跳 167m），尾迹长度
                 // 每物理步从满长缩到 0 再跳回 → 伸缩抖动，视觉上呈"折线"。弹头本就平滑。
-                DVector3 trailEndAbs = renderPos - proj.velocity.v * (2.0 / 60.0);   // 批6 S3-3c：显式跨界
+                double trailSeconds = shotVisual?.HasVisual == true ? shotVisual.VisualSeconds : 2.0 / 60.0;
+                DVector3 trailEndAbs = renderPos - proj.velocity.v * trailSeconds;
                 Vector3 tv = AbsToView(trailEndAbs + bodyOff, origin);
                 float len = Vector3.Distance(vp, tv);
                 if (len > 0.01f)
@@ -682,7 +685,8 @@ namespace PioneerFramework
                     Vector3 mid = (vp + tv) * 0.5f;
                     Quaternion rot = Quaternion.LookRotation((vp - tv).normalized, Vector3.up);
                     Matrix4x4 lmtx = Matrix4x4.TRS(mid, rot, new Vector3(trailWidth, trailWidth, len));
-                    matBlock.SetColor("_Color", new Color(1f, 0.8f, 0.2f, 0.55f));
+                    Color trailColor = shotVisual?.HasVisual == true ? shotVisual.Color : new Color(1f, 0.8f, 0.2f, 0.55f);
+                    matBlock.SetColor("_Color", trailColor);
                     Graphics.DrawMesh(cubeMesh, lmtx, renderMat, SceneLayer, null, 0, matBlock);
                 }
             }
@@ -696,8 +700,9 @@ namespace PioneerFramework
                 float len = Vector3.Distance(sv, ev);
                 if (len < 0.01f) continue;
                 Quaternion rot = Quaternion.LookRotation((ev - sv).normalized, Vector3.up);
-                Matrix4x4 mtx = Matrix4x4.TRS(mid, rot, new Vector3(0.15f, 0.15f, len));
-                matBlock.SetColor("_Color", new Color(1f, 0.2f, 0.2f, 0.85f));
+                float beamWidth = Mathf.Max(beam.minimumViewWidth, beam.widthMeters * (float)SpaceConstants.UnitsPerMeter);
+                Matrix4x4 mtx = Matrix4x4.TRS(mid, rot, new Vector3(beamWidth, beamWidth, len));
+                matBlock.SetColor("_Color", beam.color);
                 Graphics.DrawMesh(cubeMesh, mtx, renderMat, SceneLayer, null, 0, matBlock);
             }
 

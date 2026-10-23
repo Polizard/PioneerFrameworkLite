@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_WorldRadarEffectHide>Hide radar effect</PF_WorldRadarEffectHide>
+  <PF_WorldRadarEffectShow>Show radar effect</PF_WorldRadarEffectShow>
+  <PF_WorldRadarEffectTip>Show or hide radar scan effects for all fleets on the world map. Radar detection continues to operate. This preference is saved across game restarts.</PF_WorldRadarEffectTip>
+</LanguageData>

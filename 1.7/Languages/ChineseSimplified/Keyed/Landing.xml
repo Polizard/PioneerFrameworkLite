@@ -41,4 +41,15 @@
   <PFL_LandingViewSite>查看降落地点</PFL_LandingViewSite>
   <PFL_LandingRecover>使用 {0} 回收</PFL_LandingRecover>
   <PFL_LandingRecoverAction>回收已着陆载具</PFL_LandingRecoverAction>
+  <PFL_TouchdownLabel>已着陆飞船 {0}</PFL_TouchdownLabel>
+  <PFL_TouchdownRegistered>编队 {0} 已接地，落点已登记。可从世界标记查看状态并手动请求地表地图。</PFL_TouchdownRegistered>
+  <PFL_TouchdownWaiting>保留原船舱，等待手动访问。尚未请求地表地图。</PFL_TouchdownWaiting>
+  <PFL_TouchdownPreparing>正在准备落点地图。</PFL_TouchdownPreparing>
+  <PFL_TouchdownPlacement>落点地图已就绪，等待选择安置位置。</PFL_TouchdownPlacement>
+  <PFL_TouchdownTransferring>正在安置飞船内容。</PFL_TouchdownTransferring>
+  <PFL_TouchdownBlocked>地表安置受阻，船舱与任务记录已保留。</PFL_TouchdownBlocked>
+  <PFL_TouchdownSpeed>接地速度：{0} m/s。</PFL_TouchdownSpeed>
+  <PFL_TouchdownRequestMap>生成并进入落点地图</PFL_TouchdownRequestMap>
+  <PFL_TouchdownUnsupported>本轮接地测试仅支持地球有效地块上的单实体、单张已加载船图。原船舱和接地记录已保留。</PFL_TouchdownUnsupported>
+  <PFL_TouchdownCrashLanding>编队 {0} 在无法安全着陆的地块发生坠落事故。原船舱与接地记录已保留。</PFL_TouchdownCrashLanding>
 </LanguageData>

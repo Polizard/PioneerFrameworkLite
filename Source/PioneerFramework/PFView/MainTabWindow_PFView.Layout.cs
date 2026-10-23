@@ -15,7 +15,7 @@ namespace PioneerFramework
     /// 不用色相。面板/角标装饰复用 <c>UiKit.SpacecraftUIDecor</c>（同一份程序化画笔）。
     ///
     /// 数据准入（红线）：列表与雷达**只读认知层**（`PlayerCanSee` / `SensorManager.AppendVisible`），
-    /// 不得读真值；dev 真值对照仍走 `DebugShowGroundTruth` 开关。
+    /// 我方可读取自身遥测；其他实体不得读取隐藏真值。dev 真值对照仍走 `DebugShowGroundTruth` 开关。
     /// </summary>
     public partial class MainTabWindow_PFView : MainTabWindow
     {
@@ -174,7 +174,7 @@ namespace PioneerFramework
         /// <summary>
         /// PFView 内的游戏时间速度控制（2026-10-18 用户：视图内仍要能控制时间流逝）。
         /// 宿主 HUD 的时间档按钮被 PFView 的 HUD 隔离补丁挡住（视觉上也被全屏视图盖住），
-        /// 所以这里直接操作 TickManager.CurTimeSpeed，档位/倍率与原版一致。
+        /// 按钮通过时间服务设置宿主速度，档位/倍率与原版一致，右侧显示空间时间与精度限制。
         /// </summary>
         private void DrawTimeSpeedButtons(float x, float by, float bh)
         {
@@ -189,6 +189,13 @@ namespace PioneerFramework
             DrawTimeSpeedButton(new Rect(x, by, w, bh), "6×", TimeSpeed.Superfast, "超快（6×；无地图时可到 12/18×）");
             x += w + gap;
             DrawTimeSpeedButton(new Rect(x, by, w, bh), "15×", TimeSpeed.Ultrafast, "极速（15×；无地图时可到 150×）");
+            var clock = Current.Game?.GetComponent<TimeScaleManager>();
+            if (clock != null)
+            {
+                var status = new Rect(x + w + gap + 4f, by, 164f, bh);
+                TooltipHandler.TipRegion(status, clock.StatusTip);
+                Widgets.Label(status, clock.StatusLabel);
+            }
         }
 
         private static void DrawTimeSpeedButton(Rect rr, string label, TimeSpeed speed, string tip)

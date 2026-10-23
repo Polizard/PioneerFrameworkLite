@@ -1,11 +1,31 @@
 using UnityEngine;
 using Verse;
+using System.Collections.Generic;
 
 namespace PioneerFramework.Combat
 {
     public class WeaponDef : Def
     {
         public WeaponType weaponType;
+
+        public ShotDefReference? defaultShot;
+        public List<ShotDefReference> allowedShots = new();
+        public float muzzleVelocityFactor = 1f;
+        public bool UsesShotComponents => defaultShot != null || allowedShots is { Count: > 0 };
+        public bool AllowsShot(ShotDef shot) => allowedShots != null && allowedShots.Exists(reference => reference?.Resolve() == shot);
+
+        public override IEnumerable<string> ConfigErrors()
+        {
+            foreach (string error in base.ConfigErrors()) yield return error;
+            if (!UsesShotComponents) yield break;
+            var defaultDefinition = defaultShot?.Resolve();
+            if (defaultDefinition == null || !AllowsShot(defaultDefinition))
+                yield return "defaultShot must be a member of allowedShots";
+            if (allowedShots != null && allowedShots.Exists(s => s?.Resolve() == null)) yield return "allowedShots contains a missing reference";
+            if (!ShotMath.Positive(muzzleVelocityFactor)) yield return "muzzleVelocityFactor must be finite and positive";
+            if (weaponType == WeaponType.Missile || weaponType == WeaponType.Drone)
+                yield return "ShotComp weapons must use Projectile or Ray weaponType";
+        }
 
         public float damagePerShot = 15f;
         public float armorPenetration = 5f;

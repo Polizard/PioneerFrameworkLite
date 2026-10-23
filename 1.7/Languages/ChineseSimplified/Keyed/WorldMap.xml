@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_WorldRadarEffectHide>隐藏雷达特效</PF_WorldRadarEffectHide>
+  <PF_WorldRadarEffectShow>显示雷达特效</PF_WorldRadarEffectShow>
+  <PF_WorldRadarEffectTip>控制世界地图上所有编队的雷达扫描特效，雷达探测继续运行。此设置会跨游戏重启保留。</PF_WorldRadarEffectTip>
+</LanguageData>

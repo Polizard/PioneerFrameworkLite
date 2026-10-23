@@ -9,6 +9,7 @@ namespace PioneerFramework
 {
     public partial class MainTabWindow_PFView
     {
+        private const float WeaponRowHeight = 60f;
         private Vector2 inspectorScroll;
         private readonly List<(SpaceEntity entity, SpacePart part)> inspectorRooms = new();
         private int inspectorRoomsGroup = -1;
@@ -52,13 +53,15 @@ namespace PioneerFramework
             var source = ResolveOperationGroup();
             int weapons = operationContext.WeaponsOpen && source != null ? combat?.GetGroupWeapons(source.GroupId).Count ?? 0 : 0;
             bool own = CanOperateGroup(selected, false, out _);
+            fleetSnapshots.TryGetValue(selectedGroupId, out var fleet);
             bool hasMap = selected != null && RefreshNavigableGroupMaps(selected.GroupId);
             float height = inspectedContactKey != null ? 361f : selected == null ? 0f : 123f;
             if (hasMap) height += 33f;
             if (selected != null && selected.GroupId != source?.GroupId) height += 33f;
             if (own) height += 99f + (source != null && source.GroupId != selected!.GroupId ? 33f : 0f)
                 + (showInspectorRooms ? inspectorRooms.Count * 33f : 0);
-            if (operationContext.WeaponsOpen) height += 133f + (weaponTarget.IsSet ? 33f : 0f) + weapons * 33f;
+            if (own && fleet != null) height += FleetInspectorHeight(fleet) + 66f;
+            if (operationContext.WeaponsOpen) height += 133f + (weaponTarget.IsSet ? 33f : 0f) + weapons * WeaponRowHeight;
             height += 16f;
             var outer = new Rect(rect.x + 8, rect.y + 42, rect.width - 16, Mathf.Max(1, rect.height - 50));
             var content = new Rect(0, 0, outer.width - 18, Mathf.Max(height, outer.height));
@@ -79,12 +82,18 @@ namespace PioneerFramework
                 string body = Current.Game?.GetComponent<CelestialBodyManager>()?.GetBodyName(selected.CelestialBodyId) ?? "—";
                 InspectorLine(content, ref y, "PFV_Region".Translate(), body);
                 InspectorLine(content, ref y, "PFV_Speed".Translate(), PFViewUiObjectListCore.FormatSpeed(known.velocity.magnitude));
+                if (own && fleet != null) DrawFleetInspector(content, ref y, fleet);
                 if (InspectorButton(content, ref y, "PFV_Focus".Translate())) FocusGroup(selected.GroupId);
                 if (hasMap && InspectorButton(content, ref y, "PFV_EnterMap".Translate())) ShowGroupMapMenu(selected.GroupId);
                 if (selected.GroupId != source?.GroupId
                     && InspectorButton(content, ref y, "PFV_SetTarget".Translate())) SetTargetGroup(selected.GroupId);
                 if (CanOperateGroup(selected, false, out _))
                 {
+                    if (fleet != null)
+                    {
+                        if (InspectorButton(content, ref y, "PFV_FleetManeuvers".Translate())) OpenFleetManeuvers(selected.GroupId, false);
+                        if (InspectorButton(content, ref y, "PFV_FleetQueue".Translate(fleet.ManeuverCount))) OpenFleetManeuvers(selected.GroupId, true);
+                    }
                     string label = SteeringController.GroupId == selected.GroupId ? "PFV_StopSteering" : "PFV_StartSteering";
                     if (InspectorButton(content, ref y, label.Translate("G" + selected.GroupId))) ToggleManualSteering(selected);
                     if (InspectorButton(content, ref y, "PFV_OpenWeapons".Translate("G" + selected.GroupId))) TryOpenWeaponsFor(selected.GroupId);
@@ -166,14 +175,19 @@ namespace PioneerFramework
             {
                 var weapon = weapons[i];
                 string state = (weapon.isOverheated ? "PFV_Overheated" : weapon.CanFire() ? "PFV_Ready" : "PFV_NotReady").Translate();
-                Widgets.Label(new(0, y, rect.width - 58, 27), weapon.def.LabelCap + " · " + state);
+                bool hasShots = weapon.def.UsesShotComponents;
+                Widgets.Label(new(0, y, rect.width - (hasShots ? 144 : 58), 27), weapon.def.LabelCap + " · " + state);
+                if (hasShots && Widgets.ButtonText(new(rect.width - 140, y, 82, 27), Combat.ShotSelectionUI.Label(weapon)))
+                    Combat.ShotSelectionUI.Open(weapon);
                 bool enabled = PFViewUiOperationContext.CanFire(source.GroupId, weaponTarget, true,
                     TryGetWeaponTarget(out _), weapon.CanFire());
                 bool old = GUI.enabled;
                 GUI.enabled = old && enabled;
                 if (Widgets.ButtonText(new(rect.width - 54, y, 54, 27), "PFV_Fire".Translate())) TryFireAtTarget(source.GroupId, weapon);
                 GUI.enabled = old;
-                y += 33;
+                string range = PFViewUiObjectListCore.FormatDistance(SpaceAI.ContactTargetService.EffectiveRange(weapon));
+                Widgets.Label(new(0, y + 27, rect.width, 27), "PFV_EngagementRange".Translate(range));
+                y += WeaponRowHeight;
             }
         }
     }

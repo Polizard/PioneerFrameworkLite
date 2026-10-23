@@ -46,6 +46,7 @@
   <PFV_EnterRoom>进入 {0}</PFV_EnterRoom>
   <PFV_Operating>操作编队 {0}</PFV_Operating>
   <PFV_WeaponTarget>目标：{0}</PFV_WeaponTarget>
+  <PFV_EngagementRange>交战距离：{0}</PFV_EngagementRange>
   <PFV_CloseWeapons>结束武器操作</PFV_CloseWeapons>
   <PFV_ClearTarget>清除目标</PFV_ClearTarget>
   <PFV_Overheated>过热</PFV_Overheated>
@@ -214,4 +215,50 @@
   <PFV_Pilot_Sas_Antinormal>反法向</PFV_Pilot_Sas_Antinormal>
   <PFV_Pilot_Sas_RadialOut>径外</PFV_Pilot_Sas_RadialOut>
   <PFV_Pilot_Sas_RadialIn>径内</PFV_Pilot_Sas_RadialIn>
+  <PFV_TimeSpaceRate>空间 {0}×</PFV_TimeSpaceRate>
+  <PFV_TimeCombat>交战</PFV_TimeCombat>
+  <PFV_TimeTerminal>交会收尾</PFV_TimeTerminal>
+  <PFV_TimeManeuver>机动中</PFV_TimeManeuver>
+  <PFV_TimeUnrestricted>采用玩家选择的空间倍率</PFV_TimeUnrestricted>
+  <PFV_TimeStatusTip>按钮控制游戏运行速度；空间时间同时采用当前倍率。\n当前：{0}\n状态：{1}\n精度限制解除后自动恢复空间倍率偏好。暂停时空间模拟停止。</PFV_TimeStatusTip>
+  <PFV_FleetOverview>我方舰况 ({0})</PFV_FleetOverview>
+  <PFV_FleetAttention>需关注 ({0})</PFV_FleetAttention>
+  <PFV_FleetShowAll>显示全部</PFV_FleetShowAll>
+  <PFV_FleetAllRegions>范围：全部我方区域</PFV_FleetAllRegions>
+  <PFV_FleetFuel>推进剂 {0}</PFV_FleetFuel>
+  <PFV_FleetDeltaV>参考 Δv {0}</PFV_FleetDeltaV>
+  <PFV_FleetEndurance>最短全推 {0}</PFV_FleetEndurance>
+  <PFV_FleetNoPropulsion>无可用推进系统</PFV_FleetNoPropulsion>
+  <PFV_FleetNoEvent>无排队事件</PFV_FleetNoEvent>
+  <PFV_FleetEvent_Node>机动节点 +{0}</PFV_FleetEvent_Node>
+  <PFV_FleetEvent_Arrival>到达估计 +{0}</PFV_FleetEvent_Arrival>
+  <PFV_FleetEstimateTip>参考 Δv 沿用现有编队推进口径，不保证任务可完成。环境相关网络显示当前工况下最短的全推续航；各工质见详情。节点倒计时指节点时刻，点火可能更早。推进剂低于 20% 仅作储备提醒。</PFV_FleetEstimateTip>
+  <PFV_FleetPropellant>推进剂</PFV_FleetPropellant>
+  <PFV_FleetMobility>机动能力</PFV_FleetMobility>
+  <PFV_FleetStructure>结构</PFV_FleetStructure>
+  <PFV_FleetDamageCounts>受损建筑 {0} · 已毁部件 {1}</PFV_FleetDamageCounts>
+  <PFV_FleetMinimumHp>最低部件 HP</PFV_FleetMinimumHp>
+  <PFV_FleetWeapons>武器</PFV_FleetWeapons>
+  <PFV_FleetWeaponCounts>就绪 {0} / {1}</PFV_FleetWeaponCounts>
+  <PFV_FleetNextEvent>下一事件</PFV_FleetNextEvent>
+  <PFV_FleetUnloadedMaps>部分舱图未加载；建筑与武器统计仅含已加载地图。</PFV_FleetUnloadedMaps>
+  <PFV_FleetMembers>展开 / 收起成员 ({0})</PFV_FleetMembers>
+  <PFV_FleetMemberParts>{0} 部件 · 已毁 {1}</PFV_FleetMemberParts>
+  <PFV_FleetManeuvers>机动规划</PFV_FleetManeuvers>
+  <PFV_FleetQueue>机动队列 ({0})</PFV_FleetQueue>
+  <PFV_FleetActivity_Idle>待命</PFV_FleetActivity_Idle>
+  <PFV_FleetActivity_Crippled>关键部件失能</PFV_FleetActivity_Crippled>
+  <PFV_FleetActivity_Burning>燃烧中</PFV_FleetActivity_Burning>
+  <PFV_FleetActivity_Approach>近距离接近中</PFV_FleetActivity_Approach>
+  <PFV_FleetActivity_Rendezvous>交会引导中</PFV_FleetActivity_Rendezvous>
+  <PFV_FleetActivity_Transfer>转移中</PFV_FleetActivity_Transfer>
+  <PFV_FleetActivity_Landing>降落中</PFV_FleetActivity_Landing>
+  <PFV_FleetActivity_Queued>机动待执行</PFV_FleetActivity_Queued>
+  <PFV_FleetAlert_Crippled>× 关键部件失能</PFV_FleetAlert_Crippled>
+  <PFV_FleetAlert_PropellantEmpty>× 推进剂耗尽</PFV_FleetAlert_PropellantEmpty>
+  <PFV_FleetAlert_LowPropellant>! 推进剂偏低</PFV_FleetAlert_LowPropellant>
+  <PFV_FleetAlert_Damage>! 结构受损</PFV_FleetAlert_Damage>
+  <PFV_FleetAlert_Overheated>! 武器过热</PFV_FleetAlert_Overheated>
+  <PFV_FleetAlert_DisabledWeapons>! 武器停用</PFV_FleetAlert_DisabledWeapons>
+  <PFV_FleetAlert_EmptyWeapons>! 武器缺弹</PFV_FleetAlert_EmptyWeapons>
 </LanguageData>

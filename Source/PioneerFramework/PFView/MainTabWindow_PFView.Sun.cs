@@ -43,6 +43,26 @@ namespace PioneerFramework
         /// <summary>探针限频（-1 = 还没跑过）。</summary>
         private long sunProbeTick = -1;
 
+        private bool IsStarFocus => focusKind == PFViewFocusKind.Body
+            && Current.Game?.GetComponent<CelestialBodyManager>()?.GetBodyById(focusBodyId)?.bodyType == CelestialBodyType.Star;
+
+        /// <summary>恒星只画背景圆盘；显式导航每次对准圆盘，避免恢复曾转离太阳的机位。</summary>
+        private void InitializeSunCameraPose()
+        {
+            camYaw = 0f;
+            camPitch = PFViewCameraCore.DefaultPitch;
+            camFocusOffset = Vector3.zero;
+            camDistance = DefaultBodyDistance();
+        }
+
+        private Quaternion SunFocusOrbitFrame()
+        {
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            // UpdateCamera 早于 DrawCelestialBodies：直接取同一方向源，避免沿用上一帧/参考系的方向。
+            Vector3 toSun = mgr != null ? viewFrameRot * SunDirectionInView(mgr, RenderTick()) : sunDirectionView;
+            return PFViewSunDisc.FocusOrbitFrame(toSun);
+        }
+
         /// <summary>
         /// 每帧一次：**太阳圆片的角半径** = `atan(Sun.radius / 根行星.orbitRadius)`（`PFViewSunDisc`）。
         /// "当前行星系环绕太阳的半径"取**根行星**（飞船在月球上时仍取地球 —— 月球绕的是地球，不是太阳）。

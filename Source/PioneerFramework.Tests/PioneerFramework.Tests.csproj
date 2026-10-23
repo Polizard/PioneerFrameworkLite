@@ -86,6 +86,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Inspector.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Inspector.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Fleet.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Fleet.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewFleetTelemetry.cs" Link="Source\PioneerFramework\PFView\PFViewFleetTelemetry.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewFleetCore.cs" Link="Source\PioneerFramework\PFView\PFViewFleetCore.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.MapNavigation.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.MapNavigation.cs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>

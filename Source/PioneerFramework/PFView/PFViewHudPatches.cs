@@ -1,5 +1,7 @@
 using HarmonyLib;
 using RimWorld;
+using UnityEngine;
+using Verse;
 
 namespace PioneerFramework
 {
@@ -32,5 +34,23 @@ namespace PioneerFramework
     internal static class Patch_PFView_HideAlerts
     {
         private static bool Prefix() => !MainTabWindow_PFView.IsOpen;
+    }
+
+    /// <summary>
+    /// 1.7 Waylith 先向焦点窗口派发键盘，再进入 UIRoot_Play.OnGUI 处理宿主界面。
+    /// PFView 的持续操舵键通过轮询发布，未匹配的快捷键也会留下未消费的事件；
+    /// 在此消费剩余键盘，避免继续触发世界地图、地图选择器和主页签快捷键。
+    /// 鼠标事件保留给既有窗口路由与底部页签；上层弹窗同样先于此处收到输入。
+    /// </summary>
+    [HarmonyPatch(typeof(UIRoot_Play), nameof(UIRoot_Play.UIRootOnGUI))]
+    internal static class Patch_PFView_BlockHostKeyboard
+    {
+        private static void Prefix(UIRoot_Play __instance)
+            => ConsumeHostKeyboard(Event.current, __instance.windows.IsOpen(typeof(MainTabWindow_PFView)));
+
+        internal static void ConsumeHostKeyboard(Event? input, bool viewOpen)
+        {
+            if (viewOpen && input?.isKey == true) input.Use();
+        }
     }
 }

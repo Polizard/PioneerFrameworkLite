@@ -41,4 +41,15 @@
   <PFL_LandingViewSite>View landing site</PFL_LandingViewSite>
   <PFL_LandingRecover>Recover with {0}</PFL_LandingRecover>
   <PFL_LandingRecoverAction>Recover landed spacecraft</PFL_LandingRecoverAction>
+  <PFL_TouchdownLabel>Landed spacecraft {0}</PFL_TouchdownLabel>
+  <PFL_TouchdownRegistered>Group {0} has touched down. Its location is recorded. Use the world marker to inspect it and manually request a surface map.</PFL_TouchdownRegistered>
+  <PFL_TouchdownWaiting>The original cabin is retained, awaiting a manual visit. No surface map has been requested.</PFL_TouchdownWaiting>
+  <PFL_TouchdownPreparing>Preparing the landing site map.</PFL_TouchdownPreparing>
+  <PFL_TouchdownPlacement>The landing site map is ready. Choose a placement location.</PFL_TouchdownPlacement>
+  <PFL_TouchdownTransferring>Placing spacecraft contents.</PFL_TouchdownTransferring>
+  <PFL_TouchdownBlocked>Surface placement is blocked. Cabin contents and task records are retained.</PFL_TouchdownBlocked>
+  <PFL_TouchdownSpeed>Touchdown speed: {0} m/s.</PFL_TouchdownSpeed>
+  <PFL_TouchdownRequestMap>Generate and enter landing site map</PFL_TouchdownRequestMap>
+  <PFL_TouchdownUnsupported>This touchdown test supports one entity with one loaded ship map on a valid Earth tile. The original cabin and touchdown records are retained.</PFL_TouchdownUnsupported>
+  <PFL_TouchdownCrashLanding>Group {0} crash-landed on a tile unsuitable for a safe landing. The original cabin and touchdown records are retained.</PFL_TouchdownCrashLanding>
 </LanguageData>

@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 
 using Verse;
+using System.Linq;
 
 namespace PioneerFramework.Combat
 {
@@ -18,6 +19,36 @@ namespace PioneerFramework.Combat
         public int ammo = AmmoInfinite;
         public bool isDisabled ;
         private int lastUpdateTick = -1;
+        public ShotDef? selectedShot;
+        private string? selectedShotName;
+        public float mountVelocityFactor = 1f;
+
+        public bool TryGetSelectedShot(out ShotDef? shot)
+        {
+            shot = null;
+            if (def == null) return false;
+            if (selectedShot == null && !string.IsNullOrEmpty(selectedShotName)) return false;
+            if (!def.UsesShotComponents) return selectedShot == null;
+            shot = selectedShot ?? def.defaultShot?.Resolve();
+            return shot != null && def.AllowsShot(shot) &&
+                !def.ConfigErrors().Any() && !shot.ConfigErrors().Any();
+        }
+
+        public bool TrySelectShot(ShotDef shot)
+        {
+            if (def == null || !def.AllowsShot(shot) || shot.ConfigErrors().Any()) return false;
+            selectedShot = shot;
+            selectedShotName = shot.defName;
+            return true;
+        }
+
+        public bool TryCreateShot(out ShotRuntime? shot, out string error)
+        {
+            shot = null;
+            error = "";
+            if (!TryGetSelectedShot(out var definition)) { error = "invalid selected/default shot"; return false; }
+            return definition == null || definition.TryCreateRuntime(def.muzzleVelocityFactor, mountVelocityFactor, out shot, out error);
+        }
 
         // Def 由设施 Comp 重新绑定；其余字段保留真实弹药和状态机进度。
         public void ExposeData()
@@ -28,6 +59,9 @@ namespace PioneerFramework.Combat
             Scribe_Values.Look(ref isOverheated, "isOverheated");
             Scribe_Values.Look(ref isDisabled, "isDisabled");
             Scribe_Values.Look(ref lastUpdateTick, "lastUpdateTick", -1);
+            Scribe_Defs.Look(ref selectedShot, "selectedShot");
+            if (Scribe.mode == LoadSaveMode.Saving && selectedShot != null) selectedShotName = selectedShot.defName;
+            Scribe_Values.Look(ref selectedShotName, "selectedShotName");
         }
 
         public void Update(int currentTick)
@@ -82,6 +116,7 @@ namespace PioneerFramework.Combat
             if (isOverheated) return false;
             if (cooldownRemaining > 0) return false;
             if (ammo == 0) return false;
+            if (def != null && !TryGetSelectedShot(out _)) return false;
             return true;
         }
 

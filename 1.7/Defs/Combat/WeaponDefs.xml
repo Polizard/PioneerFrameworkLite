@@ -5,6 +5,12 @@
     <label>加农炮</label>
     <description>标准的太空加农炮，发射高速射弹（默认武器部件引用）。</description>
     <weaponType>Projectile</weaponType>
+    <defaultShot>PF_Shot_AP</defaultShot>
+    <allowedShots>
+      <li>PF_Shot_AP</li>
+      <li>PF_Shot_HE</li>
+    </allowedShots>
+    <muzzleVelocityFactor>1</muzzleVelocityFactor>
     <damagePerShot>40</damagePerShot>
     <armorPenetration>10</armorPenetration>
     <fireRate>1</fireRate>
@@ -29,6 +35,10 @@
     <label>激光炮</label>
     <description>快速射击的定向能武器，光束即时命中、无需提前量，精度高但单发伤害低。</description>
     <weaponType>Ray</weaponType>
+    <defaultShot>PF_Shot_PulseLaser</defaultShot>
+    <allowedShots>
+      <li>PF_Shot_PulseLaser</li>
+    </allowedShots>
     <damagePerShot>10</damagePerShot>
     <armorPenetration>3</armorPenetration>
     <fireRate>2.0</fireRate>

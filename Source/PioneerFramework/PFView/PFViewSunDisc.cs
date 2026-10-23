@@ -23,6 +23,17 @@ namespace PioneerFramework
         /// </summary>
         public const float DefaultAngularRadiusDeg = 1.43f;
 
+        /// <summary>让默认天体机位面向背景太阳，保留原有俯仰限位；竖直方向也有正交的 up。</summary>
+        public static Quaternion FocusOrbitFrame(Vector3 toSun)
+        {
+            float lengthSquared = toSun.sqrMagnitude;
+            toSun = float.IsFinite(lengthSquared) && lengthSquared > 1e-12f
+                ? toSun / Mathf.Sqrt(lengthSquared) : -Vector3.forward;
+            return PFViewCameraCore.MinimalRotation(
+                PFViewCameraCore.OrbitDir(0f, PFViewCameraCore.DefaultPitch), -toSun,
+                PFViewCameraCore.OrbitUp(0f, PFViewCameraCore.DefaultPitch));
+        }
+
         /// <summary>
         /// **太阳的角半径（度）**：`atan(R_sun / d_orbit)`。
         /// `d_orbit` = **当前行星系环绕太阳的半径** = 根行星的 `CelestialBodyDef.orbitRadius`（地球 = 1.2e8 m）。

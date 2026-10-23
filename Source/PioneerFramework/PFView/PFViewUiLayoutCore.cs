@@ -37,7 +37,7 @@ namespace PioneerFramework
                 PFViewToolbarItem.Display => 76f,
                 PFViewToolbarItem.Camera => 144f,
                 PFViewToolbarItem.Frame => 132f,
-                PFViewToolbarItem.Time => 158f,
+                PFViewToolbarItem.Time => 330f,
                 PFViewToolbarItem.Weapons => 88f,
                 PFViewToolbarItem.Help => 30f,
                 _ => 60f
@@ -108,8 +108,11 @@ namespace PioneerFramework
         public static PFViewUiLayout Compute(float width, float height, bool detailsVisible, PFViewUiVisibility visibility, bool piloting = false)
         {
             if (!float.IsFinite(width) || !float.IsFinite(height) || width <= 0 || height <= 0) return default;
+            float sideW = Math.Min(width < 900f ? 300f : 330f, Math.Max(0, width - 2 * Pad));
             float toolbarH = Math.Min(height, ToolbarHeight(width, false, false));
-            bool drawer = width < 760f || height - toolbarH - 24f - 2f * Pad < 268f;
+            bool crowded = visibility.ShowRadar && (visibility.ShowNavball || piloting)
+                && width - sideW - 260f - 4f * Pad < (piloting ? 250f : BallSize);
+            bool drawer = width < 760f || crowded || height - toolbarH - 24f - 2f * Pad < 268f;
             if (drawer)
                 toolbarH = Math.Min(height, ToolbarHeight(width, visibility.ShowNavball, visibility.ShowRadar));
             float statusH = Math.Min(24f, Math.Max(0, height - toolbarH));
@@ -117,10 +120,16 @@ namespace PioneerFramework
             float bottom = Math.Max(top, height - statusH - Pad);
             float bodyH = Math.Max(0, bottom - top);
             bool compact = width < 1100f || height < 600f;
-            float sideW = Math.Min(252f, Math.Max(0, width - 2 * Pad));
             var side = new PFViewUiRect(Pad, top, sideW, bodyH);
-            PFViewUiRect objects = compact && detailsVisible ? default : side;
-            PFViewUiRect details = compact && detailsVisible ? side : default;
+            PFViewUiRect objects = side;
+            PFViewUiRect details = default;
+            if (compact && detailsVisible)
+            {
+                // Leave room for the fixed list controls and a complete fleet card when space permits.
+                float listH = Math.Min(Math.Max(0, bodyH - 96f - Pad), Math.Max(252f, (bodyH - Pad) * .65f));
+                objects = new(side.X, top, sideW, listH);
+                details = new(side.X, top + listH + Pad, sideW, Math.Max(0, bodyH - listH - Pad));
+            }
             PFViewUiRect radar = default, nav = default, strip = default;
             float centerLeft = side.X + side.Width + Pad;
             float centerRight = width - Pad;

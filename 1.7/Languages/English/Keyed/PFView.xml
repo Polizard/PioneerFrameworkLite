@@ -46,6 +46,7 @@
   <PFV_EnterRoom>Enter {0}</PFV_EnterRoom>
   <PFV_Operating>Operating group {0}</PFV_Operating>
   <PFV_WeaponTarget>Target: {0}</PFV_WeaponTarget>
+  <PFV_EngagementRange>Engagement range: {0}</PFV_EngagementRange>
   <PFV_CloseWeapons>End weapon operation</PFV_CloseWeapons>
   <PFV_ClearTarget>Clear target</PFV_ClearTarget>
   <PFV_Overheated>Overheated</PFV_Overheated>
@@ -214,4 +215,50 @@
   <PFV_Pilot_Sas_Antinormal>Antinormal</PFV_Pilot_Sas_Antinormal>
   <PFV_Pilot_Sas_RadialOut>Radial out</PFV_Pilot_Sas_RadialOut>
   <PFV_Pilot_Sas_RadialIn>Radial in</PFV_Pilot_Sas_RadialIn>
+  <PFV_TimeSpaceRate>Space {0}×</PFV_TimeSpaceRate>
+  <PFV_TimeCombat>Combat</PFV_TimeCombat>
+  <PFV_TimeTerminal>Approach</PFV_TimeTerminal>
+  <PFV_TimeManeuver>Maneuver</PFV_TimeManeuver>
+  <PFV_TimeUnrestricted>Using your selected space time rate</PFV_TimeUnrestricted>
+  <PFV_TimeStatusTip>The buttons control game speed; space time also uses its current rate.\nCurrent: {0}\nStatus: {1}\nYour preferred space time rate resumes when precision limits end. Space simulation stops while paused.</PFV_TimeStatusTip>
+  <PFV_FleetOverview>Fleet status ({0})</PFV_FleetOverview>
+  <PFV_FleetAttention>Attention ({0})</PFV_FleetAttention>
+  <PFV_FleetShowAll>Show all</PFV_FleetShowAll>
+  <PFV_FleetAllRegions>Scope: all player regions</PFV_FleetAllRegions>
+  <PFV_FleetFuel>Propellant {0}</PFV_FleetFuel>
+  <PFV_FleetDeltaV>Ref. Δv {0}</PFV_FleetDeltaV>
+  <PFV_FleetEndurance>Min. endurance {0}</PFV_FleetEndurance>
+  <PFV_FleetNoPropulsion>No available propulsion</PFV_FleetNoPropulsion>
+  <PFV_FleetNoEvent>No queued event</PFV_FleetNoEvent>
+  <PFV_FleetEvent_Node>Maneuver node +{0}</PFV_FleetEvent_Node>
+  <PFV_FleetEvent_Arrival>Estimated arrival +{0}</PFV_FleetEvent_Arrival>
+  <PFV_FleetEstimateTip>Reference Δv uses the existing group propulsion estimate and does not guarantee mission completion. Environment-dependent networks show the shortest full-thrust endurance under current conditions; see details for individual propellants. Node countdowns refer to the node time; ignition can be earlier. Propellant below 20% is only a reserve reminder.</PFV_FleetEstimateTip>
+  <PFV_FleetPropellant>Propellant</PFV_FleetPropellant>
+  <PFV_FleetMobility>Mobility</PFV_FleetMobility>
+  <PFV_FleetStructure>Structure</PFV_FleetStructure>
+  <PFV_FleetDamageCounts>{0} damaged buildings · {1} destroyed parts</PFV_FleetDamageCounts>
+  <PFV_FleetMinimumHp>Lowest part HP</PFV_FleetMinimumHp>
+  <PFV_FleetWeapons>Weapons</PFV_FleetWeapons>
+  <PFV_FleetWeaponCounts>{0} / {1} ready</PFV_FleetWeaponCounts>
+  <PFV_FleetNextEvent>Next event</PFV_FleetNextEvent>
+  <PFV_FleetUnloadedMaps>Some interior maps are unloaded; building and weapon counts cover loaded maps only.</PFV_FleetUnloadedMaps>
+  <PFV_FleetMembers>Expand / collapse members ({0})</PFV_FleetMembers>
+  <PFV_FleetMemberParts>{0} parts · {1} destroyed</PFV_FleetMemberParts>
+  <PFV_FleetManeuvers>Maneuver planner</PFV_FleetManeuvers>
+  <PFV_FleetQueue>Maneuver queue ({0})</PFV_FleetQueue>
+  <PFV_FleetActivity_Idle>Idle</PFV_FleetActivity_Idle>
+  <PFV_FleetActivity_Crippled>Critical parts disabled</PFV_FleetActivity_Crippled>
+  <PFV_FleetActivity_Burning>Burning</PFV_FleetActivity_Burning>
+  <PFV_FleetActivity_Approach>Approaching</PFV_FleetActivity_Approach>
+  <PFV_FleetActivity_Rendezvous>Rendezvous guidance</PFV_FleetActivity_Rendezvous>
+  <PFV_FleetActivity_Transfer>Transferring</PFV_FleetActivity_Transfer>
+  <PFV_FleetActivity_Landing>Landing</PFV_FleetActivity_Landing>
+  <PFV_FleetActivity_Queued>Maneuver queued</PFV_FleetActivity_Queued>
+  <PFV_FleetAlert_Crippled>× Critical parts disabled</PFV_FleetAlert_Crippled>
+  <PFV_FleetAlert_PropellantEmpty>× Propellant exhausted</PFV_FleetAlert_PropellantEmpty>
+  <PFV_FleetAlert_LowPropellant>! Low propellant</PFV_FleetAlert_LowPropellant>
+  <PFV_FleetAlert_Damage>! Structural damage</PFV_FleetAlert_Damage>
+  <PFV_FleetAlert_Overheated>! Weapon overheating</PFV_FleetAlert_Overheated>
+  <PFV_FleetAlert_DisabledWeapons>! Weapons disabled</PFV_FleetAlert_DisabledWeapons>
+  <PFV_FleetAlert_EmptyWeapons>! Weapons out of ammo</PFV_FleetAlert_EmptyWeapons>
 </LanguageData>

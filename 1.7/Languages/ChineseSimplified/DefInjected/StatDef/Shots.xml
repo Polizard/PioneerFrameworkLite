@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_ShotResistance.label>结构抗穿透</PF_ShotResistance.label>
+  <PF_ShotResistance.description>飞船发射物穿透该结构消耗的预算；与人员护甲穿透百分比分别计算。</PF_ShotResistance.description>
+</LanguageData>

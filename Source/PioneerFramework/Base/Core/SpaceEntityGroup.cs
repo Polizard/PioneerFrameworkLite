@@ -41,6 +41,15 @@ namespace PioneerFramework
 
         public bool IsActive = true;
         public bool IsMovable = true;
+        // 新建组在自己的出生时间之后参与积分；步间发射的导弹先等母船状态结算到同一时刻。
+        internal double physicsBirthTick = -1;
+        internal int physicsBirthSourceId = -1;
+        internal DVector3 physicsBirthOffsetShip;
+        internal DVector3 physicsBirthMuzzleSystem;
+        // 表示层快照不入档；重载后的首个物理区间重新建立插值样本。
+        internal DVector3 physicsRenderPreviousPosition;
+        internal double physicsRenderPreviousTick = double.NaN;
+        internal double physicsRenderCurrentTick = double.NaN;
         public bool IsCollidable = true;
         public bool HasGravityWell ;
         /// <summary>B5：关键件损毁 ⇒ 整船失能（不立即解体）：禁止新点火/自动机动；碰撞与漂移照常。</summary>
@@ -1796,6 +1805,9 @@ namespace PioneerFramework
         /// 如果中心天体是行星（地球自身），返回零向量。
         /// </summary>
         public SystemVec3 GetCentralBodyVelocity(int currentTick)
+            => GetCentralBodyVelocity((double)currentTick);
+
+        public SystemVec3 GetCentralBodyVelocity(double currentTick)
         {
             if (CelestialBodyId < 0) return SystemVec3.zero;
             // R5（2026-09-26）：缓存引用（同 `GetCentralBodyOffset`）。
@@ -1820,7 +1832,7 @@ namespace PioneerFramework
 
         /// <summary>**本群组在"天体局部系"的速度**。语义与 <see cref="GetBodyPosition" /> 相同。</summary>
         public BodyVec3 GetBodyVelocity(double tick) =>
-            FrameConvert.SystemToBodyVelocity(CurrentOrbit.velocitySystem, GetCentralBodyVelocity((int)System.Math.Round(tick)));
+            FrameConvert.SystemToBodyVelocity(CurrentOrbit.velocitySystem, GetCentralBodyVelocity(tick));
 
         /// <summary>
         /// **本群组的系统系状态 → 天体局部系状态**（同一 tick 取两次 ⇒ 一定同一时刻；
@@ -1828,9 +1840,8 @@ namespace PioneerFramework
         /// </summary>
         public (BodyVec3 pos, BodyVec3 vel) GetBodyState(double tick)
         {
-            int t = (int)System.Math.Round(tick);
-            return (FrameConvert.SystemToBody(CurrentOrbit.positionSystem, GetCentralBodyOffset(t)),
-                    FrameConvert.SystemToBodyVelocity(CurrentOrbit.velocitySystem, GetCentralBodyVelocity(t)));
+            return (FrameConvert.SystemToBody(CurrentOrbit.positionSystem, GetCentralBodyOffset(tick)),
+                    FrameConvert.SystemToBodyVelocity(CurrentOrbit.velocitySystem, GetCentralBodyVelocity(tick)));
         }
 
         /// <summary>
@@ -2133,6 +2144,10 @@ namespace PioneerFramework
         {
             Scribe_Values.Look(ref LandingTaskId, "landingTaskId", string.Empty);
             Scribe_Values.Look(ref GroupId, "groupId");
+            Scribe_Values.Look(ref physicsBirthTick, "physicsBirthTick", -1.0);
+            Scribe_Values.Look(ref physicsBirthSourceId, "physicsBirthSourceId", -1);
+            DVector3.Scribe("physicsBirthOffsetShip", ref physicsBirthOffsetShip);
+            DVector3.Scribe("physicsBirthMuzzleSystem", ref physicsBirthMuzzleSystem);
             Scribe_Values.Look(ref FactionId, "factionId");
             Scribe_Values.Look(ref BurnCommandVersion, "burnCommandVersion");
             Scribe_Values.Look(ref IsActive, "isActive", true);

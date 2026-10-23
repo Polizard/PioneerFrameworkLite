@@ -21,6 +21,9 @@ namespace PioneerFramework
         public bool replaceWorldSky = true;
         public bool spaceAiRandomEncounters;
 
+        /// <summary>世界地图上所有编队的雷达扫描特效显示开关；跨局保留，默认显示。</summary>
+        public bool showWorldRadarScanEffect = true;
+
         /// <summary>
         /// 双击/聚焦编队时的**默认镜头模式**（跨局保存在 Mod 配置中）：
         /// `Free` / `ThirdPersonHull`（船体正向）/ `ThirdPersonVelocity`（速度正向）。
@@ -37,6 +40,7 @@ namespace PioneerFramework
         {
             Scribe_Values.Look(ref replaceWorldSky, "replaceWorldSky", true);
             Scribe_Values.Look(ref spaceAiRandomEncounters, "spaceAiRandomEncounters");
+            Scribe_Values.Look(ref showWorldRadarScanEffect, "showWorldRadarScanEffect", true);
 
             // 降级兼容：旧键只表达「是否仍默认第三人称」（船体/速度正向都算 true）。
             if (Scribe.mode == LoadSaveMode.Saving)
