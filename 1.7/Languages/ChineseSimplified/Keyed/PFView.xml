@@ -204,4 +204,8 @@
   <PFV_Pilot_Sas_Antinormal>反法向</PFV_Pilot_Sas_Antinormal>
   <PFV_Pilot_Sas_RadialOut>径外</PFV_Pilot_Sas_RadialOut>
   <PFV_Pilot_Sas_RadialIn>径内</PFV_Pilot_Sas_RadialIn>
+  <PFV_Asset_MinimalSection>PFView 极简资产</PFV_Asset_MinimalSection>
+  <PFV_Asset_MinimalMode>启用极简资产模式</PFV_Asset_MinimalMode>
+  <PFV_Asset_MinimalPrefix>极简资产前缀</PFV_Asset_MinimalPrefix>
+  <PFV_Asset_MinimalHint>开启后优先加载“前缀+原文件名”的极简资产；缺失时使用 Box/Cylinder/Sphere 占位，不加载基础高模。实体、碰撞和物理保持不变。设置变化后下一次 PFView 重绘生效；若基础贴图已被游戏缓存，完整回收显存建议重启游戏。</PFV_Asset_MinimalHint>
 </LanguageData>

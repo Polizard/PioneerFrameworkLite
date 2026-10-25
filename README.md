@@ -7,13 +7,26 @@
 - 单 Part 空间站 / 飞船结构
 - 空间站对射与 3D 战斗
 - 月球表面动态生成与运行时 PlanetLayer 服务
-- PFView 3D 视图及预留的独立描边模块（Waylith 后端待迁移）
+- PFView 3D 视图、极简资产模式（`MIN_` 前缀 + 原语回退）及预留的独立描边模块（Waylith 后端待迁移）
 
 ## 安装
 
 1. 将本仓库作为 Mod 放入 RimWorld 的 `Mods` 目录，目录名建议为 `PioneerFrameworkLite`。
 2. 启动游戏前确认已安装 **Harmony**（`brrainz.harmony`）。
 3. 在 Mod 列表启用 `先驱框架Lite`。
+
+## PFView 极简资产模式
+
+在 `选项 → Mod 设置 → 先驱框架Lite → PFView 极简资产` 中开启。
+
+- 默认前缀：`MIN_`，可修改；
+- 解析顺序：`MIN_ + 原文件名` → Box/Cylinder/Sphere 原语；
+- 极简模式**不会回退到基础高模**；
+- 极简资产缺失、网格校验失败或前缀不匹配时，实体仍保留，只改用原语占位；
+- 极简模式默认只加载 albedo，不加载法线贴图；
+- 命名、当前资产清单和校验要求见 [1.7/Models/MINIMAL_ASSETS.md](./1.7/Models/MINIMAL_ASSETS.md)。
+
+当前极简资产覆盖 X15、Crew Dragon 和 Soyuz Prism；CapsuleSegment 尚未接入运行时极简链路。
 
 ## 目录结构
 

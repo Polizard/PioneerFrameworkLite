@@ -1,0 +1,11 @@
+# Soyuz minimal material sidecar
+# Runtime albedo only; minimal mode intentionally uses no normal map.
+newmtl MIN_PFL_Soyuz_Prism_Material
+Ns 150.0
+Ka 0.25 0.25 0.25
+Ks 0.20 0.20 0.20
+Ke 0.0 0.0 0.0
+Ni 1.5
+d 1.0
+illum 2
+map_Kd ../../Textures/PFView/Ships/Soyuz/MIN_SoyuzAlbedo.png

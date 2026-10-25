@@ -1,0 +1,12 @@
+# PFL X-15 hypersonic rocket plane - material sidecar
+# Runtime geometry is UV-atlased: hull panels / canopy glass / engine metal.
+newmtl PFL_X15_Hull
+Ns 230.4
+Ka 0.22 0.22 0.22
+Ks 0.50 0.50 0.50
+Ke 0.0 0.0 0.0
+Ni 1.50
+d 1.0
+illum 3
+map_Kd textures/X15Albedo.png
+map_Bump -bm 0.800000 textures/X15Normal.png

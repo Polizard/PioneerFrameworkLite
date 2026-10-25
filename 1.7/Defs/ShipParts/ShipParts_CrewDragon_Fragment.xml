@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- PFL 1.7 Crew Dragon full-shape low-poly test hull: open nose, 16 Draco (12 side + 4 top) and 8 SuperDraco in four pods.
+       Bounds use PFL/runtime axes: X = radial width, Y = radial height, Z = forward/length.
+       Geometry is a 1x1x1 Unit OBJ; PartMatrix restores these dimensions. -->
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_CrewDragon</defName>
+    <label>龙飞船 Crew Dragon 低模测试船体（16 Draco + 8 SuperDraco）</label>
+    <category>hull</category>
+    <massKg>12000</massKg>
+    <boundsX>4.084576</boundsX>
+    <boundsY>4.167594</boundsY>
+    <boundsZ>7.721946</boundsZ>
+    <stackLengthMeters>7.721946</stackLengthMeters>
+    <shape>Box</shape>
+  </ShipPartDef>
+</Defs>

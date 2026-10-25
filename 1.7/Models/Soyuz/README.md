@@ -27,7 +27,7 @@ This asset is a deliberately hard-surface, low-poly Soyuz-style test model for P
 - Vertices: 545
 - Triangles: 1,014
 - Material slots: 1
-- UV layer: 1 (box projection, 24 m texture period; four panels per tile => 6 m panels on the surface)
+- UV layer: 1 (per-component cylindrical unwrap; one full U tile per revolution, 24 m V period along the rocket axis)
 - Native size: X = 10.2 m, Y = 10.2 m, Z = 50.51 m in final PFL axes
 - Unit mesh: 1.0 x 1.0 x 1.0 around the origin
 - Final axes: Y up, +Z nose/forward
@@ -42,6 +42,14 @@ This asset is a deliberately hard-surface, low-poly Soyuz-style test model for P
 - The normal map uses a derivative-rebuilt tangent basis, so no tangent vertex attribute is required and the existing single-submesh batched attribute set remains sufficient.
 - The current Soyuz demonstration takes a dedicated direct-draw path in `SoyuzModelAssets.TryDraw`; this avoids sending a different material through the normal `PF_ShipSkin` batch.
 
+## Minimal asset mode (2026-10-25)
+
+- Runtime minimal mesh: `1.7/Models/Soyuz/MIN_PFL_Soyuz_Prism.obj`
+- Runtime minimal albedo: `1.7/Textures/PFView/Ships/Soyuz/MIN_SoyuzAlbedo.png` (512x512)
+- Minimal mode resolves the configured prefix (`MIN_` by default) on the file name; if the prefixed mesh/albedo is missing or invalid, PFView falls back to the shared Box/Cylinder/Sphere proxy instead of loading this base asset.
+- Soyuz keeps the base 1,014-triangle geometry in its minimal variant. The saving comes from avoiding the normal texture and the runtime RGBA32 linear-normal copy; the albedo remains 512x512.
+- In game the minimal path logs `variant=minimal`, `normalMap=off`, and the same 1,850 runtime vertices as the base mesh.
+
 ## Why 1,014 triangles?
 
 The asset intentionally tests the prism/detail-bake rules rather than reproducing every CAD surface. At PFView distance, silhouette is carried by the core stages, four boosters, nozzles and escape tower; panel/rivet detail is carried by the normal map.
@@ -49,19 +57,21 @@ The asset intentionally tests the prism/detail-bake rules rather than reproducin
 ## Runtime notes (2026-10-21 branch)
 
 - `PFLitNormal.vert.glsl` applies the inverse-transpose model normal matrix.
-- `PFLitNormal.frag.glsl` decodes the normal map and reconstructs a tangent basis from screen-space derivatives of world position and UV. Runtime normal strength is 0.9; a restrained view-dependent specular/rim response makes the panel seams readable at PFView distance.
+- `PFLitNormal.frag.glsl` decodes the normal map and reconstructs a tangent basis from screen-space derivatives of world position and UV. Runtime normal strength is 0.8; a restrained view-dependent specular/rim response makes the panel seams readable at PFView distance.
 - The normal PNG is authored as raw data (Blender Non-Color). At runtime `SoyuzModelAssets` copies its pixels into a linear `Texture2D` before binding it to `_NormalTex`, preventing accidental sRGB gamma decoding.
 - Preview: `D:\PJ\Blender-MCP-Test\PFL_Assets\Soyuz\Soyuz_Prism_Preview.png`
 
-## Follow-up texture-alignment pass (2026-10-21)
+## Texture alignment: cylindrical UV pass (2026-10-21)
 
-- The runtime albedo and normal detail now use **triplanar projection** over translation-free model-space coordinates. This removes the UV-seam misalignment visible on the close-up prism faces.
-- The texture period stays at **24 m**, so the four panels per texture tile remain approximately **6 m** on the hull.
-- The normal strength remains **0.9**.
+- Earlier passes tried runtime box projection and then model-space triplanar projection. Both can change the 2D projection frame at a flat-facet boundary, causing a directional black panel line to jump or rotate there.
+- The final runtime path uses **per-component cylindrical UVs** baked into the mesh. `U` maps one full texture tile around each rotationally symmetric connected part; the wrap seam is placed on the existing `-X` meridian. `V` maps `-24 m` along the rocket axis so circumferential panel lines line up across components.
+- At load, `SoyuzModelAssets` mirrors the OBJ `TexCoord0` channel into the generic Tangent attribute (`xy = UV`, `z = 1` marker). PFLitNormal uses this packed transport because the direct-draw OBJ path did not produce a textured result from TexCoord0 alone. TexCoord0 plus `_MainTex_ST` remains the fallback.
+- The negative V direction makes the UV basis right-handed for `PFLitNormal`'s derivative-built TBN, so the normal map's green channel is not mirrored.
+- Caps use a separate planar projection, avoiding the degenerate centre of a cylindrical projection.
+- `SoyuzModelAssets` sets `_NormalParams = (0.8, 0, 0, 0)`: normal strength remains 0.8, while `y = 0` selects the mesh-UV path. Albedo and normal both sample the same transformed `texUv`; `_MainTex_ST` is explicitly identity.
+- The legacy triplanar branch remains in `PFLitNormal.frag.glsl` for other potential callers, but it is not used by Soyuz.
+- The UV build is reproducible with `D:\PJ\Blender-MCP-Test\PFL_Assets\Soyuz\rebuild_soyuz_cylindrical_uv.py`. Its validation found 528 shared side-face edges, maximum circular U error `6e-8`, maximum V error `0`, and TBN handedness dot `1.0`.
+- Runtime confirmation logs include `UV transport ready: count=1850`, `uvTransport=tangent`, `albedo=OK`, and `normalMap=OK`; the panel rings, longitudinal seams and red warning panels are visible across the prism facets.
 - The generic yellow `DrawHeadingBar` is suppressed for groups rendered with the Soyuz custom model. The large yellow rectangular volume at the tail in the old PFView screenshots was the main-thrust heading bar, not an engine flame or part of the OBJ.
+- `SoyuzModelAssets` carries `[StaticConstructorOnStartup]`; this removes the RimWorld startup warning about its static `Material` field.
 - The runtime debug DLL in the working tree is a local Debug build; it is intentionally not part of the committed source changes.
-## Alignment follow-up 2 (2026-10-21)
-
-- Triplanar projection now uses a single dominant projection plane per flat facet instead of blending multiple projections. The mixed-plane blend caused the visible triangular panel distortions at close range.
-- Normal strength lowered slightly to 0.8 and the view-dependent highlight/rim was reduced so normal-map projection boundaries cannot produce bright triangular patches.
-- `SoyuzModelAssets` now carries `[StaticConstructorOnStartup]`; this removes the RimWorld startup warning about its static `Material` field.

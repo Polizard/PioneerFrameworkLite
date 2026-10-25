@@ -87,6 +87,8 @@ namespace PioneerFramework
                 // （另外把相机位置一起喂进去，rim 要用；全在视图系）。
                 ShipSkinAssets.ApplyLighting(toSun, sc, GetCameraViewPos());
                 SoyuzModelAssets.ApplyLighting(toSun, sc, GetCameraViewPos());
+                X15ModelAssets.ApplyLighting(toSun, sc, GetCameraViewPos());
+                CrewDragonModelAssets.ApplyLighting(toSun, sc, GetCameraViewPos());
 
             }
 
@@ -116,6 +118,7 @@ namespace PioneerFramework
             if (Event.current == null || Event.current.type != EventType.Repaint
                 || lastSceneRenderFrame == RealTime.frameCount) return;
             lastSceneRenderFrame = RealTime.frameCount;
+            PFAssetVariantRuntime.Refresh();   // 极简模式/前缀变化时释放旧的模型材质缓存
 
             // ⚠ 2026-10-11（"别的航天器整体位置在抖"的治本）：这里用**帧级连续时钟**（不是阶梯的物理 tick）。
             //   物理 tick 由整数 `TicksGame` 推出 ⇒ 渲染帧率高于 tick 率时，位置一格一格跳；
@@ -607,6 +610,19 @@ namespace PioneerFramework
         {
             if (SoyuzModelAssets.TryDraw(entity, eVp, gRot, scale, SceneLayer, matBlock, MetersToView))
                 return true;
+            if (X15ModelAssets.TryDraw(entity, eVp, gRot, scale, SceneLayer, matBlock, MetersToView))
+                return true;
+            if (CrewDragonModelAssets.TryDraw(entity, eVp, gRot, scale, SceneLayer, matBlock, MetersToView))
+                return true;
+
+            if (PFAssetVariantRules.MinimalMode)
+            {
+                // B 方案：极简模式下不加载基础高模；没有可用的前缀资产时，
+                // 用共享材质 + 现有 Box/Cylinder/Sphere 原语保底。
+                ShipModelRenderer.DrawParts(entity, eVp, gRot, scale, cubeMesh, renderMat, matBlock,
+                    false, MetersToView, SceneLayer);
+                return false;
+            }
 
             // 2026-10-19 蒙皮：可用且开 = PF_ShipSkin + 阵营 tint；否则逐字回到旧路径（Toon 优先/单色）。
             // 蒙皮用**硬法线**立方体（三平面投影/几何边亮棱需要面法线恒定）；旧路径仍用平滑法线 cubeMesh。

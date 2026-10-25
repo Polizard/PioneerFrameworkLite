@@ -61,5 +61,32 @@ namespace PioneerFramework
             w.DebugSelectAndFocusGroup(group.GroupId);
         }
 
+        public static void SpawnX15()
+        {
+            var group = DebugShipSpawner.SpawnX15Demo();
+            if (group == null) return;
+            var w = Window;
+            if (w == null)
+            {
+                Log.Message("[PFView·调试] X-15 已生成 G" + group.GroupId
+                    + "；打开 PFView 后再在对象列表选择/聚焦该组。");
+                return;
+            }
+            w.DebugSelectAndFocusGroup(group.GroupId);
+        }
+
+        public static void SpawnCrewDragon()
+        {
+            var group = DebugShipSpawner.SpawnCrewDragonDemo();
+            if (group == null) return;
+            var w = Window;
+            if (w == null)
+            {
+                Log.Message("[PFView·调试] 龙飞船已生成 G" + group.GroupId
+                    + "；打开 PFView 后再在对象列表选择/聚焦该组。");
+                return;
+            }
+            w.DebugSelectAndFocusGroup(group.GroupId);
+        }
     }
 }

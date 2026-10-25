@@ -1,4 +1,4 @@
-﻿# 先驱框架Lite（PioneerFramework Lite）TODO
+# 先驱框架Lite（PioneerFramework Lite）TODO
 
 > 创建日期：2026-08-10
 > 定位：PFL 粒度任务清单，从 [Lite规划-20260808.md](./Lite规划-20260808.md) 里程碑 M3-M5 拆解而来。
@@ -142,6 +142,10 @@
 | PERF-2 | P1 | `CombatGrid.WalkSegmentCells` 空格提前中断 | DDA 走到无船的格（不在 cells 字典）就中断，可能漏掉空格之后的船。修复：cell 边界由坐标直接推导（cell 索引 × cellSize），不再依赖 cells 字典查格 | ✅ 已完成 |
 | PERF-3 | P1 | `CelestialBodyManager.GetOrbitFrame` 重复正交基 | `GetOrbitFrame` 每次调用都 `normalized + cross ×2` 重算 refX/refY，N 体积分热路径多处调用。修复：在 `CelestialBodyDef` 懒加载缓存规范化轨道法线 + refX/refY（`EnsureOrbitFrame`/`GetOrbitFrame`），`CelestialBodyManager` 5 处调用改走缓存 | ✅ 已完成 |
 | PERF-4 | P2 | `TargetingSystem.FindBestTarget` O(n²) 索敌 | 每 tick 对 N 个 group 双重遍历；N 大时 O(n²)。修复：用 `SpaceGameComp.GetGroupsInRange`（粗网格 `SpatialGrid3D.GetNearby`）按 CellSizeMeters 预过滤候选，候选数从 N 降到近邻 k | ✅ 已完成 |
+| PERF-6 | P1 | PFView 极简资产模式 | 2026-10-25 落地：`MIN_` 前缀解析、极简/基础变体、负缓存、Box/Cylinder/Sphere 原语兜底、设置 UI、三套极简资产与日志实证；极简模式不加载基础高模且默认不加载法线贴图。当前 X15 922 tris / 512 albedo，CrewDragon 5,148 tris / 512 albedo，Soyuz 1,014 tris / 512 albedo。 | ✅ 已完成（2026-10-25） |
+| PERF-7 | P2 | PFView 多实例 GPU Instancing / draw call 合并 | 数百实体仍按实体提交 `Graphics.DrawMesh`；极简资产解决显存/贴图但未解决 draw call。后续按资产类型合批并加 GPU Instancing。 | ⬜ 待办 |
+| PERF-8 | P2 | PFView 压缩纹理与显存预算实测 | 极简 albedo 仍以 PNG 进入 ContentFinder；需要 DDS/BC 管线，并用 GPU Profiler 验证 30MB 常驻红线，不能只按文件体积估算。 | ⬜ 待办 |
+| ASSET-1 | P2 | CapsuleSegment 极简资产与 loader 接入 | CapsuleSegment 目前没有 PFView 运行时 loader，也未进入极简资产链路；需要接入 loader 后再生成 `MIN_` 变体。 | ⬜ 待办 |
 | PERF-5 | P2 | `Parallel.ForEach` 小规模回退顺序 | `SpaceGameComp.UpdateAllMovements` 对 `groups.Values` 用 Parallel.ForEach + ConcurrentBag；group 数少时线程调度 + ConcurrentBag 分配 > 顺序开销。修复：`PARALLEL_PHYSICS_MIN_GROUPS = 32` 阈值以下走顺序循环 + 预分配数组 | ✅ 已完成 |
 
 ---
@@ -158,6 +162,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-10-25 | ✅ **PFView 极简资产模式落地**：①新增 `PioneerFrameworkLiteSettings.Assets`（`pfviewMinimalMode` + 可配置前缀，默认 `MIN_`）；②新增 `PFAssetVariantRules` / `PFAssetVariantRuntime`，按 `前缀+原文件名` 解析 Mesh/Albedo，负缓存按资产类型共享，模式/前缀变化时释放旧材质；③Soyuz/X15/CrewDragon loader 共用变体运行时，极简模式严格不访问基础高模，缺失/无效时由现有 Box/Cylinder/Sphere 路径兜底；④极简材质默认只加载 albedo、`normalMap=off`，避免 2K 法线及运行时 RGBA32 线性副本；⑤生成并接入 X15（922 tris）、CrewDragon（5,148 tris）、Soyuz（1,014 tris）极简 OBJ + 512 albedo，附 `MINIMAL_ASSETS.md`；⑥游戏日志实测三套均 `variant=minimal`、`normalMap=off`，无 PFView 错误。后续 PERF-7/8 与 ASSET-1 已登记。 |
 | 2026-09-14 | ⚠️→✅ **㉔ 探针抓到并修掉一个真竞争（本轮唯一的生产 bug，且是新引入的）**：第一版局部缓存写成 `Dictionary<int,(double tick, DVector3 v)>` —— 值类型元组 32 字节、字段逐个拷贝，**写入不原子**，而群组物理在 `Parallel.For` 里跑 ⇒ 读者会拿到"新 tick + 旧位置分量"的**撕裂值**。游戏内实测 3 次（月球，t=509.033/525.100/526.800，Δ=5.3/15.8/31.5 m），全部由 ㉔ 的影子比对报出（判定 PASS 是**在它们之前**打印的，而 `TotalMismatches` 是硬指标 —— 晚打印就会 FAIL）。**断定是撕裂的依据**：命中要求 tick 逐位相等，而该算式是 (bodyId,tick) 的纯函数 ⇒ "命中却值不同"只可能来自写入方式。**离线复现**：同负载压旧写法 = 656 万命中/1585 次撕裂，新写法 = 1.687 亿命中/0。**修法**：抽出纯类型 `Base/Orbital/BodySampleCache.cs` —— ①值体是不可变引用对象、槽位只做一次引用赋值（原子）②槽位是数组下标而非字典键（并发期零字典写入）。四处缓存（世界/局部 × 位置/速度）全换掉，位置与速度合成一份采样。同批修掉 `CelestialBodyDef.EnsureOrbitFrame` 的"先置标志后算值"竞争（PERF-3 遗留：并发首用会拿到 (0,0,0) 基向量）。新增纯测试 `BodySampleCacheTests`（3 例，直接压这个生产类型）。`tools/test-all.ps1` ALL GREEN 8/8（纯测试 98/98、集成 80/80、0 错误、警告 561 = 基线、已提交 DLL 随脚本重建）。**游戏内已确认（同日重跑，8/8 PASS）：㉔ 影子 182796 次比对、不一致 0**（修前同流程 3 次撕裂），命中/未命中 8.0:1 → **13.9:1**（值体合并成一份采样的结构签名）。顺带把 ㉖ 的"最慢一步"补上**第几步 + 真实 tick**（峰值 6.9/7.1 ms 与 10.8 ms 在两轮间不复现 ⇒ 需要定位而不是猜）。DLL → `40B2AD61…`。 |
 | 2026-09-14 | ✅ **性能挂账第 24/25 条落地**（都是"能看见"的能力，不是新判据）：㉔**局部系天体位置/速度加 `(bodyId,tick)` 缓存** —— A0 之后群组引力场每步、每父链天体都查一次 `GetBodyLocalPosition/Velocity`，而这对 API 此前**没有缓存**，同一 tick 内同一颗月球被每个群组各重算一遍（21 组 × 2 天体 × 60 步/秒 ≈ 2500 次三角/秒）；顺手把世界系递归里内联的**同一份相位算式**并进 `...Core`（算式副本 4 → 1，与 A1 同一条单一来源原则）。新探针 ㉔ 判据：未命中 ≈ 子天体数×步数（缓存前是 ×组数），影子在命中时用无缓存算式复算逐位比对（容差 0 → 不一致只可能是缓存陈旧）。㉖**每物理步墙钟探针** —— 此前日志里**全是计数**，"性能没变差"只能靠代码结构推断、给不出前后对比；现在一步一计时（平均/最慢 µs/步 + 引力场段 `CollectSystemSources+FieldAccelJerk` 单列占比，只在物理步调用点计时以免被战斗插值重建污染口径）。读数为观测项，**不进 PASS/FAIL**。`tools/test-all.ps1` ALL GREEN 8/8（纯测试 95/95、集成 80/80、已提交 DLL 随脚本重建 → `DEE19494…`）；游戏内读数待跑（㉔ 命中/未命中 + ㉖ 墙钟值）。 |
 | 2026-09-14 | ✅ **E9 删除孤儿 WeaponDef（用户裁定）**：`1.6/Defs/Combat/WeaponDefs.xml` 删去 `PF_Weapon_Cannon` 与 `PF_Weapon_Default`——前者是**唯一**声明 `affectedByGravity=true` 的武器却零引用（建筑 `PF_Building_Turret_Cannon` 实际挂的是 `PF_Weapon_ProjectileCannon`），留着会让 grep `affectedByGravity` 的人误以为有活的引力射弹在跑；后者零引用且其"部件未指定武器时的默认武器"描述已无对应代码。删前全库（.cs/.xml/.ps1/.py + 测试工程）确认除自身 defName 外零引用、且代码无指向它的兜底字符串。武器 Def **8 → 6**，`validate_config.py` 通过（78 defs）；`tools/test-all.ps1` ALL GREEN 8/8 |

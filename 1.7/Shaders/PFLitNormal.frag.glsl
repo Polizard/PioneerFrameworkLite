@@ -2,16 +2,17 @@
 
 // PFLitNormal.frag.glsl - PFLit lighting plus a tangent-space normal map.
 //
-// The Soyuz asset uses triplanar projection for both albedo and normal detail.
-// This removes UV seams across the prism facets and component joints while
-// preserving the panel/rivet detail authored in the same textures.
+// The Soyuz mesh is authored with per-component cylindrical UVs. The legacy
+// triplanar branch remains available for other callers, but it is disabled for
+// Soyuz because axis-aligned projections can rotate or shift a directional
+// pattern where the dominant projection axis changes between flat facets.
 //
-// _NormalParams.x = normal strength. _NormalParams.y = triplanar scale in
-// inverse view units (0 disables triplanar and falls back to the UV derivative
-// TBN path). A normal strength <= 0 disables normal sampling entirely.
+// _NormalParams.x = normal strength. _NormalParams.y = legacy triplanar scale
+// in inverse view units (0 uses the mesh UV derivative TBN path). A normal
+// strength <= 0 disables normal sampling entirely.
 
 layout(location = 0) in vec3 vNormal;
-layout(location = 1) in vec2 vUv;
+layout(location = 1) in vec3 vUv;
 layout(location = 2) in vec3 vWorldPos;
 layout(location = 3) in vec3 vSurfacePos;
 
@@ -52,6 +53,12 @@ void main()
     float normalStrength = max(uMaterial._NormalParams.x, 0.0);
     float triplanarScale = max(uMaterial._NormalParams.y, 0.0);
     float triplanarMode = step(1e-5, triplanarScale);
+    // Packed cylindrical UVs come in raw OBJ orientation. Apply the same V flip
+    // that the engine normally applies through _MainTex_ST. If the tangent
+    // transport is unavailable, fall back to the ordinary TexCoord0 + ST path.
+    vec2 texUv = vUv.xy * uMaterial._MainTex_ST.zw + uMaterial._MainTex_ST.xy;
+    if (vUv.z > 0.5)
+        texUv = vec2(vUv.x, 1.0 - vUv.y);
 
     vec3 p = vSurfacePos * triplanarScale;
     // Hard-surface facets should use one projection plane, not a blend of two
@@ -65,8 +72,8 @@ void main()
     else
         weights.z = 1.0;
 
-    // Triplanar albedo: no UV seams across the prism facets or the component
-    // joints. The UV path remains as a fallback for future PFLitNormal users.
+    // Soyuz uses texUv: one continuous cylindrical unwrap per connected part.
+    // The legacy triplanar branch is used only when _NormalParams.y > 0.
     vec3 texColor;
     vec4 tex;
     if (triplanarMode > 0.5)
@@ -79,7 +86,7 @@ void main()
     }
     else
     {
-        tex = texture(_MainTex, vUv * uMaterial._MainTex_ST.zw + uMaterial._MainTex_ST.xy);
+        tex = texture(_MainTex, texUv);
         texColor = tex.rgb;
     }
 
@@ -105,8 +112,8 @@ void main()
         {
             vec3 dpdx = dFdx(vWorldPos);
             vec3 dpdy = dFdy(vWorldPos);
-            vec2 duvdx = dFdx(vUv);
-            vec2 duvdy = dFdy(vUv);
+            vec2 duvdx = dFdx(texUv);
+            vec2 duvdy = dFdy(texUv);
 
             vec3 tangent = dpdx * duvdy.y - dpdy * duvdx.y;
             float tangentLen = length(tangent);
@@ -114,7 +121,7 @@ void main()
             {
                 tangent /= tangentLen;
                 vec3 bitangent = normalize(cross(baseNormal, tangent));
-                vec3 sampled = texture(_NormalTex, vUv).xyz * 2.0 - 1.0;
+                vec3 sampled = texture(_NormalTex, texUv).xyz * 2.0 - 1.0;
                 sampled.xy *= normalStrength;
                 n = normalize(mat3(tangent, bitangent, baseNormal) * normalize(sampled));
             }

@@ -204,4 +204,8 @@
   <PFV_Pilot_Sas_Antinormal>Antinormal</PFV_Pilot_Sas_Antinormal>
   <PFV_Pilot_Sas_RadialOut>Radial out</PFV_Pilot_Sas_RadialOut>
   <PFV_Pilot_Sas_RadialIn>Radial in</PFV_Pilot_Sas_RadialIn>
+  <PFV_Asset_MinimalSection>PFView minimal assets</PFV_Asset_MinimalSection>
+  <PFV_Asset_MinimalMode>Enable minimal-asset mode</PFV_Asset_MinimalMode>
+  <PFV_Asset_MinimalPrefix>Minimal asset prefix</PFV_Asset_MinimalPrefix>
+  <PFV_Asset_MinimalHint>When enabled, PFView loads only assets named with the prefix plus the original file name. If a prefixed asset is missing, a Box/Cylinder/Sphere placeholder is used and the base high-detail asset is not loaded. Entities, collision and physics are unchanged. Changes apply on the next PFView repaint; if base textures are already cached by the game, restart the game to reclaim all VRAM.</PFV_Asset_MinimalHint>
 </LanguageData>

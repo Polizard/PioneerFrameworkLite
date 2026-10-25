@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- PFL 1.7 X-15 external-mesh test hull.
+       Bounds are PFL/runtime axes: X = span, Y = up, Z = forward/length.
+       Geometry is a 1x1x1 Unit OBJ; PartMatrix restores these dimensions. -->
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_X15</defName>
+    <label>X-15 高超音速火箭飞机测试船体</label>
+    <category>hull</category>
+    <massKg>15000</massKg>
+    <boundsX>6.812</boundsX>
+    <boundsY>3.9082</boundsY>
+    <boundsZ>15.251</boundsZ>
+    <stackLengthMeters>15.251</stackLengthMeters>
+    <shape>Box</shape>
+  </ShipPartDef>
+</Defs>

@@ -54,6 +54,10 @@ namespace PioneerFramework
                 }, null);
             AddAction("PFView·联盟号棱柱测试资产（12/16 棱柱 + 8 棱小件 + 法线贴图）",
                 "20 视图/表现", 58, PFViewDebugActions.SpawnSoyuzPrism, null);
+            AddAction("PFView·X-15 高超音速低模测试资产（16 边机身 + 翼型低模 + 法线贴图）",
+                "20 视图/表现", 58, PFViewDebugActions.SpawnX15, null);
+            AddAction("PFView·龙飞船 Crew Dragon（开启鼻锥 + 16 天龙座 + 8 超级天龙座）",
+                "20 视图/表现", 58, PFViewDebugActions.SpawnCrewDragon, null);
 
 
             // PFView 视图系统 v2（2026-10-18）：原先挂在玩家工具条/面板上的测试与作弊项，统一收进这里。

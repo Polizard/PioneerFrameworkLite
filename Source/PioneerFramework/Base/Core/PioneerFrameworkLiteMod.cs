@@ -48,6 +48,7 @@ namespace PioneerFramework
             Scribe_Values.Look(ref storedMode, "pfviewFocusCameraMode", -1);
             pfviewFocusCameraMode = PFViewGroupCameraCore.MigrateMode(storedMode, legacyThirdPersonOnFocus);
             ExposePilotSettings();
+            ExposeAssetSettings();
         }
     }
 
@@ -99,6 +100,7 @@ namespace PioneerFramework
             }
             listing.Label("PFV_SettingsFocusModeTip".Translate());
             DrawPilotSettings(listing);
+            DrawAssetSettings(listing);
             pilotSettingsHeight = listing.CurHeight + 12f;
             listing.End();
             Widgets.EndScrollView();
@@ -107,6 +109,7 @@ namespace PioneerFramework
         public override void WriteSettings()
         {
             base.WriteSettings();
+            Settings?.NormalizeAssetSettings();
             Settings?.Write();
         }
     }
