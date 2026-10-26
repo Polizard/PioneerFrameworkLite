@@ -31,7 +31,13 @@
   <ItemGroup>
     <None Include="..\..\Shaders\*.shader" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Shaders\PF_PlanetClouds.*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\1.7\Shaders\PF_Stellar*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.StellarVisuals.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.StellarVisuals.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewStellarVisualCore.cs" Link="Source\PioneerFramework\PFView\PFViewStellarVisualCore.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Clouds.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Clouds.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Starfield.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Starfield.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewQuadGeometry.cs" Link="Source\PioneerFramework\PFView\PFViewQuadGeometry.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewCelestialLighting.cs" Link="Source\PioneerFramework\PFView\PFViewCelestialLighting.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Defs\**\*.xml" Link="Defs\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Patches\**\*.xml" Link="Patches\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\GameReferences.props" Link="Source\GameReferences.props" CopyToOutputDirectory="PreserveNewest" />

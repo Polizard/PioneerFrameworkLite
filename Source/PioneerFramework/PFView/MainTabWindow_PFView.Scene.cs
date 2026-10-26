@@ -21,33 +21,6 @@ namespace PioneerFramework
         /// <summary>蒙皮在"无 Map 编队"路径上的首次命中读数（只打一次）。</summary>
         private static bool loggedPartSkin;
 
-        /// <summary>
-        /// PFView 场景里的**太阳方向**（`toSun`：从天体中心**指向太阳**，PFView 的**惯性系**）。
-        ///
-        /// **出处 = 原版权威** `GenCelestial.CurSunPositionInWorldSpace()`（世界视图的太阳、地图昼夜用的**同一条**，
-        /// 本 mod 的 `CalendarAndSunPatch` 已把它改成"physicsTick + 天体自转周期"口径 ✓）
-        /// ⇒ 再经 `PFViewBodyRotation`（= `SurfaceFrame.FixedToEci` 的基向量像反推）从**固连系**映射到 PFView 的**惯性系**
-        /// （与地表贴图用的是同一个旋转 ⇒ "太阳在哪儿"与"哪半球被照亮"永远一致，与世界视图同源）。
-        ///
-        /// ⚠⚠ 2026-10-11 为什么要改（用户：「PFView 界面下和世界视图下看到的太阳光不一样」）：
-        /// 原来这里算的是 `normalize(行星位置 − 恒星位置)`，而本 mod 把**根源行星钉在原点、恒星也在原点** ⇒ 那个矢量**恒为 0**
-        /// ⇒ 下面的 `sqrMagnitude > 0.001` 早退分支一直生效 ⇒ **方向光从没更新过**（停在初始化方向，昼夜是冻结的 ✗）。
-        /// </summary>
-        private Vector3 SunDirectionInView(CelestialBodyManager mgr, double tick)
-        {
-            Vector3 sunFixed = GenCelestial.CurSunPositionInWorldSpace();     // 固连系（世界地图系）里"指向太阳"
-            if (sunFixed.sqrMagnitude < 1e-6f) return -Vector3.forward;
-
-            // 固连→惯性 的旋转取自**根源行星**（原版那条太阳方向就是定义在它的世界系里的）
-            int shipBodyId = ResolveFocusBodyId();
-            int rootId = mgr.GetRootPlanetId(shipBodyId);
-            Quaternion spin = PFViewBodyRotation.FixedToEciRotation(rootId >= 0 ? rootId : 0);
-            return (spin * sunFixed).normalized;
-
-            // ⚠ 自检读数（限频）：固连方向 → 惯性方向。**惯性方向应随时间基本不变**（太阳在惯性系里不动 ✓）；
-            //   若它随时间漂 ⇒ 说明"原版权威的相位"与"地表自转的相位"用了两把尺子（那才是下一步要查的）。
-        }
-
         /// <summary>把当前太阳口径写进某材质（`renderMat` 本体与它的克隆们共用；2026-10-14）。</summary>
         private static void ApplySunUniforms(Material m, Vector3 toSun, Color sunColor)
         {
@@ -58,10 +31,11 @@ namespace PioneerFramework
         private void UpdateLighting(CelestialBodyManager mgr, double tick, DVector3 origin)
         {
             if (sunLight == null) return;
-            if (mgr.GetStar() == null) return;
-
-            Vector3 toSunInertial = SunDirectionInView(mgr, tick);          // 惯性系（读数判据看这一支）
-            Vector3 toSun = viewFrameRot * toSunInertial;                   // 视图参考系（固连档下太阳随自转"走"= 正确）
+            var star = mgr.GetStar();
+            if (star == null) return;
+            DVector3 starPosition = mgr.GetBodyPositionAbs(star.bodyId, tick);
+            DVector3 cameraPosition = ViewToAbs(GetCameraViewPos(), origin);
+            Vector3 toSun = PFViewCelestialLighting.Direction(starPosition, cameraPosition, viewFrameRot);
             // 方向光的 `forward` = 光**传播**方向 = 太阳→天体 = −toSun
             // 2026-10-13（P2-a）：1.7 的 UnityStubs 里 `Transform.forward` 只读（无 set_forward）
             // ⇒ 改用 rotation=LookRotation（与"设 forward"同义；上向量取 Vector3.up 即原默认）。
@@ -78,11 +52,7 @@ namespace PioneerFramework
                 Color sc = sunLight.color;
                 ApplySunUniforms(renderMat, toSun, sc);
 
-                // ⚠ 2026-10-14（"阳光还是太弱"的真根因）：`NewSurfaceMaterial` 是 `new Material(renderMat)` 的**克隆**，
-                //   克隆只在创建那一刻拷值 ⇒ 行星/补丁材质**收不到** renderMat 的每帧刷新（停在 1× 的旧口径）。
-                //   这里把缓存的地表材质逐个一起刷新（天体数个，成本可忽略）。
-                foreach (var m in patchMaterials.Values) if (m != null) ApplySunUniforms(m, toSun, sc);
-                foreach (var m in baseSphereMaterials.Values) if (m != null) ApplySunUniforms(m, toSun, sc);
+                // 天体材质在各自绘制入口按真实中心更新，避免月球复用地球的光照方向。
                 // 2026-10-19 蒙皮：独立材质同样收不到 renderMat 的每帧刷新 —— 同一个坑，同一个修法
                 // （另外把相机位置一起喂进去，rim 要用；全在视图系）。
                 ShipSkinAssets.ApplyLighting(toSun, sc, GetCameraViewPos());
@@ -91,11 +61,7 @@ namespace PioneerFramework
             if (tick - lastSunLogTick > 300.0)
             {
                 lastSunLogTick = tick;
-                Vector3 fixedDir = GenCelestial.CurSunPositionInWorldSpace();
-                Log.Message($"[PFView·太阳] 固连方向 ({fixedDir.x:F2},{fixedDir.y:F2},{fixedDir.z:F2}) → 惯性 toSun ({toSunInertial.x:F2},{toSunInertial.y:F2},{toSunInertial.z:F2})（惯性系应随时间基本不变）｜参考系={(viewFrameIsFixed ? "固连" : "惯性")}｜light.forward ({-toSun.x:F2},{-toSun.y:F2},{-toSun.z:F2})");
-                Log.Message($"[PFView·太阳盘] 角半径 {sunDiscAngularRadiusDeg:F2}°（直径 {sunDiscAngularRadiusDeg * 2f:F2}°）⇒ 屏高 {(renderCamera != null ? renderCamera.pixelHeight : 0)}px / FOV {(renderCamera != null ? renderCamera.fieldOfView : 45f):F0}° 下直径 ≈ {PFViewSunDisc.DiameterPixels(sunDiscAngularRadiusDeg,
-                        renderCamera != null ? renderCamera.fieldOfView : 45f,
-                        renderCamera != null ? renderCamera.pixelHeight : 1080):F0} px｜画序：星空({(int)UnityEngine.Rendering.RenderQueue.Background}) → 太阳盘({SunDiscRenderQueue}) → 场景(2000+)｜{SunInViewNote(mgr, tick, origin)}｜{SunDiscDrawNote()}");
+                Log.Message($"[PFView·光照] 相机到恒星的视图系方向 ({toSun.x:F2},{toSun.y:F2},{toSun.z:F2})｜参考系={(viewFrameIsFixed ? "固连" : "惯性")}");
             }
         }
 
@@ -128,12 +94,10 @@ namespace PioneerFramework
             UpdateCamera(mgr, tick, origin);
             UpdateLighting(mgr, tick, origin);
             UpdateAtmosphereSky(mgr, tick, origin);   // 大气视觉：天空盒按相机高度变蓝（并给雾层/壳准备读数）
-            UpdateSunDisc(mgr);                       // 太阳圆片：本帧角半径（由"根行星绕日半径"定）
             DrawStarfield();                          // 倒数第一层：星空盒（复用世界视图同一份星表；大气里 1−天空α 淡出）
             DrawAllObjects(origin, mgr, tick);
 
             renderCamera.Render();
-            ProbeSunDisc(tick);   // 限频：从 RT 读回圆盘处像素 ⇒ "太阳到底画上了没有"用数字回答（2026-10-11）
         }
 
         /// <summary>帧级连续渲染时钟（`TimeScaleManager.GetRenderTick()` 的静态便捷口；无 Game ⇒ 退回物理 tick）。</summary>
@@ -145,10 +109,12 @@ namespace PioneerFramework
 
         private void DrawAllObjects(DVector3 origin, CelestialBodyManager mgr, double tick)
         {
+            stellarHaloDraws.Clear();
             DrawCelestialBodies(mgr, tick, origin);
             DrawSystemGroups(mgr, tick, origin);
             DrawMegastructures(mgr, origin);
             DrawProjectiles(origin, tick);
+            DrawStellarHalos();
         }
 
         /// <summary>计算本行星系应渲染的天体 ID 集合（恒星 + 飞船所在行星 + 其卫星）。
@@ -189,18 +155,16 @@ namespace PioneerFramework
 
         private void DrawCelestialBodies(CelestialBodyManager mgr, double tick, DVector3 origin)
         {
-            // 本帧的"指向太阳"方向（惯性系）：太阳球摆位与方向光共用同一份（同源 ⇒ 不会两套真相）
-            sunDirectionView = viewFrameRot * SunDirectionInView(mgr, tick);   // 视图参考系（太阳盘/星空盒/定居点昼夜共用）
             DrawCelestialBodiesCore(mgr, tick, origin);
         }
-
-        /// <summary>本帧的太阳方向（由 `DrawCelestialBodies` 每帧写；太阳球与方向光同用）。</summary>
-        private Vector3 sunDirectionView = Vector3.forward;
 
         private void DrawCelestialBodiesCore(CelestialBodyManager mgr, double tick, DVector3 origin)
         {
             var relevantIds = GetLocalSystemBodyIds(mgr);
             Vector3 camPos = GetCameraViewPos();
+            var star = mgr.GetStar();
+            DVector3 starPosition = star != null ? mgr.GetBodyPositionAbs(star.bodyId, tick) : DVector3.zero;
+            Color sunColor = sunLight != null ? sunLight.color : Color.white;
 
             foreach (var body in mgr.GetAllBodies())
             {
@@ -209,36 +173,12 @@ namespace PioneerFramework
                 bool isStar = body.bodyType == CelestialBodyType.Star;
                 DVector3 wp = mgr.GetBodyPositionAbs(body.bodyId, tick);
                 Vector3 vp = AbsToView(wp, origin);
+                Vector3 toSun = PFViewCelestialLighting.Direction(starPosition, wp, viewFrameRot);
 
-                // ═══ 恒星：等效替代，方向对即可 ═══
-                if (isStar)
-                {
-                    // ⚠ 2026-10-11 用户裁定：「把太阳渲染成一个**圆** —— 大小只和当前行星系环绕太阳的半径有关系」，
-                    //   圆片固定在**倒数第二层**（除了星空盒，任何东西都能遮挡它）。
-                    //   ⇒ 拆掉原来那套"发光球 + 朝向相机的面片 + 按相机距离摆到某个有限距离 + 一堆远裁剪余量"：
-                    //     现在就是**一个朝向相机的四边形**，角半径 = `atan(Sun.radius / 根行星.orbitRadius)`（`PFViewSunDisc`），
-                    //     摆在"无穷远"方向（`FarClip*0.4` ⇒ 远在一切之上），材质**不写深度**、画序**排在场景之前**
-                    //     ⇒ 后画的场景自然盖住它（确定性；不再有任何远裁剪/深度竞争）。
-                    //   方向仍取 `sunDirectionView`（与方向光同一份 ✓ ⇒ "太阳画在哪儿"与"哪半球被照亮"永远一致）。
-                    DrawSunDisc(camPos);
-
-                    // ── 调试：在太阳位置放黄色方块（默认关闭；面板上"太阳标记"勾选）──
-                    if (DebugShowSunMarker && renderMat != null)
-                    {
-                        Vector3 dbgPos = camPos + SunDiscDir(camPos) * SunPlaceDistView;
-                        matBlock.SetColor("_Color", new Color(1f, 1f, 0f));
-                        Matrix4x4 dbgMtx = Matrix4x4.TRS(dbgPos, Quaternion.identity,
-                            Vector3.one * sunDiscQuadSize * 2.5f);
-                        Graphics.DrawMesh(cubeMesh, dbgMtx, renderMat, SceneLayer, null, 0, matBlock);
-                    }
-                    continue;
-                }
-
-                // ═══ 行星/卫星：实际位置渲染 ═══
+                // 所有天体共享星历位置、距离缩放、球网格与深度遮挡。
                 float bodyR = (float)(body.radius * MetersToView);
 
-                Color c = body.bodyType == CelestialBodyType.Planet ?
-                    new Color(0.2f, 0.5f, 0.8f) : new Color(0.7f, 0.7f, 0.7f);
+                Color c = CelestialBodyManager.GetBodyColor(body);
 
                 // ⚠ **天体要按自转相位转**（2026-10-10 用户实测："世界视图里 Group 在陆地上方，PFView 一侧却不是"）：
                 //    贴图内容是**天体固连系**的地形，而飞船位置是 **ECI/绝对系**的 ⇒ 画行星必须把贴图转到 ECI 才对齐。
@@ -299,20 +239,26 @@ namespace PioneerFramework
                 float baseRenderR = hasPatch ? renderR * (1f - PFViewSurfaceBake.BaseSinkFactor) : renderR;
                 var baseMat = GetBaseSphereMaterial(body, bodyLayer);
                 if (baseMat != null)
+                {
+                    ApplySunUniforms(baseMat, toSun, sunColor);
+                    float visualRadius = isStar
+                        ? PrepareStellarVisual(body, baseMat, renderPos, Mathf.Max(baseRenderR, MinBodyVisRadius), selfRot, lodMesh, tick) : baseRenderR;
                     // ⚠⚠ 2026-10-11 修：这里的颜色参数**会被写进 MaterialPropertyBlock 覆盖材料的 `_Color`** ——
                     //   原来传 `Color.white` ⇒ 材料上的 `SurfaceReflectance`(0.20) 被抹掉 ⇒ 基底球一直**比补丁亮 5 倍**
                     //   （"反射率不一致"从第一天起就是这个原因；没有贴图时更直接变成"纯白"）。
                     //   ⇒ 传**与材料同值**的灰色，覆盖就等于没覆盖 ✓（补丁那条路没有 PropertyBlock，材料值直接生效）。
-                    DrawCelestialSphere(renderPos, baseRenderR, SurfaceTint, selfRot, lodMesh, baseMat, false, allowToon: false);
+                    DrawCelestialSphere(renderPos, visualRadius, isStar ? Color.black : SurfaceTint, selfRot, lodMesh, baseMat, false, allowToon: false);
+                }
                 else
                     DrawCelestialSphere(renderPos, baseRenderR, c, selfRot, lodMesh, renderMat, true);
 
-                if (hasPatch)
+                if (hasPatch && patchMat != null)
                 {
+                    ApplySunUniforms(patchMat, toSun, sunColor);
                     Matrix4x4 patchMtx = Matrix4x4.TRS(renderPos, selfRot, Vector3.one * renderR * 2f);
                     Graphics.DrawMesh(patchMesh, patchMtx, patchMat, SceneLayer);
                 }
-                else if (noPatchLogged.Add(body.bodyId))
+                else if (body.hasSurface && noPatchLogged.Add(body.bodyId))
                 {
                     // 没补丁 = 这颗天体的"地表"就是**基底球**（背景 biome 平铺），不是烘焙地形 —— 说明白，别让它像"渲染坏了"
                     Log.Message($"[PFView·地表] body={body.defName} **没有烘焙补丁** ⇒ 现在画的这一层是基底球（背景 biome 平铺），不是烘焙地形；去调试页签烤一次即得");
@@ -325,15 +271,22 @@ namespace PioneerFramework
                 // 定居点层（D-2，2026-10-12）：**实时画、不烘**（动态数据不进静态图）。
                 // 挂在这里 = 贴在同一套 TRS 上（renderPos/selfRot/renderR 都在作用域内），且在**大气壳之前**
                 // ⇒ 壳会自然罩在定居点上面（与"贴在地表"的观感一致）。
-                DrawSettlementOverlay(body, bodyLayer, renderPos, renderR, selfRot);
+                DrawSettlementOverlay(body, bodyLayer, renderPos, renderR, selfRot, toSun);
 
                 // 云层与地表共用姿态/等比挪位；淡出用真实相机高度，避免远景缩放影响显隐。
                 DrawCloudLayer(body, renderPos, renderR, selfRot, tick,
-                    camDistToBody / (double)MetersToView - body.radius);
+                    camDistToBody / (double)MetersToView - body.radius, toSun);
 
                 // 大气壳（2026-10-10 用户口径）：半径 = R + **大气厚度的一半**（XML 定义），半透明。
                 // 日照走**几何**（只画朝太阳那半边 ⇒ 夜侧没有壳）；双面网格 ⇒ 球缘那圈自然叠两层 = 大气辉光贴边。
-                DrawAtmosphereShell(body, renderPos, renderR, -sunLightForward);
+                DrawAtmosphereShell(body, renderPos, renderR, toSun);
+
+                if (isStar && DebugShowSunMarker && renderMat != null)
+                {
+                    matBlock.SetColor("_Color", new Color(1f, 1f, 0f));
+                    Graphics.DrawMesh(cubeMesh, Matrix4x4.TRS(renderPos, Quaternion.identity,
+                        Vector3.one * renderR * 2.2f), renderMat, SceneLayer, null, 0, matBlock);
+                }
 
                 // 2026-10-10：原"近档：可见分格补丁"已随用户裁定（不论远近均用烘焙贴图、取消档位）退役，
                 // 归档在 `Source/已弃置/PFViewTiles-近档分格-20261010.cs`。天体表面现在统一由上面两层承担。

@@ -67,6 +67,8 @@ namespace PioneerFramework
             float bestAltKm = 0f;
             float bestSunlit = 0f;
             float bestDistView = 0f;
+            var star = mgr.GetStar();
+            DVector3 starPosition = star != null ? mgr.GetBodyPositionAbs(star.bodyId, tick) : DVector3.zero;
 
             foreach (var body in mgr.GetAllBodies())
             {
@@ -74,11 +76,13 @@ namespace PioneerFramework
                 if (body.atmosphereThickness <= 0.0 || body.atmosphereRho0 <= 0.0 || body.atmosphereScaleHeight <= 0.0)
                     continue;                                    // 没大气（月球）⇒ 天空不变蓝、不画壳
 
-                Vector3 bodyPos = AbsToView(mgr.GetBodyPositionAbs(body.bodyId, tick), origin);
+                DVector3 bodyPosition = mgr.GetBodyPositionAbs(body.bodyId, tick);
+                Vector3 bodyPos = AbsToView(bodyPosition, origin);
                 float radiusView = Mathf.Max((float)(body.radius * MetersToView), MinBodyVisRadius);
                 float bodyDistView = Vector3.Distance(camPos, bodyPos);
                 float altMeters = (bodyDistView - radiusView) / MetersToView;
-                float sunlit = PFViewAtmosphere.SunlitFactor(camPos - bodyPos, -sunLightForward);
+                Vector3 toSun = PFViewCelestialLighting.Direction(starPosition, bodyPosition, viewFrameRot);
+                float sunlit = PFViewAtmosphere.SunlitFactor(camPos - bodyPos, toSun);
                 float a = PFViewAtmosphere.SkyAlpha(altMeters, body.atmosphereThickness, body.atmosphereRho0,
                     body.atmosphereScaleHeight, sunlit);
                 if (a > bestAlpha)
@@ -137,9 +141,6 @@ namespace PioneerFramework
                 }
             }
         }
-
-        /// <summary>方向光的 forward = "太阳 → 天体"（`UpdateLighting` 就是那么写的）⇒ 相机朝太阳 = 取反。</summary>
-        private Vector3 sunLightForward => sunLight != null ? sunLight.transform.forward : Vector3.forward;
 
         /// <summary>
         /// 大气壳：半径 = `R + 大气厚度/2`（XML 定义）· **覆盖全球**（受光半球 + 夜半球都画）。

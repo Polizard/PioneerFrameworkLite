@@ -42,7 +42,12 @@ namespace PioneerFramework
             //   ② 没给才退回"水格最多的 biome 的贴图"（不是 `backgroundBiome` 那张 —— 那张是给世界着色器做调制的**细节图**）。
             string baseLabel;
             Material mat;
-            if (body.baseSphereColor.a > 0f)
+            if (body.bodyType == CelestialBodyType.Star)
+            {
+                mat = CreateStellarSurfaceMaterial(body);
+                baseLabel = "普通天体位置与球网格，局部等离子体材质";
+            }
+            else if (body.baseSphereColor.a > 0f)
             {
                 // ⚠⚠ 2026-10-11 修：**必须走"1×1 贴图 + NewSurfaceMaterial"这条路**，不能直接设 `Material.color` ——
                 //    绘制那条路（`DrawCelestialSphere`）会在 MaterialPropertyBlock 里**覆盖 `_Color`**，

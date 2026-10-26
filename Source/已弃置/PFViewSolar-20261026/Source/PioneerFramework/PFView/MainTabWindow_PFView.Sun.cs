@@ -5,7 +5,9 @@ using Verse;
 namespace PioneerFramework
 {
     /// <summary>
-    /// **太阳 = 圆片（倒数第二层）· 星空盒（倒数第一层）**。
+    /// **太阳 = 连续三维等离子体（倒数第二层）· 星空盒（倒数第一层）**。
+    /// 2026-10-26：已批准的体积/对流/辉光模型进入 PFView；聚焦支持按观察距离缩放和环绕。
+    /// 下列历史裁定继续约束远景方向、角大小、合成顺序和不可用时的圆片回退。
     ///
     /// 用户 2026-10-11 四条裁定（先讨论后动手）：
     /// 1. **大小 = 角大小**（不是屏幕像素）⇒ `角半径 = atan(Sun.radius / 根行星.orbitRadius)`（`PFViewSunDisc`）；
@@ -46,21 +48,13 @@ namespace PioneerFramework
         private bool IsStarFocus => focusKind == PFViewFocusKind.Body
             && Current.Game?.GetComponent<CelestialBodyManager>()?.GetBodyById(focusBodyId)?.bodyType == CelestialBodyType.Star;
 
-        /// <summary>恒星只画背景圆盘；显式导航每次对准圆盘，避免恢复曾转离太阳的机位。</summary>
+        /// <summary>显式导航进入太阳近景，复位到体积模型的默认观察机位。</summary>
         private void InitializeSunCameraPose()
         {
             camYaw = 0f;
             camPitch = PFViewCameraCore.DefaultPitch;
             camFocusOffset = Vector3.zero;
             camDistance = DefaultBodyDistance();
-        }
-
-        private Quaternion SunFocusOrbitFrame()
-        {
-            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            // UpdateCamera 早于 DrawCelestialBodies：直接取同一方向源，避免沿用上一帧/参考系的方向。
-            Vector3 toSun = mgr != null ? viewFrameRot * SunDirectionInView(mgr, RenderTick()) : sunDirectionView;
-            return PFViewSunDisc.FocusOrbitFrame(toSun);
         }
 
         /// <summary>
@@ -76,6 +70,12 @@ namespace PioneerFramework
             sunDiscAngularRadiusDeg = PFViewSunDisc.AngularRadiusDeg(
                 star != null ? star.radius : 0.0,
                 root != null ? root.orbitRadius : 0.0);
+            if (IsStarFocus && renderCamera != null && star != null)
+            {
+                float radius = (float)(star.radius * MetersToView);
+                float distance = Mathf.Max(renderCamera.transform.position.magnitude, radius * 1.001f);
+                sunDiscAngularRadiusDeg = Mathf.Asin(Mathf.Clamp(radius / distance, 0f, 1f)) * Mathf.Rad2Deg;
+            }
             // 四边形按"实心芯 = 名义角半径"放大（贴图芯只占半宽 `DiscCoreFraction`；外沿柔边略出一点）
             sunDiscQuadSize = PFViewSunDisc.QuadSizeForDisc(SunPlaceDistView, sunDiscAngularRadiusDeg);
         }
@@ -83,6 +83,7 @@ namespace PioneerFramework
         /// <summary>太阳在视图里的方向（与方向光**同一份** ⇒ 摆位与明暗面永远一致）。</summary>
         private Vector3 SunDiscDir(Vector3 camPos)
         {
+            if (IsStarFocus && camPos.sqrMagnitude > 1e-6f) return -camPos.normalized;
             Vector3 d = sunDirectionView;
             if (d.sqrMagnitude < 1e-6f) d = -camPos;
             if (d.sqrMagnitude < 1e-6f) d = Vector3.forward;
@@ -228,6 +229,7 @@ namespace PioneerFramework
         /// </summary>
         private void DrawSunDisc(Vector3 camPos)
         {
+            if (TryDrawSolarPlasma(camPos)) return;
             var mat = GetSunDiscMaterial();
             var mesh = GetSunDiscMesh();
             if (mat == null || mesh == null) return;
@@ -351,7 +353,9 @@ namespace PioneerFramework
 
             float scale = PFViewSunDisc.StarShellScale(renderCamera.nearClipPlane, WorldStarfield.ShellRadius);
             Vector3 camPos = renderCamera.transform.position;
-            Quaternion rot = Quaternion.LookRotation(SunDiscDir(camPos), Vector3.up);
+            // 星空保持独立的天球朝向；太阳近景的摆位方向随环绕机位变化，不能用于旋转星表。
+            Vector3 skyForward = sunDirectionView.sqrMagnitude > 1e-6f ? sunDirectionView.normalized : Vector3.forward;
+            Quaternion rot = Quaternion.LookRotation(skyForward, PFViewSunDisc.SafeUp(skyForward));
             Graphics.DrawMesh(starfieldMesh, Matrix4x4.TRS(camPos, rot, Vector3.one * scale), starfieldMat, SceneLayer);
         }
     }

@@ -270,8 +270,7 @@ namespace PioneerFramework
         {
             var body = Current.Game?.GetComponent<CelestialBodyManager>()?.GetBodyById(bodyId);
             if (body == null) return;
-            bool isStar = body.bodyType == CelestialBodyType.Star;
-            if (!isStar && focusKind == PFViewFocusKind.Body && focusBodyId == bodyId) { RefreshPilotCameraOptions(); return; }
+            if (focusKind == PFViewFocusKind.Body && focusBodyId == bodyId) { RefreshPilotCameraOptions(); return; }
             RememberPreviousView();
             SaveCameraMemory();
             DVector3 oldOrigin = ResolveFocusOrigin();
@@ -284,8 +283,7 @@ namespace PioneerFramework
             frozenCameraPose = null;
             currentSystemBodyId = bodyId;
 
-            if (isStar) InitializeSunCameraPose();
-            else if (!TryLoadPose())
+            if (!TryLoadPose())
             {
                 camFocusOffset = Vector3.zero;
                 camDistance = DefaultBodyDistance();
@@ -560,7 +558,7 @@ namespace PioneerFramework
             {
                 pos = targetPos;
                 look = targetLook;
-                up = focusKind == PFViewFocusKind.Body && !IsStarFocus ? Vector3.up : orbitFrame * PFViewCameraCore.OrbitUp(camYaw, camPitch);
+                up = focusKind == PFViewFocusKind.Body ? Vector3.up : orbitFrame * PFViewCameraCore.OrbitUp(camYaw, camPitch);
             }
 
             // 相机不许钻进**任何**天体（2026-10-18 用户：缩放/转视角会进入星体内部、行星局部透明）。

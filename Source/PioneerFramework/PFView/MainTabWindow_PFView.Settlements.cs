@@ -50,7 +50,7 @@ namespace PioneerFramework
         /// 基底球 + 补丁之后、大气壳之前调用（⇒ 大气壳会自然罩在它上面）。
         /// </summary>
         private void DrawSettlementOverlay(CelestialBodyDef body, PlanetLayer? layer,
-            Vector3 renderPos, float renderR, Quaternion selfRot)
+            Vector3 renderPos, float renderR, Quaternion selfRot, Vector3 toSun)
         {
             if (!debugSettlements || layer == null || layer.TilesCount <= 0) return;
 
@@ -61,7 +61,6 @@ namespace PioneerFramework
             float size = PFViewSettlementLayer.MarkerSizeMeters(layer.AverageTileSize) * MetersToView;
             if (size <= 1e-4f) return;
 
-            Vector3 toSun = sunDirectionView;                 // 与方向光/明暗面同一出处（视图系）
             int shown = 0, night = 0;
             float techMin = 2f, techMax = -1f;
 
@@ -124,13 +123,13 @@ namespace PioneerFramework
             Log.Message($"[PFView·定居点] body={body.defName} 定居点 {shown} 座（夜面 {night} 座亮灯）｜标记 {sizeViewUnits:F0} 视图单位（{sizeViewUnits / MetersToView / 1000f:F0} km）｜科技强度 {(techMax < 0f ? 0f : techMin):F2}~{(techMax < 0f ? 0f : techMax):F2}（覆盖/密度/亮度三轴）");
         }
 
-        /// <summary>标记网格 = 太阳圆片那套**带 UV 的双面四边形**（quadMesh 没 UV，径向贴图会整片透明）。</summary>
+        /// <summary>标记网格使用带 UV 的双面四边形，保持径向贴图和两面可见。</summary>
         private static Mesh? GetSettlementMesh()
         {
             if (settlementMesh != null) return settlementMesh;
             try
             {
-                PFViewSunDisc.DiscQuadGeometry(out var verts, out var uvs, out var tris);
+                PFViewQuadGeometry.Create(out var verts, out var uvs, out var tris);
                 var m = new Mesh { name = "PF_SettlementQuad" };
                 m.vertices = verts;
                 m.uv = uvs;

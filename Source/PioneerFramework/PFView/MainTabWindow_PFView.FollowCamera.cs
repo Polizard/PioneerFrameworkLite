@@ -45,7 +45,6 @@ namespace PioneerFramework
                 }
                 return lastThirdPersonFrame;
             }
-            if (IsStarFocus) return SunFocusOrbitFrame();
             return focusKind == PFViewFocusKind.Frozen ? viewFrameRot * frozenFreeFrameSystem : Quaternion.identity;
         }
 

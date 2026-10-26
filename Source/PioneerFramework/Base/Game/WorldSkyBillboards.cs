@@ -106,7 +106,7 @@ namespace PioneerFramework
         /// （远大于行星/地形尺度 = 半径 100 单位，远小于天穹相机 farClip = 原版 7500）；
         /// 面片边长**保持原版 1–3.8 不变** ⇒ 视直径 0.19°–0.73°（1080p / 60° 视场下 ≈3–13 px）。
         /// </summary>
-        internal const float ShellRadius = 300f;   // PFView 的星空盒复用同一份（见 PFViewSunDisc.StarShellScale）
+        internal const float ShellRadius = 300f;   // PFView 的星空盒复用同一份星表与壳半径。
 
         /// <summary>星色：偏冷白（比纯白更像星）——加性混合下就是"亮点"。</summary>
         private static readonly Color StarColor = new(0.90f, 0.93f, 1f);

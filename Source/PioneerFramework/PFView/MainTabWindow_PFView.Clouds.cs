@@ -25,7 +25,7 @@ namespace PioneerFramework
         /// 相机低于 10 km 时隐藏；材质只覆盖云，现有大气边缘和低空天空照旧承担大气表现。
         /// </summary>
         private void DrawCloudLayer(CelestialBodyDef body, Vector3 renderPos, float renderR,
-            Quaternion selfRot, double tick, double cameraAltitudeMeters)
+            Quaternion selfRot, double tick, double cameraAltitudeMeters, Vector3 toSun)
         {
             if (body.defName != "Earth" || body.atmosphereThickness <= 0.0 || renderCamera == null) return;
             float opacity = (float)PFViewClouds.Opacity(cameraAltitudeMeters);
@@ -33,7 +33,6 @@ namespace PioneerFramework
             Material? mat = GetCloudMaterial();
             if (mat == null) return;
 
-            Vector3 toSun = -sunLightForward;
             Vector3 localSun = Quaternion.Inverse(selfRot) * toSun;
             Vector3 cameraFromBody = renderCamera.transform.position - renderPos;
             mat.SetVector("_CloudToSun", new Vector4(toSun.x, toSun.y, toSun.z, 0f));

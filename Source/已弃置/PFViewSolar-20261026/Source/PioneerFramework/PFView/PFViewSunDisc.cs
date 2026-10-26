@@ -21,7 +21,7 @@ namespace PioneerFramework
         /// 取不到数据时的兜底角半径（度）= 本 mod 地球档的值（3000 km ÷ 120,000 km ≈ 1.43°）。
         /// 只在 `sunRadius` 或 `orbitRadius` 非正（XML 没填/该行星不是绕恒星的）时用。
         /// </summary>
-        public const float DefaultAngularRadiusDeg = 1.43f;
+        public const float DefaultAngularRadiusDeg = (float)PFViewSolarCore.DefaultAngularRadiusDegrees;
 
         /// <summary>让默认天体机位面向背景太阳，保留原有俯仰限位；竖直方向也有正交的 up。</summary>
         public static Quaternion FocusOrbitFrame(Vector3 toSun)
