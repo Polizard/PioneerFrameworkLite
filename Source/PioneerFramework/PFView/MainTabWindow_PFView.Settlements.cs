@@ -43,13 +43,13 @@ namespace PioneerFramework
         /// 共用一份"上次数量"会每帧判成"数量变了" ⇒ 实测 859 行 + 每条 10 行栈 / 45 秒，见 2026-10-17 日志）。</summary>
         private struct SettlementLogState { public double tick; public int count; }
 
-        private readonly Dictionary<ushort, SettlementLogState> settlementLogByBody = new();
+        private readonly Dictionary<(System.Guid, int), SettlementLogState> settlementLogByBody = new();
 
         /// <summary>
         /// 把**这一颗天体**上的定居点画到它的地表（实时；不烘）。由 `DrawCelestialBodiesCore` 在对该天体画完
         /// 基底球 + 补丁之后、大气壳之前调用（⇒ 大气壳会自然罩在它上面）。
         /// </summary>
-        private void DrawSettlementOverlay(CelestialBodyDef body, PlanetLayer? layer,
+        private void DrawSettlementOverlay(CelestialBodyInfo body, PlanetLayer? layer,
             Vector3 renderPos, float renderR, Quaternion selfRot, Vector3 toSun)
         {
             if (!debugSettlements || layer == null || layer.TilesCount <= 0) return;
@@ -112,11 +112,11 @@ namespace PioneerFramework
         }
 
         /// <summary>读数（限频：**该天体**数量变化即打，或每 300 物理秒一行）——"画了几座、几座亮着、多大、科技亮度区间"。</summary>
-        private void LogSettlementReadout(CelestialBodyDef body, int shown, int night, float sizeViewUnits,
+        private void LogSettlementReadout(CelestialBodyInfo body, int shown, int night, float sizeViewUnits,
             float techMin, float techMax)
         {
             double tick = TimeScaleManager.GetPhysicsTickSafe();
-            ushort key = body.shortHash;
+            var key = (celestialRenderRuntime?.WorldSessionId ?? System.Guid.Empty, body.bodyId);
             if (settlementLogByBody.TryGetValue(key, out var st)
                 && shown == st.count && tick - st.tick < 300.0) return;
             settlementLogByBody[key] = new SettlementLogState { tick = tick, count = shown };

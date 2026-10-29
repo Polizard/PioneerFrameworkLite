@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <PlanetLayerDef>
+    <defName>PF_CelestialSurface</defName>
+    <label>天体地表</label>
+    <viewGizmoTooltip>查看这颗天体的地表。</viewGizmoTooltip>
+    <viewGizmoTexPath>UI/Commands/ViewPlanet</viewGizmoTexPath>
+    <layerType>PioneerFramework.Celestial.CelestialSurfaceLayer</layerType>
+    <tileType>SurfaceTile</tileType>
+    <elevationString>{0}m</elevationString>
+    <gerundLabel>在天体地表</gerundLabel>
+    <backgroundBiome>Ocean</backgroundBiome>
+    <worldGenSteps>
+      <li>PF_CelestialTiles</li>
+    </worldGenSteps>
+    <worldDrawLayers>
+      <li>WorldDrawLayer_CurrentMapTile</li>
+      <li>WorldDrawLayer_SelectedTile</li>
+      <li>WorldDrawLayer_MouseTile</li>
+      <li>WorldDrawLayer_UngeneratedPlanetParts</li>
+      <li>WorldDrawLayer_WorldObjects_Expandable</li>
+      <li>WorldDrawLayer_WorldObjects_NonExpandable</li>
+      <li>WorldDrawLayer_Glow</li>
+      <li>WorldDrawLayer_Terrain</li>
+      <li>WorldDrawLayer_Clouds</li>
+    </worldDrawLayers>
+    <worldTabs>
+      <li>WITab_Terrain</li>
+      <li>WITab_Planet</li>
+    </worldTabs>
+  </PlanetLayerDef>
+</Defs>

@@ -21,6 +21,8 @@ public class PFViewStellarVisualTests
     [Theory]
     [InlineData("PF_StellarSurface", "Opaque", "true", 2000)]
     [InlineData("PF_StellarHalo", "Custom", "false", 2900)]
+    [InlineData("PF_StellarSurfaceFast", "Opaque", "true", 2000)]
+    [InlineData("PF_StellarHaloFast", "Custom", "false", 2900)]
     public void StellarEffectsUseRealSphereDepthAndExplicitTransparency(string name, string blend, string writesDepth, int queue)
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Defs", "ShaderDefs", "PFViewStellar.xml");
@@ -173,6 +175,7 @@ public class PFViewStellarVisualTests
     }
 
     [Theory]
+    // Legacy (default) shader: the approved old visual keeps its original early-discard contract.
     [InlineData(true, 3.0, 0.0, true, true)]
     [InlineData(true, 1.65, 0.9199, true, true)]
     [InlineData(true, 1.6499, 0.9199, true, true)]
@@ -185,17 +188,44 @@ public class PFViewStellarVisualTests
     [InlineData(true, 1.5, 1.1, true, false)]
     [InlineData(false, 1.2, 0.0, true, false)]
     [InlineData(false, 1.2, 0.9199, true, false)]
-    public void EarlyDiscardSkipsHiddenHaloWorkWhilePreservingVisibleRays(
-        bool haloPass, double distance, double impact, bool inward, bool expected)
+    public void EarlyDiscardLegacyKeepsApprovedHaloCulling(
+        bool haloPass, double distance, double impact, bool inward, bool expectedDiscarded)
+        => Assert.Equal(expectedDiscarded,
+            AnyGuardDiscards("PF_StellarVolume.frag.glsl", haloPass, distance, impact, inward));
+
+    [Theory]
+    // Optional fast renderer: both passes cull "rays leaving the shell away from the star";
+    // the surface pass additionally culls the corona ring (impact > 1.42) because the halo pass
+    // owns the transparent corona. Inward rays are never culled by these early guards.
+    [InlineData(true, 3.0, 0.0, true, false)]
+    [InlineData(true, 3.0, 0.0, false, true)]
+    [InlineData(true, 1.2, 0.0, false, false)]
+    [InlineData(true, 1.2, 0.0, true, false)]
+    [InlineData(true, 1.5, 1.1, true, false)]
+    [InlineData(true, 3.0, 1.5, false, true)]
+    [InlineData(false, 3.0, 0.0, true, false)]
+    [InlineData(false, 3.0, 1.5, true, true)]
+    [InlineData(false, 3.0, 1.5, false, true)]
+    [InlineData(false, 1.2, 0.0, true, false)]
+    [InlineData(false, 1.2, 0.0, false, false)]
+    [InlineData(false, 1.65, 1.5, false, true)]
+    [InlineData(false, 1.65, 0.9, true, false)]
+    [InlineData(false, 1.65, 0.9, false, true)]
+    public void EarlyDiscardFastCullsOnlyAwayRaysAndSurfaceCoronaRing(
+        bool haloPass, double distance, double impact, bool inward, bool expectedDiscarded)
+        => Assert.Equal(expectedDiscarded,
+            AnyGuardDiscards("PF_StellarVolumeFast.frag.glsl", haloPass, distance, impact, inward));
+
+    /// <summary>Execute the shipped GLSL early-discard guards on one ray fixture (no copied predicate).</summary>
+    private static bool AnyGuardDiscards(string shaderFile, bool haloPass, double distance, double impact, bool inward)
     {
-        string source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders", "PF_StellarVolume.frag.glsl"));
+        string source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders", shaderFile));
         string main = source.Substring(source.IndexOf("void main()", StringComparison.Ordinal));
         string guards = main.Substring(0, main.IndexOf("float phase", StringComparison.Ordinal));
         double b = Math.Sqrt(distance * distance - impact * impact) * (inward ? -1 : 1);
 
-        // Evaluate the shipped GLSL guards on ray fixtures; no copied early-exit predicate.
         using var expressions = new DataTable { Locale = CultureInfo.InvariantCulture };
-        bool discarded = Regex.Matches(guards, @"if\s*\((.+)\)\s*discard\s*;")
+        return Regex.Matches(guards, @"if\s*\((.+)\)\s*discard\s*;")
             .Cast<Match>().Any(match =>
             {
                 string condition = Regex.Replace(match.Groups[1].Value, @"length\s*\(eye\)", Number(distance));
@@ -206,7 +236,6 @@ public class PFViewStellarVisualTests
                 condition = Regex.Replace(condition, @"!(?!=)", " NOT ");
                 return (bool)expressions.Compute(condition, "");
             });
-        Assert.Equal(expected, discarded);
     }
 
     private static string Number(double value) => "(" + value.ToString("R", CultureInfo.InvariantCulture) + ")";

@@ -27,10 +27,28 @@ namespace PioneerFramework
             public IReadOnlyCollection<T> GetAll() => entities;
             public int Count => entities.Count;
             public bool IsEmpty => entities.Count == 0;
+            internal void ClearForCelestialStep() => entities.Clear();
         }
 
         private Dictionary<(int cx, int cy, int cz), RoughCell> cells = new();
         private Queue<(int cx, int cy, int cz)> emptyQueue = new();
+
+        internal SpatialGrid3D<T> CopyForCelestialStep(Func<T, T> mapEntity, SpatialGrid3D<T>? recycled = null)
+        {
+            var copy = recycled != null && !ReferenceEquals(recycled, this) ? recycled : new SpatialGrid3D<T>();
+            foreach (var key in copy.cells.Keys) if (!cells.ContainsKey(key)) copy.cells.Remove(key);
+            foreach (var pair in cells)
+            {
+                var source = pair.Value;
+                if (!copy.cells.TryGetValue(pair.Key, out var cell)) copy.cells.Add(pair.Key, cell = new RoughCell());
+                cell.ClearForCelestialStep(); cell.emptyTick = source.emptyTick;
+                cell.SetBounds(source.minX, source.maxX, source.minY, source.maxY, source.minZ, source.maxZ);
+                foreach (var entity in source.GetAll()) cell.Add(mapEntity(entity));
+            }
+            copy.emptyQueue.Clear();
+            foreach (var key in emptyQueue) copy.emptyQueue.Enqueue(key);
+            return copy;
+        }
 
         public const int ROUGH_EMPTY_TTL = 600;
 

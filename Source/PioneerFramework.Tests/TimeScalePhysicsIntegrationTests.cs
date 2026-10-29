@@ -136,10 +136,10 @@ public class TimeScalePhysicsIntegrationTests
         {
             var ship = AddMovingShip(host);
             var bodies = host.Game.GetComponent<CelestialBodyManager>();
-            AccessTools.Property(typeof(CelestialBodyDef), nameof(CelestialBodyDef.ParentBodyId)).SetValue(bodies.GetBodyById(0), -1);
-            var moon = new CelestialBodyDef { bodyId = 1, bodyType = CelestialBodyType.Moon, orbitRadius = 1000,
+            AccessTools.Property(typeof(CelestialBodyInfo), nameof(CelestialBodyInfo.ParentBodyId)).SetValue(bodies.GetBodyById(0), -1);
+            var moon = new CelestialBodyInfo { bodyId = 1, bodyType = CelestialBodyType.Moon, ParentBodyId = 0, orbitRadius = 1000,
                 orbitPeriod = 400, orbitNormal = UnityEngine.Vector3.up, gravitationalParameter = 1e8 };
-            ((Dictionary<int, CelestialBodyDef>)AccessTools.Field(typeof(CelestialBodyManager), "bodiesById").GetValue(bodies)).Add(1, moon);
+            ((Dictionary<int, CelestialBodyInfo>)AccessTools.Field(typeof(CelestialBodyManager), "bodiesById").GetValue(bodies)).Add(1, moon);
             ship.CurrentOrbit.positionSystem = (SystemVec3)new DVector3(2000, 0, 0);
             var expectedPosition = ship.CurrentOrbit.positionSystem.v;
             var expectedVelocity = ship.CurrentOrbit.velocitySystem.v;
@@ -174,9 +174,9 @@ public class TimeScalePhysicsIntegrationTests
         {
             var ship = AddMovingShip(host);
             var bodies = host.Game.GetComponent<CelestialBodyManager>();
-            var moon = new CelestialBodyDef { bodyId = 1, bodyType = CelestialBodyType.Moon, orbitRadius = 1000,
+            var moon = new CelestialBodyInfo { bodyId = 1, bodyType = CelestialBodyType.Moon, ParentBodyId = 0, orbitRadius = 1000,
                 orbitPeriod = 400, orbitNormal = UnityEngine.Vector3.up, gravitationalParameter = 1e8 };
-            ((Dictionary<int, CelestialBodyDef>)AccessTools.Field(typeof(CelestialBodyManager), "bodiesById").GetValue(bodies)).Add(1, moon);
+            ((Dictionary<int, CelestialBodyInfo>)AccessTools.Field(typeof(CelestialBodyManager), "bodiesById").GetValue(bodies)).Add(1, moon);
             ship.CelestialBodyId = 1;
             double phase = 100.5 * Math.PI / 200;
             ship.CurrentOrbit.positionSystem = (SystemVec3)new DVector3(1000 * Math.Cos(phase) + 100, 0, -1000 * Math.Sin(phase));
@@ -265,7 +265,9 @@ public class TimeScalePhysicsIntegrationTests
     private static SpaceEntityGroup AddMovingShip(SpaceAiRuntimeTestHost host)
     {
         // 显式给出近零引力参数，避免根天体 GM=0 触发生产的地球引力兜底；保留真实积分路径。
-        host.Game.GetComponent<CelestialBodyManager>().GetBodyById(0).gravitationalParameter = 1e-100;
+        var bodies = host.Game.GetComponent<CelestialBodyManager>();
+        var table = (Dictionary<int, CelestialBodyInfo>)AccessTools.Field(typeof(CelestialBodyManager), "bodiesById").GetValue(bodies);
+        table[0] = table[0] with { gravitationalParameter = 1e-100 };
         var ship = host.AddShip();
         ship.CurrentOrbit = new OrbitState
         {

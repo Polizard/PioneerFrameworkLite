@@ -120,6 +120,14 @@
   <PFV_SettingsCamera>PFView 编队镜头</PFV_SettingsCamera>
   <PFV_SettingsFocusMode>双击／聚焦时的默认视角：{0}</PFV_SettingsFocusMode>
   <PFV_SettingsFocusModeTip>只影响之后双击编队或点击“聚焦”。当前镜头保持不变；也可在 PFView 工具条临时切换视角。</PFV_SettingsFocusModeTip>
+  <PFV_SettingsStellar>恒星渲染（默认旧版视觉）</PFV_SettingsStellar>
+  <PFV_SettingsStellarFast>使用新版恒星渲染（实验；观感不同、性能优先）</PFV_SettingsStellarFast>
+  <PFV_SettingsStellarFastTip>默认关闭＝你认可的旧版恒星视觉，不改任何观感。开启后改用"解析光球＋薄日冕壳"的新渲染（性能更高，但边缘/日冕观感不同）；切换后需重开 PFView 生效。</PFV_SettingsStellarFastTip>
+  <PFV_SettingsStellarTier>新版渲染档位：{0}</PFV_SettingsStellarTier>
+  <PFV_SettingsStellarTip>档位只在新版渲染开启时生效：视觉优先＝新版全质量；均衡／性能优先只降低日冕内部采样密度。旧版视觉不受影响。</PFV_SettingsStellarTip>
+  <PFV_StellarQuality_VisualFirst>新版·视觉优先（默认档）</PFV_StellarQuality_VisualFirst>
+  <PFV_StellarQuality_Balanced>新版·均衡</PFV_StellarQuality_Balanced>
+  <PFV_StellarQuality_PerformanceFirst>新版·性能优先</PFV_StellarQuality_PerformanceFirst>
   <PFV_HelpCameraModesTitle>自由与两种第三人称</PFV_HelpCameraModesTitle>
   <PFV_HelpCameraModes>自由环绕、船体正向、速度正向分别保存机位。船体正向从船尾跟随；速度正向沿系统惯性速度方向跟随，零速时退回船体方向。默认抑制船体滚转带动整屏旋转，可在 Mod 设置中开启随船滚转。第三人称支持全周环视，俯仰限制在 −85°～85°，保持安全距离并禁用平移。环视默认松手保留，可设置松手回正。修改镜头默认项在下一次聚焦时应用。</PFV_HelpCameraModes>
   <PFV_Pilot_Settings>PFView 驾驶与观察</PFV_Pilot_Settings>

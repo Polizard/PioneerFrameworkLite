@@ -6,6 +6,7 @@
 #   3. Game integration tests (net48)               -> Source/PioneerFramework.Tests
 #   3b. Ported MechJebLib tests (net48)             -> Source/MechJebLibTest (third-party 移植面)
 #   4. Def/XML validation                           -> python tools/validate_config.py
+#      Python tool regression tests               -> python -m unittest discover -s tools/tests
 #   5. Frozen 1.6 line intact                        -> tools/check-frozen-1.6.ps1 (hash-pinned; never rebuilt)
 #   6. Deterministic Release build                  -> two builds, identical DLL bytes
 #   7. Rebuild committed DLL (Release)              -> restores 1.7/Assemblies/PioneerFrameworkLite.dll
@@ -109,7 +110,8 @@ function Invoke-Dotnet {
     $r = Invoke-Native 'dotnet' $Arguments
     if ($r.ExitCode -ne 0) {
         $tail = ($r.Output | Select-Object -Last 25) -join "`n"
-        throw "dotnet $($Arguments -join ' ') failed (exit $($r.ExitCode))`n$tail"
+        $errors = ($r.Output | Where-Object { "$_" -match 'error [A-Z]+[0-9]+|\[FAIL\]|^\s+Failed |Unhandled exception|Test Run Aborted' } | Select-Object -First 12) -join "`n"
+        throw "dotnet $($Arguments -join ' ') failed (exit $($r.ExitCode))`n$errors`n$tail"
     }
     return @($r.Output)
 }
@@ -184,9 +186,11 @@ if (-not $skipConfig) {
 }
 if ($skipConfig) {
     Warn "Validate Defs/XML (tools/validate_config.py)" "UNCHECKED: -SkipConfig"
+    Warn "Python tool regression tests (tools/tests)" "UNCHECKED: -SkipConfig"
 }
 elseif (-not $py) {
     Warn "Validate Defs/XML (tools/validate_config.py)" "UNCHECKED: no local python (CI covers this step)"
+    Warn "Python tool regression tests (tools/tests)" "UNCHECKED: no local python (CI covers this step)"
 }
 else {
 Step "Validate Defs/XML (tools/validate_config.py)" {
@@ -195,6 +199,15 @@ Step "Validate Defs/XML (tools/validate_config.py)" {
         throw "validate_config.py failed (exit $($r.ExitCode))`n$(($r.Output | Select-Object -Last 15) -join "`n")"
     }
     return "ok"
+}
+Step "Python tool regression tests (tools/tests)" {
+    $r = Invoke-Native $py.Source @("-m", "unittest", "discover", "-s", "tools/tests", "-v")
+    if ($r.ExitCode -ne 0) {
+        throw "Python tool tests failed (exit $($r.ExitCode))`n$(($r.Output | Select-Object -Last 20) -join "`n")"
+    }
+    $summary = $r.Output | ForEach-Object { "$_" } | Where-Object { $_ -match '^Ran [1-9][0-9]* tests? in ' } | Select-Object -Last 1
+    if (-not $summary) { throw "Python tool tests did not report a nonzero test count" }
+    return "$summary; OK"
 }
 }
 

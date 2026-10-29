@@ -57,12 +57,12 @@ namespace PioneerFramework.Tests
                 "/Defs/PlanetLayerDef[defName='Moon']");
             Assert.NotNull(moon);
             var layerType = typeof(PF_CelestialSurfaceLayer).Assembly.GetType(moon.SelectSingleNode("layerType")?.InnerText, true);
-            Assert.Equal(typeof(PF_CelestialSurfaceLayer), layerType);
+            Assert.Equal(typeof(Celestial.CelestialSurfaceLayer), layerType);
             Assert.True(typeof(SurfaceLayer).IsAssignableFrom(layerType));
             Assert.Equal("SurfaceTile", moon.SelectSingleNode("tileType")?.InnerText);
             var steps = moon.SelectNodes("worldGenSteps/li");
             var stepNames = steps.Cast<System.Xml.XmlNode>().Select(n => n.InnerText).ToList();
-            Assert.Contains("PF_MoonTiles", stepNames);
+            Assert.Equal(new[] { "PF_CelestialTiles" }, stepNames);
         }
 
         [Fact]

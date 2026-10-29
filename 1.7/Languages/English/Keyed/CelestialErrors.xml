@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_CelestialError_Validation>Celestial request is invalid: {0}</PF_CelestialError_Validation>
+  <PF_CelestialError_Conflict>Celestial request conflicts with the current state: {0}</PF_CelestialError_Conflict>
+  <PF_CelestialError_Availability>Celestial service is unavailable: {0}</PF_CelestialError_Availability>
+  <PF_CelestialError_Component>A celestial component failed: {0}</PF_CelestialError_Component>
+  <PF_CelestialError_Consistency>Celestial state consistency failed: {0}</PF_CelestialError_Consistency>
+  <PF_CelestialError_Expired>Celestial request has expired: {0}</PF_CelestialError_Expired>
+</LanguageData>

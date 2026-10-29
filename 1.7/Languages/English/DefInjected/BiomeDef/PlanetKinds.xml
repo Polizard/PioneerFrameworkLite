@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_BarrenRock.label>barren rock plains</PF_BarrenRock.label>
+  <PF_BarrenRock.description>Exposed rock and rubble without vegetation, suitable for many barren rocky bodies.</PF_BarrenRock.description>
+  <PF_BarrenRock.settleWarning>There is no breathable atmosphere here. Prepare a sealed habitat, EVA equipment and thermal protection before landing.</PF_BarrenRock.settleWarning>
+  <PF_BarrenRegolith.label>barren regolith plains</PF_BarrenRegolith.label>
+  <PF_BarrenRegolith.description>Dry ground covered by fine regolith, with no natural plants or animals.</PF_BarrenRegolith.description>
+  <PF_BarrenRegolith.settleWarning>There is no breathable atmosphere here. Prepare a sealed habitat, EVA equipment and thermal protection before landing.</PF_BarrenRegolith.settleWarning>
+  <PF_FrozenPlain.label>frozen plains</PF_FrozenPlain.label>
+  <PF_FrozenPlain.description>A persistently cold icy surface that can combine with rocky outcrops on frozen bodies.</PF_FrozenPlain.description>
+  <PF_FrozenPlain.settleWarning>There is no breathable atmosphere here. Prepare a sealed habitat, EVA equipment and thermal protection before landing.</PF_FrozenPlain.settleWarning>
+  <PF_GreenhousePlain.label>scorching plains</PF_GreenhousePlain.label>
+  <PF_GreenhousePlain.description>A scorching, dry surface beneath a dense atmosphere, without natural ecology. Pressure and gas toxicity require additional environment capabilities.</PF_GreenhousePlain.description>
+  <PF_GreenhousePlain.settleWarning>Surface temperatures are extreme. Ordinary colonists and equipment cannot safely remain exposed outdoors.</PF_GreenhousePlain.settleWarning>
+</LanguageData>

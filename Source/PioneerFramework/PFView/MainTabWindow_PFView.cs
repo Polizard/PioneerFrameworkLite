@@ -46,7 +46,7 @@ namespace PioneerFramework
         // ════════════════════════════════════════════════════
 
         private int currentSystemBodyId = 1;
-        private List<CelestialBodyDef> selectableSystems = new();
+        private List<CelestialBodyInfo> selectableSystems = new();
 
         private float camDistance = 50000f;
         private float camYaw;

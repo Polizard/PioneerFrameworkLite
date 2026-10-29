@@ -26,4 +26,33 @@
       <renderQueue>2900</renderQueue>
     </shaderProgram>
   </ShaderDef>
+  <!-- 2026-10-28 P2 optional fast renderer (analytic photosphere + thin corona shell).
+       Default rendering still uses PF_StellarSurface/PF_StellarHalo above; these two defs are
+       selected only when the player enables "useFastStellarRenderer" in Mod settings. -->
+  <ShaderDef>
+    <defName>PF_StellarSurfaceFast</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_StellarVolume.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_StellarVolumeFast.frag.glsl</fragmentShaderFileName>
+      <blendMode>Opaque</blendMode>
+      <depthTest>true</depthTest>
+      <depthWrite>true</depthWrite>
+      <cullMode>Front</cullMode>
+      <renderQueue>2000</renderQueue>
+    </shaderProgram>
+  </ShaderDef>
+  <ShaderDef>
+    <defName>PF_StellarHaloFast</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_StellarVolume.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_StellarVolumeFast.frag.glsl</fragmentShaderFileName>
+      <blendMode>Custom</blendMode>
+      <blendSrcFactor>One</blendSrcFactor>
+      <blendDstFactor>OneMinusSrcAlpha</blendDstFactor>
+      <depthTest>true</depthTest>
+      <depthWrite>false</depthWrite>
+      <cullMode>Front</cullMode>
+      <renderQueue>2900</renderQueue>
+    </shaderProgram>
+  </ShaderDef>
 </Defs>

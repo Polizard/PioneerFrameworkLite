@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_CounterSampleFixed.label>fixed counter body</PF_CounterSampleFixed.label>
+  <PF_CounterSampleFixed.description>An independent component with fixed geometry and initial count. Send an explicit counter event through the developer actions.</PF_CounterSampleFixed.description>
+  <PF_CounterSampleRanged.label>ranged counter body</PF_CounterSampleRanged.label>
+  <PF_CounterSampleRanged.description>Radius and initial count are sampled from closed intervals. Resolved values are saved per instance.</PF_CounterSampleRanged.description>
+</LanguageData>

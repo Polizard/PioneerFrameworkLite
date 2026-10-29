@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_BarrenRock.label>荒芜岩原</PF_BarrenRock.label>
+  <PF_BarrenRock.description>缺乏植被的裸岩与碎石地表，适用于多种荒芜岩质天体。</PF_BarrenRock.description>
+  <PF_BarrenRock.settleWarning>这里没有可呼吸大气。登陆前请准备密闭生存空间、舱外装备与温度防护。</PF_BarrenRock.settleWarning>
+  <PF_BarrenRegolith.label>荒芜尘原</PF_BarrenRegolith.label>
+  <PF_BarrenRegolith.description>细碎风化物覆盖的干燥地表，没有自然植物与动物。</PF_BarrenRegolith.description>
+  <PF_BarrenRegolith.settleWarning>这里没有可呼吸大气。登陆前请准备密闭生存空间、舱外装备与温度防护。</PF_BarrenRegolith.settleWarning>
+  <PF_FrozenPlain.label>冰封平原</PF_FrozenPlain.label>
+  <PF_FrozenPlain.description>长期低温下形成的冰质地表，可与岩石露头共同组成冰封天体。</PF_FrozenPlain.description>
+  <PF_FrozenPlain.settleWarning>这里没有可呼吸大气。登陆前请准备密闭生存空间、舱外装备与温度防护。</PF_FrozenPlain.settleWarning>
+  <PF_GreenhousePlain.label>灼热平原</PF_GreenhousePlain.label>
+  <PF_GreenhousePlain.description>浓厚大气下的灼热、干燥地表，缺乏自然生态。高压与气体毒性需要额外环境能力。</PF_GreenhousePlain.description>
+  <PF_GreenhousePlain.settleWarning>地表温度极高。普通殖民者和设备无法安全暴露在户外。</PF_GreenhousePlain.settleWarning>
+</LanguageData>

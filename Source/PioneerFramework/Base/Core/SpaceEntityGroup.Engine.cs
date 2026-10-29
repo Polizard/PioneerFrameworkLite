@@ -13,7 +13,7 @@ namespace PioneerFramework
         /// </summary>
         public DVector3 GetEngineThrustTorque(DVector3 thrustDirectionSystem, double totalThrustN)
         {
-            var sg = SpaceGameComp.GetCached();
+            var sg = (preparedPhysicsHost ?? SpaceGameComp.GetCached());
             if (sg == null) return DVector3.zero;
 
             var inertia = InertiaResult;

@@ -98,6 +98,7 @@ namespace PioneerFramework
             DrawAllObjects(origin, mgr, tick);
 
             renderCamera.Render();
+            RecordStellarPerfFrame();   // P0 探针：仅调试窗打开时记录（关窗零开销）
         }
 
         /// <summary>帧级连续渲染时钟（`TimeScaleManager.GetRenderTick()` 的静态便捷口；无 Game ⇒ 退回物理 tick）。</summary>
@@ -117,13 +118,12 @@ namespace PioneerFramework
             DrawStellarHalos();
         }
 
-        /// <summary>计算本行星系应渲染的天体 ID 集合（恒星 + 飞船所在行星 + 其卫星）。
-        /// 第 12 条：按 shipBodyId 记忆化（每帧调用；天体图开局后不可变 → 键相同即内容相同）。</summary>
+        /// <summary>旧消费者兼容分支的显示集合；实例框架直接使用当前呈现批次，不经过此缓存。</summary>
         private HashSet<int> GetLocalSystemBodyIds(CelestialBodyManager mgr)
         {
             // 2026-10-18 用户报「选中编队时不会显示出其他星体」：
             // 原来只画「恒星 + 焦点所在根行星 + 其卫星」，聚焦到别的天体（恒星/深空/卫星）时其余天体会被过滤掉。
-            // 本 mod 天体图很小（Sun/Earth/Moon），全画成本可忽略；观感上也不会再「选中后世界只剩船」。
+            // 兼容分支保留全画行为，实例框架的动态目录由呈现批次处理。
             int shipBodyId = ResolveFocusBodyId();
             if (shipBodyId < 0) shipBodyId = currentSystemBodyId;
             if (localSystemBodyIdsCacheKey == shipBodyId) return localSystemBodyIdsCache;
@@ -160,25 +160,26 @@ namespace PioneerFramework
 
         private void DrawCelestialBodiesCore(CelestialBodyManager mgr, double tick, DVector3 origin)
         {
-            var relevantIds = GetLocalSystemBodyIds(mgr);
+            var renderBodies = GetCelestialRenderBodies(mgr, tick);
+            var relevantIds = celestialRenderRuntime == null ? GetLocalSystemBodyIds(mgr) : null;
             Vector3 camPos = GetCameraViewPos();
-            var star = mgr.GetStar();
-            DVector3 starPosition = star != null ? mgr.GetBodyPositionAbs(star.bodyId, tick) : DVector3.zero;
             Color sunColor = sunLight != null ? sunLight.color : Color.white;
 
-            foreach (var body in mgr.GetAllBodies())
+            foreach (var body in renderBodies)
             {
-                if (!relevantIds.Contains(body.bodyId)) continue;
+                if (relevantIds != null && !relevantIds.Contains(body.bodyId)) continue;
 
                 bool isStar = body.bodyType == CelestialBodyType.Star;
-                DVector3 wp = mgr.GetBodyPositionAbs(body.bodyId, tick);
+                DVector3 wp = GetCelestialRenderPosition(mgr, body.bodyId, tick);
                 Vector3 vp = AbsToView(wp, origin);
-                Vector3 toSun = PFViewCelestialLighting.Direction(starPosition, wp, viewFrameRot);
+                Vector3 toSun = PFViewCelestialLighting.Direction(GetCelestialRenderLight(mgr, body.bodyId, tick), wp, viewFrameRot);
 
                 // 所有天体共享星历位置、距离缩放、球网格与深度遮挡。
                 float bodyR = (float)(body.radius * MetersToView);
 
                 Color c = CelestialBodyManager.GetBodyColor(body);
+                var configuredColor = GetCelestialRenderVisual(body.bodyId, Celestial.CelestialVisualKind.Surface)?.Profile;
+                if (configuredColor != null) c = new Color((float)configuredColor.Red, (float)configuredColor.Green, (float)configuredColor.Blue, 1f);
 
                 // ⚠ **天体要按自转相位转**（2026-10-10 用户实测："世界视图里 Group 在陆地上方，PFView 一侧却不是"）：
                 //    贴图内容是**天体固连系**的地形，而飞船位置是 **ECI/绝对系**的 ⇒ 画行星必须把贴图转到 ECI 才对齐。
@@ -187,7 +188,7 @@ namespace PioneerFramework
                 // ⚠ 左乘 `viewFrameRot`：固连档下"本船所在天体"变成恒等（地面静止），其余天体保留相对自转 ✓
                 // ⚠⚠ 自检**必须用未换系的那一份**（`bodyRotEci`）——自检比的是"我的自转 vs 权威 tile→ECI"，
                 //    在 ECI 系里比；喂换系后的值会在固连档下报几千 km 的**假红**（2026-10-12 修，别改回去）。
-                Quaternion bodyRotEci = PFViewBodyRotation.FixedToEciRotation(body.bodyId);
+                Quaternion bodyRotEci = GetCelestialRenderRotation(body.bodyId);
                 Quaternion selfRot = viewFrameRot * bodyRotEci;
 
                 // 相机到天体的真实方向与距离
@@ -213,7 +214,7 @@ namespace PioneerFramework
 
                 // 2026-10-18 用户报「右键转动视角时行星闪烁/突然透明」：
                 // 天体中心点可能已在视锥外，但巨大球面仍占满视野（高轨/近表都常见）⇒ 中心点剔除会误杀。
-                // 本 mod 只有 Sun/Earth/Moon 三颗，直接全画、交给 GPU 裁剪；不要再用 SphereInFrustum 剔天体。
+                // 遍历当前呈现集合并交给 GPU 裁剪，避免焦点变化导致已发布天体被过滤。
 
                 // LOD 选择：根据天体在屏幕上的角大小决定网格精度
                 float camDistToRender = Vector3.Distance(renderPos, camPos);
@@ -227,30 +228,40 @@ namespace PioneerFramework
                 // 而地表分格只外扩 0.6% ⇒ 黑壳比两者都靠外，会把贴图球和分格**一起挡住**
                 // （2026-10-10 用户："看不见 tile" —— 实际看到的就是那颗黑壳）。
                 // 描边本来就是"toon shader 缺席时的替身"，贴图球这条路上不该有它。
-                var bodyLayer = GetSurfaceState.GetLayerForBody(mgr, body.bodyId);
+                var bodyLayer = GetCelestialRenderLayer(mgr, body.bodyId);
 
                 // 先看有没有烘焙补丁 —— 它决定**基底球要不要下沉**（见下方注释）。
-                bool hasPatch = TryGetSurfacePatch(body, bodyLayer, out var patchMesh, out var patchMat);
+                bool drawSurface = celestialRenderRuntime == null || GetCelestialRenderVisual(body.bodyId, Celestial.CelestialVisualKind.Surface) != null;
+                Mesh? patchMesh = null;
+                Material? patchMat = null;
+                bool hasPatch = drawSurface && TryGetSurfacePatch(body, bodyLayer, out patchMesh, out patchMat);
 
                 // ⚠ 两层的**高度分工**（2026-10-11 用户实测"低飞朝向地表时烘焙渲染消失"之后定死）：
                 //   · **补丁**只离地一点点（`PatchEpsilon`，地球 1 km）⇒ 低飞的相机永远不会钻到它下面；
                 //   · **基底球**在有补丁时**下沉** `BaseSinkFactor`（地球 40 km）⇒ 深度余量由下沉买（两层间距 ≫ δz），
                 //     而不是把补丁抬高（上一批抬到 30 km，低飞相机于是跑到了补丁底下、朝下只看到基底球 = 那次的病根）。
                 float baseRenderR = hasPatch ? renderR * (1f - PFViewSurfaceBake.BaseSinkFactor) : renderR;
+                if (drawSurface || isStar)
+                {
                 var baseMat = GetBaseSphereMaterial(body, bodyLayer);
                 if (baseMat != null)
                 {
                     ApplySunUniforms(baseMat, toSun, sunColor);
                     float visualRadius = isStar
                         ? PrepareStellarVisual(body, baseMat, renderPos, Mathf.Max(baseRenderR, MinBodyVisRadius), selfRot, lodMesh, tick) : baseRenderR;
+                    // P0 性能探针（2026-10-28）：surface pass 可单独关掉做 A/B；halo 的提交在
+                    // PrepareStellarVisual 内部由 `PFViewStellarProbe.HaloPass` 控制，两者独立 ⇒ 能分辨
+                    // "谁贵"。默认全开 = 现状。
                     // ⚠⚠ 2026-10-11 修：这里的颜色参数**会被写进 MaterialPropertyBlock 覆盖材料的 `_Color`** ——
                     //   原来传 `Color.white` ⇒ 材料上的 `SurfaceReflectance`(0.20) 被抹掉 ⇒ 基底球一直**比补丁亮 5 倍**
                     //   （"反射率不一致"从第一天起就是这个原因；没有贴图时更直接变成"纯白"）。
                     //   ⇒ 传**与材料同值**的灰色，覆盖就等于没覆盖 ✓（补丁那条路没有 PropertyBlock，材料值直接生效）。
-                    DrawCelestialSphere(renderPos, visualRadius, isStar ? Color.black : SurfaceTint, selfRot, lodMesh, baseMat, false, allowToon: false);
+                    if (!isStar || PFViewStellarProbe.SurfacePass)
+                        DrawCelestialSphere(renderPos, visualRadius, isStar ? Color.black : SurfaceTint, selfRot, lodMesh, baseMat, false, allowToon: false);
                 }
                 else
                     DrawCelestialSphere(renderPos, baseRenderR, c, selfRot, lodMesh, renderMat, true);
+                }
 
                 if (hasPatch && patchMat != null)
                 {
@@ -307,7 +318,7 @@ namespace PioneerFramework
         /// ⇒ 差应 ≈ 0；**> 1 km 就是自转相位/换系错了**（正是用户 2026-10-10 报的「PFView 贴图与世界视图角度不一致」的判据）。
         /// 地块取"生成区中间的格子"：本条判据与"取哪一格"无关（两边都是同一个旋转关系），取它能顺便在人眼上对得上。
         /// </summary>
-        private void VerifySurfaceAlignment(CelestialBodyDef body, PlanetLayer? layer, Quaternion selfRot, double tick)
+        private void VerifySurfaceAlignment(CelestialBodyInfo body, PlanetLayer? layer, Quaternion selfRot, double tick)
         {
             if (layer == null || layer.TilesCount <= 0) return;
             long now = (long)tick;
@@ -324,7 +335,9 @@ namespace PioneerFramework
             //   `|mine|` 大了 layer 半径倍 ⇒ 假红「差 494,998 km / 43,454 km」（与 (100−1)×5000 km、(30−1)×1500 km 逐位对上）。
             //   归一化收在 `PFViewBodyRotation.SurfacePointEci`（与权威侧 `TileToFixedPosition` 同口径），判据见该类注释。
             DVector3 mine = PFViewBodyRotation.SurfacePointEci(selfRot, dirFixedRaw, body.radius);   // 我画的（米、绝对系）
-            DVector3 auth = GetSurfaceState.TileToEci(layer, tile, body.radius, omega, tick);   // 权威（米、绝对系）
+            DVector3 auth = mgr?.TryGetCelestialRuntime(out _) == true
+                ? GetSurfaceState.TileToEci(tile, mgr, body.bodyId, tick)
+                : GetSurfaceState.TileToEci(layer, tile, body.radius, omega, tick);
             double errKm = (mine - auth).magnitude / 1000.0;
 
             // 自转相位做成**可读数字**（用户 2026-10-10："没有自转起来" ⇒ 光靠眼睛判不了 21.6°/分钟 的东西）：
@@ -338,7 +351,8 @@ namespace PioneerFramework
             if (grp != null && grp.CelestialBodyId == body.bodyId && mgr != null)
             {
                 DVector3 shipEci = GetGroupPosAbs(grp, tick) - mgr.GetBodyPositionAbs(body.bodyId, tick);
-                int t = GetSurfaceState.EciToTile(shipEci, layer, omega, tick);
+                int t = mgr.TryGetCelestialRuntime(out _) ? GetSurfaceState.EciToTile(shipEci, mgr, body.bodyId, tick)
+                    : GetSurfaceState.EciToTile(shipEci, layer, omega, tick);
                 if (t >= 0)
                 {
                     Vector2 ll = layer.LongLatOf(t);

@@ -52,6 +52,7 @@ namespace PioneerFramework
             Scribe_Values.Look(ref storedMode, "pfviewFocusCameraMode", -1);
             pfviewFocusCameraMode = PFViewGroupCameraCore.MigrateMode(storedMode, legacyThirdPersonOnFocus);
             ExposePilotSettings();
+            ExposeStellarSettings();   // P2 恒星画质档位（默认 VisualFirst = 现状观感）
         }
     }
 
@@ -69,6 +70,7 @@ namespace PioneerFramework
         public PioneerFrameworkLiteMod(ModContentPack content) : base(content)
         {
             Settings = GetSettings<PioneerFrameworkLiteSettings>();
+            Celestial.CelestialFrameworkStartup.Initialize();
         }
 
         public override string SettingsCategory() => "先驱框架Lite";
@@ -102,6 +104,23 @@ namespace PioneerFramework
                 Find.WindowStack.Add(new FloatMenu(options));
             }
             listing.Label("PFV_SettingsFocusModeTip".Translate());
+            listing.Gap(18f);
+            // 2026-10-28：默认恢复旧版恒星视觉；新版渲染只作为玩家自选项保留。
+            listing.Label("PFV_SettingsStellar".Translate());
+            listing.CheckboxLabeled("PFV_SettingsStellarFast".Translate(), ref Settings.useFastStellarRenderer);
+            listing.Label("PFV_SettingsStellarFastTip".Translate());
+            string stellarTier = ("PFV_StellarQuality_" + Settings.stellarQuality).Translate();
+            if (Widgets.ButtonText(listing.GetRect(30f), "PFV_SettingsStellarTier".Translate(stellarTier)))
+            {
+                var options = new System.Collections.Generic.List<FloatMenuOption>();
+                foreach (PFViewStellarQuality value in System.Enum.GetValues<PFViewStellarQuality>())
+                {
+                    PFViewStellarQuality captured = value;
+                    options.Add(new(("PFV_StellarQuality_" + value).Translate(), () => Settings.stellarQuality = captured));
+                }
+                Find.WindowStack.Add(new FloatMenu(options));
+            }
+            listing.Label("PFV_SettingsStellarTip".Translate());
             DrawPilotSettings(listing);
             pilotSettingsHeight = listing.CurHeight + 12f;
             listing.End();

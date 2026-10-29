@@ -10,6 +10,10 @@
 **/bin/
 **/obj/
 
+# Python validator/tool caches
+__pycache__/
+*.py[cod]
+
 # Debug symbols (keep DLL, ignore PDB)
 1.7/Assemblies/*.pdb
 **/*.pdb
@@ -75,3 +79,8 @@ Arena/
 # ── RimSearcher 项目工作区（2026-10-17）：exe 与 defs.db 不入库，仅保留环境文档
 .rimsearcher/*
 !.rimsearcher/README.md
+
+# Independently built celestial sample outputs; the real 1.7 deliverable remains tracked.
+/Examples/CelestialCompSample/Assemblies/
+/Examples/CelestialCompSample/bin/
+/Examples/CelestialCompSample/obj/

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Emit;
@@ -955,7 +955,7 @@ namespace PioneerFramework
             // 现在改走 `OrbitView` 的交点族：`FromGameStateVectors` 会把游戏系 +Y 映射成适配层 +z，
             // 于是 `*Equatorial*` 一族要的正是**相对游戏世界赤道**的交点 —— 与这里的意图一致。
             var celestialMgrDbg = Current.Game?.GetComponent<CelestialBodyManager>();
-            CelestialBodyDef? defDbg = celestialMgrDbg?.GetBodyById(group.CelestialBodyId);
+            CelestialBodyInfo? defDbg = celestialMgrDbg?.GetBodyById(group.CelestialBodyId);
             if (defDbg != null)
             {
                 OrbitView ovDbg = OrbitView.FromGameStateVectors(posMetersD, velMetersD,

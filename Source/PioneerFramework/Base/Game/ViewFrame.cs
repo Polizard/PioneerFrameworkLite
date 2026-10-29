@@ -1,4 +1,5 @@
 using System;                    // Math（ToViewRotation 的相位/半角三角函数）
+using System.Linq;
 using PioneerFramework.Launch;   // GetSurfaceState（layer↔天体、自转角速度的唯一出处）
 using UnityEngine;
 using Verse;                     // Current.Game
@@ -37,6 +38,10 @@ namespace PioneerFramework
     /// </summary>
     internal static class ViewFrame
     {
+        public static Vector3 ToViewUnity(DVector3 systemFrameMeters, Celestial.CelestialViewSnapshot viewedBody)
+            => (Vector3)(viewedBody.SystemPointToFixed(systemFrameMeters) * viewedBody.UnitsPerMeter);
+        public static Quaternion ToViewRotation(Quaternion systemFrameRotation, Celestial.CelestialViewSnapshot viewedBody)
+            => (Quaternion)(DQuaternion.Inverse(viewedBody.Motion.Orientation) * (DQuaternion)systemFrameRotation);
         /// <summary>当前被查看的天体（`PlanetLayer.Selected` → 反查；取不到退回根行星）。</summary>
         public static int ViewedBodyId
         {
@@ -68,6 +73,11 @@ namespace PioneerFramework
         /// </summary>
         public static int RootPlanetId(CelestialBodyManager? mgr)
         {
+            if (mgr?.TryGetCelestialRuntime(out var runtime) == true && runtime.Creation.RootSurfaceId.HasValue)
+            {
+                var root = runtime.Query(runtime.Creation.RootSurfaceId.Value);
+                if (root.Success) return root.Value.Description.Handle;
+            }
             var planets = mgr?.GetPlanets();
             return planets != null && planets.Count > 0 ? planets[0].bodyId : 1;
         }
@@ -99,7 +109,7 @@ namespace PioneerFramework
                 var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
                 var body = mgr?.GetBodyById(ViewedBodyId);
                 if (body == null || body.radius <= 0.0) return (float)SpaceConstants.PlanetRadiusUnity;
-                return (float)(body.radius * SpaceConstants.UnitsPerMeter);
+                return (float)(body.radius * ViewedUnitsPerMeter(mgr!, body.bodyId));
             }
         }
 
@@ -126,6 +136,13 @@ namespace PioneerFramework
         {
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             int viewed = ViewedBodyId;
+            if (mgr?.TryGetCelestialRuntime(out _) == true)
+            {
+                int frame = mgr.GetReferenceFrameId(viewed);
+                var pose = mgr.GetBodyMotion(viewed, tick);
+                var absolute = (DVector3)systemFrameUnity / SpaceConstants.UnitsPerMeter + mgr.GetBodyPositionAbs(frame, tick);
+                return (Vector3)(DVector3.Rotate(absolute - pose.Position, DQuaternion.Inverse(pose.Orientation)) * ViewedUnitsPerMeter(mgr, viewed));
+            }
             Vector3 rel = systemFrameUnity - (Vector3)(BodySystemPosition(viewed, tick) * SpaceConstants.UnitsPerMeter);
 
             double omega = GetSurfaceState.RotationOmega(mgr, viewed);
@@ -151,6 +168,8 @@ namespace PioneerFramework
         {
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             int viewed = ViewedBodyId;
+            if (mgr?.TryGetCelestialRuntime(out _) == true)
+                return (Quaternion)(DQuaternion.Inverse(mgr.GetBodyMotion(viewed, tick).Orientation) * (DQuaternion)systemFrameRotation);
             double omega = GetSurfaceState.RotationOmega(mgr, viewed);
 
             // x̂ 的像给出相位（基向量 ⇒ 与位置那条路同式、且不受天体偏移影响）
@@ -160,6 +179,12 @@ namespace PioneerFramework
             float half = (float)(ang * 0.5);
             var frameRotation = new Quaternion(0f, (float)Math.Sin(half), 0f, (float)Math.Cos(half));
             return frameRotation * systemFrameRotation;
+        }
+        private static double ViewedUnitsPerMeter(CelestialBodyManager manager, int handle)
+        {
+            if (manager.TryGetCelestialRuntime(out var runtime) && runtime.Catalog.TryResolveHandle(handle, out var id))
+                return runtime.Creation.GetProperties(id).OfType<Celestial.SurfaceResolvedProperties>().SingleOrDefault()?.MetersPerLayerUnit is { } meters ? 1 / meters : SpaceConstants.UnitsPerMeter;
+            return SpaceConstants.UnitsPerMeter;
         }
 
         /// <summary>

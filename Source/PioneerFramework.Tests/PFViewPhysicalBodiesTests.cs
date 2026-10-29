@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
+using PioneerFramework.Celestial;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -30,7 +30,12 @@ public class PFViewPhysicalBodiesTests
     public void AllBodiesAreDrawnAtEphemerisPositionsWithTheSharedSpherePipeline()
     {
         var members = Members("DrawCelestialBodiesCore");
-        Assert.Contains(members, m => m.Name == "GetBodyPositionAbs");
+        Assert.Contains(members, m => m.Name == "GetCelestialRenderPosition");
+        var positions = Members("GetCelestialRenderPosition");
+        Assert.Contains(positions, m => m.Name == "get_Motion");
+        Assert.Contains(positions, m => m.Name == "get_Position");
+        Assert.Contains(positions, m => m.Name == "GetBodyPositionAbs");
+        Assert.Contains(Members("GetCelestialRenderBodies"), m => m.DeclaringType == typeof(Celestial.CelestialViewAdapter) && m.Name == "CapturePresentationBatch");
         Assert.Contains(members, m => m.Name == "AbsToView");
         Assert.Contains(members, m => m.Name == "DrawCelestialSphere");
         Assert.DoesNotContain(members, m => m.Name is "DrawSunDisc" or "TryDrawSolarPlasma" or "SunDiscDir");
@@ -176,21 +181,34 @@ public class PFViewPhysicalBodiesTests
     private static MemberInfo[] Members(string name) => PFViewUiIntegrationTests.ReferencedMembers(
         typeof(MainTabWindow_PFView).GetMethod(name, Flags)).ToArray();
 
-    private static (CelestialBodyManager, Dictionary<int, CelestialBodyDef>) SolarSystem()
+    private static (CelestialBodyManager, Dictionary<int, CelestialBodyInfo>) SolarSystem()
     {
         var root = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "Defs", "CelestialBodies", "CelestialBodies_SolarSystem.xml")).Root;
-        var byName = root.Elements().ToDictionary(e => (string)e.Element("defName"), e => new CelestialBodyDef
-        {
-            defName = (string)e.Element("defName"), bodyId = (int)e.Element("bodyId"),
-            bodyType = Enum.Parse<CelestialBodyType>((string)e.Element("bodyType")),
-            radius = (double)e.Element("radius"), gravitationalParameter = (double)e.Element("gravitationalParameter"),
-            orbitRadius = (double?)e.Element("orbitRadius") ?? 0, orbitPeriod = (double?)e.Element("orbitPeriod") ?? 0,
-            initialPhase = (double?)e.Element("initialPhase") ?? 0,
-            orbitNormal = ReadNormal((string)e.Element("orbitNormal")),
-            parentBodyDefName = (string)e.Element("parentBodyDefName")
-        });
+        var system = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "Defs", "CelestialFramework", "CelestialSystems.xml"))
+            .Root.Elements().Single().Element("entries").Elements("li").ToDictionary(entry => (string)entry.Element("key"));
+        string EntryPath(XElement entry) => entry.Element("parentEntry") is { } parent ? EntryPath(system[parent.Value]) + "/" + entry.Element("key").Value + "[0]"
+            : entry.Element("key").Value + "[0]";
+        var entries = system.Values.OrderBy(EntryPath, StringComparer.Ordinal).ToArray();
+        var xmlBodies = root.Elements().ToDictionary(element => element.Element("defName").Value);
+        var byName = entries.Select((entry, index) => {
+            var e = xmlBodies[entry.Element("bodyDef").Value];
+            var comps = e.Element("comps").Elements("li").ToArray();
+            var geometry = comps.Single(comp => comp.Attribute("Class").Value.EndsWith("CompProperties_SphericalBody", StringComparison.Ordinal));
+            var physics = comps.Single(comp => comp.Attribute("Class").Value.EndsWith("CompProperties_ExternalPhysicsBinding", StringComparison.Ordinal));
+            var decoded = ExistingEphemerisParameters.Parse(new(physics.Element("providerId").Value, physics.Element("modeId").Value,
+                (int?)physics.Element("initializationVersion") ?? 1, Convert.FromBase64String(physics.Element("initializationPayload").Value)));
+            Assert.True(decoded.Success);
+            var parameters = decoded.Value;
+            return new CelestialBodyInfo {
+                defName = e.Element("defName").Value, bodyId = index, bodyType = Enum.Parse<CelestialBodyType>(e.Element("category").Value),
+                radius = (double)geometry.Element("radiusMeters").Element("value"),
+                gravitationalParameter = (double)physics.Element("gravitationalParameter").Element("value"),
+                orbitRadius = parameters.OrbitRadius, orbitPeriod = parameters.OrbitPeriod, initialPhase = parameters.InitialPhase,
+                orbitNormal = (Vector3)parameters.OrbitNormal,
+                parentBodyDefName = entry.Element("parentEntry") is { } parent ? system[parent.Value].Element("bodyDef").Value : null };
+        }).ToDictionary(body => body.defName);
         foreach (var body in byName.Values)
-            typeof(CelestialBodyDef).GetProperty(nameof(CelestialBodyDef.ParentBodyId)).SetValue(body,
+            typeof(CelestialBodyInfo).GetProperty(nameof(CelestialBodyInfo.ParentBodyId)).SetValue(body,
                 body.parentBodyDefName != null ? byName[body.parentBodyDefName].bodyId : -1);
         var bodies = byName.Values.ToDictionary(b => b.bodyId);
         var manager = new CelestialBodyManager(null);
@@ -199,10 +217,4 @@ public class PFViewPhysicalBodiesTests
         return (manager, bodies);
     }
 
-    private static Vector3 ReadNormal(string value)
-    {
-        if (value == null) return Vector3.up;
-        var parts = value.Trim('(', ')').Split(',').Select(p => float.Parse(p, CultureInfo.InvariantCulture)).ToArray();
-        return new Vector3(parts[0], parts[1], parts[2]);
-    }
 }

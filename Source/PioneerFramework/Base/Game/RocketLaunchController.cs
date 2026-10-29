@@ -259,7 +259,7 @@ namespace PioneerFramework
 
         /// <summary>
         /// 本步"气动不可忽略"判定（[A6+]，2026-10-06）：**同一处**给闩锁恢复与顺气流指向用
-        /// （判据 = `CelestialBodyDef.atmosphereRestoreScaleHeights`，默认 9.5 个标尺高度 ⇒ 地球 76 km）。
+        /// （判据 = `CelestialBodyInfo.atmosphereRestoreScaleHeights`，默认 9.5 个标尺高度 ⇒ 地球 76 km）。
         /// </summary>
         private static bool IsInSignificantAir(SpaceEntityGroup group, RocketLaunchState st)
         {

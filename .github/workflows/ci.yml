@@ -73,6 +73,9 @@ jobs:
       - name: Validate XML / DefOf / localization
         run: python tools/validate_config.py
 
+      - name: Run Python tool regression tests
+        run: python -m unittest discover -s tools/tests -v
+
       # 2026-10-13 (tree split): the frozen 1.6 package is guarded by a HASH-PINNED script
       # (tools/check-frozen-1.6.ps1) instead of an asset-presence list; the 1.7 deliverable is
       # covered by "Verify committed DLL consistency" above (now pointing at 1.7/Assemblies).

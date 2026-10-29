@@ -146,7 +146,7 @@ namespace PioneerFramework.Tests
         {
             using var context=new Context();
             var bodies=new CelestialBodyManager(Current.Game);
-            AccessTools.Field(typeof(CelestialBodyManager),"bodiesById").SetValue(bodies,new Dictionary<int,CelestialBodyDef>{{1,new(){radius=6000000}}});
+            AccessTools.Field(typeof(CelestialBodyManager),"bodiesById").SetValue(bodies,new Dictionary<int,CelestialBodyInfo>{{1,new(){radius=6000000}}});
             AccessTools.Field(typeof(CelestialBodyManager),"initialized").SetValue(bodies,true);Current.Game.components.Add(bodies);
             var request=new CreateStructureRequest{OperationId="variant",InstanceId="custom-ring",DefinitionId="ExtensionRing",OwnerFactionId=7,SpatialOverrides={["facility"]=new(){Mode=SpatialMode.BodyAnchored,BodyId=1},["extra"]=new(){Mode=SpatialMode.FrameFixed,FrameId=2}}};
             var result=new PioneerFramework.RingWorld.RingBackendProvider().CreateDefault(request,out var configured);

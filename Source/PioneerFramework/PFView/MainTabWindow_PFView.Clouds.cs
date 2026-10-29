@@ -1,5 +1,7 @@
 using UnityEngine;
 using Verse;
+using System.Collections.Generic;
+using PioneerFramework.Celestial;
 
 namespace PioneerFramework
 {
@@ -8,6 +10,7 @@ namespace PioneerFramework
         private Material? cloudMaterial;
         private bool cloudResourcesUnavailable;
         private static Mesh? cloudSphereMesh;
+        private readonly Dictionary<CelestialViewCacheKey, Material> celestialCloudMaterials = new();
 
         private static Mesh GetCloudSphereMesh()
         {
@@ -24,13 +27,16 @@ namespace PioneerFramework
         /// 地球独立云层（2026-10-19）：复用原版云图/噪声/晨昏渐变，跟随地表姿态与远景等比挪位。
         /// 相机低于 10 km 时隐藏；材质只覆盖云，现有大气边缘和低空天空照旧承担大气表现。
         /// </summary>
-        private void DrawCloudLayer(CelestialBodyDef body, Vector3 renderPos, float renderR,
+        private void DrawCloudLayer(CelestialBodyInfo body, Vector3 renderPos, float renderR,
             Quaternion selfRot, double tick, double cameraAltitudeMeters, Vector3 toSun)
         {
-            if (body.defName != "Earth" || body.atmosphereThickness <= 0.0 || renderCamera == null) return;
-            float opacity = (float)PFViewClouds.Opacity(cameraAltitudeMeters);
+            var visual = celestialRenderRuntime != null ? GetCelestialRenderVisual(body.bodyId, CelestialVisualKind.Clouds) : null;
+            if (renderCamera == null || (celestialRenderRuntime != null ? visual == null : body.defName != "Earth" || body.atmosphereThickness <= 0.0)) return;
+            var profile = visual?.Profile;
+            double altitude = profile?.ShellHeightMeters ?? PFViewClouds.AltitudeMeters;
+            float opacity = (float)PFViewClouds.Opacity(cameraAltitudeMeters, altitude, profile?.FadeRangeMeters ?? PFViewClouds.FadeRangeMeters);
             if (opacity <= 0.001f) return;
-            Material? mat = GetCloudMaterial();
+            Material? mat = profile == null ? GetCloudMaterial() : GetCelestialCloudMaterial(celestialRenderSnapshots[body.bodyId].CacheKey, profile);
             if (mat == null) return;
 
             Vector3 localSun = Quaternion.Inverse(selfRot) * toSun;
@@ -39,10 +45,10 @@ namespace PioneerFramework
             mat.SetVector("_CloudSunLocal", new Vector4(localSun.x, localSun.y, localSun.z, 0f));
             mat.SetVector("_CloudCameraFromBody", new Vector4(cameraFromBody.x, cameraFromBody.y, cameraFromBody.z, 0f));
             mat.SetVector("_CloudParams", new Vector4(opacity,
-                (float)PFViewClouds.AnimationPhase(tick, PFViewClouds.DriftPeriodTicks),
-                (float)PFViewClouds.AnimationPhase(tick, PFViewClouds.DistortionPeriodTicks), 0f));
+                (float)PFViewClouds.AnimationPhase(tick, profile?.DriftPeriodTicks ?? PFViewClouds.DriftPeriodTicks),
+                (float)PFViewClouds.AnimationPhase(tick, profile?.DistortionPeriodTicks ?? PFViewClouds.DistortionPeriodTicks), 0f));
 
-            float radius = renderR * (float)PFViewClouds.RadiusFactor(body.radius);
+            float radius = renderR * (float)PFViewClouds.RadiusFactor(body.radius, altitude);
             // 低空看向云层时，仅按地表余量算 near 会切掉云壳近侧；取实际渲染尺度的云壳余量。
             float shellGapView = cameraFromBody.magnitude - radius;
             renderCamera.nearClipPlane = (float)PFViewClouds.LimitNearClip(renderCamera.nearClipPlane, shellGapView, NearClip);
@@ -73,9 +79,23 @@ namespace PioneerFramework
             Log.Message($"[PFView·云层] shader={shader.name} · 地球云高 10 km · 10–15 km 相机高度淡出 · 原版云图/噪声/晨昏渐变");
             return cloudMaterial;
         }
+        private Material? GetCelestialCloudMaterial(CelestialViewCacheKey key, CelestialVisualProfile profile)
+        {
+            if (celestialCloudMaterials.TryGetValue(key, out var material)) return material;
+            var template = GetCloudMaterial();
+            if (template == null) return null;
+            var texture = profile.TexturePath == null ? null : ContentFinder<Texture2D>.Get(profile.TexturePath, false);
+            if (profile.TexturePath != null && texture == null) return null;
+            material = new Material(template);
+            if (texture != null) material.SetTexture("_CloudTex", texture);
+            celestialCloudMaterials.Add(key, material);
+            return material;
+        }
 
         private void DestroyCloudResources()
         {
+            foreach (var material in celestialCloudMaterials.Values) UnityEngine.Object.Destroy(material);
+            celestialCloudMaterials.Clear();
             if (cloudMaterial != null) UnityEngine.Object.Destroy(cloudMaterial);
             cloudMaterial = null;
             cloudResourcesUnavailable = false;

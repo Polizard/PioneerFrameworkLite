@@ -146,6 +146,7 @@ $absFrameAllowed = @(
     "MainTabWindow_PFView.Render.cs", # PFView renderer (2026-10-02 V-0: split into partials -- same
     "MainTabWindow_PFView.Scene.cs",  #   display-only decision, same call sites, new file names)
     "MainTabWindow_PFView.GUI.cs",    #   (ibid)
+    "MainTabWindow_PFView.CelestialFramework.cs", # instance renderer partial; legacy absolute fallback is display-only
     "MainTabWindow_PFView.Atmosphere.cs", # PFView renderer partial (2026-10-10 大气表现：相机高度 = |abs 差| -- 同一条
                                           #   display-only 决定：只喂天空 α / 壳位置，不进物理、不进制导)
     "MainTabWindow_PFView.Sun.cs",    # PFView renderer partial (2026-10-11 sun disc + star shell): the

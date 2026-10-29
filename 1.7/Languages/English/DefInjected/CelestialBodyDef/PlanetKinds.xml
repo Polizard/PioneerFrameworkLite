@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_BarrenPlanet.label>barren planet</PF_BarrenPlanet.label>
+  <PF_BarrenPlanet.description>A barren body of rock, rubble and regolith, suitable for Mercury-, Mars- and Moon-like surfaces. This preset uses vacuum; atmospheric variants must override both atmosphere and surface environment.</PF_BarrenPlanet.description>
+  <PF_TemperatePlanet.label>temperate planet</PF_TemperatePlanet.label>
+  <PF_TemperatePlanet.description>A rocky body with a relatively mild climate, using native surface generation for oceans, forests, grasslands, deserts and polar regions.</PF_TemperatePlanet.description>
+  <PF_GreenhousePlanet.label>greenhouse planet</PF_GreenhousePlanet.label>
+  <PF_GreenhousePlanet.description>A scorching rocky body beneath a dense atmosphere, suitable for Venus-like environments. Provides hot terrain, atmospheric drag and dense clouds; pressure damage and gas toxicity require additional components.</PF_GreenhousePlanet.description>
+  <PF_FrozenPlanet.label>frozen planet</PF_FrozenPlanet.label>
+  <PF_FrozenPlanet.description>A cold body of icy plains and rocky outcrops, suitable for icy moons and icy outer-system bodies. This preset uses a vacuum surface; subsurface oceans require extension capabilities.</PF_FrozenPlanet.description>
+  <PF_GasGiant.label>gas giant</PF_GasGiant.label>
+  <PF_GasGiant.description>A body with a massive gaseous envelope, suitable for Jupiter- and Saturn-like planets. Provides gravity, atmosphere and cloud appearance, with no conventional landing, surface layer or colony maps.</PF_GasGiant.description>
+  <PF_IceGiant.label>ice giant</PF_IceGiant.label>
+  <PF_IceGiant.description>A giant rich in volatiles such as water, ammonia and methane, suitable for Uranus- and Neptune-like bodies. The name describes composition and does not imply a landable ice surface.</PF_IceGiant.description>
+</LanguageData>

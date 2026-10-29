@@ -78,8 +78,7 @@ namespace PioneerFramework.Landing
                     LatitudeRad = latitudeRad, LongitudeRad = longitudeRad });
                 var bodies = Current.Game.GetComponent<CelestialBodyManager>();
                 var layer = Launch.GetSurfaceState.GetLayerForBody(bodies, task.TargetBodyId);
-                int tileId = layer == null ? -1 : Launch.GetSurfaceState.EciToTile(positionBody, layer,
-                    Launch.GetSurfaceState.RotationOmega(bodies, task.TargetBodyId), physicsTick);
+                int tileId = layer == null ? -1 : Launch.GetSurfaceState.EciToTile(positionBody, bodies, task.TargetBodyId, physicsTick);
                 if (tileId >= 0) task.TargetTile = new PlanetTile(tileId, layer!);
                 var report = CheckSupported(sg, task);
                 if (!report.Success) { LandingTransitService.Fail(task, report, LandingTransitStatus.AwaitingMapRequest, true); }

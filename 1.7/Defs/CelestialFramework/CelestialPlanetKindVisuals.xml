@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_BarrenSurfaceVisual</defName>
+    <label>荒芜地表表现</label>
+    <color>(0.48, 0.42, 0.35, 1)</color>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_FrozenSurfaceVisual</defName>
+    <label>冰封地表表现</label>
+    <color>(0.76, 0.84, 0.9, 1)</color>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_GreenhouseSurfaceVisual</defName>
+    <label>温室地表表现</label>
+    <color>(0.55, 0.36, 0.19, 1)</color>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_GreenhouseAtmosphereVisual</defName>
+    <label>温室大气表现</label>
+    <color>(0.85, 0.63, 0.28, 1)</color>
+    <shellHeightMeters>80000</shellHeightMeters>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_GreenhouseCloudsVisual</defName>
+    <label>温室云层表现</label>
+    <color>(0.9, 0.8, 0.57, 1)</color>
+    <shellHeightMeters>50000</shellHeightMeters>
+    <texturePath>World/CloudMap</texturePath>
+    <fadeRangeMeters>5000</fadeRangeMeters>
+    <driftPeriodTicks>600000</driftPeriodTicks>
+    <distortionPeriodTicks>6000</distortionPeriodTicks>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_GasGiantSurfaceVisual</defName>
+    <label>气态巨行星球体表现</label>
+    <color>(0.72, 0.55, 0.36, 1)</color>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_GasGiantAtmosphereVisual</defName>
+    <label>气态巨行星大气表现</label>
+    <color>(0.78, 0.64, 0.44, 1)</color>
+    <shellHeightMeters>300000</shellHeightMeters>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_GasGiantCloudsVisual</defName>
+    <label>气态巨行星云层表现</label>
+    <color>(0.9, 0.8, 0.65, 1)</color>
+    <shellHeightMeters>100000</shellHeightMeters>
+    <texturePath>World/CloudMap</texturePath>
+    <fadeRangeMeters>5000</fadeRangeMeters>
+    <driftPeriodTicks>600000</driftPeriodTicks>
+    <distortionPeriodTicks>6000</distortionPeriodTicks>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_IceGiantSurfaceVisual</defName>
+    <label>冰巨行星球体表现</label>
+    <color>(0.24, 0.52, 0.72, 1)</color>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_IceGiantAtmosphereVisual</defName>
+    <label>冰巨行星大气表现</label>
+    <color>(0.3, 0.66, 0.85, 1)</color>
+    <shellHeightMeters>200000</shellHeightMeters>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_IceGiantCloudsVisual</defName>
+    <label>冰巨行星云层表现</label>
+    <color>(0.67, 0.84, 0.92, 1)</color>
+    <shellHeightMeters>80000</shellHeightMeters>
+    <texturePath>World/CloudMap</texturePath>
+    <fadeRangeMeters>5000</fadeRangeMeters>
+    <driftPeriodTicks>600000</driftPeriodTicks>
+    <distortionPeriodTicks>6000</distortionPeriodTicks>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+</Defs>

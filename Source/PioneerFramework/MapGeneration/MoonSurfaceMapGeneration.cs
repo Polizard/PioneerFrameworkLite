@@ -16,30 +16,25 @@ namespace PioneerFramework
 
         static MoonSurfaceMapGeneration()
         {
-            var generateContentsIntoMap = AccessTools.Method(
-                typeof(MapGenerator),
-                "GenerateContentsIntoMap",
-                [typeof(IEnumerable<GenStepWithParams>),
-                    typeof(Map),
-                    typeof(int),
-                    typeof(bool)]);
-            if (generateContentsIntoMap == null)
-            {
-                Log.Error("[PioneerFramework] Could not patch MapGenerator.GenerateContentsIntoMap for Moon maps.");
-                return;
-            }
+            var generateContentsIntoMap = Celestial.CelestialNativeCompatibility.RequireMethod("MapGenerator.GenerateContentsIntoMap");
 
             new Harmony("PioneerFramework.MoonSurfaceMapGeneration").Patch(
                 generateContentsIntoMap,
                 prefix: new HarmonyMethod(
                     typeof(MoonSurfaceMapGeneration),
                     nameof(GenerateContentsIntoMap_Prefix)));
+            Celestial.CelestialNativeCompatibility.RequireInstalledHooks("MapGenerator.GenerateContentsIntoMap.prefix.GenerateContentsIntoMap_Prefix");
         }
 
         internal static void GenerateContentsIntoMap_Prefix(
             ref IEnumerable<GenStepWithParams> genStepDefs,
             Map map)
         {
+            if (Celestial.CelestialMapGeneration.TryGetProfile(map, out var profile))
+            {
+                if (genStepDefs != null) genStepDefs = genStepDefs.Where(step => !Celestial.CelestialMapGeneration.ShouldSkip(profile, map.Biome.defName, step.def)).ToList();
+                return;
+            }
             string? biomeDefName = map?.Biome?.defName;
             if (genStepDefs == null ||
                 !IsMoonSurfaceBiomeDefName(biomeDefName))
@@ -144,6 +139,11 @@ namespace PioneerFramework
 
         public override void Generate(Map map, GenStepParams parms)
         {
+            if (Celestial.CelestialMapGeneration.TryGetProfile(map, out var profile))
+            {
+                Celestial.CelestialMapGeneration.ReplaceTerrain(map, profile);
+                return;
+            }
             string? biomeDefName = map?.Biome?.defName;
             if (!MoonSurfaceMapGeneration.IsMoonSurfaceBiomeDefName(
                 biomeDefName))

@@ -145,7 +145,9 @@ void main()
         float cells = granulation(photoQ * 49.0 + photoWarp * 1.9 + drift * 1.1);
         float surfaceHeat = .59 + .48 * cells + .09 * noise(photoQ * 130.0 + photoWarp * 2.0);
         // Both passes use identical steps, so the opacity partition cannot leave a seam.
-        float budget = clamp(uMaterial._StellarParams.x, 32.0, 64.0);
+        // 2026-10-28: this is the LEGACY (default) path = the visual users approved before P2.
+        // The P0 clamp lower bound is 4 so the debug probe can still A/B step budgets; default is 64.
+        float budget = clamp(uMaterial._StellarParams.x, 4.0, 64.0);
         float stepSize = max(impact < 1.10 ? .019 : .041, (end - start) / budget);
         float t = start + stepSize * .5;
         for (int i = 0; i < 64; ++i)

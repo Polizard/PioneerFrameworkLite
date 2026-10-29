@@ -19,7 +19,7 @@ namespace PioneerFramework
     /// 手动操舵输入状态（由 Window_Steering 写入，SpaceGameComp 每物理步读取应用）。
     /// 单例语义：同一时刻只能操舵一艘船（打开新操舵台窗口即切换目标）。
     /// </summary>
-    public static class SteeringController
+    public static partial class SteeringController
     {
         /// <summary>当前被操舵的 group；-1 = 未开启。</summary>
         public static int GroupId = -1;
@@ -120,85 +120,21 @@ namespace PioneerFramework
             }
         }
 
+        private static SteeringStepMath CurrentStepMath => new(KeyForward, KeyBack, KeyLeft, KeyRight, KeyUp, KeyDown,
+            KeyRollL, KeyRollR, KeyYawL, KeyYawR, KeyPitchU, KeyPitchD, PrecisionHeld, AssistedStop, InvertPitch, PrecisionScale);
+
         /// <summary>平移键合成世界方向（多键叠加）。</summary>
-        public static DVector3 GetTranslationWorldDir(SpaceEntityGroup g)
-        {
-            DVector3 dir = DVector3.zero;
-            if (KeyForward) dir += g.GetThrustAxisSystem(ThrustAxis.Forward);
-            if (KeyBack) dir += g.GetThrustAxisSystem(ThrustAxis.Back);
-            if (KeyLeft) dir += g.GetThrustAxisSystem(ThrustAxis.Left);
-            if (KeyRight) dir += g.GetThrustAxisSystem(ThrustAxis.Right);
-            if (KeyUp) dir += g.GetThrustAxisSystem(ThrustAxis.Up);
-            if (KeyDown) dir += g.GetThrustAxisSystem(ThrustAxis.Down);
-            return dir;
-        }
+        public static DVector3 GetTranslationWorldDir(SpaceEntityGroup g) => CurrentStepMath.GetTranslationWorldDir(g);
 
-        /// <summary>
-        /// 旋转键 → 世界系角速度（船体局部轴经 rotation 旋转）。
-        /// 船头 +Z、船上 +Y：抬头为 -X，左偏航为 -Y，左滚转为 +Z。
-        /// </summary>
-        public static DVector3 GetRotationWorldAngularVelocity(SpaceEntityGroup g)
-        {
-            double pitch = (KeyPitchU ? 1 : 0) - (KeyPitchD ? 1 : 0);
-            if (InvertPitch) pitch = -pitch;
-            double yaw = (KeyYawL ? 1 : 0) - (KeyYawR ? 1 : 0);
-            double roll = (KeyRollL ? 1 : 0) - (KeyRollR ? 1 : 0);
-
-            // 方向/符号沿用远端 SteeringMath；每轴再乘各自的 I 加权限速（批 1）。
-            var unit = SteeringMath.AngularCommand(pitch, yaw, roll, 1.0, 1.0);
-            var local = new DVector3(
-                unit.x * g.MaxAngularRateAboutBodyAxis(1, 0, 0),
-                unit.y * g.MaxAngularRateAboutBodyAxis(0, 1, 0),
-                unit.z * g.MaxAngularRateAboutBodyAxis(0, 0, 1));
-            if (PrecisionHeld) local = local * PrecisionScale;
-            return DVector3.Rotate(local, g.CurrentOrbit.rotation);
-        }
+        /// <summary>旋转键转为世界系角速度；逐轴惯量限速和运算次序由共享值输入运算保持。</summary>
+        public static DVector3 GetRotationWorldAngularVelocity(SpaceEntityGroup g) => CurrentStepMath.GetRotationWorldAngularVelocity(g);
 
         internal static void ApplyManualRotation(SpaceEntityGroup group, double dtSeconds)
-        {
-            if (AnyRotation)
-            {
-                if (SasKind != SasTargetKind.None) TakeoverNotice = true;
-                SasKind = SasTargetKind.None;
-                manualTurnStarted = true;
-                group.angularVelocity = GetRotationWorldAngularVelocity(group);
-            }
-            else if (SasKind == SasTargetKind.None && manualTurnStarted)
-                group.angularVelocity = SteeringMath.ReleaseSpin(group.angularVelocity, AssistedStop, dtSeconds);
-        }
+            => CurrentStepMath.ApplyManualRotation(group, dtSeconds, ref SasKind, ref TakeoverNotice, ref manualTurnStarted);
 
-        internal static void ScaleManualThrust(ref float force, ref float massFlow)
-        {
-            float scale = PrecisionHeld ? PrecisionScale : 1f;
-            force *= scale;
-            massFlow *= scale;
-        }
+        internal static void ScaleManualThrust(ref float force, ref float massFlow) => CurrentStepMath.ScaleManualThrust(ref force, ref massFlow);
 
         /// <summary>SAS 目标世界方向（主推进轴对准目标；None 返回零）。</summary>
-        public static DVector3 GetSasTarget(SpaceEntityGroup g)
-        {
-            switch (SasKind)
-            {
-                case SasTargetKind.Prograde:
-                    return g.CurrentOrbit.velocitySystem.normalized.v;   // 批6 S3-3c：读带系字段（旧名是过渡桥）
-                case SasTargetKind.Retrograde:
-                    return (-g.CurrentOrbit.velocitySystem.normalized).v;
-                case SasTargetKind.Normal:
-                case SasTargetKind.Antinormal:
-                {
-                    DVector3 radial = g.positionBody.normalized;
-                    DVector3 h = DVector3.Cross(radial, g.velocityBody).normalized;
-                    if (h.sqrMagnitude < 1e-9)
-                        h = DVector3.up;
-                    return SasKind == SasTargetKind.Normal ? h : -h;
-                }
-                case SasTargetKind.RadialOut:
-                    return g.positionBody.normalized;
-                case SasTargetKind.RadialIn:
-                    return -g.positionBody.normalized;
-                default:
-                    return DVector3.zero;
-            }
-        }
+        public static DVector3 GetSasTarget(SpaceEntityGroup g) => CurrentStepMath.GetSasTarget(g, SasKind);
     }
 }

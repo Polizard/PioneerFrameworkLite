@@ -13,6 +13,11 @@ namespace PioneerFramework.Megastructures
             int frame=mgr!.GetReferenceFrameId(id);
             var position=ViewFrame.BodySystemPosition(id,tick);
             var velocity=id==frame?DVector3.zero:mgr.GetBodyVelocityAbs(id,tick)-mgr.GetBodyVelocityAbs(frame,tick);
+            if(mgr.TryGetCelestialRuntime(out _))
+            {
+                var motion=mgr.GetBodyMotion(id,tick);var q=motion.Orientation;
+                state=new(frame,position,velocity,new(q.x,q.y,q.z,q.w),motion.AngularVelocity,tick);return true;
+            }
             double omega=Launch.GetSurfaceState.RotationOmega(mgr,id);
             state=new(frame,position,velocity,RotationData.AxisAngle(new DVector3(0,1,0),-omega*tick),new DVector3(0,-omega,0),tick);return true;
         }

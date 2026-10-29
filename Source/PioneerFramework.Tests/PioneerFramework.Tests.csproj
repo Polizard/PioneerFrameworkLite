@@ -19,6 +19,7 @@
     <ProjectReference Include="..\PioneerFramework\PioneerFramework.csproj" />
     <ProjectReference Include="..\..\Examples\MegastructureExtensionSample\MegastructureExtensionSample.csproj" />
     <ProjectReference Include="..\..\Examples\ArtificialSurfaceSample\ArtificialSurfaceSample.csproj" />
+    <ProjectReference Include="..\..\Examples\CelestialCompSample\CelestialCompSample.csproj" />
   </ItemGroup>
 
   <Import Project="..\GameReferences.props" />
@@ -29,12 +30,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\..\Examples\CelestialCompSample\Defs\*.xml" Link="CelestialCompSample\Defs\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\Examples\CelestialCompSample\Patches\*.xml" Link="CelestialCompSample\Patches\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\Shaders\*.shader" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Shaders\PF_PlanetClouds.*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Shaders\PF_Stellar*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.StellarVisuals.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.StellarVisuals.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\PFViewStellarVisualCore.cs" Link="Source\PioneerFramework\PFView\PFViewStellarVisualCore.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Clouds.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Clouds.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.CelestialFramework.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.CelestialFramework.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Starfield.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Starfield.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\PFViewQuadGeometry.cs" Link="Source\PioneerFramework\PFView\PFViewQuadGeometry.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\PFViewCelestialLighting.cs" Link="Source\PioneerFramework\PFView\PFViewCelestialLighting.cs" CopyToOutputDirectory="PreserveNewest" />
@@ -107,5 +111,11 @@
     <None Include="..\PioneerFramework\Base\Core\PioneerFrameworkLiteMod.cs" Link="Source\PioneerFramework\Base\Core\PioneerFrameworkLiteMod.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\PFViewUiDragState.cs" Link="Source\PioneerFramework\PFView\PFViewUiDragState.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\Base\Buildings\Window_Steering.cs" Link="Source\PioneerFramework\Base\Buildings\Window_Steering.cs" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\TestSupport\Celestial\**\*.cs" Link="TestSupport\Celestial\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Fixtures\Celestial\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

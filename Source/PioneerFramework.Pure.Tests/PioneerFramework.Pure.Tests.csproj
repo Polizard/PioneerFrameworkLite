@@ -34,6 +34,8 @@
 
   <ItemGroup>
     <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Pure\DVector3.cs" />
+    <Compile Include="..\PioneerFramework\Celestial\API\**\*.cs" Link="Celestial\API\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\PioneerFramework\Celestial\Core\**\*.cs" Link="Celestial\Core\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\PioneerFramework\Base\Game\PhysicsTimeLine.cs" Link="Pure\PhysicsTimeLine.cs" />
     <Compile Include="..\PioneerFramework\Combat\Shots\ShotMath.cs" Link="Pure\ShotMath.cs" />
     <!-- 批 0（2026-10-17）：**惯量张量**（形状预设 / 合成 / 主轴 / 分类器）。纯数学（只 System）⇒ 链进来钉解析样本。 -->
@@ -137,5 +139,8 @@
     <Compile Include="..\PioneerFramework\PFView\PFViewUiDragState.cs" Link="Pure\PFViewUiDragState.cs" />
     <Compile Include="..\PioneerFramework\PFView\PFViewGroupCameraCore.cs" Link="Pure\PFViewGroupCameraCore.cs" />
     <Compile Include="..\PioneerFramework\PFView\PFViewClouds.cs" Link="Pure\PFViewClouds.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\TestSupport\Celestial\**\*.cs" Link="TestSupport\Celestial\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

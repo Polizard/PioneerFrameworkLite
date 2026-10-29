@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>PFL.CelestialCompSample</AssemblyName>
+    <RootNamespace>PFL.CelestialCompSample</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <OutputPath>bin/Debug/</OutputPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <OutputPath>Assemblies/</OutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Source/PioneerFramework/PioneerFramework.csproj" Private="false"
+                      AdditionalProperties="OutputPath=$(MSBuildThisFileDirectory)..\..\Source\PioneerFramework\bin\CelestialCompSample\$(Configuration)\" />
+  </ItemGroup>
+  <Import Project="../../Source/GameReferences.props" />
+</Project>

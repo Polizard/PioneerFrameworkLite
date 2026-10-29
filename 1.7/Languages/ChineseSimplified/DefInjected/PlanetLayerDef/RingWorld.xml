@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_RingWorld.label>环世界</PF_RingWorld.label>
+  <PF_RingWorld.description>围绕行星的人工居住环带，拥有周向连通的地块和独立殖民地。</PF_RingWorld.description>
+  <PF_RingWorld.viewGizmoTooltip>查看环世界。</PF_RingWorld.viewGizmoTooltip>
+  <PF_RingWorld.gerundLabel>在环世界</PF_RingWorld.gerundLabel>
+</LanguageData>

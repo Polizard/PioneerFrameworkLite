@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+  <name>PFL Celestial Comp Sample</name><author>PFL sample</author>
+  <packageId>NewFrontierTeam.PFL.CelestialCompSample</packageId>
+  <supportedVersions><li>1.7</li></supportedVersions>
+  <description>独立行星组件示例：固定/范围 XML、按实例计数和版本化状态恢复。</description>
+  <modDependencies><li><packageId>NewFrontierTeam.PioneerFrameworkLite</packageId><displayName>PioneerFrameworkLite</displayName></li></modDependencies>
+  <loadAfter><li>NewFrontierTeam.PioneerFrameworkLite</li></loadAfter>
+</ModMetaData>

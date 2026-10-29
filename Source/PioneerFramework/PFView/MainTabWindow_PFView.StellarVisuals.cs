@@ -9,42 +9,73 @@ namespace PioneerFramework
         private Shader? stellarSurfaceShader;
         private Shader? stellarHaloShader;
         private bool stellarShadersChecked;
+        private bool stellarShadersAreFast;
         private readonly Dictionary<int, Material> stellarHaloMaterials = new();
         private readonly List<(Mesh Mesh, Matrix4x4 Matrix, Material Material)> stellarHaloDraws = new();
 
-        private Material CreateStellarSurfaceMaterial(CelestialBodyDef body)
+        /// <summary>
+        /// 选取本窗口使用的恒星 shader：**默认 legacy（旧视觉）**；只有玩家在 Mod 设置勾选
+        /// "使用新版恒星渲染" 时才用 Fast 版。Fast 版缺失时自动回退 legacy（不让恒星变普通材质）。
+        /// 设置切换在重开 PFView 后生效（材质按 body 缓存，见 CleanupResources）。
+        /// </summary>
+        private void EnsureStellarShaders()
         {
-            if (!stellarShadersChecked)
+            if (stellarShadersChecked) return;
+            stellarShadersChecked = true;
+            stellarShadersAreFast = PFViewStellarProbe.FastRendererEnabled;
+            if (stellarShadersAreFast)
             {
-                stellarShadersChecked = true;
+                stellarSurfaceShader = Shader.Find("PF_StellarSurfaceFast");
+                stellarHaloShader = Shader.Find("PF_StellarHaloFast");
+                if (stellarSurfaceShader == null || stellarHaloShader == null)
+                {
+                    Log.Warning("[PFView·恒星材质] 新版恒星 shader 未加载，回退旧版视觉。");
+                    stellarShadersAreFast = false;
+                }
+            }
+            if (!stellarShadersAreFast)
+            {
                 stellarSurfaceShader = Shader.Find("PF_StellarSurface");
                 stellarHaloShader = Shader.Find("PF_StellarHalo");
-                if (stellarSurfaceShader == null || stellarHaloShader == null)
-                    Log.Warning("[PFView·恒星材质] 等离子体着色器未加载，本次窗口使用普通自发光材质。");
             }
+            if (stellarSurfaceShader == null || stellarHaloShader == null)
+                Log.Warning("[PFView·恒星材质] 等离子体着色器未加载，本次窗口使用普通自发光材质。");
+            else
+                Log.Message($"[PFView·恒星材质] 使用{(stellarShadersAreFast ? "新版（性能优先）" : "旧版（默认视觉）")}恒星渲染。");
+        }
+
+        private Material CreateStellarSurfaceMaterial(CelestialBodyInfo body)
+        {
+            EnsureStellarShaders();
             if (stellarSurfaceShader != null && stellarHaloShader != null)
                 return new Material(stellarSurfaceShader) { name = "PF_StellarSurface_" + body.bodyId,
                     renderQueue = PFViewLayers.PlanetAndShips };
 
             var fallback = new Material(renderMat) { mainTexture = Texture2D.whiteTexture,
                 renderQueue = PFViewLayers.PlanetAndShips };
-            fallback.SetColor("_Emission", CelestialBodyManager.GetBodyColor(body));
+            fallback.SetColor("_Emission", body.baseSphereColor.a > 0 ? body.baseSphereColor : CelestialBodyManager.GetBodyColor(body));
             return fallback;
         }
 
         /// <summary>只更新材质并返回视觉包围球半径；中心、姿态和真实半径均来自普通天体流程。</summary>
-        private float PrepareStellarVisual(CelestialBodyDef body, Material surface, Vector3 center, float radius,
+        private float PrepareStellarVisual(CelestialBodyInfo body, Material surface, Vector3 center, float radius,
             Quaternion rotation, Mesh mesh, double tick)
         {
             if (stellarSurfaceShader == null || stellarHaloShader == null || surface.shader != stellarSurfaceShader)
                 return radius;
 
+            int steps = PFViewStellarProbe.ResolveStepBudget();
             Vector3 eye = PFViewStellarVisualCore.Eye(GetCameraViewPos(), center, rotation, radius);
             Vector4 eyeValue = new(eye.x, eye.y, eye.z, 0f);
             var frame = PFViewStellarVisualCore.Frame(tick);
             surface.SetVector("_StellarEye", eyeValue);
             ApplyStellarFrame(surface, in frame);
-            surface.SetVector("_StellarParams", new Vector4(PFViewStellarVisualCore.SurfaceSteps, 0f, .19f, PFViewStellarVisualCore.Extent));
+            surface.SetVector("_StellarParams", new Vector4(steps, 0f, .19f, PFViewStellarVisualCore.Extent));
+
+            float proxyRadius = radius * PFViewStellarVisualCore.Extent;
+            // P0 探针：halo pass 可单独关掉做 A/B（surface pass 的绘制在 Scene.cs 侧由
+            // `PFViewStellarProbe.SurfacePass` 控制，两者独立）。默认开 = 现状。
+            if (!PFViewStellarProbe.HaloPass) return proxyRadius;
 
             if (!stellarHaloMaterials.TryGetValue(body.bodyId, out var halo))
             {
@@ -54,8 +85,7 @@ namespace PioneerFramework
             }
             halo.SetVector("_StellarEye", eyeValue);
             ApplyStellarFrame(halo, in frame);
-            halo.SetVector("_StellarParams", new Vector4(PFViewStellarVisualCore.HaloSteps, 1f, .19f, PFViewStellarVisualCore.Extent));
-            float proxyRadius = radius * PFViewStellarVisualCore.Extent;
+            halo.SetVector("_StellarParams", new Vector4(steps, 1f, .19f, PFViewStellarVisualCore.Extent));
             stellarHaloDraws.Add((mesh, Matrix4x4.TRS(center, rotation, Vector3.one * proxyRadius * 2f), halo));
             return proxyRadius;
         }
@@ -83,6 +113,7 @@ namespace PioneerFramework
             stellarSurfaceShader = null;
             stellarHaloShader = null;
             stellarShadersChecked = false;
+            stellarShadersAreFast = false;
         }
     }
 }

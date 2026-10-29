@@ -24,6 +24,17 @@ namespace PioneerFramework
     /// </summary>
     public static class PF_SunMath
     {
+        public readonly record struct CelestialDayCycle(float DayPercent, int DayOfYear, float DayOfYearFraction);
+        public static CelestialDayCycle EvaluateCycle(double displayTicksAbs, float dayLengthTicks, float longitudeDegrees)
+        {
+            if (!System.Double.IsFinite(displayTicksAbs) || !float.IsFinite(dayLengthTicks) || dayLengthTicks <= 0 || !float.IsFinite(longitudeDegrees))
+                throw new System.ArgumentOutOfRangeException(nameof(displayTicksAbs));
+            long ticks = (long)displayTicksAbs;
+            if (System.Math.Abs(dayLengthTicks - 60000f) > 10f) ticks = (long)(ticks * (60000.0 / dayLengthTicks));
+            double days = (ticks + (double)(longitudeDegrees / 360f * 60000f)) / 60000.0;
+            return new((float)(((days % 1.0) + 1.0) % 1.0), (int)(((System.Math.Floor(days) % 60.0) + 60.0) % 60.0),
+                (float)(((days % 60.0) + 60.0) % 60.0));
+        }
         /// <summary>照抄 `GenCelestial.SunOffsetFractionFromLatitudeCurve`（:258-268）。</summary>
         private static readonly SimpleCurve SunOffsetFractionFromLatitudeCurve = new()
         {

@@ -27,6 +27,7 @@ namespace PioneerFramework.SpaceAI
         internal double planningEpoch;
         internal int planningTrack;
         internal int planningBody;
+        internal Celestial.CelestialTargetToken? planningCelestialTarget;
         internal AiShipState planningState;
         public void ExposeData()
         {

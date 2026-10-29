@@ -78,7 +78,7 @@ namespace PioneerFramework
             }
 
             double mu = SpaceConstants.PrimaryGravitationalParameter;
-            CelestialBodyDef? earth = celestialMgr.GetBodyById(EARTH_BODY_ID);
+            CelestialBodyInfo? earth = celestialMgr.GetBodyById(EARTH_BODY_ID);
             if (earth != null && earth.gravitationalParameter > 0.0) mu = earth.gravitationalParameter;
             double bodyR = earth?.radius ?? SpaceConstants.PlanetRadiusMeters;
 

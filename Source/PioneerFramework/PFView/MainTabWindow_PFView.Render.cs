@@ -230,10 +230,13 @@ namespace PioneerFramework
         }
 
         /// <summary>按当前屏幕尺寸（重）建渲染纹理。窗口尺寸变化后不重建的话，画面会被 StretchToFill 拉变形/发糊。</summary>
+        /// <remarks>P0 恒星性能探针（2026-10-28）：`PFViewStellarProbe.RenderScale` 默认 1.0 ⇒ 与历史逐字节一致；
+        /// 0.75/0.5 仅用于判"是否 GPU 填充率主导"，不是玩家可见功能。</remarks>
         private void RecreateRenderTexture()
         {
-            int rw = Mathf.Max(1, UI.screenWidth);
-            int rh = Mathf.Max(1, UI.screenHeight);
+            float scale = Mathf.Clamp(PFViewStellarProbe.RenderScale, 0.25f, 1f);
+            int rw = Mathf.Max(1, Mathf.RoundToInt(UI.screenWidth * scale));
+            int rh = Mathf.Max(1, Mathf.RoundToInt(UI.screenHeight * scale));
             if (renderTexture != null)
             {
                 if (renderTexture.width == rw && renderTexture.height == rh) return;

@@ -116,7 +116,7 @@ namespace PioneerFramework
 
         private InertiaTensor.InertiaResult EnsureInertia()
         {
-            var comp = Current.Game?.GetComponent<SpaceGameComp>();
+            var comp = (preparedPhysicsHost ?? Current.Game?.GetComponent<SpaceGameComp>());
             if (comp == null) return default;
 
             int stamp = CalcInertiaStamp(comp);

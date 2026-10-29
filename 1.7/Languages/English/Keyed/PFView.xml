@@ -120,6 +120,14 @@
   <PFV_SettingsCamera>PFView group camera</PFV_SettingsCamera>
   <PFV_SettingsFocusMode>Default view on double-click / focus: {0}</PFV_SettingsFocusMode>
   <PFV_SettingsFocusModeTip>Applies to future double-clicks and Focus actions. The current camera stays in place. You can also switch modes in the PFView toolbar.</PFV_SettingsFocusModeTip>
+  <PFV_SettingsStellar>Stellar rendering (legacy visuals by default)</PFV_SettingsStellar>
+  <PFV_SettingsStellarFast>Use the new stellar renderer (experimental; different look, performance-first)</PFV_SettingsStellarFast>
+  <PFV_SettingsStellarFastTip>Off by default = the legacy stellar visuals you approved, with no visual change. On switches to the analytic-photosphere + thin-corona renderer (faster, but limb/corona look differs). Reopen PFView after switching.</PFV_SettingsStellarFastTip>
+  <PFV_SettingsStellarTier>New renderer tier: {0}</PFV_SettingsStellarTier>
+  <PFV_SettingsStellarTip>The tier only applies when the new renderer is enabled: visual first = full quality; balanced / performance first lower only the corona sampling density. Legacy visuals are unaffected.</PFV_SettingsStellarTip>
+  <PFV_StellarQuality_VisualFirst>New renderer · visual first (default tier)</PFV_StellarQuality_VisualFirst>
+  <PFV_StellarQuality_Balanced>New renderer · balanced</PFV_StellarQuality_Balanced>
+  <PFV_StellarQuality_PerformanceFirst>New renderer · performance first</PFV_StellarQuality_PerformanceFirst>
   <PFV_HelpCameraModesTitle>Free and two third-person views</PFV_HelpCameraModesTitle>
   <PFV_HelpCameraModes>Free, hull-forward and velocity-forward views remember their own poses. Hull-forward follows the tail; velocity-forward uses system inertial velocity and falls back to the hull heading at zero speed. Camera roll is stabilized by default; hull-roll following is optional in Mod settings. Third-person look covers a full circle with pitch limited to -85..85 degrees, safe distances and no panning. Look angles remain after release unless automatic recentering is enabled. Camera defaults apply on the next explicit focus.</PFV_HelpCameraModes>
   <PFV_Pilot_Settings>PFView piloting and observation</PFV_Pilot_Settings>

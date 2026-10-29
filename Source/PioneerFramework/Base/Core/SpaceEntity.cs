@@ -17,7 +17,7 @@ namespace PioneerFramework
     /// Lite 裁剪：装配系统（Ship3D）已删除；武器缓存与 Morton 部件索引已删除（§5.4 C1）。
     /// 实现 IPropulsionSource：无 Map 实体自带推进数据（PropulsionData），有 Map 时 burn 走 SpaceMapComp。
     /// </summary>
-    public class SpaceEntity : IExposable, IPropulsionSource
+    public partial class SpaceEntity : IExposable, IPropulsionSource
     {
         private int entityId;
         public int EntityId => entityId;
@@ -193,7 +193,7 @@ namespace PioneerFramework
         private IPropulsionSource? GetPropulsionSource()
         {
             // B6：多图实体用群级聚合（所有图 + 无图实体源）；无组/无图再回退主图/自带。
-            var sg = Current.Game?.GetComponent<SpaceGameComp>();
+            var sg = (preparedPhysicsHost ?? Current.Game?.GetComponent<SpaceGameComp>());
             if (sg != null && GroupId != 0)
             {
                 var g = sg.GetGroupById(GroupId);
@@ -226,10 +226,11 @@ namespace PioneerFramework
         public SpaceMapComp? GetMapComp(int mapId)
         {
             if (mapId < 0) return null;
-            var sg = Current.Game?.GetComponent<SpaceGameComp>();
+            var sg = (preparedPhysicsHost ?? Current.Game?.GetComponent<SpaceGameComp>());
             var mc = sg?.GetMapComponent<SpaceMapComp>(mapId);
             if (mc != null)
                 return mc;
+            if (preparedPhysicsHost != null) return null;
 
             // mapComponents 不随存档恢复；兜底直接从地图取 SpaceMapComp。
             Map map = SpaceMapGenerator.FindPocketMap(mapId);
@@ -423,7 +424,7 @@ namespace PioneerFramework
 
         /// <summary>B6：供油计划结构版本（部件集/切网/优先级/外部镜像重分配时自增；**质量变化不增**）。</summary>
         internal int fuelPlanVersion;
-        private readonly Dictionary<(string defName, int group), FuelPlan> fuelPlans = new();
+        private Dictionary<(string defName, int group), FuelPlan> fuelPlans = new();
 
         /// <summary>实体聚合属性：Σ 部件 ShipStats（质量含损毁件；功能项只算未毁件，见 B5）。</summary>
         public ShipStats AggregatedStats
@@ -485,7 +486,7 @@ namespace PioneerFramework
             // 本方法是"部件集可能变化"的**唯一既有收口**（AddComponent / RemoveComponent / 部件销毁都汇聚到这里），
             // 所以同步点放这里最省。⚠ 若将来新增改部件的路径绕开本方法，群组信号会静默过期
             // —— 与 AVM:824 的"派生点"是同一类陷阱，新加部件变更入口时请对照此处。
-            Current.Game?.GetComponent<SpaceGameComp>()?.GetGroupById(GroupId)?.InvalidateSignal();
+            (preparedPhysicsHost ?? Current.Game?.GetComponent<SpaceGameComp>())?.GetGroupById(GroupId)?.InvalidateSignal();
         }
 
         // ── 无 Map 实体的自带推进数据（IPropulsionSource）──
@@ -1260,7 +1261,7 @@ namespace PioneerFramework
         private void DisableOnKeyPartDestroyed()
         {
             if (GroupId == 0) return;
-            var sg = Current.Game?.GetComponent<SpaceGameComp>();
+            var sg = (preparedPhysicsHost ?? Current.Game?.GetComponent<SpaceGameComp>());
             var g = sg?.GetGroupById(GroupId);
             if (g == null) return;
 
@@ -1373,7 +1374,7 @@ namespace PioneerFramework
         public float perUnitRatio = 1f;
     }
 
-    public class PropulsionData : IExposable
+    public partial class PropulsionData : IExposable
     {
         /// <summary>工质种类。</summary>
         public PropellantDef propellant;

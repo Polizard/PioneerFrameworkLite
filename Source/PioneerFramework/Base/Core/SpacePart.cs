@@ -13,7 +13,7 @@ namespace PioneerFramework
     /// Lite 裁剪：从 Combat 命名空间迁出，作为「空间实体体积/质量」基础层（无战斗语义）；
     /// 武器挂载链路（WeaponMountComponentData）已删除，武器来源改由 Map 炮塔桥接（§5.5）。
     /// </summary>
-    public class SpacePart : IExposable
+    public partial class SpacePart : IExposable
     {
         public int partId;
         public string defName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）

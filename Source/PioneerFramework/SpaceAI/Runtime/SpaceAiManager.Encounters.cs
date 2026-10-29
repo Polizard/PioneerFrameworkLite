@@ -107,7 +107,7 @@ namespace PioneerFramework.SpaceAI
                     body.radius+body.atmosphereThickness+10000,out var spawnPosition,out var spawnVelocity))
                     throw new InvalidOperationException("No safe encounter spawn orbit");
                 var position = FrameConvert.BodyToSystem((BodyVec3)spawnPosition,target.GetCentralBodyOffset(now));
-                var velocity = FrameConvert.BodyToSystemVelocity((BodyVec3)spawnVelocity,target.GetCentralBodyVelocity((int)Math.Round(now)));
+                var velocity = FrameConvert.BodyToSystemVelocity((BodyVec3)spawnVelocity,target.GetCentralBodyVelocity(now));
                 var group = EncounterShipFactory.Create(template,faction,source,position,velocity,target.CelestialBodyId);
                 entry.groupIds.Add(group.GroupId);
                 if (entry.groupIds.Count < entry.requestedCount) return;

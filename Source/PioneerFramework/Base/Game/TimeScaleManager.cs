@@ -19,7 +19,7 @@ namespace PioneerFramework
     /// 游戏速度意图、精度限制和物理时钟的统一入口。2026-10-22：取消偶数 tick 队列与超时绕闸；
     /// 物理调度器逐段提交切档区间，步内消费者读取同一不可变时刻。宿主倍率保持原版语义。
     /// </summary>
-    public class TimeScaleManager : GameComponent
+    public partial class TimeScaleManager : GameComponent
     {
         private TimeScaleLevel currentLevel = TimeScaleLevel.Normal;
         private TimeScaleLevel requestedLevel = TimeScaleLevel.Normal;
@@ -38,6 +38,7 @@ namespace PioneerFramework
         private readonly GameComponentRef<Combat.CombatManager> combatMgrRef = new();
         private readonly GameComponentRef<AutonomousVehicleManager> avmRef = new();
         private readonly GameComponentRef<SpaceGameComp> spaceRef = new();
+        private readonly GameComponentRef<CelestialBodyManager> celestialRef = new();
 
         public TimeScaleLevel CurrentLevel => activeStep?.Level ?? currentLevel;
         public TimeScaleLevel RequestedLevel => requestedLevel;
@@ -96,7 +97,8 @@ namespace PioneerFramework
         public double GetPhysicsTick()
         {
             EnsureTimeline();
-            return activeStep?.EndTick ?? timeline!.At(Find.TickManager.TicksGame);
+            if (activeStep.HasValue) return activeStep.Value.EndTick;
+            return celestialRef.Get()?.TryGetCelestialRuntime(out _) == true ? timeline!.CommittedPhysicsTick : timeline!.At(Find.TickManager.TicksGame);
         }
 
         public double GetPhysicsTick(int realTick)
@@ -179,6 +181,7 @@ namespace PioneerFramework
             if (target == currentLevel) return;
             int tick = Find.TickManager.TicksGame;
             double physicsTick = timeline!.At(tick);
+            if (celestialRef.Get()?.TryGetCelestialRuntime(out _) == true) physicsTick = Math.Min(physicsTick, timeline.CommittedPhysicsTick);
             var previous = currentLevel;
             timeline.SetRate(tick, target);
             currentLevel = target;
@@ -270,7 +273,8 @@ namespace PioneerFramework
         public double GetRenderTick()
         {
             EnsureTimeline();
-            if (renderClockFrame == RealTime.frameCount) return renderClockValue;
+            var bounds = GetCelestialRenderBounds();
+            if (renderClockFrame == RealTime.frameCount) return renderClockValue = BoundRenderTime(renderClockValue, bounds);
             renderClockFrame = RealTime.frameCount;
             int tick = Find.TickManager.TicksGame;
             double physicsTick = timeline!.At(tick);
@@ -278,7 +282,7 @@ namespace PioneerFramework
             {
                 renderClockTicksGame = tick;
                 renderClockFrac = 0;
-                return renderClockValue = physicsTick;
+                return renderClockValue = BoundRenderTime(physicsTick, bounds);
             }
             double dt = RealTime.deltaTime;
             if (dt > 0 && dt < 0.5) renderClockFrac += dt / renderClockSecPerTick;
@@ -296,7 +300,7 @@ namespace PioneerFramework
             }
             renderClockFrac = Math.Clamp(renderClockFrac, 0, 1);
             double sample = timeline.At(Math.Max(timeline.OldestGameTick, tick - 1.0 + renderClockFrac));
-            return renderClockValue = Math.Min(physicsTick, Math.Max(renderClockValue, sample));
+            return renderClockValue = BoundRenderTime(Math.Min(physicsTick, Math.Max(renderClockValue, sample)), bounds);
         }
 
         private List<int> epochGameTicks = new();

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Verse;
+using PioneerFramework.Celestial;
 
 namespace PioneerFramework
 {
@@ -37,7 +38,7 @@ namespace PioneerFramework
             return group.CurrentOrbit.positionSystem.v + group.CurrentOrbit.velocitySystem.v * delta;
         }
         private int pendingGroupBirthCount;
-        private readonly List<int> invalidGroupBirths = new();
+        private List<int> invalidGroupBirths = new();
 
         internal void AnchorGroupBirth(SpaceEntityGroup group, SpaceEntityGroup source, DVector3 sourcePosition, DVector3 sourceVelocity)
         {
@@ -87,11 +88,35 @@ namespace PioneerFramework
         internal void AdvancePhysics(int currentTick)
         {
             var timeScaleManager = timeScaleRef.Get();
+            var manager = celestialRef.Get();
+            CelestialRuntime? runtime = manager != null && manager.TryGetCelestialRuntime(out var currentRuntime) ? currentRuntime : null;
+            if (manager?.CelestialRestorePending == true)
+            {
+                CelestialPhysicsErrors = manager.CelestialRestoreErrors.Count == 0 ? new[] { new CelestialError("RestorePending") } : manager.CelestialRestoreErrors;
+                return;
+            }
+            if (runtime != null)
+            {
+                if (runtime.IsRestoring) return;
+                // The game tick is an explicit host lifecycle entry; arbitrary Runtime.Advance callers cannot rebind ownership.
+                runtime.HostWork.BindHostThread();
+                var attached = AttachCelestialParticipants(runtime, timeScaleManager, manager!);
+                if (!attached.Success) throw new InvalidOperationException(attached.Errors[0].Code);
+                if (SteeringController.IsOpen) SteeringInputHost.EnsureInputSafety();
+            }
             timeScaleManager.BeginPhysicsBatch();
             try
             {
-                while (timeScaleManager.TryBeginPhysicsStep(currentTick))
+                while (true)
                 {
+                    // Register/unregister at the committed instant, so every positive ship interval has one stable membership.
+                    if (runtime != null && runtime.HasPendingPhysicsChanges)
+                    {
+                        var stamp = runtime.CurrentStamp;
+                        var membership = runtime.Advance(new(runtime.WorldSessionId, stamp.TopologyRevision, stamp.PhysicalSeconds, stamp.PhysicalSeconds));
+                        if (!membership.Success) { CelestialPhysicsErrors = membership.Errors; break; }
+                    }
+                    if (!timeScaleManager.TryBeginPhysicsStep(currentTick)) break;
                     try
                     {
                         long blockClock = PerfProbe.ExtraClockStart();   // ★ 2026-10-02：整步块钟（含全部每物理步消费者）
@@ -101,7 +126,14 @@ namespace PioneerFramework
                         //   动机：优化探针的开关会**连带打开影子校验**（额外工作 ✗）⇒ 用它测耗时会污染计时
                         //   （观测者效应）。常驻测量则与那些校验**完全独立** ✓。
                         long stepClock = PerfProbe.StepClockStart();
-                        UpdateAllMovements(timeScaleManager);
+                        if (runtime == null) UpdateAllMovements(timeScaleManager);
+                        else
+                        {
+                            var advanced = AdvanceCelestialPhysicsInterval(runtime, timeScaleManager);
+                            CelestialPhysicsErrors = advanced.Errors;
+                            if (!advanced.Success) break;
+                            CompleteCelestialShipStep(runtime.CurrentStamp.PhysicalSeconds, manager!);
+                        }
                         LastPhysicsStepTick = timeScaleManager.GetPhysicsTick();
                         ResolveGroupBirths(LastPhysicsStepTick);
                         PerfProbe.StepClockEnd(stepClock);
@@ -165,13 +197,25 @@ namespace PioneerFramework
                     finally
                     {
                         // 保留既有异常语义：发生部分状态写入的区间不可在下一 tick 重复结算。
-                        timeScaleManager.CompletePhysicsStep();
+                        if (runtime == null) timeScaleManager.CompletePhysicsStep();
+                        else if (timeScaleManager.CurrentPhysicsStep.HasValue) timeScaleManager.CancelCelestialPhysicsStep();
                         lastUpdateTick = timeScaleManager.CommittedGameTick;
                         LastPhysicsStepTick = timeScaleManager.CommittedPhysicsTick;
                     }
                 }
             }
             finally { timeScaleManager.EndPhysicsBatch(); }
+        }
+
+        // Production shared boundary: the provider, privately prepared ships and real clock publish once together.
+        internal CelestialResult<bool> AdvanceCelestialPhysicsInterval(CelestialRuntime runtime, TimeScaleManager clock)
+        {
+            var interval = clock.CurrentPhysicsStep;
+            if (!interval.HasValue) return CelestialResult.Reject<bool>(new CelestialError("ClockIntervalMissing"));
+            var result = runtime.Advance(new PhysicsIntervalRequest(runtime.WorldSessionId, runtime.CurrentStamp.TopologyRevision,
+                interval.Value.StartTick, interval.Value.EndTick));
+            if (!result.Success) clock.CancelCelestialPhysicsStep();
+            return result;
         }
     }
 }

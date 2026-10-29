@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_BarrenSurfaceVisual.label>荒芜地表表现</PF_BarrenSurfaceVisual.label>
+  <PF_FrozenSurfaceVisual.label>冰封地表表现</PF_FrozenSurfaceVisual.label>
+  <PF_GreenhouseSurfaceVisual.label>温室地表表现</PF_GreenhouseSurfaceVisual.label>
+  <PF_GreenhouseAtmosphereVisual.label>温室大气表现</PF_GreenhouseAtmosphereVisual.label>
+  <PF_GreenhouseCloudsVisual.label>温室云层表现</PF_GreenhouseCloudsVisual.label>
+  <PF_GasGiantSurfaceVisual.label>气态巨行星球体表现</PF_GasGiantSurfaceVisual.label>
+  <PF_GasGiantAtmosphereVisual.label>气态巨行星大气表现</PF_GasGiantAtmosphereVisual.label>
+  <PF_GasGiantCloudsVisual.label>气态巨行星云层表现</PF_GasGiantCloudsVisual.label>
+  <PF_IceGiantSurfaceVisual.label>冰巨行星球体表现</PF_IceGiantSurfaceVisual.label>
+  <PF_IceGiantAtmosphereVisual.label>冰巨行星大气表现</PF_IceGiantAtmosphereVisual.label>
+  <PF_IceGiantCloudsVisual.label>冰巨行星云层表现</PF_IceGiantCloudsVisual.label>
+</LanguageData>

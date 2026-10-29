@@ -39,6 +39,16 @@ namespace PioneerFramework.Landing
         {
             Game session = Current.Game;
             string taskId = task.TaskId;
+            int targetHandle = task.TargetBodyId;
+            var targetTile = task.TargetTile;
+            var bodies = session.GetComponent<CelestialBodyManager>();
+            Celestial.CelestialTargetToken? target = null;
+            if (bodies?.TryGetCelestialRuntime(out _) == true)
+            {
+                var captured = bodies.CaptureTarget(targetHandle);
+                if (!captured.Success) { failed(LandingReport.Reject("PFL_LandingDestinationUnavailable")); return; }
+                target = captured.Value;
+            }
             bool Pending() => ReferenceEquals(session, Current.Game) &&
                 ReferenceEquals(session.GetComponent<LandingTransitManager>()?.FindTask(taskId), task) &&
                 task.Status == LandingTransitStatus.PreparingDestination;
@@ -48,6 +58,8 @@ namespace PioneerFramework.Landing
                 if (!Pending()) return;
                 try
                 {
+                    if (task.TargetBodyId != targetHandle || task.TargetTile != targetTile || target != null && !bodies!.ValidateTarget(target).Success)
+                    { Reject(LandingReport.Reject("PFL_LandingDestinationUnavailable")); return; }
                     var sourceCheck = CheckSourceIdentity(task);
                     if (!sourceCheck.Success) { Reject(sourceCheck); return; }
                     var largest = new IntVec2(0, 0);
@@ -60,8 +72,11 @@ namespace PioneerFramework.Landing
                     var size = RequiredMapSize(largest);
                     var check = Check(task.TargetTile, task.TargetBodyId, size);
                     if (!check.Success) { Reject(check); return; }
-                    Map map = ResolveExisting(() => FindExisting(task.TargetTile), () => LandingDestinationRuntime.Generate(task, size));
+                    Map map = task.TargetTile.Layer is Celestial.CelestialSurfaceLayer ? LandingDestinationRuntime.Generate(task, size) :
+                        ResolveExisting(() => FindExisting(task.TargetTile), () => LandingDestinationRuntime.Generate(task, size));
                     if (!Pending()) return;
+                    if (target != null && !bodies!.ValidateTarget(target).Success)
+                    { Reject(LandingReport.Reject("PFL_LandingDestinationUnavailable")); return; }
                     task.DestinationMapId = map.uniqueID; task.DestinationParentId = map.Parent.ID;
                     ready(map);
                 }

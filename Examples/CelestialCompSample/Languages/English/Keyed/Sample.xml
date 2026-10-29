@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_CounterSample_Queued>Queued SampleIncrement for {0}. Resume simulation, then report the counters.</PF_CounterSample_Queued>
+  <PF_CounterSample_Value>{0} / {1}: {2}</PF_CounterSample_Value>
+  <PF_CounterSample_NoInstances>No ready sample counter components were found.</PF_CounterSample_NoInstances>
+  <PF_CounterSample_Error>Counter event rejected: {0}</PF_CounterSample_Error>
+</LanguageData>
