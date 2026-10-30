@@ -2416,6 +2416,16 @@ namespace PioneerFramework
                             useRcs = hasRcsFuel;
                             useMain = false;
                         }
+                        else if (!hasMainFuel && hasRcsFuel)
+                        {
+                            // 2026-10-31（C 项根因）：**船只有 RCS 网络、没有主网**时必须烧 RCS。
+                            // 旧写法会落进下面的 `mainAligned ⇒ useMain = hasMainFuel(false)` ⇒ 一个切片都不建，
+                            // 症状是"燃烧标志亮着、网络在、燃料在，但一步不推、一滴不耗"，而且不报错。
+                            // ⚠ 与 2026-10-27「烧完主网不跨类回退」不冲突：这里是**选网**阶段（本来就没有主网可烧），
+                            //   不是"主网烧干了再偷偷接 RCS"。
+                            useMain = false;
+                            useRcs = true;
+                        }
                         else if (!isMainThrust)
                         {
                             useMain = true;
