@@ -3,6 +3,10 @@
 # 用法（在仓库根或任意目录）：
 #   powershell -ExecutionPolicy Bypass -File tools/MutationCheck.ps1
 #   powershell -ExecutionPolicy Bypass -File tools/MutationCheck.ps1 -Manifest <path>
+#   powershell -ExecutionPolicy Bypass -File tools/MutationCheck.ps1 -Only M22,M8     # 只跑受影响的子集
+#
+# 为什么有 -Only（2026-10-31）：全量 34 条约 4 分钟（实测 7.4 s/条 = 构建 ~4 s + 筛测试 ~3.4 s）。
+# 日常改一个模块没必要全跑；按名字前缀挑相关的几条，~40–60 s 就够。**收口仍要全量跑一次**。
 #
 # 语义（2026-10-17 起，计划稿 §8-7 的"判据先自证"条）：
 #   对清单里的每个条目：
@@ -17,7 +21,8 @@
 #   · 还原后若要提交/构建，请照常跑 `tools/test-all.ps1`（本工具不替代闸门）；
 #   · 清单与源码漂移（oldText 命中 ≠ 1）时**先修清单**，不要放宽匹配。
 param(
-    [string]$Manifest = (Join-Path $PSScriptRoot "mutation-checks.json")
+    [string]$Manifest = (Join-Path $PSScriptRoot "mutation-checks.json"),
+    [string]$Only = ""
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,6 +31,15 @@ Push-Location $root
 
 $failures = 0
 $entries = Get-Content -LiteralPath $Manifest -Raw -Encoding UTF8 | ConvertFrom-Json
+
+if ($Only) {
+    $pats = $Only -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+    $entries = @($entries | Where-Object {
+        $n = $_.name
+        ($pats | Where-Object { $n -like "$_*" }).Count -gt 0
+    })
+    if ($entries.Count -eq 0) { throw "没有条目匹配 -Only $Only" }
+}
 
 Write-Host "=== MutationCheck: $($entries.Count) 个条目（清单 $Manifest）===" -ForegroundColor Cyan
 

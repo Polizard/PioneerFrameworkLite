@@ -14,8 +14,13 @@
     <OutputPath>Assemblies/</OutputPath>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../Source/PioneerFramework/PioneerFramework.csproj" Private="false"
-                      AdditionalProperties="OutputPath=$(MSBuildThisFileDirectory)..\..\Source\PioneerFramework\bin\CelestialCompSample\$(Configuration)\" />
+    <!-- 2026-10-31（合并期修复）：原先在这里用 `AdditionalProperties` 把被引用的 mod 工程的
+         `OutputPath` 重定向到 `Source/PioneerFramework/bin/CelestialCompSample/…`。
+         那会让 **同一个工程在同一张构建图里以两套全局属性各编一遍**（测试工程一次、本样例一次），
+         两遍都写 `Source/PioneerFramework/obj/Debug/PioneerFrameworkLite.dll` ⇒ 间歇性
+         `CSC : error CS2012 … 文件被占用`（变异自检 18/34 项因此拿不到 TRX）。
+         样例用 `Private="false"` 本来就不拷贝 mod DLL，这个重定向没有收益 ⇒ 去掉。 -->
+    <ProjectReference Include="../../Source/PioneerFramework/PioneerFramework.csproj" Private="false" />
   </ItemGroup>
   <Import Project="../../Source/GameReferences.props" />
 </Project>

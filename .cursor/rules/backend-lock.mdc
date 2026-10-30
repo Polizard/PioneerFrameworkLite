@@ -1,0 +1,6 @@
+// 后端锁（钢印）——物理 / 时间基 / 状态提交
+// 规则全文：BACKEND-LOCK.md
+// 后端 = Source/PioneerFramework/{Base,Components,Combat,Launch,GroundAssembly,Landing}/**
+//        + Celestial/Adapters/Physics/** + 1.7/Assemblies/**
+// 未经 DesignNotes/后端变更授权-*.md：一个字节都不许改；AI 只能提补丁 + 判据 + 回退路径。
+// 拿不准是否属于后端 ⇒ 停下问，不许猜。
