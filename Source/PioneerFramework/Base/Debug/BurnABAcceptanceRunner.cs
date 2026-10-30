@@ -56,7 +56,7 @@ namespace PioneerFramework
             arms.Clear();
             BurnAB.Reset();
             double mu = SpaceConstants.PrimaryGravitationalParameter;
-            CelestialBodyDef? earth = mgr.GetBodyById(EARTH_BODY_ID);
+            CelestialBodyInfo? earth = mgr.GetBodyById(EARTH_BODY_ID);
             if (earth != null && earth.gravitationalParameter > 0.0) mu = earth.gravitationalParameter;
 
             var sb = new StringBuilder();

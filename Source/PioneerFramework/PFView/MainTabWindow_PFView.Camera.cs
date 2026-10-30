@@ -110,6 +110,7 @@ namespace PioneerFramework
 
         // 右键「点击 vs 拖拽」判定（右键单击 = 上下文菜单，拖拽 = 旋转）
         private Vector2 rightMouseDownPos;
+        private readonly PFViewOrbitDragState orbitDrag = new();
 
         // ── 会话级机位记忆（不写档）：key = (焦点类型, id) ──
         private static readonly Dictionary<(PFViewFocusKind kind, int id), CameraPose> cameraMemory = new();
@@ -267,9 +268,9 @@ namespace PioneerFramework
 
         internal void FocusBody(int bodyId)
         {
+            var body = Current.Game?.GetComponent<CelestialBodyManager>()?.GetBodyById(bodyId);
+            if (body == null) return;
             if (focusKind == PFViewFocusKind.Body && focusBodyId == bodyId) { RefreshPilotCameraOptions(); return; }
-
-            if (Current.Game?.GetComponent<CelestialBodyManager>()?.GetBodyById(bodyId) == null) return;
             RememberPreviousView();
             SaveCameraMemory();
             DVector3 oldOrigin = ResolveFocusOrigin();
@@ -467,6 +468,7 @@ namespace PioneerFramework
 
         private void BeginTransition(DVector3 oldOrigin, CameraPose oldPose)
         {
+            orbitDrag.Reset();
             if (renderCamera == null)
             {
                 cameraTransitioning = false;
@@ -504,6 +506,10 @@ namespace PioneerFramework
             RecreateRenderTexture();
 
             float bodyRadiusView = FocusBodyRadiusView();
+
+            var draggedLook = orbitDrag.Advance(camYaw, camPitch, Time.unscaledDeltaTime);
+            camYaw = draggedLook.Yaw;
+            camPitch = draggedLook.Pitch;
 
             if (IsThirdPersonView)
             {
@@ -606,6 +612,12 @@ namespace PioneerFramework
         /// <summary>设置游戏时间档（按钮与数字键共用）。暂停走 TogglePaused，保留原版 prePause。</summary>
         internal static void SetGameSpeed(TimeSpeed speed)
         {
+            var clock = Current.Game?.GetComponent<TimeScaleManager>();
+            if (clock != null)
+            {
+                clock.SetGameSpeed(speed);
+                return;
+            }
             var tm = Find.TickManager;
             if (tm == null) return;
             if (speed == TimeSpeed.Paused)
@@ -680,6 +692,9 @@ namespace PioneerFramework
                 }
             }
 
+            // 已在视口内开始的拖拽持续拥有输入，跨过本窗口的侧栏仍逐次更新鼠标位置。
+            if (HandleCameraDrag(e)) return;
+
             bool inViewport = MouseInViewport(inRect);
             if (!inViewport) return;
 
@@ -706,26 +721,37 @@ namespace PioneerFramework
                 if (IsThirdPersonView && (e.button == 2 || e.shift)) { e.Use(); return; }
                 CancelTransition();
                 pilotLookReturning = false;
+                orbitDrag.Reset();
                 dragState.Begin(e.button == 2 || e.shift);
                 rightMouseDownPos = e.mousePosition;
                 lastMousePos = e.mousePosition;
                 e.Use();
             }
+        }
 
-            if (isDraggingRight && e.type == EventType.MouseDrag && e.button == 1)
+        private bool HandleCameraDrag(Event e)
+        {
+            if (!dragState.IsActive || e.rawType != EventType.MouseDrag) return false;
+            var top = Find.WindowStack?.GetWindowAt(e.mousePosition);
+            if (top != null && top != this)
+            {
+                ResetCameraDrag();
+                return false;
+            }
+
+            if (isDraggingRight && e.button == 1)
             {
                 if ((e.mousePosition - rightMouseDownPos).magnitude > 3f) dragState.MarkMoved();
                 Vector2 d = e.mousePosition - lastMousePos;
-                var look = PFViewPilotCameraCore.LookDrag(camYaw, camPitch, d.x, d.y,
+                var delta = PFViewPilotCameraCore.LookDrag(0, 0, d.x, d.y,
                     OrbitSensitivity * pilotCameraOptions.Sensitivity, pilotCameraOptions.InvertMouseY);
-                camYaw = IsThirdPersonView ? PFViewPilotCameraCore.LookYaw(look.Yaw) : look.Yaw;
-                camPitch = IsThirdPersonView ? PFViewPilotCameraCore.LookPitch(look.Pitch)
-                    : PFViewCameraCore.ResolvePitch(focusKind, look.Pitch);
+                orbitDrag.AddDrag(camYaw, camPitch, delta.Yaw, delta.Pitch, focusKind, IsThirdPersonView);
                 lastMousePos = e.mousePosition;
-                e.Use();
+                if (e.type != EventType.Used) e.Use();
+                return true;
             }
 
-            if (!IsThirdPersonView && isDraggingPan && e.type == EventType.MouseDrag && (e.button == 1 || e.button == 2))
+            if (!IsThirdPersonView && isDraggingPan && (e.button == 1 || e.button == 2))
             {
                 Vector2 d = e.mousePosition - lastMousePos;
                 if (renderCamera != null)
@@ -738,8 +764,10 @@ namespace PioneerFramework
                         NotifyViewLimit();
                 }
                 lastMousePos = e.mousePosition;
-                e.Use();
+                if (e.type != EventType.Used) e.Use();
+                return true;
             }
+            return false;
         }
 
         /// <summary>最上层窗口是否就是本窗口（键盘归属）。</summary>
@@ -750,18 +778,19 @@ namespace PioneerFramework
             bool moved = dragState.Moved;
             bool click = dragState.End();
             bool menu = active && e.button == 1 && click;
-            ResetCameraDrag();
-            if (active && moved && e.button == 1 && IsThirdPersonView && pilotCameraOptions.Recenter)
-                pilotLookReturning = true;
+            bool recenter = active && moved && e.button == 1 && IsThirdPersonView && pilotCameraOptions.Recenter;
+            ResetCameraDrag(settleRotation: active && moved && !recenter);
+            if (recenter) pilotLookReturning = true;
             if (!active) return false;
             if (menu && MouseInViewport(inRect)) ShowContextMenu(e.mousePosition, inRect);
             if (e.type != EventType.Used) e.Use();
             return true;
         }
 
-        private void ResetCameraDrag()
+        private void ResetCameraDrag(bool settleRotation = false)
         {
             dragState.Reset();
+            if (!settleRotation) orbitDrag.Reset();
             rightMouseDownPos = Vector2.zero;
             lastMousePos = Vector2.zero;
         }
@@ -770,9 +799,9 @@ namespace PioneerFramework
         {
             var stack = Find.WindowStack;
             if (stack == null) return false;
-            var windows = stack.Windows;
-            return windows != null && windows.Count > 0 && (ReferenceEquals(windows[windows.Count - 1], this)
-                || (HasTextInputFocus && windows[windows.Count - 1] is Window_Steering));
+            var foreground = SteeringInputHost.KeyboardForeground(stack.Windows);
+            return ReferenceEquals(foreground, this)
+                || (HasTextInputFocus && foreground is Window_Steering);
         }
     }
 }

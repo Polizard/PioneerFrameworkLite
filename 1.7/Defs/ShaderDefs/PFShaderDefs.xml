@@ -10,6 +10,8 @@
     <shaderProgram>
       <vertexShaderFileName>PFLit.vert.glsl</vertexShaderFileName>
       <fragmentShaderFileName>PFLit.frag.glsl</fragmentShaderFileName>
+      <blendMode>Opaque</blendMode>
+      <depthTest>true</depthTest>
       <depthWrite>true</depthWrite>
       <renderQueue>2000</renderQueue>
       <!-- 2026-10-14：**改为 true（= 引擎默认）**。上一稿抄地图类 shader 写了 false——错：

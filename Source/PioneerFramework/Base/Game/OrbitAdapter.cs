@@ -7,7 +7,7 @@ namespace PioneerFramework
 {
     /// <summary>
     /// **游戏世界 ↔ 适配层的桥**（P-1 §3 的"宿主侧"）。这是唯一允许把 `SpaceEntityGroup` /
-    /// `CelestialBodyDef` 变成 `OrbitView` / `BodyView` 的地方。
+    /// `CelestialBodyInfo` 变成 `OrbitView` / `BodyView` 的地方。
     ///
     /// ## 三条必须守住的约定
     /// ① **构造点唯一（R5）**：`OrbitView` 只从**一个**状态源构造 —— `TryToOrbitView` 读的是
@@ -44,19 +44,20 @@ namespace PioneerFramework
         /// 绝不用主天体 GM 兜底（那会把两体问题解成另一个两体问题，且没有任何东西会报警）。
         /// <paramref name="mgr" /> 允许为 null（`Current.Game?.GetComponent<...>()` 本来就可能拿不到）。
         /// </summary>
-        public static CelestialBodyDef? GetBody(CelestialBodyManager? mgr, int bodyId) =>
+        public static CelestialBodyInfo? GetBody(CelestialBodyManager? mgr, int bodyId) =>
             mgr == null ? null : mgr.GetBodyById(bodyId);
 
         /// <summary>由天体 Def 填一张 <see cref="BodyView" /> 记录（P-1 §3.2）。</summary>
-        public static BodyView ToBodyView(CelestialBodyDef def, CelestialBodyManager? mgr)
+        public static BodyView ToBodyView(CelestialBodyInfo def, CelestialBodyManager? mgr)
         {
             // ⚠ 我们**没有**模型的轴倾角：本 mod 的天体轨道都在世界 XZ 平面内，
             //    所以"赤道轴"取世界的极轴 `DVector3.up`（= +Y；批4 P4 起适配层也是 +Y ⇒ 不再有换系）。
             //    这一点有实测支撑：自检里 15/17 个编队的游戏系倾角正好是 0（见 OrbitViewProbe 的输出）。
-            V3 pole = DVector3.up; // 两系同轴（批4 P4）⇒ 直传；跨系只剩 `OrbitView` 的进/出两个口（批6 S2）
+            var spin = GetSpin(def, mgr, mgr?.TryGetCelestialRuntime(out _) == true ? mgr.MotionSampleSeconds : 0);
+            V3 pole = spin.Axis;
 
             // 自转：1 tick = 1 秒 ⇒ 角速度 = 2π / dayLengthTicks（算式只有一份：AngularVelocity）
-            double angularVelocity = AngularVelocity(def);
+            double angularVelocity = spin.Rate;
 
             // SOI：见 SoiRadiusApprox 的说明。
             double soiApprox = SoiRadiusApprox(def, mgr);
@@ -76,7 +77,7 @@ namespace PioneerFramework
         /// <summary>
         /// 中心天体的 **SOI 半径近似**（P-1 §6-R3）：`a·(m/M)^(2/5)`，即 Hill 半径。
         ///
-        /// ⚠ **这不是真值**：`CelestialBodyDef` 没有 `sphereOfInfluence`，而我们**从不**拿 SOI 判定参考系
+        /// ⚠ **这不是真值**：`CelestialBodyInfo` 没有 `sphereOfInfluence`，而我们**从不**拿 SOI 判定参考系
         /// （参考系是显式跟踪的：`CelestialBodyId` + `RegisterGroupToBody`）。
         /// 它只服务少量"健全性提醒"，所以名字里带 `Approx`，别当权威用。
         /// 无法近似时返回 `NaN`。
@@ -86,16 +87,28 @@ namespace PioneerFramework
         /// ⚠ 前提是"**1 physics tick = 1 秒**"——这一条是实测钉住的
         /// （物理积分器把 `UPDATE_INTERVAL_TICKS` 当 `dtSeconds` 喂进去），不是假设。
         /// </summary>
-        public static double AngularVelocity(CelestialBodyDef def)
+        public static double AngularVelocity(CelestialBodyInfo def)
         {
             double daySeconds = def.dayLengthTicks > 0.0 ? def.dayLengthTicks : 60000.0;
             return 2.0 * Math.PI / daySeconds;
         }
+        private static (DVector3 Axis, double Rate) GetSpin(CelestialBodyInfo body, CelestialBodyManager? manager, double seconds)
+        {
+            if (manager?.TryGetCelestialRuntime(out _) == true)
+            {
+                var sample = manager.MotionForPlanning(body.bodyId, seconds);
+                if (!sample.Success) throw new InvalidOperationException(sample.Errors[0].Code);
+                var angular = sample.Value.AngularVelocity;
+                double rate = angular.magnitude;
+                return (rate > 0 ? -angular / rate : DVector3.up, rate);
+            }
+            return (DVector3.up, AngularVelocity(body));
+        }
 
-        public static double SoiRadiusApprox(CelestialBodyDef def, CelestialBodyManager? mgr)
+        public static double SoiRadiusApprox(CelestialBodyInfo def, CelestialBodyManager? mgr)
         {
             if (mgr == null || def.ParentBodyId < 0 || !(def.orbitRadius > 0.0)) return double.NaN;
-            CelestialBodyDef? parent = mgr.GetBodyById(def.ParentBodyId);
+            CelestialBodyInfo? parent = mgr.GetBodyById(def.ParentBodyId);
             if (parent == null || !(parent.gravitationalParameter > 0.0)) return double.NaN;
             double massRatio = def.gravitationalParameter / parent.gravitationalParameter;
             return def.orbitRadius * Math.Pow(massRatio, 0.4);
@@ -124,18 +137,27 @@ namespace PioneerFramework
             if (g == null)
                 return false;
 
-            CelestialBodyDef? def = GetBody(mgr, g.CelestialBodyId);
+            CelestialBodyInfo? def = GetBody(mgr, g.CelestialBodyId);
             if (def == null)
                 return false;
 
             // 系统系 → 天体局部系：**唯一换算**（`GetBodyState` 内部走 `FrameConvert`，且**同一 tick 取两次** ⇒ 位置/速度一定同刻）
-            (BodyVec3 bodyPos, BodyVec3 bodyVel) = g.GetBodyState(physicsTick);
+            BodyVec3 bodyPos, bodyVel;
+            if (mgr?.TryGetCelestialRuntime(out _) == true)
+            {
+                var offset = mgr.FrameOffsetForPlanning(g.CelestialBodyId, physicsTick);
+                var motion = mgr.MotionForPlanning(g.CelestialBodyId, physicsTick);
+                if (!offset.Success || !motion.Success) return false;
+                bodyPos = FrameConvert.SystemToBody(g.CurrentOrbit.positionSystem, (SystemVec3)offset.Value.Position);
+                bodyVel = FrameConvert.SystemToBodyVelocity(g.CurrentOrbit.velocitySystem, (SystemVec3)offset.Value.Velocity);
+            }
+            else (bodyPos, bodyVel) = g.GetBodyState(physicsTick);
             DVector3 r = bodyPos.v;
             DVector3 v = bodyVel.v;
 
+            var spin = GetSpin(def, mgr, physicsTick);
             ov = OrbitView.FromGameStateVectors(
-                r, v, def.gravitationalParameter, physicsTick, DVector3.up, def.radius, SoiRadiusApprox(def, mgr),
-                AngularVelocity(def));
+                r, v, def.gravitationalParameter, physicsTick, spin.Axis, def.radius, SoiRadiusApprox(def, mgr), spin.Rate);
             return true;
         }
 

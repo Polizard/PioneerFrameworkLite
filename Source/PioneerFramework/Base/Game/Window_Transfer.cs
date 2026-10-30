@@ -101,21 +101,31 @@ namespace PioneerFramework
         {
             var pos = group.CurrentOrbit.positionSystem.v;
             var vel = group.CurrentOrbit.velocitySystem.v;
+            if (mgr?.TryGetCelestialRuntime(out _) == true)
+            {
+                var offset = mgr.BodyFrameOffset(group.CelestialBodyId, physicsTick);
+                pos -= offset.Position;
+                vel -= offset.Velocity;
+            }
             double omega = Launch.GetSurfaceState.RotationOmega(mgr, group.CelestialBodyId);
             double radius = Launch.GetSurfaceState.BodyRadius(mgr, group.CelestialBodyId);
 
-            var (latRad, lonRad) = SurfaceFrame.EciToLongLat(pos, omega, physicsTick);
+            var (latRad, lonRad) = Launch.GetSurfaceState.BodyLongLat(mgr, group.CelestialBodyId, pos, physicsTick);
             shipLatDeg = (float)(latRad * Mathf.Rad2Deg);
             shipLonDeg = (float)(lonRad * Mathf.Rad2Deg);
             shipAltKm = (float)((pos.magnitude - radius) / 1000.0);
 
             // 地速与航向：地面相对速度（扣掉共转）投到当地东/北基上（基用**同一份**换算转进 ECI）
-            var vRel = vel - SurfaceFrame.SurfaceVelocity(pos, omega);
+            var vRel = vel - Launch.GetSurfaceState.CoRotationVelocity(mgr, group.CelestialBodyId, pos, physicsTick);
             var eastFixed = new DVector3(Math.Cos(lonRad), 0.0, Math.Sin(lonRad));
             var northFixed = new DVector3(-Math.Sin(lonRad) * Math.Sin(latRad), Math.Cos(latRad),
                 Math.Cos(lonRad) * Math.Sin(latRad));
-            var eastEci = SurfaceFrame.FixedToEci(eastFixed, omega, physicsTick);
-            var northEci = SurfaceFrame.FixedToEci(northFixed, omega, physicsTick);
+            var eastEci = mgr?.TryGetCelestialRuntime(out _) == true
+                ? Launch.GetSurfaceState.FixedSurfaceState(mgr, group.CelestialBodyId, eastFixed, physicsTick).pos
+                : SurfaceFrame.FixedToEci(eastFixed, omega, physicsTick);
+            var northEci = mgr?.TryGetCelestialRuntime(out _) == true
+                ? Launch.GetSurfaceState.FixedSurfaceState(mgr, group.CelestialBodyId, northFixed, physicsTick).pos
+                : SurfaceFrame.FixedToEci(northFixed, omega, physicsTick);
             double ve = DVector3.Dot(vRel, eastEci), vn = DVector3.Dot(vRel, northEci);
             shipGroundSpeed = (float)Math.Sqrt(ve * ve + vn * vn);
             hasHeading = shipGroundSpeed > 1.0f;      // 站着不动（共转）时没有"航向"
@@ -137,7 +147,9 @@ namespace PioneerFramework
             hasScanned = true;
             lastScanPos = pos;
 
-            int t = Launch.GetSurfaceState.EciToTile(pos, layer, omega, physicsTick);
+            int t = mgr?.TryGetCelestialRuntime(out _) == true
+                ? Launch.GetSurfaceState.EciToTile(pos, mgr, group.CelestialBodyId, physicsTick)
+                : Launch.GetSurfaceState.EciToTile(pos, layer, omega, physicsTick);
             if (t >= 0) shipTile = t;
             if (layer != patchLayer || shipTile != patchCenterTile) BuildPatch(layer, shipTile, radius);
 
@@ -375,7 +387,8 @@ namespace PioneerFramework
                     {
                         double u = k / 24.0;
                         var p = AnalyticTransferCore.PositionAt(from, to, u);
-                        var (la, lo) = SurfaceFrame.EciToLongLat(p, omega: Launch.GetSurfaceState.RotationOmega(mgr, group.CelestialBodyId), physicsTick: physicsTick);
+                        if (mgr?.TryGetCelestialRuntime(out _) == true) p -= mgr.BodyFrameOffset(group.CelestialBodyId, physicsTick).Position;
+                        var (la, lo) = Launch.GetSurfaceState.BodyLongLat(mgr, group.CelestialBodyId, p, physicsTick);
                         float dLon2 = Mathf.DeltaAngle(shipLonDeg, (float)(lo * Mathf.Rad2Deg)) * cosLat;
                         float dLat2 = (float)(la * Mathf.Rad2Deg) - shipLatDeg;
                         var pt = new Vector2(MapSize * 0.5f + dLon2 * pxPerDeg, MapSize * 0.5f - dLat2 * pxPerDeg);
@@ -518,6 +531,11 @@ namespace PioneerFramework
             double omega = Launch.GetSurfaceState.RotationOmega(mgr, group.CelestialBodyId);
             double radius = Launch.GetSurfaceState.BodyRadius(mgr, group.CelestialBodyId);
             float altKm = altKmOverride > 0f ? altKmOverride : shipAltKm;
+            if (mgr?.TryGetCelestialRuntime(out _) == true)
+            {
+                var local = Launch.GetSurfaceState.TileToEci(destTile, mgr, group.CelestialBodyId, physicsTick);
+                return mgr.BodyFrameOffset(group.CelestialBodyId, physicsTick).Position + local + local.normalized * (altKm * 1000.0);
+            }
             var p = Launch.GetSurfaceState.TileToEci(layer, destTile, radius, omega, physicsTick);
             return p + p.normalized * (altKm * 1000.0);
         }
@@ -561,7 +579,8 @@ namespace PioneerFramework
             if (dvF <= 0f) { note = "Δv 要 > 0。"; return; }
 
             var targetPos = DestinationEci(layer, mgr, group, physicsTick, altKm);
-            var targetVel = SurfaceFrame.SurfaceVelocity(targetPos, Launch.GetSurfaceState.RotationOmega(mgr, group.CelestialBodyId));
+            var offset = mgr?.TryGetCelestialRuntime(out _) == true ? mgr.BodyFrameOffset(group.CelestialBodyId, physicsTick) : (Position: DVector3.zero, Velocity: DVector3.zero);
+            var targetVel = offset.Velocity + Launch.GetSurfaceState.CoRotationVelocity(mgr, group.CelestialBodyId, targetPos - offset.Position, physicsTick);
             bool wasHovering = group.hoverActive;      // 起搬会**临时退出悬浮**，并在**到达点自动恢复原档位**
             note = spaceGame.StartAnalyticTransfer(group, targetPos, targetVel, dvF, physicsTick)
                 ? (wasHovering

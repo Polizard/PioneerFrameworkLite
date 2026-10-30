@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using RimWorld.Planet;
 using UnityEngine;
 using Verse;
@@ -28,13 +28,15 @@ namespace PioneerFramework.Launch
     /// 出生状态 = 地表点 + 离地高度 alt，速度继承自转初速 v_surface（赤道 ≈ 524 m/s）。
     /// 注意（设计缺口）：高纬度发射会入倾斜圆轨（控制律无面外项）。
     /// </summary>
-    public static class GetSurfaceState
+    public static partial class GetSurfaceState
     {
         public const double DefaultDayLengthTicks = 60000.0;
 
         /// <summary>自转角速度 ω (rad/s)：2π/dayLengthTicks（1 tick = 1 s）。</summary>
         public static double RotationOmega(CelestialBodyManager? mgr, int bodyId)
         {
+            if (mgr?.TryGetCelestialRuntime(out _) == true)
+                return -mgr.GetBodyMotion(bodyId, mgr.MotionSampleSeconds).AngularVelocity.y;
             var body = mgr?.GetBodyById(bodyId);
             double dayTicks = body != null && body.dayLengthTicks > 0.0 ? body.dayLengthTicks : DefaultDayLengthTicks;
             return 2.0 * Math.PI / dayTicks;
@@ -43,6 +45,11 @@ namespace PioneerFramework.Launch
         /// <summary>地心半径 (m)。</summary>
         public static double BodyRadius(CelestialBodyManager? mgr, int bodyId)
         {
+            if (mgr?.TryGetCelestialRuntime(out var runtime) == true && runtime.Catalog.TryResolveHandle(bodyId, out var id))
+            {
+                var instance = runtime.Query(id);
+                if (instance.Success) return instance.Value.Description.RadiusMeters;
+            }
             var body = mgr?.GetBodyById(bodyId);
             return body != null && body.radius > 0.0 ? body.radius : SpaceConstants.PlanetRadiusMeters;
         }
@@ -62,6 +69,23 @@ namespace PioneerFramework.Launch
         /// <summary>表面上方出生点：p + radial·alt，速度继承地表（尚未被推力改变）。</summary>
         public static (DVector3 pos, DVector3 vel) SurfaceStateAbove((DVector3 pos, DVector3 vel) surface, double altMeters)
             => SurfaceFrame.SurfaceStateAbove(surface, altMeters);
+        /// <summary>同一已提交采样中的固连点 → 共同惯性系位置与速度。</summary>
+        public static (DVector3 pos, DVector3 vel) SystemSurfaceState(Celestial.CelestialViewSnapshot body, DVector3 fixedMeters)
+            => (body.FixedPointToSystem(fixedMeters), body.FixedPointVelocity(fixedMeters));
+
+        /// <summary>固连地表点在天体中心惯性系中的状态；运动提供者负责姿态与角速度。</summary>
+        public static (DVector3 pos, DVector3 vel) FixedSurfaceState(CelestialBodyManager? manager, int bodyId, DVector3 fixedMeters, double seconds)
+        {
+            if (manager?.TryGetCelestialRuntime(out _) == true)
+            {
+                var motion = manager.GetBodyMotion(bodyId, seconds);
+                var position = DVector3.Rotate(fixedMeters, motion.Orientation);
+                return (position, DVector3.Cross(motion.AngularVelocity, position));
+            }
+            double omega = RotationOmega(manager, bodyId);
+            var legacyPosition = SurfaceFrame.FixedToEci(fixedMeters, omega, seconds);
+            return (legacyPosition, SurfaceFrame.SurfaceVelocity(legacyPosition, omega));
+        }
 
         /// <summary>
         /// 发射台 → 惯性出生状态（点火时刻现算，发射台随自转在动）。
@@ -79,6 +103,11 @@ namespace PioneerFramework.Launch
 
             PlanetLayer layer = groundMap != null ? groundMap.Tile.Layer : Find.WorldGrid.Surface;
             int tileId = groundMap != null ? groundMap.Tile : 0;
+            if (mgr?.TryGetCelestialRuntime(out _) == true)
+            {
+                if (GetBodyForLayer(mgr, layer) != bodyId) throw new InvalidOperationException("SurfaceIdentityMismatch");
+                return SurfaceStateAbove(FixedSurfaceState(mgr, bodyId, TileToFixedPosition(layer, tileId, radius), physicsTick), altMeters);
+            }
             var pEci = TileToEci(layer, tileId, radius, omega, physicsTick);
             var vEci = SurfaceVelocity(pEci, omega);
 
@@ -87,7 +116,7 @@ namespace PioneerFramework.Launch
 
         // ═══ tile ↔ 物理层（ECI）坐标转换（天地映射公开 API，单一事实源）═══
         // 支持任意 PlanetLayer 天体：tile 的中心取 tile.Layer.GetTileCenter（渲染网格顶点中心），
-        // 归一化 × 该天体的米制物理半径（CelestialBodyDef.radius，非渲染单位）→ 固连系米制位置。
+        // 归一化 × 该天体的米制物理半径（CelestialBodyInfo.radius，非渲染单位）→ 固连系米制位置。
         // 约定：所有 layer 均为球心原点、极轴 +y 的球面网格，经度 0 = −z（与 RW LongLatOf 一致）。
 
         /// <summary>
@@ -97,6 +126,13 @@ namespace PioneerFramework.Launch
         /// </summary>
         public static PlanetLayer? GetLayerForBody(CelestialBodyManager? mgr, int bodyId)
         {
+            if (mgr?.TryGetCelestialRuntime(out var runtime) == true)
+            {
+                if (!runtime.Catalog.TryResolveHandle(bodyId, out var id) || runtime.Surfaces == null) return null;
+                var handle = runtime.Surfaces.Find(id);
+                var currentGrid = Current.Game?.World?.grid ?? Current.CreatingWorld?.grid;
+                return handle.Success && currentGrid != null && currentGrid.PlanetLayers.TryGetValue(handle.Value.LayerId, out var layer) ? layer : null;
+            }
             var body = mgr?.GetBodyById(bodyId);
             if (body == null || !body.hasSurface) return null;
             string defName = !string.IsNullOrEmpty(body.planetLayerDefName) ? body.planetLayerDefName : body.defName;
@@ -117,6 +153,17 @@ namespace PioneerFramework.Launch
         public static int GetBodyForLayer(CelestialBodyManager? mgr, PlanetLayer layer)
         {
             if (mgr == null || layer == null) return -1;
+            if (layer is Celestial.CelestialSurfaceLayer surface)
+            {
+                var grid = Current.Game?.World?.grid ?? Current.CreatingWorld?.grid;
+                if (mgr.TryGetCelestialRuntime(out var runtime) && grid != null && grid.PlanetLayers.TryGetValue(layer.LayerID, out var registered) &&
+                    ReferenceEquals(registered, layer))
+                {
+                    var body = runtime.Query(surface.Header.OwnerId);
+                    if (body.Success && body.Value.Lifecycle != Celestial.CelestialLifecycle.Removed) return body.Value.Description.Handle;
+                }
+                return -1;
+            }
             foreach (var body in mgr.GetAllBodies())
             {
                 if (GetLayerForBody(mgr, body.bodyId) == layer) return body.bodyId;
@@ -161,6 +208,11 @@ namespace PioneerFramework.Launch
         /// </summary>
         public static DVector3 TileToEci(int tile, CelestialBodyManager mgr, int bodyId, double physicsTick)
         {
+            if (mgr?.TryGetCelestialRuntime(out _) == true)
+            {
+                var owned = GetLayerForBody(mgr, bodyId) ?? throw new InvalidOperationException("SurfaceNotCreated");
+                return FixedSurfaceState(mgr, bodyId, TileToFixedPosition(owned, tile, BodyRadius(mgr, bodyId)), physicsTick).pos;
+            }
             var layer = GetLayerForBody(mgr, bodyId) ?? Find.WorldGrid.Surface;
             return TileToEci(layer, tile, BodyRadius(mgr, bodyId), RotationOmega(mgr, bodyId), physicsTick);
         }
@@ -201,6 +253,11 @@ namespace PioneerFramework.Launch
         {
             var layer = GetLayerForBody(mgr, bodyId);
             if (layer == null) return -1;
+            if (mgr?.TryGetCelestialRuntime(out _) == true)
+            {
+                var motion = mgr.GetBodyMotion(bodyId, physicsTick);
+                return EciToTile(DVector3.Rotate(pEci, DQuaternion.Inverse(motion.Orientation)), layer, 0, 0);
+            }
             return EciToTile(pEci, layer, RotationOmega(mgr, bodyId), physicsTick);
         }
 

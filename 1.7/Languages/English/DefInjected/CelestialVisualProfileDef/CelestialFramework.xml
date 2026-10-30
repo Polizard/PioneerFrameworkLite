@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<LanguageData>
+  <PF_EarthSurfaceVisual.label>Earth surface visuals</PF_EarthSurfaceVisual.label>
+  <PF_MoonSurfaceVisual.label>lunar surface visuals</PF_MoonSurfaceVisual.label>
+  <PF_EarthAtmosphereVisual.label>Earth atmosphere visuals</PF_EarthAtmosphereVisual.label>
+  <PF_EarthCloudsVisual.label>Earth cloud visuals</PF_EarthCloudsVisual.label>
+  <PF_StellarVisual.label>existing stellar plasma visuals</PF_StellarVisual.label>
+</LanguageData>

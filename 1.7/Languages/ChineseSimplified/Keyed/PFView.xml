@@ -30,6 +30,9 @@
   <PFV_Region>所在区域</PFV_Region>
   <PFV_Speed>轨道速度</PFV_Speed>
   <PFV_Focus>聚焦此对象</PFV_Focus>
+  <PFV_EnterMap>进入地图</PFV_EnterMap>
+  <PFV_GroupMapChoice>{0}（地图 {1}）</PFV_GroupMapChoice>
+  <PFV_MapUnavailable>无法进入地图：编队已不可操作或地图已卸载。</PFV_MapUnavailable>
   <PFV_SetTarget>设为目标</PFV_SetTarget>
   <PFV_TargetSelected>目标：{0}</PFV_TargetSelected>
   <PFV_TargetShortcut>Shift+左键：设为目标，保留当前查看与操控。</PFV_TargetShortcut>
@@ -43,6 +46,7 @@
   <PFV_EnterRoom>进入 {0}</PFV_EnterRoom>
   <PFV_Operating>操作编队 {0}</PFV_Operating>
   <PFV_WeaponTarget>目标：{0}</PFV_WeaponTarget>
+  <PFV_EngagementRange>交战距离：{0}</PFV_EngagementRange>
   <PFV_CloseWeapons>结束武器操作</PFV_CloseWeapons>
   <PFV_ClearTarget>清除目标</PFV_ClearTarget>
   <PFV_Overheated>过热</PFV_Overheated>
@@ -87,7 +91,7 @@
   <PFV_HelpCameraTitle>观察与镜头</PFV_HelpCameraTitle>
   <PFV_HelpCamera>单击查看、双击聚焦；右键环视；自由视角下中键或 Shift+右键平移。键盘快捷键以当前自定义绑定为准。</PFV_HelpCamera>
   <PFV_HelpTasksTitle>按场景展开</PFV_HelpTasksTitle>
-  <PFV_HelpTasks>操舵时展开姿态仪表，武器操作时展开雷达。显示菜单可临时固定展开或收起；重开恢复自动。雷达只显示。</PFV_HelpTasks>
+  <PFV_HelpTasks>操舵时展开姿态仪表，武器操作时展开雷达。显示菜单可临时固定展开或收起；重开恢复自动。雷达只显示。有已加载地图的我方编队，可在详情或右键菜单选择“进入地图”；多个地图会列出供选择。</PFV_HelpTasks>
   <PFV_HelpSubjectsTitle>查看与操作</PFV_HelpSubjectsTitle>
   <PFV_HelpSubjects>底部依次显示查看、跟随、操作编队、目标。查看其他对象或收起详情不会切换操控编队。Shift+左键设目标；开火前需明确打开操作编队的武器面板。</PFV_HelpSubjects>
   <PFV_HelpTimeTitle>游戏时间</PFV_HelpTimeTitle>
@@ -116,19 +120,34 @@
   <PFV_SettingsCamera>PFView 编队镜头</PFV_SettingsCamera>
   <PFV_SettingsFocusMode>双击／聚焦时的默认视角：{0}</PFV_SettingsFocusMode>
   <PFV_SettingsFocusModeTip>只影响之后双击编队或点击“聚焦”。当前镜头保持不变；也可在 PFView 工具条临时切换视角。</PFV_SettingsFocusModeTip>
+  <PFV_SettingsStellar>恒星渲染（默认旧版视觉）</PFV_SettingsStellar>
+  <PFV_SettingsStellarFast>使用新版恒星渲染（实验；观感不同、性能优先）</PFV_SettingsStellarFast>
+  <PFV_SettingsStellarFastTip>默认关闭＝你认可的旧版恒星视觉，不改任何观感。开启后改用"解析光球＋薄日冕壳"的新渲染（性能更高，但边缘/日冕观感不同）；切换后需重开 PFView 生效。</PFV_SettingsStellarFastTip>
+  <PFV_SettingsStellarTier>新版渲染档位：{0}</PFV_SettingsStellarTier>
+  <PFV_SettingsStellarTip>档位只在新版渲染开启时生效：视觉优先＝新版全质量；均衡／性能优先只降低日冕内部采样密度。旧版视觉不受影响。</PFV_SettingsStellarTip>
+  <PFV_StellarQuality_VisualFirst>新版·视觉优先（默认档）</PFV_StellarQuality_VisualFirst>
+  <PFV_StellarQuality_Balanced>新版·均衡</PFV_StellarQuality_Balanced>
+  <PFV_StellarQuality_PerformanceFirst>新版·性能优先</PFV_StellarQuality_PerformanceFirst>
   <PFV_HelpCameraModesTitle>自由与两种第三人称</PFV_HelpCameraModesTitle>
   <PFV_HelpCameraModes>自由环绕、船体正向、速度正向分别保存机位。船体正向从船尾跟随；速度正向沿系统惯性速度方向跟随，零速时退回船体方向。默认抑制船体滚转带动整屏旋转，可在 Mod 设置中开启随船滚转。第三人称支持全周环视，俯仰限制在 −85°～85°，保持安全距离并禁用平移。环视默认松手保留，可设置松手回正。修改镜头默认项在下一次聚焦时应用。</PFV_HelpCameraModes>
   <PFV_Pilot_Settings>PFView 驾驶与观察</PFV_Pilot_Settings>
   <PFV_Pilot_Assist>松开转向键后辅助止转（关闭则保留惯性旋转）</PFV_Pilot_Assist>
   <PFV_Pilot_InvertPitch>反转键盘俯仰方向</PFV_Pilot_InvertPitch>
-  <PFV_Pilot_Precision>精细操作比例：{0}%</PFV_Pilot_Precision>
+  <PFV_Pilot_Precision>精确操舵比例：{0}%</PFV_Pilot_Precision>
+  <PFV_Pilot_PrecisionMode>精确操舵触发方式：{0}</PFV_Pilot_PrecisionMode>
+  <PFV_Pilot_PrecisionHold>按住生效（默认）</PFV_Pilot_PrecisionHold>
+  <PFV_Pilot_PrecisionToggle>按一次切换</PFV_Pilot_PrecisionToggle>
+  <PFV_Pilot_PrecisionHoldHelp>精确操舵：按住 {0}</PFV_Pilot_PrecisionHoldHelp>
+  <PFV_Pilot_PrecisionToggleHelp>精确操舵：按 {0} 切换开关</PFV_Pilot_PrecisionToggleHelp>
+  <PFV_Pilot_PrecisionOn>精确 {0}%</PFV_Pilot_PrecisionOn>
+  <PFV_Pilot_PrecisionOff>常规操舵</PFV_Pilot_PrecisionOff>
   <PFV_Pilot_FollowRoll>镜头随船体滚转</PFV_Pilot_FollowRoll>
   <PFV_Pilot_InvertMouse>反转鼠标观察纵轴</PFV_Pilot_InvertMouse>
   <PFV_Pilot_InvertWheel>反转滚轮缩放（默认向前拉近）</PFV_Pilot_InvertWheel>
   <PFV_Pilot_Recenter>第三人称环视松手后自动回正</PFV_Pilot_Recenter>
   <PFV_Pilot_Sensitivity>鼠标观察灵敏度：{0} 倍</PFV_Pilot_Sensitivity>
   <PFV_Pilot_Smoothing>镜头跟随平滑时间：{0} 秒</PFV_Pilot_Smoothing>
-  <PFV_Pilot_Activation>转向辅助和精细比例在下一次接管时生效；镜头选项在下一次聚焦时生效。改键后须先松开按键，再重新按下。</PFV_Pilot_Activation>
+  <PFV_Pilot_Activation>转向辅助、精确操舵触发方式和比例在下一次接管时生效；镜头选项在下一次聚焦时生效。切换式精确操舵在本次接管期间保持，结束或换船时关闭。改键后须先松开按键，再重新按下。</PFV_Pilot_Activation>
   <PFV_Pilot_Bindings>PFView 键位设置</PFV_Pilot_Bindings>
   <PFV_Pilot_Unbound>未绑定</PFV_Pilot_Unbound>
   <PFV_Pilot_Edit>修改</PFV_Pilot_Edit>
@@ -154,7 +173,7 @@
   <PFV_Pilot_Action_Right>向右平移</PFV_Pilot_Action_Right>
   <PFV_Pilot_Action_Up>向上平移</PFV_Pilot_Action_Up>
   <PFV_Pilot_Action_Down>向下平移</PFV_Pilot_Action_Down>
-  <PFV_Pilot_Action_Precision>按住精细操作</PFV_Pilot_Action_Precision>
+  <PFV_Pilot_Action_Precision>精确操舵</PFV_Pilot_Action_Precision>
   <PFV_Pilot_Action_ResetCamera>重置当前焦点取景</PFV_Pilot_Action_ResetCamera>
   <PFV_Pilot_Action_FocusControl>回到操控船</PFV_Pilot_Action_FocusControl>
   <PFV_Pilot_Action_Group1>切换动作组 1</PFV_Pilot_Action_Group1>
@@ -178,7 +197,7 @@
   <PFV_Pilot_Axis>主推进轴</PFV_Pilot_Axis>
   <PFV_Pilot_Groups>动作组</PFV_Pilot_Groups>
   <PFV_Pilot_Directions>船头 / 主推 / 速度</PFV_Pilot_Directions>
-  <PFV_Pilot_DriveKeys>转向 {0}/{1}/{2}/{3} · 滚转 {4}/{5} · 精细 {6}</PFV_Pilot_DriveKeys>
+  <PFV_Pilot_DriveKeys>转向 {0}/{1}/{2}/{3} · 滚转 {4}/{5} · {6}</PFV_Pilot_DriveKeys>
   <PFV_Pilot_TranslateKeys>前后 {0}/{1} · 左右 {2}/{3} · 上下 {4}/{5}（松开停推，已有速度保留）</PFV_Pilot_TranslateKeys>
   <PFV_Pilot_CameraKeys>右键环视；自由视角中键或 Shift+右键平移；滚轮缩放。复位 {0}，回操控船 {1}。</PFV_Pilot_CameraKeys>
   <PFV_Pilot_Suspended>输入已暂停：请松开按键，再重新按下。</PFV_Pilot_Suspended>
@@ -204,4 +223,50 @@
   <PFV_Pilot_Sas_Antinormal>反法向</PFV_Pilot_Sas_Antinormal>
   <PFV_Pilot_Sas_RadialOut>径外</PFV_Pilot_Sas_RadialOut>
   <PFV_Pilot_Sas_RadialIn>径内</PFV_Pilot_Sas_RadialIn>
+  <PFV_TimeSpaceRate>空间 {0}×</PFV_TimeSpaceRate>
+  <PFV_TimeCombat>交战</PFV_TimeCombat>
+  <PFV_TimeTerminal>交会收尾</PFV_TimeTerminal>
+  <PFV_TimeManeuver>机动中</PFV_TimeManeuver>
+  <PFV_TimeUnrestricted>采用玩家选择的空间倍率</PFV_TimeUnrestricted>
+  <PFV_TimeStatusTip>按钮控制游戏运行速度；空间时间同时采用当前倍率。\n当前：{0}\n状态：{1}\n精度限制解除后自动恢复空间倍率偏好。暂停时空间模拟停止。</PFV_TimeStatusTip>
+  <PFV_FleetOverview>我方舰况 ({0})</PFV_FleetOverview>
+  <PFV_FleetAttention>需关注 ({0})</PFV_FleetAttention>
+  <PFV_FleetShowAll>显示全部</PFV_FleetShowAll>
+  <PFV_FleetAllRegions>范围：全部我方区域</PFV_FleetAllRegions>
+  <PFV_FleetFuel>推进剂 {0}</PFV_FleetFuel>
+  <PFV_FleetDeltaV>参考 Δv {0}</PFV_FleetDeltaV>
+  <PFV_FleetEndurance>最短全推 {0}</PFV_FleetEndurance>
+  <PFV_FleetNoPropulsion>无可用推进系统</PFV_FleetNoPropulsion>
+  <PFV_FleetNoEvent>无排队事件</PFV_FleetNoEvent>
+  <PFV_FleetEvent_Node>机动节点 +{0}</PFV_FleetEvent_Node>
+  <PFV_FleetEvent_Arrival>到达估计 +{0}</PFV_FleetEvent_Arrival>
+  <PFV_FleetEstimateTip>参考 Δv 沿用现有编队推进口径，不保证任务可完成。环境相关网络显示当前工况下最短的全推续航；各工质见详情。节点倒计时指节点时刻，点火可能更早。推进剂低于 20% 仅作储备提醒。</PFV_FleetEstimateTip>
+  <PFV_FleetPropellant>推进剂</PFV_FleetPropellant>
+  <PFV_FleetMobility>机动能力</PFV_FleetMobility>
+  <PFV_FleetStructure>结构</PFV_FleetStructure>
+  <PFV_FleetDamageCounts>受损建筑 {0} · 已毁部件 {1}</PFV_FleetDamageCounts>
+  <PFV_FleetMinimumHp>最低部件 HP</PFV_FleetMinimumHp>
+  <PFV_FleetWeapons>武器</PFV_FleetWeapons>
+  <PFV_FleetWeaponCounts>就绪 {0} / {1}</PFV_FleetWeaponCounts>
+  <PFV_FleetNextEvent>下一事件</PFV_FleetNextEvent>
+  <PFV_FleetUnloadedMaps>部分舱图未加载；建筑与武器统计仅含已加载地图。</PFV_FleetUnloadedMaps>
+  <PFV_FleetMembers>展开 / 收起成员 ({0})</PFV_FleetMembers>
+  <PFV_FleetMemberParts>{0} 部件 · 已毁 {1}</PFV_FleetMemberParts>
+  <PFV_FleetManeuvers>机动规划</PFV_FleetManeuvers>
+  <PFV_FleetQueue>机动队列 ({0})</PFV_FleetQueue>
+  <PFV_FleetActivity_Idle>待命</PFV_FleetActivity_Idle>
+  <PFV_FleetActivity_Crippled>关键部件失能</PFV_FleetActivity_Crippled>
+  <PFV_FleetActivity_Burning>燃烧中</PFV_FleetActivity_Burning>
+  <PFV_FleetActivity_Approach>近距离接近中</PFV_FleetActivity_Approach>
+  <PFV_FleetActivity_Rendezvous>交会引导中</PFV_FleetActivity_Rendezvous>
+  <PFV_FleetActivity_Transfer>转移中</PFV_FleetActivity_Transfer>
+  <PFV_FleetActivity_Landing>降落中</PFV_FleetActivity_Landing>
+  <PFV_FleetActivity_Queued>机动待执行</PFV_FleetActivity_Queued>
+  <PFV_FleetAlert_Crippled>× 关键部件失能</PFV_FleetAlert_Crippled>
+  <PFV_FleetAlert_PropellantEmpty>× 推进剂耗尽</PFV_FleetAlert_PropellantEmpty>
+  <PFV_FleetAlert_LowPropellant>! 推进剂偏低</PFV_FleetAlert_LowPropellant>
+  <PFV_FleetAlert_Damage>! 结构受损</PFV_FleetAlert_Damage>
+  <PFV_FleetAlert_Overheated>! 武器过热</PFV_FleetAlert_Overheated>
+  <PFV_FleetAlert_DisabledWeapons>! 武器停用</PFV_FleetAlert_DisabledWeapons>
+  <PFV_FleetAlert_EmptyWeapons>! 武器缺弹</PFV_FleetAlert_EmptyWeapons>
 </LanguageData>

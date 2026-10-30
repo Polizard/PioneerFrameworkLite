@@ -1,5 +1,6 @@
 #if !PURE_MATH
-using RimWorld.Planet;
+using Verse;
+using PioneerFramework.Celestial;
 #endif
 
 namespace PioneerFramework
@@ -66,15 +67,20 @@ namespace PioneerFramework
 
 #if !PURE_MATH
         /// <summary>
-        /// 与 RimWorld 世界同步行星参数。
-        /// RimWorld 的世界半径恒为 WorldGrid.PlanetRadius (100 tiles)，
-        /// 因此行星物理半径 = 100 × MetersPerUnit = 5,000,000 m。
-        /// 如果后续支持不同大小的世界，此处会自动适配。
+        /// 从选定主地表的实例事实同步兼容读数。原生网格半径只用于显示。
         /// </summary>
         public static void SyncWithWorldGrid()
         {
-            // WorldGrid.PlanetRadius 是 RimWorld 的编译时常量 100f
-            PlanetRadiusMeters = WorldGrid.PlanetRadius * MetersPerUnit;
+            var manager = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (manager?.TryGetCelestialRuntime(out var runtime) != true) return;
+            var root = runtime.Creation.RootSurfaceId ?? CelestialWorldBootstrap.Current?.Manifest.RootSurfaceId;
+            if (!root.HasValue) return;
+            var body = runtime.Query(root.Value);
+            if (!body.Success) return;
+            PlanetRadiusMeters = body.Value.Description.RadiusMeters;
+            PrimaryGravitationalParameter = body.Value.Description.GravitationalParameter ?? 0;
+            var atmospheres = runtime.GetCapabilities<ICelestialAtmosphereCapability>(root.Value);
+            AtmosphereThicknessMeters = atmospheres.Count == 1 ? atmospheres[0].GetProfile().topAltitude : 0;
         }
 #endif
     }

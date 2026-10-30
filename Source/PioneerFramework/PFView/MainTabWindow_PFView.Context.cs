@@ -20,6 +20,10 @@ namespace PioneerFramework
         private void ResetUiSession()
         {
             ResetCameraDrag();
+            navigableGroupMaps.Clear();
+            fleetSnapshots.Clear();
+            fleetAlertsOnly = false;
+            showFleetMembers = false;
             objectSearchFocused = false;
             navballMode = PFViewPanelMode.Automatic;
             radarMode = PFViewPanelMode.Automatic;

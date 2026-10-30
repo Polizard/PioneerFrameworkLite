@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
+using PioneerFramework.ShipSkin;
 
 namespace PioneerFramework
 {
@@ -104,6 +105,12 @@ namespace PioneerFramework
 
             // 健康件：同网格同材质同色 ⇒ 一次提交；蒙皮 tint 非空时用阵营色。
             block.SetColor("_Color", tint ?? PartColor);
+            if (tint.HasValue)
+            {
+                ShipSkinFrame.Apply(block, viewPos, rotation, metersToView, scale);
+                block.SetColor("_HullColor", ShipSkinPalette.HullColor(0));
+                block.SetVector("_SkinSurface", new Vector4(1f, ShipSkinPalette.Roughness(0), 0f, 0f));
+            }
             WorldQuadBatch.Reset();
             foreach (var part in entity.Parts)
             {
@@ -209,6 +216,8 @@ namespace PioneerFramework
             if (meshes == null || material == null || block == null) return;
 
             Matrix4x4 mtx = ReliefMatrix(viewPos, rotation, metersToView, scale);
+            if (tint.HasValue)
+                ShipSkinFrame.Apply(block, viewPos, rotation, metersToView, scale);
             if (toonOutline)
                 block.SetFloat("_OutlineWidth", ReliefOutlineWidth);
 
@@ -216,8 +225,13 @@ namespace PioneerFramework
             {
                 Mesh? mesh = meshes[c];
                 if (mesh == null) continue;
-                // 2026-10-19 蒙皮：tint 非空 = 三档明度向阵营色靠 28%（仍有结构层次）；空 = 旧三色逐字不变。
-                block.SetColor("_Color", tint.HasValue ? Color.Lerp(ReliefColors[c], tint.Value, 0.28f) : ReliefColors[c]);
+                // 2026-10-20：阵营色仅进入贴图的涂装遮罩；三类结构各自保留底色/粗糙度。
+                block.SetColor("_Color", tint ?? ReliefColors[c]);
+                if (tint.HasValue)
+                {
+                    block.SetColor("_HullColor", ShipSkinPalette.HullColor(c));
+                    block.SetVector("_SkinSurface", new Vector4(0f, ShipSkinPalette.Roughness(c), 0f, 0f));
+                }
                 Graphics.DrawMesh(mesh, mtx, material, layer, null, 0, block);
             }
         }

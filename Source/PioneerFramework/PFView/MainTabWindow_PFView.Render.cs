@@ -222,7 +222,7 @@ namespace PioneerFramework
 
             // 2026-10-19 舰船蒙皮：每次开窗都确保材质就绪（Cleanup 会销毁它；静态构造器只在首次跑）。
             // 取不到 shader/贴图 ⇒ 自动回退旧材质，不抛异常。
-            if (!ShipSkinAssets.EnsureInitialized(MetersToView) && ShipSkinSettings.Enabled)
+            if (!ShipSkinAssets.EnsureInitialized() && ShipSkinSettings.Enabled)
                 Log.Warning("[PFView·蒙皮] 不可用（" + (ShipSkinAssets.Failure ?? "未知原因")
                     + "）⇒ 舰船回退 PFLit/Toon 旧材质");
 
@@ -230,10 +230,13 @@ namespace PioneerFramework
         }
 
         /// <summary>按当前屏幕尺寸（重）建渲染纹理。窗口尺寸变化后不重建的话，画面会被 StretchToFill 拉变形/发糊。</summary>
+        /// <remarks>P0 恒星性能探针（2026-10-28）：`PFViewStellarProbe.RenderScale` 默认 1.0 ⇒ 与历史逐字节一致；
+        /// 0.75/0.5 仅用于判"是否 GPU 填充率主导"，不是玩家可见功能。</remarks>
         private void RecreateRenderTexture()
         {
-            int rw = Mathf.Max(1, UI.screenWidth);
-            int rh = Mathf.Max(1, UI.screenHeight);
+            float scale = Mathf.Clamp(PFViewStellarProbe.RenderScale, 0.25f, 1f);
+            int rw = Mathf.Max(1, Mathf.RoundToInt(UI.screenWidth * scale));
+            int rh = Mathf.Max(1, Mathf.RoundToInt(UI.screenHeight * scale));
             if (renderTexture != null)
             {
                 if (renderTexture.width == rw && renderTexture.height == rh) return;
@@ -251,6 +254,7 @@ namespace PioneerFramework
             DestroySurfaceResources();  // 基底球材质 + 补丁网格/材质同上
             DestroyAtmosphereShellMaterials();  // 大气壳材质同上（网格是静态资源，不销毁）
             DestroyCloudResources();
+            DestroyStellarVisualResources();
             if (renderTexture != null) { renderTexture.Release(); UnityEngine.Object.Destroy(renderTexture); renderTexture = null; }
             if (sunLight != null) { UnityEngine.Object.Destroy(sunLight.gameObject); sunLight = null; }
             if (fillLight != null) { UnityEngine.Object.Destroy(fillLight.gameObject); fillLight = null; }
@@ -290,25 +294,10 @@ namespace PioneerFramework
 
         private DVector3 GetGroupPosAbs(SpaceEntityGroup g, double tick)
         {
-            // ⚠ 2026-10-11（"别的航天器整体位置在抖"的治本）：两条路各按自己的连续性取位置 ——
-            //   · **解析圆轨**：`GetCircularPositionAtTick(double)` 本就是 `f(tick)` 的**连续**函数（注释：支持子tick）
-            //     ⇒ 喂连续时钟即可，位置严格连续；
-            //   · **积分轨**：物理状态只在**物理步边界**被写（每 `UPDATE_INTERVAL_TICKS`=2 tick 一步）
-            //     ⇒ 按速度**外推**到当前渲染时刻（`pos + v·Δt`）——与射弹那条"渲染位置解析化"同一手法；
-            //     Δt = 渲染 tick − 上一次物理步的物理 tick（`SpaceGameComp.LastPhysicsStepTick`）。
-            //   ⛔ 不要只改一半：**原点与物体必须同钟**（原点也是本函数算的 ⇒ 自动同钟）。
-            DVector3 posSystem;
-            if (g.IsCircularOrbit)
-            {
-                posSystem = g.GetCircularPositionAtTick(tick);
-            }
-            else
-            {
-                var sg = Current.Game?.GetComponent<SpaceGameComp>();
-                double dt = sg != null ? tick - sg.LastPhysicsStepTick : 0.0;
-                if (dt < 0.0 || dt > 8.0) dt = 0.0;   // 换档/读档/异常：不外推（宁可静止，也别把船外推飞）
-                posSystem = g.CurrentOrbit.positionSystem.v + g.CurrentOrbit.velocitySystem.v * dt;
-            }
+            // 原点与物体共享连续渲染时钟；已提交区间内插值，区间外沿用受限外推。
+            var space = Current.Game?.GetComponent<SpaceGameComp>();
+            DVector3 posSystem = space != null ? space.RenderedGroupPosition(g, tick)
+                : g.IsCircularOrbit ? g.GetCircularPositionAtTick(tick) : g.CurrentOrbit.positionSystem.v;
 
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (mgr == null) return posSystem;

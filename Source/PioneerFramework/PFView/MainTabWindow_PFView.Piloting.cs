@@ -14,8 +14,13 @@ namespace PioneerFramework
             Widgets.DrawBoxSolid(rect, PFViewPalette.PanelBg);
             Text.Font = GameFont.Small;
             string mode = (SteeringController.AssistedStop ? "PFV_Pilot_Assisted" : "PFV_Pilot_Inertial").Translate();
-            Widgets.Label(new(rect.x + 6, rect.y + 2, rect.width - 12, 20),
-                "G" + group.GroupId + " · " + mode + " · " + Window_Steering.SasLabel(SteeringController.SasKind));
+            string heading = "G" + group.GroupId + " · " + Window_Steering.PrecisionStatus() + " · " + mode
+                + " · " + Window_Steering.SasLabel(SteeringController.SasKind);
+            var headingRect = new Rect(rect.x + 6, rect.y + 2, rect.width - 12, 20);
+            Text.Font = rect.width < 450 ? GameFont.Tiny : GameFont.Small;
+            Widgets.Label(headingRect, heading);
+            TooltipHandler.TipRegion(headingRect, heading + "\n" + Window_Steering.PrecisionHelp());
+            Text.Font = GameFont.Small;
             Widgets.Label(new(rect.x + 6, rect.y + 22, rect.width - 12, 20),
                 "PFV_Pilot_ActualThrust".Translate((SteeringController.ActualThrust / 1000f).ToString("F1"))
                 + " · " + "PFV_Pilot_Spin".Translate((group.angularVelocity.magnitude * Mathf.Rad2Deg).ToString("F1")));

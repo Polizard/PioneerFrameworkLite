@@ -21,6 +21,7 @@ namespace PioneerFramework.Landing
             if (!LandingFootprintService.TryCollect(source, out var footprint, out var initial))
             { LandingTransitService.Fail(task, initial, LandingTransitStatus.AwaitingPlacement); return; }
             entry.SourceCells = footprint!.SourceCells.ToList();
+            if (task.Touchdown != null) Find.MainTabsRoot.SetCurrentTab(null);
             CameraJumper.TryJump(target.Center, target); Find.TickManager.Pause();
             foreach (var old in Find.WindowStack.Windows.OfType<Window_LandingPlacement>().ToList()) old.Close();
             var window = new Window_LandingPlacement(task); Find.WindowStack.Add(window);

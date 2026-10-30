@@ -9,7 +9,7 @@ namespace PioneerFramework
     /// ## 形状（计划稿 §2.1 的裁定）
     /// · **64 点表 + 线性插值**：建表时用 `exp` 采样一次（每天体一次，不在热路径上）；
     ///   运行期只做"一次乘法取索引 + 一次线性插值"——守住 D2 红线"**热路径无超越函数**（ρ 用表不用 exp）"。
-    /// · 参数（ρ₀、标尺高度 H）由 `CelestialBodyDef` 提供；上界 = `atmosphereThickness`（地球 100 km）。
+    /// · 参数（ρ₀、标尺高度 H）由 `CelestialBodyInfo` 提供；上界 = `atmosphereThickness`（地球 100 km）。
     /// · **顶之上恒 0**（硬截断）——"大气有顶"的模型固有台阶（与 KSP 同态）；表顶值 = ρ₀·exp(−top/H)
     ///   本就 ~1e-5·ρ₀ 量级 ⇒ 台阶在物理上可忽略，**不做平滑**（平滑会踩"不许改既有算式/偏离"那条）。
     /// · **惰性（缺席即零）**：ρ₀ ≤ 0 或 H ≤ 0 或 top ≤ 0 ⇒ **不建表**，`Density` 恒返 0。
@@ -44,7 +44,7 @@ namespace PioneerFramework
         private static volatile int anyActive;
 
         /// <summary>
-        /// 建一份剖面（每个天体一次，由 `CelestialBodyDef.EnsureAtmosphereProfile` 缓存）。
+        /// 建一份剖面（每个天体一次，由 `CelestialBodyInfo.EnsureAtmosphereProfile` 缓存）。
         /// **任何参数非正 ⇒ 返回惰性剖面**（`IsActive == false`、`Density` 恒 0）。
         /// </summary>
         public static AtmosphereProfile Build(double rho0, double scaleHeight, double topAltitude)
@@ -80,7 +80,7 @@ namespace PioneerFramework
         /// <summary>标尺高度 H (m)（ρ(h) = ρ₀·exp(−h/H) 的 H）。惰性剖面 = 0。</summary>
         public readonly double scaleHeight;
 
-        /// <summary>大气顶高度 (m)（= `CelestialBodyDef.atmosphereThickness`；h ≥ 它 ⇒ ρ ≡ 0）。惰性剖面 = 0。</summary>
+        /// <summary>大气顶高度 (m)（= `CelestialBodyInfo.atmosphereThickness`；h ≥ 它 ⇒ ρ ≡ 0）。惰性剖面 = 0。</summary>
         public readonly double topAltitude;
 
         /// <summary>`(TableSize−1)/topAltitude`：热路径一次乘法取索引（省一次除法）。</summary>

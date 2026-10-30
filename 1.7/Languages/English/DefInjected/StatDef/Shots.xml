@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_ShotResistance.label>structural penetration resistance</PF_ShotResistance.label>
+  <PF_ShotResistance.description>Penetration budget consumed by this structure, separate from pawn armor penetration.</PF_ShotResistance.description>
+</LanguageData>

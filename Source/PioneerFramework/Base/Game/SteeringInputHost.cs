@@ -16,8 +16,10 @@ namespace PioneerFramework
         private static int nativeSignature;
         private static SteeringModifiers currentModifiers;
         private static readonly SteeringPointerHold pointer = new();
+        private static bool precisionLatched;
 
         internal static void Rearm() { gate.Rearm(); pointer.Cancel(); }
+        internal static void ResetPrecision() => precisionLatched = false;
 
         internal static void UpdatePointer(bool held, bool enabled) => pointer.Update(held, enabled && SteeringController.IsOpen);
         internal static void BeginPointer(SteeringAction action) => pointer.Press(action);
@@ -26,15 +28,27 @@ namespace PioneerFramework
             if (pointer.Action is { } action) SteeringController.HoldPointerAction(action);
         }
 
+        internal static Window? KeyboardForeground(IList<Window>? windows)
+        {
+            if (windows == null) return null;
+            for (int i = windows.Count - 1; i >= 0; i--)
+            {
+                var window = windows[i];
+                // 提示框也在窗口栈顶；被动绘制层不占键盘焦点，真实弹窗仍会暂停操舵。
+                if (window is ImmediateWindow && !window.focusWhenOpened && !window.absorbInputAroundWindow) continue;
+                return window;
+            }
+            return null;
+        }
+
         internal static bool CanReadKeyboard()
         {
             if (!Application.isFocused) return false;
             var stack = Find.WindowStack;
             var view = stack?.WindowOfType<MainTabWindow_PFView>();
             if (view?.HasTextInputFocus == true) return false;
-            var windows = stack?.Windows;
-            if (windows == null || windows.Count == 0) return false;
-            var foreground = windows[windows.Count - 1];
+            var foreground = KeyboardForeground(stack?.Windows);
+            if (foreground == null) return false;
             if (foreground is Window_Steering) return SteeringController.IsOpen;
             return SteeringController.IsOpen && !SteeringController.FromPFView
                 ? foreground is Window_Steering || view != null && ReferenceEquals(foreground, view)
@@ -75,26 +89,30 @@ namespace PioneerFramework
             activeProfile = profile;
             currentModifiers = modifiers;
             gate.Update(held, enabled);
+            if (!activeProfile[SteeringAction.Precision].IsBound) precisionLatched = false;
             if (!enabled || !SteeringController.IsOpen)
             {
                 pointer.Cancel();
                 SteeringController.ClearHeldInput();
                 return;
             }
-            bool precision = IsHeld(SteeringAction.Precision, false);
-            SteeringController.PrecisionHeld = precision;
-            SteeringController.KeyPitchU = IsHeld(SteeringAction.PitchUp, precision);
-            SteeringController.KeyPitchD = IsHeld(SteeringAction.PitchDown, precision);
-            SteeringController.KeyYawL = IsHeld(SteeringAction.YawLeft, precision);
-            SteeringController.KeyYawR = IsHeld(SteeringAction.YawRight, precision);
-            SteeringController.KeyRollL = IsHeld(SteeringAction.RollLeft, precision);
-            SteeringController.KeyRollR = IsHeld(SteeringAction.RollRight, precision);
-            SteeringController.KeyForward = IsHeld(SteeringAction.Forward, precision);
-            SteeringController.KeyBack = IsHeld(SteeringAction.Back, precision);
-            SteeringController.KeyLeft = IsHeld(SteeringAction.Left, precision);
-            SteeringController.KeyRight = IsHeld(SteeringAction.Right, precision);
-            SteeringController.KeyUp = IsHeld(SteeringAction.Up, precision);
-            SteeringController.KeyDown = IsHeld(SteeringAction.Down, precision);
+            bool precisionKeyHeld = IsHeld(SteeringAction.Precision, false);
+            if (SteeringController.PrecisionToggle && precisionKeyHeld && gate.TryPress(activeProfile[SteeringAction.Precision].Key))
+                precisionLatched = !precisionLatched;
+            SteeringController.PrecisionHeld = SteeringController.PrecisionToggle ? precisionLatched : precisionKeyHeld;
+            // Ignore the precision chord's modifiers only while that chord is physically held.
+            SteeringController.KeyPitchU = IsHeld(SteeringAction.PitchUp, precisionKeyHeld);
+            SteeringController.KeyPitchD = IsHeld(SteeringAction.PitchDown, precisionKeyHeld);
+            SteeringController.KeyYawL = IsHeld(SteeringAction.YawLeft, precisionKeyHeld);
+            SteeringController.KeyYawR = IsHeld(SteeringAction.YawRight, precisionKeyHeld);
+            SteeringController.KeyRollL = IsHeld(SteeringAction.RollLeft, precisionKeyHeld);
+            SteeringController.KeyRollR = IsHeld(SteeringAction.RollRight, precisionKeyHeld);
+            SteeringController.KeyForward = IsHeld(SteeringAction.Forward, precisionKeyHeld);
+            SteeringController.KeyBack = IsHeld(SteeringAction.Back, precisionKeyHeld);
+            SteeringController.KeyLeft = IsHeld(SteeringAction.Left, precisionKeyHeld);
+            SteeringController.KeyRight = IsHeld(SteeringAction.Right, precisionKeyHeld);
+            SteeringController.KeyUp = IsHeld(SteeringAction.Up, precisionKeyHeld);
+            SteeringController.KeyDown = IsHeld(SteeringAction.Down, precisionKeyHeld);
         }
 
         private static bool IsHeld(SteeringAction action, bool precision)

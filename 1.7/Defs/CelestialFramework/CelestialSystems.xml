@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <PioneerFramework.Celestial.CelestialSystemDef>
+    <defName>PF_DefaultCelestialSystem</defName><label>默认地月系</label>
+    <rootSurfaceEntry>root</rootSurfaceEntry>
+    <entries>
+      <li>
+        <key>primary</key><bodyDef>Sun</bodyDef><count><value>1</value></count>
+        <initializationReferences><li><key>frameOrigin</key><entry>primary</entry><scope>Self</scope></li></initializationReferences>
+      </li>
+      <li>
+        <key>root</key><bodyDef>Earth</bodyDef><count><value>1</value></count><parentEntry>primary</parentEntry>
+        <initializationReferences>
+          <li><key>primaryLight</key><entry>primary</entry><scope>Global</scope></li>
+          <li><key>frameOrigin</key><entry>root</entry><scope>Self</scope></li>
+        </initializationReferences>
+      </li>
+      <li>
+        <key>satellite</key><bodyDef>Moon</bodyDef><count><value>1</value></count><parentEntry>root</parentEntry>
+        <initializationReferences>
+          <li><key>primaryLight</key><entry>primary</entry><scope>Global</scope></li>
+          <li><key>frameOrigin</key><entry>root</entry><scope>Parent</scope></li>
+        </initializationReferences>
+      </li>
+    </entries>
+  </PioneerFramework.Celestial.CelestialSystemDef>
+</Defs>

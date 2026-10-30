@@ -32,7 +32,7 @@ namespace PioneerFramework
         private readonly Dictionary<int, Material> baseSphereMaterials = new();
         private readonly HashSet<int> baseSphereLogged = new();
 
-        private Material? GetBaseSphereMaterial(CelestialBodyDef body, PlanetLayer? layer)
+        private Material? GetBaseSphereMaterial(CelestialBodyInfo body, PlanetLayer? layer)
         {
             if (baseSphereMaterials.TryGetValue(body.bodyId, out var cached) && cached != null) return cached;
 
@@ -42,7 +42,20 @@ namespace PioneerFramework
             //   ② 没给才退回"水格最多的 biome 的贴图"（不是 `backgroundBiome` 那张 —— 那张是给世界着色器做调制的**细节图**）。
             string baseLabel;
             Material mat;
-            if (body.baseSphereColor.a > 0f)
+            var configured = GetCelestialRenderVisual(body.bodyId, Celestial.CelestialVisualKind.Surface)?.Profile;
+            if (body.bodyType == CelestialBodyType.Star)
+            {
+                mat = CreateStellarSurfaceMaterial(body);
+                baseLabel = "普通天体位置与球网格，局部等离子体材质";
+            }
+            else if (configured?.TexturePath != null)
+            {
+                var texture = ContentFinder<Texture2D>.Get(configured.TexturePath, false);
+                if (texture == null) return null;
+                mat = NewSurfaceMaterial(texture);
+                baseLabel = configured.TexturePath;
+            }
+            else if (body.baseSphereColor.a > 0f)
             {
                 // ⚠⚠ 2026-10-11 修：**必须走"1×1 贴图 + NewSurfaceMaterial"这条路**，不能直接设 `Material.color` ——
                 //    绘制那条路（`DrawCelestialSphere`）会在 MaterialPropertyBlock 里**覆盖 `_Color`**，
@@ -86,7 +99,7 @@ namespace PioneerFramework
         // ⇒ **诊断串不引入任何新机制，直接不读**（反射方案已被否决：为一条日志不值得）。
         // 真要这个读数：等主线切 net10（编译目标换成 UnityStubs）后按普通属性读即可。
 
-        private bool TryGetSurfacePatch(CelestialBodyDef body, PlanetLayer? layer, out Mesh? mesh, out Material? mat)
+        private bool TryGetSurfacePatch(CelestialBodyInfo body, PlanetLayer? layer, out Mesh? mesh, out Material? mat)
         {
             mesh = null;
             mat = null;
@@ -230,7 +243,7 @@ namespace PioneerFramework
         /// 把 Def 的 `baseSphereColor`（**显示色**）烘成一张 1×1 贴图：写进去的就是这些字节，
         /// 采样时 Unity 按 sRGB 解码 —— 与补丁贴图（烘焙 PNG，sRGB）**同一语义** ⇒ 两者亮度/色调口径一致。
         /// </summary>
-        private Texture2D? GetFlatColorTexture(CelestialBodyDef body)
+        private Texture2D? GetFlatColorTexture(CelestialBodyInfo body)
         {
             if (flatColorTextures.TryGetValue(body.bodyId, out var cached) && cached != null) return cached;
             try

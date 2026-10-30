@@ -376,7 +376,7 @@ namespace PioneerFramework
             }
         }
 
-        private static string Names(List<CelestialBodyDef> list)
+        private static string Names(List<CelestialBodyInfo> list)
         {
             var sb = new StringBuilder();
             for (int i = 0; i < list.Count; i++)
@@ -387,14 +387,14 @@ namespace PioneerFramework
             return sb.ToString();
         }
 
-        private static bool Contains(List<CelestialBodyDef> list, int bodyId)
+        private static bool Contains(List<CelestialBodyInfo> list, int bodyId)
         {
             for (int i = 0; i < list.Count; i++)
                 if (list[i].bodyId == bodyId) return true;
             return false;
         }
 
-        private static bool SameSet(List<CelestialBodyDef> a, List<CelestialBodyDef> b)
+        private static bool SameSet(List<CelestialBodyInfo> a, List<CelestialBodyInfo> b)
         {
             if (a.Count != b.Count) return false;
             var set = new HashSet<int>();

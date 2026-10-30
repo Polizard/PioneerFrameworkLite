@@ -45,6 +45,15 @@ namespace PioneerFramework
 
         public bool IsActive = true;
         public bool IsMovable = true;
+        // 新建组在自己的出生时间之后参与积分；步间发射的导弹先等母船状态结算到同一时刻。
+        internal double physicsBirthTick = -1;
+        internal int physicsBirthSourceId = -1;
+        internal DVector3 physicsBirthOffsetShip;
+        internal DVector3 physicsBirthMuzzleSystem;
+        // 表示层快照不入档；重载后的首个物理区间重新建立插值样本。
+        internal DVector3 physicsRenderPreviousPosition;
+        internal double physicsRenderPreviousTick = double.NaN;
+        internal double physicsRenderCurrentTick = double.NaN;
         public bool IsCollidable = true;
         public bool HasGravityWell ;
         /// <summary>B5：关键件损毁 ⇒ 整船失能（不立即解体）：禁止新点火/自动机动；碰撞与漂移照常。</summary>
@@ -260,7 +269,7 @@ namespace PioneerFramework
                 return radarManualDir.normalized;
             if (radarAim == RadarAim.Track && radarTrackGroupId >= 0)
             {
-                var sg = Current.Game?.GetComponent<SpaceGameComp>();
+                var sg = (preparedPhysicsHost ?? Current.Game?.GetComponent<SpaceGameComp>());
                 var tgt = sg?.GetGroupById(radarTrackGroupId);
                 DVector3 self = CurrentOrbit.positionSystem.v;     // OrbitState 是 struct ⇒ 不判空（零值由下面的 ≥1e-12 兜住）
                 if (tgt != null)
@@ -508,7 +517,6 @@ namespace PioneerFramework
             };
 
             var dt = new SensorTech();   // 编队级 = 各实体聚合的**求和**（与实体级聚合同口径）
-
             // §5 电/热快照输入：整趟重算先清零（与上面 `SignalInputs` 同一次遍历收集）。
             // ⚠ 注意 `cachedJamStrength` 没有清零（历史遗留，已登记为缺陷：每次重算都会累加 Σ干扰）；
             //   本批**不动它**（属 EW 平衡改动，需单独裁定），新字段按"重算 = 全量覆盖"的纪律写。
@@ -523,7 +531,9 @@ namespace PioneerFramework
             cachedHeatProduction = 0f;
             cachedHeatDissipation = 0f;
 
-            var sg = Current.Game?.GetComponent<SpaceGameComp>();
+            // 合并（2026-10-31）：远端把宿主来源改成"预演副本优先"；与上面的清零块无耦合
+            // （副本上跑同一段聚合正是他要的：算出来的是副本的预测值；主线 preparedPhysicsHost == null 不变）。
+            var sg = (preparedPhysicsHost ?? Current.Game?.GetComponent<SpaceGameComp>());
             if (sg != null)
             {
                 // 尺寸口径（B8 定稿）：**编队并集 AABB 的半尺寸模**（船体系，姿态无关），
@@ -636,7 +646,7 @@ namespace PioneerFramework
 
         /// <summary>燃烧切片 scratch（第 3 条：每物理步复用，免每步 new List）。
         /// 物理并行区内由本组唯一迭代独占写入，主线程在同一步消费其引用快照后不再保留。</summary>
-        internal readonly List<ThrustSlice> thrustSliceScratch = new();
+        internal List<ThrustSlice> thrustSliceScratch = new();
 
         // ── 圆轨模式 ──
         public bool IsCircularOrbit ;
@@ -1272,7 +1282,7 @@ namespace PioneerFramework
         {
             // R5（2026-09-26）：改用缓存引用 —— 本方法在相位里被 `GetMainThrustAxisSystem`/
             // `GetGroupPropulsionSource` 调用（每组每步 ≥1 次），原来每次都做一次组件表线性扫描。
-            var sg = SpaceGameComp.GetCached();
+            var sg = (preparedPhysicsHost ?? SpaceGameComp.GetCached());
             if (sg == null) return null;
             foreach (int eid in GetEntityIds())
             {
@@ -1283,6 +1293,7 @@ namespace PioneerFramework
                 var mc = sg.GetMapComponent<SpaceMapComp>(e.MapId);
                 if (mc != null)
                     return mc;
+                if (preparedPhysicsHost != null) continue;
 
                 // mapComponents 不随存档恢复；兜底直接从地图取 SpaceMapComp。
                 Map map = SpaceMapGenerator.FindPocketMap(e.MapId);
@@ -2210,6 +2221,7 @@ namespace PioneerFramework
             // R5（2026-09-26）：缓存引用（本方法由 `OrbitAdapter.TryToOrbitView` 每组每步调用）。
             var celestialMgr = CelestialBodyManager.GetCached();
             if (celestialMgr == null) return SystemVec3.zero;
+            if (celestialMgr.TryGetCelestialRuntime(out _)) return (SystemVec3)celestialMgr.BodyFrameOffset(CelestialBodyId, currentTick).Position;
             var centralDef = celestialMgr.GetBodyById(CelestialBodyId);
             if (centralDef == null || centralDef.bodyType == CelestialBodyType.Planet)
                 return SystemVec3.zero;
@@ -2221,11 +2233,15 @@ namespace PioneerFramework
         /// 如果中心天体是行星（地球自身），返回零向量。
         /// </summary>
         public SystemVec3 GetCentralBodyVelocity(int currentTick)
+            => GetCentralBodyVelocity((double)currentTick);
+
+        public SystemVec3 GetCentralBodyVelocity(double currentTick)
         {
             if (CelestialBodyId < 0) return SystemVec3.zero;
             // R5（2026-09-26）：缓存引用（同 `GetCentralBodyOffset`）。
             var celestialMgr = CelestialBodyManager.GetCached();
             if (celestialMgr == null) return SystemVec3.zero;
+            if (celestialMgr.TryGetCelestialRuntime(out _)) return (SystemVec3)celestialMgr.BodyFrameOffset(CelestialBodyId, currentTick).Velocity;
             var centralDef = celestialMgr.GetBodyById(CelestialBodyId);
             if (centralDef == null || centralDef.bodyType == CelestialBodyType.Planet)
                 return SystemVec3.zero;
@@ -2245,7 +2261,7 @@ namespace PioneerFramework
 
         /// <summary>**本群组在"天体局部系"的速度**。语义与 <see cref="GetBodyPosition" /> 相同。</summary>
         public BodyVec3 GetBodyVelocity(double tick) =>
-            FrameConvert.SystemToBodyVelocity(CurrentOrbit.velocitySystem, GetCentralBodyVelocity((int)System.Math.Round(tick)));
+            FrameConvert.SystemToBodyVelocity(CurrentOrbit.velocitySystem, GetCentralBodyVelocity(tick));
 
         /// <summary>
         /// **本群组的系统系状态 → 天体局部系状态**（同一 tick 取两次 ⇒ 一定同一时刻；
@@ -2253,9 +2269,8 @@ namespace PioneerFramework
         /// </summary>
         public (BodyVec3 pos, BodyVec3 vel) GetBodyState(double tick)
         {
-            int t = (int)System.Math.Round(tick);
-            return (FrameConvert.SystemToBody(CurrentOrbit.positionSystem, GetCentralBodyOffset(t)),
-                    FrameConvert.SystemToBodyVelocity(CurrentOrbit.velocitySystem, GetCentralBodyVelocity(t)));
+            return (FrameConvert.SystemToBody(CurrentOrbit.positionSystem, GetCentralBodyOffset(tick)),
+                    FrameConvert.SystemToBodyVelocity(CurrentOrbit.velocitySystem, GetCentralBodyVelocity(tick)));
         }
 
         /// <summary>
@@ -2288,7 +2303,13 @@ namespace PioneerFramework
             if (celestialMgr != null)
             {
                 var centralDef = celestialMgr.GetBodyById(centralBodyId);
-                if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
+                if (celestialMgr.TryGetCelestialRuntime(out _))
+                {
+                    var frameOffset = celestialMgr.BodyFrameOffset(centralBodyId, physicsTick);
+                    pos -= frameOffset.Position;
+                    vel -= frameOffset.Velocity;
+                }
+                else if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
                 {
                     pos -= celestialMgr.GetBodyPositionParent(centralBodyId, physicsTick);
                     vel -= celestialMgr.GetBodyVelocityParent(centralBodyId, physicsTick);
@@ -2298,7 +2319,7 @@ namespace PioneerFramework
             double r = pos.magnitude;
             if (r < 0.01)
             {
-                Log.Warning($"SpaceEntityGroup {GroupId}: Cannot enter circular orbit at near-zero radius.");
+                GroupPhysicsWarning($"SpaceEntityGroup {GroupId}: Cannot enter circular orbit at near-zero radius.");
                 return;
             }
 
@@ -2306,7 +2327,7 @@ namespace PioneerFramework
             var centralDefForRadius = celestialMgr?.GetBodyById(centralBodyId);
             if (centralDefForRadius != null && centralDefForRadius.radius > 0.0 && r < centralDefForRadius.radius)
             {
-                Log.Warning($"SpaceEntityGroup {GroupId}: Cannot enter circular orbit around body {centralBodyId}: orbit radius {r / 1000.0:F0} km < body radius {centralDefForRadius.radius / 1000.0:F0} km.");
+                GroupPhysicsWarning($"SpaceEntityGroup {GroupId}: Cannot enter circular orbit around body {centralBodyId}: orbit radius {r / 1000.0:F0} km < body radius {centralDefForRadius.radius / 1000.0:F0} km.");
                 return;
             }
 
@@ -2318,7 +2339,7 @@ namespace PioneerFramework
             if (centralDefForRadius != null
                 && centralDefForRadius.Atmosphere.IsInsideAtmosphere(r - centralDefForRadius.radius))
             {
-                Log.Warning($"SpaceEntityGroup {GroupId}: Refusing analytic circular orbit around body {centralBodyId} at r={r / 1000.0:F0} km — inside the atmosphere (analytic rail ignores drag). [A6]");
+                GroupPhysicsWarning($"SpaceEntityGroup {GroupId}: Refusing analytic circular orbit around body {centralBodyId} at r={r / 1000.0:F0} km — inside the atmosphere (analytic rail ignores drag). [A6]");
                 return;
             }
 
@@ -2331,9 +2352,10 @@ namespace PioneerFramework
             if (celestialMgr != null)
             {
                 var centralDef = celestialMgr.GetBodyById(centralBodyId);
-                if (centralDef != null && centralDef.gravitationalParameter > 0.0)
-                    mu = centralDef.gravitationalParameter;
+                if (celestialMgr.TryGetCelestialRuntime(out _)) mu = centralDef?.gravitationalParameter ?? 0;
+                else if (centralDef != null && centralDef.gravitationalParameter > 0.0) mu = centralDef.gravitationalParameter;
             }
+            if (!(mu > 0)) return;
             double v_tan = System.Math.Sqrt(mu / r);
             double omega = v_tan / r;
 
@@ -2363,13 +2385,14 @@ namespace PioneerFramework
             DVector3 circularVel = tangentDir * v_tan;
 
             // 批6 S3-3d：`positionBody`/`velocityBody` 现在是**现算属性**（见其文档）⇒ 不再在这里写副本
-            Log.Message($"[Orbit] Group {GroupId} EnterCircularOrbit: body={centralBodyId} r={r / 1000.0:F0}km |localPos|={positionBody.magnitude / 1000.0:F0}km |localVel|={velocityBody.magnitude:F1} m/s");
+            GroupPhysicsMessage($"[Orbit] Group {GroupId} EnterCircularOrbit: body={centralBodyId} r={r / 1000.0:F0}km |localPos|={positionBody.magnitude / 1000.0:F0}km |localVel|={velocityBody.magnitude:F1} m/s");
 
             // 如果中心天体不是行星，加回其轨道速度（转回地球参考系）
             if (celestialMgr != null)
             {
                 var centralDefInner = celestialMgr.GetBodyById(centralBodyId);
-                if (centralDefInner != null && centralDefInner.bodyType != CelestialBodyType.Planet)
+                if (celestialMgr.TryGetCelestialRuntime(out _)) circularVel += celestialMgr.BodyFrameOffset(centralBodyId, physicsTick).Velocity;
+                else if (centralDefInner != null && centralDefInner.bodyType != CelestialBodyType.Planet)
                 {
                     circularVel += celestialMgr.GetBodyVelocityParent(centralBodyId, physicsTick);
                 }
@@ -2421,7 +2444,8 @@ namespace PioneerFramework
                 if (celestialMgr != null)
                 {
                     var centralDef = celestialMgr.GetBodyById(circularCentralBodyId);
-                    if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
+                    if (celestialMgr.TryGetCelestialRuntime(out _)) CurrentOrbit.velocitySystem += (SystemVec3)celestialMgr.BodyFrameOffset(circularCentralBodyId, physicsTick).Velocity;
+                    else if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
                     {
                         // 同系相加（中心天体的轨道速度也是系统系）⇒ 显式跨界，不再手写裸名
                         CurrentOrbit.velocitySystem = CurrentOrbit.velocitySystem
@@ -2478,23 +2502,7 @@ namespace PioneerFramework
 
             // circularAngularVelocity 是 rad/秒；physicsTick 是游戏世界秒（1 tick = 1 秒），
             // 与 N 体积分 / 天体公转 / 机动规划使用同一时间基准，无需额外换算。
-            double deltaAngle = circularAngularVelocity * (currentTick - circularStartTick);
-            double angle = circularStartAngle + deltaAngle;
-            double cosA = System.Math.Cos(angle);
-            double sinA = System.Math.Sin(angle);
-
-            DVector3 localPos;
-            if (circularOrbitNormal.sqrMagnitude > 0.001 && circularRadialRef.sqrMagnitude > 0.001)
-            {
-                // 使用轨道平面：pos = r * (radialRef * cos(θ) + yDir * sin(θ))
-                DVector3 yDir = DVector3.Cross(circularOrbitNormal, circularRadialRef).normalized;
-                localPos = circularRadius * (circularRadialRef * cosA + yDir * sinA);
-            }
-            else
-            {
-                // 旧存档兼容：XZ 平面
-                localPos = new DVector3(System.Math.Cos(angle) * circularRadius, 0, System.Math.Sin(angle) * circularRadius);
-            }
+            DVector3 localPos = CircularLocalPosition(currentTick);
 
             // 如果中心天体不是行星，将局部坐标转回系统系
             // 注意：使用 currentTick（physicsTick），与发动机积分器保持一致
@@ -2544,7 +2552,8 @@ namespace PioneerFramework
                 if (celestialMgr != null)
                 {
                     var centralDef = celestialMgr.GetBodyById(circularCentralBodyId);
-                    if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
+                    if (celestialMgr.TryGetCelestialRuntime(out _)) vel += celestialMgr.BodyFrameOffset(circularCentralBodyId, currentTick).Velocity;
+                    else if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
                         vel += celestialMgr.GetBodyVelocityParent(circularCentralBodyId, currentTick);
                 }
             }
@@ -2558,6 +2567,10 @@ namespace PioneerFramework
         {
             Scribe_Values.Look(ref LandingTaskId, "landingTaskId", string.Empty);
             Scribe_Values.Look(ref GroupId, "groupId");
+            Scribe_Values.Look(ref physicsBirthTick, "physicsBirthTick", -1.0);
+            Scribe_Values.Look(ref physicsBirthSourceId, "physicsBirthSourceId", -1);
+            DVector3.Scribe("physicsBirthOffsetShip", ref physicsBirthOffsetShip);
+            DVector3.Scribe("physicsBirthMuzzleSystem", ref physicsBirthMuzzleSystem);
             Scribe_Values.Look(ref FactionId, "factionId");
             Scribe_Values.Look(ref BurnCommandVersion, "burnCommandVersion");
             Scribe_Values.Look(ref IsActive, "isActive", true);

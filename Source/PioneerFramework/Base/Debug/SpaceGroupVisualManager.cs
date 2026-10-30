@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Emit;
@@ -115,10 +115,6 @@ namespace PioneerFramework
             //（`Defs/WorldDrawLayerDefs/PF_SpaceOverlay.xml`）；绘制主体仍是本类的
             // `RenderSpaceOverlayFrame()`（由该层每帧调用，调用点与旧 postfix 逐字相同）。
             // 补丁2：世界地图 GUI 事件（信息面板、点击选中）
-            // 2026-10-16 反射清理 A-4：原先这里还有**同一条方法上的第二个安装点**——
-            // `WorldInterfaceOnGUI` 的 Prefix（画"显示/隐藏卫星视图"按钮）。两处补丁本就是**同一个方法**，
-            // 现已合并进 Postfix 的绘制体（`WorldInterfaceOnGUIBody` → `DrawToggleButton`）：
-            // 安装点 −1、按钮位置/文案/时机**零变化**（只是画序从"vanilla 内容之前"挪到"之后"，更不会被盖）。
             harmony.Patch(AccessTools.Method(typeof(WorldInterface), "WorldInterfaceOnGUI"),
                 postfix: new HarmonyMethod(typeof(SpaceGroupVisualManager), nameof(WorldInterface_OnGUI_Postfix)));
             // 2026-10-15 反射清理 A-13：原先这里还有 `WorldCameraDriver.Update` 的 Postfix（跟随 + farClip）
@@ -543,10 +539,6 @@ namespace PioneerFramework
 
         private static void WorldInterfaceOnGUIBody()
         {
-            // 开关按钮：**不依赖 EnableVisualization**（关着的时候要能开回来）。
-            // 2026-10-16 反射清理 A-4：原为同方法上的 Prefix 安装点，合并到此处（安装点 −1，行为不变）。
-            DrawToggleButton();
-
             if (!EnableVisualization) return;
             if (!WorldRendererUtility.WorldSelected) return;
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
@@ -554,32 +546,6 @@ namespace PioneerFramework
 
             HandleInput(spaceGame);
             DrawInfoPanel(spaceGame);
-        }
-
-        /// <summary>
-        /// 世界地图右下角的"显示/隐藏卫星视图"开关（原 `WorldInterface_OnGUI_Prefix_AddGizmo` 原样搬入）。
-        /// </summary>
-        private static void DrawToggleButton()
-        {
-            if (!WorldRendererUtility.WorldSelected) return;
-            if (Current.ProgramState != ProgramState.Playing) return;
-            if (Find.World == null) return;
-
-            // 绘制按钮（右下角固定位置）
-            float x = UI.screenWidth - 180f;
-            float y = UI.screenHeight - 50f;
-            Rect rect = new Rect(x, y, 160f, 40f);
-            string label = EnableVisualization ? "隐藏卫星视图" : "显示卫星视图";
-            if (Widgets.ButtonText(rect, label))
-            {
-                EnableVisualization = !EnableVisualization;
-                // 关闭可视化时同时停止跟随和清除选中
-                if (!EnableVisualization)
-                {
-                    isFollowing = false;
-                    selectedGroupId = -1;
-                }
-            }
         }
 
         /// <summary>
@@ -615,9 +581,6 @@ namespace PioneerFramework
             float t = Mathf.Clamp01(Time.deltaTime * followLerpSpeed);
             driver.sphereRotation = Quaternion.Slerp(driver.sphereRotation, targetRot, t);
         }
-
-        // 在世界地图右下角添加一个按钮 —— 2026-10-16 反射清理 A-4：原为 `WorldInterfaceOnGUI` 的
-        // Prefix 安装点，已合并进同方法的 Postfix 绘制体（见 `DrawToggleButton`）⇒ 该方法体删去。
 
         // ──────────── 摄像机拉远距离补丁 ────────────
 
@@ -992,7 +955,7 @@ namespace PioneerFramework
             // 现在改走 `OrbitView` 的交点族：`FromGameStateVectors` 会把游戏系 +Y 映射成适配层 +z，
             // 于是 `*Equatorial*` 一族要的正是**相对游戏世界赤道**的交点 —— 与这里的意图一致。
             var celestialMgrDbg = Current.Game?.GetComponent<CelestialBodyManager>();
-            CelestialBodyDef? defDbg = celestialMgrDbg?.GetBodyById(group.CelestialBodyId);
+            CelestialBodyInfo? defDbg = celestialMgrDbg?.GetBodyById(group.CelestialBodyId);
             if (defDbg != null)
             {
                 OrbitView ovDbg = OrbitView.FromGameStateVectors(posMetersD, velMetersD,
@@ -1095,6 +1058,7 @@ namespace PioneerFramework
         /// </summary>
         private static void DrawBeamCones(Camera cam, SpaceGameComp spaceGame)
         {
+            if (PioneerFrameworkLiteMod.Settings?.showWorldRadarScanEffect == false) return;
             if (spaceGame == null) return;
             var player = Faction.OfPlayer;
             if (player == null) return;
@@ -1715,7 +1679,7 @@ namespace PioneerFramework
             float leftX = panel.x + 12f;
             float rightX = panel.x + 12f + btnW + 10f;
 
-            // 行1：跟随
+            // 行1：跟随 | 雷达特效（全局显示偏好，独立于编队的主动雷达开机状态）
             string followLabel = isFollowing && selectedGroupId == group.GroupId ? "停止跟随" : "跟随";
             if (Widgets.ButtonText(new Rect(leftX, y, btnW, rowH), followLabel))
             {
@@ -1727,6 +1691,20 @@ namespace PioneerFramework
                     isFollowing = true;
                     lastFollowTime = Time.time;
                 }
+            }
+
+            var settings = PioneerFrameworkLiteMod.Settings;
+            if (settings != null)
+            {
+                Rect radarEffectRect = new Rect(rightX, y, btnW, rowH);
+                string radarEffectLabel = (settings.showWorldRadarScanEffect
+                    ? "PF_WorldRadarEffectHide" : "PF_WorldRadarEffectShow").Translate();
+                if (Widgets.ButtonText(radarEffectRect, radarEffectLabel))
+                {
+                    settings.showWorldRadarScanEffect = !settings.showWorldRadarScanEffect;
+                    settings.Write();
+                }
+                TooltipHandler.TipRegion(radarEffectRect, "PF_WorldRadarEffectTip".Translate());
             }
             y += rowH + rowGap;
 

@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<LanguageData>
+  <PF_EarthSurfaceVisual.label>地球地表表现</PF_EarthSurfaceVisual.label>
+  <PF_MoonSurfaceVisual.label>月球地表表现</PF_MoonSurfaceVisual.label>
+  <PF_EarthAtmosphereVisual.label>地球大气表现</PF_EarthAtmosphereVisual.label>
+  <PF_EarthCloudsVisual.label>地球云层表现</PF_EarthCloudsVisual.label>
+  <PF_StellarVisual.label>现有恒星等离子体表现</PF_StellarVisual.label>
+</LanguageData>

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Celestial_Title>Celestial instances</PF_Celestial_Title>
+  <PF_Celestial_ID>Instance: {0}</PF_Celestial_ID>
+  <PF_Celestial_Definition>Template: {0}</PF_Celestial_Definition>
+  <PF_Celestial_Radius>Physical radius: {0} m</PF_Celestial_Radius>
+  <PF_Celestial_Physics>Physics status: {0}</PF_Celestial_Physics>
+  <PF_Celestial_RequestSurface>Generate surface</PF_Celestial_RequestSurface>
+  <PF_Celestial_RequestMap>Generate ground map</PF_Celestial_RequestMap>
+  <PF_Celestial_Create>Create body from template</PF_Celestial_Create>
+  <PF_Celestial_Remove>Remove body</PF_Celestial_Remove>
+  <PF_Celestial_Operation>Operation {0}: {1}</PF_Celestial_Operation>
+  <PF_Celestial_Rejected>Unable to complete operation: {0}</PF_Celestial_Rejected>
+  <PF_Celestial_TargetUnavailable>The target body is unavailable. Select it again.</PF_Celestial_TargetUnavailable>
+  <PF_Celestial_RootProtected>The root surface supports the current world and cannot be removed.</PF_Celestial_RootProtected>
+  <PF_Celestial_ReferenceExists>The body is still referenced by a map, ship, task or extension.</PF_Celestial_ReferenceExists>
+  <PF_Celestial_ProviderUnavailable>The physics provider is unavailable. Check enabled mods and the log.</PF_Celestial_ProviderUnavailable>
+  <PF_Celestial_RestorePending>Restoring body bindings to native objects.</PF_Celestial_RestorePending>
+  <PF_Celestial_UnsupportedSave>The save has no supported framework document. Create a world with this version.</PF_Celestial_UnsupportedSave>
+  <PF_Celestial_HandlerMissing>Missing component handler: {0}. The original payload has been retained.</PF_Celestial_HandlerMissing>
+  <PF_Celestial_State_Staged>Staged</PF_Celestial_State_Staged>
+  <PF_Celestial_State_Registering>Registering</PF_Celestial_State_Registering>
+  <PF_Celestial_State_Ready>Ready</PF_Celestial_State_Ready>
+  <PF_Celestial_State_Removing>Removing</PF_Celestial_State_Removing>
+  <PF_Celestial_State_Removed>Removed</PF_Celestial_State_Removed>
+  <PF_Celestial_State_Blocked>Blocked</PF_Celestial_State_Blocked>
+  <PF_Celestial_Physics_Unavailable>Unavailable</PF_Celestial_Physics_Unavailable>
+  <PF_Celestial_Physics_Ready>Ready</PF_Celestial_Physics_Ready>
+  <PF_Celestial_Physics_Restoring>Restoring</PF_Celestial_Physics_Restoring>
+  <PF_Celestial_Physics_Faulted>Faulted</PF_Celestial_Physics_Faulted>
+  <PF_Celestial_Operation_Pending>Pending</PF_Celestial_Operation_Pending>
+  <PF_Celestial_Operation_Applied>Applied</PF_Celestial_Operation_Applied>
+  <PF_Celestial_Operation_Rejected>Rejected</PF_Celestial_Operation_Rejected>
+  <PF_Celestial_ApplyBoundary>Apply pending at current time</PF_Celestial_ApplyBoundary>
+  <PF_Celestial_BoundaryApplied>Pending changes applied without advancing time.</PF_Celestial_BoundaryApplied>
+  <PF_Celestial_SelectOwnedTile>Select a world tile on this body's generated surface first.</PF_Celestial_SelectOwnedTile>
+  <PF_Celestial_RestoreFailed>Celestial restoration failed. Space simulation and saving are paused until restoration succeeds. Restore the required modules or native objects, then retry.\n\n{0}</PF_Celestial_RestoreFailed>
+  <PF_Celestial_RetryRestore>Retry restoration</PF_Celestial_RetryRestore>
+  <PF_Celestial_RestoreStillBlocked>Restoration is still blocked: {0}</PF_Celestial_RestoreStillBlocked>
+  <PF_Celestial_SaveBlocked>Save cancelled: the celestial framework is not at a safe restored boundary ({0}). Retry after restoration or the current work completes.</PF_Celestial_SaveBlocked>
+</LanguageData>

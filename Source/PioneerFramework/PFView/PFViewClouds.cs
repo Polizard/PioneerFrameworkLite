@@ -49,8 +49,10 @@ namespace PioneerFramework
         }
 
         public static double RadiusFactor(double bodyRadiusMeters)
+            => RadiusFactor(bodyRadiusMeters, AltitudeMeters);
+        public static double RadiusFactor(double bodyRadiusMeters, double altitudeMeters)
             => double.IsFinite(bodyRadiusMeters) && bodyRadiusMeters > 0.0
-                ? 1.0 + AltitudeMeters / bodyRadiusMeters : 1.0;
+                ? 1.0 + altitudeMeters / bodyRadiusMeters : 1.0;
 
         /// <summary>可见云壳也必须处于近裁面之外；只收紧当前近裁距离，不放大或修改相机位置。</summary>
         public static double LimitNearClip(double currentNearView, double shellGapView, double nearMinView)
@@ -59,9 +61,11 @@ namespace PioneerFramework
 
         /// <summary>10 km 及以下不可见，10–15 km 平滑过渡到完整云层；依据相机高度。</summary>
         public static double Opacity(double cameraAltitudeMeters)
+            => Opacity(cameraAltitudeMeters, AltitudeMeters, FadeRangeMeters);
+        public static double Opacity(double cameraAltitudeMeters, double altitudeMeters, double fadeRangeMeters)
         {
-            if (!double.IsFinite(cameraAltitudeMeters)) return 0.0;
-            double t = Math.Clamp((cameraAltitudeMeters - AltitudeMeters) / FadeRangeMeters, 0.0, 1.0);
+            if (!double.IsFinite(cameraAltitudeMeters) || !double.IsFinite(altitudeMeters) || !double.IsFinite(fadeRangeMeters) || fadeRangeMeters <= 0) return 0.0;
+            double t = Math.Clamp((cameraAltitudeMeters - altitudeMeters) / fadeRangeMeters, 0.0, 1.0);
             return t * t * (3.0 - 2.0 * t);
         }
 

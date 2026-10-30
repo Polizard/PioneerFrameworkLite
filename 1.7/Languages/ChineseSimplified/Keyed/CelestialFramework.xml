@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Celestial_Title>天体实例</PF_Celestial_Title>
+  <PF_Celestial_ID>实例：{0}</PF_Celestial_ID>
+  <PF_Celestial_Definition>模板：{0}</PF_Celestial_Definition>
+  <PF_Celestial_Radius>物理半径：{0} 米</PF_Celestial_Radius>
+  <PF_Celestial_Physics>物理状态：{0}</PF_Celestial_Physics>
+  <PF_Celestial_RequestSurface>生成地表</PF_Celestial_RequestSurface>
+  <PF_Celestial_RequestMap>生成地面地图</PF_Celestial_RequestMap>
+  <PF_Celestial_Create>从模板创建天体</PF_Celestial_Create>
+  <PF_Celestial_Remove>移除天体</PF_Celestial_Remove>
+  <PF_Celestial_Operation>操作 {0}：{1}</PF_Celestial_Operation>
+  <PF_Celestial_Rejected>操作无法完成：{0}</PF_Celestial_Rejected>
+  <PF_Celestial_TargetUnavailable>目标天体已失效，请重新选择。</PF_Celestial_TargetUnavailable>
+  <PF_Celestial_RootProtected>主地表正在支撑当前世界，无法移除。</PF_Celestial_RootProtected>
+  <PF_Celestial_ReferenceExists>天体仍被地图、飞船、任务或扩展引用。</PF_Celestial_ReferenceExists>
+  <PF_Celestial_ProviderUnavailable>物理提供者尚未就绪。请检查启用的模组和日志。</PF_Celestial_ProviderUnavailable>
+  <PF_Celestial_RestorePending>正在恢复天体与原生对象的绑定。</PF_Celestial_RestorePending>
+  <PF_Celestial_UnsupportedSave>存档缺少本版框架文档或格式不受支持。请使用本版新建世界。</PF_Celestial_UnsupportedSave>
+  <PF_Celestial_HandlerMissing>缺少组件处理器：{0}。原载荷已保留。</PF_Celestial_HandlerMissing>
+  <PF_Celestial_State_Staged>已暂存</PF_Celestial_State_Staged>
+  <PF_Celestial_State_Registering>正在注册</PF_Celestial_State_Registering>
+  <PF_Celestial_State_Ready>已就绪</PF_Celestial_State_Ready>
+  <PF_Celestial_State_Removing>正在移除</PF_Celestial_State_Removing>
+  <PF_Celestial_State_Removed>已移除</PF_Celestial_State_Removed>
+  <PF_Celestial_State_Blocked>受阻</PF_Celestial_State_Blocked>
+  <PF_Celestial_Physics_Unavailable>不可用</PF_Celestial_Physics_Unavailable>
+  <PF_Celestial_Physics_Ready>已就绪</PF_Celestial_Physics_Ready>
+  <PF_Celestial_Physics_Restoring>正在恢复</PF_Celestial_Physics_Restoring>
+  <PF_Celestial_Physics_Faulted>故障</PF_Celestial_Physics_Faulted>
+  <PF_Celestial_Operation_Pending>等待处理</PF_Celestial_Operation_Pending>
+  <PF_Celestial_Operation_Applied>已应用</PF_Celestial_Operation_Applied>
+  <PF_Celestial_Operation_Rejected>已拒绝</PF_Celestial_Operation_Rejected>
+  <PF_Celestial_ApplyBoundary>在当前时刻处理挂起请求</PF_Celestial_ApplyBoundary>
+  <PF_Celestial_BoundaryApplied>已处理挂起请求，物理时间保持不变。</PF_Celestial_BoundaryApplied>
+  <PF_Celestial_SelectOwnedTile>请先在该天体已生成的地表上选中一个世界地块。</PF_Celestial_SelectOwnedTile>
+  <PF_Celestial_RestoreFailed>天体恢复失败。太空模拟与保存已暂停，恢复成功后可继续。请补回所需模块或原生对象，然后重试。\n\n{0}</PF_Celestial_RestoreFailed>
+  <PF_Celestial_RetryRestore>重试恢复</PF_Celestial_RetryRestore>
+  <PF_Celestial_RestoreStillBlocked>恢复仍被阻断：{0}</PF_Celestial_RestoreStillBlocked>
+  <PF_Celestial_SaveBlocked>已取消保存：天体框架尚未处于恢复完成的安全边界（{0}）。请在恢复或当前工作完成后重试。</PF_Celestial_SaveBlocked>
+</LanguageData>

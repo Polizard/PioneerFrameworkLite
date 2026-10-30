@@ -25,6 +25,9 @@ namespace PioneerFramework
         /// （引擎偏心力矩不进轮子），别的行为一概不变（已有 L 仍按原规则被 RCS 卸掉）。默认关。</summary>
         public bool kerbinMagicWheel;
 
+        /// <summary>世界地图上所有编队的雷达扫描特效显示开关；跨局保留，默认显示。</summary>
+        public bool showWorldRadarScanEffect = true;
+
         /// <summary>
         /// 双击/聚焦编队时的**默认镜头模式**（跨局保存在 Mod 配置中）：
         /// `Free` / `ThirdPersonHull`（船体正向）/ `ThirdPersonVelocity`（速度正向）。
@@ -42,6 +45,7 @@ namespace PioneerFramework
             Scribe_Values.Look(ref replaceWorldSky, "replaceWorldSky", true);
             Scribe_Values.Look(ref spaceAiRandomEncounters, "spaceAiRandomEncounters");
             Scribe_Values.Look(ref kerbinMagicWheel, "kerbinMagicWheel", false);
+            Scribe_Values.Look(ref showWorldRadarScanEffect, "showWorldRadarScanEffect", true);
 
             // 降级兼容：旧键只表达「是否仍默认第三人称」（船体/速度正向都算 true）。
             if (Scribe.mode == LoadSaveMode.Saving)
@@ -53,6 +57,7 @@ namespace PioneerFramework
             Scribe_Values.Look(ref storedMode, "pfviewFocusCameraMode", -1);
             pfviewFocusCameraMode = PFViewGroupCameraCore.MigrateMode(storedMode, legacyThirdPersonOnFocus);
             ExposePilotSettings();
+            ExposeStellarSettings();   // P2 恒星画质档位（默认 VisualFirst = 现状观感）
         }
     }
 
@@ -70,10 +75,12 @@ namespace PioneerFramework
         public PioneerFrameworkLiteMod(ModContentPack content) : base(content)
         {
             Settings = GetSettings<PioneerFrameworkLiteSettings>();
+            Celestial.CelestialFrameworkStartup.Initialize();
 
             // 2026-10-22 部件功能化 §7：**启动期自检**。
             // ① 内置组件全量触达（注册点在各自静态构造器里，只被目录预置 typeId 引用的组件不会自己注册）；
             // ② 角色失效表缺行 / 注册组件没声明 Role ⇒ 当场抛（"缺行 = 启动期报错，不是运行时静默"）。
+            // 放在天文框架初始化之后：自检要看的是"全部注册都做完"之后的状态。
             Components.ComponentRegistry.RegisterBuiltIns();
             Components.PartRoleTable.Validate();
         }
@@ -110,6 +117,23 @@ namespace PioneerFramework
                 Find.WindowStack.Add(new FloatMenu(options));
             }
             listing.Label("PFV_SettingsFocusModeTip".Translate());
+            listing.Gap(18f);
+            // 2026-10-28：默认恢复旧版恒星视觉；新版渲染只作为玩家自选项保留。
+            listing.Label("PFV_SettingsStellar".Translate());
+            listing.CheckboxLabeled("PFV_SettingsStellarFast".Translate(), ref Settings.useFastStellarRenderer);
+            listing.Label("PFV_SettingsStellarFastTip".Translate());
+            string stellarTier = ("PFV_StellarQuality_" + Settings.stellarQuality).Translate();
+            if (Widgets.ButtonText(listing.GetRect(30f), "PFV_SettingsStellarTier".Translate(stellarTier)))
+            {
+                var options = new System.Collections.Generic.List<FloatMenuOption>();
+                foreach (PFViewStellarQuality value in System.Enum.GetValues<PFViewStellarQuality>())
+                {
+                    PFViewStellarQuality captured = value;
+                    options.Add(new(("PFV_StellarQuality_" + value).Translate(), () => Settings.stellarQuality = captured));
+                }
+                Find.WindowStack.Add(new FloatMenu(options));
+            }
+            listing.Label("PFV_SettingsStellarTip".Translate());
             DrawPilotSettings(listing);
             pilotSettingsHeight = listing.CurHeight + 12f;
             listing.End();

@@ -67,6 +67,12 @@ namespace PioneerFramework.SpaceAI
         {
             if (weapon?.def == null) return 0;
             double range = weapon.def.orbitalEngageRange;
+            if (weapon.def.UsesShotComponents)
+            {
+                if (!weapon.TryCreateShot(out var shot, out _) || shot == null) return 0;
+                double shotRange = shot.Profile.Instant ? shot.Profile.RangeMeters : shot.Profile.Speed * shot.Profile.LifetimeSeconds;
+                return Math.Max(0, Math.Min(range, Math.Min(weapon.def.maxRange, shotRange)));
+            }
             if (weapon.def.weaponType == WeaponType.Ray) range = Math.Min(range, weapon.def.rayMaxLength);
             if (weapon.def.weaponType == WeaponType.Projectile)
                 range = Math.Min(range, weapon.def.projectileSpeed * weapon.def.projectileLifetime / 60.0);

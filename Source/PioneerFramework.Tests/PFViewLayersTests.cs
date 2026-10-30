@@ -16,23 +16,19 @@ namespace PioneerFramework.Tests
         public void Layering_IsStrictlyIncreasing()
         {
             Assert.True(PFViewLayers.IsLayeredInOrder(),
-                "必须满足 星空 < 太阳盘 < 大气壳 < 行星/船："
-                + PFViewLayers.Starfield + " < " + PFViewLayers.SunDisc + " < "
+                "必须满足 星空 < 大气壳 < 不透明天体/船："
+                + PFViewLayers.Starfield + " < "
                 + PFViewLayers.AtmosphereShell + " < " + PFViewLayers.PlanetAndShips);
         }
 
         [Fact]
-        public void Shell_SitsBeforeThePlanet_AndAfterTheSun()
+        public void Shell_SitsBeforeOpaqueBodies_AndAfterTheStarfield()
         {
             // ① 壳在行星之前 ⇒ 行星（不透明、后画）覆盖壳的盘面部分 ⇒ 球缘不进深度比较（消闪的关键）
             Assert.True(PFViewLayers.AtmosphereShell < PFViewLayers.PlanetAndShips,
                 "壳必须排在行星之前（否则壳与行星在球缘处靠深度竞争 ⇒ 闪）");
-            // ② 壳在太阳之后 ⇒ 太阳被大气蒙一层雾（原 1900/2900 的关系不变）
-            Assert.True(PFViewLayers.SunDisc < PFViewLayers.AtmosphereShell,
-                "壳必须排在太阳之后（太阳该被大气蒙雾）");
-            // ③ 星空最靠后（背景）
-            Assert.True(PFViewLayers.Starfield < PFViewLayers.SunDisc,
-                "星空必须在太阳之前");
+            Assert.True(PFViewLayers.Starfield < PFViewLayers.AtmosphereShell,
+                "星空必须在场景和大气之前");
         }
     }
 }

@@ -1,411 +1,358 @@
 using System;
 using System.Collections.Generic;
-using RimWorld;
 using Verse;
 
 namespace PioneerFramework
 {
-    public enum TimeScaleLevel
-    {
-        Combat = 0,
-        Normal = 1,
-        Fast = 2
-    }
-
+    /// <summary>保留旧公开请求结构；请求进入统一仲裁，不再按历史命令排队。</summary>
     public struct TimeScaleCommand
     {
         public TimeScaleLevel TargetLevel;
         public int RequestTick;
         public int ExecuteAfterTick;
-
-        public static TimeScaleCommand ToCombat() => new() {
-            TargetLevel = TimeScaleLevel.Combat,
-            RequestTick = Find.TickManager.TicksGame
-        };
-
-        public static TimeScaleCommand ToNormal() => new() {
-            TargetLevel = TimeScaleLevel.Normal,
-            RequestTick = Find.TickManager.TicksGame
-        };
-
-        public static TimeScaleCommand ToFast() => new() {
-            TargetLevel = TimeScaleLevel.Fast,
-            RequestTick = Find.TickManager.TicksGame
-        };
+        public static TimeScaleCommand ToCombat() => new() { TargetLevel = TimeScaleLevel.Combat, RequestTick = Find.TickManager.TicksGame };
+        public static TimeScaleCommand ToNormal() => new() { TargetLevel = TimeScaleLevel.Normal, RequestTick = Find.TickManager.TicksGame };
+        public static TimeScaleCommand ToFast() => new() { TargetLevel = TimeScaleLevel.Fast, RequestTick = Find.TickManager.TicksGame };
     }
 
-    public class TimeScaleManager : GameComponent
+    /// <summary>
+    /// 游戏速度意图、精度限制和物理时钟的统一入口。2026-10-22：取消偶数 tick 队列与超时绕闸；
+    /// 物理调度器逐段提交切档区间，步内消费者读取同一不可变时刻。宿主倍率保持原版语义。
+    /// </summary>
+    public partial class TimeScaleManager : GameComponent
     {
-        private const int UPDATE_INTERVAL_TICKS = 2;
-        private const int MAX_WAIT_TICKS = 600;
-
         private TimeScaleLevel currentLevel = TimeScaleLevel.Normal;
-        private Queue<TimeScaleCommand> commandQueue = new();
-        private bool isProcessing ;
-        private int combatStartTick ;
-        private int combatSubTick ;
-        private double calendarBaseTick ;
-        private int switchStartTick ;
-        private double gameStartAbsTickCapture ;
-        private bool calendarInitialized ;
+        private TimeScaleLevel requestedLevel = TimeScaleLevel.Normal;
+        private int combatStartTick;
+        private double calendarBaseTick;
+        private int switchStartTick;
+        private double gameStartAbsTickCapture;
+        private bool calendarInitialized;
+        private PhysicsTimeLine? timeline;
+        private PhysicsStep? activeStep;
+        private bool batchActive;
+        private bool resolving;
+        private bool resolveAgain;
+        private bool combatEntryRequested;
+        private bool combatCacheDirty;
+        private readonly GameComponentRef<Combat.CombatManager> combatMgrRef = new();
+        private readonly GameComponentRef<AutonomousVehicleManager> avmRef = new();
+        private readonly GameComponentRef<SpaceGameComp> spaceRef = new();
+        private readonly GameComponentRef<CelestialBodyManager> celestialRef = new();
 
-        public float CalendarSpeedMultiplier
+        public TimeScaleLevel CurrentLevel => activeStep?.Level ?? currentLevel;
+        public TimeScaleLevel RequestedLevel => requestedLevel;
+        public TimeScaleRestriction Restrictions { get; private set; }
+        internal string StatusLabel
         {
             get
             {
-                switch (currentLevel)
-                {
-                    case TimeScaleLevel.Combat: return 1f / 60f;
-                    case TimeScaleLevel.Normal: return 1f;
-                    case TimeScaleLevel.Fast: return 8f;
-                    default: return 1f;
-                }
+                string scale = CurrentLevel switch { TimeScaleLevel.Combat => "1/60", TimeScaleLevel.Fast => "8", _ => "1" };
+                string label = "PFV_TimeSpaceRate".Translate(scale);
+                string? reason = RestrictionKey;
+                return reason == null ? label : label + " · " + reason.Translate();
             }
         }
-
-        public float PhysicsSpeedMultiplier
+        private string? RestrictionKey => (Restrictions & TimeScaleRestriction.Combat) != 0 ? "PFV_TimeCombat"
+            : (Restrictions & TimeScaleRestriction.TerminalPrecision) != 0 ? "PFV_TimeTerminal"
+            : (Restrictions & TimeScaleRestriction.Maneuver) != 0 ? "PFV_TimeManeuver" : null;
+        internal string StatusTip => "PFV_TimeStatusTip".Translate(StatusLabel,
+            RestrictionKey == null ? "PFV_TimeUnrestricted".Translate().ToString() : RestrictionKey.Translate().ToString());
+        public bool IsCombatMode => CurrentLevel == TimeScaleLevel.Combat;
+        public float CalendarSpeedMultiplier => PhysicsSpeedMultiplier;
+        public float PhysicsSpeedMultiplier => CurrentLevel switch
         {
-            get
-            {
-                switch (currentLevel)
-                {
-                    case TimeScaleLevel.Combat: return 1f / 60f;
-                    case TimeScaleLevel.Normal: return 1f;
-                    case TimeScaleLevel.Fast: return 8f;
-                    default: return 1f;
-                }
-            }
-        }
-
-        public int SubSteps
-        {
-            get
-            {
-                switch (currentLevel)
-                {
-                    case TimeScaleLevel.Combat: return 1;
-                    case TimeScaleLevel.Normal: return 1;
-                    case TimeScaleLevel.Fast: return 8;
-                    default: return 1;
-                }
-            }
-        }
-
-        public bool IsCombatMode => currentLevel == TimeScaleLevel.Combat;
-
-        public TimeScaleLevel CurrentLevel => currentLevel;
-
+            TimeScaleLevel.Combat => 1f / 60f,
+            TimeScaleLevel.Fast => 8f,
+            _ => 1f
+        };
+        public int SubSteps => activeStep?.SubSteps ?? (CurrentLevel == TimeScaleLevel.Fast ? 8 : 1);
+        internal PhysicsStep? CurrentPhysicsStep => activeStep;
+        internal bool IsPhysicsBatchActive => batchActive;
+        internal int CommittedGameTick { get { EnsureTimeline(); return timeline!.CommittedGameTick; } }
+        internal double CommittedPhysicsTick { get { EnsureTimeline(); return timeline!.CommittedPhysicsTick; } }
         public int GetCombatStartTick() => combatStartTick;
+        public event Action<TimeScaleLevel, TimeScaleLevel>? OnTimeScaleChanged;
 
-        /// <summary>
-        /// 初始化历法锚点。核心修复：把 gameStartAbsTick 在首次初始化时**捕获一次并固定**，
-        /// 而非每次调用都全新读取 Find.TickManager.gameStartAbsTick。
-        /// 原因：Game.InitNewGame 在 (Game.cs L507) 才设置 gameStartAbsTick，Mod 的 GameComponent
-        /// 首次调用本方法可能早于此（此时 gameStartAbsTick==0）→ 旧代码把 calendarBaseTick 锚定到
-        /// TicksGame+0，之后再读到的真实 gSAT 相减 → physicsTick = 120 - 372500 = -372380（负且大），
-        /// 污染自转相位/经度。捕获后减号与基线用同一锚点 → 自洽非负，且跨存档连续。
-        /// </summary>
+        public TimeScaleManager(Game game) { }
+
         private void EnsureCalendarBaseline()
         {
             if (calendarInitialized) return;
+            // gameStartAbsTick 在新局早期可能仍为 0：捕获值必须同时用于基线与减法，保持旧存档锚点自洽。
             gameStartAbsTickCapture = Find.TickManager.gameStartAbsTick;
             calendarBaseTick = Find.TickManager.TicksGame + gameStartAbsTickCapture;
             switchStartTick = Find.TickManager.TicksGame;
             calendarInitialized = true;
         }
 
-        public double GetPhysicsTick()
+        private void EnsureTimeline()
         {
             EnsureCalendarBaseline();
-
-            int realTicksGame = Find.TickManager.TicksGame;
-            int deltaReal = realTicksGame - switchStartTick;
-            double scale = GetCalendarScale();
-
-            return calendarBaseTick + deltaReal * scale - gameStartAbsTickCapture;
+            timeline ??= new PhysicsTimeLine(Find.TickManager.TicksGame,
+                calendarBaseTick + (Find.TickManager.TicksGame - switchStartTick) * PhysicsTimeLine.Scale(currentLevel)
+                    - gameStartAbsTickCapture, currentLevel);
         }
 
-        private static Game cachedGame = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
-        private static TimeScaleManager cachedTsm = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public double GetPhysicsTick()
+        {
+            EnsureTimeline();
+            if (activeStep.HasValue) return activeStep.Value.EndTick;
+            return celestialRef.Get()?.TryGetCelestialRuntime(out _) == true ? timeline!.CommittedPhysicsTick : timeline!.At(Find.TickManager.TicksGame);
+        }
 
-        /// <summary>
-        /// 获取当前 physicsTick（静态便捷入口）。缓存组件引用避免每 tick 几十次 GetComponent。
-        /// 用 ReferenceEquals 校验缓存所属 Game，跨存档/新游戏时自动失效。
-        /// </summary>
+        public double GetPhysicsTick(int realTick)
+        {
+            EnsureTimeline();
+            return timeline!.At(realTick);
+        }
+
+        private static Game cachedGame = null!;
+        private static TimeScaleManager cachedTsm = null!;
         public static double GetPhysicsTickSafe()
         {
             var game = Current.Game;
-            if (game == null) return (double)Find.TickManager.TicksGame;
+            if (game == null) return Find.TickManager.TicksGame;
             if (cachedTsm == null || !ReferenceEquals(cachedGame, game))
             {
                 cachedTsm = game.GetComponent<TimeScaleManager>();
                 cachedGame = game;
             }
-            return cachedTsm != null ? cachedTsm.GetPhysicsTick() : (double)Find.TickManager.TicksGame;
+            return cachedTsm != null ? cachedTsm.GetPhysicsTick() : Find.TickManager.TicksGame;
         }
 
-        public double GetPhysicsTick(int realTick)
-        {
-            EnsureCalendarBaseline();
+        public double GetDisplayTicksAbs() => GetPhysicsTick() + gameStartAbsTickCapture;
 
-            int deltaReal = realTick - switchStartTick;
-            double scale = GetCalendarScale();
-
-            return calendarBaseTick + deltaReal * scale - gameStartAbsTickCapture;
-        }
-
-        // ── 帧级连续渲染时钟（2026-10-11，"别的航天器位置在抖"的治本）────────────────────────
-        // 问题：`GetPhysicsTick()` 由**整数** `TicksGame` 推出 ⇒ 渲染时间轴是**阶梯**。两台站不同轨道时
-        //       相对速度可达 km/s（每 tick 相对位移上千米）⇒ 渲染帧率高于 tick 率时，位置**一格一格跳**
-        //       = 用户报的"别的航天器整体位置在抖"（大小形状不变，只有位置在跳）。
-        // 修法：把物理 tick **连续化** —— 加上"当前真实 tick 内已过的比例 × 档位倍率"。
-        //       消费侧本来就按"任意实数 tick"取位置：圆轨是解析函数（`GetCircularPositionAtTick(double)`
-        //       的注释就写着"支持子tick"），积分轨按速度外推（`SpaceGameComp.LastPhysicsStepTick`）。
-        // ⚠ 只做**相位平滑**，不改时间基准：平均值仍严格等于物理 tick（相位有界 [0, scale]）。
-        private int renderClockTicksGame = int.MinValue;
-        private int renderClockFrame = int.MinValue;
-        private double renderClockFrac;                      // 当前真实 tick 内已过的比例（[0,1]）
-        private double renderClockSecPerTick = 1.0 / 60.0;   // 实测（滑均）：一个真实 tick ≈ 多少秒
-
-        /// <summary>
-        /// **帧级连续时间**（渲染专用）：物理 tick + 子 tick 相位。取任意实数 tick 的位置函数都能吃它。
-        /// ⚠ 不用于物理结算（那边仍按物理步整数边界走）——这是**表示层**的时间。
-        /// </summary>
-        public double GetRenderTick()
-        {
-            EnsureCalendarBaseline();
-            int tg = Find.TickManager.TicksGame;
-
-            // 2026-10-18：同帧有多个消费者（相机、天体、射弹、HUD），只能累计一次 dt。
-            // 重复累计会让防穿入与实际绘制使用不同的天体位置，切掉近侧球面。
-            double dt = renderClockFrame != RealTime.frameCount ? RealTime.deltaTime : 0.0;
-            renderClockFrame = RealTime.frameCount;
-            if (Find.TickManager.CurTimeSpeed == TimeSpeed.Paused)
-            {
-                renderClockTicksGame = tg;
-                renderClockFrac = 0.0;
-                return GetPhysicsTick();
-            }
-            if (dt > 0.0 && dt < 0.5) renderClockFrac += dt / renderClockSecPerTick;
-
-            if (tg != renderClockTicksGame)
-            {
-                if (renderClockTicksGame != int.MinValue)
-                {
-                    int dtTicks = tg - renderClockTicksGame;
-                    // 实测"每 tick 秒数"（只吃合理样本：暂停/卡帧/换档跳变不吃）
-                    if (dtTicks > 0 && dtTicks <= 8 && dt > 0.0)
-                        renderClockSecPerTick = renderClockSecPerTick * 0.75 + (dt / dtTicks) * 0.25;
-                    renderClockFrac -= dtTicks;   // 相位**减去**走过的 tick 数（保留小数部分 ⇒ 无跳变）
-                }
-                else renderClockFrac = 0.0;
-                renderClockTicksGame = tg;
-            }
-            if (renderClockFrac < 0.0) renderClockFrac = 0.0;
-            else if (renderClockFrac > 1.0) renderClockFrac = 1.0;   // 暂停/掉帧：夹住，等 tick 复位
-
-            return GetPhysicsTick() + renderClockFrac * GetCalendarScale();
-        }
-
-        /// <summary>
-        /// 获取用于历法显示的 TicksAbs（基于 TicksAbs，用于 DateReadout）。
-        /// 注意：这是纯显示层时间，不做物理计算；内部不使用 TicksAbs 属性，避免与 TickManager_TicksAbs_Patch 递归。
-        /// </summary>
-        public double GetDisplayTicksAbs()
-        {
-            EnsureCalendarBaseline();
-
-            int realTicksGame = Find.TickManager.TicksGame;
-            int deltaReal = realTicksGame - switchStartTick;
-            double scale = GetCalendarScale();
-
-            return calendarBaseTick + deltaReal * scale;
-        }
-
-        private double GetCalendarScale()
-        
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         => currentLevel switch
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         {
-            TimeScaleLevel.Combat => 1.0 / 60.0,
-            TimeScaleLevel.Fast => 8.0,
-            _ => 1.0,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         };
-
-        public event Action<TimeScaleLevel, TimeScaleLevel> OnTimeScaleChanged;
-
-        public TimeScaleManager(Game game) { }
-
-        public void QueueCommand(TimeScaleCommand command)
-        {
-            var temp = new Queue<TimeScaleCommand>();
-            while (commandQueue.Count > 0)
-            {
-                var cmd = commandQueue.Dequeue();
-                if (cmd.TargetLevel != command.TargetLevel)
-                    temp.Enqueue(cmd);
-            }
-            commandQueue = temp;
-
-            command.ExecuteAfterTick = GetNextStepBoundary(Find.TickManager.TicksGame);
-            commandQueue.Enqueue(command);
-
-            UpdateUIPending(command);
-        }
-
+        public void QueueCommand(TimeScaleCommand command) => SetTimeScale(command.TargetLevel);
         public void SetTimeScale(TimeScaleLevel level)
         {
-            if (level == currentLevel) return;
-            QueueCommand(new TimeScaleCommand { TargetLevel = level, RequestTick = Find.TickManager.TicksGame });
+            if (!Enum.IsDefined(level)) throw new ArgumentOutOfRangeException(nameof(level));
+            requestedLevel = level;
+            RefreshConstraints();
         }
-
         public void SetCombatMode() => SetTimeScale(TimeScaleLevel.Combat);
         public void SetNormalMode() => SetTimeScale(TimeScaleLevel.Normal);
         public void SetFastMode() => SetTimeScale(TimeScaleLevel.Fast);
 
-        /// <summary>
-        /// 立即切换 Combat 档（不排队、不弹"等待时间同步"消息）。
-        /// 供射弹生成等需要瞬间进入子弹时间的路径调用——排队版本有 ≤2 tick 的边界延迟，
-        /// Normal 档窗口内射弹会以 1s/tick 大步进瞬移（6.5km/步），观感上"物理断裂"。
-        /// </summary>
+        /// <summary>立即记录精度要求；步间保留旧时间段，步内等全部消费者完成后提交。</summary>
         public void SetCombatModeImmediate()
         {
-            if (currentLevel == TimeScaleLevel.Combat) return;
-            ExecuteCommand(new TimeScaleCommand { TargetLevel = TimeScaleLevel.Combat, RequestTick = Find.TickManager.TicksGame });
+            combatEntryRequested = true;
+            RefreshConstraints();
         }
 
-        public override void GameComponentTick()
-        {
-            base.GameComponentTick();
+        /// <summary>唯一战斗判据：射弹在飞或导弹 Attack 终末段。解析轨降级继续共用此入口。</summary>
+        public bool IsInCombatAction()
+            => combatMgrRef.Get()?.IsBattleActive == true || avmRef.Get()?.HasActiveAttack == true;
 
-            if (IsCombatMode)
+        internal void RefreshConstraints()
+        {
+            if (batchActive) return;
+            if (resolving)
             {
-                combatSubTick++;
-                if (combatSubTick >= 60)
-                    combatSubTick = 0;
+                resolveAgain = true;
+                return;
             }
-
-            ProcessCommands();
-        }
-
-        private void ProcessCommands()
-        {
-            if (isProcessing) return;
-
-            int currentTick = Find.TickManager.TicksGame;
-
-            while (commandQueue.Count > 0)
+            resolving = true;
+            try
             {
-                var command = commandQueue.Peek();
-
-                if (currentTick - command.RequestTick > MAX_WAIT_TICKS)
+                do
                 {
-                    ExecuteCommand(command);
-                    commandQueue.Dequeue();
-                    continue;
+                    resolveAgain = false;
+                    ResolveCurrentPreference();
                 }
+                while (resolveAgain);
+            }
+            finally { resolving = false; }
+        }
 
-                if (currentTick < command.ExecuteAfterTick)
-                    break;
+        private void ResolveCurrentPreference()
+        {
+            EnsureTimeline();
+            var space = spaceRef.Get();
+            Restrictions = TimeScaleRestriction.None;
+            if (combatEntryRequested || IsInCombatAction()) Restrictions |= TimeScaleRestriction.Combat;
+            if (space?.RequiresTerminalPrecision == true) Restrictions |= TimeScaleRestriction.TerminalPrecision;
+            if (space?.HasTrackedManeuvers == true) Restrictions |= TimeScaleRestriction.Maneuver;
+            var target = (Restrictions & (TimeScaleRestriction.Combat | TimeScaleRestriction.TerminalPrecision)) != 0
+                ? TimeScaleLevel.Combat
+                : requestedLevel == TimeScaleLevel.Fast && (Restrictions & TimeScaleRestriction.Maneuver) != 0
+                    ? TimeScaleLevel.Normal : requestedLevel;
+            if (target == currentLevel) return;
+            int tick = Find.TickManager.TicksGame;
+            double physicsTick = timeline!.At(tick);
+            if (celestialRef.Get()?.TryGetCelestialRuntime(out _) == true) physicsTick = Math.Min(physicsTick, timeline.CommittedPhysicsTick);
+            var previous = currentLevel;
+            timeline.SetRate(tick, target);
+            currentLevel = target;
+            calendarBaseTick = physicsTick + gameStartAbsTickCapture;
+            switchStartTick = tick;
+            if (target == TimeScaleLevel.Combat)
+            {
+                combatStartTick = tick;
+                combatCacheDirty = true;
+            }
+            OnTimeScaleChanged?.Invoke(previous, target);
+        }
 
-                if (!CanExecuteNow(command))
-                    break;
+        // GameComponentTick 刻意不仲裁：调度器显式调用，组件列表前后顺序不会改变切档时刻。
+        public override void GameComponentTick() { }
 
-                ExecuteCommand(command);
-                commandQueue.Dequeue();
+        internal void BeginPhysicsBatch()
+        {
+            if (batchActive) throw new InvalidOperationException("Nested physical world advancement is not allowed.");
+            RefreshConstraints();
+            batchActive = true;
+        }
+
+        internal bool TryBeginPhysicsStep(int endGameTick)
+        {
+            if (!batchActive || activeStep.HasValue) throw new InvalidOperationException("Unfinished physical interval.");
+            activeStep = timeline!.NextStep(endGameTick);
+            return activeStep.HasValue;
+        }
+
+        internal void CompletePhysicsStep()
+        {
+            if (!activeStep.HasValue) throw new InvalidOperationException("No physical interval to commit.");
+            timeline!.Commit(activeStep.Value);
+            activeStep = null;
+        }
+
+        internal void EndPhysicsBatch()
+        {
+            activeStep = null;
+            batchActive = false;
+            combatEntryRequested = false;
+            RefreshConstraints();
+            if (combatCacheDirty && currentLevel == TimeScaleLevel.Combat)
+            {
+                combatCacheDirty = false;
+                spaceRef.Get()?.RebuildAllCombatCaches(Find.TickManager.TicksGame);
             }
         }
 
-        private bool CanExecuteNow(TimeScaleCommand command)
-        {
-            if (command.TargetLevel == TimeScaleLevel.Normal && IsInCombatAction())
-                return false;
+        internal double PhysicsStepSeconds => activeStep?.Duration ?? SpaceGameComp.UPDATE_INTERVAL_TICKS * PhysicsSpeedMultiplier;
 
-            return true;
+        internal void MarkPhysicsEvent()
+        {
+            EnsureTimeline();
+            if (!batchActive) timeline!.SplitAt(Find.TickManager.TicksGame);
         }
+
+        public void SetGameSpeed(TimeSpeed speed)
+        {
+            var ticks = Find.TickManager;
+            if (speed == TimeSpeed.Paused)
+            {
+                if (ticks.CurTimeSpeed != TimeSpeed.Paused) ticks.TogglePaused();
+            }
+            else ticks.CurTimeSpeed = speed;
+            renderClockTicksGame = int.MinValue;
+            renderClockFrac = 0;
+            renderClockSecPerTick = 1.0 / (60 * (speed switch
+            {
+                TimeSpeed.Fast => 3,
+                TimeSpeed.Superfast => 6,
+                TimeSpeed.Ultrafast => 15,
+                _ => 1
+            }));
+        }
+
+        private int renderClockTicksGame = int.MinValue;
+        private int renderClockFrame = int.MinValue;
+        private double renderClockFrac;
+        private double renderClockSecPerTick = 1.0 / 60;
+        private double renderClockValue = double.NegativeInfinity;
 
         /// <summary>
-        /// **是否处于「战斗动作」**（本库唯一的战斗判据口径，原来叫 private `IsInCombatAction`）：
-        /// ① **有射弹在飞**（`CombatManager.IsBattleActive` = `activeProjectiles.Count > 0`）；
-        /// ② 或**导弹处于 Attack 终末自动段**（`AutonomousVehicleManager.HasActiveAttack`；2026-09-07 用户定稿：
-        ///    与射弹同级 ⇒ 存在即视为战斗动作）。
-        ///
-        /// 读者（两处，**同一份实现、不各写一份**）：
-        /// · 时间流速闸（禁止"有战斗动作时回 Normal"）；
-        /// · **解析档降级 [D7②]**（交战 ⇒ 退出解析轨）—— 2026-10-08 用户裁定："**用现成那个就行，别新建交战触发**"。
-        /// ⚠ 改公开的顺带修一处成本：原来每次**现查组件**（`Current.Game.GetComponent` = 组件表线性扫描），
-        ///   而新读者是**每物理步**调用 ⇒ 现在两个组件都走 `GameComponentRef` 缓存（全局查询增量 = 0）。
+        /// 表示层在前一个宿主 tick 与当前 tick 之间插值，最多延后一个宿主 tick；
+        /// 不外推到尚未经过的物理时间。历史倍率由账本求值，跨档不会收回未来预测位置。
+        /// 同一帧所有读者共享一次采样；暂停直接落到物理时刻。
         /// </summary>
-        public bool IsInCombatAction()
+        public double GetRenderTick()
         {
-            var combatManager = combatMgrRef.Get();
-            if (combatManager != null && combatManager.IsBattleActive) return true;
-            var avm = avmRef.Get();
-            return avm != null && avm.HasActiveAttack;
+            EnsureTimeline();
+            var bounds = GetCelestialRenderBounds();
+            if (renderClockFrame == RealTime.frameCount) return renderClockValue = BoundRenderTime(renderClockValue, bounds);
+            renderClockFrame = RealTime.frameCount;
+            int tick = Find.TickManager.TicksGame;
+            double physicsTick = timeline!.At(tick);
+            if (Find.TickManager.CurTimeSpeed == TimeSpeed.Paused)
+            {
+                renderClockTicksGame = tick;
+                renderClockFrac = 0;
+                return renderClockValue = BoundRenderTime(physicsTick, bounds);
+            }
+            double dt = RealTime.deltaTime;
+            if (dt > 0 && dt < 0.5) renderClockFrac += dt / renderClockSecPerTick;
+            if (tick != renderClockTicksGame)
+            {
+                if (renderClockTicksGame != int.MinValue)
+                {
+                    int elapsed = tick - renderClockTicksGame;
+                    if (elapsed > 0 && dt > 0 && dt < 0.5)
+                        renderClockSecPerTick = renderClockSecPerTick * 0.75 + dt / elapsed * 0.25;
+                    renderClockFrac -= elapsed;
+                }
+                else renderClockFrac = 0;
+                renderClockTicksGame = tick;
+            }
+            renderClockFrac = Math.Clamp(renderClockFrac, 0, 1);
+            double sample = timeline.At(Math.Max(timeline.OldestGameTick, tick - 1.0 + renderClockFrac));
+            return renderClockValue = BoundRenderTime(Math.Min(physicsTick, Math.Max(renderClockValue, sample)), bounds);
         }
 
-        private readonly GameComponentRef<Combat.CombatManager> combatMgrRef = new();
-        private readonly GameComponentRef<AutonomousVehicleManager> avmRef = new();
-
-        private void ExecuteCommand(TimeScaleCommand command)
-        {
-            isProcessing = true;
-
-            double prevDisplayTicksAbs = GetDisplayTicksAbs();
-
-            TimeScaleLevel oldLevel = currentLevel;
-            currentLevel = command.TargetLevel;
-
-            calendarBaseTick = prevDisplayTicksAbs;
-            switchStartTick = Find.TickManager.TicksGame;
-
-            Log.Message($"[TimeScale] Switched from {oldLevel} to {currentLevel} | baseTicksAbs={calendarBaseTick:F2} startTick={switchStartTick}");
-
-            if (currentLevel == TimeScaleLevel.Combat)
-                combatSubTick = 0;
-
-            InitializeCombatCacheIfNeeded(command.TargetLevel);
-
-            OnTimeScaleChanged?.Invoke(oldLevel, currentLevel);
-
-            isProcessing = false;
-        }
-
-        private void InitializeCombatCacheIfNeeded(TimeScaleLevel targetLevel)
-        {
-            if (targetLevel != TimeScaleLevel.Combat) return;
-
-            int currentTick = Find.TickManager.TicksGame;
-            combatStartTick = currentTick;
-            var spaceGameComp = Current.Game.GetComponent<SpaceGameComp>();
-            if (spaceGameComp == null) return;
-
-            // 采样与插值算式的唯一实现在 SpaceGameComp（此前这里是一份平行副本，已废止）
-            spaceGameComp.RebuildAllCombatCaches(currentTick);
-        }
-
-        private int GetNextStepBoundary(int currentTick)
-        {
-            int remainder = currentTick % UPDATE_INTERVAL_TICKS;
-            return currentTick + (UPDATE_INTERVAL_TICKS - remainder);
-        }
-
-        private void UpdateUIPending(TimeScaleCommand command)
-        {
-            int currentTick = Find.TickManager.TicksGame;
-            int waitTicks = command.ExecuteAfterTick - currentTick;
-            double waitSeconds = waitTicks * 1.0;
-
-            Messages.Message($"等待时间同步... ({waitSeconds:F1}s)", MessageTypeDefOf.NeutralEvent);
-        }
+        private List<int> epochGameTicks = new();
+        private List<double> epochPhysicsTicks = new();
+        private List<TimeScaleLevel> epochLevels = new();
+        private int savedCommittedGameTick;
+        private double savedCommittedPhysicsTick;
 
         public override void ExposeData()
         {
             base.ExposeData();
+            if (Scribe.mode == LoadSaveMode.Saving)
+            {
+                EnsureTimeline();
+                epochGameTicks.Clear(); epochPhysicsTicks.Clear(); epochLevels.Clear();
+                foreach (var epoch in timeline!.Epochs)
+                {
+                    epochGameTicks.Add(epoch.GameTick);
+                    epochPhysicsTicks.Add(epoch.PhysicsTick);
+                    epochLevels.Add(epoch.Level);
+                }
+                savedCommittedGameTick = timeline.CommittedGameTick;
+                savedCommittedPhysicsTick = timeline.CommittedPhysicsTick;
+            }
             Scribe_Values.Look(ref currentLevel, "timeScaleLevel", TimeScaleLevel.Normal);
+            Scribe_Values.Look(ref requestedLevel, "requestedTimeScale", TimeScaleLevel.Normal);
+            Scribe_Values.Look(ref combatEntryRequested, "combatEntryRequested", false);
             Scribe_Values.Look(ref calendarBaseTick, "calendarBaseTick", 0.0);
             Scribe_Values.Look(ref switchStartTick, "switchStartTick", 0);
             Scribe_Values.Look(ref gameStartAbsTickCapture, "gameStartAbsTickCapture", 0.0);
             Scribe_Values.Look(ref calendarInitialized, "calendarInitialized", false);
+            Scribe_Collections.Look(ref epochGameTicks, "physicsEpochGameTicks", LookMode.Value);
+            Scribe_Collections.Look(ref epochPhysicsTicks, "physicsEpochTicks", LookMode.Value);
+            Scribe_Collections.Look(ref epochLevels, "physicsEpochLevels", LookMode.Value);
+            Scribe_Values.Look(ref savedCommittedGameTick, "physicsCommittedGameTick", 0);
+            Scribe_Values.Look(ref savedCommittedPhysicsTick, "physicsCommittedTick", 0.0);
+            if (Scribe.mode == LoadSaveMode.PostLoadInit)
+            {
+                timeline = null;
+                if (epochGameTicks != null && epochGameTicks.Count > 0)
+                {
+                    if (epochPhysicsTicks == null || epochLevels == null || epochGameTicks.Count != epochPhysicsTicks.Count
+                        || epochGameTicks.Count != epochLevels.Count)
+                        throw new InvalidOperationException("Incomplete saved physical clock history.");
+                    var history = new List<PhysicsTimeEpoch>(epochGameTicks.Count);
+                    for (int i = 0; i < epochGameTicks.Count; i++)
+                        history.Add(new PhysicsTimeEpoch(epochGameTicks[i], epochPhysicsTicks[i], epochLevels[i]));
+                    timeline = new PhysicsTimeLine(history, savedCommittedGameTick, savedCommittedPhysicsTick);
+                }
+                epochGameTicks ??= new(); epochPhysicsTicks ??= new(); epochLevels ??= new();
+                combatCacheDirty = currentLevel == TimeScaleLevel.Combat;
+            }
         }
     }
 }

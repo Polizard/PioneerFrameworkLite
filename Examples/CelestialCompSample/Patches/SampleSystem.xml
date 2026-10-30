@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <Operation Class="PatchOperationAdd">
+    <xpath>Defs/PioneerFramework.Celestial.CelestialSystemDef[defName="PF_DefaultCelestialSystem"]/entries</xpath>
+    <value>
+      <li>
+        <key>z_counterFixed</key><bodyDef>PF_CounterSampleFixed</bodyDef><count><value>1</value></count><parentEntry>root</parentEntry>
+        <initializationReferences>
+          <li><key>frameOrigin</key><entry>root</entry><scope>Parent</scope></li>
+          <li><key>primaryLight</key><entry>primary</entry><scope>Global</scope></li>
+        </initializationReferences>
+      </li>
+      <li>
+        <key>z_counterRanged</key><bodyDef>PF_CounterSampleRanged</bodyDef><count><value>1</value></count><parentEntry>root</parentEntry>
+        <initializationReferences>
+          <li><key>frameOrigin</key><entry>root</entry><scope>Parent</scope></li>
+          <li><key>primaryLight</key><entry>primary</entry><scope>Global</scope></li>
+        </initializationReferences>
+      </li>
+    </value>
+  </Operation>
+</Patch>

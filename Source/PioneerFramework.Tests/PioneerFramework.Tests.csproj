@@ -19,6 +19,7 @@
     <ProjectReference Include="..\PioneerFramework\PioneerFramework.csproj" />
     <ProjectReference Include="..\..\Examples\MegastructureExtensionSample\MegastructureExtensionSample.csproj" />
     <ProjectReference Include="..\..\Examples\ArtificialSurfaceSample\ArtificialSurfaceSample.csproj" />
+    <ProjectReference Include="..\..\Examples\CelestialCompSample\CelestialCompSample.csproj" />
   </ItemGroup>
 
   <Import Project="..\GameReferences.props" />
@@ -29,9 +30,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\..\Examples\CelestialCompSample\Defs\*.xml" Link="CelestialCompSample\Defs\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\Examples\CelestialCompSample\Patches\*.xml" Link="CelestialCompSample\Patches\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\Shaders\*.shader" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Shaders\PF_PlanetClouds.*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\1.7\Shaders\PF_Stellar*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.StellarVisuals.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.StellarVisuals.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewStellarVisualCore.cs" Link="Source\PioneerFramework\PFView\PFViewStellarVisualCore.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Clouds.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Clouds.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.CelestialFramework.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.CelestialFramework.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Starfield.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Starfield.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewQuadGeometry.cs" Link="Source\PioneerFramework\PFView\PFViewQuadGeometry.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewCelestialLighting.cs" Link="Source\PioneerFramework\PFView\PFViewCelestialLighting.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Defs\**\*.xml" Link="Defs\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Patches\**\*.xml" Link="Patches\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\GameReferences.props" Link="Source\GameReferences.props" CopyToOutputDirectory="PreserveNewest" />
@@ -61,6 +71,8 @@
     <None Include="..\PioneerFramework\PFView\PFViewHudPatches.cs" Link="Source\PioneerFramework\PFView\PFViewHudPatches.cs" CopyToOutputDirectory="PreserveNewest" />
     <!-- D-1（2026-10-11）：画船代码从 Scene/MapRelief 抽到 ShipModelRenderer ⇒ 扫描面一并覆盖（同 V-0 拆文件的连坐纪律：只许加覆盖） -->
     <None Include="..\PioneerFramework\PFView\ShipModelRenderer.cs" Link="Source\PioneerFramework\PFView\ShipModelRenderer.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\ShipSkin\*.cs" Link="Source\PioneerFramework\PFView\ShipSkin\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\1.7\Shaders\PF_ShipSkin.*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\ToonOutline\PFViewOutlineContracts.cs" Link="Source\PioneerFramework\PFView\ToonOutline\PFViewOutlineContracts.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\ToonOutline\PFViewOutlineAssetBundleProvider.cs" Link="Source\PioneerFramework\PFView\ToonOutline\PFViewOutlineAssetBundleProvider.cs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
@@ -84,6 +96,10 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Inspector.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Inspector.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Fleet.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Fleet.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewFleetTelemetry.cs" Link="Source\PioneerFramework\PFView\PFViewFleetTelemetry.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\PFViewFleetCore.cs" Link="Source\PioneerFramework\PFView\PFViewFleetCore.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.MapNavigation.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.MapNavigation.cs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\PioneerFramework\PFView\Window_PFViewInstrument.cs" Link="Source\PioneerFramework\PFView\Window_PFViewInstrument.cs" CopyToOutputDirectory="PreserveNewest" />
@@ -95,5 +111,11 @@
     <None Include="..\PioneerFramework\Base\Core\PioneerFrameworkLiteMod.cs" Link="Source\PioneerFramework\Base\Core\PioneerFrameworkLiteMod.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\PFViewUiDragState.cs" Link="Source\PioneerFramework\PFView\PFViewUiDragState.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\Base\Buildings\Window_Steering.cs" Link="Source\PioneerFramework\Base\Buildings\Window_Steering.cs" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\TestSupport\Celestial\**\*.cs" Link="TestSupport\Celestial\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Fixtures\Celestial\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

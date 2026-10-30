@@ -1082,6 +1082,7 @@ namespace PioneerFramework
         /// <summary>设置地图内全部推进器的燃烧状态（空间层 burn 开始/结束时调用，表现层读）。</summary>
         public void SetThrustersBurning(bool burning)
         {
+            if (isPreparedPhysicsCopy) { preparedThrustersBurning = burning; return; }
             for (int i = 0; i < thrusters.Count; i++)
             {
                 if (thrusters[i] != null)

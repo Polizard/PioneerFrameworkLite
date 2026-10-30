@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_BarrenSurfaceVisual.label>barren surface appearance</PF_BarrenSurfaceVisual.label>
+  <PF_FrozenSurfaceVisual.label>frozen surface appearance</PF_FrozenSurfaceVisual.label>
+  <PF_GreenhouseSurfaceVisual.label>greenhouse surface appearance</PF_GreenhouseSurfaceVisual.label>
+  <PF_GreenhouseAtmosphereVisual.label>greenhouse atmosphere appearance</PF_GreenhouseAtmosphereVisual.label>
+  <PF_GreenhouseCloudsVisual.label>greenhouse clouds appearance</PF_GreenhouseCloudsVisual.label>
+  <PF_GasGiantSurfaceVisual.label>gas giant globe appearance</PF_GasGiantSurfaceVisual.label>
+  <PF_GasGiantAtmosphereVisual.label>gas giant atmosphere appearance</PF_GasGiantAtmosphereVisual.label>
+  <PF_GasGiantCloudsVisual.label>gas giant clouds appearance</PF_GasGiantCloudsVisual.label>
+  <PF_IceGiantSurfaceVisual.label>ice giant globe appearance</PF_IceGiantSurfaceVisual.label>
+  <PF_IceGiantAtmosphereVisual.label>ice giant atmosphere appearance</PF_IceGiantAtmosphereVisual.label>
+  <PF_IceGiantCloudsVisual.label>ice giant clouds appearance</PF_IceGiantCloudsVisual.label>
+</LanguageData>

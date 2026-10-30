@@ -30,6 +30,9 @@
   <PFV_Region>Region</PFV_Region>
   <PFV_Speed>Orbital speed</PFV_Speed>
   <PFV_Focus>Focus this object</PFV_Focus>
+  <PFV_EnterMap>Enter map</PFV_EnterMap>
+  <PFV_GroupMapChoice>{0} (map {1})</PFV_GroupMapChoice>
+  <PFV_MapUnavailable>Cannot enter map: the group cannot be operated or the map was unloaded.</PFV_MapUnavailable>
   <PFV_SetTarget>Set as target</PFV_SetTarget>
   <PFV_TargetSelected>Target: {0}</PFV_TargetSelected>
   <PFV_TargetShortcut>Shift+click: set target and keep the current inspection and controls.</PFV_TargetShortcut>
@@ -43,6 +46,7 @@
   <PFV_EnterRoom>Enter {0}</PFV_EnterRoom>
   <PFV_Operating>Operating group {0}</PFV_Operating>
   <PFV_WeaponTarget>Target: {0}</PFV_WeaponTarget>
+  <PFV_EngagementRange>Engagement range: {0}</PFV_EngagementRange>
   <PFV_CloseWeapons>End weapon operation</PFV_CloseWeapons>
   <PFV_ClearTarget>Clear target</PFV_ClearTarget>
   <PFV_Overheated>Overheated</PFV_Overheated>
@@ -87,7 +91,7 @@
   <PFV_HelpCameraTitle>Inspection and camera</PFV_HelpCameraTitle>
   <PFV_HelpCamera>Click to inspect; double-click to focus. Right-drag to look around; middle-drag or Shift+right-drag to pan in free view. Keyboard shortcuts follow your custom bindings.</PFV_HelpCamera>
   <PFV_HelpTasksTitle>Contextual instruments</PFV_HelpTasksTitle>
-  <PFV_HelpTasks>Steering opens attitude instruments; weapon operation opens radar. Display options can pin visibility for this session. Reopening restores automatic visibility. Radar is display-only.</PFV_HelpTasks>
+  <PFV_HelpTasks>Steering opens attitude instruments; weapon operation opens radar. Display options can pin visibility for this session. Reopening restores automatic visibility. Radar is display-only. For player groups with loaded maps, choose Enter map in the details panel or right-click menu. Groups with multiple maps offer a choice.</PFV_HelpTasks>
   <PFV_HelpSubjectsTitle>Inspection and operation</PFV_HelpSubjectsTitle>
   <PFV_HelpSubjects>The bottom bar shows inspection, follow, operator and target. Inspecting another object or hiding details keeps the operator. Shift+click sets a target; open the operating group's weapon panel before firing.</PFV_HelpSubjects>
   <PFV_HelpTimeTitle>Game time</PFV_HelpTimeTitle>
@@ -116,19 +120,34 @@
   <PFV_SettingsCamera>PFView group camera</PFV_SettingsCamera>
   <PFV_SettingsFocusMode>Default view on double-click / focus: {0}</PFV_SettingsFocusMode>
   <PFV_SettingsFocusModeTip>Applies to future double-clicks and Focus actions. The current camera stays in place. You can also switch modes in the PFView toolbar.</PFV_SettingsFocusModeTip>
+  <PFV_SettingsStellar>Stellar rendering (legacy visuals by default)</PFV_SettingsStellar>
+  <PFV_SettingsStellarFast>Use the new stellar renderer (experimental; different look, performance-first)</PFV_SettingsStellarFast>
+  <PFV_SettingsStellarFastTip>Off by default = the legacy stellar visuals you approved, with no visual change. On switches to the analytic-photosphere + thin-corona renderer (faster, but limb/corona look differs). Reopen PFView after switching.</PFV_SettingsStellarFastTip>
+  <PFV_SettingsStellarTier>New renderer tier: {0}</PFV_SettingsStellarTier>
+  <PFV_SettingsStellarTip>The tier only applies when the new renderer is enabled: visual first = full quality; balanced / performance first lower only the corona sampling density. Legacy visuals are unaffected.</PFV_SettingsStellarTip>
+  <PFV_StellarQuality_VisualFirst>New renderer · visual first (default tier)</PFV_StellarQuality_VisualFirst>
+  <PFV_StellarQuality_Balanced>New renderer · balanced</PFV_StellarQuality_Balanced>
+  <PFV_StellarQuality_PerformanceFirst>New renderer · performance first</PFV_StellarQuality_PerformanceFirst>
   <PFV_HelpCameraModesTitle>Free and two third-person views</PFV_HelpCameraModesTitle>
   <PFV_HelpCameraModes>Free, hull-forward and velocity-forward views remember their own poses. Hull-forward follows the tail; velocity-forward uses system inertial velocity and falls back to the hull heading at zero speed. Camera roll is stabilized by default; hull-roll following is optional in Mod settings. Third-person look covers a full circle with pitch limited to -85..85 degrees, safe distances and no panning. Look angles remain after release unless automatic recentering is enabled. Camera defaults apply on the next explicit focus.</PFV_HelpCameraModes>
   <PFV_Pilot_Settings>PFView piloting and observation</PFV_Pilot_Settings>
   <PFV_Pilot_Assist>Stop rotation after releasing steering keys (off: retain angular inertia)</PFV_Pilot_Assist>
   <PFV_Pilot_InvertPitch>Invert keyboard pitch</PFV_Pilot_InvertPitch>
   <PFV_Pilot_Precision>Precision input scale: {0}%</PFV_Pilot_Precision>
+  <PFV_Pilot_PrecisionMode>Precision activation: {0}</PFV_Pilot_PrecisionMode>
+  <PFV_Pilot_PrecisionHold>Hold (default)</PFV_Pilot_PrecisionHold>
+  <PFV_Pilot_PrecisionToggle>Press to toggle</PFV_Pilot_PrecisionToggle>
+  <PFV_Pilot_PrecisionHoldHelp>Precision: hold {0}</PFV_Pilot_PrecisionHoldHelp>
+  <PFV_Pilot_PrecisionToggleHelp>Precision: press {0} to toggle</PFV_Pilot_PrecisionToggleHelp>
+  <PFV_Pilot_PrecisionOn>Precision {0}%</PFV_Pilot_PrecisionOn>
+  <PFV_Pilot_PrecisionOff>Normal steering</PFV_Pilot_PrecisionOff>
   <PFV_Pilot_FollowRoll>Camera follows hull roll</PFV_Pilot_FollowRoll>
   <PFV_Pilot_InvertMouse>Invert mouse look vertical axis</PFV_Pilot_InvertMouse>
   <PFV_Pilot_InvertWheel>Invert zoom wheel (default: forward zooms in)</PFV_Pilot_InvertWheel>
   <PFV_Pilot_Recenter>Recenter third-person look after releasing drag</PFV_Pilot_Recenter>
   <PFV_Pilot_Sensitivity>Mouse look sensitivity: {0}x</PFV_Pilot_Sensitivity>
   <PFV_Pilot_Smoothing>Camera follow smoothing: {0} seconds</PFV_Pilot_Smoothing>
-  <PFV_Pilot_Activation>Steering assistance and precision scale apply on the next takeover; camera options apply on the next focus. After rebinding, release held keys before pressing them again.</PFV_Pilot_Activation>
+  <PFV_Pilot_Activation>Steering assistance, precision activation and scale apply on the next takeover; camera options apply on the next focus. Toggled precision lasts for the current control session and resets when ending control or switching ships. After rebinding, release held keys before pressing them again.</PFV_Pilot_Activation>
   <PFV_Pilot_Bindings>PFView key bindings</PFV_Pilot_Bindings>
   <PFV_Pilot_Unbound>Unbound</PFV_Pilot_Unbound>
   <PFV_Pilot_Edit>Edit</PFV_Pilot_Edit>
@@ -154,7 +173,7 @@
   <PFV_Pilot_Action_Right>Translate right</PFV_Pilot_Action_Right>
   <PFV_Pilot_Action_Up>Translate up</PFV_Pilot_Action_Up>
   <PFV_Pilot_Action_Down>Translate down</PFV_Pilot_Action_Down>
-  <PFV_Pilot_Action_Precision>Hold precision input</PFV_Pilot_Action_Precision>
+  <PFV_Pilot_Action_Precision>Precision steering</PFV_Pilot_Action_Precision>
   <PFV_Pilot_Action_ResetCamera>Reset current focus framing</PFV_Pilot_Action_ResetCamera>
   <PFV_Pilot_Action_FocusControl>Focus controlled ship</PFV_Pilot_Action_FocusControl>
   <PFV_Pilot_Action_Group1>Toggle action group 1</PFV_Pilot_Action_Group1>
@@ -178,7 +197,7 @@
   <PFV_Pilot_Axis>Main thrust axis</PFV_Pilot_Axis>
   <PFV_Pilot_Groups>Action groups</PFV_Pilot_Groups>
   <PFV_Pilot_Directions>Nose / main thrust / velocity</PFV_Pilot_Directions>
-  <PFV_Pilot_DriveKeys>Steer {0}/{1}/{2}/{3} · Roll {4}/{5} · Precision {6}</PFV_Pilot_DriveKeys>
+  <PFV_Pilot_DriveKeys>Steer {0}/{1}/{2}/{3} · Roll {4}/{5} · {6}</PFV_Pilot_DriveKeys>
   <PFV_Pilot_TranslateKeys>Fore/aft {0}/{1} · Left/right {2}/{3} · Up/down {4}/{5} (release stops thrust; velocity is retained)</PFV_Pilot_TranslateKeys>
   <PFV_Pilot_CameraKeys>Right-drag looks around; middle-drag or Shift+right-drag pans in free view. Wheel zooms. Reset {0}; controlled ship {1}.</PFV_Pilot_CameraKeys>
   <PFV_Pilot_Suspended>Input suspended: release held keys before pressing them again.</PFV_Pilot_Suspended>
@@ -204,4 +223,50 @@
   <PFV_Pilot_Sas_Antinormal>Antinormal</PFV_Pilot_Sas_Antinormal>
   <PFV_Pilot_Sas_RadialOut>Radial out</PFV_Pilot_Sas_RadialOut>
   <PFV_Pilot_Sas_RadialIn>Radial in</PFV_Pilot_Sas_RadialIn>
+  <PFV_TimeSpaceRate>Space {0}×</PFV_TimeSpaceRate>
+  <PFV_TimeCombat>Combat</PFV_TimeCombat>
+  <PFV_TimeTerminal>Approach</PFV_TimeTerminal>
+  <PFV_TimeManeuver>Maneuver</PFV_TimeManeuver>
+  <PFV_TimeUnrestricted>Using your selected space time rate</PFV_TimeUnrestricted>
+  <PFV_TimeStatusTip>The buttons control game speed; space time also uses its current rate.\nCurrent: {0}\nStatus: {1}\nYour preferred space time rate resumes when precision limits end. Space simulation stops while paused.</PFV_TimeStatusTip>
+  <PFV_FleetOverview>Fleet status ({0})</PFV_FleetOverview>
+  <PFV_FleetAttention>Attention ({0})</PFV_FleetAttention>
+  <PFV_FleetShowAll>Show all</PFV_FleetShowAll>
+  <PFV_FleetAllRegions>Scope: all player regions</PFV_FleetAllRegions>
+  <PFV_FleetFuel>Propellant {0}</PFV_FleetFuel>
+  <PFV_FleetDeltaV>Ref. Δv {0}</PFV_FleetDeltaV>
+  <PFV_FleetEndurance>Min. endurance {0}</PFV_FleetEndurance>
+  <PFV_FleetNoPropulsion>No available propulsion</PFV_FleetNoPropulsion>
+  <PFV_FleetNoEvent>No queued event</PFV_FleetNoEvent>
+  <PFV_FleetEvent_Node>Maneuver node +{0}</PFV_FleetEvent_Node>
+  <PFV_FleetEvent_Arrival>Estimated arrival +{0}</PFV_FleetEvent_Arrival>
+  <PFV_FleetEstimateTip>Reference Δv uses the existing group propulsion estimate and does not guarantee mission completion. Environment-dependent networks show the shortest full-thrust endurance under current conditions; see details for individual propellants. Node countdowns refer to the node time; ignition can be earlier. Propellant below 20% is only a reserve reminder.</PFV_FleetEstimateTip>
+  <PFV_FleetPropellant>Propellant</PFV_FleetPropellant>
+  <PFV_FleetMobility>Mobility</PFV_FleetMobility>
+  <PFV_FleetStructure>Structure</PFV_FleetStructure>
+  <PFV_FleetDamageCounts>{0} damaged buildings · {1} destroyed parts</PFV_FleetDamageCounts>
+  <PFV_FleetMinimumHp>Lowest part HP</PFV_FleetMinimumHp>
+  <PFV_FleetWeapons>Weapons</PFV_FleetWeapons>
+  <PFV_FleetWeaponCounts>{0} / {1} ready</PFV_FleetWeaponCounts>
+  <PFV_FleetNextEvent>Next event</PFV_FleetNextEvent>
+  <PFV_FleetUnloadedMaps>Some interior maps are unloaded; building and weapon counts cover loaded maps only.</PFV_FleetUnloadedMaps>
+  <PFV_FleetMembers>Expand / collapse members ({0})</PFV_FleetMembers>
+  <PFV_FleetMemberParts>{0} parts · {1} destroyed</PFV_FleetMemberParts>
+  <PFV_FleetManeuvers>Maneuver planner</PFV_FleetManeuvers>
+  <PFV_FleetQueue>Maneuver queue ({0})</PFV_FleetQueue>
+  <PFV_FleetActivity_Idle>Idle</PFV_FleetActivity_Idle>
+  <PFV_FleetActivity_Crippled>Critical parts disabled</PFV_FleetActivity_Crippled>
+  <PFV_FleetActivity_Burning>Burning</PFV_FleetActivity_Burning>
+  <PFV_FleetActivity_Approach>Approaching</PFV_FleetActivity_Approach>
+  <PFV_FleetActivity_Rendezvous>Rendezvous guidance</PFV_FleetActivity_Rendezvous>
+  <PFV_FleetActivity_Transfer>Transferring</PFV_FleetActivity_Transfer>
+  <PFV_FleetActivity_Landing>Landing</PFV_FleetActivity_Landing>
+  <PFV_FleetActivity_Queued>Maneuver queued</PFV_FleetActivity_Queued>
+  <PFV_FleetAlert_Crippled>× Critical parts disabled</PFV_FleetAlert_Crippled>
+  <PFV_FleetAlert_PropellantEmpty>× Propellant exhausted</PFV_FleetAlert_PropellantEmpty>
+  <PFV_FleetAlert_LowPropellant>! Low propellant</PFV_FleetAlert_LowPropellant>
+  <PFV_FleetAlert_Damage>! Structural damage</PFV_FleetAlert_Damage>
+  <PFV_FleetAlert_Overheated>! Weapon overheating</PFV_FleetAlert_Overheated>
+  <PFV_FleetAlert_DisabledWeapons>! Weapons disabled</PFV_FleetAlert_DisabledWeapons>
+  <PFV_FleetAlert_EmptyWeapons>! Weapons out of ammo</PFV_FleetAlert_EmptyWeapons>
 </LanguageData>

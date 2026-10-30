@@ -50,6 +50,7 @@ namespace PioneerFramework
 
         private void ResetCameraSession()
         {
+            orbitDrag.Reset();
             cameraTransitioning = false;
             transitionElapsed = 0f;
             transitionStartLookAbs = DVector3.zero;
@@ -203,6 +204,7 @@ namespace PioneerFramework
 
         private void LockFrozenCamera()
         {
+            orbitDrag.Reset();
             if (!hasDisplayedCameraPose) return;
             frozenCameraPose = new(displayedCameraAbs, displayedLookAbs, displayedOrbitRotationSystem);
             frozenFreeFrameSystem = displayedOrbitRotationSystem;
@@ -213,6 +215,7 @@ namespace PioneerFramework
         private void ReleaseFrozenCamera()
         {
             if (frozenCameraPose == null) return;
+            orbitDrag.Reset();
             var origin = frozenAbs;
             camFocusOffset = AbsToView(frozenCameraPose.Look, origin);
             camDistance = (float)(frozenCameraPose.Position - frozenCameraPose.Look).magnitude * MetersToView;

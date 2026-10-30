@@ -136,7 +136,19 @@ namespace PioneerFramework
             SteeringInputHost.Label(SteeringAction.PitchUp), SteeringInputHost.Label(SteeringAction.PitchDown),
             SteeringInputHost.Label(SteeringAction.YawLeft), SteeringInputHost.Label(SteeringAction.YawRight),
             SteeringInputHost.Label(SteeringAction.RollLeft), SteeringInputHost.Label(SteeringAction.RollRight),
-            SteeringInputHost.Label(SteeringAction.Precision));
+            PrecisionHelp());
+
+        internal static string PrecisionHelp()
+        {
+            bool toggle = SteeringController.IsOpen ? SteeringController.PrecisionToggle
+                : PioneerFrameworkLiteMod.Settings?.pfviewPrecisionToggle ?? false;
+            return (toggle ? "PFV_Pilot_PrecisionToggleHelp" : "PFV_Pilot_PrecisionHoldHelp")
+                .Translate(SteeringInputHost.Label(SteeringAction.Precision));
+        }
+
+        internal static string PrecisionStatus() => SteeringController.PrecisionHeld
+            ? "PFV_Pilot_PrecisionOn".Translate((SteeringController.PrecisionScale * 100).ToString("F0"))
+            : "PFV_Pilot_PrecisionOff".Translate();
 
         internal static string TranslationHelp() => "PFV_Pilot_TranslateKeys".Translate(
             SteeringInputHost.Label(SteeringAction.Forward), SteeringInputHost.Label(SteeringAction.Back),
@@ -183,11 +195,12 @@ namespace PioneerFramework
         {
             Text.Font = GameFont.Tiny;
             float w = (float)group.angularVelocity.magnitude;
-            Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, RowH),
-                "PFV_Pilot_Spin".Translate((w * Mathf.Rad2Deg).ToString("F2")) + " · "
+            string status = PrecisionStatus() + " · " + "PFV_Pilot_Spin".Translate((w * Mathf.Rad2Deg).ToString("F2")) + " · "
                 + (SteeringController.AssistedStop ? "PFV_Pilot_Assisted" : "PFV_Pilot_Inertial").Translate()
-                + " · " + SasLabel(SteeringController.SasKind));
-            y += RowH - 2f;
+                + " · " + SasLabel(SteeringController.SasKind);
+            float height = Mathf.Max(RowH - 2f, Text.CalcHeight(status, inRect.width - 20f));
+            Widgets.Label(new Rect(inRect.x + 10f, y, inRect.width - 20f, height), status);
+            y += height;
         }
 
         private void DrawAxisThrusts(Rect inRect, ref float y, SpaceMapComp mapComp)
@@ -341,9 +354,8 @@ namespace PioneerFramework
             var stack = Find.WindowStack;
             var view = stack?.WindowOfType<MainTabWindow_PFView>();
             if (view?.HasTextInputFocus == true) return false;
-            var windows = stack?.Windows;
-            if (windows == null || windows.Count == 0) return false;
-            var foreground = windows[windows.Count - 1];
+            var foreground = SteeringInputHost.KeyboardForeground(stack?.Windows);
+            if (foreground == null) return false;
             return ReferenceEquals(foreground, this) || (view != null && ReferenceEquals(foreground, view));
         }
 

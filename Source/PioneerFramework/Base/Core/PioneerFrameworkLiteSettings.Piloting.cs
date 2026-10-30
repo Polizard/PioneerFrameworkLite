@@ -10,6 +10,7 @@ namespace PioneerFramework
         internal bool pfviewAssistStop = true;
         internal bool pfviewInvertPitch;
         internal float pfviewPrecisionScale = .25f;
+        internal bool pfviewPrecisionToggle;
         internal bool pfviewFollowRoll;
         internal bool pfviewInvertMouseY;
         internal bool pfviewInvertWheel;
@@ -24,6 +25,7 @@ namespace PioneerFramework
             Scribe_Values.Look(ref pfviewAssistStop, "pfviewAssistStop", true);
             Scribe_Values.Look(ref pfviewInvertPitch, "pfviewInvertPitch");
             Scribe_Values.Look(ref pfviewPrecisionScale, "pfviewPrecisionScale", .25f);
+            Scribe_Values.Look(ref pfviewPrecisionToggle, "pfviewPrecisionToggle");
             Scribe_Values.Look(ref pfviewFollowRoll, "pfviewFollowRoll");
             Scribe_Values.Look(ref pfviewInvertMouseY, "pfviewInvertMouseY");
             Scribe_Values.Look(ref pfviewInvertWheel, "pfviewInvertWheel");
@@ -66,6 +68,13 @@ namespace PioneerFramework
             listing.Label("PFV_Pilot_Settings".Translate());
             listing.CheckboxLabeled("PFV_Pilot_Assist".Translate(), ref settings.pfviewAssistStop);
             listing.CheckboxLabeled("PFV_Pilot_InvertPitch".Translate(), ref settings.pfviewInvertPitch);
+            string precisionMode = (settings.pfviewPrecisionToggle ? "PFV_Pilot_PrecisionToggle" : "PFV_Pilot_PrecisionHold").Translate();
+            if (Widgets.ButtonText(listing.GetRect(30f), "PFV_Pilot_PrecisionMode".Translate(precisionMode)))
+                Find.WindowStack.Add(new FloatMenu(new List<FloatMenuOption>
+                {
+                    new("PFV_Pilot_PrecisionHold".Translate(), () => settings.pfviewPrecisionToggle = false),
+                    new("PFV_Pilot_PrecisionToggle".Translate(), () => settings.pfviewPrecisionToggle = true)
+                }));
             listing.Label("PFV_Pilot_Precision".Translate((settings.pfviewPrecisionScale * 100).ToString("F0")));
             settings.pfviewPrecisionScale = listing.Slider(settings.pfviewPrecisionScale, .05f, .50f);
             listing.CheckboxLabeled("PFV_Pilot_FollowRoll".Translate(), ref settings.pfviewFollowRoll);

@@ -67,18 +67,19 @@ namespace PioneerFramework
             float bestAltKm = 0f;
             float bestSunlit = 0f;
             float bestDistView = 0f;
-
-            foreach (var body in mgr.GetAllBodies())
+            foreach (var body in GetCelestialRenderBodies(mgr, tick))
             {
                 if (body == null) continue;
                 if (body.atmosphereThickness <= 0.0 || body.atmosphereRho0 <= 0.0 || body.atmosphereScaleHeight <= 0.0)
                     continue;                                    // 没大气（月球）⇒ 天空不变蓝、不画壳
 
-                Vector3 bodyPos = AbsToView(mgr.GetBodyPositionAbs(body.bodyId, tick), origin);
+                DVector3 bodyPosition = GetCelestialRenderPosition(mgr, body.bodyId, tick);
+                Vector3 bodyPos = AbsToView(bodyPosition, origin);
                 float radiusView = Mathf.Max((float)(body.radius * MetersToView), MinBodyVisRadius);
                 float bodyDistView = Vector3.Distance(camPos, bodyPos);
                 float altMeters = (bodyDistView - radiusView) / MetersToView;
-                float sunlit = PFViewAtmosphere.SunlitFactor(camPos - bodyPos, -sunLightForward);
+                Vector3 toSun = PFViewCelestialLighting.Direction(GetCelestialRenderLight(mgr, body.bodyId, tick), bodyPosition, viewFrameRot);
+                float sunlit = PFViewAtmosphere.SunlitFactor(camPos - bodyPos, toSun);
                 float a = PFViewAtmosphere.SkyAlpha(altMeters, body.atmosphereThickness, body.atmosphereRho0,
                     body.atmosphereScaleHeight, sunlit);
                 if (a > bestAlpha)
@@ -101,11 +102,11 @@ namespace PioneerFramework
             var watched = GetFocusGroup();
             if (watched != null)
             {
-                var wb = mgr.GetBodyById(watched.CelestialBodyId);
+                var wb = GetCelestialRenderBody(mgr, watched.CelestialBodyId, tick);
                 if (wb != null && wb.atmosphereThickness > 0.0)
                 {
                     Vector3 gView = AbsToView(GetGroupPosAbs(watched, tick), origin);
-                    Vector3 bView = AbsToView(mgr.GetBodyPositionAbs(wb.bodyId, tick), origin);
+                    Vector3 bView = AbsToView(GetCelestialRenderPosition(mgr, wb.bodyId, tick), origin);
                     float rView = Mathf.Max((float)(wb.radius * MetersToView), MinBodyVisRadius);
                     float groupAltMeters = (Vector3.Distance(gView, bView) - rView) / MetersToView;
                     if (PFViewAtmosphere.ShellHiddenForGroupAltitude(groupAltMeters, wb.atmosphereThickness))
@@ -126,7 +127,7 @@ namespace PioneerFramework
                 }
                 else
                 {
-                    var b = mgr.GetBodyById(bestBody);
+                    var b = GetCelestialRenderBody(mgr, bestBody, tick);
                     // 深度余量读数（2026-10-10"壳一闪一闪"的判据）：δz 与该处"壳离地高度"的比值，< 1 就是抢深度。
                     float deltaZ = PFViewAtmosphere.DepthResolution(bestDistView,
                         renderCamera != null ? renderCamera.nearClipPlane : 0.01f);
@@ -138,9 +139,6 @@ namespace PioneerFramework
             }
         }
 
-        /// <summary>方向光的 forward = "太阳 → 天体"（`UpdateLighting` 就是那么写的）⇒ 相机朝太阳 = 取反。</summary>
-        private Vector3 sunLightForward => sunLight != null ? sunLight.transform.forward : Vector3.forward;
-
         /// <summary>
         /// 大气壳：半径 = `R + 大气厚度/2`（XML 定义）· **覆盖全球**（受光半球 + 夜半球都画）。
         /// 口径演化：22:56"厚度一半的半透明壳" ⇒ 23:08"（首版不透明）改成只画受光半球" ⇒
@@ -148,7 +146,7 @@ namespace PioneerFramework
         /// 背太阳的用夜侧更淡的材质（alpha = `PFViewAtmosphere.NightShellAlpha`；给 0 = 夜侧没有壳，给同值 = 不分昼夜）。
         /// **日照是几何、不是 shader 属性**（不依赖任何可能被剥掉的 shader 变体）。
         /// </summary>
-        private void DrawAtmosphereShell(CelestialBodyDef body, Vector3 renderPos, float renderR, Vector3 toSun)
+        private void DrawAtmosphereShell(CelestialBodyInfo body, Vector3 renderPos, float renderR, Vector3 toSun)
         {
             if (body.bodyId == shellHiddenBodyId) return;   // 人已经在壳下（大气里）⇒ 不画壳，只靠天空盒（用户口径）
             if (atmosphereDayCapMesh == null || body.atmosphereThickness <= 0.0) return;
@@ -180,7 +178,7 @@ namespace PioneerFramework
         /// ⇒ 教训：**别把透明性押在"运行期切 shader 模式"上**；要透明就用天生透明的 shader。
         /// "日照"同样不再依赖 shader（改成几何：只画受光半球，见 `DrawAtmosphereShell`）。
         /// </summary>
-        private Material? GetAtmosphereShellMaterial(CelestialBodyDef body, bool night)
+        private Material? GetAtmosphereShellMaterial(CelestialBodyInfo body, bool night)
         {
             var cache = night ? shellNightMaterials : shellMaterials;
             if (cache.TryGetValue(body.bodyId, out var cached) && cached != null) return cached;

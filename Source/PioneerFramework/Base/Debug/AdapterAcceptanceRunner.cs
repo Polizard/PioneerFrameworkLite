@@ -67,7 +67,7 @@ namespace PioneerFramework
             }
 
             double mu = SpaceConstants.PrimaryGravitationalParameter;
-            CelestialBodyDef? earth = celestialMgr.GetBodyById(EARTH_BODY_ID);
+            CelestialBodyInfo? earth = celestialMgr.GetBodyById(EARTH_BODY_ID);
             if (earth != null && earth.gravitationalParameter > 0.0)
                 mu = earth.gravitationalParameter;
             double bodyR = earth?.radius ?? SpaceConstants.PlanetRadiusMeters;
@@ -151,7 +151,7 @@ namespace PioneerFramework
             foreach (SpaceEntityGroup g in spaceGame.GetAllGroups())
             {
                 if (!g.IsActive) continue;
-                CelestialBodyDef? def = celestialMgr.GetBodyById(g.CelestialBodyId);
+                CelestialBodyInfo? def = celestialMgr.GetBodyById(g.CelestialBodyId);
                 if (def == null) continue;
 
                 (BodyVec3 gBodyPos, BodyVec3 gBodyVel) = g.GetBodyState(tick);

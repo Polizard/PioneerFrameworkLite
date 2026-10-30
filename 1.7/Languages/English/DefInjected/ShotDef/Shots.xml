@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Shot_AP.label>armor-piercing shell</PF_Shot_AP.label>
+  <PF_Shot_AP.description>A kinetic shell that penetrates structures, losing damage after each penetration.</PF_Shot_AP.description>
+  <PF_Shot_HE.label>high-explosive shell</PF_Shot_HE.label>
+  <PF_Shot_HE.description>Explodes on structural impact, damaging nearby buildings and pawns with distance falloff.</PF_Shot_HE.description>
+  <PF_Shot_PulseLaser.label>pulse laser</PF_Shot_PulseLaser.label>
+  <PF_Shot_PulseLaser.description>An instant ray. Damage and visual beam duration are configured separately.</PF_Shot_PulseLaser.description>
+</LanguageData>

@@ -74,6 +74,8 @@ namespace PioneerFramework
         public static Quaternion FixedToEciRotation(int bodyId)
         {
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (mgr?.TryGetCelestialRuntime(out _) == true)
+                return (Quaternion)mgr.GetBodyMotion(bodyId, TimeScaleManager.GetPhysicsTickSafe()).Orientation;
             double omega = GetSurfaceState.RotationOmega(mgr, bodyId);
             double tick = TimeScaleManager.GetPhysicsTickSafe();
             return SurfaceFrameRotation(omega, tick);
@@ -99,6 +101,8 @@ namespace PioneerFramework
         public static Quaternion EciToFixedRotation(int bodyId)
         {
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (mgr?.TryGetCelestialRuntime(out _) == true)
+                return (Quaternion)DQuaternion.Inverse(mgr.GetBodyMotion(bodyId, TimeScaleManager.GetPhysicsTickSafe()).Orientation);
             double omega = GetSurfaceState.RotationOmega(mgr, bodyId);
             double tick = TimeScaleManager.GetPhysicsTickSafe();
             return EciToSurfaceFrameRotation(omega, tick);

@@ -10,6 +10,7 @@ namespace PioneerFramework
     {
         /// <summary>武器 Def 名（WeaponDef）。</summary>
         public string weaponDefName = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        public float muzzleVelocityFactor = 1f;
 
         public CompProperties_MapTurret()
         {
@@ -45,6 +46,7 @@ namespace PioneerFramework
         {
             base.PostSpawnSetup(respawningAfterLoad);
             if (mount == null) BuildMount();
+            if (mount?.weapon != null) mount.weapon.mountVelocityFactor = Props.muzzleVelocityFactor;
             parent.Map?.GetComponent<SpaceMapComp>()?.RegisterSpaceWeapon(parent);
         }
 
@@ -89,6 +91,9 @@ namespace PioneerFramework
             foreach (Gizmo g in base.CompGetGizmosExtra()) yield return g;
             if (parent.Faction != Faction.OfPlayer) yield break;
             if (mount == null) yield break;
+
+            if (mount.weapon.def.UsesShotComponents)
+                yield return ShotSelectionUI.Command(mount.weapon);
 
             bool bound = mount.boundDesignator != null && !mount.boundDesignator.Destroyed;
             yield return new Command_Action

@@ -18,3 +18,4 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyFileVersion("1.0.0.0")]
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("PioneerFramework.Tests")]
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("PioneerFramework.Pure.Tests")]
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("PioneerFramework.CelestialBenchmark")]

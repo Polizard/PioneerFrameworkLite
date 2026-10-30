@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_CounterSampleFixed.label>定值计数天体</PF_CounterSampleFixed.label>
+  <PF_CounterSampleFixed.description>固定半径与初值的独立组件示例。通过开发者动作发送明确的计数事件。</PF_CounterSampleFixed.description>
+  <PF_CounterSampleRanged.label>范围计数天体</PF_CounterSampleRanged.label>
+  <PF_CounterSampleRanged.description>半径与计数初值从闭区间采样，实际结果随每个实例保存。</PF_CounterSampleRanged.description>
+</LanguageData>

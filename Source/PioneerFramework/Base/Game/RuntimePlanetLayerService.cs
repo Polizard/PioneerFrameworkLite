@@ -7,6 +7,7 @@ using RimWorld;
 using RimWorld.Planet;
 using UnityEngine;
 using Verse;
+using PioneerFramework.Celestial;
 
 namespace PioneerFramework
 {
@@ -130,6 +131,50 @@ namespace PioneerFramework
     /// </summary>
     public static class RuntimePlanetLayerService
     {
+        internal static CelestialSurfaceLayer RegisterCelestialInstance(WorldGrid grid, PlanetLayerDef definition, CelestialSurfaceHeader header)
+        {
+            using var scope = new CelestialSurfaceCreationScope(header, grid);
+            return (CelestialSurfaceLayer)grid.RegisterPlanetLayer(definition, radius: header.NativeRadius, subdivisions: header.Subdivisions);
+        }
+
+        internal static CelestialResult<bool> GenerateCelestialPreservingRand(int seed, Func<CelestialResult<bool>> generate)
+        {
+            Rand.PushState(seed);
+            try { return generate(); }
+            finally { Rand.PopState(); }
+        }
+
+        internal static IReadOnlyList<CelestialError> InspectCelestialContents(CelestialSurfaceLayer layer)
+        {
+            var errors = new List<CelestialError>();
+            if (Find.WorldGrid == null || Find.WorldObjects == null || Current.Game?.Maps == null)
+            {
+                errors.Add(new CelestialError("ResourceAuthorityUnavailable", layer.Header.OwnerId));
+                return errors;
+            }
+            if (Current.Game.Maps.Any(map => map.Tile.Valid && ReferenceEquals(map.Tile.Layer, layer)))
+                errors.Add(new CelestialError("MapExists", layer.Header.OwnerId));
+            if (Find.WorldObjects.AllWorldObjects.Any(worldObject => worldObject.Tile.Valid && ReferenceEquals(worldObject.Tile.Layer, layer)))
+                errors.Add(new CelestialError("WorldObjectExists", layer.Header.OwnerId));
+            return errors;
+        }
+
+        internal static CelestialResult<bool> RemoveCelestialInstance(CelestialSurfaceLayer layer)
+        {
+            var blockers = InspectCelestialContents(layer);
+            if (blockers.Count > 0) return CelestialResult.Reject<bool>(blockers.ToArray());
+            if (!CanRemove(layer, false, out string reason)) return CelestialResult.Reject<bool>(new CelestialError("SurfaceCleanupBlocked", layer.Header.OwnerId, Detail: reason));
+            // 新世界生成期间尚未创建 UI，此时没有选层状态需要迁移；仍使用原版移除和同一内容检查。
+            if (Find.World.UI == null)
+            {
+                ClearZoomReferences(Find.WorldGrid, layer);
+                Find.WorldGrid.RemovePlanetLayer(layer);
+                return CelestialResult.Ok(!Find.WorldGrid.PlanetLayers.ContainsKey(layer.LayerID));
+            }
+            return TryRemove(layer, false, out reason) ? CelestialResult.Ok(true) :
+                CelestialResult.Reject<bool>(new CelestialError("SurfaceCleanupBlocked", layer.Header.OwnerId, Detail: reason));
+        }
+
         // 2026-10-15 反射清理：`zoomInToLayer`/`zoomOutToLayer` 在 1.7 是 **public 字段**
         //（`PlanetLayer.cs:1544/1547`）⇒ 原先两处 FieldInfo 反射已删、改直取。
         // 仍保留反射的只有 `PlanetLayerDef.worldGenSteps/worldTabs`（1.7 仍为 private、无公开 setter，

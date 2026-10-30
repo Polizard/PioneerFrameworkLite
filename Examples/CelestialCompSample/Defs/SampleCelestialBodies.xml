@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_CounterSampleVisual</defName><label>计数示例外观</label>
+    <color>(0.25, 0.65, 0.5, 1)</color>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.CelestialBodyDef Name="PF_CounterSampleBase" Abstract="True">
+    <category>Sample</category>
+    <comps Inherit="False">
+      <li Class="PioneerFramework.Celestial.CompProperties_SphericalBody">
+        <key>shape</key><radiusMeters><value>500000</value></radiusMeters>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
+        <key>motion</key><providerId>PFL.ExistingEphemeris</providerId><modeId>existing.circular.v1</modeId>
+        <initializationVersion>1</initializationVersion><initializationPayload>eyJvcmJpdFJhZGl1cyI6MTEwMDAwMDAsIm9yYml0UGVyaW9kIjo0MzIwMDAsIm9yYml0Tm9ybWFsIjpbMCwxLDBdLCJpbml0aWFsUGhhc2UiOjAsImRheUxlbmd0aFRpY2tzIjo2MDAwMCwiYm9keVR5cGUiOiJQbGFuZXQiLCJmcmFtZU9yaWdpblJlZmVyZW5jZSI6ImZyYW1lT3JpZ2luIn0=</initializationPayload>
+        <gravitationalParameter><value>0</value></gravitationalParameter>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
+        <key>visual</key><profile>PF_CounterSampleVisual</profile>
+      </li>
+      <li Class="PFL.CelestialCompSample.CompProperties_SampleCounter">
+        <key>counter</key><initialCount><value>3</value></initialCount>
+      </li>
+    </comps>
+  </PioneerFramework.CelestialBodyDef>
+  <PioneerFramework.CelestialBodyDef ParentName="PF_CounterSampleBase">
+    <defName>PF_CounterSampleFixed</defName><label>定值计数天体</label>
+    <description>固定半径与初值的独立组件示例。通过开发者动作发送明确的计数事件。</description>
+  </PioneerFramework.CelestialBodyDef>
+  <PioneerFramework.CelestialBodyDef ParentName="PF_CounterSampleBase">
+    <defName>PF_CounterSampleRanged</defName><label>范围计数天体</label>
+    <description>半径与计数初值从闭区间采样，实际结果随每个实例保存。</description>
+    <comps Inherit="False">
+      <li Class="PioneerFramework.Celestial.CompProperties_SphericalBody">
+        <key>shape</key><radiusMeters><min>250000</min><max>650000</max></radiusMeters>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
+        <key>motion</key><providerId>PFL.ExistingEphemeris</providerId><modeId>existing.circular.v1</modeId>
+        <initializationVersion>1</initializationVersion><initializationPayload>eyJvcmJpdFJhZGl1cyI6MTYwMDAwMDAsIm9yYml0UGVyaW9kIjo1MTAwMDAsIm9yYml0Tm9ybWFsIjpbMCwxLDBdLCJpbml0aWFsUGhhc2UiOjIuMiwiZGF5TGVuZ3RoVGlja3MiOjYwMDAwLCJib2R5VHlwZSI6IlBsYW5ldCIsImZyYW1lT3JpZ2luUmVmZXJlbmNlIjoiZnJhbWVPcmlnaW4ifQ==</initializationPayload>
+        <gravitationalParameter><value>0</value></gravitationalParameter>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
+        <key>visual</key><profile>PF_CounterSampleVisual</profile>
+      </li>
+      <li Class="PFL.CelestialCompSample.CompProperties_SampleCounter">
+        <key>counter</key><initialCount><min>1</min><max>9</max></initialCount>
+      </li>
+    </comps>
+  </PioneerFramework.CelestialBodyDef>
+</Defs>

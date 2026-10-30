@@ -16,7 +16,6 @@ namespace PioneerFramework
     /// ## 本场景的分层（值与用途）
     /// ```
     /// 星空 1000（RenderQueue.Background）
-    ///   太阳盘 1200          ← 原 1900；提前是为了让壳能排在它之后（太阳该被大气蒙一层雾）
     ///   大气壳 1950          ← **排在行星之前**（这是修球缘闪的关键：壳先画、行星随后**覆盖**它的盘面部分，
     ///                          于是"壳 vs 行星"根本不进深度比较 ⇒ 没有可翻的边）
     /// 行星（基底球 + 烘焙补丁）／飞船零件／浮雕 2000（Standard 的默认 Geometry 队列，不透明、写深度）
@@ -36,9 +35,6 @@ namespace PioneerFramework
         /// <summary>星空盒：`RenderQueue.Background`（排在一切之前，含大气壳与太阳）。</summary>
         public const int Starfield = 1000;
 
-        /// <summary>太阳圆片：星空之上、大气壳之下（⇒ 会被壳蒙一层雾）。</summary>
-        public const int SunDisc = 1200;
-
         /// <summary>
         /// 大气壳：**排在行星之前**（正是这一条消掉"球缘闪"：行星随后不透明覆盖它的盘面部分）。
         /// 改回 2900 = 退回"盘面有 18% 蓝雾、但球缘一圈闪"。
@@ -51,14 +47,17 @@ namespace PioneerFramework
         /// <summary>云层在不透明场景之后混合，仍由深度测试保留近处飞船的遮挡。</summary>
         public const int Clouds = 2850;
 
+        /// <summary>恒星透明日冕：不写深度，保留普通不透明场景的遮挡。</summary>
+        public const int StellarHalo = 2900;
+
         /// <summary>
         /// 分层次序自检（**画序必须严格递增**）—— 用例钉的就是这条：层次一旦写乱，
         /// "谁挡谁"就重新变成深度竞争，球缘闪会回来。
         /// </summary>
         public static bool IsLayeredInOrder()
         {
-            return Starfield < SunDisc && SunDisc < AtmosphereShell && AtmosphereShell < PlanetAndShips
-                && PlanetAndShips < Clouds;
+            return Starfield < AtmosphereShell && AtmosphereShell < PlanetAndShips
+                && PlanetAndShips < Clouds && Clouds < StellarHalo;
         }
     }
 }

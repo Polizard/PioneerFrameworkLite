@@ -92,8 +92,10 @@ namespace PioneerFramework.Megastructures
                 var captured=new StructureSurfaceActionRequest{OperationId=Guid.NewGuid().ToString("N"),Key=action.Key,Surface=surface,CellId=cell,ActorFactionId=Faction.OfPlayer.loadID,ExpectedRevision=state.Revision};
                 if(action.Available&&Widgets.ButtonText(new Rect(0,y,210,27),action.LabelKey.Translate()))
                 {
+                    var validate=MegastructureDeferredGuard.Capture(manager,state);
                     void Execute()
                     {
+                        var valid=validate();if(!valid.Success){Show(valid);return;}
                         var result=manager.Actions.Execute(captured,out var map);Show(result);
                         if(result.Success&&map!=null){Current.Game.CurrentMap=map;CameraJumper.TryHideWorld();}
                     }
@@ -107,11 +109,15 @@ namespace PioneerFramework.Megastructures
             {
                 var address=site.Address;
                 if(Widgets.ButtonText(new Rect(0,y,width-15,27),"PF_Surface_Map".Translate(address.Cell!.Value.CellId,site.MapParentId,site.MapId)))
+                {
+                    var validate=MegastructureDeferredGuard.Capture(manager,state);
                     LongEventHandler.QueueLongEvent(()=>
                     {
+                        var valid=validate();if(!valid.Success){Show(valid);return;}
                         var result=manager.MapSites.Access(address,true,Faction.OfPlayer.loadID,new(250,1,250),out var map);Show(result);
                         if(result.Success){Current.Game.CurrentMap=map;CameraJumper.TryHideWorld();}
                     },"GeneratingMap",false,null);
+                }
                 y+=32;
             }
         }
@@ -122,8 +128,11 @@ namespace PioneerFramework.Megastructures
                 Show(manager.Execute(new StructureCommand {OperationId=Guid.NewGuid().ToString("N"),InstanceId=state.Id,NodeId=nodeId,ActorFactionId=Faction.OfPlayer.loadID,Kind=StructureCommandKind.SetCapabilityEnabled,CapabilityId=capability.Id,Enabled=!capability.Enabled}));
             y+=30;
             if(capability.HandlerId=="pfl.map"&&capability.Enabled&&Widgets.ButtonText(new Rect(0,y,180,27),"PF_Mega_AccessMap".Translate()))
+            {
+                var validate=MegastructureDeferredGuard.Capture(manager,state);
                 LongEventHandler.QueueLongEvent(()=>
-                {var result=manager.Maps.Access(new(state.Id,nodeId),capability.Id,0,true,Faction.OfPlayer.loadID,out var map);if(result.Success)SpaceMapGenerator.EnterPocketMap(map!);else Show(result);},"GeneratingMap",false,null);
+                {var valid=validate();if(!valid.Success){Show(valid);return;}var result=manager.Maps.Access(new(state.Id,nodeId),capability.Id,0,true,Faction.OfPlayer.loadID,out var map);if(result.Success)SpaceMapGenerator.EnterPocketMap(map!);else Show(result);},"GeneratingMap",false,null);
+            }
             if(capability.HandlerId=="pfl.map")y+=32;
         }
         private static void OpenCreateMenu(MegastructureManager manager)

@@ -73,7 +73,7 @@ namespace PioneerFramework
             {
                 if (!g.IsActive) continue;
 
-                CelestialBodyDef? def = celestialMgr.GetBodyById(g.CelestialBodyId);
+                CelestialBodyInfo? def = celestialMgr.GetBodyById(g.CelestialBodyId);
                 if (def == null) continue;
 
                 checkedGroups++;

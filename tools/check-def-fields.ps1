@@ -49,6 +49,23 @@ foreach ($n in $retired) {
         ('\b{0}\b' -f [System.Text.RegularExpressions.Regex]::Escape($n)))
 }
 $hits = 0
+# Celestial scalar fields are retired only on the active line. The frozen 1.6 schema remains intact.
+$celestialRetired = @('bodyId', 'bodyType', 'radius', 'gravitationalParameter', 'hasSurface',
+    'atmosphereThickness', 'atmosphereRho0', 'atmosphereScaleHeight', 'atmosphereRestoreScaleHeights',
+    'atmosphereColor', 'baseSphereColor', 'dayLengthTicks', 'planetLayerDefName', 'orbitRadius',
+    'orbitPeriod', 'orbitNormal', 'initialPhase', 'parentBodyDefName', 'moonBodies')
+$activeDefs = Join-Path $root '1.7/Defs'
+foreach ($file in Get-ChildItem -LiteralPath $activeDefs -Recurse -Filter *.xml -File) {
+    [xml]$document = [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8)
+    foreach ($definition in $document.SelectNodes('/Defs/PioneerFramework.CelestialBodyDef')) {
+        foreach ($field in $celestialRetired) {
+            if ($definition.SelectSingleNode($field)) {
+                $hits++
+                Write-Host ("{0}: CelestialBodyDef still references retired scalar '{1}'" -f $file.FullName.Substring($root.Length + 1), $field)
+            }
+        }
+    }
+}
 foreach ($f in $xmlFiles) {
     $lines = [System.IO.File]::ReadAllLines($f.FullName, [System.Text.Encoding]::UTF8)
     for ($i = 0; $i -lt $lines.Length; $i++) {

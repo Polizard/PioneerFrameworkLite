@@ -233,6 +233,8 @@ namespace PioneerFramework
             {
                 opts.Add(new FloatMenuOption($"选中 G{hit}", () => SelectGroupForInspection(hit)));
                 opts.Add(new FloatMenuOption($"聚焦 G{hit}", () => { SelectGroupForInspection(hit); FocusGroup(hit); }));
+                if (RefreshNavigableGroupMaps(hit))
+                    opts.Add(new FloatMenuOption("PFV_EnterMap".Translate(), () => ShowGroupMapMenu(hit)));
                 opts.Add(new FloatMenuOption($"设为目标 G{hit}", () => SetTargetGroup(hit)));
             }
             opts.Add(new FloatMenuOption("取消选中", ClearInspection));
@@ -405,7 +407,7 @@ namespace PioneerFramework
                 double speed = System.Math.Sqrt(spaceGame.GetBodyGM(bodyId) / orbitRadius);
                 var reference = new SpaceEntityGroup(-1, Faction.OfPlayer.loadID) { CelestialBodyId = bodyId };
                 var center = reference.GetCentralBodyOffset(tick);
-                var centerVelocity = reference.GetCentralBodyVelocity((int)System.Math.Round(tick));
+                var centerVelocity = reference.GetCentralBodyVelocity(tick);
                 DVector3 basePos = FrameConvert.BodyToSystem((BodyVec3)new DVector3(
                     System.Math.Cos(angle) * orbitRadius, 0, System.Math.Sin(angle) * orbitRadius), center);
                 DVector3 vel = FrameConvert.BodyToSystemVelocity((BodyVec3)new DVector3(

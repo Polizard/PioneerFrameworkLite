@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using MechJebLib.Functions;
 using MechJebLib.TwoBody;
 using System.Collections.Generic;
@@ -111,7 +111,7 @@ namespace PioneerFramework
             }
 
             double mu = SpaceConstants.PrimaryGravitationalParameter;
-            CelestialBodyDef? earth = celestialMgr.GetBodyById(EARTH_BODY_ID);
+            CelestialBodyInfo? earth = celestialMgr.GetBodyById(EARTH_BODY_ID);
             if (earth != null && earth.gravitationalParameter > 0.0) mu = earth.gravitationalParameter;
 
             double tick = TimeScaleManager.GetPhysicsTickSafe();
@@ -203,7 +203,7 @@ namespace PioneerFramework
             }
 
             double mu = SpaceConstants.PrimaryGravitationalParameter;
-            CelestialBodyDef? earth = celestialMgr.GetBodyById(EARTH_BODY_ID);
+            CelestialBodyInfo? earth = celestialMgr.GetBodyById(EARTH_BODY_ID);
             if (earth != null && earth.gravitationalParameter > 0.0) mu = earth.gravitationalParameter;
 
             double tick = TimeScaleManager.GetPhysicsTickSafe();

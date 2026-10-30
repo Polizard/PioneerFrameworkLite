@@ -10,7 +10,7 @@ using PioneerFramework.Components;
 
 namespace PioneerFramework.Combat
 {
-    public class CombatManager : GameComponent
+    public partial class CombatManager : GameComponent
     {
         private readonly List<ProjectileInstance> activeProjectiles = new();
         // 群组武器列表（Lite 裁剪后：实体级武器收集已删除，此容器由 M4 Map 炮塔桥接填充）
@@ -383,10 +383,6 @@ namespace PioneerFramework.Combat
         private long lastProjSpawned, lastProjDestroyed, lastCellCross;
 #endif
 
-        // 射弹在飞 → 自动降速到 1/60（Combat 档）。限频防抖：每 60 tick 最多请求一次。
-        private int lastProjectileSlowdownTick = -9999;
-        private const int PROJECTILE_SLOWDOWN_MIN_INTERVAL = 60;
-
         private DVector3 lastHitPosition;
         private int lastHitGroupId = -1;
         private int lastHitTick = -1;
@@ -597,31 +593,10 @@ namespace PioneerFramework.Combat
 
         /// <summary>
         /// 射弹在飞 / 导弹处于 Attack 终末自动段时自动将时间流速降到 1/60（Combat 档），
-        /// 实现"子弹时间"（导弹终末与射弹同级 flag，2026-09-07 用户定稿——否则 60× 现实流速下
-        /// 玩家看不清导弹冲刺与撞击）。只降不升：恢复由 SpaceGameComp 的流速检查（每 240 tick）
-        /// 处理，避免清空/再生反复切换。限频（每 60 tick 最多请求一次）：覆盖用户手动切走的
-        /// 高流速，同时避免 QueueCommand 刷屏。
+        /// 导弹终末与射弹同级（2026-09-07 用户定稿）。将当前限制交给统一时间仲裁；
+        /// 限制解除后由仲裁器恢复最新偏好，不积累降速或恢复命令。
         /// </summary>
-        private void ManageProjectileTimeScale()
-        {
-            var tsm = GetTimeScaleManager();
-            if (tsm == null) return;
-
-            bool combatActive = activeProjectiles.Count > 0;
-            if (!combatActive)
-            {
-                var avm = GetAvm();
-                combatActive = avm != null && avm.HasActiveAttack;
-            }
-
-            if (combatActive &&
-                tsm.CurrentLevel != TimeScaleLevel.Combat &&
-                Find.TickManager.TicksGame - lastProjectileSlowdownTick >= PROJECTILE_SLOWDOWN_MIN_INTERVAL)
-            {
-                lastProjectileSlowdownTick = Find.TickManager.TicksGame;
-                tsm.QueueCommand(TimeScaleCommand.ToCombat());
-            }
-        }
+        private void ManageProjectileTimeScale() => GetTimeScaleManager()?.RefreshConstraints();
 
         // ── 组件引用缓存（2026-09-10 性能第 5 条）：下列组件在每物理步 / 每弹 / 每对 上报，
         //    每次 Current.Game.GetComponent 都是组件表线性扫描，故按 Game 缓存（见 GameComponentRef）。──
@@ -725,9 +700,15 @@ namespace PioneerFramework.Combat
                 // 战斗模式（1/60）下 physicsTick 差值与真实秒相等，行为不变；Normal/Fast 档位
                 // 下射弹与飞船同速推进，不再出现射弹被船甩开 60 倍的问题。
                 double physicsTickNow = TimeScaleManager.GetPhysicsTickSafe();
+                if (!ResolveProjectileBirth(proj, physicsTickNow))
+                {
+                    combatGrid?.RemoveProjectile(proj);
+                    spaceGame.UnregisterProjectileFromGrid(proj);
+                    activeProjectiles.RemoveAt(i);
+                    continue;
+                }
                 double deltaTime = physicsTickNow - proj.prevPhysicsTick;
-                if (deltaTime <= 0.0)
-                    deltaTime = (Find.TickManager.TicksGame - proj.lastUpdateRealTick) / 60.0;
+                if (deltaTime <= 0.0) continue;
                 // 物理严格基于 physicsTick：deltaTime = physicsTick 差值，不做任何截断。
                 // 射弹位置 = spawnPos + velocity×Δt 是 physicsTick 的连续函数，配合渲染精确外推
                 // 即得平滑轨迹；人为 clamp 步长反而造成物理点与渲染外推错位 → 折线。
@@ -769,7 +750,7 @@ namespace PioneerFramework.Combat
                 }
                 else
                 {
-                    proj.UpdatePosition((float)deltaTime);
+                    proj.UpdatePosition(deltaTime);
                 }
 
                 if (!proj.IsAlive())
@@ -852,6 +833,7 @@ namespace PioneerFramework.Combat
 
         private void CheckProjectileCollision(ProjectileInstance proj, SpaceGameComp spaceGame)
         {
+            if (proj.shot != null) { CheckConfiguredProjectile(proj, spaceGame); return; }
             var combatGrid = GetCombatGrid();
             if (combatGrid == null) return;
 
@@ -867,6 +849,7 @@ namespace PioneerFramework.Combat
             foreach (var group in projectileQueryResults)
             {
                 if (!group.IsActive || !group.IsCollidable) continue;
+                if (group.physicsBirthTick >= TimeScaleManager.GetPhysicsTickSafe()) continue;
                 if (group.GroupId == proj.sourceGroupId) continue;
 
                 // 命中诊断：射弹接近目标但未命中时，打印一次关键数据定位漏检
@@ -1180,6 +1163,8 @@ namespace PioneerFramework.Combat
             foreach (var (a, b) in combatGrid.EnumerateShipPairs())
             {
                 if (!a.IsActive || !b.IsActive || !a.IsCollidable || !b.IsCollidable) continue;
+                if (a.physicsBirthTick >= TimeScaleManager.GetPhysicsTickSafe()
+                    || b.physicsBirthTick >= TimeScaleManager.GetPhysicsTickSafe()) continue;
                 if (a.GroupId == b.GroupId) continue;
 
                 // P49 读数（只量不改）：到这里才算"候选对"（前面两个 continue 是枚举器层面的粗筛）
@@ -4383,15 +4368,28 @@ namespace PioneerFramework.Combat
                 spawnPos = GetGroupPos(group);
             }
 
+            if (!weapon.TryCreateShot(out var configuredShot, out string shotError))
+            {
+                Log.Warning($"[ShotComp] {weapon.def.defName}: {shotError}");
+                return;
+            }
+            if (configuredShot != null && TryGetMapWeaponMount(groupId, weapon, out _, out var sourceBuilding))
+            {
+                configuredShot.Instigator = sourceBuilding;
+                configuredShot.WeaponThingDef = sourceBuilding.def;
+            }
+            bool instant = configuredShot?.Profile.Instant ?? weapon.def.weaponType == WeaponType.Ray;
+            double muzzleSpeed = configuredShot?.Profile.Speed ?? weapon.def.projectileSpeed;
+
             // 发射者当前世界系速度（射弹继承 + 提前量解算共用）
             DVector3 groupVelocity = GetGroupVelocity(group);
 
             // 瞄准：射线瞬时命中瞄准当前位置；射弹带简单提前量（相对运动二次方程）。
             // Missile 无提前量（硬性分叉 §6）：出膛速度量级远低于炮弹且靠制导收敛，收敛归制导循环。
             DVector3 aimPos = targetPosition;
-            if (weapon.def.weaponType != WeaponType.Ray && weapon.def.weaponType != WeaponType.Missile
-                && targetVelocity.HasValue && weapon.def.projectileSpeed > 0f)
-                aimPos = ComputeLeadAimPoint(spawnPos, groupVelocity, targetPosition, targetVelocity.Value, weapon.def.projectileSpeed);
+            if (!instant && weapon.def.weaponType != WeaponType.Missile
+                && targetVelocity.HasValue && muzzleSpeed > 0f)
+                aimPos = ComputeLeadAimPoint(spawnPos, groupVelocity, targetPosition, targetVelocity.Value, muzzleSpeed);
 
             // 出膛方向有效性检查：目标与炮口重合（<1m）时 aimDelta 为零向量，
             // direction.normalized 为 0 → muzzle=0 → 生成"卡膛弹"（射弹无出膛速度，只有船速）。
@@ -4408,7 +4406,13 @@ namespace PioneerFramework.Combat
                 volleyCount = weapon.AvailableVolleyCount(volleyCount ?? weapon.def.missileCount, MaxVolleyCount);
             weapon.Fire();
 
-            if (weapon.def.weaponType == WeaponType.Ray)
+            if (configuredShot?.Profile.Instant == true)
+            {
+                FireConfiguredRay(group, weapon, configuredShot, spawnPos, direction);
+                return;
+            }
+
+            if (configuredShot == null && weapon.def.weaponType == WeaponType.Ray)
             {
                 FireRayWeapon(group, weapon, groupId, spawnPos, direction);
                 return;
@@ -4422,20 +4426,21 @@ namespace PioneerFramework.Combat
                 return;
             }
 
-            DVector3 muzzleVelocity = direction * weapon.def.projectileSpeed;
+            DVector3 muzzleVelocity = direction * muzzleSpeed;
 
             var proj = new ProjectileInstance
             {
                 sourceGroupId = groupId,
                 factionId = group.FactionId,
                 weaponDef = weapon.def,
+                shot = configuredShot,
                 // 批6 S3-3c：射弹的"出生点/出生速度"来自未标类型的算式 ⇒ 在此**显式跨界**（系统系）
                 position = (SystemVec3)spawnPos,
                 velocity = (SystemVec3)(groupVelocity + muzzleVelocity),
-                remainingLife = weapon.def.projectileLifetime / 60f,
+                remainingLife = configuredShot?.Profile.LifetimeSeconds ?? weapon.def.projectileLifetime / 60f,
                 damage = weapon.def.damagePerShot,
                 armorPenetration = weapon.def.armorPenetration,
-                affectedByGravity = weapon.def.affectedByGravity,
+                affectedByGravity = configuredShot?.Profile.Gravity ?? weapon.def.affectedByGravity,
                 prevPosition = (SystemVec3)spawnPos,
                 spawnPosition = (SystemVec3)spawnPos,
                 spawnVelocity = (SystemVec3)(groupVelocity + muzzleVelocity),
@@ -4450,6 +4455,7 @@ namespace PioneerFramework.Combat
             };
 
             activeProjectiles.Add(proj);
+            PrepareProjectileBirth(proj, group, targetPosition, targetVelocity, muzzleSpeed);
 #if DEBUG
             projSpawnedTotal++;
 #endif
@@ -4567,6 +4573,7 @@ namespace PioneerFramework.Combat
                     launcherGroup.CelestialBodyId, direction, out missileEntityId);
             }
             int missileGroupId = group.GroupId;
+            spaceGame.AnchorGroupBirth(group, launcherGroup, GetGroupPos(launcherGroup), groupVelocity);
 
             // 齐射 N 按弹药计数（K3）：公共路径已扣 1，补扣余下 N-1（ammo<0 = 无限不动）
             if (weapon.ammo > 0 && logicalCount > 1)
@@ -4916,7 +4923,7 @@ namespace PioneerFramework.Combat
         private double PhysicsStepSeconds()
         {
             var tsm = GetTimeScaleManager();
-            return SpaceGameComp.UPDATE_INTERVAL_TICKS * (tsm != null ? tsm.PhysicsSpeedMultiplier : 1f);
+            return tsm?.PhysicsStepSeconds ?? SpaceGameComp.UPDATE_INTERVAL_TICKS;
         }
 
         /// <summary>
@@ -5690,6 +5697,9 @@ namespace PioneerFramework.Combat
         public DVector3 endPos;
         public int remainingTicks;
         public int totalTicks;
+        public Color color = new(1f, 0.2f, 0.2f, 0.85f);
+        public float widthMeters = 0.15f;
+        public float minimumViewWidth = 0.15f;
         public int systemBodyId = -1;   // 所属参考系（渲染时转绝对坐标）
     }
 }

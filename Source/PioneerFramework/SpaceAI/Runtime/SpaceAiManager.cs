@@ -214,9 +214,16 @@ namespace PioneerFramework.SpaceAI
                 var body = bodies?.GetBodyById(group.CelestialBodyId);
                 if (body != null && OrbitAdapter.TryToOrbitView(group, bodies, now, out var orbit))
                 {
+                    record.planningCelestialTarget = null;
+                    if (bodies!.TryGetCelestialRuntime(out _))
+                    {
+                        var celestialTarget = bodies.CaptureTarget(body.bodyId);
+                        if (!celestialTarget.Success) return;
+                        record.planningCelestialTarget = celestialTarget.Value;
+                    }
                     var own = orbit.GameFrameStateAtUT(now);
                     var targetPosition = FrameConvert.SystemToBody((SystemVec3)aiContact.PositionAt(now), group.GetCentralBodyOffset(now)).v;
-                    var targetVelocity = FrameConvert.SystemToBody((SystemVec3)aiContact.Velocity, group.GetCentralBodyVelocity((int)Math.Round(now))).v;
+                    var targetVelocity = FrameConvert.SystemToBody((SystemVec3)aiContact.Velocity, group.GetCentralBodyVelocity(now)).v;
                     record.planning = new(own.pos, own.vel, targetPosition, targetVelocity, body.gravitationalParameter,
                         body.radius + body.atmosphereThickness, Math.Max(0, state.DeltaV - state.ReserveDeltaV));
                     record.planningEpoch = now; record.planningTrack = decision.TrackId;
@@ -270,6 +277,7 @@ namespace PioneerFramework.SpaceAI
                 var combat = combatRef.Get();
                 if (group == null || combat == null || record.action != AiAction.Approach || record.withdrawing ||
                     !CanControl(group, record) || record.planningBody != group.CelestialBodyId ||
+                    record.planningCelestialTarget != null && CelestialBodyManager.GetCached()?.ValidateTarget(record.planningCelestialTarget).Success != true ||
                     now < record.planningEpoch || now - record.planningEpoch >= 15 ||
                     record.decision.TrackId != record.planningTrack || !ContactTargetService.TryResolve(sensor, game,
                         record.factionId, new(record.targetGroupId, record.targetDecoyId), now, out _))

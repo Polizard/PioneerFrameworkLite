@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Shot_AP.label>穿甲弹</PF_Shot_AP.label>
+  <PF_Shot_AP.description>动能穿甲弹，沿弹道贯穿结构，每次穿透后伤害递减。</PF_Shot_AP.description>
+  <PF_Shot_HE.label>高爆弹</PF_Shot_HE.label>
+  <PF_Shot_HE.description>在命中结构处爆炸，对附近建筑和人员造成衰减范围伤害。</PF_Shot_HE.description>
+  <PF_Shot_PulseLaser.label>脉冲激光</PF_Shot_PulseLaser.label>
+  <PF_Shot_PulseLaser.description>瞬时射线命中，伤害与光束显示时长分别定义。</PF_Shot_PulseLaser.description>
+</LanguageData>

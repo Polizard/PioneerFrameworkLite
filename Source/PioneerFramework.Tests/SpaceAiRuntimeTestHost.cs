@@ -27,7 +27,7 @@ namespace PioneerFramework.Tests
             var bodies = new CelestialBodyManager(Game);
             AccessTools.Field(typeof(CelestialBodyManager), "initialized").SetValue(bodies, true);
             AccessTools.Field(typeof(CelestialBodyManager), "bodiesById").SetValue(bodies,
-                new Dictionary<int,CelestialBodyDef> { [0] = new CelestialBodyDef { bodyId = 0, bodyType = CelestialBodyType.Planet } });
+                new Dictionary<int,CelestialBodyInfo> { [0] = new CelestialBodyInfo { bodyId = 0, bodyType = CelestialBodyType.Planet } });
             Game.components = new List<GameComponent> { Space, Ai, Grid, bodies, new CombatManager(Game) };
             Current.Game = Game;
         }

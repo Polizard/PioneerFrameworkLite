@@ -75,8 +75,9 @@ namespace PioneerFramework.Landing
             transit = success ? marker : null;
             report = success ? LandingReport.Ok() : LandingReport.Reject("PFL_LandingExecutionError", error); return success;
         }
-        public static LandingTransitWorldObject EnsureMarker(LandingTaskData task)
+        public static LandingTransitWorldObject? EnsureMarker(LandingTaskData task)
         {
+            if (!task.TargetTile.Valid) return null;
             var marker = Find.WorldObjects.AllWorldObjects.OfType<LandingTransitWorldObject>().FirstOrDefault(w => w.Task == task);
             if (marker != null) return marker;
             marker = (LandingTransitWorldObject)WorldObjectMaker.MakeWorldObject(DefDatabase<WorldObjectDef>.GetNamed("PF_LandingTransit"));
@@ -98,9 +99,11 @@ namespace PioneerFramework.Landing
         public static bool TryResume(string id, out LandingReport report)
         {
             var task = Manager.FindTask(id);
-            if (task == null || task.Status == LandingTransitStatus.Blocked || task.Status == LandingTransitStatus.Completed)
+            if (task == null || task.Status == LandingTransitStatus.Blocked || task.Status == LandingTransitStatus.Completed || task.Status == LandingTransitStatus.AwaitingMapRequest)
             { report = LandingReport.Reject("PFL_LandingInvalidState"); return false; }
             if (task.Status == LandingTransitStatus.FailedRecoverable) task.Status = task.ResumeStage;
+            if (task.Status == LandingTransitStatus.AwaitingMapRequest)
+            { report = LandingReport.Reject("PFL_LandingInvalidState"); return false; }
             if (task.Status == LandingTransitStatus.AwaitingPlacement) ContinuePlacement?.Invoke(task); else Arrived?.Invoke(task);
             report = LandingReport.Ok(); return true;
         }
@@ -121,6 +124,11 @@ namespace PioneerFramework.Landing
                 {
                     group.LandingTaskId = task.TaskId; group.IsActive = group.IsMovable = group.IsCollidable = false;
                     sg.RemoveLandingGroupFromIndexes(group);
+                }
+                if (task.Status == LandingTransitStatus.AwaitingMapRequest)
+                {
+                    EnsureMarker(task);
+                    continue;
                 }
                 if (task.Status == LandingTransitStatus.PreparingDestination) task.Status = LandingTransitStatus.InFlight;
                 var transfer = LandingMapTransferService.Reconcile(task);

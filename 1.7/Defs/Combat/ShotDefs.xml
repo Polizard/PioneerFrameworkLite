@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <PioneerFramework.Combat.ShotDef>
+    <defName>PF_Shot_AP</defName>
+    <label>穿甲弹</label>
+    <description>动能穿甲弹，沿弹道贯穿结构，每次穿透后伤害递减。</description>
+    <comps>
+      <li Class="PioneerFramework.Combat.ShotCompProperties_Ballistic">
+        <referenceSpeed>5000</referenceSpeed>
+        <massKg>0.5</massKg>
+        <lifetimeSeconds>60</lifetimeSeconds>
+        <affectedByGravity>false</affectedByGravity>
+      </li>
+      <li Class="PioneerFramework.Combat.ShotCompProperties_DirectDamage">
+        <damageDef>Bullet</damageDef>
+        <partDamage>40</partDamage>
+        <mapDamage>40</mapDamage>
+        <armorPenetration>0.3</armorPenetration>
+      </li>
+      <li Class="PioneerFramework.Combat.ShotCompProperties_Penetration">
+        <initialBudget>100</initialBudget>
+        <defaultResistance>25</defaultResistance>
+        <resistanceStat>PF_ShotResistance</resistanceStat>
+        <damageRetention>0.75</damageRetention>
+        <minimumDamageScale>0.05</minimumDamageScale>
+        <maxHits>4</maxHits>
+      </li>
+      <li Class="PioneerFramework.Combat.ShotCompProperties_BeamVisual">
+        <color>(1,0.9,0.2,0.85)</color>
+        <widthMeters>100</widthMeters>
+        <durationSeconds>0.15</durationSeconds>
+        <mapVisualProjectile>PF_Projectile_Shell</mapVisualProjectile>
+      </li>
+    </comps>
+  </PioneerFramework.Combat.ShotDef>
+
+  <PioneerFramework.Combat.ShotDef>
+    <defName>PF_Shot_HE</defName>
+    <label>高爆弹</label>
+    <description>在命中结构处爆炸，对附近建筑和人员造成衰减范围伤害。</description>
+    <comps>
+      <li Class="PioneerFramework.Combat.ShotCompProperties_Ballistic">
+        <referenceSpeed>4500</referenceSpeed>
+        <massKg>0.6</massKg>
+        <lifetimeSeconds>60</lifetimeSeconds>
+      </li>
+      <li Class="PioneerFramework.Combat.ShotCompProperties_DirectDamage">
+        <damageDef>Bomb</damageDef>
+        <partDamage>40</partDamage>
+        <mapDamage>0</mapDamage>
+      </li>
+      <li Class="PioneerFramework.Combat.ShotCompProperties_Explosion">
+        <trigger>Stop</trigger>
+        <damageDef>Bomb</damageDef>
+        <mapRadiusCells>4</mapRadiusCells>
+        <mapCenterDamage>60</mapCenterDamage>
+        <spaceRadiusMeters>4</spaceRadiusMeters>
+        <partCenterDamage>20</partCenterDamage>
+        <armorPenetration>0.1</armorPenetration>
+        <falloffExponent>1</falloffExponent>
+        <affectBuildings>true</affectBuildings>
+        <affectPawns>true</affectPawns>
+      </li>
+      <li Class="PioneerFramework.Combat.ShotCompProperties_BeamVisual">
+        <color>(1,0.5,0.1,0.85)</color>
+        <widthMeters>100</widthMeters>
+        <durationSeconds>0.15</durationSeconds>
+        <mapVisualProjectile>PF_Projectile_Shell</mapVisualProjectile>
+      </li>
+    </comps>
+  </PioneerFramework.Combat.ShotDef>
+
+  <PioneerFramework.Combat.ShotDef>
+    <defName>PF_Shot_PulseLaser</defName>
+    <label>脉冲激光</label>
+    <description>瞬时射线命中，伤害与光束显示时长分别定义。</description>
+    <comps>
+      <li Class="PioneerFramework.Combat.ShotCompProperties_InstantRay">
+        <rangeMeters>50000</rangeMeters>
+      </li>
+      <li Class="PioneerFramework.Combat.ShotCompProperties_DirectDamage">
+        <damageDef>Burn</damageDef>
+        <partDamage>10</partDamage>
+        <mapDamage>10</mapDamage>
+        <armorPenetration>0.15</armorPenetration>
+      </li>
+      <li Class="PioneerFramework.Combat.ShotCompProperties_BeamVisual">
+        <color>(1,0.2,0.2,0.85)</color>
+        <widthMeters>150</widthMeters>
+        <durationSeconds>0.15</durationSeconds>
+        <mapVisualProjectile>PF_Projectile_Shell</mapVisualProjectile>
+      </li>
+    </comps>
+  </PioneerFramework.Combat.ShotDef>
+
+  <StatDef>
+    <defName>PF_ShotResistance</defName>
+    <label>结构抗穿透</label>
+    <description>飞船发射物穿透该结构消耗的预算；与人员护甲穿透百分比分别计算。</description>
+    <category>Basics</category>
+    <defaultBaseValue>25</defaultBaseValue>
+    <toStringStyle>FloatOne</toStringStyle>
+  </StatDef>
+</Defs>

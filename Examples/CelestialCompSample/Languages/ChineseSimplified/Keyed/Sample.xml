@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_CounterSample_Queued>已为 {0} 排入 SampleIncrement 事件。恢复模拟推进后，再查看计数。</PF_CounterSample_Queued>
+  <PF_CounterSample_Value>{0} / {1}：{2}</PF_CounterSample_Value>
+  <PF_CounterSample_NoInstances>没有找到已就绪的示例计数组件。</PF_CounterSample_NoInstances>
+  <PF_CounterSample_Error>计数事件被拒绝：{0}</PF_CounterSample_Error>
+</LanguageData>

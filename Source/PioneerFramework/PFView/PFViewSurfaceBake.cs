@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using RimWorld;
 using RimWorld.Planet;
 using UnityEngine;
@@ -89,6 +90,7 @@ namespace PioneerFramework
         private struct Patch
         {
             public Texture2D tex;
+            public string path;
             public Vector3 center;          // 球冠中心方向（天体局部系、单位向量）
             public float thetaMaxRad;       // 补丁盘覆盖的半角（含余量）
         }
@@ -99,6 +101,8 @@ namespace PioneerFramework
 
         /// <summary>缓存所属的世界种子（地形是世界种子的函数 ⇒ 换种子必须整个丢掉）。</summary>
         private static int cachedSeed = int.MinValue;
+        private static Game? cachedGame;
+        private static System.Guid cachedCelestialSession;
 
         /// <summary>补丁图的生命周期缓存版本：每次进/出缓存自增 ⇒ PFView 侧据此丢掉"补丁材质/网格"缓存。</summary>
         public static int Version { get; private set; }
@@ -106,7 +110,8 @@ namespace PioneerFramework
         /// <summary>取补丁图 + 它的球冠。没有（没烤过、也没旁挂文件）⇒ false。</summary>
         public static bool TryGetPatch(int bodyId, out Texture2D? tex, out Vector3 center, out float thetaMaxRad)
         {
-            if (baked.TryGetValue(bodyId, out var p) && p.tex != null)
+            EnsureContext();
+            if (TryGetCurrentPatch(bodyId, out var p) && p.tex != null)
             {
                 tex = p.tex; center = p.center; thetaMaxRad = p.thetaMaxRad;
                 return true;
@@ -134,7 +139,7 @@ namespace PioneerFramework
             for (int i = 0; i < ids.Count; i++)
             {
                 int id = ids[i];
-                if (!File.Exists(PathFor(world.info.Seed, id))) continue;      // 盘上没有 ⇒ 留着（这是唯一的副本）
+                if (!File.Exists(baked[id].path)) continue;
                 if (baked[id].tex != null) UnityEngine.Object.Destroy(baked[id].tex);
                 baked.Remove(id);
                 loadTried.Remove(id);
@@ -157,14 +162,19 @@ namespace PioneerFramework
                     Clear();
                     cachedSeed = int.MinValue;
                 }
+                cachedGame = null;
+                cachedCelestialSession = System.Guid.Empty;
                 return;
             }
 
             int seed = Find.World.info.Seed;
-            if (seed != cachedSeed)
+            System.Guid session = Current.Game.GetComponent<CelestialBodyManager>()?.TryGetCelestialRuntime(out var runtime) == true ? runtime.WorldSessionId : System.Guid.Empty;
+            if (seed != cachedSeed || !ReferenceEquals(cachedGame, Current.Game) || cachedCelestialSession != session)
             {
                 Clear();
                 cachedSeed = seed;
+                cachedGame = Current.Game;
+                cachedCelestialSession = session;
             }
         }
 
@@ -179,6 +189,27 @@ namespace PioneerFramework
             baseTexLabel.Clear();
             Version++;
         }
+        internal static void ForgetMemory(int handle)
+        {
+            if (baked.TryGetValue(handle, out var patch) && patch.tex != null) UnityEngine.Object.Destroy(patch.tex);
+            baked.Remove(handle); failed.Remove(handle); loadTried.Remove(handle); Version++;
+        }
+        private static bool TryGetCurrentPatch(int bodyId, out Patch patch)
+        {
+            if (!baked.TryGetValue(bodyId, out patch)) return false;
+            bool removed = false;
+            var manager = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (manager?.TryGetCelestialRuntime(out var runtime) == true && runtime.Catalog.TryResolveHandle(bodyId, out var id))
+            {
+                var body = runtime.Query(id);
+                removed = !body.Success || body.Value.Lifecycle == Celestial.CelestialLifecycle.Removed;
+            }
+            if (!removed && string.Equals(patch.path, PathFor(cachedSeed, bodyId), StringComparison.Ordinal)) return true;
+            if (patch.tex != null) UnityEngine.Object.Destroy(patch.tex);
+            baked.Remove(bodyId); loadTried.Remove(bodyId); failed.Remove(bodyId); Version++;
+            patch = default;
+            return false;
+        }
 
         /// <summary>
         /// 取用前调一次：保证（1）上下文正确（换种子/回主菜单即作废）、（2）旁挂文件被尝试加载过
@@ -188,7 +219,8 @@ namespace PioneerFramework
         public static bool EnsureReady(int bodyId, PlanetLayer? layer)
         {
             EnsureContext();
-            if (baked.ContainsKey(bodyId)) return true;
+            if (!MatchesCelestialOwner(bodyId, layer)) return false;
+            if (TryGetCurrentPatch(bodyId, out _)) return true;
             if (loadTried.Contains(bodyId)) return false;
             loadTried.Add(bodyId);
 
@@ -210,14 +242,35 @@ namespace PioneerFramework
         /// ⇒ 旧图不会被当成新图读进来（省得出现"改了没生效"的假象）。读档时另有一道"必须正方形"的兜底闸。
         /// </summary>
         private static string PathFor(int seed, int bodyId)
-            => Path.Combine(Path.Combine(GenFilePaths.SaveDataFolderPath, FolderName),
-                seed + "_" + bodyId + "_patch2.png");
+        {
+            string directory = Path.Combine(GenFilePaths.SaveDataFolderPath, FolderName);
+            var manager = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (manager?.TryGetCelestialRuntime(out var runtime) == true && runtime.Catalog.TryResolveHandle(bodyId, out var id) && runtime.Catalog.TryGetInstance(id, out var instance))
+            {
+                string configuration = Celestial.CelestialBakeCacheIdentity.ConfigurationHash(instance.GenerationOrigin, instance.CompStateRecords.Values);
+                return Path.Combine(directory, Celestial.CelestialBakeCacheIdentity.DiskKey(seed, id, instance.Description.DescriptorRevision, configuration) + "_patch3.png");
+            }
+            return Path.Combine(directory, seed + "_" + bodyId + "_patch2.png");
+        }
+        private static bool MatchesCelestialOwner(int handle, PlanetLayer? layer)
+        {
+            var manager = Current.Game?.GetComponent<CelestialBodyManager>();
+            bool active = manager?.TryGetCelestialRuntime(out _) == true;
+            if (layer is not Celestial.CelestialSurfaceLayer surface) return !active;
+            if (!active || !manager!.TryGetCelestialRuntime(out var runtime) || !runtime.Catalog.TryResolveHandle(handle, out var id) || id != surface.Header.OwnerId ||
+                surface.Header.State != Celestial.CelestialSurfaceState.Ready || Find.WorldGrid == null ||
+                !Find.WorldGrid.PlanetLayers.TryGetValue(layer.LayerID, out var registered) || !ReferenceEquals(registered, layer)) return false;
+            var body = runtime.Query(id);
+            return body.Success && body.Value.Lifecycle != Celestial.CelestialLifecycle.Removed && body.Value.Description.RadiusMeters == surface.Header.PhysicalRadiusMeters;
+        }
 
         /// <summary>先看旁挂文件在不在；在就读进来（转场/读档后由 `EnsureReady` 调一次）。</summary>
         public static bool TryLoadSaved(int seed, int bodyId, PlanetLayer? layer, out string? message)
         {
+            EnsureContext();
             message = null;
-            if (baked.ContainsKey(bodyId)) return true;
+            if (!MatchesCelestialOwner(bodyId, layer)) { message = "SurfaceIdentityMismatch"; return false; }
+            if (TryGetCurrentPatch(bodyId, out _)) return true;
 
             string path = PathFor(seed, bodyId);
             if (!File.Exists(path)) return false;
@@ -256,6 +309,7 @@ namespace PioneerFramework
                 baked[bodyId] = new Patch
                 {
                     tex = tex,
+                    path = path,
                     center = center,
                     thetaMaxRad = (Mathf.Min(halfAngleDeg, MaxHalfAngleDeg) + PatchMarginDeg) * Mathf.Deg2Rad,
                 };
@@ -463,14 +517,28 @@ namespace PioneerFramework
         /// <summary>
         /// 手动烘焙入口。成功 ⇒ 进缓存 + 落盘；失败 ⇒ 登记（不刷屏）并给出原因。
         /// </summary>
-        public static bool TryBake(CelestialBodyDef body, PlanetLayer? layer, int seed, out string? message)
+        public static bool TryBake(CelestialBodyInfo body, PlanetLayer? layer, int seed, out string? message)
         {
+            EnsureContext();
             message = null;
+            if (body != null && !MatchesCelestialOwner(body.bodyId, layer)) { message = "SurfaceIdentityMismatch"; return false; }
             if (body == null || layer == null || layer.TilesCount <= 0)
             {
                 message = "该天体没有地表层（或层还没生成）";
                 failed.Add(body != null ? body.bodyId : -1);
                 return false;
+            }
+
+            var manager = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (manager?.TryGetCelestialRuntime(out var runtime) == true && runtime.Catalog.TryResolveHandle(body.bodyId, out var owner))
+            {
+                var instance = runtime.Query(owner);
+                if (!instance.Success || instance.Value.Lifecycle != Celestial.CelestialLifecycle.Ready) { message = "BodyNotReady"; return false; }
+                var visuals = runtime.GetCapabilities<Celestial.ICelestialVisualCapability>(owner).Select(capability => capability.GetVisualDescription()).ToArray();
+                var atmospheres = runtime.GetCapabilities<Celestial.ICelestialAtmosphereCapability>(owner);
+                var environment = runtime.Creation.GetProperties(owner).OfType<Celestial.ExistingEnvironmentResolvedProperties>().SingleOrDefault();
+                body = Celestial.CelestialRenderProjection.Create(instance.Value.Description, visuals, true,
+                    atmospheres.Count == 1 ? atmospheres[0].GetProfile() : default, environment?.Profile.DayLengthTicks ?? 0);
             }
 
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -677,7 +745,7 @@ namespace PioneerFramework
 
                 if (baked.TryGetValue(body.bodyId, out var old) && old.tex != null)
                     UnityEngine.Object.Destroy(old.tex);
-                baked[body.bodyId] = new Patch { tex = tex, center = capCenter, thetaMaxRad = thetaMaxRad };
+                baked[body.bodyId] = new Patch { tex = tex, center = capCenter, thetaMaxRad = thetaMaxRad, path = PathFor(seed, body.bodyId) };
                 failed.Remove(body.bodyId);
                 loadTried.Add(body.bodyId);
                 Version++;                       // 补丁图变了 ⇒ PFView 侧丢掉补丁材质/网格缓存

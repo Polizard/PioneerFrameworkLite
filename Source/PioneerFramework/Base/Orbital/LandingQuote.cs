@@ -84,6 +84,24 @@ namespace PioneerFramework
             DVector3 pEci = SurfaceFrame.FixedToEci(tileDirFixed.normalized * bodyRadius, omega, physicsTick);
             DVector3 pSystem = bodyOffsetPos + pEci;
             DVector3 vSystem = bodyOffsetVel + SurfaceFrame.SurfaceVelocity(pEci, omega);
+            return EvaluateCore(shipPos, shipVel, bodyOffsetPos, bodyRadius, pEci, pSystem, vSystem);
+        }
+
+        /// <summary>Evaluate the same distance and velocity criteria using an already sampled surface state.</summary>
+        public static Result EvaluateSurface(DVector3 shipPos, DVector3 shipVel, DVector3 bodyOffsetPos,
+            double bodyRadius, DVector3 pSystem, DVector3 vSystem)
+        {
+            double maxDist = MaxSurfaceDistance(bodyRadius);
+            DVector3 pEci = pSystem - bodyOffsetPos;
+            if (!(bodyRadius > 0.0) || !(pEci.sqrMagnitude > 1e-12))
+                return new Result(false, 0.0, double.NaN, maxDist, pSystem, vSystem, "参数不完整（天体半径或地表方向无效）");
+            return EvaluateCore(shipPos, shipVel, bodyOffsetPos, bodyRadius, pEci, pSystem, vSystem);
+        }
+
+        private static Result EvaluateCore(DVector3 shipPos, DVector3 shipVel, DVector3 bodyOffsetPos,
+            double bodyRadius, DVector3 pEci, DVector3 pSystem, DVector3 vSystem)
+        {
+            double maxDist = MaxSurfaceDistance(bodyRadius);
             double dv = (shipVel - vSystem).magnitude;
 
             DVector3 rBody = shipPos - bodyOffsetPos;

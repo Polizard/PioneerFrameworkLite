@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Patch>
-  <!-- 2026-10-15 反射清理 A-3：原版 `Surface`（地球）层的 layerType 换成我们的子类
-       （`PF_CelestialSurfaceLayer`：选中月球时隐藏/停用地球大球壳；未选中天体时行为与原版逐字一致）。
-       纯 XML def 改写，无 Harmony。 -->
-  <Operation Class="PatchOperationReplace">
-    <xpath>/Defs/PlanetLayerDef[defName="Surface"]/layerType</xpath>
-    <value>
-      <layerType>PioneerFramework.PF_CelestialSurfaceLayer</layerType>
-    </value>
+  <!-- 实例保存头在根层构造前确定；世界生成统一由保存的 profile 分派。
+       自有层继承原天体可见性规则。原版步骤由 profile 按原顺序和种子调用一次。 -->
+  <Operation Class="PatchOperationSequence">
+    <operations>
+      <li Class="PatchOperationReplace">
+        <xpath>/Defs/PlanetLayerDef[defName="Surface"]/layerType</xpath>
+        <value><layerType>PioneerFramework.Celestial.CelestialSurfaceLayer</layerType></value>
+      </li>
+      <li Class="PatchOperationReplace">
+        <xpath>/Defs/PlanetLayerDef[defName="Surface"]/worldGenSteps</xpath>
+        <value><worldGenSteps><li>PF_CelestialTiles</li></worldGenSteps></value>
+      </li>
+    </operations>
   </Operation>
 </Patch>

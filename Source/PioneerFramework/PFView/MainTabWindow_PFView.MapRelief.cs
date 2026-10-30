@@ -77,7 +77,7 @@ namespace PioneerFramework
             if (set == null)
                 return false;
 
-            // 2026-10-19 蒙皮：可用且开 = PF_ShipSkin（三平面板缝 + 阵营色）；否则逐字回到 Toon/旧三色。
+            // 2026-10-20：三平面工业装甲 + 局部阵营涂装；关闭时保留旧三色。
             Material? skin = ShipSkinSettings.Enabled ? ShipSkinAssets.Material : null;
             Material mat = skin ?? (ToonMat ?? renderMat);
             if (mat == null)

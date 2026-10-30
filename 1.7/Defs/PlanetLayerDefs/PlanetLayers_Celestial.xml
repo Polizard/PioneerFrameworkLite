@@ -2,8 +2,7 @@
 <Defs>
   <!-- ════════════════════════════════════════════════════════════════
        天体表面 PlanetLayerDef
-       月球拥有独立 layer，通过"查看天体"Gizmo 切换。
-       Lite 裁剪：火星 layer 已删除（跨行星系不做）。
+       月球兼容名称由自有实例层处理；额外天体共用 PF_CelestialSurface 静态定义。
        ════════════════════════════════════════════════════════════════ -->
   <!-- ── 月球地表 layer ── -->
   <PlanetLayerDef>
@@ -11,14 +10,14 @@
     <label>月球</label>
     <viewGizmoTooltip>查看月球地表。</viewGizmoTooltip>
     <viewGizmoTexPath>UI/Commands/ViewPlanet</viewGizmoTexPath>
-    <!-- 2026-10-15 反射清理 A-3：原为原版 SurfaceLayer + Visible/Raycastable 两处 Harmony 补丁 ⇒ 改 def 子类 -->
-    <layerType>PioneerFramework.PF_CelestialSurfaceLayer</layerType>
+    <!-- 物理与生成参数由实例头提供。 -->
+    <layerType>PioneerFramework.Celestial.CelestialSurfaceLayer</layerType>
     <tileType>SurfaceTile</tileType>
     <elevationString>{0}m</elevationString>
     <gerundLabel>在月球</gerundLabel>
     <backgroundBiome>PF_MoonBiomeWater</backgroundBiome>
     <worldGenSteps>
-      <li>PF_MoonTiles</li>
+      <li>PF_CelestialTiles</li>
     </worldGenSteps>
     <worldDrawLayers>
       <li>WorldDrawLayer_CurrentMapTile</li>

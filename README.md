@@ -7,6 +7,7 @@
 - 单 Part 空间站 / 飞船结构
 - 空间站对射与 3D 战斗
 - 月球表面动态生成与运行时 PlanetLayer 服务
+- XML 固定/范围天体模板、独立 Comp、动态创建/移除和版本化实例保存
 - PFView 3D 视图及预留的独立描边模块（Waylith 后端待迁移）
 
 ## 安装
@@ -85,6 +86,10 @@ dotnet test Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.cspro
 - 已提交 DLL 与 CI Release 构建一致性校验
 - xUnit 测试
 - Defs / DefOf / 运行时资产校验
+
+## 行星框架扩展
+
+公开契约以 [通用天体 API](Source/PioneerFramework/Celestial/API/README.md) 为准（存档 v2，要求新建测试世界）。从 [CelestialCompSample 使用说明](Examples/CelestialCompSample/README.md) 开始：示例包含可加载的固定/范围 XML、独立 C# 组件、保存 codec、生成配置 patch 和开发者检查动作。按说明构建并作为独立 Mod 启用后，可检查多个实例的计数与保存恢复。
 
 ## 许可证
 

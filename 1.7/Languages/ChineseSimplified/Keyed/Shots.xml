@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Shot_Select>发射物：{0}</PF_Shot_Select>
+  <PF_Shot_SelectDesc>选择该武器使用的发射物。切换不会补充弹药或改变在飞射弹。</PF_Shot_SelectDesc>
+  <PF_Shot_Invalid>发射物配置无效</PF_Shot_Invalid>
+</LanguageData>

@@ -89,6 +89,7 @@ namespace PioneerFramework
 
             return ticksAbs;
         }
+        private static double GetCelestialDisplayTicksAbs() => timeScaleRef.Get()?.GetDisplayTicksAbs() ?? Find.TickManager?.TicksAbs ?? 0;
 
         public static bool GenDate_TicksAbs_Prefix(ref long absTicks)
         {
@@ -118,6 +119,14 @@ namespace PioneerFramework
             if (Megastructures.SurfaceEnvironmentBridge.TrySunGlow(map.Tile.Layer,out float artificialSunGlow))
             {
                 __result = artificialSunGlow;
+                return false;
+            }
+
+            Vector2 naturalLongLat = Find.WorldGrid.LongLatOf(map.Tile);
+            if (Celestial.CelestialEnvironmentBridge.TryEvaluate(map.Tile.Layer,
+                new(GetCelestialDisplayTicksAbs(), naturalLongLat.x, naturalLongLat.y, map.Biome.defName), out var natural))
+            {
+                __result = natural.SunGlow;
                 return false;
             }
 
@@ -159,6 +168,14 @@ namespace PioneerFramework
                 return false;
             }
 
+            Vector2 naturalLongLat = Find.WorldGrid.LongLatOf(map.Tile);
+            if (Celestial.CelestialEnvironmentBridge.TryEvaluate(map.Tile.Layer,
+                new(GetCelestialDisplayTicksAbs(), naturalLongLat.x, naturalLongLat.y, map.Biome.defName), out var natural))
+            {
+                __result = natural.DayPercent;
+                return false;
+            }
+
             float dayLength = CelestialBodyLayerManager.GetDayLengthForMap(map);
             if (Math.Abs(dayLength - 60000f) <= 10f) return true; // Earth，走原版
 
@@ -179,6 +196,12 @@ namespace PioneerFramework
         /// </summary>
         public static bool CurSunPositionInWorldSpace_Prefix(ref Vector3 __result)
         {
+            if (Celestial.CelestialEnvironmentBridge.TryEvaluate(PlanetLayer.Selected,
+                new(GetCelestialDisplayTicksAbs(), 0, 0), out var natural))
+            {
+                __result = PF_SunMath.SunPositionUnmodified(natural.DayOfYearFraction, natural.DayPercent, new Vector3(0f, 0f, -1f), 0f);
+                return false;
+            }
             long scaledTicks = GetCelestialScaledTicksAbs();
             double days = (double)scaledTicks / 60000.0;
 

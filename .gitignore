@@ -10,6 +10,10 @@
 **/bin/
 **/obj/
 
+# Python validator/tool caches
+__pycache__/
+*.py[cod]
+
 # Debug symbols (keep DLL, ignore PDB)
 1.7/Assemblies/*.pdb
 **/*.pdb
@@ -81,3 +85,8 @@ AgentMemory/
 
 # ── DSH 沙箱文件权限修复的备份/回滚件（2026-10-22；机器本机，不入库）
 _acl-repair-*/
+
+# Independently built celestial sample outputs; the real 1.7 deliverable remains tracked.
+/Examples/CelestialCompSample/Assemblies/
+/Examples/CelestialCompSample/bin/
+/Examples/CelestialCompSample/obj/

@@ -162,8 +162,8 @@ namespace PioneerFramework
             foreach (var b in boundMounts)
             {
                 var weapon = b.turret?.TryGetComp<CompMapTurret>()?.Mount?.weapon;
-                if (weapon != null && weapon.def != null && weapon.def.orbitalEngageRange > range)
-                    range = weapon.def.orbitalEngageRange;
+                if (weapon != null && weapon.def != null)
+                    range = System.Math.Max(range, (float)PioneerFramework.SpaceAI.ContactTargetService.EffectiveRange(weapon));
             }
             return range > 0f ? range : 100000f;
         }

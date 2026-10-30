@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- Reusable kind presets. They are not added to PF_DefaultCelestialSystem. Motion is a representative circular orbit; override motion and bind frameOrigin/primaryLight for each actual instance. See Source/PioneerFramework/Celestial/API/PlanetKinds.md. -->
+  <PioneerFramework.CelestialBodyDef Name="PF_BarrenPlanetBase">
+    <defName>PF_BarrenPlanet</defName>
+    <label>荒芜行星</label>
+    <description>岩石、碎屑与风化物构成的荒芜天体。可覆盖水星、火星和月球一类地表。此预设采用真空环境；有大气的实例需同步覆盖大气与地表环境。</description>
+    <category>Barren</category>
+    <tags>
+      <li>PlanetKind</li>
+      <li>Barren</li>
+      <li>Rocky</li>
+      <li>Airless</li>
+      <li>NoNativeEcology</li>
+    </tags>
+    <comps>
+      <li Class="PioneerFramework.Celestial.CompProperties_SphericalBody">
+        <key>shape</key>
+        <radiusMeters>
+          <value>2500000</value>
+        </radiusMeters>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
+        <key>motion</key>
+        <providerId>PFL.ExistingEphemeris</providerId>
+        <modeId>existing.circular.v1</modeId>
+        <gravitationalParameter>
+          <value>4e12</value>
+        </gravitationalParameter>
+        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjU4NDAwLCJkYXlMZW5ndGhUaWNrcyI6NjAwMDAsIm9yYml0UmFkaXVzIjoxMjAwMDAwMDAsImZyYW1lT3JpZ2luUmVmZXJlbmNlIjoiZnJhbWVPcmlnaW4iLCJib2R5VHlwZSI6IlBsYW5ldCIsImluaXRpYWxQaGFzZSI6MH0=</initializationPayload>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_Surface">
+        <key>surface</key>
+        <generationMode>OnDemand</generationMode>
+        <subdivisions>
+          <value>5</value>
+        </subdivisions>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_BiomeGeneration">
+        <key>biomes</key>
+        <profile>PF_BarrenBiomes</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_MapGeneration">
+        <key>maps</key>
+        <profile>PF_BarrenMaps</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExistingEnvironment">
+        <key>environment</key>
+        <profile>PF_BarrenEnvironment</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
+        <key>visual</key>
+        <profile>PF_BarrenSurfaceVisual</profile>
+      </li>
+    </comps>
+  </PioneerFramework.CelestialBodyDef>
+  <PioneerFramework.CelestialBodyDef Name="PF_TemperatePlanetBase">
+    <defName>PF_TemperatePlanet</defName>
+    <label>温带行星</label>
+    <description>气候相对温和的岩质天体，使用原版地表生成，能够容纳海洋、森林、草原、沙漠和极地等多种生态。</description>
+    <category>Temperate</category>
+    <tags>
+      <li>PlanetKind</li>
+      <li>Temperate</li>
+      <li>Rocky</li>
+      <li>Atmospheric</li>
+      <li>NativeEcology</li>
+    </tags>
+    <comps>
+      <li Class="PioneerFramework.Celestial.CompProperties_SphericalBody">
+        <key>shape</key>
+        <radiusMeters>
+          <value>5000000</value>
+        </radiusMeters>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
+        <key>motion</key>
+        <providerId>PFL.ExistingEphemeris</providerId>
+        <modeId>existing.circular.v1</modeId>
+        <gravitationalParameter>
+          <value>2e14</value>
+        </gravitationalParameter>
+        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjU4NDAwLCJkYXlMZW5ndGhUaWNrcyI6NjAwMDAsIm9yYml0UmFkaXVzIjoxMjAwMDAwMDAsImZyYW1lT3JpZ2luUmVmZXJlbmNlIjoiZnJhbWVPcmlnaW4iLCJib2R5VHlwZSI6IlBsYW5ldCIsImluaXRpYWxQaGFzZSI6MH0=</initializationPayload>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_Surface">
+        <key>surface</key>
+        <generationMode>OnDemand</generationMode>
+        <subdivisions>
+          <value>5</value>
+        </subdivisions>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_BiomeGeneration">
+        <key>biomes</key>
+        <profile>PF_EarthBiomes</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_MapGeneration">
+        <key>maps</key>
+        <profile>PF_EarthMaps</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExistingEnvironment">
+        <key>environment</key>
+        <profile>PF_EarthEnvironment</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_Atmosphere">
+        <key>air</key>
+        <rho0>
+          <value>1.2</value>
+        </rho0>
+        <scaleHeight>
+          <value>8000</value>
+        </scaleHeight>
+        <topAltitude>
+          <value>100000</value>
+        </topAltitude>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
+        <key>visual</key>
+        <profile>PF_EarthSurfaceVisual</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_AtmosphereVisual">
+        <key>atmosphereVisual</key>
+        <profile>PF_EarthAtmosphereVisual</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CloudsVisual">
+        <key>clouds</key>
+        <profile>PF_EarthCloudsVisual</profile>
+      </li>
+    </comps>
+  </PioneerFramework.CelestialBodyDef>
+  <PioneerFramework.CelestialBodyDef Name="PF_GreenhousePlanetBase">
+    <defName>PF_GreenhousePlanet</defName>
+    <label>温室行星</label>
+    <description>浓厚大气包裹的灼热岩质天体，适用于金星一类环境。预设提供高温地表、大气阻力与浓云；高压伤害和气体毒性需额外组件。</description>
+    <category>Greenhouse</category>
+    <tags>
+      <li>PlanetKind</li>
+      <li>Greenhouse</li>
+      <li>Rocky</li>
+      <li>DenseAtmosphere</li>
+      <li>Hot</li>
+      <li>NoNativeEcology</li>
+    </tags>
+    <comps>
+      <li Class="PioneerFramework.Celestial.CompProperties_SphericalBody">
+        <key>shape</key>
+        <radiusMeters>
+          <value>5000000</value>
+        </radiusMeters>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
+        <key>motion</key>
+        <providerId>PFL.ExistingEphemeris</providerId>
+        <modeId>existing.circular.v1</modeId>
+        <gravitationalParameter>
+          <value>2e14</value>
+        </gravitationalParameter>
+        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjU4NDAwLCJkYXlMZW5ndGhUaWNrcyI6MTIwMDAwMCwib3JiaXRSYWRpdXMiOjEyMDAwMDAwMCwiZnJhbWVPcmlnaW5SZWZlcmVuY2UiOiJmcmFtZU9yaWdpbiIsImJvZHlUeXBlIjoiUGxhbmV0IiwiaW5pdGlhbFBoYXNlIjowfQ==</initializationPayload>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_Surface">
+        <key>surface</key>
+        <generationMode>OnDemand</generationMode>
+        <subdivisions>
+          <value>5</value>
+        </subdivisions>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_BiomeGeneration">
+        <key>biomes</key>
+        <profile>PF_GreenhouseBiomes</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_MapGeneration">
+        <key>maps</key>
+        <profile>PF_GreenhouseMaps</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExistingEnvironment">
+        <key>environment</key>
+        <profile>PF_GreenhouseEnvironment</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_Atmosphere">
+        <key>air</key>
+        <rho0>
+          <value>65</value>
+        </rho0>
+        <scaleHeight>
+          <value>15900</value>
+        </scaleHeight>
+        <topAltitude>
+          <value>250000</value>
+        </topAltitude>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
+        <key>visual</key>
+        <profile>PF_GreenhouseSurfaceVisual</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_AtmosphereVisual">
+        <key>atmosphereVisual</key>
+        <profile>PF_GreenhouseAtmosphereVisual</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CloudsVisual">
+        <key>clouds</key>
+        <profile>PF_GreenhouseCloudsVisual</profile>
+      </li>
+    </comps>
+  </PioneerFramework.CelestialBodyDef>
+  <PioneerFramework.CelestialBodyDef Name="PF_FrozenPlanetBase">
+    <defName>PF_FrozenPlanet</defName>
+    <label>冰封行星</label>
+    <description>以冰质平原和岩石露头为主的寒冷天体，可覆盖冰卫星和外太阳系冰质小天体。此预设采用真空地表，地下海洋需扩展能力。</description>
+    <category>Frozen</category>
+    <tags>
+      <li>PlanetKind</li>
+      <li>Frozen</li>
+      <li>Icy</li>
+      <li>Airless</li>
+      <li>Cold</li>
+      <li>NoNativeEcology</li>
+    </tags>
+    <comps>
+      <li Class="PioneerFramework.Celestial.CompProperties_SphericalBody">
+        <key>shape</key>
+        <radiusMeters>
+          <value>1200000</value>
+        </radiusMeters>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
+        <key>motion</key>
+        <providerId>PFL.ExistingEphemeris</providerId>
+        <modeId>existing.circular.v1</modeId>
+        <gravitationalParameter>
+          <value>8e11</value>
+        </gravitationalParameter>
+        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjU4NDAwLCJkYXlMZW5ndGhUaWNrcyI6NjAwMDAsIm9yYml0UmFkaXVzIjoxMjAwMDAwMDAsImZyYW1lT3JpZ2luUmVmZXJlbmNlIjoiZnJhbWVPcmlnaW4iLCJib2R5VHlwZSI6IlBsYW5ldCIsImluaXRpYWxQaGFzZSI6MH0=</initializationPayload>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_Surface">
+        <key>surface</key>
+        <generationMode>OnDemand</generationMode>
+        <subdivisions>
+          <value>5</value>
+        </subdivisions>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_BiomeGeneration">
+        <key>biomes</key>
+        <profile>PF_FrozenBiomes</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_MapGeneration">
+        <key>maps</key>
+        <profile>PF_FrozenMaps</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExistingEnvironment">
+        <key>environment</key>
+        <profile>PF_FrozenEnvironment</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
+        <key>visual</key>
+        <profile>PF_FrozenSurfaceVisual</profile>
+      </li>
+    </comps>
+  </PioneerFramework.CelestialBodyDef>
+  <PioneerFramework.CelestialBodyDef Name="PF_GasGiantBase">
+    <defName>PF_GasGiant</defName>
+    <label>气态巨行星</label>
+    <description>具有巨大气体包层的天体，适用于木星和土星一类行星。提供引力、大气和云层外观，不提供常规登陆、地表层或殖民地地图。</description>
+    <category>GasGiant</category>
+    <tags>
+      <li>PlanetKind</li>
+      <li>GasGiant</li>
+      <li>Giant</li>
+      <li>HydrogenHeliumRich</li>
+      <li>NoSolidSurface</li>
+    </tags>
+    <comps>
+      <li Class="PioneerFramework.Celestial.CompProperties_SphericalBody">
+        <key>shape</key>
+        <radiusMeters>
+          <value>12000000</value>
+        </radiusMeters>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
+        <key>motion</key>
+        <providerId>PFL.ExistingEphemeris</providerId>
+        <modeId>existing.circular.v1</modeId>
+        <gravitationalParameter>
+          <value>2e15</value>
+        </gravitationalParameter>
+        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjU4NDAwLCJkYXlMZW5ndGhUaWNrcyI6MjUwMDAsIm9yYml0UmFkaXVzIjoxMjAwMDAwMDAsImZyYW1lT3JpZ2luUmVmZXJlbmNlIjoiZnJhbWVPcmlnaW4iLCJib2R5VHlwZSI6IlBsYW5ldCIsImluaXRpYWxQaGFzZSI6MH0=</initializationPayload>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_Atmosphere">
+        <key>air</key>
+        <rho0>
+          <value>0.16</value>
+        </rho0>
+        <scaleHeight>
+          <value>27000</value>
+        </scaleHeight>
+        <topAltitude>
+          <value>500000</value>
+        </topAltitude>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
+        <key>visual</key>
+        <profile>PF_GasGiantSurfaceVisual</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_AtmosphereVisual">
+        <key>atmosphereVisual</key>
+        <profile>PF_GasGiantAtmosphereVisual</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CloudsVisual">
+        <key>clouds</key>
+        <profile>PF_GasGiantCloudsVisual</profile>
+      </li>
+    </comps>
+  </PioneerFramework.CelestialBodyDef>
+  <PioneerFramework.CelestialBodyDef Name="PF_IceGiantBase">
+    <defName>PF_IceGiant</defName>
+    <label>冰巨行星</label>
+    <description>内部富含水、氨、甲烷等挥发物的巨行星，适用于天王星和海王星一类天体。“冰巨”描述其组分，不赋予可登陆冰面。</description>
+    <category>IceGiant</category>
+    <tags>
+      <li>PlanetKind</li>
+      <li>IceGiant</li>
+      <li>Giant</li>
+      <li>VolatileRich</li>
+      <li>NoSolidSurface</li>
+    </tags>
+    <comps>
+      <li Class="PioneerFramework.Celestial.CompProperties_SphericalBody">
+        <key>shape</key>
+        <radiusMeters>
+          <value>8000000</value>
+        </radiusMeters>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
+        <key>motion</key>
+        <providerId>PFL.ExistingEphemeris</providerId>
+        <modeId>existing.circular.v1</modeId>
+        <gravitationalParameter>
+          <value>5e14</value>
+        </gravitationalParameter>
+        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjU4NDAwLCJkYXlMZW5ndGhUaWNrcyI6NDAwMDAsIm9yYml0UmFkaXVzIjoxMjAwMDAwMDAsImZyYW1lT3JpZ2luUmVmZXJlbmNlIjoiZnJhbWVPcmlnaW4iLCJib2R5VHlwZSI6IlBsYW5ldCIsImluaXRpYWxQaGFzZSI6MH0=</initializationPayload>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_Atmosphere">
+        <key>air</key>
+        <rho0>
+          <value>0.45</value>
+        </rho0>
+        <scaleHeight>
+          <value>40000</value>
+        </scaleHeight>
+        <topAltitude>
+          <value>400000</value>
+        </topAltitude>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
+        <key>visual</key>
+        <profile>PF_IceGiantSurfaceVisual</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_AtmosphereVisual">
+        <key>atmosphereVisual</key>
+        <profile>PF_IceGiantAtmosphereVisual</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CloudsVisual">
+        <key>clouds</key>
+        <profile>PF_IceGiantCloudsVisual</profile>
+      </li>
+    </comps>
+  </PioneerFramework.CelestialBodyDef>
+</Defs>

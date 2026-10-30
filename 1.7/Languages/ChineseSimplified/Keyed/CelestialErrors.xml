@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_CelestialError_Validation>天体请求无效：{0}</PF_CelestialError_Validation>
+  <PF_CelestialError_Conflict>天体请求与当前状态冲突：{0}</PF_CelestialError_Conflict>
+  <PF_CelestialError_Availability>天体服务暂不可用：{0}</PF_CelestialError_Availability>
+  <PF_CelestialError_Component>天体组件发生错误：{0}</PF_CelestialError_Component>
+  <PF_CelestialError_Consistency>天体状态一致性检查失败：{0}</PF_CelestialError_Consistency>
+  <PF_CelestialError_Expired>天体请求已过期：{0}</PF_CelestialError_Expired>
+</LanguageData>

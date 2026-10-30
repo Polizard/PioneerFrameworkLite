@@ -8,13 +8,16 @@ Checks:
   and the brrainz.harmony dependency
 - committed per-version Assemblies exist (plus the frozen 1.6 bundles / shader sources)
 - CelestialBodyDef XML elements must be declared C# fields (atmosphere-data guard, 2026-10-06)
-- optional Languages Keyed/DefInjected consistency (when Languages/ exists)
+- per-version Languages Keyed/DefInjected consistency, duplicates and placeholders
 - optional LoadFolders.xml well-formedness (when present)
 """
 import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from celestial_schema import build_schema_index, is_celestial_node, validate_celestial_definition
+from validate_celestial_examples import validate_example_content
+from celestial_localization import validate_package_languages
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -111,62 +114,10 @@ def main():
         if not (ROOT / rel).is_file():
             fail(f"required committed asset missing: {rel}")
 
-    # 5. Optional Languages validation (mirrors RimPipe when languages exist)
-    langs_dir = ROOT / "Languages"
-    if langs_dir.exists():
-        key_sets = {}
-        for keyed_path in sorted(langs_dir.rglob("Keyed/*.xml")):
-            try:
-                root = ET.parse(keyed_path).getroot()
-            except ET.ParseError as e:
-                fail(f"{keyed_path.relative_to(ROOT)}: XML parse error: {e}")
-            keys = set(child.tag for child in root)
-            lang = keyed_path.parent.parent.name
-            key_sets[lang] = keys
-
-        required_langs = {"ChineseSimplified", "English"}
-        if not required_langs.issubset(key_sets.keys()):
-            fail(f"expected ChineseSimplified and English Keyed files, got {sorted(key_sets.keys())}")
-        base = None
-        for lang, keys in key_sets.items():
-            if base is None:
-                base = keys
-            elif base != keys:
-                only_a = sorted(base - keys)
-                only_b = sorted(keys - base)
-                fail(f"Keyed mismatch for {lang}: missing={only_a} extra={only_b}")
-
-        definjected_sets = {}
-        for definjected_path in sorted(
-            p for p in langs_dir.rglob("*.xml") if "DefInjected" in p.parts
-        ):
-            try:
-                root = ET.parse(definjected_path).getroot()
-            except ET.ParseError as e:
-                fail(f"{definjected_path.relative_to(ROOT)}: XML parse error: {e}")
-            lang = definjected_path.parent.parent.parent.name
-            keys = definjected_sets.setdefault(lang, set())
-            for child in root:
-                tag = child.tag
-                if "." not in tag:
-                    continue
-                def_name = tag.split(".", 1)[0]
-                if def_name not in def_names:
-                    fail(
-                        f"{definjected_path.relative_to(ROOT)}: DefInjected tag '{tag}' "
-                        f"references missing DefName '{def_name}'"
-                    )
-                keys.add(tag)
-
-        definjected_base = None
-        for lang in sorted(definjected_sets):
-            keys = definjected_sets[lang]
-            if definjected_base is None:
-                definjected_base = keys
-            elif definjected_base != keys:
-                only_a = sorted(definjected_base - keys)
-                only_b = sorted(keys - definjected_base)
-                fail(f"DefInjected mismatch for {lang}: missing={only_a} extra={only_b}")
+    # 5. Per-version languages; keys are scoped by Keyed/DefInjected type.
+    language_errors = validate_package_languages(VERSION_DIRS, def_names)
+    if language_errors:
+        fail(language_errors[0])
 
     # 6. Optional LoadFolders validation
     load_folders = ROOT / "LoadFolders.xml"
@@ -263,7 +214,7 @@ def main():
         # ⇒ 出处：`RimWorld/CompProperties_Launchable.cs:25/28`（2026-10-15 核对）
         "CompProperties_Launchable_PF": {"activeTransporterDef", "skyfallerLeaving"},
     }
-    SIMPLE_DEF_TYPES = {"CelestialBodyDef", "PropellantDef"}
+    SIMPLE_DEF_TYPES = {"CelestialBodyDef", "PropellantDef", "ShotDef", "WeaponDef"}
     # ⚠ 2026-10-14：尾部允许**行尾注释**（`public string x = null!;  // null!：…`）。
     #   原式要求 `;\s*$` ⇒ "字段行带行尾注释"这类合法声明会被漏收（N2 可空族批加了注释才暴露）。
     #   判据不放宽：仍是"以 `;` 收尾的字段声明行"，只是允许其后跟注释。
@@ -298,9 +249,24 @@ def main():
         declared_cache[type_name] = found
         return found
 
+    celestial_index = build_schema_index([
+        ROOT / "Source/PioneerFramework/Celestial",
+        ROOT / "Source/PioneerFramework/Base/Core/CelestialBodyDef.cs",
+        ROOT / "Examples/CelestialCompSample",
+    ])
+    celestial_example = ROOT / "Examples/CelestialCompSample"
+    if celestial_example.exists():
+        example_errors = validate_example_content(celestial_example, celestial_index, def_names)
+        if example_errors:
+            fail("Examples/CelestialCompSample: " + example_errors[0])
     for xml_path, root in xml_roots:
         rel = xml_path.relative_to(ROOT)
         for node in root.iter():
+            if is_celestial_node(node, celestial_index):
+                celestial_errors = validate_celestial_definition(node, rel.parts[0], celestial_index)
+                if celestial_errors:
+                    fail(f"{rel}: {celestial_errors[0]}")
+                continue
             cls = node.get("Class")
             if cls and cls.startswith("PioneerFramework."):
                 type_name = cls.split(".")[-1]
@@ -316,6 +282,22 @@ def main():
                 continue
 
             declared = declared_fields(type_name)
+            if type_name.startswith("ShotCompProperties_"):
+                # Custom ShotComp properties do not inherit Verse.CompProperties fields.
+                # Restrict each node to its own class, rather than the file-wide field union.
+                source = (ROOT / "Source/PioneerFramework/Combat/Shots/ShotComponents.cs").read_text(encoding="utf-8")
+                block = re.search(r"class\s+" + re.escape(type_name) + r"\s*:\s*ShotCompProperties\s*\{", source)
+                if block is None:
+                    fail(f"{rel}: unknown built-in shot component {type_name}")
+                declared = set()
+                depth = 1
+                for line in source[block.end():].splitlines():
+                    if depth == 1 and (field := _field_re.match(line)):
+                        declared.add(field.group(1))
+                    depth += line.count("{") - line.count("}")
+                    if depth == 0:
+                        break
+                base_fields = set()
             if declared is None:
                 fail(f"{rel}: XML references type '{cls or node.tag}' but no class/struct "
                      f"'{type_name}' is declared under Source/")

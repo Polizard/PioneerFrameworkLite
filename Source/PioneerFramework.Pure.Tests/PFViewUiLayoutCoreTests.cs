@@ -82,13 +82,16 @@ public class PFViewUiLayoutCoreTests
     }
 
     [Fact]
-    public void CompactInspectionReusesSidebarWithoutChangingOtherAnchors()
+    public void CompactInspectionKeepsFleetReachableWithoutMovingInstruments()
     {
         var list = PFViewUiLayoutCore.Compute(853, 480, false, new(true, true, false));
         var details = PFViewUiLayoutCore.Compute(853, 480, true, new(true, true, false));
         Assert.True(list.Compact);
-        Assert.Equal(list.ObjectList, details.Details);
-        Assert.Equal(0, details.ObjectList.Width);
+        Assert.True(details.ObjectList.Width > 0 && details.ObjectList.Height > 0);
+        Assert.True(details.Details.Width > 0 && details.Details.Height > 0);
+        Assert.False(details.ObjectList.Overlaps(details.Details));
+        Assert.Equal(list.ObjectList.X, details.ObjectList.X);
+        Assert.Equal(list.ObjectList.Width, details.ObjectList.Width);
         Assert.Equal(list.Navball, details.Navball);
         Assert.Equal(list.Radar, details.Radar);
     }
@@ -100,6 +103,20 @@ public class PFViewUiLayoutCoreTests
         Assert.True(layout.RequiresInstrumentDrawer);
         Assert.Equal(0, layout.Navball.Width);
         Assert.Equal(0, layout.Radar.Width);
+    }
+
+    [Theory]
+    [InlineData(760)]
+    [InlineData(800)]
+    [InlineData(820)]
+    public void WiderFleetSidebarNeverPushesInstrumentsIntoEachOther(float width)
+    {
+        var layout = PFViewUiLayoutCore.Compute(width, 720, true, new(true, true, false), piloting: true);
+        var occupied = new[] { layout.ObjectList, layout.Details, layout.Navball, layout.Radar, layout.PilotPanel };
+        for (int i = 0; i < occupied.Length; i++)
+            for (int j = i + 1; j < occupied.Length; j++) Assert.False(occupied[i].Overlaps(occupied[j]));
+        Assert.True(layout.RequiresInstrumentDrawer || layout.Navball.Height == 222);
+        Assert.True(layout.PilotPanel.Width >= 250);
     }
 
     [Fact]

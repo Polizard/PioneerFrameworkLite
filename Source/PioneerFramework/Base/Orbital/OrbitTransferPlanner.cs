@@ -215,6 +215,12 @@ namespace PioneerFramework
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (mgr == null) return (DVector3.zero, DVector3.zero);
             var body = mgr.GetBodyById(bodyId);
+            if (mgr.TryGetCelestialRuntime(out _))
+            {
+                var predicted = mgr.FrameOffsetForPlanning(bodyId, tick);
+                if (!predicted.Success) throw new InvalidOperationException(predicted.Errors[0].Code);
+                return predicted.Value;
+            }
             if (body == null || body.bodyType == CelestialBodyType.Planet)
                 return (DVector3.zero, DVector3.zero);
             return (mgr.GetBodyPositionParent(bodyId, tick), mgr.GetBodyVelocityParent(bodyId, tick));
