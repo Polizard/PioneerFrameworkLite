@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       火箭组装器（2026-10-28，第一步）：**一个建筑 Comp 同时管设计与建造**。
+       与旧链（发射台 CompAssemblyPad + 蓝图 + 框架 + 完工通知）并存，互不改写：
+       本 def 上没有 CompAssemblyPad，所以不会触发旧发射台的任何状态机。
+       贴图沿用小型总装发射台（本批不加新美术）；点建筑上的「火箭组装器」Gizmo 开窗口。
+       ════════════════════════════════════════════════════════════════════ -->
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_Building_RocketAssembler</defName>
+    <label>火箭组装器</label>
+    <description>把零件按设计装配成整支火箭的车间。设计、建造、进度都在这一台机器上；第一步不消耗材料、无科技门槛。</description>
+    <thingClass>Building</thingClass>
+    <tickerType>Normal</tickerType>
+    <graphicData>
+      <texPath>Things/Building/SpaceLaunchTechnology/LaunchPadS</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(9,9)</drawSize>
+      <damageData>
+        <enabled>true</enabled>
+        <rect>(0,0,7,7)</rect>
+      </damageData>
+    </graphicData>
+    <drawerType>MapMeshAndRealTime</drawerType>
+    <size>(9,9)</size>
+    <rotatable>false</rotatable>
+    <altitudeLayer>FloorEmplacement</altitudeLayer>
+    <passability>Standable</passability>
+    <designationCategory>Misc</designationCategory>
+    <uiOrder>2210</uiOrder>
+    <canOverlapZones>true</canOverlapZones>
+    <terrainAffordanceNeeded>Heavy</terrainAffordanceNeeded>
+    <costList>
+      <Steel>250</Steel>
+      <ComponentIndustrial>8</ComponentIndustrial>
+    </costList>
+    <building>
+      <isEdifice>false</isEdifice>
+      <hasFuelingPort>false</hasFuelingPort>
+      <expandHomeArea>false</expandHomeArea>
+    </building>
+    <statBases>
+      <MaxHitPoints>700</MaxHitPoints>
+      <Flammability>0.5</Flammability>
+    </statBases>
+    <comps>
+      <li Class="PioneerFramework.GroundAssembly.CompProperties_RocketAssembler" />
+    </comps>
+    <placeWorkers>
+      <li>PlaceWorker_NotUnderRoof</li>
+    </placeWorkers>
+  </ThingDef>
+
+</Defs>

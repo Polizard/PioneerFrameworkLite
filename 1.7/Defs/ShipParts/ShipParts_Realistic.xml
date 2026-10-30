@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- ════════════════════════════════════════════════════════════════════
+       现实数据零件（2026-10-28，用户令："搞几个仿照现实火箭填数据的引擎和工质箱"）
+
+       口径（三条，写死在这里免得以后又漂）：
+       ① **ve 用 Isp×9.81 取整到 10 m/s**；推力 = ve×ṁ，取整到 10 kN ⇒ ṁ 由推力反推。
+          （例：RL10 Isp 465 s ⇒ 4560 ⇒ 取 4500；110 kN / 4500 = 24.4 ⇒ ṁ=24，推力 108 kN。）
+       ② **干重/容量取现实量级的整数**：一级大罐 400 t、二级 100 t、半人马座类 20 t、氙罐 5 t。
+       ③ **产热按 1 kW/kN 标称、被动散热按产热 1/3**（沿用 `PF_ShipPart_Thruster_Debug`
+          30 kW / 10 kW 的同一比例）；`powerDrawWatts` 一律 0（化学机不吃电，
+          填了就过不了 2026-10-26 的欠电拒绝点火门）。
+
+       工质只映射到现有四条（本 Mod 不新增工质 Def）：
+       Chemical = 液氧煤油/甲烷一类 · Hydrogen = 液氧液氢 · Xenon = 电推 · Hydrazine = RCS。
+
+       自洽样例（一级 9×Lifter_Small + 1×Kerolox_Heavy，二级 1×Upper_Hydrolox + 1×Hydrolox_Centaur）：
+       起飞质量 ≈ 451.5 t（推进剂 400 + 罐干重 20 + 9 台引擎 4.5 + 上面级 27）
+       推力 9×600 = 5400 kN；重力 451.5 t×8 = 3612 kN ⇒ **TWR ≈ 1.50**
+       一级理论 Δv = 3000×ln(451.5/51.5) ≈ **6.5 km/s**（扣重力/气动损失后 ≈ 2.5–3 km/s，
+       与现实同级一致）；二级 4500×ln(27/7) ≈ 6.1 km/s ⇒ 合计远大于 LEO 所需。
+       ⚠ 理论 Δv 高是正常的：ve 取真空值、且没有重力损失项。
+
+       这些件**不改变任何既有行为**：只新增目录条目，不被任何默认设计引用。
+
+        2026-10-29（用户令"工质罐和引擎都改为圆柱"）：4 台引擎 + 4 个工质箱一律
+       `<shape>Cylinder</shape>` ⇒ 惯量走 `CylinderInertia`、渲染走圆柱网格、碰撞走胶囊近似。
+       **圆柱轴向 = 体 Z**（= 堆叠轴 = 机头 +Z）：直径 = boundsX（这些件 boundsX == boundsZ），
+       高 = 堆叠长度（`stackLengthMeters` / boundsY 换轴后的 Z）。
+       ════════════════════════════════════════════════════════════════════ -->
+
+  <!-- ── 引擎 1/4：小推力液氧煤油（原型 Merlin 1D Vacuum，Isp 311 s → ve 3000）── -->
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Engine_Lifter_Small</defName>
+    <label>小推力液氧煤油机</label>
+    <description>仿 Merlin 1D 真空版：ve 3000 m/s、600 kN。一级多机并联的主力小机。</description>
+    <category>thruster</category>
+    <massKg>500</massKg>
+    <boundsX>2</boundsX>
+    <boundsY>3</boundsY>
+    <boundsZ>2</boundsZ>
+    <stackLengthMeters>3</stackLengthMeters>
+    <shape>Cylinder</shape>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>10</armorThicknessMm>
+    <exhaustVelocity>3000</exhaustVelocity>
+    <massFlowRate>200</massFlowRate>
+    <propellantDefName>PF_Propellant_Chemical</propellantDefName>
+    <heatProductionWatts>600000</heatProductionWatts>
+    <heatDissipationWatts>200000</heatDissipationWatts>
+  </ShipPartDef>
+
+  <!-- ── 引擎 2/4：大推力液氧煤油双燃烧室（原型 RD-180，Isp 338 s → ve 3300）── -->
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Engine_Lifter_Heavy</defName>
+    <label>大推力液氧煤油机</label>
+    <description>仿 RD-180：ve 3300 m/s、3795 kN。单台顶一级，干重 5.5 t。</description>
+    <category>thruster</category>
+    <massKg>5500</massKg>
+    <boundsX>4</boundsX>
+    <boundsY>4</boundsY>
+    <boundsZ>4</boundsZ>
+    <stackLengthMeters>4</stackLengthMeters>
+    <shape>Cylinder</shape>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>14</armorThicknessMm>
+    <exhaustVelocity>3300</exhaustVelocity>
+    <massFlowRate>1150</massFlowRate>
+    <propellantDefName>PF_Propellant_Chemical</propellantDefName>
+    <heatProductionWatts>3800000</heatProductionWatts>
+    <heatDissipationWatts>1200000</heatDissipationWatts>
+  </ShipPartDef>
+
+  <!-- ── 引擎 3/4：小推力液氧液氢上面级（原型 RL10，Isp 465 s → ve 4500）── -->
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Engine_Upper_Hydrolox</defName>
+    <label>液氧液氢上面级机</label>
+    <description>仿 RL10：ve 4500 m/s、108 kN。干重仅 300 kg，半人马座类上面级用。</description>
+    <category>thruster</category>
+    <massKg>300</massKg>
+    <boundsX>2</boundsX>
+    <boundsY>3</boundsY>
+    <boundsZ>2</boundsZ>
+    <stackLengthMeters>3</stackLengthMeters>
+    <shape>Cylinder</shape>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>8</armorThicknessMm>
+    <exhaustVelocity>4500</exhaustVelocity>
+    <massFlowRate>24</massFlowRate>
+    <propellantDefName>PF_Propellant_Hydrogen</propellantDefName>
+    <heatProductionWatts>110000</heatProductionWatts>
+    <heatDissipationWatts>36000</heatDissipationWatts>
+  </ShipPartDef>
+
+  <!-- ── 引擎 4/4：大推力液氧液氢持续机（原型 RS-25/SSME，Isp 452 s → ve 4400）── -->
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Engine_Sustainer_Hydrolox</defName>
+    <label>液氧液氢持续机</label>
+    <description>仿 RS-25：ve 4400 m/s、2288 kN。高压补燃，干重 3.2 t。</description>
+    <category>thruster</category>
+    <massKg>3200</massKg>
+    <boundsX>3</boundsX>
+    <boundsY>4</boundsY>
+    <boundsZ>3</boundsZ>
+    <stackLengthMeters>4</stackLengthMeters>
+    <shape>Cylinder</shape>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>12</armorThicknessMm>
+    <exhaustVelocity>4400</exhaustVelocity>
+    <massFlowRate>520</massFlowRate>
+    <propellantDefName>PF_Propellant_Hydrogen</propellantDefName>
+    <heatProductionWatts>2300000</heatProductionWatts>
+    <heatDissipationWatts>760000</heatDissipationWatts>
+  </ShipPartDef>
+
+  <!-- ── 工质箱 1/4：一级液氧煤油大罐（原型 Falcon 9 一级，推进剂 400 t）── -->
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Tank_Kerolox_Heavy</defName>
+    <label>一级液氧煤油大罐</label>
+    <description>仿猎鹰一级：容量 400 t、干重 20 t（干质比 20:1）。满罐入轨前是 420 t 的死重。</description>
+    <category>tank</category>
+    <massKg>20000</massKg>
+    <boundsX>4</boundsX>
+    <boundsY>40</boundsY>
+    <boundsZ>4</boundsZ>
+    <stackLengthMeters>40</stackLengthMeters>
+    <shape>Cylinder</shape>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>6</armorThicknessMm>
+    <tankCapacityKg>400000</tankCapacityKg>
+    <tankInitialKg>400000</tankInitialKg>
+    <propellantDefName>PF_Propellant_Chemical</propellantDefName>
+  </ShipPartDef>
+
+  <!-- ── 工质箱 2/4：二级液氧煤油罐（原型 Falcon 9 二级，推进剂 100 t）── -->
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Tank_Kerolox_Medium</defName>
+    <label>二级液氧煤油罐</label>
+    <description>仿猎鹰二级：容量 100 t、干重 5 t（干质比 20:1）。</description>
+    <category>tank</category>
+    <massKg>5000</massKg>
+    <boundsX>4</boundsX>
+    <boundsY>15</boundsY>
+    <boundsZ>4</boundsZ>
+    <stackLengthMeters>15</stackLengthMeters>
+    <shape>Cylinder</shape>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>5</armorThicknessMm>
+    <tankCapacityKg>100000</tankCapacityKg>
+    <tankInitialKg>100000</tankInitialKg>
+    <propellantDefName>PF_Propellant_Chemical</propellantDefName>
+  </ShipPartDef>
+
+  <!-- ── 工质箱 3/4：液氧液氢上面级罐（原型半人马座，推进剂 20 t）── -->
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Tank_Hydrolox_Centaur</defName>
+    <label>液氧液氢上面级罐</label>
+    <description>仿半人马座：容量 20 t、干重 2 t（干质比 10:1）。液氢密度低 ⇒ 同容量罐体更大更轻。</description>
+    <category>tank</category>
+    <massKg>2000</massKg>
+    <boundsX>3</boundsX>
+    <boundsY>10</boundsY>
+    <boundsZ>3</boundsZ>
+    <stackLengthMeters>10</stackLengthMeters>
+    <shape>Cylinder</shape>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>5</armorThicknessMm>
+    <tankCapacityKg>20000</tankCapacityKg>
+    <tankInitialKg>20000</tankInitialKg>
+    <propellantDefName>PF_Propellant_Hydrogen</propellantDefName>
+  </ShipPartDef>
+
+  <!-- ── 工质箱 4/4：氙罐（电推用，容量 5 t）── -->
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Tank_Xenon_Small</defName>
+    <label>氙罐</label>
+    <description>电推进工质罐：容量 5 t、干重 500 kg（高压复合材料罐，干质比 10:1）。</description>
+    <category>tank</category>
+    <massKg>500</massKg>
+    <boundsX>2</boundsX>
+    <boundsY>3</boundsY>
+    <boundsZ>2</boundsZ>
+    <stackLengthMeters>3</stackLengthMeters>
+    <shape>Cylinder</shape>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>4</armorThicknessMm>
+    <tankCapacityKg>5000</tankCapacityKg>
+    <tankInitialKg>5000</tankInitialKg>
+    <propellantDefName>PF_Propellant_Xenon</propellantDefName>
+  </ShipPartDef>
+
+</Defs>
