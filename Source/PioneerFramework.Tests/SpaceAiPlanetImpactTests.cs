@@ -55,6 +55,16 @@ namespace PioneerFramework.Tests
                     Assert.NotNull(avm.GetRecord(20));
                     return;
                 }
+                // 2026-10-31 用户裁定（后端）：「安全接地一律保船」——进 Landed 解析档，玩家船与 AI 探针同规则。
+                // 只有「超速坠毁」和「导弹撞地爆炸」才销毁。此前这条期望(=销毁)出自没有 Landed 档的旧前提。
+                if (!isMissile && speed == 0)
+                {
+                    Assert.Same(group, host.Space.GetGroupById(20));
+                    Assert.Null(avm.GetRecord(20));   // 非导弹本就没登进 AVM，这条是"没被误登记"而非"记录还在"
+                    Assert.Contains("着陆", Assert.Single(messages));
+                    Assert.Empty(explosions);
+                    return;
+                }
                 Assert.Null(host.Space.GetGroupById(20));
                 Assert.Null(avm.GetRecord(20));
                 if (isMissile)
