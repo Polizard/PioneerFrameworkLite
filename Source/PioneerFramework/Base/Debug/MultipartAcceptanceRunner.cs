@@ -85,9 +85,9 @@ namespace PioneerFramework
                 $"partId={cabin.partId} pos={cabin.positionShip}");
             PflTestKit.Check(PflTestKit.Kind.Invariant, cabin.linkedMapId == -1, "装配器不填 linkedMapId（留给图链）");
             PflTestKit.Check(PflTestKit.Kind.Value,
-                Math.Abs(parts[1].positionShip.y + 27.0) < 1e-6, "首件（推进器）中心 y=-27", parts[1].positionShip.y.ToString("F3"));
+                Math.Abs(parts[1].positionShip.z + 27.0) < 1e-6, "首件（推进器）中心 z=-27", parts[1].positionShip.z.ToString("F3"));
             PflTestKit.Check(PflTestKit.Kind.Value,
-                Math.Abs(parts[4].positionShip.y + 42.0) < 1e-6, "末件（分离环）中心 y=-42", parts[4].positionShip.y.ToString("F3"));
+                Math.Abs(parts[4].positionShip.z + 42.0) < 1e-6, "末件（分离环）中心 z=-42", parts[4].positionShip.z.ToString("F3"));
 
             bool appendedUnlinked = true;
             double total = cabin.Mass;
@@ -346,8 +346,9 @@ namespace PioneerFramework
 
             bool hitDestroyed = CombatManager.TryPickHitPart(e, new DVector3(10, -20, 0), new DVector3(0, 1, 0), 60.0,
                 out _, out var hitPart, out _);
-            PflTestKit.Check(PflTestKit.Kind.Invariant, hitDestroyed && hitPart.partId == side.partId,
-                "损毁残骸仍可命中（D-P7）", $"part={hitPart?.partId}");
+            // 2026-10-30 用户裁定：射弹跳过残骸（原判据"残骸仍可命中（D-P7）"已推翻）。
+            PflTestKit.Check(PflTestKit.Kind.Invariant, !hitDestroyed,
+                "残骸不再挡弹（射弹跳过损毁件）", $"hit={hitDestroyed} part={hitPart?.partId}");
 
             e.MarkPartDestroyed(hull.partId);
             PflTestKit.Check(PflTestKit.Kind.Invariant, !e.HasIntactKeyPart, "关键件损毁 ⇒ 失能（不解体）");

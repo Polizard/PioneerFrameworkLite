@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
@@ -37,6 +37,16 @@ namespace PioneerFramework
     {
         /// <summary>总开关（Gizmo 切换）。关闭时全部探针零开销。</summary>
         public static bool Enabled ;
+
+        /// <summary>
+        /// **tick 级日志总开关**（2026-10-29 用户令："把 tick 日志全关了"）。
+        /// 默认 **false**：`[冲量落地]`/`[物理步输出]`/`[燃烧·诊断]`/`[燃料账]`/`[抛级判据]`/`[步耗时·尖峰]`
+        /// 这类"每物理步或每次点火都刷"的日志一律不写。
+        /// 理由（实测）：Waylith 每条 `Log.Message` 都附 13 行堆栈 ⇒ 一次点火块 10 组 × 5 条 ≈ 800 行 I/O，
+        /// 表现为 `机动=2.4–3.3 ms` 的尖峰与一条 2090 µs 的未归因残差（同一时刻无 GC、各阶段合计仅 96 µs）。
+        /// 打开方式：调试菜单「tick 日志：开/关」或把此字段设为 true（重启不保留，避免忘关）。
+        /// </summary>
+        public static bool TickLog ;
 
         /// <summary>影子校验开关：关掉后只统计计数与"无变更重建"等结构性异常，不做重算比对。</summary>
         public static bool ShadowChecks = true;
@@ -855,7 +865,7 @@ namespace PioneerFramework
                 long apColUs = ApplySubDelta(ApplySubCollision);
                 long apTsUs = ApplySubDelta(ApplySubTimeScale);
                 long apManUs = ApplySubDelta(ApplySubManeuver);
-                Log.Message($"[步耗时·尖峰] 本步={us:F0}µs（第{StepClocks}步 / t={tickNow}）｜**阶段**：操舵={ToMicros(PhaseDelta(PhaseSteer)):F0} 冲量={ToMicros(PhaseDelta(PhaseImpulse)):F0} 组物理={ToMicros(PhaseDelta(PhaseGroupPhysics)):F0} 主循环应用={ToMicros(PhaseDelta(PhaseApply)):F0} 引导={ToMicros(PhaseDelta(PhaseGuidance)):F0} 搬运={ToMicros(PhaseDelta(PhaseAnalyticTransfer)):F0} 悬浮={ToMicros(PhaseDelta(PhaseHover)):F0}｜子段：引力场={ToMicros(grav):F0}µs 采样{segs}｜解析源表={ToMicros(seg):F1}｜预取建表={ToMicros(pf):F1}｜**残差={us - ToMicros(grav) - ToMicros(seg) - ToMicros(pf):F0}µs**｜GC 本步={g0 - _spikeLastGc0}/{g1 - _spikeLastGc1}/{g2 - _spikeLastGc2}｜步均={(StepClocks > 0 ? ToMicros(StepTicksTotal) / StepClocks : 0.0):F1}µs｜**本步CPU={(cpuOk ? cpuUs : -1.0):F0}µs**｜**墙钟−CPU={(cpuOk ? us - cpuUs : -1.0):F0}µs**{(cpuOk ? "" : "（CPU 栏不可用）")}｜**apply细分**：燃烧/工质={ToMicros(apBurnUs):F0} 行星碰撞={ToMicros(apColUs):F0} 时标={ToMicros(apTsUs):F0} 机动={ToMicros(apManUs):F0} **余={ToMicros(PhaseDelta(PhaseApply) - apBurnUs - apColUs - apTsUs - apManUs):F0}**｜**块①细分**：诊断日志={ToMicros(ApplySubDelta(ApplySubBurnDiag)):F0} 工质账={ToMicros(ApplySubDelta(ApplySubBurnFuel)):F0} 探针/验收={ToMicros(ApplySubDelta(ApplySubBurnProbe)):F0} **余={ToMicros(apBurnUs - ApplySubDelta(ApplySubBurnDiag) - ApplySubDelta(ApplySubBurnFuel)
+                if (TickLog) Log.Message($"[步耗时·尖峰] 本步={us:F0}µs（第{StepClocks}步 / t={tickNow}）｜**阶段**：操舵={ToMicros(PhaseDelta(PhaseSteer)):F0} 冲量={ToMicros(PhaseDelta(PhaseImpulse)):F0} 组物理={ToMicros(PhaseDelta(PhaseGroupPhysics)):F0} 主循环应用={ToMicros(PhaseDelta(PhaseApply)):F0} 引导={ToMicros(PhaseDelta(PhaseGuidance)):F0} 搬运={ToMicros(PhaseDelta(PhaseAnalyticTransfer)):F0} 悬浮={ToMicros(PhaseDelta(PhaseHover)):F0}｜子段：引力场={ToMicros(grav):F0}µs 采样{segs}｜解析源表={ToMicros(seg):F1}｜预取建表={ToMicros(pf):F1}｜**残差={us - ToMicros(grav) - ToMicros(seg) - ToMicros(pf):F0}µs**｜GC 本步={g0 - _spikeLastGc0}/{g1 - _spikeLastGc1}/{g2 - _spikeLastGc2}｜步均={(StepClocks > 0 ? ToMicros(StepTicksTotal) / StepClocks : 0.0):F1}µs｜**本步CPU={(cpuOk ? cpuUs : -1.0):F0}µs**｜**墙钟−CPU={(cpuOk ? us - cpuUs : -1.0):F0}µs**{(cpuOk ? "" : "（CPU 栏不可用）")}｜**apply细分**：燃烧/工质={ToMicros(apBurnUs):F0} 行星碰撞={ToMicros(apColUs):F0} 时标={ToMicros(apTsUs):F0} 机动={ToMicros(apManUs):F0} **余={ToMicros(PhaseDelta(PhaseApply) - apBurnUs - apColUs - apTsUs - apManUs):F0}**｜**块①细分**：诊断日志={ToMicros(ApplySubDelta(ApplySubBurnDiag)):F0} 工质账={ToMicros(ApplySubDelta(ApplySubBurnFuel)):F0} 探针/验收={ToMicros(ApplySubDelta(ApplySubBurnProbe)):F0} **余={ToMicros(apBurnUs - ApplySubDelta(ApplySubBurnDiag) - ApplySubDelta(ApplySubBurnFuel)
                              - ApplySubDelta(ApplySubBurnProbe)):F0}**");
                 _spikeLastGc0 = g0; _spikeLastGc1 = g1; _spikeLastGc2 = g2;
             }
@@ -935,12 +945,15 @@ namespace PioneerFramework
         // · 首次执行单独打一行 `[碰撞子段·首次]`，把 JIT 与稳态分开（避免再把 5.6ms JIT 当算法）。
         // ⚠ 子段钟本身有成本：10 段 × 2 次 Stopwatch ≈ 0.4µs，会把 0.8µs 的空场船对读数抬高 ~50%
         //   ⇒ 只在 DevMode/诊断时开，不要并进常驻步钟。
+        // ⚠ 嵌套关系（2026-10-21）：`最深对` **包含** `part盒重组`（两组的 part AABB 重建）与
+        //   `SAP枚举`（扫掠事件+候选遍历）；后两者之和 ≈ 最深对，不要重复相加。
         public const int ColStagePairLoop = 0, ColStageCache = 1, ColStageSphere = 2, ColStageSweep = 3,
             ColStageNarrow = 4, ColStageContacts = 5, ColStageSolve = 6, ColStageProjection = 7,
             ColStageCcd = 8, ColStageExplosion = 9, ColStageCcdRefine = 10,
-            ColStageCcdTranslate = 11, ColStageCcdOverlap = 12, ColStageCount = 13;
+            ColStageCcdTranslate = 11, ColStageCcdOverlap = 12,
+            ColStagePartBuild = 13, ColStageSap = 14, ColStageCount = 15;
         private static readonly string[] _colStageNames =
-            ["配对循环", "组缓存", "球快筛", "扫掠盒", "最深对", "接触收集", "解算", "位置投影", "CCD", "爆炸", "CCD细化", "CCD平移", "CCD重叠"];
+            ["配对循环", "组缓存", "球快筛", "扫掠盒", "最深对", "接触收集", "解算", "位置投影", "CCD", "爆炸", "CCD细化", "CCD平移", "CCD重叠", "part盒重组", "SAP枚举"];
         private static readonly long[] _colStageTicks = new long[ColStageCount];
         private static readonly long[] _colStageMax = new long[ColStageCount];
         private static readonly long[] _colStageCount = new long[ColStageCount];
@@ -948,6 +961,25 @@ namespace PioneerFramework
 
         /// <summary>船-船碰撞子段计时开关（默认关；DevMode 由 CombatManager 每步同步）。</summary>
         public static bool CollisionStagesEnabled;
+
+        // ── 窄相候选 / SAT 计数（2026-10-21）────────────────────────────────────────
+        // 动因：2026-10-21 游戏日志里 256 长条的 `最深对` 平均 73.8µs，但 54 个窗口中有 24 个
+        // 出现 1–2.9ms 尖峰。机制假设 = SAP 只按扫掠轴出候选、OBB 分支缺 AABB 前置排除 ⇒
+        // 每个候选都要付一次 15 轴 SAT（台架 340.8ns/对）。这两个计数用来在游戏内直接证明/证伪：
+        //   · `SAP对` 的单次最大值随两船相对姿态摆动（尖峰只可能出在候选多的步）；
+        //   · `OBB粗筛` 的"拒"远多于"进 SAT"（前置排除确实在挡，而不是白加一次比较）。
+        public static long ColSapPairs;        // 本窗口 SAP 枚举出的轴重叠候选总数
+        public static int ColSapPairsMax;      // 单次 SAP 调用的候选数最大值
+        public static long ColObbAabbRejects;  // OBB 分支被 AABB 前置排除挡掉的对数
+        public static long ColObbSatCalls;     // 真正进入 OBB-SAT 的对数
+
+        /// <summary>记录一次 SAP 调用的候选数（只在子段钟开时累计）。</summary>
+        public static void NoteSapPairs(int n)
+        {
+            if (!CollisionStagesEnabled) return;
+            ColSapPairs += n;
+            if (n > ColSapPairsMax) ColSapPairsMax = n;
+        }
 
         public static long CollisionStageStart()
             => CollisionStagesEnabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
@@ -984,6 +1016,24 @@ namespace PioneerFramework
             return any ? sb.ToString() : "";
         }
 
+        /// <summary>窄相计数（SAP 候选 / OBB 粗筛）；无样本返回空串。由 `[碰撞链成本]` 同一行消费。</summary>
+        public static string CollisionCounterReport()
+        {
+            if (!CollisionStagesEnabled) return "";
+            if (ColSapPairs == 0 && ColObbAabbRejects == 0 && ColObbSatCalls == 0) return "";
+            var sb = new StringBuilder(64);
+            if (ColSapPairs > 0)
+            {
+                sb.Append("SAP对=").Append(ColSapPairs).Append('/').Append(ColSapPairsMax);
+            }
+            if (ColObbAabbRejects + ColObbSatCalls > 0)
+            {
+                if (sb.Length > 0) sb.Append(' ');
+                sb.Append("OBB粗筛=拒").Append(ColObbAabbRejects).Append("/进").Append(ColObbSatCalls);
+            }
+            return sb.ToString();
+        }
+
         /// <summary>清零子段累加器（保留 first-seen；与 `[碰撞链成本]` 打印同拍）。</summary>
         public static void ResetCollisionStages()
         {
@@ -993,6 +1043,10 @@ namespace PioneerFramework
                 _colStageMax[i] = 0;
                 _colStageCount[i] = 0;
             }
+            ColSapPairs = 0;
+            ColSapPairsMax = 0;
+            ColObbAabbRejects = 0;
+            ColObbSatCalls = 0;
         }
         private static int _stepSpikeLines;
         private static long _spikeLastGrav, _spikeLastSeg, _spikeLastPf;
@@ -1183,3 +1237,4 @@ namespace PioneerFramework
         }
     }
 }
+

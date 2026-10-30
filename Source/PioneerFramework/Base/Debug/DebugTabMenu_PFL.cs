@@ -158,6 +158,7 @@ namespace PioneerFramework
             AddAction("中止验收（立即打印结论与计数）", "00 验收", 90, PerfAcceptanceRunner.Abort, null);
             AddAction("多part 一键验收", "00 验收", 58, MultipartAcceptanceRunner.Run, null);
             AddCheckbox("性能优化验收探针（影子校验 + 周期汇总）", "00 验收", 80, typeof(PerfProbe), "Enabled");
+            AddCheckbox("tick 级日志（冲量/物理步/燃烧诊断/燃料账/点火；默认关）", "00 验收", 79, typeof(PerfProbe), "TickLog");
             // ★ 按需读"物理步总耗时"（常驻测量，与影子校验**无关** ⇒ 测耗时不会被观测者效应污染）：
             //   打印并清零 ⇒ 每次读数 = 上一份读数以来这些步的 平均/最慢/引力段占比。
             AddAction("物理步耗时·打印并清零（平均/最慢 + 最慢那一步的 tick）", "00 验收", 79,
@@ -241,6 +242,8 @@ namespace PioneerFramework
                 "07 场景 · 多part", 93, DebugShipSpawner.SpawnCompact256CcdDemo, null);
             AddAction("多part 交会·一键（3 件追击 → 3 件目标，同轨 30° 相位）",
                 "07 场景 · 多part", 70, DebugShipSpawner.SpawnMultipartRendezvousDemo, null);
+            AddAction("交会·批量 20 组（20 份阶梯规划同拍到期；验预热 #序号曲线）",
+                "07 场景 · 多part", 94, DebugShipSpawner.SpawnRendezvousBatch20, null);
             AddAction("256/多part 演示·清场（只清飞行/对撞/交会按钮生成的组）",
                 "07 场景 · 多part", 69, DebugShipSpawner.CleanupStressDemos, null);
             AddAction("多part 多点对撞·一键（3 件×2 侧靠错位，专门触发多接触求解）",
@@ -263,6 +266,22 @@ namespace PioneerFramework
                 "07 场景 · 多part", 74, DebugShipSpawner.SpawnB8MultiMapDemo, null);
             AddAction("B8 表现验收·清场（只清 B8 按钮生成的组）",
                 "07 场景 · 多part", 73, DebugShipSpawner.CleanupB8Demos, null);
+            AddAction("载荷舱·释放（选中的舰；首次自动注册调试载荷：控制核心+罐+引擎）",
+                "07 场景 · 多part", 72, DeployPayloadForSelectedGroup, null);
+            AddAction("载荷舱·套娃验收（自动建舰 → 两级释放 → 核对状态/件数）",
+                "07 场景 · 多part", 71, PayloadNestingAcceptanceRunner.Run, null);
+            AddAction("动量轮·三档验收（对称 / 偏置 / RCS 空）",
+                "07 场景 · 多part", 70, WheelAcceptanceRunner.Run, null);
+            AddAction("按级号抛级·验收（自动造三级舰 → 连抛两次 → 核对）",
+                "07 场景 · 多part", 69, StageSeparationAcceptanceRunner.Run, null);
+            AddAction("双天体·各 10 发爬升验收（地球+月球，纬度 −60°…+60°，自动结算）",
+                "07 场景 · 多part", 65, DualBodyLaunchAcceptanceRunner.Stage, null);
+            AddAction("三级火箭·升空序列（活动级供能 → 点火 → 抛级 → 切级 → 上面级）",
+                "07 场景 · 多part", 68, ThreeStageLaunchAcceptanceRunner.Run, null);
+            AddAction("三级火箭·地表发射演示（真起飞；每 15 s 自动抛一级）",
+                "07 场景 · 多part", 67, SurfaceLaunchDemo.Run, null);
+            AddAction("月球·自动发射演示（天体解析 + SOI 夹取 + 制导）",
+                "07 场景 · 多part", 66, MoonLaunchAcceptanceRunner.Run, null);
             AddAction("多part 复杂碰撞·一键验收（4 组不同角度，自动结算角动量）",
                 "07 场景 · 多part", 87, ComplexCollisionAcceptanceRunner.Stage, null);
             AddAction("低速对撞（4 m/s：看最小穿透轴/质量反比/e=0.2/角速度）",
@@ -499,6 +518,10 @@ namespace PioneerFramework
             // ⚠ 标签 2026-09-28 更正：原写"交会用新远场律（RendezvousGuidanceLaw）"——那套律已作废、
             //   远场段与 5% CW 终端已删除。字段名沿用（跨文件反射引用，改名要一次改两处）。
             AddCheckbox("交会引导=阶梯（默认开；关=回退旧巡航 Lambert 路径）", "80 调试日志", 58, typeof(SpaceGameComp), "UseNewRendezvousLaw");
+            // 2026-10-21（用户令"不允许增加性能消耗"）：闭式霍曼的影子对照**默认关** ——
+            // 打开才每次闭式计划多跑一次搜索（≈1.7–2.7 ms），用来在游戏内自证"闭式 ≈ 搜索"；查完关掉。
+            AddCheckbox("闭式霍曼·影子对照（默认关；开=每次闭式计划多一次搜索 ≈2ms，查完关掉）", "80 调试日志", 57,
+                typeof(SpaceGameComp), "DebugShadowCompareClosedForm");
             AddAction("射弹飞行探针（30 tick / 关）", "80 调试日志", 65, ToggleProjectileProbe,
                 () => CombatManager.DebugProjectileProbeInterval > 0
                     ? "射弹飞行探针：开（" + CombatManager.DebugProjectileProbeInterval + "t）"
@@ -608,6 +631,56 @@ namespace PioneerFramework
             node.settingsField = fi;
             myRoot.AddChild(node);
             return node;
+        }
+
+        /// <summary>载荷舱释放（2026-10-26）：选中的舰 → 找 payload-bay 部件 → 未绑设计则注册一个调试载荷 → 部署。</summary>
+        private static void DeployPayloadForSelectedGroup()
+        {
+            var sg = Current.Game?.GetComponent<SpaceGameComp>();
+            var g = sg?.GetGroupById(SpaceGroupVisualManager.GetSelectedGroupId());
+            if (sg == null || g == null)
+            {
+                Log.Message("[载荷舱] 先选中一条舰。");
+                return;
+            }
+
+            SpaceEntity? owner = null;
+            SpacePart? bay = null;
+            foreach (int eid in g.GetEntityIds())
+            {
+                var e = sg.GetEntityById(eid);
+                if (e == null) continue;
+                for (int i = 0; i < e.Parts.Count; i++)
+                {
+                    var p = e.Parts[i];
+                    if (p.GetComponent<Components.PayloadBayComponentData>() != null) { owner = e; bay = p; break; }
+                }
+                if (bay != null) break;
+            }
+            if (bay == null)
+            {
+                Log.Message("[载荷舱] 选中的舰没有载荷舱（category=payload-bay）部件。");
+                return;
+            }
+
+            var comp = bay.GetComponent<Components.PayloadBayComponentData>()!;
+            if (comp.payloadDesignId <= 0)
+            {
+                var design = new GroundAssembly.RocketDesignSpec
+                {
+                    parts = new System.Collections.Generic.List<GroundAssembly.DesignPartSpec>
+                    {
+                        new() { defName = "PF_ShipPart_ControlCore_Debug", category = "control", quantity = 1 },
+                        new() { defName = "PF_ShipPart_Tank_Debug", category = "tank", quantity = 1 },
+                        new() { defName = "PF_ShipPart_Thruster_Debug", category = "thruster", quantity = 1 },
+                    },
+                };
+                comp.payloadDesignId = sg.RegisterPayloadDesign(design);
+                Log.Message($"[载荷舱] 已注册调试载荷设计 id={comp.payloadDesignId}");
+            }
+
+            var ng = sg.TryDeployPayload(g, bay, out string reason);
+            Log.Message(ng != null ? $"[载荷舱] 已释放 → G{ng.GroupId}" : $"[载荷舱] 释放失败：{reason}");
         }
     }
 }

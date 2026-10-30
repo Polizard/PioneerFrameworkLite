@@ -7,14 +7,14 @@ namespace PioneerFramework
     /// <summary>
     /// 与场景无关的「船模型绘制」静态段（D-1，2026-10-11；缺口总表 `视觉与玩家交互-现状与开工-20261011.md` §7 的 D-1）。
     ///
-    /// **它解决的问题**：画船的代码原先长在 PFView 窗口自己身上（`DrawRuntimeParts` / `TryDrawMapRelief` /
-    /// `DrawHeadingBar`），并依赖窗口的私有状态与**没说出口的约定**（窗口的 `matBlock` / `ToonMat` /
+    /// **它解决的问题**：画船的代码原先长在 PFView 窗口自己身上（`DrawRuntimeParts` / `TryDrawMapRelief`），
+    /// 并依赖窗口的私有状态与**没说出口的约定**（窗口的 `matBlock` / `ToonMat` /
     /// `SceneLayer` / `debugScaleParts`，以及"位置已由 `AbsToView` 换算到本视图系、单位 = 米×0.1"）。
     /// 而「世界视图叠加模型 / 特殊飞船建筑渲染 / 远 icon 近模型分档」都要在**别的视图 / 别的尺度 /
     /// 别的参考系**里画同一艘船 —— 不抽就会复制三份画船代码（三份真相），而且换系约定多半会被抄错。
     ///
     /// **本类的边界（契约）**：
-    ///   · 只管「**画什么**」：按**给定矩阵**把零件盒体 / 地图浮雕 / 朝向棒画出去；
+    ///   · 只管「**画什么**」：按**给定矩阵**把零件盒体 / 地图浮雕画出去；
     ///   · **不碰任何窗口/场景状态**：视图系位置、姿态、缩放、材质、层、MaterialPropertyBlock 全部显式传入；
     ///   · **不含换系与尺度假设**：位置 = 调用方视图系里的位置；单位换算（米↔视图）走显式入参 `metersToView`。
     ///   ⇒ 别的视图要画同一艘船 = 自己算好这组入参（+ 自己的网格/材质），观感口径与本类共享。
@@ -23,8 +23,9 @@ namespace PioneerFramework
     /// **行为约定（PFView 侧调用 = 逐位不变，重构验收口径）**：
     ///   · 零件：位置 = 视图系位置 + 姿态 ×（局部偏移 × metersToView × scale）；尺寸 = 盒体尺寸 × metersToView × scale
     ///     （各轴下限 `MinPartViewSize`）；
-    ///   · 浮雕：网格顶点以**格**为单位（1 格 = 1 米）⇒ 矩阵 = TRS(位置, 姿态, 单位向量 × metersToView × scale)；
-    ///   · 朝向棒：方向与长度由调用方算好（那是**数据**，不是绘制）。
+    ///   · 浮雕：网格顶点以**格**为单位（1 格 = 1 米）⇒ 矩阵 = TRS(位置, 姿态, 单位向量 × metersToView × scale)。
+    ///   （2026-10-30 用户令"直接删"：原先的"朝向棒 `DrawHeadingBar`"已整段移除 —— 主推轴读数在姿态球 T 记号与左栏文字里，
+    ///   那根棒只是一根穿过船体的重复标记。）
     ///
     /// ⚠ 乘法**逐字保留**重构前的结合顺序（`v * metersToView * scale`，不预乘成单个系数）——
     ///   浮点乘法不满足结合律，换个顺序会在末位比特上分家（"逐位不变"的验收就靠这个）。
@@ -133,34 +134,47 @@ namespace PioneerFramework
         }
 
         // ════════════════════════════════════════════════════
-        //  朝向指示棒（黄棒）
+        //  火箭外壳（2026-10-30）：24 边形棱柱/棱台，三批颜色
         // ════════════════════════════════════════════════════
 
-        /// <summary>朝向棒长细比与最小宽（视图单位）。</summary>
-        public const float HeadingBarWidthRatio = 0.08f;
-        public const float HeadingBarMinWidth = 0.05f;
+        /// <summary>外壳描边宽度（对象空间；比零件盒略细，避免 lowpoly 棱线糊成一片）。</summary>
+        public const float HullOutlineWidth = 0.012f;
 
-        /// <summary>朝向棒颜色（黄）：它就是"主推轴指向哪边"的读数。</summary>
-        public static readonly Color HeadingBarColor = new(1f, 0.75f, 0.15f, 1f);
+        /// <summary>整流罩颜色 = 健康色向白提亮（与壳体区分）。</summary>
+        public static Color FairingColorFor(Color hull) => Color.Lerp(hull, Color.white, 0.35f);
 
         /// <summary>
-        /// 朝向指示棒：从 `centerViewPos` 沿 `dir` 画一根细棒（中心 = 位置 + dir × 长/2）。
-        /// **方向与长度由调用方算好**（主推轴出自 `SpaceGameComp.GetMainThrustAxisSystem` —— 那是数据）。
+        /// 画一个实体的外壳（三批：健康 / 残骸 / 整流罩）。网格在**米制船体系**，
+        /// 这里统一用 `position=viewPos、rotation=组姿态、scale=metersToView×scale` 的矩阵。
         /// </summary>
-        public static void DrawHeadingBar(Vector3 centerViewPos, Vector3 dir, float barLen,
-            Mesh mesh, Material material, MaterialPropertyBlock block, int layer)
+        internal static void DrawHull(RocketHullGeometry? hull, Vector3 viewPos, Quaternion rotation, float scale,
+            Material material, MaterialPropertyBlock block, float metersToView, int layer, bool toonOutline,
+            Color hullColor)
         {
-            if (mesh == null || material == null || block == null) return;
-            if (barLen <= 0.01f) return;
-            if (dir.sqrMagnitude < 0.5f) return;   // 方向无效/NaN 守卫（调用方给的是归一化向量）
+            if (hull == null || material == null || block == null) return;
+            if (toonOutline)
+                block.SetFloat("_OutlineWidth", HullOutlineWidth);
+            Matrix4x4 m = Matrix4x4.TRS(viewPos, rotation, Vector3.one * (metersToView * scale));
 
-            float width = Mathf.Max(barLen * HeadingBarWidthRatio, HeadingBarMinWidth);
-            Vector3 mid = centerViewPos + dir * (barLen * 0.5f);
-            Quaternion rot = Quaternion.LookRotation(dir, Mathf.Abs(dir.y) < 0.9f ? Vector3.up : Vector3.forward);
-            Matrix4x4 mtx = Matrix4x4.TRS(mid, rot, new Vector3(width, width, barLen));
-            block.SetColor("_Color", HeadingBarColor);
-            Graphics.DrawMesh(mesh, mtx, material, layer, null, 0, block);
+            DrawHullBatch(hull.healthy, hullColor, m, material, block, layer);
+            DrawHullBatch(hull.damaged, DamagedPartColor, m, material, block, layer);
+            DrawHullBatch(hull.fairing, FairingColorFor(hullColor), m, material, block, layer);
         }
+
+        private static void DrawHullBatch(Mesh? mesh, Color color, in Matrix4x4 matrix,
+            Material material, MaterialPropertyBlock block, int layer)
+        {
+            if (mesh == null) return;
+            block.SetColor("_Color", color);
+            WorldQuadBatch.Reset();
+            WorldQuadBatch.AddMesh(mesh, matrix);
+            if (WorldQuadBatch.ItemCount > 0)
+                WorldQuadBatch.Flush(material, block, layer);
+        }
+
+        // ════════════════════════════════════════════════════
+        //  朝向指示棒（黄棒）
+        // ════════════════════════════════════════════════════
 
         // ════════════════════════════════════════════════════
         //  地图浮雕

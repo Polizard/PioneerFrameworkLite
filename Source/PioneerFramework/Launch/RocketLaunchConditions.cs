@@ -17,9 +17,9 @@ namespace PioneerFramework.Launch
         /// 校验一次发射是否允许进行。
         /// </summary>
         /// <param name="spec">火箭设计规格。</param>
-        /// <param name="rocketMap">舱内口袋地图。调试直接发射且尚未生成地图时可为 null。</param>
+        /// <param name="rocketMap">舱内口袋地图。**发射链一律传 null**（用户 2026-10-28：发射的火箭都没有地图）。</param>
         /// <param name="debug">调试模式跳过人员相关校验。</param>
-        public static List<string> Validate(RocketDesignSpec spec, Map rocketMap, bool debug = false)
+        public static List<string> Validate(RocketDesignSpec spec, Map? rocketMap, bool debug = false)
         {
             var errors = new List<string>();
             if (spec == null)
@@ -89,7 +89,7 @@ namespace PioneerFramework.Launch
             {
                 if (spec.parts[i] == null || spec.parts[i].category != "thruster")
                     continue;
-                count += Mathf.Max(1, spec.parts[i].quantity);
+                count += RocketDesignRules.PartCountOf(spec.parts[i]);
             }
 
             return count >= 1;

@@ -54,19 +54,65 @@ namespace PioneerFramework.Components
         /// 部件级默认 0（= 开机只付基准代价），装上雷达阵列才付设备那一份。</summary>
         public float activeRadiation ;
 
+        /// <summary>**运转功耗**（W，§5 电闭环的"传感器"通道；最低优先级）：0 = 不用电（默认 ⇒ 零行为变化）。
+        /// 只进 `ShipStats.powerDrawSensor`。</summary>
+        public float powerDrawWatts ;
+
         static SensorArrayComponentData()
         {
             ComponentRegistry.Register<SensorArrayComponentData>();
         }
 
-        public override void AccumulateStats(ref ShipStats s)
+        public override PartRole Role => PartRole.Sensor;
+
+        public override void AccumulateStats(ref ShipStats s, float efficiency)
         {
-            s.sensorRange += passiveRangeMeters;
-            s.memorySeconds += memorySeconds;
-            s.ecmResist += ecmResist;
-            s.eccmResist += eccmResist;
-            s.activeGainBonus += activeGainBonus;   // [V7]/[E2]：加法语义（加成/增量），与实体聚合一致
-            s.activeRadiation += activeRadiation;
+            // §11.4：传感器的一切**运转能力**乘效率（失修的阵列能看，但看不远、抗不住、记得短）；
+            // 未磨损时 efficiency 恰为 1.0f ⇒ 逐位同旧值（确定性红线）。
+            s.sensorRange += passiveRangeMeters * efficiency;
+            s.memorySeconds += memorySeconds * efficiency;
+            s.ecmResist += ecmResist * efficiency;
+            s.eccmResist += eccmResist * efficiency;
+            s.activeGainBonus += activeGainBonus * efficiency;   // [V7]/[E2]：加法语义（加成/增量），与实体聚合一致
+            s.activeRadiation += activeRadiation * efficiency;
+            s.powerDrawSensor += powerDrawWatts * efficiency;    // §5：最低优先级的那个通道
+        }
+
+        public override bool ApplyPreset(string key, string value)
+        {
+            switch (key)
+            {
+                case "passiveRangeMeters":
+                    if (!TryParseFloat(value, out float range)) return false;
+                    passiveRangeMeters = range;
+                    return true;
+                case "ecmResist":
+                    if (!TryParseFloat(value, out float ecm)) return false;
+                    ecmResist = ecm;
+                    return true;
+                case "eccmResist":
+                    if (!TryParseFloat(value, out float eccm)) return false;
+                    eccmResist = eccm;
+                    return true;
+                case "memorySeconds":
+                    if (!TryParseFloat(value, out float mem)) return false;
+                    memorySeconds = mem;
+                    return true;
+                case "activeGainBonus":
+                    if (!TryParseFloat(value, out float gain)) return false;
+                    activeGainBonus = gain;
+                    return true;
+                case "activeRadiation":
+                    if (!TryParseFloat(value, out float rad)) return false;
+                    activeRadiation = rad;
+                    return true;
+                case "powerDrawWatts":
+                    if (!TryParseFloat(value, out float draw)) return false;
+                    powerDrawWatts = draw;
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         public override void ExposeData()
@@ -78,6 +124,7 @@ namespace PioneerFramework.Components
             Scribe_Values.Look(ref memorySeconds, "memorySeconds", 0f);
             Scribe_Values.Look(ref activeGainBonus, "activeGainBonus", 0f);
             Scribe_Values.Look(ref activeRadiation, "activeRadiation", 0f);
+            Scribe_Values.Look(ref powerDrawWatts, "sensorPowerDraw", 0f);
         }
 
         public override void Write(BinaryWriter w)
@@ -88,6 +135,7 @@ namespace PioneerFramework.Components
             w.Write(memorySeconds);      // ★ 修复（2026-10-17 批 -1）：与 ExposeData 三场同补（二进制通道对称）
             w.Write(activeGainBonus);
             w.Write(activeRadiation);
+            w.Write(powerDrawWatts);
         }
 
         public override void Read(BinaryReader r)
@@ -98,6 +146,7 @@ namespace PioneerFramework.Components
             memorySeconds = r.ReadSingle();
             activeGainBonus = r.ReadSingle();
             activeRadiation = r.ReadSingle();
+            powerDrawWatts = r.ReadSingle();
         }
     }
 }

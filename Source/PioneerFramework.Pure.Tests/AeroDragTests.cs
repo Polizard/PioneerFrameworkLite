@@ -76,7 +76,7 @@ namespace PioneerFramework.Pure.Tests
             DVector3 vAir = SurfaceFrame.GroundRelativeVelocity(p, vCo, omega);
             Assert.Equal(0.0, vAir.sqrMagnitude);
 
-            var rod = AeroShape.FromBox(new DVector3(1, 1, 30));
+            var rod = AeroShape.FromBox(new DVector3(1, 1, 30), dragCoefficient: 1.0);
             var q = DQuaternion.AngleAxis(1.1, DVector3.up);
             var a = AeroDrag.Accel(Rho, vAir, rod,
                 DVector3.Rotate(Fwd, q), DVector3.Rotate(Left, q), DVector3.Rotate(Up, q), Mass);
@@ -94,7 +94,7 @@ namespace PioneerFramework.Pure.Tests
         [Fact]
         public void NoseFirstVsSideways_Ratio_EqualsAreaRatio()
         {
-            var rod = AeroShape.FromBox(new DVector3(1, 1, 30));   // 头锥 1 m² / 侧向 30 m²
+            var rod = AeroShape.FromBox(new DVector3(1, 1, 30), dragCoefficient: 1.0);   // 头锥 1 m² / 侧向 30 m²
             var vNose = Fwd * 200.0;
             var vSide = Left * 200.0;
 
@@ -148,22 +148,23 @@ namespace PioneerFramework.Pure.Tests
             Assert.Equal(0.0, a.z);
         }
 
-        // ── 陷阱用例：斜向气流必须用"二次范数"，不许"逐轴相加"──
+        // ── 斜向气流：**盒子解析投影**（2026-10-28 改口径）──
 
         [Fact]
-        public void ObliqueFlow_UsesQuadrature_NotAxisSum()
+        public void ObliqueFlow_UsesBoxProjection_NotQuadrature()
         {
-            // 前/左相等（30、30）、上很小：45° 斜吹时
-            //   正确（范数）= √((30s)²+(30s)²) = 30
-            //   错误（逐轴相加）= 30s+30s = 42.43 —— 差 41%
+            // 前/左都 30（x·y = 30、y·z = 30 ⇒ 方形柱体），45° 斜吹时
+            //   盒子真投影 = |n·ẑ|·30 + |n·x̂|·30 = 42.43  ← 现在用这个（= 真实阴影面积）
+            //   旧口径（二次范数）= 30 —— 对盒模型是**低估**（立方体沿体对角会低估 42%）
+            // ⚠ D13 禁的是"**力**逐轴相加"；**面积**的逐轴投影加权是盒模型正解。
             var shape = new AeroShape(forwardCdA: 30.0, leftCdA: 30.0, upCdA: 5.0);
             double s = 1.0 / Math.Sqrt(2.0);
             var vHat = new DVector3(s, 0.0, s);
 
             double aEff = AeroDrag.EffectiveArea(shape, vHat, Fwd, Left, Up);
 
-            Assert.True(Math.Abs(aEff - 30.0) < 1e-12, $"A_eff={aEff:R}（应为 30）");
-            Assert.True(aEff < 35.0, $"A_eff={aEff:R} 落在'逐轴相加'值 42.43 附近 ⇒ 用了错误的算式");
+            Assert.Equal(30.0 * Math.Sqrt(2.0), aEff, 12);   // 42.4264
+            Assert.True(aEff > 35.0, $"A_eff={aEff:R} 落在'二次范数'值 30 附近 ⇒ 用了旧算式");
         }
 
         // ── 方向自洽：阻力与空气相对速度反向 ──

@@ -29,7 +29,7 @@ namespace PioneerFramework.Megastructures
             if(group.HasActiveBurn||!string.IsNullOrEmpty(group.LandingTaskId))return FrameworkResult.Reject("GroupBusy");
             float budget=simulation!.GetGroupDeltaV(group).remainingDv;
             if(!float.IsFinite(budget)||budget<deltaV.magnitude)return FrameworkResult.Reject("InsufficientPropellant");
-            group.StartBurn(deltaV);return FrameworkResult.Ok();
+            group.BeginBurn(new ManeuverPlan { dv = deltaV, networks = ManeuverNetworkMode.All });return FrameworkResult.Ok();
         }
     }
 }

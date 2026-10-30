@@ -21,6 +21,10 @@ namespace PioneerFramework
         public bool replaceWorldSky = true;
         public bool spaceAiRandomEncounters;
 
+        /// <summary>**坎星（Kerbin）魔法动量轮**（2026-10-27 用户裁定）：开 ⇒ 动量轮**不累积角动量**
+        /// （引擎偏心力矩不进轮子），别的行为一概不变（已有 L 仍按原规则被 RCS 卸掉）。默认关。</summary>
+        public bool kerbinMagicWheel;
+
         /// <summary>
         /// 双击/聚焦编队时的**默认镜头模式**（跨局保存在 Mod 配置中）：
         /// `Free` / `ThirdPersonHull`（船体正向）/ `ThirdPersonVelocity`（速度正向）。
@@ -37,6 +41,7 @@ namespace PioneerFramework
         {
             Scribe_Values.Look(ref replaceWorldSky, "replaceWorldSky", true);
             Scribe_Values.Look(ref spaceAiRandomEncounters, "spaceAiRandomEncounters");
+            Scribe_Values.Look(ref kerbinMagicWheel, "kerbinMagicWheel", false);
 
             // 降级兼容：旧键只表达「是否仍默认第三人称」（船体/速度正向都算 true）。
             if (Scribe.mode == LoadSaveMode.Saving)
@@ -65,6 +70,12 @@ namespace PioneerFramework
         public PioneerFrameworkLiteMod(ModContentPack content) : base(content)
         {
             Settings = GetSettings<PioneerFrameworkLiteSettings>();
+
+            // 2026-10-22 部件功能化 §7：**启动期自检**。
+            // ① 内置组件全量触达（注册点在各自静态构造器里，只被目录预置 typeId 引用的组件不会自己注册）；
+            // ② 角色失效表缺行 / 注册组件没声明 Role ⇒ 当场抛（"缺行 = 启动期报错，不是运行时静默"）。
+            Components.ComponentRegistry.RegisterBuiltIns();
+            Components.PartRoleTable.Validate();
         }
 
         public override string SettingsCategory() => "先驱框架Lite";
@@ -80,6 +91,7 @@ namespace PioneerFramework
             // ⚠ 只用最小且确定的 API（`CheckboxLabeled(2 参)` / `Label`）——不确定的签名不猜（仓库纪律）
             listing.CheckboxLabeled("替换世界视图的太阳与星空（默认开）", ref Settings.replaceWorldSky);
             listing.CheckboxLabeled("PF_AI_RandomEncounters".Translate(), ref Settings.spaceAiRandomEncounters);
+            listing.CheckboxLabeled("坎星（Kerbin）魔法动量轮（动量轮不累积角动量，默认关）", ref Settings.kerbinMagicWheel);
             listing.Gap(6f);
             listing.Label("开（默认）：世界视图与含图编队地图背景里的太阳/星空用本模组补画的那套；");
             listing.Label("原版那两套画在行星中心附近、只在镜头进入行星壳（船落地/低空）时才会露出来，已停用。");

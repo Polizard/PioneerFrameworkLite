@@ -671,7 +671,8 @@ namespace PioneerFramework
             if (step.action == MissileGuidanceAction.Burn)
             {
                 if (group.HasActiveBurn) group.EndBurn(); // 清上一步残余（两拍时延语义，Boarding 同构）
-                group.StartBurn(step.dv); // 物理引擎：转向-收心（≤1.5°）-主网点火；每步重置方向
+                var plan = new ManeuverPlan { dv = step.dv, networks = ManeuverNetworkMode.All };
+                group.BeginBurn(in plan); // 物理引擎：转向-收心（≤1.5°）-主网点火；每步重置方向
             }
             else if (group.HasActiveBurn)
             {

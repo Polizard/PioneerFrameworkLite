@@ -54,7 +54,7 @@ namespace PioneerFramework
             bool own = CanOperateGroup(selected, false, out _);
             float height = inspectedContactKey != null ? 361f : selected == null ? 0f : 123f;
             if (selected != null && selected.GroupId != source?.GroupId) height += 33f;
-            if (own) height += 99f + (source != null && source.GroupId != selected!.GroupId ? 33f : 0f)
+            if (own) height += 198f + (source != null && source.GroupId != selected!.GroupId ? 33f : 0f)
                 + (showInspectorRooms ? inspectorRooms.Count * 33f : 0);
             if (operationContext.WeaponsOpen) height += 133f + (weaponTarget.IsSet ? 33f : 0f) + weapons * 33f;
             height += 16f;
@@ -85,6 +85,17 @@ namespace PioneerFramework
                     string label = SteeringController.GroupId == selected.GroupId ? "PFV_StopSteering" : "PFV_StartSteering";
                     if (InspectorButton(content, ref y, label.Translate("G" + selected.GroupId))) ToggleManualSteering(selected);
                     if (InspectorButton(content, ref y, "PFV_OpenWeapons".Translate("G" + selected.GroupId))) TryOpenWeaponsFor(selected.GroupId);
+                    DrawNetworkSelectorButton(content, ref y, selected);
+                    if (InspectorButton(content, ref y, "自动抛级：" + (selected.autoStageEnabled ? "开" : "关")))
+                        space?.SetAutoStage(selected, !selected.autoStageEnabled);
+                    if (InspectorButton(content, ref y, "立即抛级"))
+                    {
+                        SpaceEntityGroup? separated = null;
+                        string sepReason = "";
+                        if (space != null) separated = space.TrySeparateStage(selected, out sepReason);
+                        Messages.Message(separated != null ? $"已抛级 → G{separated.GroupId}" : $"无法抛级：{sepReason}",
+                            separated != null ? MessageTypeDefOf.TaskCompletion : MessageTypeDefOf.RejectInput, false);
+                    }
                     if (source != null && source.GroupId != selected.GroupId
                         && InspectorButton(content, ref y, "PFV_ChangeOperator".Translate("G" + selected.GroupId)))
                     {
@@ -142,6 +153,40 @@ namespace PioneerFramework
             bool clicked = Widgets.ButtonText(new(0, y, content.width, 27), label);
             y += 33;
             return clicked;
+        }
+
+        /// <summary>
+        /// **推进网络选择**（2026-10-27）：列出当前舰的推进网络（主/RCS、ve、ṁ、余量），
+        /// 玩家选一个就只启用它；"全部"恢复默认。选择落盘（`enabledNetworkDefName`），
+        /// 机动未显式指定网络时沿用（见 `SpaceGameComp` 的 `pm.useNetworks ?? PlayerEnabledNetworks`）。
+        /// </summary>
+        private void DrawNetworkSelectorButton(Rect content, ref float y, SpaceEntityGroup group)
+        {
+            string label = string.IsNullOrEmpty(group.enabledNetworkDefName) ? "全部" : group.enabledNetworkDefName;
+            if (!InspectorButton(content, ref y, "推进网络：" + label)) return;
+
+            var options = new List<FloatMenuOption>
+            {
+                new("全部网络", () => group.ApplyNetworkSelection("", false)),
+            };
+            var space = Current.Game?.GetComponent<SpaceGameComp>();
+            var src = space?.GetGroupPropulsionSource(group);
+            if (src != null)
+            {
+                var seen = new HashSet<string>();
+                foreach (var n in src.Networks)
+                {
+                    if (n.propellant == null || n.MassFlow <= 0f) continue;
+                    string key = n.propellant.defName;
+                    if (!seen.Add(key)) continue;
+                    string kind = n.HasRcsEngines ? "RCS" : "主";
+                    double avail = src.GetPropellantMass(n.propellant);
+                    options.Add(new FloatMenuOption(
+                        $"{n.propellant.label}（{kind} ve {n.Ve:F0} ṁ {n.MassFlow:F1} 余 {avail:F0}kg）",
+                        () => group.ApplyNetworkSelection(key, n.HasRcsEngines)));
+                }
+            }
+            Find.WindowStack.Add(new FloatMenu(options));
         }
 
         private void DrawOperationPanel(Rect rect)

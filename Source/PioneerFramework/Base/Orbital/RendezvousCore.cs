@@ -24,7 +24,7 @@ namespace PioneerFramework
             public double WaitSeconds;
             /// <summary>转移时长（秒）。</summary>
             public double TransferSeconds;
-            /// <summary>出发段 Δv（在出发点的世界/中心天体参考系里，直接作为 plannedDvSystem）。</summary>
+            /// <summary>出发段 Δv（在出发点的世界/中心天体参考系里，直接作为 plannedDvBody）。</summary>
             public DVector3 DepartureDv;
             /// <summary>到达段 Δv 的模（信息用；精确交会由闭环引导做终端消速）。</summary>
             public double ArrivalDv;

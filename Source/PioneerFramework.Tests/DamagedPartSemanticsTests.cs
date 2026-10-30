@@ -51,18 +51,33 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
-        public void DestroyedPart_StillHitByRay()
+        public void HasAlivePart_TracksWreckState()
         {
+            // 2026-10-30 裁定"射弹/光束/弹头跳过残骸"的唯一判据：全部损毁 ⇒ 纯残骸。
+            var e = new SpaceEntity(4, 0);
+            var a = Part(1, DVector3.zero, 4, 100f);
+            var b = Part(2, new DVector3(0, 0, 6), 4, 100f);
+            e.SetParts(new List<SpacePart> { a, b });
+
+            Assert.True(e.HasAlivePart);
+            e.MarkPartDestroyed(a.partId);
+            Assert.True(e.HasAlivePart);          // 还有活件
+            e.MarkPartDestroyed(b.partId);
+            Assert.False(e.HasAlivePart);         // 纯残骸
+        }
+
+        [Fact]
+        public void DestroyedPart_NotHitByRay()
+        {
+            // 2026-10-30 用户裁定：射弹跳过残骸（推翻 B5/D-P7"残骸挡弹"）。
             var e = new SpaceEntity(2, 0);
             var p = Part(1, DVector3.zero, 4, 100f);
             e.SetParts(new List<SpacePart> { p });
             e.MarkPartDestroyed(p.partId);
 
             bool hit = CombatManager.TryPickHitPart(e, new DVector3(0, -10, 0), new DVector3(0, 1, 0), 20.0,
-                out int idx, out var hitPart, out _);
-            Assert.True(hit);
-            Assert.Equal(0, idx);
-            Assert.Same(p, hitPart);
+                out _, out _, out _);
+            Assert.False(hit);
         }
 
         [Fact]

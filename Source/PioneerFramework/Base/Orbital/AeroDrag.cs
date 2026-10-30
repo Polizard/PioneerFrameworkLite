@@ -37,13 +37,14 @@ namespace PioneerFramework
         public static double EffectiveArea(in AeroShape shape, DVector3 vAirUnit,
             DVector3 axisForward, DVector3 axisLeft, DVector3 axisUp)
         {
+            // 球退化（三轴精确相等）：投影面积与方向无关 ⇒ 直接返回系数（与"球"一致，也保逐位一致）
             if (shape.IsIsotropic)
-                return shape.forwardCdA;   // 退化：标量路径（与各向同性公式逐位一致）
+                return shape.forwardCdA;
 
-            double sf = shape.forwardCdA * DVector3.Dot(vAirUnit, axisForward);
-            double sl = shape.leftCdA * DVector3.Dot(vAirUnit, axisLeft);
-            double su = shape.upCdA * DVector3.Dot(vAirUnit, axisUp);
-            return Math.Sqrt(sf * sf + sl * sl + su * su);
+            // 2026-10-28：改成**盒子解析投影**（|n·轴| 加权求和）。
+            // 旧口径是二次范数 √(Σ((CdA)·p)²)：立方体沿体对角只给 a²，真值 √3·a² ⇒ 斜向低估。
+            // 禁令针对的是"**力**逐轴相加"；**面积**的逐轴投影加权正是盒模型的正解。
+            return shape.ProjectedCdA(vAirUnit, axisForward, axisLeft, axisUp);
         }
 
         /// <summary>

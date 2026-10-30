@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Xunit;
 
 namespace PioneerFramework.Pure.Tests
@@ -7,8 +7,9 @@ namespace PioneerFramework.Pure.Tests
     /// **烧执行器政策**（`Base/Orbital/BurnExecutorPolicy.cs`，B5 第一份交付物，2026-09-23）。
     ///
     /// 这批用例钉两件事：
-    /// ① **收敛不改行为**：`RendezvousGuidanceCore.SelectActuator` 转发到政策件后，三态判决与收敛前**逐位一致**
-    ///    （网格等价性）；
+    /// ① **收敛不改行为**：`RendezvousGuidanceCore.SelectActuator` 转发到政策件后，三态判决与政策件**逐位一致**
+    ///    （网格等价性）。⚠ 2026-10-27：语义收敛为"只按 Δv 窗口"——大 Δv 一律主网（等对准），
+    ///    删掉了"未对准 ⇒ RCS 兜底"那一支（500 m/s 交 RCS 要 ~19 分钟，拖死节点）。
     /// ② ★ **把"计划所用执行器 ≠ 实际所用执行器"这条量化**（游戏实测：计划 0.8 s、实烧 14 s）——
     ///    这正是交接里"纯核复现失败"那条读数的**来路之一**，也是 B5 存在的理由。
     /// </summary>
@@ -57,8 +58,9 @@ namespace PioneerFramework.Pure.Tests
             Assert.True(BurnExecutorPolicy.UseRcs(0.4356 * 15.0, 8.0, 0.4356, mainAligned: true));
             // 大 Δv 且主推已对准 ⇒ 主网
             Assert.False(BurnExecutorPolicy.UseRcs(0.4356 * 15.0 + 0.01, 8.0, 0.4356, mainAligned: true));
-            // 大 Δv 但主推未对准 ⇒ RCS 兜底（有界总比烧不动好）
-            Assert.True(BurnExecutorPolicy.UseRcs(500.0, 8.0, 0.4356, mainAligned: false));
+            // 大 Δv 但主推未对准 ⇒ **主网（等对准）**：2026-10-27 裁决删掉"RCS 兜底"
+            //（500 m/s 交 RCS 要烧 ~19 分钟，拖死节点，不是兜底）
+            Assert.False(BurnExecutorPolicy.UseRcs(500.0, 8.0, 0.4356, mainAligned: false));
             // 无 RCS ⇒ 走主网（哪怕未对准：调用方继续转姿态）
             Assert.False(BurnExecutorPolicy.UseRcs(1.0, 8.0, 0.0, mainAligned: false));
             // 两者皆无 ⇒ 没有可用推进

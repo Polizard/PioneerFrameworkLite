@@ -93,6 +93,8 @@ namespace PioneerFramework
             reason = "PFV_NotOperable".Translate();
             var player = Faction.OfPlayer;
             if (group == null || !group.IsActive || player == null || group.FactionId != player.loadID) return false;
+            // 控制核心（2026-10-26）：装过但已失去 ⇒ 不可操作（复用通用不可操作文案，暂不新增翻译键）
+            if (!group.IsControllableNow()) return false;
             if (requireSteeringConsole && !CompSteeringConsole.HasConsole(group.GetLinkedMapComp()?.map))
             {
                 reason = "PFV_NoConsole".Translate();

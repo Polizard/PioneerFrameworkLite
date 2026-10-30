@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using MechJebLib.Functions;
 using MechJebLib.Primitives;
 
@@ -149,6 +150,150 @@ namespace PioneerFramework
         private const double CloseSpeedDiv = 100.0, CloseSpeedFloor = 0.01; // `closingSpeed = dist/100`
         private const double PhasingOrbitSlack = 1.25;                      // `(1 + 1.25/N)^(2/3)`
         private const double PhasingBurnLead = 15.0;                        // 调相第一发在 now+15
+        /// <summary>解析预判的**保守余量**（圈）：只有"最早窗口也超出上限这么多圈"才跳过霍曼搜索。</summary>
+        private const double PhasingSkipMarginOrbits = 0.5;
+        /// <summary>解析预判只信**这个偏心以下**的轨道（圆心模型；0.005 是台架实测的安全边界，见
+        /// `HohmannAnalyticWindowTests`：e=0.03 时会误判，e=0.005 时 192 组零违规）。</summary>
+        private const double AnalyticMaxEccentricity = 0.005;
+
+        /// <summary>
+        /// **规划成本预热 + 成本曲线**（2026-10-21；与 `CombatManager.WarmupCollisionPaths` 同一手法）。
+        ///
+        /// 现象：游戏内 `[阶梯·耗时] G2 MakePlan 9.2 ms（PhasingOrbit）/ 6.9 ms（Hohmann）`，
+        /// 而 net48 台架（`LadderPlanCostSlowTests`）同量级几何只要 **0.3–0.5 ms**。
+        /// 首版写死地球几何预热 32 次后，游戏内复验的是：**首调 1.51 ms、中位 1.03、末 0.83（Hohmann）**，
+        /// 而正式规划仍 2.2–3.3 ms 且**第 2/3 次比第 1 次还慢** ⇒ 冷启动那部分已被消掉，
+        /// 剩下的 2–3 ms 是**算法本身的稳态成本**（PhasingOrbit 支把霍曼搜索跑完再被圈数上限拒掉）。
+        ///
+        /// 本版做两件事（都不碰行为）：
+        /// 1. **几何绑到当前天体**（`mu` / `bodyRadius` 由调用方给）——写死地球档时，月球档的
+        ///    周期/传播路径其实没被预热到；半径取其 1.40/1.54/1.62 倍，覆盖真实交会尺度。
+        /// 2. **三条分支都过一遍**：Hohmann、PhasingOrbit 的**抬轨**支（自船低于目标）与**压轨**支
+        ///    （自船高于目标）—— `PlanPhasingOrbit` 里这两支走不同的 `DeltaVToChangeApoapsis/Periapsis`。
+        /// 返回成本曲线（每条支的 首/中位/末），**空串 = 预热失败**；结果全部丢弃，不碰任何状态。
+        /// 判据：**首调 ≫ 末调 ⇒ 还在吃冷启动；首末接近（如 1.5 → 0.8）⇒ 冷启动已消，成本是算法的**。
+        /// </summary>
+        public static string Warmup(double mu, double bodyRadius, int reps = 24)
+        {
+            if (!(mu > 0.0) || !(bodyRadius > 0.0)) { mu = 2.0e14; bodyRadius = 5.0e6; }
+            if (reps < 2) reps = 2;
+            try
+            {
+                double rLow = 1.40 * bodyRadius;
+                double rMid = 1.54 * bodyRadius;
+                double rHigh = 1.62 * bodyRadius;
+                var pars = new Params
+                {
+                    DesiredDistance = 283.0,
+                    MatchDistance = 2000.0,
+                    MaxClosingSpeed = 100.0,
+                    MaxPhasingOrbits = 5.0,
+                    MinRadius = 1.02 * bodyRadius,     // 略高于本体半径：安全半径的真实下限
+                };
+                var self = WarmCircular(rLow, 0.0, mu, bodyRadius);
+                var hohTgt = WarmCircular(rHigh, 90.0, mu, bodyRadius);
+                // PhasingOrbit 支：相位符号随造靶约定 ⇒ 不猜，逐个试到真的落该支（试的过程也算预热）。
+                var phaRaiseTgt = PickPhasingTarget(self, rMid, mu, bodyRadius, pars, raise: true);
+                var phaLowerSelf = WarmCircular(rHigh, 0.0, mu, bodyRadius);
+                var phaLowerTgt = PickPhasingTarget(phaLowerSelf, rLow, mu, bodyRadius, pars, raise: false);
+
+                var sw = new System.Diagnostics.Stopwatch();
+                var hoh = new double[reps];
+                var raise = new double[reps];
+                var lower = new double[reps];
+                Rung hohRung = Rung.Done, raiseRung = Rung.Done, lowerRung = Rung.Done;
+                for (int i = 0; i < reps; i++)
+                {
+                    sw.Restart();
+                    hohRung = MakePlan(self, hohTgt, 0.0, pars, out _, out _);
+                    sw.Stop();
+                    hoh[i] = sw.Elapsed.TotalMilliseconds;
+
+                    sw.Restart();
+                    raiseRung = MakePlan(self, phaRaiseTgt, 0.0, pars, out _, out _);
+                    sw.Stop();
+                    raise[i] = sw.Elapsed.TotalMilliseconds;
+
+                    sw.Restart();
+                    lowerRung = MakePlan(phaLowerSelf, phaLowerTgt, 0.0, pars, out _, out _);
+                    sw.Stop();
+                    lower[i] = sw.Elapsed.TotalMilliseconds;
+                }
+
+                static string Curve(string name, double[] a, Rung rung)
+                {
+                    var copy = (double[])a.Clone();
+                    Array.Sort(copy);
+                    return string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                        "[{0}] 首 {1:F2}／中位 {2:F2}／末 {3:F2} ms（选中 {4}）",
+                        name, a[0], copy[copy.Length / 2], a[a.Length - 1], rung);
+                }
+                string text = Curve("Hohmann", hoh, hohRung) + "｜" + Curve("Phasing抬", raise, raiseRung);
+                text += "｜" + Curve("Phasing压", lower, lowerRung);
+                return text;
+            }
+            catch (Exception)
+            {
+                return "";   // 预热失败不能影响读档；调用方按空串跳过
+            }
+        }
+
+        /// <summary>
+        /// **闭式霍曼计划**（2026-10-21 第二刀）：给定解析窗口，直接出两发节点，**不跑搜索**。
+        ///
+        /// 前提（调用方已判）：近圆共面、两轨 `e < AnalyticMaxEccentricity`、窗口在上限内且离边界有余量。
+        /// 公式：`tof = π√((a1+a2)³/(8μ))`；烧点速度需求 `√(μ(2/r1 − 2/(r1+r2)))`、
+        /// 到达点转移速度 `√(μ(2/r2 − 2/(r1+r2)))` ⇒ 两发都沿**当地速度方向**（霍曼的切向口径）。
+        /// 台架对照（`HohmannFastPathComparisonTests`，240 组）：Δv 相对差 中位 0.00% / 最大 0.01%，点火时刻差 ≤10 s。
+        /// </summary>
+        private static bool TryBuildClosedFormHohmann(OrbitView self, OrbitView target, double now,
+            double waitSeconds, double estOrbits, double maxPhasing, List<PlanNode> nodes, out string status)
+        {
+            status = "";
+            double a1 = self.semiMajorAxis, a2 = target.semiMajorAxis, mu = self.mu;
+            if (!(a1 > 0.0) || !(a2 > 0.0) || !(mu > 0.0) || !(waitSeconds >= 0.0)) return false;
+            double tof = Math.PI * Math.Sqrt(Math.Pow(a1 + a2, 3.0) / (8.0 * mu));
+            if (!(tof > 0.0) || double.IsNaN(tof) || double.IsInfinity(tof)) return false;
+            double burnUt = now + waitSeconds;
+            double arrUt = burnUt + tof;
+            (V3 rb, V3 vb) = self.RightHandedStateVectorsAtUT(burnUt);
+            (V3 ra, V3 va) = target.RightHandedStateVectorsAtUT(arrUt);
+            double r1 = rb.magnitude, r2 = ra.magnitude;
+            if (!(r1 > 0.0) || !(r2 > 0.0) || !(vb.magnitude > 0.0) || !(va.magnitude > 0.0)) return false;
+            double vNeed = Math.Sqrt(mu * (2.0 / r1 - 2.0 / (r1 + r2)));
+            double vArr = Math.Sqrt(mu * (2.0 / r2 - 2.0 / (r1 + r2)));
+            if (double.IsNaN(vNeed) || double.IsNaN(vArr)) return false;
+            V3 dv1 = vb.normalized * (vNeed - vb.magnitude);
+            V3 dv2 = va.normalized * (va.magnitude - vArr);
+            nodes.Add(new PlanNode(dv1, burnUt));
+            nodes.Add(new PlanNode(dv2, arrUt));
+            status = $"霍曼拦截（闭式）：等 {estOrbits:F2} 圈后进入窗口（上限 {maxPhasing:F0} 圈）";
+            return true;
+        }
+
+        /// <summary>找一个真的会落 `PhasingOrbit` 的目标相位（抬轨/压轨两种自船各试一次）。</summary>
+        private static OrbitView PickPhasingTarget(OrbitView self, double targetRadius, double mu,
+            double bodyRadius, Params pars, bool raise)
+        {
+            OrbitView fallback = WarmCircular(targetRadius, 90.0, mu, bodyRadius);
+            foreach (double ph in new[] { 90.0, -90.0, 30.0, 150.0, -30.0, -150.0 })
+            {
+                var cand = WarmCircular(targetRadius, ph, mu, bodyRadius);
+                if (MakePlan(self, cand, 0.0, pars, out _, out _) == Rung.PhasingOrbit)
+                    return cand;
+            }
+            return raise ? fallback : fallback;   // 试不到就退回默认相位（至少把代码路径走一遍）
+        }
+
+        /// <summary>预热用的同面圆轨（pos/vel 绕轨道法向 (0,−1,0) 转 <paramref name="phaseDeg"/>）。</summary>
+        private static OrbitView WarmCircular(double r, double phaseDeg, double mu, double bodyRadius)
+        {
+            double vc = Math.Sqrt(mu / r);
+            double ph = phaseDeg * Math.PI / 180.0;
+            var pos = new V3(r * Math.Cos(ph), 0.0, r * Math.Sin(ph));
+            var vel = new V3(-vc * Math.Sin(ph), 0.0, vc * Math.Cos(ph));
+            return OrbitView.FromStateVectors(pos, vel, mu, 0.0, new V3(0.0, -1.0, 0.0), bodyRadius);
+        }
 
         /// <summary>
         /// 规划一次。返回**被选中的级别**；<paramref name="nodes"/> 为要提交的节点（0~2 条，适配层系）。
@@ -328,6 +473,37 @@ namespace PioneerFramework
                 //     而搜索给出的窗口圈数 < 5 ✓）。**两处都要判 ⇒ 就变成两份权威、且其中一份是错的。**
                 double period = self.period;
                 double maxPhasing = Math.Max(p.MaxPhasingOrbits, 5.0);   // 上游：忽略不合理的小值
+                // ★ 2026-10-21：**解析预判门** —— 明显超窗就别跑昂贵搜索（实测省 ~1.8 ms/次）。
+                //   背景：PhasingOrbit 那档几何里，霍曼搜索会**成功收敛到一个 6.2 圈的窗口**
+                //   （dt1=56,651 s vs 周期 9,126 s），然后被下面的 `phasingOrbits < maxPhasing` 拒掉
+                //   ⇒ 那 1.8 ms 是**先算完再丢**。近圆共面两轨的窗口时刻有闭式解（见
+                //   `EstimateHohmannWaitSeconds`），用它先判"最早窗口也远在上限之外"⇒ 直接建调相轨道。
+                //   安全性：只在**超过上限 + `PhasingSkipMarginOrbits` 圈**时才跳过（模型误差远小于 1 圈），
+                //   且"凡搜索会接受的几何，解析估计也必须在上限内"这条由 `HohmannAnalyticWindowTests` 钉住。
+                double estWait = EstimateHohmannWaitSeconds(self, target, now);
+                if (!double.IsNaN(estWait) && period > 0.0 && !double.IsNaN(period)
+                    && AnalyticGateApplies(self.eccentricity, target.eccentricity))
+                {
+                    double estOrbits = estWait / period;
+                    if (estOrbits > maxPhasing + PhasingSkipMarginOrbits)
+                    {
+                        PlanPhasingOrbit(self, target, now, maxPhasing, p, nodes, out status);
+                        status = $"解析预估窗口 {estOrbits:F2} 圈 > 上限 {maxPhasing:F0}+{PhasingSkipMarginOrbits:F1}" +
+                                 $" ⇒ 跳过霍曼搜索｜" + status;
+                        return Rung.PhasingOrbit;
+                    }
+                    // ★★ 2026-10-21 第二刀：**窗口在上限内 ⇒ 用闭式霍曼直接出计划，不跑搜索**。
+                    //   台架对照（240 组近圆共面，`HohmannFastPathComparisonTests`）：
+                    //   Δv 相对差 **中位 0.00% / 最大 0.01%**、点火时刻差 **≤10 s**、快路从不更贵。
+                    //   ⚠ 不能用"固定时刻 Lambert"代替：霍曼是 **180° 转移**，Lambert 在该处近乎奇异
+                    //     （实测有些相位解出 17 km/s 的另一支）—— 闭式解才是这一档的正确工具。
+                    //   边界保护：只在 `estOrbits < 上限 − 余量` 时走快路；落在边界带里仍跑搜索，
+                    //   让"接不接受"这个决定保持原样（那一带一天也碰不到几次）。
+                    if (estOrbits < maxPhasing - PhasingSkipMarginOrbits
+                        && TryBuildClosedFormHohmann(self, target, now, estWait, estOrbits, maxPhasing,
+                            nodes, out status))
+                        return Rung.Hohmann;
+                }
                 string? hohmannFail = null;   // ⚠ 批5.C：霍曼级若被**异常**兜住，把原因带出去（原先整口吞掉）
                 try
                 {
@@ -386,6 +562,52 @@ namespace PioneerFramework
                 return Rung.MatchPlanes;
             }
         }
+
+        /// <summary>
+        /// **近圆共面两轨的霍曼窗口等待时间（解析）**（2026-10-21）。
+        ///
+        /// 模型（调用点已用 `relInc < 0.05°`、`e < 0.05` 的同一道门）：
+        /// · 转移半时长 `tof = π√((a1+a2)³/(8μ))`（Hohmann 转移 = 二体半周期）；
+        /// · 到达时目标必须正好在"烧点对面"：`φ_rel + (n2−n1)·t_b + n2·tof = π (mod 2π)`；
+        /// · `φ_rel` = 目标相对追击方的相位（沿轨道法向的有符号夹角），`n = √(μ/a³)`。
+        /// 解出最小非负 `t_b`（秒）。
+        ///
+        /// **只用于"判定窗口是否远在上限之外"**（合理即可，不参与生成机动）：真正的 Δv/时刻仍由
+        /// `DeltaVAndTimeForHohmannTransfer` 给出。台架 `HohmannAnalyticWindowTests` 钉住
+        /// "凡搜索接受的几何，解析估计必须落在上限+余量之内"。
+        /// 返回 NaN = 模型不适用（双曲/退化/两轨角速度相同）。
+        /// </summary>
+        internal static double EstimateHohmannWaitSeconds(OrbitView self, OrbitView target, double now)
+        {
+            double a1 = self.semiMajorAxis, a2 = target.semiMajorAxis, mu = self.mu;
+            if (!(a1 > 0.0) || !(a2 > 0.0) || !(mu > 0.0)) return double.NaN;
+            double n1 = Math.Sqrt(mu / (a1 * a1 * a1));
+            double n2 = Math.Sqrt(mu / (a2 * a2 * a2));
+            double dn = n2 - n1;
+            if (Math.Abs(dn) < 1e-12) return double.NaN;   // 同轨/同步：窗口在无穷远
+            (V3 rSelf, V3 _) = self.RightHandedStateVectorsAtUT(now);
+            (V3 rTgt, V3 _) = target.RightHandedStateVectorsAtUT(now);
+            V3 h = self.OrbitNormal();
+            double phi = Math.Atan2(V3.Dot(h, V3.Cross(rSelf, rTgt)), V3.Dot(rSelf, rTgt));
+            double tof = Math.PI * Math.Sqrt(Math.Pow(a1 + a2, 3.0) / (8.0 * mu));
+            double t = (Math.PI - phi - n2 * tof) / dn;
+            double per = 2.0 * Math.PI / Math.Abs(dn);
+            t -= Math.Floor(t / per) * per;                // 归一到 [0, per)
+            return t;
+        }
+
+        /// <summary>
+        /// **解析门是否适用**（2026-10-21 正确性保险，交接 §11.36-N 风险②）：
+        /// 两轨偏心都**严格小于** <see cref="AnalyticMaxEccentricity" /> 才准用解析预判/闭式霍曼。
+        ///
+        /// 抽成谓词的唯一目的 = **边界可测**：以前这个判断内联在 <see cref="MakePlan" /> 的 `if` 里，
+        /// 只有"构造出刚好落在边界附近的整条几何"才能验到，等于验不到。
+        /// 语义与内联版逐字等价：
+        /// · `e = 0.005` **本身不进**（严格 `&lt;`）⇒ 落到原搜索，行为不变；
+        /// · `NaN`（退化轨道）⇒ `NaN &lt; x` 为 false ⇒ **不进**，同样退回搜索（安全方向）。
+        /// </summary>
+        internal static bool AnalyticGateApplies(double selfEccentricity, double targetEccentricity) =>
+            selfEccentricity < AnalyticMaxEccentricity && targetEccentricity < AnalyticMaxEccentricity;
 
         /// <summary>
         /// 两条半径向量在**同一轨道面内**的夹角（度）= 需要收掉的相位差（取 0~180 的短弧）。

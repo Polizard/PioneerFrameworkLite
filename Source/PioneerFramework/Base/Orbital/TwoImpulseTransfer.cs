@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System;
 using MechJebLib.Functions;
 using MechJebLib.Lambert;

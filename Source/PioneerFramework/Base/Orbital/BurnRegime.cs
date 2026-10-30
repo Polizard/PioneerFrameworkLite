@@ -6,6 +6,8 @@ namespace PioneerFramework
     /// **燃烧区制判据**（《MechJeb参考大修计划》B2.1；设计稿 §7.3/§7.5）。
     ///
     /// 一句话：**这次燃烧能不能当"瞬间点一下"来算**。
+    /// ⚠ 2026-10-27：**公式与阈值只有一份**（`ManeuverRegime` 是唯一权威）；本 struct 只是它的
+    /// 形状封装（`theta/alpha/burnSeconds + Describe()`），保留 MJ 侧测试的接口。
     /// 判据是**燃烧扫过角** `Θ = ω·t_b`（燃烧期间轨道转过的角度）：
     /// · `Θ = ω·Δv/a_t`（本文件用的形式）；
     /// · 等价写法 `Θ = (Δv/v_c)·(g_local/a_t)`（计划稿 B2.1 的形式）——
@@ -20,8 +22,8 @@ namespace PioneerFramework
     /// </summary>
     public readonly struct BurnRegime
     {
-        /// <summary>`Θ ≲ 0.2` 算准脉冲（设计稿 §7.3/§7.5 的门）。</summary>
-        public const double QuasiImpulseThetaMax = 0.2;
+        /// <summary>`Θ ≲ 0.2` 算准脉冲（设计稿 §7.3/§7.5 的门；与 `ManeuverRegime.ThetaThreshold` 同一常量）。</summary>
+        public const double QuasiImpulseThetaMax = ManeuverRegime.ThetaThreshold;
 
         /// <summary>燃烧扫过角（rad）——燃烧期间轨道转过的角度。</summary>
         public readonly double theta;
@@ -54,11 +56,10 @@ namespace PioneerFramework
             if (!(radius > 0.0) || !(mu > 0.0) || !(aThrust > 0.0) || dv < 0.0)
                 return new BurnRegime(double.NaN, double.NaN, double.NaN);
 
-            double omega = Math.Sqrt(mu / (radius * radius * radius));
+            double vc = Math.Sqrt(mu / radius);
             double gLocal = mu / (radius * radius);
-            double burnSeconds = dv / aThrust;
-
-            return new BurnRegime(omega * burnSeconds, aThrust / gLocal, burnSeconds);
+            ManeuverRegime.Classify(dv, vc, gLocal, aThrust, out double theta, out double alpha);
+            return new BurnRegime(theta, alpha, dv / aThrust);
         }
 
         public string Describe() =>

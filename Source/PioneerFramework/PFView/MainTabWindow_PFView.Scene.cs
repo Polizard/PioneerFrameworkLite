@@ -463,25 +463,12 @@ namespace PioneerFramework
                 matBlock.SetColor("_Color", new Color(0.3f, 0.9f, 1.0f, 0.9f));
                 Graphics.DrawMesh(quadMesh, mtx, renderMat, SceneLayer, null, 0, matBlock);
 
-                // 远距离也要能看出朝向：指示棒长度随标记尺寸同比（= 屏幕尺寸恒定）。
-                // 有 Map 的编队不画（同上：黄棒只留给无 Map 的抽象标记）。
-                if (!GroupHasMapEntity(g, spaceGame))
-                    DrawHeadingBar(g, spaceGame, vp, s * 1.5f);
+                // 2026-10-30（用户令"直接删"）：远距标记不再配"黄色主推方向棒"。
+                // 主推轴读数仍在姿态球（T 记号）与左栏文字里 —— 那根棒只剩重复信息 + 穿过船体的观感问题。
             }
 
         }
 
-        /// <summary>本编队是否含"有 Map 的实体"（空间站 / 舱内图火箭）。用于决定远距标记要不要配黄棒。</summary>
-        private static bool GroupHasMapEntity(SpaceEntityGroup group, SpaceGameComp spaceGame)
-        {
-            foreach (int eid in group.GetEntityIds())
-            {
-                var e = spaceGame.GetEntityById(eid);
-                if (e != null && e.MapId >= 0)
-                    return true;
-            }
-            return false;
-        }
 
         // ═══════════════════════════════════════════════════════════════════
         //  [B4 排查读数] "别的航天器整体位置在抖"（2026-10-11，用户实测报回）
@@ -525,7 +512,6 @@ namespace PioneerFramework
             // 三者都消费同一个 rotation）毫无关系。改用真姿态后，船怎么转、画面就怎么转。
             Quaternion gRot = viewFrameRot * group.CurrentOrbit.rotation.ToQuaternion();   // 姿态同过参考系（固连档下"相对地面"的姿态）
             float scale = DebugScaleParts ? 200f : 1f;
-            bool drewRelief = false;
             // 2026-10-19 蒙皮：阵营 tint 每帧算一次（同组所有实体共用）；蒙皮不可用 ⇒ null = 旧常量色。
             Color? skinTint = ShipSkinSettings.Enabled && ShipSkinAssets.Available
                 ? ShipSkinPalette.PartTint(group.FactionId)
@@ -544,54 +530,28 @@ namespace PioneerFramework
                 // 有 Map 的实体（空间站/舱内图火箭）：画"地图挤出来的浮雕"（2026-10-02）；
                 // 无图 / 图已封存 / 房间数据未追平 / 全图无建造痕迹 ⇒ 落回下面的 part 盒体。
                 if (entity.MapId >= 0 && TryDrawMapRelief(entity, eVp, gRot, scale))
-                {
-                    drewRelief = true;
                     continue;
-                }
 
                 // 单 part 化：无设计数据分支，统一按运行时 Parts 绘制盒体（§5.4 C4）
+                // 2026-10-30：有壳的火箭先画壳，只把"露出来的喷管"作为零件盒补画（其余件被壳包住）。
                 if (entity.Parts.Count > 0)
-                    DrawRuntimeParts(entity, eVp, gRot, scale, skinTint);
+                {
+                    if (RocketHullMesh.TryGet(entity, out var hull))
+                    {
+                        DrawRuntimeHull(hull, eVp, gRot, scale, skinTint);
+                        DrawRuntimeParts(entity, eVp, gRot, scale, skinTint, hull.coveredPartIds);
+                    }
+                    else
+                    {
+                        DrawRuntimeParts(entity, eVp, gRot, scale, skinTint);
+                    }
+                }
             }
 
-            // 有 Map 的编队不画黄棒（用户 2026-10-02："把那个黄色的指示取消掉"）：船体本身的形体
-            // 就是朝向读数，那根棒是旧"雪糕"的残留；主推轴读数仍在姿态球（T 记号）与左栏文字里。
-            if (drewRelief)
-                return;
-
-            // 朝向指示棒长：以本组包围盒对角线的 0.7 倍为准（"放大部件"调试模式下同比放大），
-            // 下限 3 view 单位 = 30m —— 棒子要能从船体里伸出来才看得见朝向
-            float hull = 0f;
-            foreach (int eid in group.GetEntityIds())
-            {
-                var e = spaceGame.GetEntityById(eid);
-                if (e != null) hull = Mathf.Max(hull, (float)e.BoundsSize.magnitude);
-            }
-            DrawHeadingBar(group, spaceGame, AbsToView(groupPosAbs, origin),
-                Mathf.Max(hull * MetersToView * 0.7f, 3f) * scale);
-        }
-
-        /// <summary>
-        /// 朝向指示棒（黄棒）：从编队中心沿**主推轴**画一根细棒。
-        /// 主推轴 = 点火会把本编队推向哪边，取自 `SpaceGameComp.GetMainThrustAxisSystem`（与 burn / SAS
-        /// 自动对准 / 主推方向同一出处），所以画出来的方向就是物理会执行的方向。
-        /// 无引擎（无推力）/ 全向类（无主推轴）时不画 —— 不摆一根物理上不存在的箭头。
-        ///
-        /// ⚠ 只给**无 Map 编队**用（抽象标记需要一个朝向读数）。**有 Map 的编队不画**
-        /// （用户 2026-10-02："把那个黄色的指示取消掉"）：浮雕/盒子本身就是船体，朝向看形体；
-        /// 主推轴读数仍在姿态球（T 记号）与左栏文字里，没有丢信息。
-        /// </summary>
-        private static void DrawHeadingBar(SpaceEntityGroup group, SpaceGameComp spaceGame, Vector3 centerVp, float barLen)
-        {
-            if (spaceGame == null || barLen <= 0.01f) return;
-
-            DVector3 axisSystem = spaceGame.GetMainThrustAxisSystem(group);
-            if (axisSystem.sqrMagnitude < 1e-12) return;
-
-            // AbsToView 只有平移 + 正等比缩放 ⇒ 方向在视图系与世界系同向，直接当视图方向用。
-            // 本函数只管**取数据**（主推轴）；画（长细比/朝向四元数/材质层）在 `ShipModelRenderer.DrawHeadingBar`（D-1）。
-            ShipModelRenderer.DrawHeadingBar(centerVp, (Vector3)axisSystem.normalized, barLen,
-                cubeMesh, renderMat, matBlock, SceneLayer);
+            // 2026-10-30（用户令"直接删"）：这里原先给**无图编队**画"黄色主推方向棒"。
+            // 删掉的理由不是缺信息（姿态球 T 记号 + 左栏"主推轴（T 记号）"文字仍在），
+            // 而是那根棒会**穿过船体**（近距下限 30 m）、且对"船体本身已经是朝向读数"的模型是重复信息。
+            // 详情与判据：`DesignNotes/交接-20261030-问题登记.md` §3。
         }
 
         /// <summary>
@@ -600,7 +560,7 @@ namespace PioneerFramework
         /// —— 本函数不表达任何"怎么画"，只表达"PFView 用哪套资源画"。
         /// </summary>
         private static void DrawRuntimeParts(SpaceEntity entity, Vector3 eVp, Quaternion gRot, float scale,
-            Color? skinTint)
+            Color? skinTint, HashSet<int>? skipPartIds = null)
         {
             // 2026-10-19 蒙皮：可用且开 = PF_ShipSkin + 阵营 tint；否则逐字回到旧路径（Toon 优先/单色）。
             // 蒙皮用**硬法线**立方体（三平面投影/几何边亮棱需要面法线恒定）；旧路径仍用平滑法线 cubeMesh。
@@ -613,8 +573,23 @@ namespace PioneerFramework
                 Log.Message("[PFView·蒙皮] 首次用于无 Map 编队：贴图=" + (ShipSkinAssets.TextureLoaded ? "OK" : "缺失→白图")
                     + "｜" + ShipSkinAssets.StatusText);
             }
+            Color? tint = skin == null ? null : skinTint;
             ShipModelRenderer.DrawParts(entity, eVp, gRot, scale, mesh, mat, matBlock,
-                skin == null && ToonMat != null, MetersToView, SceneLayer, skin == null ? null : skinTint);
+                skin == null && ToonMat != null, MetersToView, SceneLayer, tint, skipPartIds);
+        }
+
+        /// <summary>
+        /// **画火箭外壳**（2026-10-30）：材质/网格选择与 `DrawRuntimeParts` 同口径（蒙皮优先），
+        /// 只是把"三批颜色 + 米制网格"交给 `ShipModelRenderer.DrawHull`。
+        /// </summary>
+        private static void DrawRuntimeHull(RocketHullGeometry hull, Vector3 eVp, Quaternion gRot, float scale,
+            Color? skinTint)
+        {
+            Material? skin = ShipSkinSettings.Enabled ? ShipSkinAssets.Material : null;
+            Material mat = skin ?? (ToonMat ?? renderMat);
+            Color hullColor = skinTint ?? ShipModelRenderer.PartColor;
+            ShipModelRenderer.DrawHull(hull, eVp, gRot, scale, mat, matBlock, MetersToView, SceneLayer,
+                skin == null && ToonMat != null, hullColor);
         }
 
         private void DrawProjectiles(DVector3 origin, double tick)

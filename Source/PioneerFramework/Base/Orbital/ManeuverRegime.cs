@@ -21,6 +21,7 @@ namespace PioneerFramework
     /// 与现配置 Θ≈0.18 rad（10.4°）分别在阈值两侧两个数量级，**阈值不在敏感带上**。
     ///
     /// ⚠ 本类**只判区制，不算 Δv**（Δv 由计划层给）；也**不管态**（无状态、纯函数 ⇒ 每步都能调）。
+    /// ⚠ 2026-10-27：**本类是区制公式与阈值的唯一权威**；`BurnRegime`（MJ 测试用的 struct 形状）转发到这里。
     /// </summary>
     public static class ManeuverRegime
     {

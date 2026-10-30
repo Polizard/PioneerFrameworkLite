@@ -7,8 +7,9 @@ namespace PioneerFramework.Tests
 {
     /// <summary>
     /// **M1 第一刀 · 规格 → part 列表**（2026-10-17）：
-    /// 舱盒恒第一件（地图载体、原点、质量公式不变）；追加件按 spec 顺序沿 −Y 堆叠、不挂图；
-    /// 目录命中用 def 几何/质量，缺失走类别兜底；数量有上限。
+    /// 舱盒恒第一件（地图载体、原点、质量公式不变）；追加件按 spec 顺序沿 **−Z** 堆叠（2026-10-28 轴改）、不挂图；
+    /// 目录命中用 def 几何/质量，缺失走类别兜底；数量有上限；并联站同层（2026-10-29 见
+    /// `RocketAssemblerParallelTests`）。
     /// </summary>
     public class DesignPartAssemblerTests
     {
@@ -49,12 +50,13 @@ namespace PioneerFramework.Tests
             Assert.Same(cabin, parts[0]);
 
             // 兜底几何：thruster 2×4×2（stack 4）、tank 2×6×2（stack 6）
-            // 舱盒底面 y=-25 ⇒ 首件中心 -27；储罐中心依次 -32、-38
-            Assert.Equal(-27.0, parts[1].positionShip.y, 9);
-            Assert.Equal(-32.0, parts[2].positionShip.y, 9);
-            Assert.Equal(-38.0, parts[3].positionShip.y, 9);
-            Assert.Equal(new DVector3(2, 4, 2), parts[1].boundsSizeShip);
-            Assert.Equal(new DVector3(2, 6, 2), parts[2].boundsSizeShip);
+            // 2026-10-28 轴改（"横着飞的，改吧"）：堆叠方向与长度落在 **Z**（机头 +Z），
+            // 舱盒底面 z=-25 ⇒ 首件中心 -27；储罐中心依次 -32、-38。
+            Assert.Equal(-27.0, parts[1].positionShip.z, 9);
+            Assert.Equal(-32.0, parts[2].positionShip.z, 9);
+            Assert.Equal(-38.0, parts[3].positionShip.z, 9);
+            Assert.Equal(new DVector3(2, 2, 4), parts[1].boundsSizeShip);
+            Assert.Equal(new DVector3(2, 2, 6), parts[2].boundsSizeShip);
 
             // 追加件不挂图；partId 连续
             for (int i = 1; i < parts.Count; i++)
@@ -87,8 +89,9 @@ namespace PioneerFramework.Tests
 
             Assert.Equal(2, parts.Count);
             Assert.Equal(1234.0, parts[1].Mass, 3);
-            Assert.Equal(new DVector3(3, 5, 7), parts[1].boundsSizeShip);
-            Assert.Equal(-25.0 - 2.5, parts[1].positionShip.y, 9);   // 舱盒厚 50 ⇒ 底面 -25，stack 5 中心再 -2.5
+            // 2026-10-28 轴改：目录的 boundsY(5) = 堆叠长度 ⇒ 落到 Z；横向 X=3、Y=7
+            Assert.Equal(new DVector3(3, 7, 5), parts[1].boundsSizeShip);
+            Assert.Equal(-25.0 - 2.5, parts[1].positionShip.z, 9);   // 舱盒厚 50 ⇒ 底面 -25，stack 5 中心再 -2.5
             // B6 习惯默认：多 part 船 ⇒ 舱盒封闭 ⇒ 100kg 占位（不是 1kg 地板）
             Assert.Equal(SpacePart.SealedPlaceholderMassKg, cabin.Mass, 3);
         }
@@ -103,7 +106,7 @@ namespace PioneerFramework.Tests
             Assert.Same(cabin, parts[0]);
             Assert.True(cabin.isSealed);
             Assert.Equal(DesignPartAssembler.MaxTotalParts, parts[^1].partId);
-            Assert.True(parts[^1].positionShip.y < -500.0);
+            Assert.True(parts[^1].positionShip.z < -500.0);   // 2026-10-28 轴改：堆叠在 −Z
         }
 
         [Fact]
@@ -151,6 +154,46 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
+        public void BuildParts_CatalogCylinderShape_IsCopiedToPart()
+        {
+            // 2026-10-29：目录里 tank/thruster 标 <shape>Cylinder</shape> ⇒ 装配器把形状抄到 part
+            // （惯量/渲染/碰撞都按圆柱走）。圆柱轴向 = 体 Z ⇒ 高 = 堆叠长度（boundsY 换轴后的 Z）。
+            var def = new ShipPartDef
+            {
+                defName = "PF_Test_CylTank", category = "tank", massKg = 2000f,
+                boundsX = 4f, boundsY = 40f, boundsZ = 4f, stackLengthMeters = 40f,
+                tankCapacityKg = 400000f, tankInitialKg = 400000f,
+                shape = InertiaTensor.Shape.Cylinder,
+            };
+            var parts = DesignPartAssembler.BuildParts(DebugSpec(Entry("PF_Test_CylTank", "tank", 1)),
+                10, 10, out _, name => name == def.defName ? def : null,
+                includeUnknownDefs: false, includeCabin: false);
+
+            var part = Assert.Single(parts);
+            Assert.Equal(InertiaTensor.Shape.Cylinder, part.shape);
+            Assert.Equal(new DVector3(4, 4, 40), part.boundsSizeShip);   // 直径在 X/Y、高在 Z
+            Assert.Equal(-20.0, part.positionShip.z, 6);
+        }
+
+        [Fact]
+        public void Schematic_CarriesCylinderShape_ForRoundDrawing()
+        {
+            var def = new ShipPartDef
+            {
+                defName = "PF_Test_CylEngine", category = "thruster", massKg = 500f,
+                boundsX = 2f, boundsY = 3f, boundsZ = 2f, stackLengthMeters = 3f,
+                exhaustVelocity = 3000f, massFlowRate = 200f,
+                shape = InertiaTensor.Shape.Cylinder,
+            };
+            var s = RocketSchematicBuilder.Build(DebugSpec(Entry("PF_Test_CylEngine", "thruster", 1)),
+                name => name == def.defName ? def : null);
+
+            var p = Assert.Single(s.pieces);
+            Assert.Equal(InertiaTensor.Shape.Cylinder, p.shape);         // 侧视图据此画圆头
+            Assert.Equal(3f, p.heightM, 6);
+        }
+
+        [Fact]
         public void BuildParts_ExplicitPose_Shape_Stage_AndParent()
         {
             DQuaternion rot = DQuaternion.AngleAxis(System.Math.PI / 2.0, DVector3.up);
@@ -178,6 +221,86 @@ namespace PioneerFramework.Tests
             Assert.Equal(InertiaTensor.Shape.Cylinder, append.shape);
             Assert.Equal(2, append.stageId);
             Assert.Equal(parts[1].partId, append.parentId);
+        }
+
+        // ── 级间空隙（2026-10-30 用户方案：级边界留空当 ⇒ 抛级瞬间两组不接触）────
+
+        private static DesignPartSpec Staged(string defName, string category, int stage, int qty = 1)
+            => new() { defName = defName, category = category, quantity = qty, stageId = stage };
+
+        [Fact]
+        public void StageGap_LeavesClearanceAtStageBoundary()
+        {
+            // 无舱盒、从 z=0 起堆：两件 tank 兜底 2×6×2（stack 6）⇒ 无缝隙时中心 -3 / -9
+            var spec = DebugSpec(
+                Staged("PF_ShipPart_Tank_Debug", "tank", 0),
+                Staged("PF_ShipPart_Tank_Debug", "tank", 1));
+
+            var noGap = DesignPartAssembler.BuildParts(spec, 10, 10, out _,
+                _ => null, includeCabin: false);
+            var gap = DesignPartAssembler.BuildParts(spec, 10, 10, out _,
+                _ => null, includeCabin: false, stageGapMeters: 0.3f);
+
+            Assert.Equal(-3.0, noGap[0].positionShip.z, 9);
+            Assert.Equal(-9.0, noGap[1].positionShip.z, 9);
+            Assert.Equal(-3.0, gap[0].positionShip.z, 9);
+            // zCursor 是 float（历史口径）⇒ 0.3 落成 0.30000019；按 float 精度判，别用 9 位
+            Assert.Equal(-9.3, gap[1].positionShip.z, 5);
+            Assert.Equal(0.3, noGap[1].positionShip.z - gap[1].positionShip.z, 5);
+
+            // 表面间距（箭尾方向）= 3 + 3 + 0.3
+            double surface = (gap[0].positionShip.z - gap[0].boundsSizeShip.z * 0.5)
+                           - (gap[1].positionShip.z + gap[1].boundsSizeShip.z * 0.5);
+            Assert.Equal(0.3, surface, 5);
+        }
+
+        [Fact]
+        public void StageGap_SameStage_IsNoOp()
+        {
+            var spec = DebugSpec(
+                Staged("PF_ShipPart_Tank_Debug", "tank", 0),
+                Staged("PF_ShipPart_Tank_Debug", "tank", 0));
+            var noGap = DesignPartAssembler.BuildParts(spec, 10, 10, out _,
+                _ => null, includeCabin: false);
+            var gap = DesignPartAssembler.BuildParts(spec, 10, 10, out _,
+                _ => null, includeCabin: false, stageGapMeters: 0.3f);
+
+            Assert.Equal(noGap[1].positionShip.z, gap[1].positionShip.z, 9);
+        }
+
+        [Fact]
+        public void StageGap_ExplicitPose_IsNotShifted()
+        {
+            var child = new DesignPartSpec
+            {
+                defName = "PF_ShipPart_Tank_Debug", category = "tank", quantity = 1,
+                useExplicitPose = true, localPosition = new DVector3(5, 6, 7), stageId = 2,
+            };
+            var parts = DesignPartAssembler.BuildParts(
+                DebugSpec(Staged("PF_ShipPart_Tank_Debug", "tank", 0), child),
+                10, 10, out _, _ => null, includeCabin: false, stageGapMeters: 0.3f);
+
+            Assert.Equal(new DVector3(5, 6, 7), parts[1].positionShip);   // 显式位姿由调用方权威
+        }
+
+        [Fact]
+        public void Schematic_IncludesStageGap()
+        {
+            var spec = DebugSpec(
+                Staged("PF_ShipPart_Tank_Debug", "tank", 0),
+                Staged("PF_ShipPart_Thruster_Debug", "thruster", 1));
+
+            var noGap = RocketSchematicBuilder.Build(spec, _ => null);
+            var gap = RocketSchematicBuilder.Build(spec, _ => null, stageGapMeters: 0.3f);
+
+            Assert.Equal(0f, noGap.stageGapM, 6);
+            Assert.Equal(0.3f, gap.stageGapM, 6);
+            Assert.Equal(noGap.totalHeightM + 0.3f, gap.totalHeightM, 5);
+
+            // 单级设计：空隙不生效
+            var one = DebugSpec(Staged("PF_ShipPart_Tank_Debug", "tank", 0, 2));
+            Assert.Equal(RocketSchematicBuilder.Build(one, _ => null).totalHeightM,
+                         RocketSchematicBuilder.Build(one, _ => null, stageGapMeters: 0.3f).totalHeightM, 5);
         }
     }
 }

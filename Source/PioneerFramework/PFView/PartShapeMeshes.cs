@@ -6,7 +6,9 @@ namespace PioneerFramework
     /// <summary>
     /// **B3b：按形状取渲染源网格**（2026-10-17）。单位形状都落在 [-0.5,0.5]³，
     /// 由 `PartMatrix` 的 bounds 缩放成实际尺寸；Box 直接用调用方给的单位立方体，
-    /// Cylinder（轴 = Y，X/Z = 直径）与 Sphere（X/Y/Z = 直径）在首次使用时生成并缓存。
+    /// **Cylinder（轴 = Z，X/Y = 直径）** 与 Sphere（X/Y/Z = 直径）在首次使用时生成并缓存。
+    /// 圆柱轴向 = 体 Z（2026-10-29 从 Y 改过来）：船体轴向是 Z（机头 +Z、零件沿 −Z 堆），
+    /// 目录里的"长度"落在 Z 上 ⇒ 工质罐/引擎标 `Cylinder` 后才是"立着的罐"。
     ///
     /// 只被游戏内渲染调用（`Mesh` 是引擎对象）；headless 不走这里。
     /// </summary>
@@ -53,6 +55,16 @@ namespace PioneerFramework
             // 端盖（两个圆心 + 各自一圈；法线 ±Y）
             AddCap(verts, normals, uvs, tris, -0.5f, segments, -1f);
             AddCap(verts, normals, uvs, tris, 0.5f, segments, 1f);
+
+            // **交付轴 = 体 Z**（2026-10-29）：上面按"轴 = Y"生成，这里整体绕 X 转 +90°（y↔z）。
+            // 用**旋转**而不是重排分量 ⇒ 绕序/法线朝向不变，三角形索引不用动。
+            for (int i = 0; i < verts.Count; i++)
+            {
+                Vector3 p = verts[i];
+                verts[i] = new Vector3(p.x, -p.z, p.y);
+                Vector3 n = normals[i];
+                normals[i] = new Vector3(n.x, -n.z, n.y);
+            }
 
             var mesh = new Mesh();
             mesh.SetVertices(verts);

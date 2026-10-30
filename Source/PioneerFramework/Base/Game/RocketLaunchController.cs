@@ -26,6 +26,25 @@ namespace PioneerFramework
         public double radialGain;
         public double tanGain;
 
+        /// <summary>预对准跳过点火的次数（2026-10-28 探针：只用来限流日志，不参与判据）。</summary>
+        public int alignSkips;
+
+        /// <summary>
+        /// **本发是否已经点过火**（2026-10-28）：预对准门只作用于"第一次点火之前"。
+        /// 燃烧中若姿态跟不上，交给执行器自己的 25° 锥去"本步不出力"；控制器**不得 EndBurn**
+        /// （实测：转平段指令一甩向切向，门就把油门掐了，冲量停止、船直接掉回来）。
+        /// </summary>
+        public bool ignited;
+
+        // ── **收尾状态机**（2026-10-29 用户裁定 B："一次反转"）──────────────────────────
+        // 纯核无记忆（每步只由状态决定）⇒ 它天生无法"锁死"。收油/锁存放在这里：
+        /// <summary>
+        /// **相位**（2026-10-29 重写）：0=竖直，1=转平，2=滑行（收油）。
+        /// 制导律是"推力程序"，不是"速度跟踪"——相位**有记忆**，才不会在边界上来回切。
+        /// 旧的两套状态机（收油锁存/竖直闩锁/二次修正）已全部删除。
+        /// </summary>
+        public int gphase;
+
         public LaunchGuidanceParams ToParams() => new() {
             rTarget = rTarget,
             tau = tau,
@@ -74,6 +93,8 @@ namespace PioneerFramework
             Scribe_Values.Look(ref progradeSign, "progradeSign", -1.0);
             Scribe_Values.Look(ref radialGain, "radialGain", 0.0);
             Scribe_Values.Look(ref tanGain, "tanGain", 0.0);
+            // 收尾状态机（2026-10-29）
+            Scribe_Values.Look(ref gphase, "gphase", 0);
         }
     }
 
@@ -92,6 +113,13 @@ namespace PioneerFramework
         /// <summary>状态探针间隔（真实 tick）。0 = 关闭探针日志；&gt;0 时每间隔打印全部活动爬升状态。</summary>
         public static int ProbeInterval ;
         private int probeNextTick ;
+
+        /// <summary>
+        /// **发射段的姿态角速度倍率**（2026-10-28 用户裁定）：大惯量火箭在一级燃烧期间靠惯量限速
+        /// 只能维持在 ~24° 偏差（正贴着 25° 点火锥上限，随时可能熄火）。发射段给 3×，
+        /// 出段（到达/失败/失联）立刻复位 1.0 —— 只影响**发射中的这条船**。
+        /// </summary>
+        private const double LaunchAttitudeRateScale = 3.0;
 
         /// <summary>爬升状态探针（测试面板/探针日志共用，不序列化）。</summary>
         public struct LaunchProbe
@@ -163,16 +191,16 @@ namespace PioneerFramework
                 return new LaunchProbe { groupId = st.groupId, r = double.NaN, deltaR = double.NaN, vMag = double.NaN, dvMag = double.NaN, fuelKg = double.NaN };
 
             var prms = st.ToParams();
-            double r = g.CurrentOrbit.positionSystem.magnitude;
-            var step = LaunchGuidanceCore.ComputeStep(g.CurrentOrbit.positionSystem.v, GuidanceVelocity(g), sg.GetBodyGM(st.bodyId), prms);
+            double r = g.positionBody.magnitude;   // 体心系（2026-10-27）
+            var step = LaunchGuidanceCore.ComputeStep(g.positionBody, GuidanceVelocity(g), sg.GetBodyGM(st.bodyId), prms, st.gphase);
             var src = sg.GetGroupPropulsionSource(g);
             return new LaunchProbe
             {
                 groupId = st.groupId,
                 r = r,
                 deltaR = prms.rTarget - r,
-                vMag = g.CurrentOrbit.velocitySystem.magnitude,
-                vRad = DVector3.Dot(g.CurrentOrbit.velocitySystem.v, g.CurrentOrbit.positionSystem.normalized.v),
+                vMag = g.velocityBody.magnitude,
+                vRad = DVector3.Dot(g.velocityBody, g.positionBody.normalized),
                 dvMag = step.dv.magnitude,
                 fuelKg = src != null ? src.TotalPropellantMass : 0.0,
                 burning = g.HasActiveBurn,
@@ -213,7 +241,7 @@ namespace PioneerFramework
             var body = mgr?.GetBodyById(bodyId);
             if (mgr == null || body == null) return;
 
-            double altitude = group.CurrentOrbit.positionSystem.magnitude - body.radius;
+            double altitude = group.positionBody.magnitude - body.radius;
             if (!body.Atmosphere.IsAerodynamicallySignificant(altitude, body.atmosphereRestoreScaleHeights))
                 return;
 
@@ -255,7 +283,7 @@ namespace PioneerFramework
         /// ⚠ **只补速度、不外推位置**：位置外推（`pos + vel·dt`）在大 dt 下会冲过头（台架实测：掉回地面）。
         /// </summary>
         private static DVector3 GuidanceVelocity(SpaceEntityGroup group)
-            => group.CurrentOrbit.velocitySystem.v + group.pendingImpulse;
+            => group.velocityBody + group.pendingImpulse;   // 体心系（2026-10-27）
 
         /// <summary>
         /// 本步"气动不可忽略"判定（[A6+]，2026-10-06）：**同一处**给闩锁恢复与顺气流指向用
@@ -266,7 +294,7 @@ namespace PioneerFramework
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             var body = mgr?.GetBodyById(st.bodyId);
             if (body == null) return false;
-            double altitude = group.CurrentOrbit.positionSystem.magnitude - body.radius;
+            double altitude = group.positionBody.magnitude - body.radius;
             return body.Atmosphere.IsAerodynamicallySignificant(altitude, body.atmosphereRestoreScaleHeights);
         }
 
@@ -274,7 +302,7 @@ namespace PioneerFramework
         {
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             var body = mgr?.GetBodyById(st.bodyId);
-            return (group.CurrentOrbit.positionSystem.magnitude - (body?.radius ?? 0.0)) / 1000.0;
+            return (group.positionBody.magnitude - (body?.radius ?? 0.0)) / 1000.0;
         }
 
         /// <summary>
@@ -289,7 +317,7 @@ namespace PioneerFramework
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             var body = mgr?.GetBodyById(st.bodyId);
             if (body == null) return false;
-            double r = group.CurrentOrbit.positionSystem.magnitude;
+            double r = group.positionBody.magnitude;
             if (!(r < body.radius)) return false;
 
             group.exemptPlanetCollision = false;
@@ -331,6 +359,7 @@ namespace PioneerFramework
                 if (group == null || !group.IsActive)
                 {
                     // group 已销毁（坠毁/手动删）→ 结算 + 移除
+                    if (group != null) group.attitudeRateScale = 1.0;
                     if (group == null)
                         AddLog(Find.TickManager.TicksGame, st.groupId, "Destroyed", "群组不存在（已销毁/未注册）");
                     else
@@ -345,18 +374,56 @@ namespace PioneerFramework
                 if (!inAir) TryRestoreFullGravityField(group, st);
                 group.aeroAlignToAirflow = inAir;
 
+                // 发射段：姿态角速度 3×（出段复位）——大惯量火箭才跟得上点火方向
+                group.attitudeRateScale = LaunchAttitudeRateScale;
+
                 // [A6+] 失败退出：钻进地表以下 = 爬升失败（撤豁免/撤指向，交回撞击判据）；否则是"僵尸态"
                 if (TryHandleFailedAscent(group, st))
                 {
+                    group.attitudeRateScale = 1.0;
                     activeLaunches.RemoveAt(i);
                     continue;
                 }
 
                 // 火箭全程非圆轨：直接读 CurrentOrbit（物理步开始前 pendingImpulse 已施加）
                 LaunchGuidanceParams prms = st.ToParams();
+
+                // **天体自转**给制导：竖直段的"速度到"要按**地面相对速度**判（2026-10-29）。
+                // 用惯性速度的话，地球赤道自转 523 m/s > vAscent(500) ⇒ 低纬度一出生就"速度到"⇒ 摔。
+                var mgrNow = Current.Game?.GetComponent<CelestialBodyManager>();
+                if (mgrNow != null) prms.planetOmega = Launch.GetSurfaceState.RotationOmega(mgrNow, st.bodyId);
+
+                // **本步的可用加速度与步长**（MJ 口径：制导输出"油门 × 可用加速度 × dt"，
+                // 不再输出"速度目标"）。质量 = 零件干重 + 工质；推力 = Σ 网络推力。
+                var tsmNow = Current.Game?.GetComponent<TimeScaleManager>();
+                double dtNow = SpaceGameComp.UPDATE_INTERVAL_TICKS * (tsmNow != null ? tsmNow.PhysicsSpeedMultiplier : 1f);
+                var srcNow = spaceGame.GetGroupPropulsionSource(group);
+                double thrustNow = 0.0;
+                if (srcNow != null)
+                {
+                    for (int n = 0; n < srcNow.Networks.Count; n++) thrustNow += srcNow.Networks[n].Thrust;
+                }
+                double massNow = srcNow != null ? srcNow.TotalPropellantMass : 0.0;
+                foreach (int eidNow in group.GetEntityIds())
+                {
+                    var eNow = spaceGame.GetEntityById(eidNow);
+                    if (eNow != null) massNow += eNow.TotalMass;
+                }
+                double aAvailNow = massNow > 1.0 ? thrustNow / massNow : 0.0;
+
+                // **相位机**（2026-10-29 重写）：相位由控制器持有（有记忆），纯核只算"相位内"的连续量。
+                // 旧的闩锁/收油带/二次修正全部作废——它们是"速度 P 控制器"的补丁，见 `LaunchGuidanceCore` 的说明。
                 var step = LaunchGuidanceCore.ComputeStep(
-                    group.CurrentOrbit.positionSystem.v, GuidanceVelocity(group),
-                    spaceGame.GetBodyGM(st.bodyId), prms);
+                    group.positionBody, GuidanceVelocity(group),
+                    spaceGame.GetBodyGM(st.bodyId), prms, st.gphase, aAvailNow, dtNow);
+                if (step.phase != st.gphase)
+                {
+                    double altTr = group.positionBody.magnitude - prms.planetRadius;
+                    Log.Message($"[RocketLaunch] group={group.GroupId} 相位 {PhaseName(st.gphase)} → {PhaseName(step.phase)}"
+                        + $"：alt={altTr / 1000.0:F1}km r={group.positionBody.magnitude / 1000.0:F0}km"
+                        + $" 油门={step.throttle:F2}");
+                }
+                st.gphase = step.phase;
 
                 if (DebugDetailedLaunch)
                 {
@@ -366,16 +433,32 @@ namespace PioneerFramework
                     Log.Message($"[RocketLaunch] group={group.GroupId} t={Find.TickManager.TicksGame} alt={alt / 1000.0:F0}km r={p.magnitude / 1000.0:F0}km v={group.CurrentOrbit.velocitySystem.magnitude:F1}m/s vRad={vRad:F1} |dv|={step.dv.magnitude:F1} arrived={step.arrived}");
                 }
 
-                if (step.arrived)
+                // 收油 → 滑行 → 到顶切圆化：全部由 `step.phase` 驱动，这里不再有第二套状态机。
+
+                // **越顶即收**（2026-10-28，用户实报"火箭一口气飞走"）：`|Δr| < tolR(10 km) && ||v|−vC| < tolV(10 m/s)` 的**窄窗** —— 上面级猛的时候一步就穿过窗口
+                // （穿越时速度还差近 900 m/s），此后 Δr 变负、制导改去"往回拉"，油一烧完就直接逃逸
+                // （实测：r 5371 → 15,292 km、|v| 4138 → 6900 m/s）。
+                // 现在：**越过目标半径就当到达**，交给 `BeginCircularize` 收尾（它本来就有 Δv 预算）。
+                double rNow = group.positionBody.magnitude;
+                bool crossedTarget = rNow >= prms.rTarget;
+
+                if (step.arrived || crossedTarget)
                 {
+                    if (crossedTarget && !step.arrived)
+                    {
+                        Log.Message($"[RocketLaunch] group={group.GroupId} 越过目标半径（r={rNow / 1000.0:F0}km "
+                            + $">= {prms.rTarget / 1000.0:F0}km，|v|={GuidanceVelocity(group).magnitude:F1} vC={System.Math.Sqrt(spaceGame.GetBodyGM(st.bodyId) / prms.rTarget):F1}）"
+                            + " ⇒ 直接切圆轨化，不再继续加速");
+                    }
                     // 到达：清 burn（防 BeginCircularize 判"正在机动"）→ 解除碰撞豁免/撤指向 → 切给入轨
                     group.EndBurn();
+                    group.attitudeRateScale = 1.0;      // 发射段结束：姿态倍率复位
                     group.exemptPlanetCollision = false;
                     group.aeroAlignToAirflow = false;
                     if (spaceGame.BeginCircularize(group, st.bodyId))
                     {
                         AddLog(Find.TickManager.TicksGame, st.groupId, "Orbited",
-                            $"爬升完成 r={group.CurrentOrbit.positionSystem.magnitude / 1000.0:F0}km → 进入圆轨化");
+                            $"爬升完成 r={group.positionBody.magnitude / 1000.0:F0}km → 进入圆轨化");
                         Log.Message($"[RocketLaunch] group={group.GroupId} 爬升完成，进入圆轨化机动");
                     }
                     else
@@ -388,13 +471,58 @@ namespace PioneerFramework
                     continue;
                 }
 
-                // 未到达：EndBurn 清上一物理步残余 → 全矢量 RCS → StartBurn(dv)
-                if (group.HasActiveBurn)
-                    group.EndBurn();
-                if (step.dv.sqrMagnitude > 0.0)
+                // 未到达：**原地更新指令**（2026-10-27）——不再 EndBurn/StartBurn 每步重开。
+                // 命令加速度 = 本步 Δv / 本物理步时长 ⇒ 执行器只交付制导要求的量，不再全油门冲过头。
+                if (step.throttle <= 0.0)
                 {
-                    group.burnUseRcs = true;
-                    group.StartBurn(step.dv);
+                    if (group.HasActiveBurn) group.EndBurn();   // 滑行（收油/到顶前）：等 `arrived`
+                    continue;
+                }
+
+                if (step.dv.sqrMagnitude <= 0.0)
+                {
+                    if (group.HasActiveBurn) group.EndBurn();
+                }
+                else
+                {
+                    // 2026-10-27：每步交付的 Δv **限幅**到 2%·vC。低 vC 天体（月球 1741）上，
+                    // 整段误差一次交付会把径向推过头 ⇒ 下一步反向修正 ⇒ 振荡/掉高度。
+                    // 2026-10-28：制导已按"油门×可用加速度×dt"给量，限幅只作安全网（正常不会触发）。
+                    double gm = spaceGame.GetBodyGM(st.bodyId);
+                    double vC = gm > 0.0 && prms.rTarget > 0.0 ? System.Math.Sqrt(gm / prms.rTarget) : 0.0;
+                    double dvCap = 0.02 * vC;
+                    DVector3 dv = step.dv;
+                    if (dvCap > 0.0 && dv.magnitude > dvCap)
+                        dv = dv * (dvCap / dv.magnitude);
+
+                    // 2026-10-28（用户裁定 2）：**点火前预对准**。
+                    // 主推轴还没进点火锥（25°）时只转向、不发点火命令：`pendingAlignDir` 会让主线程
+                    // 每步 `RequestAttitude(MainThrust, 该方向)`，船在 coasting 段就把机头转过来；
+                    // 制导这一步不推进燃烧 ⇒ 不会出现"每步点火-熄火"的空转，也不会把方向每步翻。
+                    DVector3 plannedDir = dv.normalized;
+                    DVector3 mainAxis = spaceGame.GetMainThrustAxisSystem(group);
+                    double alignDot = mainAxis.sqrMagnitude > 1e-12
+                        ? DVector3.Dot(mainAxis.normalized, plannedDir)
+                        : 1.0;
+                    if (!st.ignited && alignDot < SpaceGameComp.NoMapIgnitionConeCos)
+                    {
+                        group.pendingAlignDir = plannedDir;
+                        if (group.HasActiveBurn) group.EndBurn();
+                        st.alignSkips++;
+                        if (DebugDetailedLaunch && st.alignSkips % 20 == 1)
+                        {
+                            double deg = System.Math.Acos(System.Math.Max(-1.0, System.Math.Min(1.0, alignDot)))
+                                * 180.0 / System.Math.PI;
+                            Log.Message($"[RocketLaunch] group={group.GroupId} 预对准中：主推轴 vs 计划={deg:F1}°"
+                                + "（点火锥 25°）⇒ 本步只转向、不点火");
+                        }
+                        continue;
+                    }
+                    group.pendingAlignDir = DVector3.zero;
+
+                    double accel = dv.magnitude / System.Math.Max(dtNow, 1e-6);
+                    group.SetBurnCommand(dv, accel);
+                    st.ignited = true;   // 点过火之后，姿态由执行器锥门管，控制器不再掐油门
                 }
             }
         }
@@ -412,5 +540,14 @@ namespace PioneerFramework
                     recentLog = new List<LaunchLogEntry>();
             }
         }
+
+        /// <summary>相位名（日志用）。</summary>
+        private static string PhaseName(int ph) => ph switch
+        {
+            0 => "竖直",
+            1 => "转平",
+            2 => "滑行",
+            _ => ph.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
     }
 }

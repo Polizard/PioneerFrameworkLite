@@ -269,7 +269,7 @@ namespace PioneerFramework
                         out SpaceEntityGroup.PlannedManeuver res, out string why2);
                     Check(ok && res.intentResolved, "C2 执行层入口 TryResolveIntentForBurn 可用",
                         ok ? $"R/T/N {res.radialDV:F2}/{res.tangentialDV:F2}/{res.normalDV:F2}"
-                             + $"｜世界系 Δv=({res.plannedDvSystem.x:F2},{res.plannedDvSystem.y:F2},{res.plannedDvSystem.z:F2})"
+                             + $"｜世界系 Δv=({res.plannedDvBody.x:F2},{res.plannedDvBody.y:F2},{res.plannedDvBody.z:F2})"
                              : why2);
 
                     if (ok)

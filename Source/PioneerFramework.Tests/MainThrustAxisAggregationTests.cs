@@ -31,7 +31,9 @@ namespace PioneerFramework.Tests
             forward.AddComponent(Engine(ThrustAxis.Forward, ve: 3000f, flow: 5f)); // 15 kN
             e.SetParts(new List<SpacePart> { back, forward });
 
-            AssertAxis(new DVector3(0, 0, -1), e.GetMainThrustAxisShip());
+            // 2026-10-27 口径：轴 = 喷口方向，主推轴 = 推力 = −Σ(轴·ve·ṁ)
+            // Back 30 kN（喷口 −Z ⇒ 推力 +Z）压过 Forward 15 kN（喷口 +Z ⇒ 推力 −Z）⇒ +Z
+            AssertAxis(new DVector3(0, 0, 1), e.GetMainThrustAxisShip());
         }
 
         [Fact]
@@ -59,7 +61,8 @@ namespace PioneerFramework.Tests
             forward.isDestroyed = true;
             e.SetParts(new List<SpacePart> { back, forward });
 
-            AssertAxis(new DVector3(0, 0, -1), e.GetMainThrustAxisShip());
+            // 只剩 Back（喷口 −Z ⇒ 推力 +Z）
+            AssertAxis(new DVector3(0, 0, 1), e.GetMainThrustAxisShip());
         }
 
         [Fact]
@@ -71,8 +74,8 @@ namespace PioneerFramework.Tests
             rotated.AddComponent(Engine(ThrustAxis.Back, ve: 3000f, flow: 10f));
             e.SetParts(new List<SpacePart> { rotated });
 
-            // Back = -Z，绕 +Y 转 180° ⇒ +Z。
-            AssertAxis(new DVector3(0, 0, 1), e.GetMainThrustAxisShip());
+            // Back（喷口 −Z）绕 +Y 转 180° ⇒ 喷口 +Z ⇒ 推力 −Z
+            AssertAxis(new DVector3(0, 0, -1), e.GetMainThrustAxisShip());
         }
 
         [Fact]

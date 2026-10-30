@@ -477,11 +477,11 @@ namespace PioneerFramework
         public static Actuator SelectActuator(double dvMagnitude, double aMain, double aRcs,
             bool mainAligned, double rcsWindowSeconds = 15.0)
         {
-            // ⚠ 2026-09-23（B5）：**规则本体已收到 `BurnExecutorPolicy`**（政策件是唯一权威；游戏侧那两处
-            //   内联规则将来也调它）—— 本函数退化为"布尔判决 → 三态枚举"的翻译，行为与收敛前**逐位一致**
-            //   （有等价性测试钉住：`BurnExecutorPolicyTests`）。
+            // ⚠ 2026-10-23（B5）：规则本体在 `BurnExecutorPolicy`（唯一权威）。
+            // ⚠ 2026-10-27：随政策件收敛为"**只按 Δv 窗口**"——大 Δv 一律主网（未对准就等），
+            //   不再有"主推未对准/主网尽 ⇒ RCS 兜底"；`mainAligned` 保留签名但不再参与判决。
             if (!BurnExecutorPolicy.HasAnyActuator(aMain, aRcs)) return Actuator.None;
-            return BurnExecutorPolicy.UseRcs(dvMagnitude, aMain, aRcs, mainAligned, rcsWindowSeconds)
+            return BurnExecutorPolicy.UseRcs(dvMagnitude, aRcs, rcsWindowSeconds)
                 ? Actuator.Rcs
                 : Actuator.Main;
         }

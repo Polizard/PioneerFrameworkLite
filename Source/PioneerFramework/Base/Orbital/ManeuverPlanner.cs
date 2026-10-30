@@ -680,19 +680,30 @@ namespace PioneerFramework
             var currentOrbitPts = currentLocalPts.ConvertAll(p => p + centralOffset);
             var postOrbitPts = postLocalPts.ConvertAll(p => p + centralOffset);
 
-            var maneuver = new SpaceEntityGroup.PlannedManeuver
+            // 2026-10-27：**走唯一入队口** `OrbitAdapter.TryQueuePlan`（此前手工拼 PlannedManeuver
+            // ⇒ 手排计划不带 plannedDvBody，执行侧只能退回分量重分解）。
+            var mgr = CelestialBodyManager.GetCached() ?? Current.Game?.GetComponent<CelestialBodyManager>();
+            if (!OrbitAdapter.TryToOrbitView(group, mgr, physicsTickNow, out OrbitView ov))
             {
-                radialDV = (float)radDV,
-                tangentialDV = (float)tanDV,
-                normalDV = (float)normDV,
-                executeTick = (int)Math.Round(physicsTickNow + maneuverTimeDeltaSeconds),
-                active = true,
-                previewCurrentOrbit = currentOrbitPts.ConvertAll(p => (Vector3)p),
-                previewNodePosition = pos,
-                previewPostOrbit = postOrbitPts.ConvertAll(p => (Vector3)p)
+                Messages.Message("无法获取当前轨道，机动未排入。", MessageTypeDefOf.RejectInput, false);
+                return;
+            }
+            var nodes = new List<PlanNode>
+            {
+                new PlanNode(dV, physicsTickNow + maneuverTimeDeltaSeconds, PlanOwner.Manual),
             };
-
-            spaceGame.QueueGroupManeuver(group.GroupId, maneuver);
+            if (!OrbitAdapter.TryQueuePlan(group, ov, nodes, out string queueReason, out _, null,
+                m =>
+                {
+                    m.previewCurrentOrbit = currentOrbitPts.ConvertAll(p => (Vector3)p);
+                    m.previewNodePosition = pos;
+                    m.previewPostOrbit = postOrbitPts.ConvertAll(p => (Vector3)p);
+                    return m;
+                }))
+            {
+                Messages.Message($"机动未排入：{queueReason}", MessageTypeDefOf.RejectInput, false);
+                return;
+            }
             Log.Message($"[ManeuverPlanner] Confirmed maneuver for Group {group.GroupId}: R={radDV:F1} T={tanDV:F1} N={normDV:F1} dt={maneuverTimeDeltaSeconds:F0}s");
 
             Close();

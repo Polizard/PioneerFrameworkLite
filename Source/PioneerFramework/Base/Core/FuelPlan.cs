@@ -59,6 +59,7 @@ namespace PioneerFramework
                 if (part == null || part.isDestroyed || part.fuelGroupId != groupId) continue;
                 var tank = part.GetComponent<PropellantTankComponentData>();
                 if (tank == null || tank.propellantDefName != PropellantDefName) continue;
+                if (!tank.feedEnabled) continue;   // 阀门关（非活动级）：不进供油计划
                 if (tank.capacityKg <= 0.0) continue;
 
                 int idx = slots.Count;

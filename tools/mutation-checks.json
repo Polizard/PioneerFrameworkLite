@@ -85,8 +85,8 @@
     "name": "M8-part-aabb-cache-invalidation",
     "why": "B1：Add/Remove/Move 必须显式失效 AABB 缓存（headless tick 恒 -1，只靠 tick 会读旧值）",
     "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
-    "oldText": "            aabbDirty = true;\n            cachedAabbTick = -1;\n            NotifyMapLinksChanged();           // 部件集变化可能带来挂图件的增删/移动\n            InvalidateStats();                 // partSetVersion++ 与群组信号失效都在这里",
-    "newText": "            // MUTATION: aabbDirty = true;\n            cachedAabbTick = -1;\n            NotifyMapLinksChanged();           // 部件集变化可能带来挂图件的增删/移动\n            InvalidateStats();                 // partSetVersion++ 与群组信号失效都在这里",
+    "oldText": "            if (!aabbDirty && tick == cachedAabbTick)",
+    "newText": "            if (tick == cachedAabbTick)   // MUTATION: 忽略显式失效",
     "testFilter": "FullyQualifiedName~PartSetMutationTests",
     "expectFail": [
       "PartSetMutationTests.MovePart_InvalidatesAabbCache_EvenWithoutTickManager"
@@ -195,9 +195,9 @@
   {
     "name": "M18-engine-loss-on-destroy",
     "why": "B5：引擎件损毁必须扣掉该台流率；短路 DisableEnginePart ⇒ 引擎流率测试必红",
-    "file": "Source/PioneerFramework/Base/Core/SpaceEntity.cs",
-    "oldText": "            LeakTankPart(part);\n            DisableEnginePart(part);",
-    "newText": "            LeakTankPart(part);\n            // DisableEnginePart(part);   // MUTATION",
+    "file": "Source/PioneerFramework/Components/PartRoleTable.cs",
+    "oldText": "                entity.DisableEnginePart(part, component as EngineComponentData);",
+    "newText": "                _ = component;   // MUTATION: 引擎件损毁不出局",
     "testFilter": "FullyQualifiedName~DamagedPartSemanticsTests",
     "expectFail": [
       "DamagedPartSemanticsTests.DestroyedEngine_RemovesFlowAndRecomputesVe"
@@ -334,6 +334,51 @@
     "testFilter": "FullyQualifiedName~Translated_MatchesFresh",
     "expectFail": [
       "CollisionPlanValidationBench.PartAabb_Translated_MatchesFreshCollect_AndOverlap"
+    ]
+  },
+  {
+    "name": "M31-obb-aabb-pre-reject",
+    "why": "2026-10-21：SAP 的扫掠轴候选必须先过 AABB 粗筛再进 OBB-SAT（AABB 是 OBB 的投影包围盒 ⇒ 结果逐位不变）；撤掉粗筛后「前置排除真的在挡」的计数测试必红",
+    "file": "Source/PioneerFramework/Combat/CombatManager.cs",
+    "oldText": "                if (!AabbOverlap(aBox.Min, aBox.Max, bBox.Min, bBox.Max, out _, out _, out _))\n                {\n                    if (PerfProbe.CollisionStagesEnabled) PerfProbe.ColObbAabbRejects++;\n                    return;\n                }",
+    "newText": "                // MUTATION：撤掉 AABB 前置排除（OBB 分支直接进 SAT）",
+    "testFilter": "FullyQualifiedName~CollisionObbPreRejectTests",
+    "expectFail": [
+      "CollisionObbPreRejectTests.ObbPreReject_Fires_And_AccountsForEverySapCandidate"
+    ]
+  },
+  {
+    "name": "M32-axis-order-lazy-invalidate",
+    "why": "2026-10-21：part 盒重建后必须让轴序失效（轴序惰性化）；把 InvalidateAxisOrders 改成空操作 ⇒ 旧轴序被当新值用，几何变更测试必红",
+    "file": "Source/PioneerFramework/Combat/CombatManager.cs",
+    "oldText": "            public void InvalidateAxisOrders()\n            {\n                orderX = null;\n                orderY = null;\n                orderZ = null;\n            }",
+    "newText": "            public void InvalidateAxisOrders()\n            {\n                // MUTATION：不失效（保留旧轴序）\n            }",
+    "testFilter": "FullyQualifiedName~CollisionAxisOrderLazyTests",
+    "expectFail": [
+      "CollisionAxisOrderLazyTests.EnsureAxisOrders_FollowsGeometryChange_AfterInvalidate"
+    ]
+  },
+  {
+    "name": "M33-analytic-gate-strictness",
+    "why": "2026-10-21：解析门的偏心边界是**严格** <（e=0.005 本身必须退回原搜索）；放宽成 <= ⇒ 边界判据必红",
+    "file": "Source/PioneerFramework/Base/Orbital/RendezvousLadder.cs",
+    "project": "Source/MechJebLibTest/MechJebLibTest.csproj",
+    "oldText": "            selfEccentricity < AnalyticMaxEccentricity && targetEccentricity < AnalyticMaxEccentricity;",
+    "newText": "            selfEccentricity <= AnalyticMaxEccentricity && targetEccentricity <= AnalyticMaxEccentricity;   // MUTATION",
+    "testFilter": "FullyQualifiedName~HohmannGateCorpusTests",
+    "expectFail": [
+      "HohmannGateCorpusTests.AnalyticGate_IsStrictAtEccentricityBoundary"
+    ]
+  },
+  {
+    "name": "M34-repair-destroyed-terminal",
+    "why": "2026-10-21 维修 R2：真摧毁是**终态**（维修 ≠ 复活）；撤掉 Repair 的 isDestroyed 早退 ⇒ 拒绝判据必红",
+    "file": "Source/PioneerFramework/Base/Core/SpacePart.cs",
+    "oldText": "        public float Repair(float amount)\n        {\n            if (isDestroyed || !(amount > 0f)) return 0f;",
+    "newText": "        public float Repair(float amount)\n        {\n            if (!(amount > 0f)) return 0f;   // MUTATION",
+    "testFilter": "FullyQualifiedName~PartRepairTests",
+    "expectFail": [
+      "PartRepairTests.Repair_DestroyedPart_IsRejected"
     ]
   }
 ]

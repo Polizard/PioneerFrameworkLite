@@ -23,14 +23,34 @@ namespace PioneerFramework.Pure.Tests
         [Fact]
         public void Cylinder_And_Sphere_MatchAnalytic()
         {
+            // 2026-10-29：圆柱轴向 = 体 **Z**（旧口径是 Y，见 PartSelfInertia 注释）
             InertiaTensor.CylinderInertia(10.0, 2.0, 3.0, out var ixx, out var iyy, out var izz);
-            Assert.Equal(0.5 * 10.0, iyy, 12);                 // 轴向 = 5
+            Assert.Equal(0.5 * 10.0, izz, 12);                 // 轴向 = 5
             Assert.Equal(10.0 * (3.0 + 9.0) / 12.0, ixx, 12);  // 径向 = 10
-            Assert.Equal(ixx, izz, 12);
+            Assert.Equal(ixx, iyy, 12);
             InertiaTensor.SphereInertia(10.0, 2.0, out var sx, out var sy, out var sz);
             Assert.Equal(0.4 * 10.0, sx, 12);                  // 4
             Assert.Equal(sx, sy, 12);
             Assert.Equal(sx, sz, 12);
+        }
+
+        [Fact]
+        public void Cylinder_DiameterTakesX_HeightTakesZ()
+        {
+            // 圆柱 = 直径(X) + 高(Z)：把 Z 拉长 ⇒ 径向惯量变大、绕 Z 的轴向惯量不变。
+            InertiaTensor.PartSelfInertia(InertiaTensor.Shape.Cylinder, 200.0,
+                3.0, 3.0, 6.0, false, 0, 0, 0, 0, 0, 0,
+                out double ixx, out double iyy, out double izz, out _, out _, out _);
+            double r = 1.5;
+            Assert.Equal(200.0 * (3.0 * r * r + 36.0) / 12.0, ixx, 9);   // 712.5
+            Assert.Equal(ixx, iyy, 12);
+            Assert.Equal(0.5 * 200.0 * r * r, izz, 9);                   // 225（绕 Z = 轴向）
+
+            InertiaTensor.PartSelfInertia(InertiaTensor.Shape.Cylinder, 200.0,
+                3.0, 3.0, 20.0, false, 0, 0, 0, 0, 0, 0,
+                out double ixx2, out _, out double izz2, out _, out _, out _);
+            Assert.True(ixx2 > ixx);
+            Assert.Equal(izz, izz2, 12);
         }
 
         [Fact]
@@ -177,20 +197,22 @@ namespace PioneerFramework.Pure.Tests
         {
             // 与 `DebugShipSpawner.SpawnMultiPartDebugShip` **同一构型**（游戏内验收的锚点读数）：
             // hull 3000 kg 10×6×40 @原点 · left 800 kg 4×4×8 @(8,0,−10) · right 200 kg 圆柱 Ø3×6 @(−6,2,12)。
-            // 期望值由独立实现（特征值求解）算出——不是从被测代码抄的（批 0 的"仪器自证"）。
+            // 期望值由独立实现（numpy 特征值求解，2026-10-29 重算）算出——不是从被测代码抄的。
+            // ⚠ 2026-10-29 圆柱轴向 Y→Z：该件的自惯量从 (712.5, 225, 712.5) 变成 (712.5, 712.5, 225)
+            //   ⇒ Iyy +487.5、Izz −487.5；主轴随之微调（p1/p2/p3 都换了）。
             var r = InertiaTensor.Compose(DebugShipParts());
             Assert.True(r.HasData);
             Assert.Equal(4000.0, r.mass, 9);
             Assert.Equal(1.30, r.comX, 9);
             Assert.Equal(0.10, r.comY, 9);
             Assert.Equal(-1.40, r.comZ, 9);
-            Assert.Equal(583298.47570393, r.p1, 6);
-            Assert.Equal(528211.97490608, r.p2, 6);
-            Assert.Equal(77659.54938999, r.p3, 6);
+            Assert.Equal(583785.24444996, r.p1, 6);
+            Assert.Equal(528200.12158937, r.p2, 6);
+            Assert.Equal(77184.63396067, r.p3, 6);
             Assert.Equal(InertiaTensor.InertiaType.Asymmetric, r.type);
             Assert.Equal(524645.83333333, r.oIxx, 6);
-            Assert.Equal(597758.33333333, r.oIyy, 6);
-            Assert.Equal(96045.83333333, r.oIzz, 6);
+            Assert.Equal(598245.83333333, r.oIyy, 6);
+            Assert.Equal(95558.33333333, r.oIzz, 6);
         }
 
         [Fact]
@@ -199,8 +221,8 @@ namespace PioneerFramework.Pure.Tests
             // 本体系三根轴（滚 z / 偏 y / 俯 x）的转动惯量 = 绕质心张量在体轴下的对角元（独立实现值）。
             var r = InertiaTensor.Compose(DebugShipParts());
             Assert.Equal(516765.83333333, r.MomentAboutBodyAxis(1.0, 0.0, 0.0), 6);
-            Assert.Equal(583158.33333333, r.MomentAboutBodyAxis(0.0, 1.0, 0.0), 6);
-            Assert.Equal(89245.83333333, r.MomentAboutBodyAxis(0.0, 0.0, 1.0), 6);
+            Assert.Equal(583645.83333333, r.MomentAboutBodyAxis(0.0, 1.0, 0.0), 6);
+            Assert.Equal(88758.33333333, r.MomentAboutBodyAxis(0.0, 0.0, 1.0), 6);
             // 主轴方向的投影必须还原主轴惯量（方向矩阵与 p 同一份数据）
             Assert.Equal(r.p1, r.MomentAboutBodyAxis(r.r00, r.r10, r.r20), 6);
             Assert.Equal(r.p2, r.MomentAboutBodyAxis(r.r01, r.r11, r.r21), 6);
@@ -247,7 +269,7 @@ namespace PioneerFramework.Pure.Tests
             var parts = new List<InertiaTensor.PartContribution>();
             AddPart(parts, InertiaTensor.Shape.Box, 3000.0, 10.0, 6.0, 40.0, 0.0, 0.0, 0.0);
             AddPart(parts, InertiaTensor.Shape.Box, 800.0, 4.0, 4.0, 8.0, 8.0, 0.0, -10.0);
-            AddPart(parts, InertiaTensor.Shape.Cylinder, 200.0, 3.0, 6.0, 0.0, -6.0, 2.0, 12.0);
+            AddPart(parts, InertiaTensor.Shape.Cylinder, 200.0, 3.0, 3.0, 6.0, -6.0, 2.0, 12.0);
             return parts;
         }
 

@@ -1704,15 +1704,15 @@ namespace PioneerFramework
             var right = new SpacePart
             {
                 partId = 3, defName = "PF_ShipPart_Cube", positionShip = new DVector3(-6, 2, 12),
-                boundsSizeShip = new DVector3(3, 6, 3), hp = 100f,
-                shape = InertiaTensor.Shape.Cylinder,   // B3b：真渲染样本（直径 3 / 高 6）
+                boundsSizeShip = new DVector3(3, 3, 6), hp = 100f,
+                shape = InertiaTensor.Shape.Cylinder,   // B3b：真渲染样本（直径 3 / 高 6，轴 = Z）
             };
             right.AddComponent(new HullMassComponent { mass = 200f });
-            // 第三件走**圆柱预设**（对称轴 = 体 Y；直径 3 / 高 6）——批 0 形状通道的真样本。
+            // 第三件走**圆柱预设**（2026-10-29 起对称轴 = 体 Z；直径 3 / 高 6）——批 0 形状通道的真样本。
             right.AddComponent(new PartInertiaComponent
             {
                 shape = InertiaTensor.Shape.Cylinder,
-                dims = new DVector3(3, 6, 0)
+                dims = new DVector3(3, 0, 6)
             });
 
             entity.SetParts(new List<SpacePart> { hull, left, right });
@@ -1763,14 +1763,14 @@ namespace PioneerFramework
             var right = new SpacePart
             {
                 partId = 3, defName = "PF_ShipPart_Cube", positionShip = new DVector3(-6, 2, 12),
-                boundsSizeShip = new DVector3(3, 6, 3), hp = 100f,
+                boundsSizeShip = new DVector3(3, 3, 6), hp = 100f,
                 shape = InertiaTensor.Shape.Cylinder,
             };
             right.AddComponent(new HullMassComponent { mass = 200f });
             right.AddComponent(new PartInertiaComponent
             {
                 shape = InertiaTensor.Shape.Cylinder,
-                dims = new DVector3(3, 6, 0)
+                dims = new DVector3(3, 0, 6)
             });
 
             entity.SetParts(new List<SpacePart> { hull, left, right });
@@ -2090,6 +2090,80 @@ namespace PioneerFramework
                 $"目标=G{target.GroupId}(3 件，{targetEntity.AggregatedStats.mass:F0}kg)｜同轨 30° 相位｜" +
                 $"预算 {dvBudget:F0} m/s｜看 [阶梯]/[交会·收尾] 与两者多part 惯量/姿态。");
             Messages.Message($"多part 交会 G{chaser.GroupId} → G{target.GroupId} 已登记（30° 相位）；看日志 [阶梯]。",
+                MessageTypeDefOf.TaskCompletion, false);
+        }
+
+        /// <summary>
+        /// **20 组交会一次布置**（2026-10-21）：同一拍里 20 份阶梯规划 ⇒ 用来验"预热是否到位"。
+        ///
+        /// 为什么需要它：`[阶梯·耗时]` 的 `#序号` 曲线要**多次调用**才看得出首末差；单组交会每 120 s
+        /// 才规划一次，一小时也攒不到 20 个点。这里一次布置 20 对（40 组 / 120 件），全部同拍到期 ⇒
+        /// 一拍就产出 20 份计划，曲线当场可见。
+        ///
+        /// 读数怎么看：
+        /// · 出现 `[阶梯·预取] … 20 份` ⇒ 这 20 份走的是**预取并行**（每份 ~0.3–1 ms 时总耗时 1–3 ms；
+        ///   若仍是 2–3 ms/份 ⇒ 预热没生效，总耗时会到 20–60 ms 量级）；
+        /// · 没出现 `[阶梯·预取]`、而是逐组 `[阶梯·耗时]` ⇒ 走的是内联路径，`#序号` 会连续递增，
+        ///   直接看 #1…#20 是否收敛。
+        /// · 结束后可用「256/多part 演示·清场」一键清掉（本演示全部登记在同一张表里）。
+        /// </summary>
+        public static void SpawnRendezvousBatch20()
+        {
+            var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
+            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (spaceGame == null || mgr == null) return;
+            ForceNormalTime();
+            SpaceGameComp.UseNewRendezvousLaw = true;
+
+            double physicsTick = TimeScaleManager.GetPhysicsTickSafe();
+            double mu = spaceGame.GetBodyGM(EARTH_BODY_ID);
+            DVector3 radial0 = EquatorialRadial(physicsTick);
+
+            const int pairs = 20;
+            int made = 0;
+            double dvMin = double.MaxValue, dvMax = 0.0;
+            for (int i = 0; i < pairs; i++)
+            {
+                // ★ 2026-10-21 改**异半径**：追击方在 r、目标在 r+200 km。
+                //   上一版是严格同轨（同半径只差相位）⇒ `T_syn→∞` 让霍曼搜索立刻放弃，
+                //   走的是最便宜那条路，**验不到解析预判门**。异半径才会出现"窗口在 5 圈外"的几何
+                //   （台架：7500→7700 km、φ=90° ⇒ 窗口 6.21 圈），那才是要跳过的搜索。
+                //   相位差逐对拉开（30°…315°）⇒ 20 组里同时有"可接受窗口"和"远窗口"两种，形成对照。
+                double radius = SpaceConstants.PlanetRadiusMeters + 500_000.0 + i * 30_000.0;
+                double targetRadius = radius + 200_000.0;
+                double vCirc = System.Math.Sqrt(mu / radius);
+                double vCircTarget = System.Math.Sqrt(mu / targetRadius);
+                DVector3 radialChaser = RotateAboutUp(radial0, i * 12.0 * System.Math.PI / 180.0);
+                double phaseGap = (30.0 + i * 15.0) * System.Math.PI / 180.0;
+                DVector3 radialTarget = RotateAboutUp(radialChaser, phaseGap);
+
+                var target = CreateNoMapShipGroup(spaceGame, EARTH_BODY_ID, radialTarget * targetRadius,
+                    ProgradeEquatorialTangent(radialTarget) * vCircTarget, out int targetEid, overThrust: false);
+                var chaser = CreateNoMapShipGroup(spaceGame, EARTH_BODY_ID, radialChaser * radius,
+                    ProgradeEquatorialTangent(radialChaser) * vCirc, out int chaserEid, overThrust: false);
+                if (target == null || chaser == null) continue;
+
+                var targetEntity = spaceGame.GetEntityById(targetEid);
+                var chaserEntity = spaceGame.GetEntityById(chaserEid);
+                if (targetEntity == null || chaserEntity == null) continue;
+                ReplaceWithMultiPart3(targetEntity);
+                ReplaceWithMultiPart3(chaserEntity);
+                TrackStressDemo(target.GroupId);
+                TrackStressDemo(chaser.GroupId);
+
+                chaser.RegisterRendezvousGuidance(target.GroupId, physicsTick, prograde: true, useNetworks: null);
+                chaser.ArmRendezvousGuidance();
+                double dv = spaceGame.GetGroupDeltaV(chaser).remainingDv;
+                if (dv < dvMin) dvMin = dv;
+                if (dv > dvMax) dvMax = dv;
+                made++;
+            }
+
+            Log.Message($"[交会·批量20] 已登记 {made}/{pairs} 对（{made * 2} 组 / {made * 6} 件）｜**异半径**：" +
+                $"追击 {SpaceConstants.PlanetRadiusMeters / 1000.0 + 500:F0}–{SpaceConstants.PlanetRadiusMeters / 1000.0 + 500 + (pairs - 1) * 30:F0} km、" +
+                $"目标再高 200 km｜相位 30°–{30 + (pairs - 1) * 15}°｜预算 {dvMin:F0}–{dvMax:F0} m/s｜" +
+                $"看 [阶梯] 里有没有「跳过霍曼搜索」与 [阶梯·耗时] #序号（20 份同拍到期）。");
+            Messages.Message($"已布置 {made} 组异半径交会（20 份阶梯规划同拍到期）；看日志里「跳过霍曼搜索」。",
                 MessageTypeDefOf.TaskCompletion, false);
         }
 
