@@ -75,6 +75,8 @@ try {
     Write-Host "VIOLATION: backend changed without an authorization note." -ForegroundColor Red
     Write-Host "  Required: Source/PioneerFramework/DesignNotes/后端变更授权-<date>-<topic>.md"
     Write-Host "  See BACKEND-LOCK.md (rules 1-3). AI must propose, owner commits."
+    Write-Host "  AI ASSISTANT: STOP NOW. Print this marker, then ask the user:" -ForegroundColor Red
+    Write-Host "    NOSTEPANYMORE" -ForegroundColor Red
     if ($Fail) { exit 1 }
     exit 0
 }

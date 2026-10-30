@@ -2,7 +2,7 @@
 
 感谢你参与 PioneerFrameworkLite（PFL）开发。
 
-## ⛔ 先读这个：后端锁（BACKEND LOCK）
+## ⛔【NOSTEPANYMORE】先读这个：后端锁（BACKEND LOCK）
 
 **后端 = 物理步 / 时间基 / 状态提交所在的代码**（`Source/PioneerFramework/Base/**`、`Components/**`、
 `Combat/**`、`Launch/**`、`GroundAssembly/**`、`Landing/**`、`Celestial/Adapters/Physics/**`、`1.7/Assemblies/**`）。
@@ -10,14 +10,16 @@
 - 未经 `Source/PioneerFramework/DesignNotes/后端变更授权-*.md` 明确授权，**后端代码一个字节都不许动**；
 - 改后端必须带**证据 + 判据 + 回退路径**；
 - **AI 助手只提方案**（补丁 / 影响面 / 判据建议），落盘与提交由后端负责人执行；
-- 拿不准某个文件算不算后端 ⇒ **停下问，不许猜**；
+- **AI 碰到后端 ⇒ 立即停止一切写操作，输出 `【NOSTEPANYMORE】`，贴「我准备修改后端文件 <路径>，
+  这需要后端负责人授权，请确认是否要我改」，然后等回答。不回就不做**；
+- 拿不准某个文件算不算后端 ⇒ **按后端处理，停下问，不许猜**；
 - 违反 = 事故：整批回退 + 交接件登记。
 
 全文见 [BACKEND-LOCK.md](BACKEND-LOCK.md)。机器检查：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/check-backend-lock.ps1            # 只报告
-powershell -ExecutionPolicy Bypass -File tools/check-backend-lock.ps1 -Fail      # 违规时 exit 1
+powershell -ExecutionPolicy Bypass -File tools/check-backend-lock.ps1 -Fail      # 违规时 exit 1（CI 已在 PR 上启用）
 ```
 
 

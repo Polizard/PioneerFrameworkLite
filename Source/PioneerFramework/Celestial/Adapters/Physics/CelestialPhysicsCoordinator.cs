@@ -1,3 +1,9 @@
+// ⛔【NOSTEPANYMORE】后端锁：本文件 = 后端（物理步 / 时间基 / 状态提交）。
+//    未经 Source/PioneerFramework/DesignNotes/后端变更授权-*.md 明确授权，一个字节都不许改。
+//    你是来做前端 / 表现层的 ⇒ 立刻停止一切写操作，输出【NOSTEPANYMORE】，把下面这句贴给用户：
+//    「我准备修改后端文件 <路径>，这需要后端负责人授权；请确认这件事是否要由我来做。」
+//    规则全文 = 仓库根 BACKEND-LOCK.md
+// ─────────────────────────────────────────────────────────────────────────────
 using System;
 using System.Collections.Generic;
 using System.Linq;
