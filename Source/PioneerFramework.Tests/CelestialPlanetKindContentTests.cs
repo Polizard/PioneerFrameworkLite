@@ -94,8 +94,8 @@ public class CelestialPlanetKindContentTests
         using var content = new Content();
         var values = content.Bodies[id].ToTemplate().Value.Resolve(new(42, id)).Value.Select(c => c.Properties).ToArray();
         var biomes = values.OfType<BiomeGenerationResolvedProperties>().Single().Profile;
-        Assert.Equal(primary, biomes.SelectBiome(0, false).BiomeId);
-        Assert.Equal(secondary, biomes.SelectBiome(0, true).BiomeId);
+        Assert.Equal(primary, CelestialPlanetTerrain.SelectBiome(biomes.Terrain, temperature, 0, 0, 0, 0, .5).BiomeId);
+        Assert.Equal(secondary, CelestialPlanetTerrain.SelectBiome(biomes.Terrain, temperature, 0, 0, 0, .5, .5).BiomeId);
         Assert.Equal(temperature, biomes.Temperature);
         Assert.Equal(0, biomes.Rainfall);
         var maps = values.OfType<MapGenerationResolvedProperties>().Single().Profile;
@@ -176,6 +176,9 @@ public class CelestialPlanetKindContentTests
                 pair.Value.secondaryBiome = n["secondaryBiome"] is { } secondary ? Biome(secondary.InnerText) : null;
                 pair.Value.worldGenSteps = Items(n, "worldGenSteps").Select(s => new WorldGenStepDef { defName = s.InnerText, worldGenStep = new WorldGenStep_Terrain() }).ToList();
                 pair.Value.rootOnlySteps = Items(n, "rootOnlySteps").Select(s => new WorldGenStepDef { defName = s.InnerText, worldGenStep = new WorldGenStep_Terrain() }).ToList();
+                if (pair.Value.terrain != null)
+                    foreach (var rule in pair.Value.terrain.biomeRules.Select((rule, i) => (rule, i)))
+                        rule.rule.biome = Biome(Items(n["terrain"], "biomeRules").ElementAt(rule.i)["biome"].InnerText);
             }
             var maps = nodes.Where(p => p.Value.Name.EndsWith(".CelestialMapProfileDef", StringComparison.Ordinal)).ToDictionary(p => p.Key, p => Parse<CelestialMapProfileDef>(p.Value));
             TerrainDef Terrain(string name) { var value = (TerrainDef)RuntimeHelpers.GetUninitializedObject(typeof(TerrainDef)); value.defName = name; return value; }
@@ -184,6 +187,9 @@ public class CelestialPlanetKindContentTests
                 pair.Value.replaceTerrains = Items(nodes[pair.Key], "replaceTerrains").Select(n => Terrain(n.InnerText)).ToList();
                 pair.Value.replacementTerrain = nodes[pair.Key]["replacementTerrain"] is { } n ? Terrain(n.InnerText) : null;
                 foreach (var rule in pair.Value.biomeRules.Select((rule, i) => (rule, i))) rule.rule.biome = Biome(Items(nodes[pair.Key], "biomeRules").ElementAt(rule.i)["biome"].InnerText);
+                if (pair.Value.diversity != null)
+                    foreach (var item in pair.Value.diversity.weather.Select((item, i) => (item, i)))
+                        item.item.def = new WeatherDef { defName = Items(nodes[pair.Key]["diversity"], "weather").ElementAt(item.i)["def"].InnerText };
             }
             foreach (var pair in nodes.Where(p => p.Value.Name == "PioneerFramework.CelestialBodyDef"))
             {

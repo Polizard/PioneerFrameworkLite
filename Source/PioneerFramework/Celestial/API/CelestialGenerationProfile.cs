@@ -10,7 +10,7 @@ namespace PioneerFramework.Celestial
     {
         CelestialGenerationProfile GetProfile();
     }
-    public enum CelestialBiomeGenerationMode { LatitudeBands, VanillaSurface }
+    public enum CelestialBiomeGenerationMode { LatitudeBands, VanillaSurface, Parameterized }
     public sealed record CelestialBiomeSelection(string BiomeId, int Hilliness);
     public sealed class CelestialGenerationProfile
     {
@@ -44,10 +44,13 @@ namespace PioneerFramework.Celestial
         public IReadOnlyList<string> WorldGenSteps { get; }
         [JsonPropertyName("RootOnlySteps"), JsonPropertyOrder(15)]
         public IReadOnlyList<string> RootOnlySteps { get; }
+        [JsonPropertyName("Terrain"), JsonPropertyOrder(16), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public CelestialPlanetTerrainConfiguration? Terrain { get; }
         [JsonConstructor]
         public CelestialGenerationProfile(string id, CelestialBiomeGenerationMode mode, string? polarBiomeId, string? primaryBiomeId,
             string? secondaryBiomeId, double polarLatitude, double secondaryChance, int polarHilliness, int primaryHilliness,
-            int secondaryHilliness, float temperature, float rainfall, float swampiness, IReadOnlyList<string> worldGenSteps, IReadOnlyList<string> rootOnlySteps)
+            int secondaryHilliness, float temperature, float rainfall, float swampiness, IReadOnlyList<string> worldGenSteps, IReadOnlyList<string> rootOnlySteps,
+            CelestialPlanetTerrainConfiguration? terrain = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(id);
             if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
@@ -61,6 +64,11 @@ namespace PioneerFramework.Celestial
             var all = worldGenSteps.Concat(rootOnlySteps).ToArray();
             if (all.Any(string.IsNullOrWhiteSpace) || all.Distinct(StringComparer.Ordinal).Count() != all.Length) throw new ArgumentException("Invalid world-generation step references.");
             if (mode == CelestialBiomeGenerationMode.VanillaSurface && worldGenSteps.Count == 0) throw new ArgumentException("Missing native world-generation steps.");
+            if ((mode == CelestialBiomeGenerationMode.Parameterized) != (terrain != null) || terrain != null && terrain.BiomeRules.Count == 0)
+                throw new ArgumentException("Parameterized mode requires explicit terrain and biome rules.");
+            if (terrain != null && (temperature < -273.15 || temperature > 10000 || rainfall > 1000000 / 1.5 ||
+                terrain.AllowRivers && terrain.Climate == null && (temperature < -100 || temperature > 100)))
+                throw new ArgumentException("Parameterized surface exceeds the native field domain.");
             Id = id;
             Mode = mode;
             PolarBiomeId = polarBiomeId;
@@ -76,6 +84,7 @@ namespace PioneerFramework.Celestial
             Swampiness = swampiness;
             WorldGenSteps = Array.AsReadOnly(worldGenSteps.ToArray());
             RootOnlySteps = Array.AsReadOnly(rootOnlySteps.ToArray());
+            Terrain = terrain;
         }
         public CelestialBiomeSelection SelectBiome(double latitudeDegrees, bool secondary)
         {
@@ -84,12 +93,12 @@ namespace PioneerFramework.Celestial
             return Math.Abs(latitudeDegrees) >= PolarLatitude ? new(PolarBiomeId!, PolarHilliness) : secondary ? new(SecondaryBiomeId!, SecondaryHilliness) : new(PrimaryBiomeId!, PrimaryHilliness);
         }
     }
-    public sealed class BiomeGenerationResolvedProperties : ICelestialResolvedProperties
+    public sealed class BiomeGenerationResolvedProperties : ICelestialResolvedProperties, ICelestialResolvedConfigurationValidator
     {
         public const string Handler = "PFL.Biomes";
         public string Key { get; }
         public string HandlerId => Handler;
-        public int Version => 1;
+        public int Version => Profile.Terrain == null ? 1 : 2;
         public CelestialGenerationProfile Profile { get; }
         public BiomeGenerationResolvedProperties(string key, CelestialGenerationProfile profile)
         {
@@ -98,12 +107,23 @@ namespace PioneerFramework.Celestial
             Profile = profile ?? throw new ArgumentNullException(nameof(profile));
         }
         public ReadOnlyMemory<byte> Serialize() => JsonSerializer.SerializeToUtf8Bytes(Profile);
+        public CelestialResult<bool> Validate(IReadOnlyList<ICelestialResolvedProperties> components)
+        {
+            if (Profile.Terrain == null) return CelestialResult.Ok(true);
+            var climates = components.OfType<ExistingEnvironmentResolvedProperties>().Select(p => p.Profile.Climate).Where(c => c != null).ToArray();
+            var source = Profile.Terrain.Climate;
+            bool matches = source == null ? climates.Length == 0 : climates.Length == 1 &&
+                JsonSerializer.SerializeToUtf8Bytes(source).AsSpan().SequenceEqual(JsonSerializer.SerializeToUtf8Bytes(climates[0]));
+            return matches ? CelestialResult.Ok(true) : CelestialResult.Reject<bool>(new CelestialError("TerrainClimateSourceMismatch", CompKey: Key,
+                Detail: "Parameterized terrain must bind the same frozen environment climate using useEnvironmentClimate."));
+        }
         public static CelestialResult<BiomeGenerationResolvedProperties> Deserialize(string key, int version, ReadOnlyMemory<byte> payload)
         {
-            if (version != 1) return CelestialResult.Reject<BiomeGenerationResolvedProperties>(new CelestialError("UnsupportedConfigurationVersion", CompKey: key));
+            if (version is not (1 or 2)) return CelestialResult.Reject<BiomeGenerationResolvedProperties>(new CelestialError("UnsupportedConfigurationVersion", CompKey: key));
             try
             {
                 var profile = CelestialResolvedJson.Read<CelestialGenerationProfile>(payload);
+                if ((version == 2) != (profile.Terrain != null)) throw new ArgumentException("Generation version mismatch.");
                 return CelestialResult.Ok(new BiomeGenerationResolvedProperties(key, profile!));
             }
             catch (Exception exception) when (exception is ArgumentException or JsonException or InvalidOperationException)

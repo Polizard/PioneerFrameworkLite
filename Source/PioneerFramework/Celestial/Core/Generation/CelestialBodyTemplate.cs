@@ -114,12 +114,14 @@ namespace PioneerFramework.Celestial
         public CelestialResult<IReadOnlyList<CelestialResolvedComp>> Resolve(CelestialGenerationContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
+            context = context.BeginResolution();
             var result = new List<CelestialResolvedComp>();
             foreach (var definition in Components)
             {
                 var resolved = definition.Resolve(context);
                 if (!resolved.Success) return CelestialResult.Reject<IReadOnlyList<CelestialResolvedComp>>(resolved.Errors.ToArray());
                 result.Add(resolved.Value);
+                context.AddResolved(resolved.Value.Properties);
             }
             var overrides = context.ValidateOverrides();
             if (!overrides.Success) return CelestialResult.Reject<IReadOnlyList<CelestialResolvedComp>>(overrides.Errors.ToArray());

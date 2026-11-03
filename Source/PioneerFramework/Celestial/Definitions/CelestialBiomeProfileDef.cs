@@ -23,7 +23,8 @@ namespace PioneerFramework.Celestial
         public float swampiness;
         public List<WorldGenStepDef> worldGenSteps = new();
         public List<WorldGenStepDef> rootOnlySteps = new();
-        public CelestialResult<CelestialGenerationProfile> ToProfile()
+        public CelestialPlanetTerrainXml? terrain;
+        public CelestialResult<CelestialGenerationProfile> ToProfile(CelestialGenerationContext? context = null, bool useEnvironmentClimate = false)
         {
             try
             {
@@ -32,7 +33,8 @@ namespace PioneerFramework.Celestial
                     return CelestialResult.Reject<CelestialGenerationProfile>(new CelestialError("InvalidBiomeProfile"));
                 return CelestialResult.Ok(new CelestialGenerationProfile(defName, mode, polarBiome?.defName, primaryBiome?.defName, secondaryBiome?.defName,
                     polarLatitude, secondaryChance, (int)polarHilliness, (int)primaryHilliness, (int)secondaryHilliness, temperature, rainfall, swampiness,
-                    worldGenSteps.Select(step => step.defName).ToArray(), rootOnlySteps.Select(step => step.defName).ToArray()));
+                    worldGenSteps.Select(step => step.defName).ToArray(), rootOnlySteps.Select(step => step.defName).ToArray(),
+                    terrain?.Resolve(context, useEnvironmentClimate ? context?.GetResolved<ExistingEnvironmentResolvedProperties>()?.Profile.Climate : null)));
             }
             catch (ArgumentException exception) { return CelestialResult.Reject<CelestialGenerationProfile>(new CelestialError("InvalidBiomeProfile", Detail: exception.Message)); }
         }

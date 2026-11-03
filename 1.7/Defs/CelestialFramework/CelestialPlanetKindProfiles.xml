@@ -3,7 +3,7 @@
   <PioneerFramework.Celestial.CelestialBiomeProfileDef>
     <defName>PF_BarrenBiomes</defName>
     <label>荒芜地表生成</label>
-    <mode>LatitudeBands</mode>
+    <mode>Parameterized</mode>
     <polarBiome>PF_FrozenPlain</polarBiome>
     <primaryBiome>PF_BarrenRock</primaryBiome>
     <secondaryBiome>PF_BarrenRegolith</secondaryBiome>
@@ -20,6 +20,32 @@
       <li>Roads</li>
       <li>Features</li>
     </rootOnlySteps>
+    <terrain>
+      <oceanCoverage>
+        <value>0</value>
+      </oceanCoverage>
+      <parameters>
+        <li>
+          <key>roughness</key>
+          <value>
+            <min>0.2</min>
+            <max>0.6</max>
+          </value>
+        </li>
+      </parameters>
+      <biomeRules>
+        <li>
+          <key>fallback</key>
+          <biome>PF_BarrenRock</biome>
+          <fallback>true</fallback>
+        </li>
+        <li>
+          <key>rough</key>
+          <biome>PF_BarrenRegolith</biome>
+          <minimumRoughness>0.2</minimumRoughness>
+        </li>
+      </biomeRules>
+    </terrain>
   </PioneerFramework.Celestial.CelestialBiomeProfileDef>
   <PioneerFramework.Celestial.CelestialEnvironmentProfileDef>
     <defName>PF_BarrenEnvironment</defName>
@@ -31,11 +57,23 @@
       <li>PF_BarrenRock</li>
       <li>PF_BarrenRegolith</li>
     </vacuumBiomes>
+    <climate>
+      <meanTemperatureCelsius>-30</meanTemperatureCelsius>
+      <diurnalAmplitudeCelsius>12</diurnalAmplitudeCelsius>
+      <seasonalAmplitudeCelsius>8</seasonalAmplitudeCelsius>
+      <thermalResponseSeconds>600</thermalResponseSeconds>
+      <rainfallMillimeters>0</rainfallMillimeters>
+      <humidity>0</humidity>
+    </climate>
+    <exposure>
+      <toxicityPerDay>0</toxicityPerDay>
+      <gravityStats>true</gravityStats>
+    </exposure>
   </PioneerFramework.Celestial.CelestialEnvironmentProfileDef>
   <PioneerFramework.Celestial.CelestialBiomeProfileDef>
     <defName>PF_FrozenBiomes</defName>
     <label>冰封地表生成</label>
-    <mode>LatitudeBands</mode>
+    <mode>Parameterized</mode>
     <polarBiome>PF_FrozenPlain</polarBiome>
     <primaryBiome>PF_FrozenPlain</primaryBiome>
     <secondaryBiome>PF_BarrenRock</secondaryBiome>
@@ -52,6 +90,32 @@
       <li>Roads</li>
       <li>Features</li>
     </rootOnlySteps>
+    <terrain>
+      <oceanCoverage>
+        <value>0</value>
+      </oceanCoverage>
+      <parameters>
+        <li>
+          <key>roughness</key>
+          <value>
+            <min>0.2</min>
+            <max>0.6</max>
+          </value>
+        </li>
+      </parameters>
+      <biomeRules>
+        <li>
+          <key>fallback</key>
+          <biome>PF_FrozenPlain</biome>
+          <fallback>true</fallback>
+        </li>
+        <li>
+          <key>rough</key>
+          <biome>PF_BarrenRock</biome>
+          <minimumRoughness>0.2</minimumRoughness>
+        </li>
+      </biomeRules>
+    </terrain>
   </PioneerFramework.Celestial.CelestialBiomeProfileDef>
   <PioneerFramework.Celestial.CelestialEnvironmentProfileDef>
     <defName>PF_FrozenEnvironment</defName>
@@ -62,11 +126,23 @@
       <li>PF_FrozenPlain</li>
       <li>PF_BarrenRock</li>
     </vacuumBiomes>
+    <climate>
+      <meanTemperatureCelsius>-160</meanTemperatureCelsius>
+      <diurnalAmplitudeCelsius>12</diurnalAmplitudeCelsius>
+      <seasonalAmplitudeCelsius>8</seasonalAmplitudeCelsius>
+      <thermalResponseSeconds>600</thermalResponseSeconds>
+      <rainfallMillimeters>0</rainfallMillimeters>
+      <humidity>0</humidity>
+    </climate>
+    <exposure>
+      <toxicityPerDay>0</toxicityPerDay>
+      <gravityStats>true</gravityStats>
+    </exposure>
   </PioneerFramework.Celestial.CelestialEnvironmentProfileDef>
   <PioneerFramework.Celestial.CelestialBiomeProfileDef>
     <defName>PF_GreenhouseBiomes</defName>
     <label>温室地表生成</label>
-    <mode>LatitudeBands</mode>
+    <mode>Parameterized</mode>
     <polarBiome>PF_GreenhousePlain</polarBiome>
     <primaryBiome>PF_GreenhousePlain</primaryBiome>
     <secondaryBiome>PF_GreenhousePlain</secondaryBiome>
@@ -83,12 +159,45 @@
       <li>Roads</li>
       <li>Features</li>
     </rootOnlySteps>
+    <terrain>
+      <oceanCoverage>
+        <value>0</value>
+      </oceanCoverage>
+      <parameters>
+        <li>
+          <key>roughness</key>
+          <value>
+            <min>0.2</min>
+            <max>0.6</max>
+          </value>
+        </li>
+      </parameters>
+      <biomeRules>
+        <li>
+          <key>fallback</key>
+          <biome>PF_GreenhousePlain</biome>
+          <fallback>true</fallback>
+        </li>
+      </biomeRules>
+    </terrain>
   </PioneerFramework.Celestial.CelestialBiomeProfileDef>
   <PioneerFramework.Celestial.CelestialEnvironmentProfileDef>
     <defName>PF_GreenhouseEnvironment</defName>
     <label>温室环境</label>
     <dayLengthTicks>1200000</dayLengthTicks>
     <primaryLightReference>primaryLight</primaryLightReference>
+    <climate>
+      <meanTemperatureCelsius>460</meanTemperatureCelsius>
+      <diurnalAmplitudeCelsius>2</diurnalAmplitudeCelsius>
+      <seasonalAmplitudeCelsius>8</seasonalAmplitudeCelsius>
+      <thermalResponseSeconds>600</thermalResponseSeconds>
+      <rainfallMillimeters>0</rainfallMillimeters>
+      <humidity>0</humidity>
+    </climate>
+    <exposure>
+      <toxicityPerDay>2</toxicityPerDay>
+      <gravityStats>true</gravityStats>
+    </exposure>
   </PioneerFramework.Celestial.CelestialEnvironmentProfileDef>
   <PioneerFramework.Celestial.CelestialMapProfileDef Name="PF_PlanetKindDryMapBase" Abstract="True">
     <skipStepNames>
@@ -126,15 +235,167 @@
     <defName>PF_BarrenMaps</defName>
     <label>荒芜殖民地地图</label>
     <replacementTerrain>PF_MoonDirt</replacementTerrain>
+    <diversity>
+      <parameters>
+        <li>
+          <key>mineralAbundance</key>
+          <value>
+            <min>0.5</min>
+            <max>1.5</max>
+          </value>
+        </li>
+      </parameters>
+      <plantDensity>0</plantDensity>
+      <animalDensity>0</animalDensity>
+      <geologyVariation>0.3</geologyVariation>
+      <weather>
+        <li>
+          <def>Clear</def>
+          <weight>3</weight>
+        </li>
+      </weather>
+    </diversity>
   </PioneerFramework.Celestial.CelestialMapProfileDef>
   <PioneerFramework.Celestial.CelestialMapProfileDef ParentName="PF_PlanetKindDryMapBase">
     <defName>PF_FrozenMaps</defName>
     <label>冰封殖民地地图</label>
     <replacementTerrain>Ice</replacementTerrain>
+    <diversity>
+      <parameters>
+        <li>
+          <key>mineralAbundance</key>
+          <value>
+            <min>0.5</min>
+            <max>1.5</max>
+          </value>
+        </li>
+      </parameters>
+      <plantDensity>0</plantDensity>
+      <animalDensity>0</animalDensity>
+      <geologyVariation>0.3</geologyVariation>
+      <weather>
+        <li>
+          <def>Clear</def>
+          <weight>3</weight>
+        </li>
+      </weather>
+    </diversity>
   </PioneerFramework.Celestial.CelestialMapProfileDef>
   <PioneerFramework.Celestial.CelestialMapProfileDef ParentName="PF_PlanetKindDryMapBase">
     <defName>PF_GreenhouseMaps</defName>
     <label>温室殖民地地图</label>
     <replacementTerrain>Sand</replacementTerrain>
+    <diversity>
+      <parameters>
+        <li>
+          <key>mineralAbundance</key>
+          <value>
+            <min>0.5</min>
+            <max>1.5</max>
+          </value>
+        </li>
+      </parameters>
+      <plantDensity>0</plantDensity>
+      <animalDensity>0</animalDensity>
+      <geologyVariation>0.3</geologyVariation>
+      <weather>
+        <li>
+          <def>Clear</def>
+          <weight>3</weight>
+        </li>
+      </weather>
+    </diversity>
+  </PioneerFramework.Celestial.CelestialMapProfileDef>
+  <PioneerFramework.Celestial.CelestialEnvironmentProfileDef>
+    <defName>PF_TemperateEnvironment</defName>
+    <label>温带行星环境</label>
+    <dayLengthTicks>60000</dayLengthTicks>
+    <primaryLightReference>primaryLight</primaryLightReference>
+    <climate>
+      <meanTemperatureCelsius>20</meanTemperatureCelsius>
+      <diurnalAmplitudeCelsius>12</diurnalAmplitudeCelsius>
+      <seasonalAmplitudeCelsius>8</seasonalAmplitudeCelsius>
+      <thermalResponseSeconds>600</thermalResponseSeconds>
+      <rainfallMillimeters>1000</rainfallMillimeters>
+      <humidity>0.6</humidity>
+    </climate>
+    <exposure>
+      <toxicityPerDay>0</toxicityPerDay>
+      <gravityStats>true</gravityStats>
+    </exposure>
+  </PioneerFramework.Celestial.CelestialEnvironmentProfileDef>
+  <PioneerFramework.Celestial.CelestialBiomeProfileDef>
+    <defName>PF_TemperateBiomes</defName>
+    <label>温带行星地表</label>
+    <mode>Parameterized</mode>
+    <worldGenSteps>
+      <li>Terrain</li>
+      <li>Lakes</li>
+      <li>Rivers</li>
+      <li>Mutators</li>
+      <li MayRequire="Ludeon.RimWorld.Odyssey">Landmarks</li>
+    </worldGenSteps>
+    <terrain>
+      <oceanCoverage>
+        <min>0.45</min>
+        <max>0.7</max>
+      </oceanCoverage>
+      <allowRivers>true</allowRivers>
+      <allowLakes>true</allowLakes>
+      <parameters>
+        <li>
+          <key>roughness</key>
+          <value>
+            <min>0.2</min>
+            <max>0.6</max>
+          </value>
+        </li>
+      </parameters>
+      <biomeRules>
+        <li>
+          <key>cold</key>
+          <biome>Tundra</biome>
+          <maximumTemperatureCelsius>0</maximumTemperatureCelsius>
+        </li>
+        <li>
+          <key>dry</key>
+          <biome>Desert</biome>
+          <maximumRainfallMillimeters>500</maximumRainfallMillimeters>
+        </li>
+        <li>
+          <key>fallback</key>
+          <biome>TemperateForest</biome>
+          <fallback>true</fallback>
+        </li>
+      </biomeRules>
+    </terrain>
+  </PioneerFramework.Celestial.CelestialBiomeProfileDef>
+  <PioneerFramework.Celestial.CelestialMapProfileDef>
+    <defName>PF_TemperateMaps</defName>
+    <label>温带行星地图</label>
+    <diversity>
+      <parameters>
+        <li>
+          <key>mineralAbundance</key>
+          <value>
+            <min>0.5</min>
+            <max>1.5</max>
+          </value>
+        </li>
+      </parameters>
+      <plantDensity>1</plantDensity>
+      <animalDensity>1</animalDensity>
+      <geologyVariation>0.3</geologyVariation>
+      <weather>
+        <li>
+          <def>Clear</def>
+          <weight>3</weight>
+        </li>
+        <li>
+          <def>Rain</def>
+          <weight>1</weight>
+        </li>
+      </weather>
+    </diversity>
   </PioneerFramework.Celestial.CelestialMapProfileDef>
 </Defs>

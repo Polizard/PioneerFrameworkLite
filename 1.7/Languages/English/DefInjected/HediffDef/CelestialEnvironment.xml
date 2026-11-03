@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_CelestialHypoxia.label>hypoxia</PF_CelestialHypoxia.label><PF_CelestialHypoxia.description>Insufficient oxygen partial pressure. Oxygen supply is required; toxin resistance does not supply oxygen.</PF_CelestialHypoxia.description>
+  <PF_CelestialPressureStress.label>pressure stress</PF_CelestialPressureStress.label><PF_CelestialPressureStress.description>Pressure beyond the adapted range. Vacuum protection covers low pressure only; high pressure requires separate protection.</PF_CelestialPressureStress.description>
+  <PF_CelestialRadiationExposure.label>environmental radiation exposure</PF_CelestialRadiationExposure.label><PF_CelestialRadiationExposure.description>A simplified accumulation of planetary radiation damage. Dedicated radiation protection is required; oxygen and toxin filtering do not block radiation.</PF_CelestialRadiationExposure.description>
+</LanguageData>

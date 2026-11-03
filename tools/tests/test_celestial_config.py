@@ -114,6 +114,18 @@ public partial class CompProperties_Partial : ISecond { public int second; }
         for value in ("2147483648", "-2147483649", "1.5"):
             self.assertTrue(validate_numeric_parameter(ET.fromstring('<count><value>' + value + '</value></count>'), integral=True))
 
+    def test_real_motion_schema_accepts_typed_ranges_and_rejects_invalid_scalar_types(self):
+        index = build_schema_index(Path(__file__).resolve().parents[2] / "Source/PioneerFramework")
+        valid = '<motion><orbitRadiusMeters>100</orbitRadiusMeters><orbitPeriodSeconds>10</orbitPeriodSeconds><rotation><periodSeconds>60</periodSeconds><retrograde>true</retrograde></rotation><parameters><li><key>rotation.phaseRadians</key><value><min>0</min><max>2</max></value></li></parameters></motion>'
+        def body(motion):
+            return self.body('<comps><li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding"><key>motion</key>' + motion + '</li></comps>')
+        self.assertEqual([], validate_celestial_definition(body(valid), "1.7", index))
+        for bad in (valid.replace('<orbitPeriodSeconds>10', '<orbitPeriodSeconds>NaN'),
+                    valid.replace('<retrograde>true', '<retrograde>sometimes'),
+                    valid.replace('<max>2</max>', '<max>-1</max>'),
+                    valid.replace('rotation.phaseRadians', 'rotation.typo')):
+            self.assertTrue(validate_celestial_definition(body(bad), "1.7", index))
+
 
 if __name__ == "__main__":
     unittest.main()

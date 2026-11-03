@@ -184,8 +184,8 @@ namespace PioneerFramework
             if (cache.TryGetValue(body.bodyId, out var cached) && cached != null) return cached;
             if (night && PFViewAtmosphere.NightShellAlpha <= 0f) return null;   // 夜侧给 0 ⇒ 干脆不画那半
 
-            Color c = body.atmosphereColor;
-            c.a = night ? PFViewAtmosphere.NightShellAlpha : PFViewAtmosphere.ShellAlpha;
+            var profile = GetCelestialRenderVisual(body.bodyId, Celestial.CelestialVisualKind.Atmosphere)?.Profile;
+            Color c = PFViewVisualBindings.Atmosphere(body.atmosphereColor, profile, night);
 
             var mat = new Material(ShaderDatabase.Transparent)
             {
@@ -276,6 +276,13 @@ namespace PioneerFramework
         }
 
         /// <summary>销毁壳材质（运行时创建 ⇒ 与表面材质同一条清理纪律）；网格是静态资源，不销毁。</summary>
+        private void DestroyAtmosphereShellMaterialsForBody(int handle)
+        {
+            DestroyOwnedResource(shellMaterials, handle);
+            DestroyOwnedResource(shellNightMaterials, handle);
+            shellLogged.Remove(handle);
+        }
+
         private void DestroyAtmosphereShellMaterials()
         {
             foreach (var kv in shellMaterials)

@@ -196,6 +196,12 @@ namespace PioneerFramework
         /// </summary>
         public static bool CurSunPositionInWorldSpace_Prefix(ref Vector3 __result)
         {
+            if (Celestial.CelestialEnvironmentBridge.TrySample(PlanetLayer.Selected,
+                new(GetCelestialDisplayTicksAbs(), 0, 0), out var physical) && physical.UsesCommittedLight)
+            {
+                __result = new Vector3((float)physical.SunEast, (float)physical.SunNorth, (float)-physical.SunUp);
+                return false;
+            }
             if (Celestial.CelestialEnvironmentBridge.TryEvaluate(PlanetLayer.Selected,
                 new(GetCelestialDisplayTicksAbs(), 0, 0), out var natural))
             {

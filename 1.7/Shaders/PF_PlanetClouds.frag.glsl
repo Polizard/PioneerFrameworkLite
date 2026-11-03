@@ -12,7 +12,8 @@ layout(set = 2, binding = 0) uniform MaterialUniforms
     vec4 _CloudToSun;
     vec4 _CloudSunLocal;
     vec4 _CloudCameraFromBody;
-    vec4 _CloudParams; // x=opacity, y=drift phase, z=noise phase
+    vec4 _CloudParams; // x=opacity, y=drift phase, z=noise phase, w=coverage multiplier
+    vec4 _CloudTint; // v1/legacy=(1,1,1,1); explicit v2=resolved profile RGBA
 } uMaterial;
 
 layout(set = 2, binding = 1) uniform sampler2D _NoiseTex;
@@ -30,7 +31,7 @@ float cloudCover(vec3 direction)
     vec2 distortion = 1.0 - 2.0 * texture(_NoiseTex, vec2(noiseUv.x, -noiseUv.y)).xy;
     uv += distortion * 0.0015;
     float cover = textureLod(_CloudTex, vec2(1.0 - uv.x, 1.0 - uv.y), 0.0).r;
-    return smoothstep(0.2, 0.5, sqrt(max(cover, 0.0))) * cover;
+    return smoothstep(0.2, 0.5, sqrt(max(cover, 0.0))) * cover * uMaterial._CloudParams.w;
 }
 
 void main()
@@ -39,7 +40,7 @@ void main()
     vec3 viewDir = normalize(uMaterial._CloudCameraFromBody.xyz - vViewOffset);
     float facing = dot(normal, viewDir);
     float cover = cloudCover(normalize(vLocalDirection));
-    float alpha = cover * uMaterial._CloudParams.x * smoothstep(0.0, 0.04, facing);
+    float alpha = cover * uMaterial._CloudParams.x * uMaterial._CloudTint.a * smoothstep(0.0, 0.04, facing);
     if (alpha < 0.001) discard;
 
     float sunlight = dot(normal, normalize(uMaterial._CloudToSun.xyz));
@@ -53,5 +54,5 @@ void main()
     float shadow = clamp(cloudCover(shadowDir) - cover, 0.0, 1.0);
     vec3 dayColor = mix(vec3(0.9, 0.9, 0.95), sunset, twilight * 0.65);
     vec3 color = mix(vec3(0.25, 0.25, 0.35), dayColor, day) * (1.0 - shadow * 0.6);
-    outColor = vec4(color, alpha);
+    outColor = vec4(color * uMaterial._CloudTint.rgb, alpha);
 }

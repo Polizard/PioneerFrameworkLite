@@ -131,6 +131,7 @@ def main():
     #    Check PFL 1.6/Textures first. Base-game textures are packed in Unity assets
     #    (no loose file on disk), so valid base references are tracked via an allowlist.
     KNOWN_BASE_TEX = {
+        "Things/Building/Misc/TempControl/Cooler",
         # 原版酿造桶贴图（打包在 Unity 资源里，无法用文件系统校验）
         "Things/Building/Production/FermentingBarrel",
         # 原版通讯台贴图（PFL 控制终端临时借用）

@@ -1,6 +1,7 @@
 using UnityEngine;
 using Verse;
 using System.Collections.Generic;
+using System.Linq;
 using PioneerFramework.Celestial;
 
 namespace PioneerFramework
@@ -33,8 +34,9 @@ namespace PioneerFramework
             var visual = celestialRenderRuntime != null ? GetCelestialRenderVisual(body.bodyId, CelestialVisualKind.Clouds) : null;
             if (renderCamera == null || (celestialRenderRuntime != null ? visual == null : body.defName != "Earth" || body.atmosphereThickness <= 0.0)) return;
             var profile = visual?.Profile;
-            double altitude = profile?.ShellHeightMeters ?? PFViewClouds.AltitudeMeters;
-            float opacity = (float)PFViewClouds.Opacity(cameraAltitudeMeters, altitude, profile?.FadeRangeMeters ?? PFViewClouds.FadeRangeMeters);
+            var binding = PFViewVisualBindings.Clouds(profile, tick, cameraAltitudeMeters);
+            double altitude = binding.AltitudeMeters;
+            float opacity = binding.Parameters.x * binding.Parameters.w * binding.Tint.w;
             if (opacity <= 0.001f) return;
             Material? mat = profile == null ? GetCloudMaterial() : GetCelestialCloudMaterial(celestialRenderSnapshots[body.bodyId].CacheKey, profile);
             if (mat == null) return;
@@ -44,9 +46,8 @@ namespace PioneerFramework
             mat.SetVector("_CloudToSun", new Vector4(toSun.x, toSun.y, toSun.z, 0f));
             mat.SetVector("_CloudSunLocal", new Vector4(localSun.x, localSun.y, localSun.z, 0f));
             mat.SetVector("_CloudCameraFromBody", new Vector4(cameraFromBody.x, cameraFromBody.y, cameraFromBody.z, 0f));
-            mat.SetVector("_CloudParams", new Vector4(opacity,
-                (float)PFViewClouds.AnimationPhase(tick, profile?.DriftPeriodTicks ?? PFViewClouds.DriftPeriodTicks),
-                (float)PFViewClouds.AnimationPhase(tick, profile?.DistortionPeriodTicks ?? PFViewClouds.DistortionPeriodTicks), 0f));
+            mat.SetVector("_CloudParams", binding.Parameters);
+            mat.SetVector("_CloudTint", binding.Tint);
 
             float radius = renderR * (float)PFViewClouds.RadiusFactor(body.radius, altitude);
             // 低空看向云层时，仅按地表余量算 near 会切掉云壳近侧；取实际渲染尺度的云壳余量。
@@ -92,9 +93,16 @@ namespace PioneerFramework
             return material;
         }
 
+        private void DestroyCloudResourcesForBody(CelestialViewCacheKey owner)
+        {
+            foreach (var key in celestialCloudMaterials.Keys.Where(key => key.WorldSessionId == owner.WorldSessionId && key.InstanceId == owner.InstanceId).ToArray())
+                DestroyOwnedResource(celestialCloudMaterials, key);
+        }
+
         private void DestroyCloudResources()
         {
-            foreach (var material in celestialCloudMaterials.Values) UnityEngine.Object.Destroy(material);
+            foreach (var material in celestialCloudMaterials.Values)
+                if (material != null) UnityEngine.Object.Destroy(material);
             celestialCloudMaterials.Clear();
             if (cloudMaterial != null) UnityEngine.Object.Destroy(cloudMaterial);
             cloudMaterial = null;

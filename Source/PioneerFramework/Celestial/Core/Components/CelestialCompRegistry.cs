@@ -6,6 +6,7 @@ namespace PioneerFramework.Celestial
     public sealed class CelestialCompRegistration
     {
         public string HandlerId { get; }
+        /// <summary>Highest supported configuration version; the codec preserves each decoded record's actual version.</summary>
         public int ConfigurationVersion { get; }
         public int SchemaVersion { get; }
         public ICelestialCompFactory Factory { get; }

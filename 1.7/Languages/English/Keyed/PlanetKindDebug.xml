@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_PlanetKind_DebugCategory>77 Scenarios · Planet kinds</PF_PlanetKind_DebugCategory>
+  <PF_PlanetKind_DebugOpen>Planet kind test panel</PF_PlanetKind_DebugOpen>
+  <PF_PlanetKind_DebugTitle>Planet kind tests</PF_PlanetKind_DebugTitle>
+  <PF_PlanetKind_DebugCreateAll>Create all six test kinds</PF_PlanetKind_DebugCreateAll>
+  <PF_PlanetKind_DebugCleanup>Clean up test bodies</PF_PlanetKind_DebugCleanup>
+  <PF_PlanetKind_DebugEmpty>No test instances yet. Choose one template or create all six kinds. This panel only lists instances created through its test actions.</PF_PlanetKind_DebugEmpty>
+  <PF_PlanetKind_DebugMissing>Planet kind templates are missing. Check that the complete Mod is loaded.</PF_PlanetKind_DebugMissing>
+  <PF_PlanetKind_DebugHelp>Pending: {0}. While paused, use Apply pending at current time. After generating a surface, select one of its tiles and return here to generate a map. Cleanup retains bodies referenced by maps, ships or other resources.</PF_PlanetKind_DebugHelp>
+  <PF_PlanetKind_DebugCapabilities>Surface: {0}    Maps: {1}    Atmosphere: {2}</PF_PlanetKind_DebugCapabilities>
+  <PF_PlanetKind_DebugView>View in PFView</PF_PlanetKind_DebugView>
+  <PF_PlanetKind_DebugYes>Yes</PF_PlanetKind_DebugYes>
+  <PF_PlanetKind_DebugNo>No</PF_PlanetKind_DebugNo>
+  <PF_PlanetKind_DebugLayerReady>Surface ready · PlanetLayer #{0}</PF_PlanetKind_DebugLayerReady>
+  <PF_PlanetKind_DebugNoSurface>No landable surface; no PlanetLayer is created.</PF_PlanetKind_DebugNoSurface>
+</LanguageData>

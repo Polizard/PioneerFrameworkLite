@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <Operation Class="PatchOperationSequence">
+    <operations>
+      <li Class="PatchOperationAdd"><xpath>Defs/StatDef[defName="MoveSpeed"]/parts</xpath><value><li Class="PioneerFramework.Celestial.StatPart_CelestialGravity" /></value></li>
+      <li Class="PatchOperationAdd"><xpath>Defs/StatDef[defName="CarryingCapacity"]/parts</xpath><value><li Class="PioneerFramework.Celestial.StatPart_CelestialGravity"><carrying>true</carrying></li></value></li>
+      <li Class="PatchOperationConditional">
+        <xpath>Defs/ThingDef[defName="Apparel_VacsuitHelmet"]</xpath>
+        <match Class="PatchOperationAdd">
+          <xpath>Defs/ThingDef[defName="Apparel_VacsuitHelmet"]</xpath>
+          <value><modExtensions><li Class="PioneerFramework.Celestial.CelestialEnvironmentProtectionExtension"><oxygenSupply>1</oxygenSupply></li></modExtensions></value>
+        </match>
+      </li>
+      <li Class="PatchOperationConditional">
+        <xpath>Defs/ThingDef[defName="OxygenPump"]</xpath>
+        <match Class="PatchOperationAdd">
+          <xpath>Defs/ThingDef[defName="OxygenPump"]/comps</xpath>
+          <value><li Class="PioneerFramework.Celestial.CompProperties_CelestialLifeSupport"><conditioningPerSecondPerHundredCells>0.01</conditioningPerSecondPerHundredCells><suppliesOxygen>true</suppliesOxygen></li></value>
+        </match>
+      </li>
+    </operations>
+  </Operation>
+</Patch>

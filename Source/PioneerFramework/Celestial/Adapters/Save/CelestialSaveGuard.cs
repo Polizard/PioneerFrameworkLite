@@ -1,3 +1,4 @@
+using System.Linq;
 using HarmonyLib;
 using Verse;
 
@@ -19,6 +20,9 @@ namespace PioneerFramework.Celestial
         {
             var manager = Current.Game?.GetComponent<CelestialBodyManager>();
             if (manager == null) return true;
+            foreach (var map in Current.Game.Maps)
+                if (map.components?.OfType<MapComponent_CelestialEnvironment>().SingleOrDefault()?.EnsureRestored() == false)
+                { manager.NotifyCelestialSaveRejected("RoomEnvironmentRestoreBlocked"); return false; }
             if (manager.CelestialRestorePending)
             { manager.NotifyCelestialSaveRejected("RestorePending"); return false; }
             if (manager.TryGetCelestialRuntime(out var runtime) &&

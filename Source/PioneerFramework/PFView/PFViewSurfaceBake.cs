@@ -104,8 +104,33 @@ namespace PioneerFramework
         private static Game? cachedGame;
         private static System.Guid cachedCelestialSession;
 
-        /// <summary>补丁图的生命周期缓存版本：每次进/出缓存自增 ⇒ PFView 侧据此丢掉"补丁材质/网格"缓存。</summary>
+        /// <summary>兼容的总修订计数；消费者按 GetRevision 读取所属天体的修订。</summary>
         public static int Version { get; private set; }
+        private static int resetRevision;
+        private static readonly Dictionary<int, int> ownerRevisions = new();
+
+        internal static int GetRevision(int handle)
+        {
+            EnsureContext();
+            return ownerRevisions.TryGetValue(handle, out int revision) ? revision : resetRevision;
+        }
+
+        private static void Touch(int handle)
+        {
+            Version++;
+            ownerRevisions[handle] = Version;
+        }
+
+        // Both native bake and sidecar decode publish through this existing texture owner.
+        private static void StorePatch(int handle, Patch patch)
+        {
+            EnsureContext();
+            if (baked.TryGetValue(handle, out var old) && old.tex != null) UnityEngine.Object.Destroy(old.tex);
+            baked[handle] = patch;
+            failed.Remove(handle);
+            loadTried.Add(handle);
+            Touch(handle);
+        }
 
         /// <summary>取补丁图 + 它的球冠。没有（没烤过、也没旁挂文件）⇒ false。</summary>
         public static bool TryGetPatch(int bodyId, out Texture2D? tex, out Vector3 center, out float thetaMaxRad)
@@ -120,7 +145,7 @@ namespace PioneerFramework
             return false;
         }
 
-        public static bool HasFailed(int bodyId) => failed.Contains(bodyId);
+        public static bool HasFailed(int bodyId) { EnsureContext(); return failed.Contains(bodyId); }
 
         /// <summary>
         /// 把**能从旁挂文件重新读回来**的补丁图从显存里放掉（2026-10-10 用户："这个显存占用是不是太巨大了"）。
@@ -143,7 +168,7 @@ namespace PioneerFramework
                 if (baked[id].tex != null) UnityEngine.Object.Destroy(baked[id].tex);
                 baked.Remove(id);
                 loadTried.Remove(id);
-                Version++;
+                Touch(id);
             }
         }
 
@@ -157,7 +182,7 @@ namespace PioneerFramework
         {
             if (Current.Game == null || Find.World == null)
             {
-                if (baked.Count > 0 || failed.Count > 0)
+                if (baked.Count > 0 || failed.Count > 0 || loadTried.Count > 0 || ownerRevisions.Count > 0 || baseTexCache.Count > 0)
                 {
                     Clear();
                     cachedSeed = int.MinValue;
@@ -187,12 +212,32 @@ namespace PioneerFramework
             loadTried.Clear();
             baseTexCache.Clear();     // 底色解析结果也跟"世界/存档上下文"走（层 id 复用别串档）
             baseTexLabel.Clear();
+            baseTexLayers.Clear();
             Version++;
+            resetRevision = Version;
+            ownerRevisions.Clear();
         }
-        internal static void ForgetMemory(int handle)
+        internal static void ForgetMemory(int handle) => ForgetMemory(handle, null);
+
+        internal static void InvalidateVisualMemory(int handle, int? layerId)
         {
+            EnsureContext();
+            // Preserve the sole copy only while the existing generated surface and disk identity remain valid.
+            if (layerId.HasValue && Find.WorldGrid != null && Find.WorldGrid.PlanetLayers.TryGetValue(layerId.Value, out var layer) &&
+                MatchesCelestialOwner(handle, layer) && TryGetCurrentPatch(handle, out var patch) && !File.Exists(patch.path)) return;
+            ForgetMemory(handle, layerId);
+        }
+
+        internal static void ForgetMemory(int handle, int? layerId)
+        {
+            EnsureContext();
             if (baked.TryGetValue(handle, out var patch) && patch.tex != null) UnityEngine.Object.Destroy(patch.tex);
-            baked.Remove(handle); failed.Remove(handle); loadTried.Remove(handle); Version++;
+            baked.Remove(handle); failed.Remove(handle); loadTried.Remove(handle);
+            if (layerId.HasValue)
+            {
+                baseTexCache.Remove(layerId.Value); baseTexLabel.Remove(layerId.Value); baseTexLayers.Remove(layerId.Value);
+            }
+            Touch(handle);
         }
         private static bool TryGetCurrentPatch(int bodyId, out Patch patch)
         {
@@ -206,7 +251,7 @@ namespace PioneerFramework
             }
             if (!removed && string.Equals(patch.path, PathFor(cachedSeed, bodyId), StringComparison.Ordinal)) return true;
             if (patch.tex != null) UnityEngine.Object.Destroy(patch.tex);
-            baked.Remove(bodyId); loadTried.Remove(bodyId); failed.Remove(bodyId); Version++;
+            baked.Remove(bodyId); loadTried.Remove(bodyId); failed.Remove(bodyId); Touch(bodyId);
             patch = default;
             return false;
         }
@@ -306,14 +351,13 @@ namespace PioneerFramework
                 tex.name = "PF_Patch_" + bodyId;
                 try { tex.Compress(true); }          // 与烘焙路径同口径：压成平台格式（48 → 12 MiB）
                 catch (Exception ex) { Log.Warning("[PFView·烘焙] 旁挂图压缩失败（只是显存偏大）：" + ex.Message); }
-                baked[bodyId] = new Patch
+                StorePatch(bodyId, new Patch
                 {
                     tex = tex,
                     path = path,
                     center = center,
                     thetaMaxRad = (Mathf.Min(halfAngleDeg, MaxHalfAngleDeg) + PatchMarginDeg) * Mathf.Deg2Rad,
-                };
-                Version++;                       // 加载到补丁 ⇒ 同样要丢材质/网格缓存
+                });
                 message = $"已从旁挂文件加载（{bytes.Length / 1024f:F0} KB）";
                 return true;
             }
@@ -441,6 +485,7 @@ namespace PioneerFramework
         // ⇒ 口径改成"**数据区里水格最多的那个 biome**的贴图"（= 烘焙海洋的同一来源 ⇒ 盘内/盘缘/基底球三处同色）✓
         private static readonly Dictionary<int, Texture2D?> baseTexCache = new();
         private static readonly Dictionary<int, string> baseTexLabel = new();
+        private static readonly Dictionary<int, PlanetLayer> baseTexLayers = new();
 
         /// <summary>
         /// 解析"该天体的底色贴图"：优先取**水格最多的 biome 的贴图**（= 烘焙海洋的同一来源），
@@ -449,8 +494,9 @@ namespace PioneerFramework
         /// </summary>
         internal static Texture2D? ResolveBaseTexture(PlanetLayer layer, out string label)
         {
+            EnsureContext();
             int key = layer.LayerID;
-            if (baseTexCache.TryGetValue(key, out var cached))
+            if (baseTexLayers.TryGetValue(key, out var cachedLayer) && ReferenceEquals(cachedLayer, layer) && baseTexCache.TryGetValue(key, out var cached))
             {
                 label = baseTexLabel[key];
                 return cached;
@@ -499,6 +545,7 @@ namespace PioneerFramework
 
             baseTexCache[key] = tex;
             baseTexLabel[key] = label;
+            baseTexLayers[key] = layer;
             return tex;
         }
 
@@ -743,12 +790,7 @@ namespace PioneerFramework
                     Log.Warning("[PFView·烘焙] 贴图压缩失败（不影响使用，只是显存偏大）：" + ex.Message);
                 }
 
-                if (baked.TryGetValue(body.bodyId, out var old) && old.tex != null)
-                    UnityEngine.Object.Destroy(old.tex);
-                baked[body.bodyId] = new Patch { tex = tex, center = capCenter, thetaMaxRad = thetaMaxRad, path = PathFor(seed, body.bodyId) };
-                failed.Remove(body.bodyId);
-                loadTried.Add(body.bodyId);
-                Version++;                       // 补丁图变了 ⇒ PFView 侧丢掉补丁材质/网格缓存
+                StorePatch(body.bodyId, new Patch { tex = tex, center = capCenter, thetaMaxRad = thetaMaxRad, path = PathFor(seed, body.bodyId) });
 
                 double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * (1000.0 / System.Diagnostics.Stopwatch.Frequency);
                 float diameterKm = (float)(body.radius * 2.0 * thetaMaxRad / 1000.0);

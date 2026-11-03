@@ -38,6 +38,7 @@ namespace PioneerFramework.Celestial
             result.Register<ICelestialSurfaceCapability>("surface");
             result.Register<ICelestialPhysicsBinding>("physics.binding");
             result.Register<ICelestialAtmosphereCapability>("atmosphere");
+            result.Register<ICelestialAtmosphereCompositionCapability>("atmosphere.composition");
             result.Register<ICelestialLightSourceCapability>("light.source");
             result.Register<ICelestialEnvironmentCapability>("environment.existing");
             result.Register<ICelestialMapGenerationCapability>("map.generation");

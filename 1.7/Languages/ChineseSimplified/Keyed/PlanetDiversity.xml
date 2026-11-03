@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_PlanetKind_Variant_Default>默认</PF_PlanetKind_Variant_Default>
+  <PF_PlanetKind_Variant_Synchronous>同步自转岩质</PF_PlanetKind_Variant_Synchronous>
+  <PF_PlanetKind_Variant_Ocean>海洋</PF_PlanetKind_Variant_Ocean>
+  <PF_PlanetKind_Variant_ThinAir>稀薄大气</PF_PlanetKind_Variant_ThinAir>
+  <PF_PlanetKind_Variant_Atmospheric>有大气冰封</PF_PlanetKind_Variant_Atmospheric>
+  <PF_PlanetKind_Variant_Arid>干旱</PF_PlanetKind_Variant_Arid>
+  <PF_PlanetKind_Unknown>未知 / 无可用能力</PF_PlanetKind_Unknown>
+  <PF_PlanetKind_Resolved>实例已保存解析值：</PF_PlanetKind_Resolved>
+  <PF_PlanetKind_AuthoringReference>当前 Def 作者参考；存档实例解析值保持冻结：</PF_PlanetKind_AuthoringReference>
+</LanguageData>

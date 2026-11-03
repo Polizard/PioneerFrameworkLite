@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_AtmosphereRegulator.label>atmosphere regulator</PF_AtmosphereRegulator.label>
+  <PF_AtmosphereRegulator.description>Supplies oxygen, filters toxic air and regulates pressure in sealed rooms on planets with explicit survival rules. Each powered unit serves roughly 100 cells; larger rooms respond more slowly. Open exterior doors, power loss and breakdowns remove protection. Does not shield radiation or control temperature. Odyssey vacuum still requires an oxygen pump.</PF_AtmosphereRegulator.description>
+</LanguageData>

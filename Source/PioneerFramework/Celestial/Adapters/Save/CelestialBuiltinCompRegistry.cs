@@ -14,17 +14,18 @@ namespace PioneerFramework.Celestial
             Register<SurfaceResolvedProperties>(registry, SurfaceResolvedProperties.Handler, SurfaceResolvedProperties.Deserialize,
                 p => new CompProperties_Surface { key = p.Key }.CreateComp());
             Register<BiomeGenerationResolvedProperties>(registry, BiomeGenerationResolvedProperties.Handler, BiomeGenerationResolvedProperties.Deserialize,
-                p => new CompProperties_BiomeGeneration { key = p.Key }.CreateComp());
+                p => new CompProperties_BiomeGeneration { key = p.Key }.CreateComp(), 2);
             Register<MapGenerationResolvedProperties>(registry, MapGenerationResolvedProperties.Handler, MapGenerationResolvedProperties.Deserialize,
-                p => new CompProperties_MapGeneration { key = p.Key }.CreateComp());
+                p => new CompProperties_MapGeneration { key = p.Key }.CreateComp(), 2);
             Register<ExternalPhysicsResolvedProperties>(registry, ExternalPhysicsResolvedProperties.Handler, ExternalPhysicsResolvedProperties.Deserialize,
                 p => new CompProperties_ExternalPhysicsBinding { key = p.Key }.CreateComp());
             Register<AtmosphereResolvedProperties>(registry, AtmosphereResolvedProperties.Handler, AtmosphereResolvedProperties.Deserialize,
-                p => new CompProperties_Atmosphere { key = p.Key }.CreateComp());
+                p => new CompProperties_Atmosphere { key = p.Key, pressurePascals = p.Version == 2 ? new() { value = 0 } : null }.CreateComp(), 2);
             Register<LightSourceResolvedProperties>(registry, LightSourceResolvedProperties.Handler, LightSourceResolvedProperties.Deserialize,
                 p => new CompProperties_LightSource { key = p.Key }.CreateComp());
             Register<ExistingEnvironmentResolvedProperties>(registry, ExistingEnvironmentResolvedProperties.Handler, ExistingEnvironmentResolvedProperties.Deserialize,
-                p => new CompProperties_ExistingEnvironment { key = p.Key }.CreateComp());
+                p => p.Version == 2 ? new CompPlanetEnvironment(new CompProperties_ExistingEnvironment { key = p.Key }.Descriptor) :
+                    new CompProperties_ExistingEnvironment { key = p.Key }.CreateComp(), 2);
             foreach (var kind in Enum.GetValues<CelestialVisualKind>())
                 Register<VisualResolvedProperties>(registry, VisualResolvedProperties.HandlerFor(kind),
                     (key, version, payload) => VisualResolvedProperties.Deserialize(key, version, payload, kind),
@@ -33,14 +34,14 @@ namespace PioneerFramework.Celestial
                         CelestialVisualKind.Atmosphere => new CompProperties_AtmosphereVisual { key = properties.Key }.CreateComp(),
                         CelestialVisualKind.Clouds => new CompProperties_CloudsVisual { key = properties.Key }.CreateComp(),
                         CelestialVisualKind.Stellar => new CompProperties_StellarVisual { key = properties.Key }.CreateComp(),
-                        _ => throw new ArgumentOutOfRangeException(nameof(kind)) });
+                        _ => throw new ArgumentOutOfRangeException(nameof(kind)) }, 2);
             return registry;
         }
         private static void Register<T>(CelestialCompRegistry registry, string handler, Func<string, int, ReadOnlyMemory<byte>, CelestialResult<T>> decode,
-            Func<T, CelestialBodyComp> create) where T : ICelestialResolvedProperties
+            Func<T, CelestialBodyComp> create, int configurationVersion = 1) where T : ICelestialResolvedProperties
         {
             var adapter = new StatelessHandler<T>(decode, create);
-            var result = registry.Register(new(handler, 1, 1, adapter, adapter));
+            var result = registry.Register(new(handler, configurationVersion, 1, adapter, adapter));
             if (!result.Success) throw new InvalidOperationException(result.Errors[0].Code);
         }
         private sealed class StatelessHandler<T>(Func<string, int, ReadOnlyMemory<byte>, CelestialResult<T>> decode, Func<T, CelestialBodyComp> create) :

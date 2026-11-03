@@ -20,6 +20,11 @@ CELESTIAL_DEFS = {
     "CelestialBodyDef", "CelestialSystemDef", "CelestialBiomeProfileDef", "CelestialMapProfileDef",
     "CelestialEnvironmentProfileDef", "CelestialVisualProfileDef",
 }
+MOTION_NUMERIC_KEYS = {
+    "orbitRadiusMeters", "orbitPeriodSeconds", "orbitPhaseRadians",
+    "orbitNormalX", "orbitNormalY", "orbitNormalZ", "rotation.axisX", "rotation.axisY",
+    "rotation.axisZ", "rotation.periodSeconds", "rotation.phaseRadians",
+}
 _MASK = re.compile(r'//[^\n]*|/\*[\s\S]*?\*/|@"(?:""|[^"])*"|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'')
 _CLASS = re.compile(r'\bclass\s+(\w+)(?:<[^>{}]*>)?\s*(?::\s*([^{}]+?))?\s*\{')
 _FIELD = re.compile(r'\bpublic\s+(?:(?:static|readonly|volatile|new)\s+)*'
@@ -158,12 +163,40 @@ def validate_celestial_definition(node, version, index):
         if version == "1.6" and name == "CelestialBodyDef":
             fields = {field: "string" for field in FROZEN_BODY_FIELDS}
         errors = []
+        seen = set()
         for child in element:
             child_path = path + "/" + child.tag
+            if child.tag in seen:
+                errors.append(child_path + ": duplicate field")
+            seen.add(child.tag)
             if child.tag not in fields:
                 errors.append(child_path + ": not a public field of " + name)
                 continue
             field_type = fields[child.tag]
+            scalar = field_type.rstrip("?")
+            if scalar in {"double", "float", "int", "long", "bool"}:
+                try:
+                    value = (child.text or "").strip()
+                    if len(child):
+                        raise ValueError()
+                    if scalar == "bool":
+                        if value.lower() not in {"true", "false"}:
+                            raise ValueError()
+                    elif scalar in {"int", "long"}:
+                        number = int(value)
+                        bits = 32 if scalar == "int" else 64
+                        if not -(2 ** (bits - 1)) <= number < 2 ** (bits - 1):
+                            raise ValueError()
+                    else:
+                        number = float(value)
+                        if not math.isfinite(number) or scalar == "float" and abs(number) > 3.4028234663852886e38:
+                            raise ValueError()
+                except ValueError:
+                    errors.append(child_path + ": invalid " + scalar + " scalar")
+            if name == "CelestialMotionXml" and child.tag == "parameters":
+                keys = [item.findtext("key") for item in child]
+                if len(keys) != len(set(keys)) or any(key not in MOTION_NUMERIC_KEYS for key in keys):
+                    errors.append(child_path + ": unknown or duplicate motion numeric key")
             collection = re.fullmatch(r'(?:List|IReadOnlyList)<(.+)>', field_type)
             if collection:
                 field_type = collection.group(1)

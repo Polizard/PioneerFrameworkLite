@@ -34,6 +34,8 @@
     <None Include="..\..\Examples\CelestialCompSample\Patches\*.xml" Link="CelestialCompSample\Patches\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\Shaders\*.shader" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Shaders\PF_PlanetClouds.*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\1.7\Shaders\PF_PlanetBands.*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Terrain.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Terrain.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Shaders\PF_Stellar*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.StellarVisuals.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.StellarVisuals.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\PFViewStellarVisualCore.cs" Link="Source\PioneerFramework\PFView\PFViewStellarVisualCore.cs" CopyToOutputDirectory="PreserveNewest" />

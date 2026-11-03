@@ -24,7 +24,7 @@ namespace PioneerFramework.Celestial
         }
     }
 
-    public static class CelestialWorldGeneration
+    public static partial class CelestialWorldGeneration
     {
         public static CelestialResult<bool> Generate(PlanetLayer layer, CelestialGenerationProfile profile, string? seedString = null)
         {
@@ -38,6 +38,11 @@ namespace PioneerFramework.Celestial
                 {
                     GenerateLatitudeBands(surface, profile);
                     if (surface.IsRootSurface) GenerateNativeSteps(surface, profile, seedString ?? Find.World.info.seedString, rootOnly: true);
+                }
+                else if (profile.Mode == CelestialBiomeGenerationMode.Parameterized)
+                {
+                    GenerateParameterized(surface, profile, seedString ?? Find.World.info.seedString);
+                    GenerateNativeSteps(surface, profile, seedString ?? Find.World.info.seedString);
                 }
                 else GenerateNativeSteps(surface, profile, seedString ?? Find.World.info.seedString);
                 if (surface.Tiles.Count != surface.TilesCount || surface.Tiles.Any(tile => tile.PrimaryBiome == null))

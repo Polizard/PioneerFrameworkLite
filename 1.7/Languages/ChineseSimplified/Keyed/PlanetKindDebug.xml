@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_PlanetKind_DebugCategory>77 场景 · 行星种类</PF_PlanetKind_DebugCategory>
+  <PF_PlanetKind_DebugOpen>行星种类测试面板</PF_PlanetKind_DebugOpen>
+  <PF_PlanetKind_DebugTitle>行星种类测试</PF_PlanetKind_DebugTitle>
+  <PF_PlanetKind_DebugCreateAll>创建六类测试天体</PF_PlanetKind_DebugCreateAll>
+  <PF_PlanetKind_DebugCleanup>清理测试天体</PF_PlanetKind_DebugCleanup>
+  <PF_PlanetKind_DebugEmpty>尚无测试实例。可单独选择一种模板，或创建整套六类天体。此处只显示通过本面板创建的实例。</PF_PlanetKind_DebugEmpty>
+  <PF_PlanetKind_DebugMissing>缺少行星种类模板，请检查 Mod 是否完整加载。</PF_PlanetKind_DebugMissing>
+  <PF_PlanetKind_DebugHelp>等待请求：{0}。暂停时点击“在当前时刻处理挂起请求”。生成地表后选中该天体的地块，再回到本面板生成地图。清理保留仍有地图、飞船或其他引用的天体。</PF_PlanetKind_DebugHelp>
+  <PF_PlanetKind_DebugCapabilities>地表：{0}    地图：{1}    大气：{2}</PF_PlanetKind_DebugCapabilities>
+  <PF_PlanetKind_DebugView>在 PFView 中查看</PF_PlanetKind_DebugView>
+  <PF_PlanetKind_DebugYes>有</PF_PlanetKind_DebugYes>
+  <PF_PlanetKind_DebugNo>无</PF_PlanetKind_DebugNo>
+  <PF_PlanetKind_DebugLayerReady>地表已就绪 · PlanetLayer #{0}</PF_PlanetKind_DebugLayerReady>
+  <PF_PlanetKind_DebugNoSurface>无可登陆地表，不创建 PlanetLayer。</PF_PlanetKind_DebugNoSurface>
+</LanguageData>

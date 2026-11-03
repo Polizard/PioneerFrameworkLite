@@ -22,7 +22,8 @@ namespace PioneerFramework.Celestial
         public List<TerrainDef> replaceTerrains = new();
         public TerrainDef? replacementTerrain;
         public List<CelestialMapBiomeRule> biomeRules = new();
-        public CelestialResult<CelestialMapProfile> ToProfile()
+        public CelestialPlanetMapDiversityXml? diversity;
+        public CelestialResult<CelestialMapProfile> ToProfile(CelestialGenerationContext? context = null)
         {
             try
             {
@@ -30,7 +31,7 @@ namespace PioneerFramework.Celestial
                     type.FullName : throw new ArgumentException("Map step type must derive from GenStep.")).ToArray();
                 return CelestialResult.Ok(new CelestialMapProfile(defName, mapGenerator?.defName, skipStepNames, skipStepPrefixes, Types(skipStepTypes),
                     replaceTerrains.Select(terrain => terrain?.defName ?? throw new ArgumentException("Missing terrain.")).ToArray(), replacementTerrain?.defName,
-                    biomeRules.Select(rule => new CelestialMapBiomeProfile(rule.biome?.defName ?? "", rule.skipStepNames, Types(rule.skipStepTypes), rule.replaceRockTerrains)).ToArray()));
+                    biomeRules.Select(rule => new CelestialMapBiomeProfile(rule.biome?.defName ?? "", rule.skipStepNames, Types(rule.skipStepTypes), rule.replaceRockTerrains)).ToArray(), diversity?.Resolve(context)));
             }
             catch (Exception exception) when (exception is ArgumentException or NullReferenceException)
             { return CelestialResult.Reject<CelestialMapProfile>(new CelestialError("InvalidMapProfile", Detail: exception.Message)); }

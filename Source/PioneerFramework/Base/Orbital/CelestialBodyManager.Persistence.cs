@@ -13,10 +13,12 @@ namespace PioneerFramework
         private bool restoreAttempted;
         private bool restoreNeedsProvider;
         private bool restoreNoticePending;
+        private bool roomRestorePending;
         private string lastRestoreFailure = "";
         public IReadOnlyList<CelestialError> CelestialRestoreErrors { get; private set; } = Array.Empty<CelestialError>();
         public bool HasCelestialState => celestialRuntime != null || celestialSaveData?.Document != null;
-        public bool CelestialRestorePending => restoreAttempted && (celestialRuntime == null || celestialRuntime.IsRestoring);
+        private bool FrameworkRestorePending => restoreAttempted && (celestialRuntime == null || celestialRuntime.IsRestoring);
+        public bool CelestialRestorePending => FrameworkRestorePending || roomRestorePending;
         private void ExposeCelestialData()
         {
             if (Scribe.mode == LoadSaveMode.Saving)
@@ -68,8 +70,8 @@ namespace PioneerFramework
         public override void LoadedGame()
         {
             base.LoadedGame();
-            if (!CelestialRestorePending) return;
-            CompleteCelestialRestore();
+            if (FrameworkRestorePending && !CompleteCelestialRestore().Success) return;
+            RestoreRoomEnvironments(false);
         }
         private CelestialResult<bool> CompleteCelestialRestore()
         {
@@ -83,17 +85,40 @@ namespace PioneerFramework
             restoreNoticePending = false;
             lastRestoreFailure = "";
             initialized = false;
-            return CelestialResult.Ok(true);
+            return RestoreRoomEnvironments(false);
         }
         /// <summary>Retry the retained restoration only; never starts a replacement system or advances simulation time.</summary>
         public CelestialResult<bool> RetryCelestialRestore()
         {
             if (!ReferenceEquals(Current.Game, hostGame)) return CelestialResult.Reject<bool>(new CelestialError("WorldChanged"));
-            if (!restoreAttempted) return CelestialResult.Reject<bool>(new CelestialError("RestoreNotStarted"));
+            if (!restoreAttempted && !roomRestorePending) return CelestialResult.Reject<bool>(new CelestialError("RestoreNotStarted"));
             if (!CelestialRestorePending) return CelestialResult.Ok(true);
+            if (!FrameworkRestorePending) return RestoreRoomEnvironments(true);
             if (celestialSaveData?.Document == null) return RestoreFailure(new[] { new CelestialError("InvalidSaveDocument") });
             if (restoreNeedsProvider || celestialRuntime == null) StartCelestialRestore(celestialSaveData.Document);
-            return CompleteCelestialRestore();
+            var completed = CompleteCelestialRestore();
+            return completed.Success || !FrameworkRestorePending ? RestoreRoomEnvironments(true) : completed;
+        }
+        internal void NotifyRoomEnvironmentRestoreFailure(string code, Map map)
+        {
+            roomRestorePending = true;
+            RestoreFailure(new[] { new CelestialError(code, Detail: "Map " + map.uniqueID) });
+        }
+        private CelestialResult<bool> RestoreRoomEnvironments(bool retry)
+        {
+            var errors = new List<CelestialError>();
+            foreach (var map in hostGame!.Maps)
+                foreach (var environment in map.components?.OfType<MapComponent_CelestialEnvironment>() ?? Enumerable.Empty<MapComponent_CelestialEnvironment>())
+                    if (!environment.EnsureRestored(retry)) errors.Add(new CelestialError(environment.BlockedReason ?? "RoomEnvironmentRestoreBlocked", Detail: "Map " + map.uniqueID));
+            roomRestorePending = errors.Count != 0;
+            if (roomRestorePending) return RestoreFailure(errors);
+            if (!FrameworkRestorePending)
+            {
+                CelestialRestoreErrors = Array.Empty<CelestialError>();
+                restoreNoticePending = false;
+                lastRestoreFailure = "";
+            }
+            return CelestialResult.Ok(true);
         }
         private CelestialResult<bool> RestoreFailure(IReadOnlyList<CelestialError> errors)
         {
@@ -128,7 +153,7 @@ namespace PioneerFramework
         {
             base.GameComponentUpdate();
             if (ReferenceEquals(Current.Game, hostGame)) ShowRestoreNotice();
-            if (!ReferenceEquals(Current.Game, hostGame) || celestialRuntime == null || celestialRuntime.IsRestoring) return;
+            if (!ReferenceEquals(Current.Game, hostGame) || celestialRuntime == null || CelestialRestorePending) return;
             celestialRuntime.HostWork.BindHostThread();
             celestialRuntime.ProcessHostWork();
         }

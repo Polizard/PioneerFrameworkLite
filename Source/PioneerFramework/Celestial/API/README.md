@@ -144,6 +144,10 @@ v1 框架测试世界及此前旧 PFL 世界明确不兼容，要求新建测试
 
 命名空间 Extensions 字节袋当前用于保留及往返未知存档数据，未提供运行时公共写入口；扩展的可变业务状态使用 comp 状态契约。category/tags 保持开放元数据，旧消费者需要的 Star/Planet/Moon 兼容角色来自明确的物理 comp 初始化或视觉/父子关系投影。
 
+## 行星参数与作者示例
+
+[PlanetAuthoring.md](PlanetAuthoring.md) 是数值字段、完整有效区间、覆盖路径、组件版本与实际消费者的完整表，包含气体注册、typed列表/组件替换与手工验收边界。[PlanetKinds.md](PlanetKinds.md) 说明现有六个可选模板、开发者变体与检查面板。默认太阳/地球/月球与历史实例保持原行为；新增能力均由明确组件启用。
+
 ## 构建与验证
 
 固定 SDK 10.0.402；主交付仅 `1.7/Assemblies/PioneerFrameworkLite.dll`。样例 Debug 输出 bin/Debug，独立 Mod Release 输出自身 Assemblies；样例引用的框架编译隔离到 bin，避免重写真实交付件。构建及验证见根 README、tools/test-all.ps1 和样例说明。

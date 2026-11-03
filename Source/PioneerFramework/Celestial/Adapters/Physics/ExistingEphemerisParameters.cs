@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 namespace PioneerFramework.Celestial
 {
     /// <summary>既有解析模型 v1 的冻结初始化数据。类别仅作为显示元数据，轨道由显式半径决定。</summary>
-    public sealed class ExistingEphemerisParameters
+    public sealed partial class ExistingEphemerisParameters
     {
         public double OrbitRadius { get; }
         public double OrbitPeriod { get; }
@@ -41,6 +41,7 @@ namespace PioneerFramework.Celestial
         }
         public static CelestialResult<ExistingEphemerisParameters> Parse(PhysicsInitialization initialization)
         {
+            if (initialization.ModeId == "existing.circular.v2") return ParseV2(initialization);
             if (initialization.ProviderId != ExistingCelestialEphemerisBridge.Id || initialization.ModeId != "existing.circular.v1" || initialization.Version != 1)
                 return CelestialResult.Reject<ExistingEphemerisParameters>(new CelestialError("UnsupportedInitialization"));
             try
