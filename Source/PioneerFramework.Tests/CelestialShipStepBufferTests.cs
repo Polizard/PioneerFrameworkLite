@@ -24,7 +24,8 @@ public class CelestialShipStepBufferTests
     {
         void Check(Type type, string fields) => Assert.Equal(fields.Split('|').Order().ToArray(),
             type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly).Select(f => f.Name).Order().ToArray());
-        Check(typeof(PioneerFramework.Components.PropellantTankComponentData), "propellantDefName|capacityKg|massKg|leaked");
+        // 2026-10-31（合并）：十三批给推进剂罐加了 RCS 供给三字段（rcsSupply/rcsEfficiency/feedEnabled）。
+        Check(typeof(PioneerFramework.Components.PropellantTankComponentData), "propellantDefName|capacityKg|massKg|leaked|rcsSupply|rcsEfficiency|feedEnabled");
         Check(typeof(SpaceEntityGroup.PhysicsStateCache), "baseTick|startPos|startVel|acc|jerk|dt|offset");
     }
     [Theory]

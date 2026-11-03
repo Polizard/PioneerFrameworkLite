@@ -80,8 +80,9 @@
     <Compile Include="..\PioneerFramework\Base\Orbital\PlanIntent.cs" Link="Adapter\PlanIntent.cs" />
     <!-- P2：队列与引导的归属规则（§2.4）——纯谓词，宿主只调用不做判断 -->
     <Compile Include="..\PioneerFramework\Base\Orbital\PlanOwnerRules.cs" Link="Adapter\PlanOwnerRules.cs" />
-    <!-- P2/B2.1：燃烧区制判据（准脉冲 vs 连续推力） -->
+    <!-- P2/B2.1：燃烧区制判据（准脉冲 vs 连续推力）；2026-10-27 起公式/阈值唯一权威在 ManeuverRegime -->
     <Compile Include="..\PioneerFramework\Base\Orbital\BurnRegime.cs" Link="Adapter\BurnRegime.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\ManeuverRegime.cs" Link="Adapter\ManeuverRegime.cs" />
     <!-- P2/B2.3 的"2° 节拍刷新"已于 2026-09-19 删除（台架定量：量化 = 残差之源）⇒ 不再链 BurnArcPolicy.cs -->
     <!-- 预对准可行性（居中点火吃掉对准时间；真飞验收的结论） -->
     <Compile Include="..\PioneerFramework\Base\Orbital\AlignFeasibility.cs" Link="Adapter\AlignFeasibility.cs" />

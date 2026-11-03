@@ -3,6 +3,10 @@
 # 用法（在仓库根或任意目录）：
 #   powershell -ExecutionPolicy Bypass -File tools/MutationCheck.ps1
 #   powershell -ExecutionPolicy Bypass -File tools/MutationCheck.ps1 -Manifest <path>
+#   powershell -ExecutionPolicy Bypass -File tools/MutationCheck.ps1 -Only M22,M8     # 只跑受影响的子集
+#
+# 为什么有 -Only（2026-10-31）：全量 34 条约 4 分钟（实测 7.4 s/条 = 构建 ~4 s + 筛测试 ~3.4 s）。
+# 日常改一个模块没必要全跑；按名字前缀挑相关的几条，~40–60 s 就够。**收口仍要全量跑一次**。
 #
 # 语义（2026-10-17 起，计划稿 §8-7 的"判据先自证"条）：
 #   对清单里的每个条目：
@@ -17,7 +21,8 @@
 #   · 还原后若要提交/构建，请照常跑 `tools/test-all.ps1`（本工具不替代闸门）；
 #   · 清单与源码漂移（oldText 命中 ≠ 1）时**先修清单**，不要放宽匹配。
 param(
-    [string]$Manifest = (Join-Path $PSScriptRoot "mutation-checks.json")
+    [string]$Manifest = (Join-Path $PSScriptRoot "mutation-checks.json"),
+    [string]$Only = ""
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,6 +31,15 @@ Push-Location $root
 
 $failures = 0
 $entries = Get-Content -LiteralPath $Manifest -Raw -Encoding UTF8 | ConvertFrom-Json
+
+if ($Only) {
+    $pats = $Only -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+    $entries = @($entries | Where-Object {
+        $n = $_.name
+        ($pats | Where-Object { $n -like "$_*" }).Count -gt 0
+    })
+    if ($entries.Count -eq 0) { throw "没有条目匹配 -Only $Only" }
+}
 
 Write-Host "=== MutationCheck: $($entries.Count) 个条目（清单 $Manifest）===" -ForegroundColor Cyan
 
@@ -40,8 +54,12 @@ foreach ($m in $entries) {
     $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
     $offset = if ($hasBom) { 3 } else { 0 }
     $orig = [Text.Encoding]::UTF8.GetString($bytes, $offset, $bytes.Length - $offset)
+    # 2026-10-21：平台口径归一。仓库存的是 LF，而 Windows checkout（core.autocrlf=true）会把文件写成
+    # CRLF ⇒ 多行 oldText（清单里按 LF 书写）命中 0 次、**假红**（M15/M28/M30 实撞过）。
+    # 匹配与施加统一按 LF；还原仍走上面的 `$bytes` 逐字节还原，不受影响。
+    $origLf = $orig.Replace("`r`n", "`n")
 
-    $hits = ([regex]::Matches($orig, [regex]::Escape($m.oldText))).Count
+    $hits = ([regex]::Matches($origLf, [regex]::Escape($m.oldText))).Count
     if ($hits -ne 1) {
         Write-Host "  FAIL: oldText 命中 $hits 次（要求恰好 1 次）——清单与源码已漂移，先修清单" -ForegroundColor Red
         $failures++
@@ -49,7 +67,7 @@ foreach ($m in $entries) {
     }
 
     try {
-        $mut = $orig.Replace($m.oldText, $m.newText)
+        $mut = $origLf.Replace($m.oldText, $m.newText)
         $enc = New-Object System.Text.UTF8Encoding($hasBom)
         [IO.File]::WriteAllText($path, $mut, $enc)
         Write-Host "  已施加变异；跑筛选测试：$($m.testFilter)"
@@ -60,8 +78,12 @@ foreach ($m in $entries) {
         $eap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         $out = ''
+        # 2026-10-21：条目可带 `project` 指定测试工程。默认仍是 net10 的游戏集成测试工程；
+        # 纯台架（阶梯/霍曼/移植面）住在 net48 的 `Source/MechJebLibTest`（MechJebLibTest.csproj），
+        # 不指定就跑错工程 —— 现象是"没有测试匹配筛选器"，会被误读成"变异没被抓住"。
+        $testProj = if ($m.project) { $m.project } else { "Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj" }
         try {
-            $out = & dotnet test "Source/PioneerFramework.Tests/PioneerFramework.Tests.csproj" -v:minimal --filter $m.testFilter --logger "trx;LogFileName=res.trx" --results-directory $resDir 2>&1 | Out-String
+            $out = & dotnet test $testProj -v:minimal --filter $m.testFilter --logger "trx;LogFileName=res.trx" --results-directory $resDir 2>&1 | Out-String
         }
         finally { $ErrorActionPreference = $eap }
 

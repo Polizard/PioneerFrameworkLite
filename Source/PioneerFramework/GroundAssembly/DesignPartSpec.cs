@@ -16,8 +16,15 @@ namespace PioneerFramework.GroundAssembly
         /// <summary>Part 类别（词表）：thruster / tank / stage / payload-mount / sensor / weapon…</summary>
         public string category = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
 
-        /// <summary>数量。框架施工代表这些 Part 被一起建造。</summary>
+        /// <summary>数量 = **轴向站数**（沿堆叠方向摆几次）。框架施工代表这些 Part 被一起建造。</summary>
         public int quantity = 1;
+
+        /// <summary>
+        /// **并联台数**（2026-10-29）：同一个轴向站上并排放几件（1 = 单件；2…7 = 绕主推轴成环）。
+        /// 实际件数 = `quantity × parallelCount`；几何见 <see cref="ParallelLayout"/>。
+        /// 默认 1 ⇒ 老存档/老设计逐位零变化。
+        /// </summary>
+        public int parallelCount = 1;
 
         /// <summary>安装位置描述。首发只做保存和透传，后续可用于自定义布局。</summary>
         public string installPosition = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
@@ -25,7 +32,7 @@ namespace PioneerFramework.GroundAssembly
         // ── B3：显式布局/姿态/形状/分级预留（全有默认值，旧设计零变化）──
         /// <summary>分级预留（只透传到 part；分级行为后置）。</summary>
         public int stageId;
-        /// <summary>true = 用 <see cref="localPosition"/>/<see cref="localRotation"/>；false = 沿 −Y 堆叠。</summary>
+        /// <summary>true = 用 <see cref="localPosition"/>/<see cref="localRotation"/>；false = 沿 −Z 堆叠。</summary>
         public bool useExplicitPose;
         /// <summary>显式体坐标（相对实体原点，米）。</summary>
         public DVector3 localPosition;
@@ -42,6 +49,8 @@ namespace PioneerFramework.GroundAssembly
             Scribe_Values.Look(ref defName, "defName");
             Scribe_Values.Look(ref category, "category");
             Scribe_Values.Look(ref quantity, "quantity", 1);
+            Scribe_Values.Look(ref parallelCount, "parallelCount", 1);
+            parallelCount = ParallelLayout.Clamp(parallelCount);
             Scribe_Values.Look(ref installPosition, "installPosition");
             Scribe_Values.Look(ref stageId, "stageId", 0);
             Scribe_Values.Look(ref useExplicitPose, "useExplicitPose", false);

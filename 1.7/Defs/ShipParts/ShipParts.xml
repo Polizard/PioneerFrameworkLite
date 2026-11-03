@@ -9,8 +9,16 @@
        ⚠ **必须带 Class 属性**：RimWorld 的 Def 解析按简单类型名 `assembly.GetType("ShipPartDef")`
        查全局类型，找不到命名空间里的 `PioneerFramework.ShipPartDef` ⇒ 写全名。
        ════════════════════════════════════════════════════════════════════ -->
+  <!-- 2026-10-29 用户令"工质罐和引擎都改为圆柱"：thruster / tank / rcs / rcs-tank 一律
+       <shape>Cylinder</shape>。口径 = **圆柱轴向 = 体 Z**（= 堆叠轴 = 机头 +Z）：
+       直径取 boundsX（圆截面 ⇒ boundsZ 同值），高取堆叠长度。渲染/惯量/碰撞胶囊三处同口径。
+       其它类别（stage/reactor/battery/radiator/cargo/weapon/control/payload-bay）保持 Box。 -->
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Thruster_Debug</defName>
+    <!-- 2026-10-26 裁定 A：目录显式热源（30 kW）；装配器写进同一个 EngineComponentData -->
+    <heatProductionWatts>30000</heatProductionWatts>
+    <!-- 2026-10-27：引擎被动散热 10 kW（用散热器组件承载） -->
+    <heatDissipationWatts>10000</heatDissipationWatts>
     <label>调试推进器</label>
     <category>thruster</category>
     <massKg>500</massKg>
@@ -18,6 +26,9 @@
     <boundsY>4</boundsY>
     <boundsZ>2</boundsZ>
     <stackLengthMeters>4</stackLengthMeters>
+    <shape>Cylinder</shape>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>10</armorThicknessMm>
     <exhaustVelocity>3000</exhaustVelocity>
     <massFlowRate>10</massFlowRate>
     <propellantDefName>PF_Propellant_Chemical</propellantDefName>
@@ -32,6 +43,9 @@
     <boundsY>6</boundsY>
     <boundsZ>2</boundsZ>
     <stackLengthMeters>6</stackLengthMeters>
+    <shape>Cylinder</shape>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>12</armorThicknessMm>
     <tankCapacityKg>1000</tankCapacityKg>
     <propellantDefName>PF_Propellant_Chemical</propellantDefName>
   </ShipPartDef>
@@ -45,5 +59,200 @@
     <boundsY>2</boundsY>
     <boundsZ>2</boundsZ>
     <stackLengthMeters>2</stackLengthMeters>
+  </ShipPartDef>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       2026-10-22 · 部件功能化 §4 目录预置（debug 数值，等台架/玩法定标）
+       新角色的参数一律走通用的 <presets>，**不加 Def 专用字段**。
+       参数名 = 组件的 ApplyPreset 键（见 `Source/PioneerFramework/Components/*.cs`）。
+       ⚠ 产热与发电/功耗**成对填**（只填一边 = 热闭环永远不超温）。
+       ════════════════════════════════════════════════════════════════════ -->
+
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Reactor_Debug</defName>
+    <label>调试反应堆</label>
+    <category>reactor</category>
+    <massKg>800</massKg>
+    <boundsX>2</boundsX>
+    <boundsY>3</boundsY>
+    <boundsZ>2</boundsZ>
+    <stackLengthMeters>3</stackLengthMeters>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>15</armorThicknessMm>
+    <presets>
+      <li>
+        <typeId>ReactorComponentData</typeId>
+        <parameters>
+          <li><key>powerGenWatts</key><value>120000</value></li>
+          <li><key>heatProductionWatts</key><value>240000</value></li>
+        </parameters>
+      </li>
+    </presets>
+  </ShipPartDef>
+
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Battery_Debug</defName>
+    <label>调试电池组</label>
+    <category>battery</category>
+    <massKg>250</massKg>
+    <boundsX>2</boundsX>
+    <boundsY>2</boundsY>
+    <boundsZ>2</boundsZ>
+    <stackLengthMeters>2</stackLengthMeters>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>4</armorThicknessMm>
+    <presets>
+      <li>
+        <typeId>BatteryComponentData</typeId>
+        <parameters>
+          <li><key>capacityJoules</key><value>5000000</value></li>
+          <li><key>maxDischargeWatts</key><value>200000</value></li>
+          <li><key>maxChargeWatts</key><value>200000</value></li>
+        </parameters>
+      </li>
+    </presets>
+  </ShipPartDef>
+
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Radiator_Debug</defName>
+    <label>调试散热器</label>
+    <category>radiator</category>
+    <massKg>150</massKg>
+    <boundsX>3</boundsX>
+    <boundsY>1</boundsY>
+    <boundsZ>2</boundsZ>
+    <stackLengthMeters>2</stackLengthMeters>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>4</armorThicknessMm>
+    <presets>
+      <li>
+        <typeId>RadiatorComponentData</typeId>
+        <parameters>
+          <li><key>dissipationWatts</key><value>300000</value></li>
+        </parameters>
+      </li>
+    </presets>
+  </ShipPartDef>
+
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Cargo_Debug</defName>
+    <label>调试货舱</label>
+    <category>cargo</category>
+    <massKg>300</massKg>
+    <boundsX>3</boundsX>
+    <boundsY>3</boundsY>
+    <boundsZ>3</boundsZ>
+    <stackLengthMeters>3</stackLengthMeters>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>8</armorThicknessMm>
+    <presets>
+      <li>
+        <typeId>CargoComponentData</typeId>
+        <parameters>
+          <li><key>capacityKg</key><value>20000</value></li>
+        </parameters>
+      </li>
+    </presets>
+  </ShipPartDef>
+
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_WeaponMount_Debug</defName>
+    <label>调试武器挂点</label>
+    <category>weapon</category>
+    <massKg>400</massKg>
+    <boundsX>2</boundsX>
+    <boundsY>1</boundsY>
+    <boundsZ>2</boundsZ>
+    <stackLengthMeters>2</stackLengthMeters>
+    <armorMaterial>PF_Armor_Composite</armorMaterial>
+    <armorThicknessMm>25</armorThicknessMm>
+    <presets>
+      <li>
+        <typeId>WeaponMountComponentData</typeId>
+        <parameters>
+          <li><key>weaponDef</key><value>PF_Weapon_Laser</value></li>
+          <li><key>mountYawDegrees</key><value>0</value></li>
+          <li><key>ammoCapacity</key><value>60</value></li>
+          <li><key>powerDrawWatts</key><value>50000</value></li>
+          <li><key>heatProductionWatts</key><value>60000</value></li>
+        </parameters>
+      </li>
+    </presets>
+  </ShipPartDef>
+
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_ControlCore_Debug</defName>
+    <label>调试控制核心</label>
+    <category>control</category>
+    <massKg>300</massKg>
+    <boundsX>2</boundsX>
+    <boundsY>2</boundsY>
+    <boundsZ>2</boundsZ>
+    <stackLengthMeters>2</stackLengthMeters>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>20</armorThicknessMm>
+  </ShipPartDef>
+
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_RcsThruster_Debug</defName>
+    <label>调试 RCS 推力器</label>
+    <category>rcs</category>
+    <massKg>50</massKg>
+    <boundsX>1</boundsX>
+    <boundsY>1</boundsY>
+    <boundsZ>1</boundsZ>
+    <stackLengthMeters>1</stackLengthMeters>
+    <shape>Cylinder</shape>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>2</armorThicknessMm>
+  </ShipPartDef>
+
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_RcsTank_Debug</defName>
+    <label>调试 RCS 小罐（肼）</label>
+    <category>rcs-tank</category>
+    <massKg>60</massKg>
+    <boundsX>2</boundsX>
+    <boundsY>2</boundsY>
+    <boundsZ>2</boundsZ>
+    <stackLengthMeters>2</stackLengthMeters>
+    <shape>Cylinder</shape>
+    <tankCapacityKg>200</tankCapacityKg>
+    <tankInitialKg>200</tankInitialKg>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>2</armorThicknessMm>
+  </ShipPartDef>
+
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_PayloadBay_Debug</defName>
+    <label>调试载荷舱</label>
+    <category>payload-bay</category>
+    <massKg>400</massKg>
+    <boundsX>3</boundsX>
+    <boundsY>3</boundsY>
+    <boundsZ>3</boundsZ>
+    <stackLengthMeters>3</stackLengthMeters>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>8</armorThicknessMm>
+  </ShipPartDef>
+
+  <ShipPartDef Class="PioneerFramework.ShipPartDef">
+    <defName>PF_ShipPart_Thruster_Electric_Debug</defName>
+    <label>调试电推进器（需 100 kW 供电）</label>
+    <category>thruster</category>
+    <massKg>600</massKg>
+    <boundsX>2</boundsX>
+    <boundsY>4</boundsY>
+    <boundsZ>2</boundsZ>
+    <stackLengthMeters>4</stackLengthMeters>
+    <shape>Cylinder</shape>
+    <armorMaterial>PF_Armor_Steel</armorMaterial>
+    <armorThicknessMm>10</armorThicknessMm>
+    <exhaustVelocity>3000</exhaustVelocity>
+    <massFlowRate>10</massFlowRate>
+    <propellantDefName>PF_Propellant_Chemical</propellantDefName>
+    <!-- §5（用户 2026-10-26 裁定）：欠电 ⇒ **拒绝点火**。100 kW = 一台调试反应堆（120 kW）刚好够，
+         没有反应堆/电池就点不着火 ⇒ 这是该机制的验收件。 -->
+    <powerDrawWatts>100000</powerDrawWatts>
   </ShipPartDef>
 </Defs>

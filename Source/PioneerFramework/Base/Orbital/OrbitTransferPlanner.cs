@@ -46,6 +46,7 @@ namespace PioneerFramework
         private int arrivalTick;
         private DVector3 departurePosSystem;  // 世界坐标
         private DVector3 departureVelSystem;
+        private HohmannResult hohmann;        // 纯核结果（2026-10-27）
 
         private const float ButtonHeight = 30f;
         private const float LabelHeight = 22f;
@@ -241,56 +242,19 @@ namespace PioneerFramework
             DVector3 r1 = r1System - bodyOff;   // 中心天体相对坐标
             DVector3 v1 = v1System - bodyVel;
 
-            double r1Mag = r1.magnitude;
-            double r2Mag = targetRadiusMeters;
-            DVector3 h1 = DVector3.Cross(r1, v1).normalized;
+            // 数学全在纯核（2026-10-27）；本窗口只负责取状态、存字段、显示。
+            var res = OrbitPlanner.PlanHohmann(r1, v1, mu, targetRadiusMeters, targetNormal);
+            if (!res.Valid) { resultMsg = res.Reason; return; }
+            hohmann = res;
+            double deltaI = res.DeltaI;
+            tanDV1 = res.TanDv1;
+            tanDV2 = res.TanDv2;
+            normDV2 = res.NormDv2;
 
-            // 霍曼转移半长轴
-            double a = (r1Mag + r2Mag) * 0.5;
-
-            // 转移轨道速度
-            double vp = System.Math.Sqrt(mu * (2.0 / r1Mag - 1.0 / a)); // 近地点速度
-            double va = System.Math.Sqrt(mu * (2.0 / r2Mag - 1.0 / a)); // 远地点速度
-
-            // 当前圆轨速度
-            double vCirc1 = System.Math.Sqrt(mu / r1Mag);
-            double vCirc2 = System.Math.Sqrt(mu / r2Mag);
-
-            // 切向分量
-            double dvTan1 = vp - vCirc1;
-
-            // 轨道平面夹角
-            DVector3 h2 = targetNormal;
-            double cosDeltaI = DVector3.Dot(h1, h2);
-            cosDeltaI = Mathf.Clamp((float)cosDeltaI, -1f, 1f);
-            double deltaI = System.Math.Acos(cosDeltaI);
-
-            // 到达机动：组合圆化 + 平面变化（在远地点做平面变化更省燃料）
-            // dvTan₂ = vCirc₂·cosΔi − va      （切向：目标圆轨在旧平面的投影）
-            // dvNorm = vCirc₂·sinΔi            （法向：抬升轨道平面）
-            double dvTan2 = vCirc2 * cosDeltaI - va;
-            double dvNormAtArrival = vCirc2 * System.Math.Sin(deltaI);
-            double combinedArrivalDV = System.Math.Sqrt(dvTan2 * dvTan2 + dvNormAtArrival * dvNormAtArrival);
-
-            // 法向符号：根据 h₁×h₂ 在径向方向的分量确定上抬/下压
-            DVector3 hCross = DVector3.Cross(h1, h2);
-            double normSign = hCross.magnitude > 1e-12
-                ? System.Math.Sign(DVector3.Dot(hCross, r1.normalized))
-                : 0.0;
-
-            // 存储结果
-            tanDV1 = dvTan1;
-            // 出发不做平面变化，留在到达组合圆化+平面变化
-
-            tanDV2 = dvTan2;
-            normDV2 = dvNormAtArrival * normSign;
-
-            departureDV = System.Math.Abs(dvTan1);
-            arrivalDV = combinedArrivalDV;
-            totalDV = departureDV + arrivalDV;
-
-            // 转移时间
-            transferTimeSeconds = System.Math.PI * System.Math.Sqrt(a * a * a / mu);
+            departureDV = System.Math.Abs(res.TanDv1);
+            arrivalDV = res.ArrivalDv;
+            totalDV = res.TotalDv;
+            transferTimeSeconds = res.TransferSeconds;
 
             departurePosSystem = r1System;      // 世界坐标（供预览）
             departureVelSystem = v1System;
@@ -314,29 +278,35 @@ namespace PioneerFramework
         {
             if (!solutionValid) return;
 
-            // 出发机动：纯切向霍曼加速
-            var departureManeuver = new SpaceEntityGroup.PlannedManeuver
+            // 2026-10-27：走唯一入队口 `OrbitAdapter.TryQueuePlan`；**第二发带转移轨道参考系**——
+            // 否则到达刹车会在"点火前轨道"上分解（`PlanNode.refOrbit` 存在的理由）。
+            var mgr = CelestialBodyManager.GetCached() ?? Current.Game?.GetComponent<CelestialBodyManager>();
+            double nowTick = TimeScaleManager.GetPhysicsTickSafe();
+            if (!OrbitAdapter.TryToOrbitView(selfGroup, mgr, nowTick, out OrbitView ovNow))
             {
-                radialDV = 0f,
-                tangentialDV = (float)tanDV1,
-                normalDV = 0f,
-                executeTick = departureTick,
-                active = true,
-                previewNodePosition = departurePosSystem
-            };
-            spaceGame.QueueGroupManeuver(selfGroup.GroupId, departureManeuver);
+                Messages.Message("无法获取当前轨道，转移未排入。", MessageTypeDefOf.RejectInput, false);
+                return;
+            }
 
-            // 到达机动：圆化 + 平面变化（如果 Δi > 0）
-            var arrivalManeuver = new SpaceEntityGroup.PlannedManeuver
+            double mu = spaceGame.GetBodyGM(selfGroup.CelestialBodyId);
+            DVector3 dv1 = hohmann.Dv1;
+            DVector3 dv2 = hohmann.Dv2;
+            DVector3 vTransfer = departureVelSystem + dv1;
+            OrbitView transferView = OrbitView.FromStateVectors(departurePosSystem, vTransfer, mu,
+                departureTick, DVector3.up, spaceGame.GetBodySafeRadius(selfGroup.CelestialBodyId));
+
+            var nodes = new List<PlanNode>
             {
-                radialDV = 0f,
-                tangentialDV = (float)tanDV2,
-                normalDV = (float)normDV2,
-                executeTick = arrivalTick,
-                active = true,
-                previewNodePosition = DVector3.zero // 到达位置未知，留空
+                new PlanNode(dv1, departureTick, PlanOwner.Manual),
+                new PlanNode(dv2, arrivalTick, PlanOwner.Manual, 0.0, transferView, true),
             };
-            spaceGame.QueueGroupManeuver(selfGroup.GroupId, arrivalManeuver);
+            int previewIndex = 0;
+            if (!OrbitAdapter.TryQueuePlan(selfGroup, ovNow, nodes, out string queueReason, out _, null,
+                m => { m.previewNodePosition = previewIndex++ == 0 ? departurePosSystem : DVector3.zero; return m; }))
+            {
+                Messages.Message($"转移未排入：{queueReason}", MessageTypeDefOf.RejectInput, false);
+                return;
+            }
 
             // 启用轨道保持
             if (selfGroup.CelestialBodyId >= 0)

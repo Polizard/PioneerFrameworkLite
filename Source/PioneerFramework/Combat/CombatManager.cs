@@ -22,6 +22,10 @@ namespace PioneerFramework.Combat
         /// 间距受弹头爆炸冲量作用半径约束；N=8 时 16km/(8−1) ≈ 2.29km &gt; 爆炸半径 1.5km）。
         /// 发射器 UI（`CompMissileLauncher` / `Window_VolleyCountSlider`）与齐射工厂都引用它。</summary>
         public const int MaxVolleyCount = 8;
+
+        /// <summary>§11.2：**爆炸的装甲穿透**（占位值；口径未定）。武器弹道用 `WeaponDef.armorPenetration`，
+        /// 爆炸没有"弹头穿透"这个字段 —— 先给中等常量，将来按装药量/爆距算再替换（登记在交接 §2）。</summary>
+        private const float ExplosionArmorPenetration = 10f;
         // 定向能射线候选集（每炮一次收集复用，方案 A 正方体粗筛 / B 走格预留共用）
         private readonly HashSet<SpaceEntityGroup> rayCandidateResults = new();
         // 命中诊断：已记录过的射弹 id（每个射弹只打印一次）
@@ -81,6 +85,11 @@ namespace PioneerFramework.Combat
         private long chainPairCandidates;   // 本窗口进入逐对几何的候选数（验证 SAP 是否真的过滤）
         private double chainTotalAccumMs, chainTotalMaxMs;
         private int chainTotalMaxStep, chainTotalMaxTick;
+        // 2026-10-21：窗口内 GC 增量。用来判定"偶发 1.5–2.1 ms 的重建尖峰"是不是 GC 停顿
+        // （重建本身就是最大分配点，GC 会正好落在它里面 ⇒ 单看子段钟分不清）。
+        private int chainGc0, chainGc1, chainGc2;
+        private double chainGcPauseMs;
+        private bool chainGcInit;
 
         /// <summary>是否处于交战状态。原为 `activeProjectiles.Count > 0 || TargetingSystem != null`，
         /// 而 `TargetingSystem` 恒为 null（死代码，2026-09-16 随 [V9] 删除）⇒ 语义等价退化为弹量判断。</summary>
@@ -235,10 +244,27 @@ namespace PioneerFramework.Combat
             public readonly List<PartRelGeom> relParts = new();
 
             /// <summary>CCD part 级 any-overlap：按相对 AABB 的 X/Y/Z min 预排序的下标。
-            /// 平移不改变顺序 ⇒ 同一 epoch 内所有 CCD 采样复用。null = 尚未构建（回退全量）。</summary>
+            /// 平移不改变顺序 ⇒ 同一 epoch 内所有 CCD 采样复用。null = 尚未构建（按需重建）。</summary>
             public int[]? orderX, orderY, orderZ;
 
-            /// <summary>相对几何重建后刷新三轴排序（每 epoch 一次，O(n log n)）。</summary>
+            /// <summary>三轴排序的 keys 暂存（跨次复用；只有 CCD 需要轴序时才会用到）。</summary>
+            private double[]? axisKeysScratch;
+
+            /// <summary>
+            /// 2026-10-21：**轴序改为惰性**。轴序只有 CCD 的 `PartsOverlapCore` / `SweptAxisEarlyOut` 用；
+            /// 而 `EnsurePartBoxes` 每个 epoch 都会重建（256 船每步 2 组），原来在重建里无条件跑 3 次排序
+            /// ⇒ 每步 6 个数组（18 KB/步）纯垃圾 + 6 次 O(n log n)。游戏日志里 `part盒重组` 平均 40 µs、
+            /// 偶发 1.5–2.1 ms（GC 落在重建里 = 自己产垃圾自己挨）。
+            /// 现在重建只置 null，谁要用谁调 `EnsureAxisOrders()`（同 epoch 内只建一次）。
+            /// </summary>
+            public void InvalidateAxisOrders()
+            {
+                orderX = null;
+                orderY = null;
+                orderZ = null;
+            }
+
+            /// <summary>相对几何重建后刷新三轴排序（每 epoch 至多一次，O(n log n)）。</summary>
             public void RebuildAxisOrders()
             {
                 int n = relParts.Count;
@@ -249,16 +275,19 @@ namespace PioneerFramework.Combat
                     orderZ = System.Array.Empty<int>();
                     return;
                 }
-                orderX = BuildAxisOrder(0);
-                orderY = BuildAxisOrder(1);
-                orderZ = BuildAxisOrder(2);
+                orderX = BuildAxisOrder(0, orderX);
+                orderY = BuildAxisOrder(1, orderY);
+                orderZ = BuildAxisOrder(2, orderZ);
             }
 
-            private int[] BuildAxisOrder(int axis)
+            private int[] BuildAxisOrder(int axis, int[]? target)
             {
                 int n = relParts.Count;
-                var keys = new double[n];
-                var idx = new int[n];
+                // keys 只是排序暂存：跨次复用；下标数组直接写回 orderX/Y/Z 自身（长度不够才新分配）。
+                if (axisKeysScratch == null || axisKeysScratch.Length < n)
+                    axisKeysScratch = new double[n];
+                double[] keys = axisKeysScratch;
+                int[] idx = target != null && target.Length == n ? target : new int[n];
                 for (int i = 0; i < n; i++)
                 {
                     idx[i] = i;
@@ -273,7 +302,7 @@ namespace PioneerFramework.Combat
                         ? entity + (axis == 0 ? r.RelMin.x : axis == 1 ? r.RelMin.y : r.RelMin.z)
                         : entity + center - half;
                 }
-                System.Array.Sort(keys, idx);
+                System.Array.Sort(keys, idx, 0, n);
                 return idx;
             }
 
@@ -516,6 +545,19 @@ namespace PioneerFramework.Combat
                     sb.Append("｜子段(平均/最慢 µs)：").Append(stages);
                 sb.Append("｜候选=").Append(chainPairCandidates)
                   .Append(" 多格船=").Append(GetCombatGrid()?.DebugMultiCellShipCount() ?? -1);
+                string counters = PerfProbe.CollisionCounterReport();
+                if (counters.Length > 0)
+                    sb.Append("｜窄相计数：").Append(counters);
+                // GC 增量（g0/g1/g2 + 累计暂停时长）：判定重建尖峰是不是 GC 停顿。首次只记基线。
+                int g0 = GC.CollectionCount(0), g1 = GC.CollectionCount(1), g2 = GC.CollectionCount(2);
+                double pauseMs = GC.GetTotalPauseDuration().TotalMilliseconds;
+                if (chainGcInit)
+                {
+                    sb.Append("｜GC回收=").Append(g0 - chainGc0).Append('/').Append(g1 - chainGc1)
+                      .Append('/').Append(g2 - chainGc2)
+                      .Append(System.Globalization.CultureInfo.InvariantCulture, $" 暂停={pauseMs - chainGcPauseMs:F1}ms");
+                }
+                chainGc0 = g0; chainGc1 = g1; chainGc2 = g2; chainGcPauseMs = pauseMs; chainGcInit = true;
                 PerfProbe.ResetCollisionStages();
             }
             Log.Message(sb.ToString());
@@ -845,6 +887,10 @@ namespace PioneerFramework.Combat
         /// 线段 = 盒内区间 `boxEntry → boxEntry + dir*maxDist`；`t` 为归一化参数（0..1），微负取 0。
         /// 多件重叠时取最小进入参数（先撞到的那件）；全部未命中 ⇒ false（AABB 命中但零件缝里穿过）。
         /// 调用方负责把 `partEnterT * maxDist` 换成命中点；图内映射只对 `linkedMapId >= 0` 的挂图件做。
+        ///
+        /// **2026-10-30 用户裁定：射弹跳过残骸** —— 已毁件（`isDestroyed`）不参与选件，
+        /// 子弹穿过残骸、打后面还活着的件；整船全成残骸 ⇒ 返回 false（弹丸不被残骸吃掉）。
+        /// 残骸**仍参与**包围盒 / 船-船碰撞 / 爆炸（那几条语义不变）。
         /// </summary>
         internal static bool TryPickHitPart(SpaceEntity entity, DVector3 boxEntry, DVector3 dirShip, double maxDistShip,
             out int partIndex, out SpacePart hitPart, out double partEnterT)
@@ -858,8 +904,10 @@ namespace PioneerFramework.Combat
             for (int i = 0; i < entity.Parts.Count; i++)
             {
                 var p = entity.Parts[i];
-                // B5 / D-P7：损毁残骸仍可被命中（子弹打在残骸上，不再“穿过空气”）。
-                if (p == null) continue;
+                // 2026-10-30 用户裁定：**射弹跳过残骸**（推翻 B5 / D-P7 的"残骸挡弹"）。
+                // 完全损坏的件不再参与选件 ⇒ 子弹穿过残骸、打到后面活着的件；整船残骸 ⇒ 返回 false
+                // ⇒ 命中链继续（弹丸不被吃）。残骸仍参与包围盒/船-船碰撞/爆炸，那几条不变。
+                if (p == null || p.isDestroyed) continue;
                 if (!PartGeometry.RayObb(boxEntry, end, p.positionShip, p.rotationShip, p.boundsSizeShip,
                         out double tEntry))
                     continue;
@@ -1001,10 +1049,10 @@ namespace PioneerFramework.Combat
                         lastHitWeaponType = proj.weaponDef?.weaponType ?? WeaponType.Projectile;
                         if (DebugDetailedCombat)
                         {
-                            Log.Message($"[命中Part!] Tick={lastHitTick} 射弹{proj.id}→Group{group.GroupId} Entity{entityId} Part[{firstHitPartIndex}]\"{hitPart.defName}\" hitT={firstHitT:F3} PartHP={hitPart.hp:F0}→{hitPart.hp - proj.damage:F0} 飞行秒={proj.totalFlightSeconds:F2} EntityPos=({entityPosSystem.x:F0},{entityPosSystem.y:F0},{entityPosSystem.z:F0}) PartPosShip=({hitPart.positionShip.x:F0},{hitPart.positionShip.y:F0},{hitPart.positionShip.z:F0}) PartSize=({hitPart.boundsSizeShip.x:F0},{hitPart.boundsSizeShip.y:F0},{hitPart.boundsSizeShip.z:F0})");
+                            Log.Message($"[命中Part!] Tick={lastHitTick} 射弹{proj.id}→Group{group.GroupId} Entity{entityId} Part[{firstHitPartIndex}]\"{hitPart.defName}\" hitT={firstHitT:F3} PartHP={hitPart.hp:F0} 穿透={proj.armorPenetration:F1} 装甲={hitPart.ArmorValue:F1} 飞行秒={proj.totalFlightSeconds:F2} EntityPos=({entityPosSystem.x:F0},{entityPosSystem.y:F0},{entityPosSystem.z:F0}) PartPosShip=({hitPart.positionShip.x:F0},{hitPart.positionShip.y:F0},{hitPart.positionShip.z:F0}) PartSize=({hitPart.boundsSizeShip.x:F0},{hitPart.boundsSizeShip.y:F0},{hitPart.boundsSizeShip.z:F0})");
                         }
-                        // 应用伤害（走组件回调：OnDamaged / OnDestroyed）
-                        hitPart.ApplyDamage(proj.damage);
+                        // 应用伤害（§11.2 双通道：结构走装甲、维护不吃装甲；走组件回调 OnDamaged/OnDestroyed）
+                        hitPart.ApplyProjectileDamage(proj.damage, proj.armorPenetration);
                         if (hitPart.isDestroyed)
                         {
                             entity.MarkPartDestroyed(hitPart.partId);
@@ -1552,6 +1600,23 @@ namespace PioneerFramework.Combat
             }
         }
 
+        /// <summary>
+        /// **丢掉某个组的扫掠历史**（2026-10-30，抛级原点重定用）。
+        ///
+        /// 为什么需要：`shipPrevPositions` 记的是"上一步的组位置"，CCD/扫掠并集靠它算位移。
+        /// 抛级把原点移到质心 ⇒ 组位置一次跳 20–60 m；不清历史的话，下一趟会把这段人造位移
+        /// 当成真实扫掠（旁边的船可能被误判成"隧穿"）。删掉两个字典 + 从粗网格摘掉，
+        /// 下一趟按"首次见到"重新登记（那一步不做扫掠）。
+        /// </summary>
+        internal void ResetSweepHistory(SpaceEntityGroup group)
+        {
+            if (group == null) return;
+            shipPrevPositions.Remove(group.GroupId);
+            shipLastPositions.Remove(group.GroupId);
+            GetCombatGrid()?.RemoveShip(group);   // 粗网格也摘掉：下一趟 AddShip 按新位置重加
+            InvalidateCollisionCacheEntry(group.GroupId);
+        }
+
         /// <summary>每 600 步清理已死/久未访问的组缓存条目（对象跨 tick 复用的代价：字典不会无界增长）。</summary>
         private void PruneCollisionCache(SpaceGameComp spaceGame)
         {
@@ -1796,7 +1861,19 @@ namespace PioneerFramework.Combat
                 || obx == null || oby == null || obz == null
                 || oax.Length != na || oay.Length != na || oaz.Length != na
                 || obx.Length != nb || oby.Length != nb || obz.Length != nb)
-                return false;
+            {
+                // 2026-10-21：轴序改成惰性后，这里也是"要用"的一方 —— 不补建就会永远返回 false，
+                // 让紧凑 256 近失的整段扫掠轴预检（热态 72.4µs 的关键）悄悄失效。
+                ca.EnsureAxisOrders();
+                cb.EnsureAxisOrders();
+                oax = ca.orderX; oay = ca.orderY; oaz = ca.orderZ;
+                obx = cb.orderX; oby = cb.orderY; obz = cb.orderZ;
+                if (oax == null || oay == null || oaz == null
+                    || obx == null || oby == null || obz == null
+                    || oax.Length != na || oay.Length != na || oaz.Length != na
+                    || obx.Length != nb || oby.Length != nb || obz.Length != nb)
+                    return false;
+            }
 
             if (!HasSweptAxisOverlap(iterPartsA, iterPartsB, oax, obx, 0, delta.x))
             {
@@ -2274,8 +2351,13 @@ namespace PioneerFramework.Combat
             // clip 负结果门实验已回退（2026-10-20 日志：256 稳态 60–81 → 128–287 µs）。
             // 原因：clip 小列表嵌套判 true 后回退全量，而全量默认算法在同状态返回 false，
             // 每步白付 clip+全量两次收集。保留原全量路径作为唯一权威。
+            // 2026-10-21：把"part 盒重组"从 `最深对` 里拆出来单独计时（256 旋转船每步都重建，
+            // 它和 SAP 候选枚举是两种完全不同性质的成本，混在一个读数里没法判断尖峰归谁）。
+            long colPartBoxClock = PerfProbe.CollisionStageStart();
             EnsurePartBoxes(ca, a, spaceGame);
             EnsurePartBoxes(cb, b, spaceGame);
+            PerfProbe.CollisionStageEnd(PerfProbe.ColStagePartBuild, colPartBoxClock);
+
             DVector3 clipMin = DVector3.Max(ca.curMin, cb.curMin);
             DVector3 clipMax = DVector3.Min(ca.curMax, cb.curMax);
             return TryFindDeepestPartPair(ca.parts, cb.parts, clipMin, clipMax,
@@ -2288,14 +2370,12 @@ namespace PioneerFramework.Combat
         {
             int version = GroupPartsVersion(group, spaceGame);
             if (cache.partsBuilt && cache.partsVersion == version)
-            {
-                cache.EnsureAxisOrders();
-                return;
-            }
+                return;   // 2026-10-21：不再在这里补建轴序（轴序只有 CCD 用，见 InvalidateAxisOrders）
             CollectPartAabbs(group, cache.pos, spaceGame, cache.parts, cache.relParts);
             cache.partsBuilt = true;
             cache.partsVersion = version;
-            cache.RebuildAxisOrders();
+            // 轴序惰性失效：交给 CCD（PartsOverlapCore / SweptAxisEarlyOut）按需重建。
+            cache.InvalidateAxisOrders();
         }
 
         /// <summary>B1：部件集指纹（实体集版本 ⊕ 各实体 partSetVersion）。原地增删/改 part 都会变。</summary>
@@ -2332,8 +2412,8 @@ namespace PioneerFramework.Combat
                 AbsRotationMatrix(entityRot, out double a00, out double a01, out double a02,
                     out double a10, out double a11, out double a12,
                     out double a20, out double a21, out double a22);
-                var parts = entity.Parts;
-                for (int i = 0; i < parts.Count; i++)
+                var parts = CollectionsMarshal.AsSpan(entity.PartsList);   // 功能化 §2-A：热循环免接口派发
+                for (int i = 0; i < parts.Length; i++)
                 {
                     var part = parts[i];
                     // B5 / D-P7：损毁件仍参与碰撞（残骸可撞）；noCollide 仍豁免。
@@ -2402,8 +2482,8 @@ namespace PioneerFramework.Combat
             {
                 var entity = spaceGame.GetEntityById(eid);
                 if (entity == null || !entity.IsCollidable) continue;
-                var parts = entity.Parts;
-                for (int i = 0; i < parts.Count; i++)
+                var parts = CollectionsMarshal.AsSpan(entity.PartsList);   // 功能化 §2-A
+                for (int i = 0; i < parts.Length; i++)
                 {
                     var part = parts[i];
                     if (part != null && !part.noCollide) count++;
@@ -2434,8 +2514,8 @@ namespace PioneerFramework.Combat
                 AbsRotationMatrix(entityRot, out double a00, out double a01, out double a02,
                     out double a10, out double a11, out double a12,
                     out double a20, out double a21, out double a22);
-                var parts = entity.Parts;
-                for (int i = 0; i < parts.Count; i++)
+                var parts = CollectionsMarshal.AsSpan(entity.PartsList);   // 功能化 §2-A
+                for (int i = 0; i < parts.Length; i++)
                 {
                     var part = parts[i];
                     if (part == null || part.noCollide) continue;
@@ -2615,6 +2695,14 @@ namespace PioneerFramework.Combat
 
             if (!handled && (aBox.UseObb || bBox.UseObb))
             {
+                // 2026-10-21：与 `ConsiderPartPair` 同一层前置排除（投影 AABB 是 OBB 的保守包围，
+                // 不相交 ⇒ SAT 必 false）。接触收集同样按扫掠轴出候选，接触帧上这一步省得更多。
+                if (!AabbOverlap(aBox.Min, aBox.Max, bBox.Min, bBox.Max, out _, out _, out _))
+                {
+                    if (PerfProbe.CollisionStagesEnabled) PerfProbe.ColObbAabbRejects++;
+                    return false;
+                }
+                if (PerfProbe.CollisionStagesEnabled) PerfProbe.ColObbSatCalls++;
                 if (!PartGeometry.ObbObbSat(aBox.Center, aBox.Half, aBox.Rotation,
                         bBox.Center, bBox.Half, bBox.Rotation,
                         out normal, out depth, out point))
@@ -2781,8 +2869,8 @@ namespace PioneerFramework.Combat
             }
         }
 
-        /// <summary>形状解析接触：Sphere/Sphere、Sphere/Box、Cylinder(胶囊近似)/Cylinder/Sphere。
-        /// Cylinder–Box 返回 false，由调用方回退 OBB。</summary>
+        /// <summary>形状解析接触：Sphere/Sphere、Sphere/Box、Cylinder(胶囊近似)/Cylinder/Box/Sphere。
+        /// 圆柱按胶囊（轴 = 局部 Z）近似；没有形状分支的组合由调用方回退 OBB。</summary>
         private static bool TryShapeContact(in PartAabb a, in PartAabb b,
             out DVector3 normal, out double depth, out DVector3 point)
         {
@@ -2925,14 +3013,15 @@ namespace PioneerFramework.Combat
             return depth > 0.0;
         }
 
-        /// <summary>Cylinder → 胶囊近似：轴 = part 局部 Y，半径 = min(half.x, half.z)。</summary>
+        /// <summary>Cylinder → 胶囊近似：**轴 = part 局部 Z**（2026-10-29 从 Y 改过来，与
+        /// `InertiaTensor.PartSelfInertia` / `PartShapeMeshes` 同口径），半径 = min(half.x, half.y)。</summary>
         private static bool CapsuleSegment(in PartAabb box, out DVector3 p0, out DVector3 p1, out double radius)
         {
-            radius = Math.Min(box.Half.x, box.Half.z);
+            radius = Math.Min(box.Half.x, box.Half.y);
             p0 = p1 = box.Center;
             if (!(radius > 0.0)) return false;
-            DVector3 axis = DVector3.Rotate(DVector3.up, box.Rotation);
-            double halfLen = Math.Max(0.0, box.Half.y - radius);
+            DVector3 axis = DVector3.Rotate(DVector3.forward, box.Rotation);
+            double halfLen = Math.Max(0.0, box.Half.z - radius);
             p0 = box.Center - axis * halfLen;
             p1 = box.Center + axis * halfLen;
             return true;
@@ -3094,6 +3183,9 @@ namespace PioneerFramework.Combat
             int[] activeB = ArrayPool<int>.Shared.Rent(nB);
             int[] posA = ArrayPool<int>.Shared.Rent(nA);
             int[] posB = ArrayPool<int>.Shared.Rent(nB);
+            // 2026-10-21：SAP 段单独计时 + 候选计数（候选 = 扫掠轴区间重叠、但另外两轴还没验的对）。
+            long sapClock = PerfProbe.CollisionStageStart();
+            int sapCandidates = 0;
             try
             {
                 int e = 0;
@@ -3127,8 +3219,11 @@ namespace PioneerFramework.Combat
                         {
                             PartAabb aBox = boxesA[ev.Index];
                             for (int q = 0; q < countB; q++)
+                            {
                                 ConsiderPartPair(aBox, boxesB[activeB[q]], ref best, ref bestA, ref bestB,
                                     ref normal, ref depth, ref contact);
+                                if (PerfProbe.CollisionStagesEnabled) sapCandidates++;
+                            }
                             posA[ev.Index] = countA;
                             activeA[countA++] = ev.Index;
                         }
@@ -3136,8 +3231,11 @@ namespace PioneerFramework.Combat
                         {
                             PartAabb bBox = boxesB[ev.Index];
                             for (int q = 0; q < countA; q++)
+                            {
                                 ConsiderPartPair(boxesA[activeA[q]], bBox, ref best, ref bestA, ref bestB,
                                     ref normal, ref depth, ref contact);
+                                if (PerfProbe.CollisionStagesEnabled) sapCandidates++;
+                            }
                             posB[ev.Index] = countB;
                             activeB[countB++] = ev.Index;
                         }
@@ -3169,6 +3267,8 @@ namespace PioneerFramework.Combat
                 ArrayPool<int>.Shared.Return(activeB);
                 ArrayPool<int>.Shared.Return(posA);
                 ArrayPool<int>.Shared.Return(posB);
+                PerfProbe.NoteSapPairs(sapCandidates);
+                PerfProbe.CollisionStageEnd(PerfProbe.ColStageSap, sapClock);
             }
             return best > 0.0;
         }
@@ -3398,6 +3498,18 @@ namespace PioneerFramework.Combat
             // B3b：任一侧带自身姿态 ⇒ 精确 OBB-SAT；两侧都无姿态 ⇒ 旧 AABB 路径逐位不变。
             if (aBox.UseObb || bBox.UseObb)
             {
+                // 2026-10-21：**OBB 分支前置 AABB 排除**。`PartAabb.Min/Max` 是 OBB 的投影包围盒
+                // （构造器里 center ∓ ProjectedHalfExtents）⇒ AABB 不相交则 OBB 必不相交（SAT 完备），
+                // 结果逐位不变；但省掉一次 15 轴 SAT（台架 340.8ns/对）。
+                // 动因：SAP 只按**扫掠轴**出候选（其余两轴没验），带姿态的 256 件场景里这些假候选
+                // 全都要付 SAT —— 2026-10-21 游戏日志 `最深对` 平均 73.8µs、24/54 个窗口出现
+                // 1–2.9ms 尖峰（≈8,500 个候选 × 340ns），此前无姿态路径本来就有这层粗筛。
+                if (!AabbOverlap(aBox.Min, aBox.Max, bBox.Min, bBox.Max, out _, out _, out _))
+                {
+                    if (PerfProbe.CollisionStagesEnabled) PerfProbe.ColObbAabbRejects++;
+                    return;
+                }
+                if (PerfProbe.CollisionStagesEnabled) PerfProbe.ColObbSatCalls++;
                 if (!PartGeometry.ObbObbSat(aBox.Center, aBox.Half, aBox.Rotation,
                         bBox.Center, bBox.Half, bBox.Rotation,
                         out DVector3 obbNormal, out double obbDepth, out DVector3 obbContact))
@@ -3867,8 +3979,9 @@ namespace PioneerFramework.Combat
                         double dmg = D0 * (1.0 - dist / R);
                         if (dmg <= 0) continue;
 
-                        // 应用伤害（走组件回调：OnDamaged / OnDestroyed）
-                        part.ApplyDamage((float)dmg);
+                        // 应用伤害（§11.2 双通道：结构走装甲、维护不吃装甲；走组件回调 OnDamaged/OnDestroyed）
+                        // 爆炸的穿透口径未定（§11.2 只定了武器弹道）⇒ 先给中等常量；将来按装药量算再替换。
+                        part.ApplyProjectileDamage((float)dmg, ExplosionArmorPenetration);
                         damaged++;
                         if (part.isDestroyed)
                         {
@@ -4852,11 +4965,15 @@ namespace PioneerFramework.Combat
                     DVector3 prevCenter = (cy.hasPrev ? cy.prevPos : cy.pos) + ey.Position + (relMin + relMax) * 0.5;
                     DVector3 curMin = cy.pos + ey.Position + relMin;
                     DVector3 curMax = cy.pos + ey.Position + relMax;
-                    if (MissileSegmentHitsTarget(xStart, xEnd, prevCenter, curMin, curMax, out var contact))
-                    {
-                        contacts.Add((exId, contact));
-                        break; // ex 只转化一次
-                    }
+                    if (!MissileSegmentHitsTarget(xStart, xEnd, prevCenter, curMin, curMax, out var contact))
+                        continue;
+                    // 2026-10-30 用户裁定：**弹头也跳过残骸** —— 目标实体全是残骸 ⇒ 不产生接触
+                    // （弹头穿过去；不能拿废船当盾牌）。仍是 AABB 级粒度：部分损毁的船照样接战。
+                    // ⚠ 放在**几何命中之后**：`HasAlivePart` 是 O(件) 扫描，只在真撞上时才付这笔钱
+                    //   （候选对每步都查的话，弹群×目标实体会放大成几何级调用）。
+                    if (!ey.HasAlivePart) continue;
+                    contacts.Add((exId, contact));
+                    break; // ex 只转化一次
                 }
             }
             // 详细门控（§5 场景验证：并集盒扫掠通过但逐实体复核空当放行的对照证据）
@@ -5372,42 +5489,51 @@ namespace PioneerFramework.Combat
                     if (!slabHit)
                         continue;
 
-                    if (tEntry < closestT)
-                    {
-                        closestT = tEntry;
-                        hit = true;
-                        hitGroup = targetGroup;
-                        hitEntity = entity;
-                        hitPartIndex = -1;
+                    if (tEntry >= closestT)
+                        continue;
 
-                        // Part 级精确检测（多 part：**逐 part slab 取最近 tEntry**，§5.3/批 3）。
-                        // 线段基准 = 盒进入点（局部系）：part 检测从进入点扫盒内区间。
-                        // 旋转保持长度，局部系 t 与世界系 t 一致 → 距离 = t × beamLength。
-                        if (entity.Parts.Count > 0)
+                    // Part 级精确检测（多 part：**逐 part slab 取最近 tEntry**，§5.3/批 3）。
+                    // 线段基准 = 盒进入点（局部系）：part 检测从进入点扫盒内区间。
+                    // 旋转保持长度，局部系 t 与世界系 t 一致 → 距离 = t × beamLength。
+                    // ⚠ 2026-10-30 裁定（射弹/光束跳过残骸）：**先选件、再提交命中** ——
+                    //   全是残骸的实体不遮挡光束（光束穿过去找后面的船），等价于"该实体未命中"。
+                    int pickedIndex = -1;
+                    DVector3 pickedShip = DVector3.zero, pickedEntry = DVector3.zero;
+                    if (entity.Parts.Count > 0)
+                    {
+                        DVector3 dirShip = (endShip - startShip).normalized;
+                        DVector3 boxEntry = startShip + dirShip * (tEntry * beamLength);
+                        double maxDistShip = (tExit - tEntry) * beamLength;
+                        if (TryPickHitPart(entity, boxEntry, dirShip, maxDistShip,
+                                out int idx, out _, out double partEnterT))
                         {
-                            DVector3 dirShip = (endShip - startShip).normalized;
-                            DVector3 boxEntry = startShip + dirShip * (tEntry * beamLength);
-                            double maxDistShip = (tExit - tEntry) * beamLength;
-                            if (TryPickHitPart(entity, boxEntry, dirShip, maxDistShip,
-                                    out int pickedIndex, out var hitPart, out double partEnterT))
+                            pickedIndex = idx;
+                            // 注意：partEnterT 是归一化参数（0..1 对应 part 线段），命中距离 = partEnterT × maxDistShip
+                            pickedShip = boxEntry + dirShip * (partEnterT * maxDistShip);
+                            // 船壳入口（贯通视觉弹）：命中点沿入射方向反方向延长到 AABB 六面
+                            // （RayExitAabb 反向复用，与出膛点几何对称；命中点必在盒内 → 恒出射）
+                            pickedEntry = (DVector3)MapCoordMapper.RayExitAabb(
+                                new Vector3((float)pickedShip.x, (float)pickedShip.y, (float)pickedShip.z),
+                                new Vector3((float)(-dirShip.x), (float)(-dirShip.y), (float)(-dirShip.z)),
+                                (Vector3)(-halfSize), (Vector3)halfSize, out _);
+                            // part 详情（详细日志）：盒入口 / part 命中参数 / 命中局部点 / 船壳入口
+                            if (DebugDetailedCombat)
                             {
-                                hitPartIndex = pickedIndex;
-                                // 注意：partEnterT 是归一化参数（0..1 对应 part 线段），命中距离 = partEnterT × maxDistShip
-                                hitShip = boxEntry + dirShip * (partEnterT * maxDistShip);
-                                // 船壳入口（贯通视觉弹）：命中点沿入射方向反方向延长到 AABB 六面
-                                // （RayExitAabb 反向复用，与出膛点几何对称；命中点必在盒内 → 恒出射）
-                                entryShip = (DVector3)MapCoordMapper.RayExitAabb(
-                                    new Vector3((float)hitShip.x, (float)hitShip.y, (float)hitShip.z),
-                                    new Vector3((float)(-dirShip.x), (float)(-dirShip.y), (float)(-dirShip.z)),
-                                    (Vector3)(-halfSize), (Vector3)halfSize, out _);
-                                // part 详情（详细日志）：盒入口 / part 命中参数 / 命中局部点 / 船壳入口
-                                if (DebugDetailedCombat)
-                                {
-                                    Log.Message($"[激光part] G{groupId}→G{targetGroup.GroupId} E{entityId} Part[{pickedIndex}] 盒入口=({boxEntry.x:F1},{boxEntry.y:F1},{boxEntry.z:F1})m partT={partEnterT:F3} 命中局部=({hitShip.x:F1},{hitShip.y:F1},{hitShip.z:F1})m 船壳入口=({entryShip.x:F1},{entryShip.y:F1},{entryShip.z:F1})m 入射局部方向=({dirShip.x:F3},{dirShip.y:F3},{dirShip.z:F3})");
-                                }
+                                Log.Message($"[激光part] G{groupId}→G{targetGroup.GroupId} E{entityId} Part[{idx}] 盒入口=({boxEntry.x:F1},{boxEntry.y:F1},{boxEntry.z:F1})m partT={partEnterT:F3} 命中局部=({pickedShip.x:F1},{pickedShip.y:F1},{pickedShip.z:F1})m 船壳入口=({pickedEntry.x:F1},{pickedEntry.y:F1},{pickedEntry.z:F1})m 入射局部方向=({dirShip.x:F3},{dirShip.y:F3},{dirShip.z:F3})");
                             }
                         }
+                        if (pickedIndex < 0)
+                            continue;   // 全是残骸 ⇒ 光束穿过（不遮挡、不结算）
                     }
+
+                    // 提交命中（有活件且选件成功；或实体无 Part 数据 ⇒ AABB 级兜底）
+                    closestT = tEntry;
+                    hit = true;
+                    hitGroup = targetGroup;
+                    hitEntity = entity;
+                    hitPartIndex = pickedIndex;
+                    hitShip = pickedShip;
+                    entryShip = pickedEntry;
                 }
             }
 
@@ -5423,8 +5549,8 @@ namespace PioneerFramework.Combat
                 {
                     var hitPart = hitEntity.Parts[hitPartIndex];
                     float preHP = hitPart.hp;
-                    // 应用伤害（走组件回调：OnDamaged / OnDestroyed）
-                    hitPart.ApplyDamage(weapon.def.damagePerShot);
+                    // 应用伤害（§11.2 双通道：结构走装甲、维护不吃装甲；走组件回调 OnDamaged/OnDestroyed）
+                    hitPart.ApplyProjectileDamage(weapon.def.damagePerShot, weapon.def.armorPenetration);
                     if (DebugDetailedCombat)
                     {
                         Log.Message($"[激光命中!] Tick={lastHitTick} Group{groupId}→Group{hitGroup.GroupId} Part[{hitPartIndex}]\"{hitPart.defName}\" HP={preHP:F0}→{hitPart.hp:F0} 命中点=({hitPoint.x:F0},{hitPoint.y:F0},{hitPoint.z:F0})");

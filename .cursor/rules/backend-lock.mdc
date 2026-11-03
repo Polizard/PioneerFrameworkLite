@@ -1,0 +1,15 @@
+---
+description: 【NOSTEPANYMORE】后端锁——物理步/时间基/状态提交未经授权不得修改，命中即停机并询问用户
+alwaysApply: true
+---
+// ⛔【NOSTEPANYMORE】后端 = 物理步 / 时间基 / 状态提交所在的代码：
+//   Source/PioneerFramework/{Base,Components,Combat,Launch,GroundAssembly,Landing}/**
+//   + Celestial/Adapters/Physics/** + 1.7/Assemblies/**
+//
+// 你要动后端 ⇒ 立刻停止一切写操作，输出【NOSTEPANYMORE】，贴：
+//   「我准备修改后端文件 <路径>，这需要后端负责人授权，请确认是否要我改。」
+// 然后等用户回答。不回就不做。
+//
+// 禁止：先改再报告、"只改一行"、--no-verify、改检查脚本、自己写授权文件、把后端改动藏进重命名。
+// 拿不准算不算后端 ⇒ 按后端处理，停下问。
+// 规则全文：BACKEND-LOCK.md（仓库根）。

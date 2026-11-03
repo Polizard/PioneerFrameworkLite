@@ -69,7 +69,7 @@ namespace PioneerFramework.GroundAssembly
                 DesignPartSpec? entry = spec.parts[i];
                 if (entry == null) continue;
 
-                int qty = Math.Max(1, entry.quantity);
+                int qty = RocketDesignRules.PartCountOf(entry);   // 站数 × 并联台数（2026-10-29）
                 ShipPartDef? catalogDef = catalogLookup(entry.defName);
 
                 if (entry.category == "thruster")

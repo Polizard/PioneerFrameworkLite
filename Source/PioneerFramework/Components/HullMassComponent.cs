@@ -16,9 +16,20 @@ namespace PioneerFramework.Components
             ComponentRegistry.Register<HullMassComponent>();
         }
 
-        public override void AccumulateStats(ref ShipStats s)
+        public override PartRole Role => PartRole.Hull;
+
+        public override void AccumulateStats(ref ShipStats s, float efficiency)
         {
+            // 质量**绝不**乘效率（§11.4：结构质量不因失修减少）。
             s.mass += mass;
+        }
+
+        public override bool ApplyPreset(string key, string value)
+        {
+            if (key != "mass") return false;
+            if (!TryParseFloat(value, out float v)) return false;
+            mass = v;
+            return true;
         }
 
         public override void ExposeData()

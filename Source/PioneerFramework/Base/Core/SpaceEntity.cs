@@ -1,3 +1,9 @@
+// ⛔【NOSTEPANYMORE】后端锁：本文件 = 后端（物理步 / 时间基 / 状态提交）。
+//    未经 Source/PioneerFramework/DesignNotes/后端变更授权-*.md 明确授权，一个字节都不许改。
+//    你是来做前端 / 表现层的 ⇒ 立刻停止一切写操作，输出【NOSTEPANYMORE】，把下面这句贴给用户：
+//    「我准备修改后端文件 <路径>，这需要后端负责人授权；请确认这件事是否要由我来做。」
+//    规则全文 = 仓库根 BACKEND-LOCK.md
+// ─────────────────────────────────────────────────────────────────────────────
 using System.Collections.Generic;
 using UnityEngine;
 using Verse;
@@ -402,8 +408,104 @@ namespace PioneerFramework
         private List<SpacePart> parts = new();
         public IReadOnlyList<SpacePart> Parts => parts;
 
+        /// <summary>
+        /// **热循环专用**：直接拿 `List&lt;SpacePart&gt;` 本体（不经过 `IReadOnlyList` 接口派发）。
+        /// 用法：`var span = CollectionsMarshal.AsSpan(entity.PartsList);` —— 只在本程序集内、
+        /// 只在**不增删** parts 的循环里取；任何写操作仍走 `AddPart` / `RemovePart` / `SetParts`
+        /// （唯一收口 = `OnPartsChanged`）。对外面（其它程序集）仍是只读的 `Parts`。
+        ///
+        /// 为什么（部件功能化 §2-A，2026-10-22）：`part盒重组` 的每件成本 ≈42 ns，其中一刀是
+        /// 每件一次的接口 `get_Item` 派发 + 边界检查。`Span&lt;T&gt;` 用 ref 取值，JIT 可去边界。
+        /// 判据：台架 ns/件**不升**（`PartHotAccessBench`），且逐位不变（只换访问方式）。
+        /// </summary>
+        internal List<SpacePart> PartsList => parts;
+
         /// <summary>下一个可用 partId（B1：持久单调、只增不复用；SetParts 会按现有最大 id 追平）。</summary>
         private int nextPartId = 1;
+
+        /// <summary>
+        /// **是否还有活着的件**（全部损毁 ⇒ 纯残骸）。
+        ///
+        /// 2026-10-30 用户裁定"射弹/光束/弹头跳过残骸"之后，这是三条路径共用的**唯一判据**：
+        /// 纯残骸实体的 AABB 不再挡弹、不再产生接触。⚠ 线性扫描（件数 10¹ 级）—— 不要改成
+        /// 按 `partSetVersion` 缓存：`isDestroyed` 有可能被直接写（不全走 `MarkPartDestroyed`）。
+        ///
+        /// 成本/调用纪律：≈1–2 ns/件（Release，只有 bool 读 + 边界检查），20 件 ≈ 30 ns、256 件 ≈ 0.4 µs。
+        /// **只允许在"几何上已经命中"之后调用**（见 `ResolveEntityContacts`）——候选对每步都查会把它
+        /// 放大成"弹群实体 × 目标实体"级别的调用量。
+        /// </summary>
+        public bool HasAlivePart
+        {
+            get
+            {
+                for (int i = 0; i < parts.Count; i++)
+                {
+                    var p = parts[i];
+                    if (p != null && !p.isDestroyed) return true;
+                }
+                return false;
+            }
+        }
+
+        // ── 控制核心（2026-10-26；用户口径 = KSP 命令舱/探测器核心）──
+        /// <summary>**装过**控制核心（粘性，落盘）：一旦为真，失去核心就**永久失控**，不会因残骸消失而复活。
+        /// 没装过的舰（EVA/导弹/无人机/调试船）恒 false ⇒ 完全不受影响。</summary>
+        public bool RequiresControlCore;
+
+        /// <summary>当前是否还有**未损毁**的控制核心（不落盘，由 `SyncControlCorePresence` 按部件集重算）。</summary>
+        public bool HasIntactControlCore;
+
+        /// <summary>该实体是否可被操作（点火/操舵）：没装过核心 ⇒ 恒 true；装过 ⇒ 必须有完好核心。</summary>
+        public bool IsControllable => !RequiresControlCore || HasIntactControlCore;
+
+        /// <summary>按部件集重算控制核心在位情况（`OnPartsChanged` 单一收口里调；O(件)，只在变更时）。</summary>
+        internal void SyncControlCorePresence()
+        {
+            bool intact = false;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var p = parts[i];
+                if (p == null || p.isDestroyed) continue;
+                if (p.HasComponent<ControlCoreComponentData>()) { intact = true; break; }
+            }
+            HasIntactControlCore = intact;
+            if (intact) RequiresControlCore = true;   // 装过就粘住
+        }
+
+        /// <summary>控制核心损毁（`PartRole.Control` 的收口）：失控 + 走关键件失能（清机动/熄火）。</summary>
+        internal void HandleControlCoreLost()
+        {
+            RequiresControlCore = true;
+            HasIntactControlCore = false;
+            DisableOnKeyPartDestroyed();
+        }
+
+        /// <summary>**按活动级自动开关工质罐阀门**（2026-10-27 用户裁定）：
+        /// 活动级 = 当前最大 `stageId`；只有活动级的罐 `feedEnabled=true`，其余关闭（油保住）。
+        /// 抛级/部件变化 ⇒ `InvalidateStats` 调用；阀门变了就让供油计划失效。</summary>
+        internal void SyncStageFeedValves()
+        {
+            int activeStage = 0;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var p = parts[i];
+                if (p != null && !p.isDestroyed && p.stageId > activeStage) activeStage = p.stageId;
+            }
+
+            bool changed = false;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var p = parts[i];
+                if (p == null || p.isDestroyed) continue;
+                var tank = p.GetComponent<PropellantTankComponentData>();
+                if (tank == null || tank.leaked) continue;
+                bool want = p.stageId == activeStage;
+                if (tank.feedEnabled == want) continue;
+                tank.feedEnabled = want;
+                changed = true;
+            }
+            if (changed) fuelPlanVersion++;
+        }
 
         // ── 实体级 stats 缓存（kg 等，Parts / 组件变更时置脏）──
         private ShipStats shipStats;
@@ -454,6 +556,13 @@ namespace PioneerFramework
                 shipStats.thrust += ps.thrust;
                 shipStats.powerGen += ps.powerGen;
                 shipStats.powerDraw += ps.powerDraw;
+                // §5 电闭环：四通道 + 电池限值（**新增 ShipStats 字段必须在此加一行**）
+                shipStats.powerDrawPropulsion += ps.powerDrawPropulsion;
+                shipStats.powerDrawShield += ps.powerDrawShield;
+                shipStats.powerDrawWeapon += ps.powerDrawWeapon;
+                shipStats.powerDrawSensor += ps.powerDrawSensor;
+                shipStats.powerDischargeLimit += ps.powerDischargeLimit;
+                shipStats.powerChargeLimit += ps.powerChargeLimit;
                 shipStats.heatProduction += ps.heatProduction;
                 shipStats.heatDissipation += ps.heatDissipation;
                 shipStats.propellant += ps.propellant;
@@ -481,7 +590,13 @@ namespace PioneerFramework
         public void InvalidateStats()
         {
             statsDirty = true;
+            SyncStageFeedValves();   // 活动级阀门（2026-10-27）：抛级/换件后自动切罐
             partSetVersion++;   // 批 0：惯量缓存指纹（群级 `SpaceEntityGroup.Inertia` 读它；与 PropulsionVersion 同款模式）
+            // 动量轮容量随质量走（2026-10-26）：只补空，不覆盖已升级/已调的容量。
+            if (wheelCapacity <= 0.0) RefreshWheelCapacity();
+            // 2026-10-26：零件驱动的推进要在"引擎/罐增删损毁"后重建（唯一收口 = 这里）。
+            // 显式推进的实体 `PropulsionFromParts=false` ⇒ 一次布尔判断，零影响。
+            if (PropulsionFromParts) PartPropulsionBuilder.RebuildMapless(this);
             // 部件集变化 ⇒ 本船所属群组的派生信号（[V8]，吃 AggregatedStats 的热/电/尺寸项）也失效。
             // 本方法是"部件集可能变化"的**唯一既有收口**（AddComponent / RemoveComponent / 部件销毁都汇聚到这里），
             // 所以同步点放这里最省。⚠ 若将来新增改部件的路径绕开本方法，群组信号会静默过期
@@ -494,6 +609,25 @@ namespace PioneerFramework
         // 有 Map 的实体忽略此数据：burn/机动估算统一走 SpaceMapComp（见 GetPropulsionSource）。
         public List<PropulsionData> propulsion = new();
         public bool HasPropulsionData => propulsion.Count > 0;
+
+        /// <summary>**推进由零件合成**（2026-10-26）：true ⇒ `InvalidateStats` 时按零件重建；
+        /// 显式 `AddPropulsion` 的实体保持 false，绝不被覆盖。</summary>
+        public bool PropulsionFromParts;
+
+        // ── 动量轮（2026-10-26 用户裁定：Entity 自己存一个角动量向量 + 可变上限）──
+        /// <summary>轮子当前储存的角动量（**船体系**，kg·m²/s）。RCS 卸载消耗的就是它。</summary>
+        public DVector3 wheelMomentum;
+
+        /// <summary>轮子容量上限（可变；≤0 ⇒ 视为没装轮子）。默认随质量给，见 `RefreshWheelCapacity`。</summary>
+        public double wheelCapacity;
+
+        /// <summary>按当前结构质量重算容量：`k · mass`（k 默认 500 (kg·m²/s)/kg）。
+        /// 只在"还没容量/质量显著变化"时调；调大是升级件的入口（以后）。</summary>
+        public void RefreshWheelCapacity(float perKg = 500f)
+        {
+            double mass = AggregatedStats.mass;
+            wheelCapacity = mass > 0f ? mass * perKg : 0.0;
+        }
 
         // ── 无 Map 主推方向型（D15，可选）──
         // 有 Map 实体忽略此字段（主推轴 = mapComp.MainThrustAxis）。
@@ -532,7 +666,9 @@ namespace PioneerFramework
                 DVector3 axisShip = ((ThrustAxis)axisIndex).ShipVector();
                 if (part.rotationShip != DQuaternion.identity)
                     axisShip = DVector3.Rotate(axisShip, part.rotationShip);
-                sum += axisShip * (engine.exhaustVelocity * engine.massFlowRate);
+                // 2026-10-27 口径修正：`thrustAxis` 是**喷口/排气方向**（Back = −Z，主推进默认）。
+                // 推力 = **反方向**（尾部引擎推动船体朝 +Z 机头走）⇒ 主推轴取反。
+                sum -= axisShip * (engine.exhaustVelocity * engine.massFlowRate);
                 anyEngine = true;
             }
 
@@ -542,6 +678,40 @@ namespace PioneerFramework
             // 旧字段兼容：导弹/调试船等仍可显式给主推轴；全向实体保持零向量。
             return HasMainAxis ? mainAxisShip!.Value.normalized : DVector3.zero;
         }
+
+        /// <summary>
+        /// **引擎偏心力矩（标称推力）**（2026-10-26，动量轮的输入）。
+        /// 口径 = "引擎全开"：每台 `F = ve·ṁ` 沿自身 `thrustAxis`（含件姿态），对 COM 取矩：
+        /// `τ = Σ(pos×F) − COM×ΣF`。只用缓存值（part 位置/组件），无分配、无 sqrt 之外的开销。
+        /// 倾斜安装暂不允许（用户 2026-10-26 裁定）；损毁件跳过。
+        /// </summary>
+        public DVector3 GetEngineTorqueAboutCom(in DVector3 com, out double totalThrust)
+        {
+            DVector3 sumFPos = DVector3.zero;
+            DVector3 sumF = DVector3.zero;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var part = parts[i];
+                if (part == null || part.isDestroyed) continue;
+                var engine = part.GetComponent<EngineComponentData>();
+                if (engine == null || engine.massFlowRate <= 0f || engine.exhaustVelocity <= 0f) continue;
+                int axisIndex = (int)engine.thrustAxis;
+                if (axisIndex < 0 || axisIndex >= 6) continue;
+
+                DVector3 axis = ((ThrustAxis)axisIndex).ShipVector();
+                if (part.rotationShip != DQuaternion.identity)
+                    axis = DVector3.Rotate(axis, part.rotationShip);
+
+                DVector3 f = axis * -(engine.exhaustVelocity * engine.massFlowRate);   // 力 = −排气方向（2026-10-27 口径）
+                sumF += f;
+                sumFPos += Cross(part.positionShip, f);
+            }
+            totalThrust = sumF.magnitude;
+            return sumFPos - Cross(com, sumF);
+        }
+
+        private static DVector3 Cross(in DVector3 a, in DVector3 b)
+            => new(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 
         // 运行时缓存（并行物理线程只读；propulsion 变更时重建）
         private List<PropellantNetwork> cachedPropulsionNetworks = new();
@@ -833,6 +1003,7 @@ namespace PioneerFramework
                 if (part == null || part.isDestroyed) continue;
                 var tank = part.GetComponent<PropellantTankComponentData>();
                 if (tank == null || tank.propellantDefName != propellantDefName) continue;
+                if (!tank.feedEnabled) continue;   // 阀门关：不参与分配，保住它自己的油
                 if (tank.capacityKg > 0.0) totalCapacity += tank.capacityKg;
             }
             if (!(totalCapacity > 0.0)) return;
@@ -845,6 +1016,7 @@ namespace PioneerFramework
                 if (part == null || part.isDestroyed) continue;
                 var tank = part.GetComponent<PropellantTankComponentData>();
                 if (tank == null || tank.propellantDefName != propellantDefName) continue;
+                if (!tank.feedEnabled) continue;   // 阀门关：不重写镜像
                 if (!(tank.capacityKg > 0.0)) continue;
                 double want = clamped * (tank.capacityKg / totalCapacity);
                 if (System.Math.Abs(tank.massKg - want) < 1e-9) continue;
@@ -939,6 +1111,7 @@ namespace PioneerFramework
             parts = newParts ?? new List<SpacePart>();
             fuelPlanVersion++;
             SyncNextPartIdFromParts();
+            SyncControlCorePresence();   // 一次性换件也要重算控制核心（SetParts 不走 OnPartsChanged）
             NotifyMapLinksChanged();
             aabbDirty = true;
             cachedAabbTick = -1; // 部件参与 GetAabbSystem → 失效缓存
@@ -1007,6 +1180,67 @@ namespace PioneerFramework
             return index >= 0 ? parts[index] : null;
         }
 
+        /// <summary>
+        /// **批量移除**（2026-10-30，抛级用）：语义与逐件 <see cref="RemovePart"/> 相同
+        /// （挂图件按 policy 毁图、`DetachComponents`、出列、`fuelPlanVersion++`），
+        /// 但 **`OnPartsChanged` 只在末尾跑一次** —— 逐件移除会每件重建一次推进池/统计/包围盒
+        /// （实测抛 13 件 ≈ 40–100 µs、256 件船抛 128 件 ≈ 0.5–1.5 ms），批量后只剩一次。
+        /// 返回实际移除的件数。
+        /// </summary>
+        public int RemoveParts(IReadOnlyList<int>? partIds,
+            PartRemovalPolicy policy = PartRemovalPolicy.DestroyMap)
+        {
+            if (partIds == null || partIds.Count == 0) return 0;
+
+            int removed = 0;
+            bool mapRemoved = false;
+            for (int i = 0; i < partIds.Count; i++)
+            {
+                int index = IndexOfPart(partIds[i]);
+                if (index < 0) continue;
+                SpacePart part = parts[index];
+                int removedMapId = part.linkedMapId;
+                if (removedMapId >= 0)
+                {
+                    if (policy == PartRemovalPolicy.KeepMap)
+                    {
+                        Log.Warning($"[SpaceEntity] RemoveParts: part {partIds[i]} is map-linked; KeepMap policy refuses removal.");
+                        continue;
+                    }
+                    SpaceMapGenerator.DestroyRoomMap(removedMapId);
+                    mapRemoved = true;
+                }
+                part.DetachComponents();
+                parts.RemoveAt(index);
+                removed++;
+            }
+
+            if (removed > 0)
+            {
+                fuelPlanVersion++;
+                OnPartsChanged(true);                    // ← 唯一一次：版本/统计/包围盒/控制核心/推进重建
+                if (mapRemoved) RecalculatePrimaryMap();
+            }
+            return removed;
+        }
+
+        /// <summary>
+        /// **整体平移零件坐标**（2026-10-30，原点重定用）：`part.positionShip -= bodyOffset`，末尾走一次
+        /// `OnPartsChanged(true)` —— 位置变了必须让包围盒/惯量指纹/统计一起刷新（`partSetVersion` 只看件集，
+        /// 不看位置，所以**不能**只改坐标）。
+        /// </summary>
+        public void RecenterParts(in DVector3 bodyOffset)
+        {
+            if (parts.Count == 0) return;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var p = parts[i];
+                if (p == null) continue;
+                p.positionShip -= bodyOffset;
+            }
+            OnPartsChanged(true);
+        }
+
         /// <summary>移动 part（体坐标；part 自身姿态字段归 B3）。</summary>
         public bool MovePart(int partId, DVector3 positionShip)
         {
@@ -1026,6 +1260,7 @@ namespace PioneerFramework
             aabbDirty = true;
             cachedAabbTick = -1;
             NotifyMapLinksChanged();           // 部件集变化可能带来挂图件的增删/移动
+            SyncControlCorePresence();         // 控制核心在位/失控（O(件)，只在变更时）
             InvalidateStats();                 // partSetVersion++ 与群组信号失效都在这里
             if (recalculateBounds)
                 RecalculateBoundsFromParts();
@@ -1151,10 +1386,10 @@ namespace PioneerFramework
         /// <summary>
         /// B5：储罐损毁漏光（D-P7）——镜像存量清零 + 从权威池扣掉同等燃料 + 容量出局。
         /// 权威池可能是地图（`SpaceMapComp`）或无图实体（`this`），统一由 `GetPropulsionSource()` 选。
+        /// 2026-10-22 §7：改为**按组件实例**收口（`PartRoleTable` 分派）——一件上挂多个罐时逐个漏。
         /// </summary>
-        private void LeakTankPart(SpacePart part)
+        internal void LeakTankPart(SpacePart part, PropellantTankComponentData? tank)
         {
-            var tank = part.GetComponent<PropellantTankComponentData>();
             if (tank == null) return;
             if (tank.leaked)
             {
@@ -1199,10 +1434,10 @@ namespace PioneerFramework
             }
         }
 
-        /// <summary>B5：引擎件损毁 ⇒ 该台的质量流率/推力出局（地图虚拟推进或无图 PropulsionData）。</summary>
-        private void DisableEnginePart(SpacePart part)
+        /// <summary>B5：引擎件损毁 ⇒ 该台的质量流率/推力出局（地图虚拟推进或无图 PropulsionData）。
+        /// 2026-10-22 §7：按组件实例收口（一件上多台引擎时逐台出局，旧实现只出局第一台）。</summary>
+        internal void DisableEnginePart(SpacePart part, EngineComponentData? engine)
         {
-            var engine = part.GetComponent<EngineComponentData>();
             if (engine == null || engine.massFlowRate <= 0f) return;
             var def = ResolvePropellantDef(engine.propellantDefName);
             if (def == null) return;
@@ -1291,8 +1526,11 @@ namespace PioneerFramework
             part.isDestroyed = true;
             if (!wasDestroyed)
                 part.NotifyDestroyed();   // ApplyDamage 已通知过时不再重复
-            LeakTankPart(part);
-            DisableEnginePart(part);
+            // §11.6：摧毁 ⇒ 维护值归零。两条摧毁路径（ApplyDamage / 本方法）口径一致。
+            part.condition = 0f;
+            // §7：统一失效语义 —— 按**角色**查表收口（储罐漏光 / 引擎出局 / 其余由聚合出局承担）。
+            // ⛔ 不要在这里加 if-else 分支：要加角色行为就加 `PartRoleTable` 的一行（缺行会在启动期红）。
+            PartRoleTable.ApplyFailure(this, part);
             fuelPlanVersion++;
             OnPartsChanged(true);
             // 舱室联动：只销毁这一件挂的图；实体还有其他图就继续存在（B6）
@@ -1327,9 +1565,15 @@ namespace PioneerFramework
             if (archivedMapIds == null) archivedMapIds = new List<int>();
             if (archivedPartIds == null) archivedPartIds = new List<int>();
             Scribe_Values.Look(ref IsMapArchived, "isMapArchived", false);
+            // 控制核心（2026-10-26）："装过"是粘性状态，必须落盘；"现在还完好"由部件集重算。
+            Scribe_Values.Look(ref RequiresControlCore, "requiresControlCore", false);
+            // 动量轮（2026-10-26）：角动量向量 + 可变容量都要落盘（RCS 卸载的账本）。
+            DVector3.Scribe("wheelMomentum", ref wheelMomentum);
+            Scribe_Values.Look(ref wheelCapacity, "wheelCapacity", 0.0);
 
             // 无 Map 实体自带推进数据序列化
             Scribe_Collections.Look(ref propulsion, "propulsion", LookMode.Deep);
+            Scribe_Values.Look(ref PropulsionFromParts, "propulsionFromParts", false);
             if (Scribe.mode == LoadSaveMode.LoadingVars)
                 InvalidatePropulsion();
 
@@ -1344,6 +1588,7 @@ namespace PioneerFramework
                 if (parts == null) parts = new List<SpacePart>();
                 if (propulsion == null) propulsion = new List<PropulsionData>();
                 SyncNextPartIdFromParts();   // 首次引入 nextPartId 的旧档：按现有 id 追平
+                SyncControlCorePresence();   // 读档后重算"核心是否还在"（Requires 已落盘）
                 aabbDirty = true;
                 InvalidateStats();
                 foreach (var part in parts)

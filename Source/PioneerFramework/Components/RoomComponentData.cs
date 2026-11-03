@@ -16,9 +16,36 @@ namespace PioneerFramework.Components
             ComponentRegistry.Register<RoomComponentData>();
         }
 
-        public override void AccumulateStats(ref ShipStats s)
+        public override PartRole Role => PartRole.Cabin;
+
+        public override void AccumulateStats(ref ShipStats s, float efficiency)
         {
+            // 质量不乘效率（§11.4）。
             s.mass += dryMass;
+        }
+
+        public override bool ApplyPreset(string key, string value)
+        {
+            switch (key)
+            {
+                case "dryMass":
+                    if (!TryParseFloat(value, out float m)) return false;
+                    dryMass = m;
+                    return true;
+                case "mapWidth":
+                    if (!TryParseInt(value, out int w)) return false;
+                    mapWidth = w;
+                    return true;
+                case "mapHeight":
+                    if (!TryParseInt(value, out int h)) return false;
+                    mapHeight = h;
+                    return true;
+                case "roomType":
+                    roomTypeDefName = value;
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         public override void ExposeData()

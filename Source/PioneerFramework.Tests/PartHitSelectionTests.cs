@@ -6,7 +6,8 @@ namespace PioneerFramework.Tests
 {
     /// <summary>
     /// **多 part 命中链（批 3 第一刀）**：实体 AABB 内逐 part slab 取最近命中件。
-    /// 判据：最近的件赢、第二件可被命中、零件缝里穿过不算命中、已毁残骸仍可命中（B5 / D-P7）。
+    /// 判据：最近的件赢、第二件可被命中、零件缝里穿过不算命中。
+    /// **2026-10-30 用户裁定：射弹跳过残骸**（已毁件不参与选件；整船残骸 ⇒ 不命中、弹丸不被吃）。
     /// </summary>
     public class PartHitSelectionTests
     {
@@ -65,9 +66,9 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
-        public void DestroyedPart_IsStillHit()
+        public void DestroyedPart_IsSkipped_AlivePartBehindIsHit()
         {
-            // B5 / D-P7：损毁残骸仍参与命中（子弹打在残骸上），最近件规则不变。
+            // 2026-10-30 用户裁定：射弹跳过残骸 ⇒ 前面的件已毁，命中的是后面还活着的那件。
             var first = Box(1, 0);
             first.isDestroyed = true;
             var e = EntityWithParts(first, Box(2, 20));
@@ -75,8 +76,24 @@ namespace PioneerFramework.Tests
                 out int idx, out var part, out _);
 
             Assert.True(hit);
-            Assert.Equal(0, idx);
-            Assert.Equal(1, part.partId);
+            Assert.Equal(1, idx);
+            Assert.Equal(2, part.partId);
+        }
+
+        [Fact]
+        public void AllPartsDestroyed_HulkDoesNotAbsorbShot()
+        {
+            // 整船都成残骸 ⇒ 不命中（弹丸穿过、不被吃）。这是"跳过残骸"的必然推论：
+            // 打爆的船不再当盾牌。
+            var a = Box(1, 0);
+            var b = Box(2, 20);
+            a.isDestroyed = true;
+            b.isDestroyed = true;
+            var e = EntityWithParts(a, b);
+
+            bool hit = CombatManager.TryPickHitPart(e, new DVector3(0, -20, 0), new DVector3(0, 1, 0), 60,
+                out _, out _, out _);
+            Assert.False(hit);
         }
     }
 }

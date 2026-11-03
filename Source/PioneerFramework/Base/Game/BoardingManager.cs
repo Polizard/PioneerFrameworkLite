@@ -320,7 +320,8 @@ namespace PioneerFramework
             DVector3 dv = desiredVel - unitVel;
             if (dv.magnitude > GuidanceDeadband)
             {
-                group.StartBurn(dv);
+                var plan = new ManeuverPlan { dv = dv, networks = ManeuverNetworkMode.All };
+                group.BeginBurn(in plan);
                 if (DebugDetailedBoarding)
                     Log.Message($"[Boarding] Unit {unit.id} 持续引导 dv={dv.magnitude:F1}m/s 收拢={approachSpeed:F1}m/s");
             }

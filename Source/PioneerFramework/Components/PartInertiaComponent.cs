@@ -8,7 +8,7 @@ namespace PioneerFramework.Components
     ///
     /// - **质量不由本组件提供**：质量仍由统计组件（`HullMassComponent` / `RoomComponentData` …）给出，
     ///   与既有口径一致；本组件只决定"这份质量按什么形状摊开"。
-    /// - 形状预设：长方体 / 圆柱（对称轴 = 本体系 **Y**）/ 球；尺寸来自 `dims`，
+    /// - 形状预设：长方体 / 圆柱（对称轴 = 本体系 **Z**）/ 球；尺寸来自 `dims`，
     ///   **为 0 的轴回落到 `part.boundsSizeShip`**。
     /// - **自定义张量**（6 分量，绕部件质心、体轴）——给非简单几何体；启用后忽略 shape/dims。
     /// - **无本组件 ⇒ 默认长方体（boundsSizeShip）**：单 part 船的读数因此 = 盒体解析值
@@ -21,7 +21,7 @@ namespace PioneerFramework.Components
         /// <summary>形状预设（无自定义张量时生效）。</summary>
         public InertiaTensor.Shape shape = InertiaTensor.Shape.Box;
 
-        /// <summary>形体尺寸（米；0 = 用 `part.boundsSizeShip`）。圆柱：X = 直径、Y = 高；球：X = 直径。</summary>
+        /// <summary>形体尺寸（米；0 = 用 `part.boundsSizeShip`）。圆柱：X = 直径、Z = 高；球：X = 直径。</summary>
         public DVector3 dims;
 
         /// <summary>启用自定义张量（绕部件质心、体轴 6 分量）；为 true 时忽略 shape/dims。</summary>
@@ -34,8 +34,10 @@ namespace PioneerFramework.Components
             ComponentRegistry.Register<PartInertiaComponent>();
         }
 
+        public override PartRole Role => PartRole.Inertia;
+
         /// <summary>本组件**刻意不写** ShipStats（与 `IntakeComponentData` 的"刻意不进"同款）：质量由别的组件给。</summary>
-        public override void AccumulateStats(ref ShipStats s) { }
+        public override void AccumulateStats(ref ShipStats s, float efficiency) { }
 
         public override void ExposeData()
         {

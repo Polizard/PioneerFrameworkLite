@@ -1,3 +1,7 @@
+// ⛔【NOSTEPANYMORE】你正在改的是表现层。若下一步要动后端（物理步 / 时间基 / 状态提交），
+//    或想"顺手改一下 Base/Components/Combat"来给表现层让路 ⇒ 立刻停止一切写操作，
+//    输出【NOSTEPANYMORE】，先问用户。规则全文 = 仓库根 BACKEND-LOCK.md
+// ─────────────────────────────────────────────────────────────────────────────
 using System;
 using System.Collections.Generic;
 using System.Linq;

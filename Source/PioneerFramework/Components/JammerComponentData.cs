@@ -24,9 +24,19 @@ namespace PioneerFramework.Components
             ComponentRegistry.Register<JammerComponentData>();   // 与 `SensorArrayComponentData` 同款（无反射注册）
         }
 
-        public override void AccumulateStats(ref ShipStats s)
+        public override PartRole Role => PartRole.Jammer;
+
+        public override void AccumulateStats(ref ShipStats s, float efficiency)
         {
-            s.jamStrength += jamStrength;
+            s.jamStrength += jamStrength * efficiency;   // §11.4：干扰效力属"运转能力"，乘效率
+        }
+
+        public override bool ApplyPreset(string key, string value)
+        {
+            if (key != "jamStrength") return false;
+            if (!TryParseFloat(value, out float v)) return false;
+            jamStrength = v;
+            return true;
         }
 
         public override void ExposeData()

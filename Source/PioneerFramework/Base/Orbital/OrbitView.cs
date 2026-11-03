@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using MechJebLib.Functions;
 using MechJebLib.Primitives;
 using MechJebLib.TwoBody;

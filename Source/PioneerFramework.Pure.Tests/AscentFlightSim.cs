@@ -176,6 +176,7 @@ namespace PioneerFramework.Pure.Tests
             r.trace = new List<string>();
             DVector3 up = DVector3.up;
             int maxSteps = (int)(maxSeconds / s.dt);
+            int simPhase = LaunchGuidanceCore.PhaseVertical;   // 相位机（2026-10-29 重写）
             for (int i = 0; i < maxSteps; i++)
             {
                 double rr = pos.magnitude;
@@ -196,7 +197,9 @@ namespace PioneerFramework.Pure.Tests
                         s.guidanceOverride.Value.localCircularTarget, s.guidanceOverride.Value.inPlaneTangent,
                         s.guidanceOverride.Value.radialGain, s.guidanceOverride.Value.tanGain,
                         s.guidanceOverride.Value.gravityLead, s.dt)
-                    : LaunchGuidanceCore.ComputeStep(lawPos, lawVel, s.mu, p);
+                    : LaunchGuidanceCore.ComputeStep(lawPos, lawVel, s.mu, p, simPhase,
+                        s.ve * s.massFlow / Math.Max(mass, 1.0), s.dt);
+                if (!s.guidanceOverride.HasValue) simPhase = step.phase;
                 DVector3 dvApplied = DVector3.zero;
                 DVector3 dvPending = DVector3.zero;   // 本步算出的指令，下步才施加（一拍延迟）
                 if (!step.arrived && step.dv.sqrMagnitude > 0.0 && fuel > 1e-9)

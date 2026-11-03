@@ -9,14 +9,30 @@ namespace PioneerFramework.Components
         public float mass;            // kg，结构 + 组件自重 + 载重
         public float thrust;          // N，Σ(ve × ṁ)
         public float powerGen;        // W
-        public float powerDraw;       // W（满负荷标称功耗）
+        /// <summary>总标称功耗（W，满负荷）。**由四个通道求和得出**（`SpacePart.RecalculateStats` 与
+        /// `SpaceEntity.RecalculateShipStats`），组件**不许**直接写这个字段 —— 要写就写下面四个通道之一。</summary>
+        public float powerDraw;
         public float heatProduction;  // W
         public float heatDissipation; // W
         public float propellant;      // kg（可消耗推进剂）
-        public float powerStorage;    // J
+        /// <summary>电池**容量**（J；当前存量是群级状态 `SpaceEntityGroup.StoredEnergyJ`，不进逐件聚合）。</summary>
+        public float powerStorage;
         public float shieldCapacity;  // 点
         public float sensorRange;     // m
         public float cargoCapacity;   // kg
+
+        // ── 电闭环四通道（2026-10-22 部件功能化 §5 步 4）──
+        // 为什么要分通道：§5 的分配优先级是 **推进 > 护盾 > 武器 > 传感器** ⇒ 规则必须知道"这份需求属于谁"，
+        // 一个总 `powerDraw` 分不出优先级。通道仍走**求和**语义 ⇒ 求和顺序 = part 顺序 × 组件顺序（确定性红线）。
+        public float powerDrawPropulsion; // W（引擎点火时）
+        public float powerDrawShield;     // W（护盾开机时）
+        public float powerDrawWeapon;     // W（武器挂点开火时）
+        public float powerDrawSensor;     // W（传感器运转时）
+
+        /// <summary>电池**放电上限**（W）：Σ 组件贡献；规则用它给"可用供给"封顶。</summary>
+        public float powerDischargeLimit;
+        /// <summary>电池**充电上限**（W）：Σ 组件贡献；规则用它给"剩余发电充电"封顶。</summary>
+        public float powerChargeLimit;
 
         // ── 电子战三分量的两个抗性槽（[N2]，2026-09-16 随 [V1] 步 2 加）──
         // 设计稿 §3.2 说"8 个空槽 = 量纲基础已躺好"，但那 8 个只覆盖灵敏度（sensorRange）与热/电基数；

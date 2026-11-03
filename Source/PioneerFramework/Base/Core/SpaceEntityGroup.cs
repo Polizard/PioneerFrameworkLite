@@ -1,8 +1,15 @@
+// ⛔【NOSTEPANYMORE】后端锁：本文件 = 后端（物理步 / 时间基 / 状态提交）。
+//    未经 Source/PioneerFramework/DesignNotes/后端变更授权-*.md 明确授权，一个字节都不许改。
+//    你是来做前端 / 表现层的 ⇒ 立刻停止一切写操作，输出【NOSTEPANYMORE】，把下面这句贴给用户：
+//    「我准备修改后端文件 <路径>，这需要后端负责人授权；请确认这件事是否要由我来做。」
+//    规则全文 = 仓库根 BACKEND-LOCK.md
+// ─────────────────────────────────────────────────────────────────────────────
 using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Verse;
 using RimWorld;
+using PioneerFramework.Components;
 
 namespace PioneerFramework
 {
@@ -32,6 +39,9 @@ namespace PioneerFramework
             DQuaternion.Scribe("rotation", ref rotation);
         }
     }
+
+    /// <summary>姿态请求用哪根船体轴（2026-10-27：每步只解析一个请求、只写一次角速度）。</summary>
+    public enum AttitudeAxis : byte { MainThrust = 0, Forward = 1, Up = 2 }
 
     public partial class SpaceEntityGroup : ISpatialEntity, IExposable
     {
@@ -315,6 +325,160 @@ namespace PioneerFramework
         private SensorTech cachedDetect;
         private bool derivedDirty = true;   // 失效位**同时**管 cachedSignal 与 cachedDetect（同一批驱动点，见 InvalidateSignal）
 
+        // ── §5 电/热闭环（2026-10-22 步 4/5）──
+        // 快照输入：只在**派生量重算**时（部件集/实体集变化、点火翻转等）刷新，每步规则只读这些 float。
+        // ⇒ 物理步里**不遍历组件**（§0-1 红线），每群每步 O(1)。
+        private float cachedPowerGen;
+        private float cachedPowerDrawPropulsion, cachedPowerDrawShield, cachedPowerDrawWeapon, cachedPowerDrawSensor;
+        private float cachedPowerStorage, cachedPowerDischargeLimit, cachedPowerChargeLimit;
+        private float cachedHeatProduction, cachedHeatDissipation;
+
+        /// <summary>**电池当前存量**（J，持久化）。容量 = `AggregatedStats.powerStorage`（Σ 组件容量）。
+        /// 放在群级而不是逐件：存量每步都变，逐件存就要每步扫组件（§0-1）。</summary>
+        public float StoredEnergyJ;
+
+        /// <summary>**电闭环总系数**（0–1；1 = 全供，0 = 完全饿死）。消费端只乘这个数（§5）。</summary>
+        public float Brownout = 1f;
+        public float BrownoutPropulsion = 1f;
+        public float BrownoutShield = 1f;
+        public float BrownoutWeapon = 1f;
+        public float BrownoutSensor = 1f;
+
+        /// <summary>**热闭环系数**（0–1；1 = 不超温）。默认公式见 `PowerThermalCore.OverheatFactor`。</summary>
+        public float Overheat = 1f;
+
+        /// <summary>上一步读数（W，不持久化；调试/验收读它）。</summary>
+        public float PowerSupplyW, PowerDemandW, PowerUsedW;
+
+        /// <summary>本群是否有任何电/热输入（重算时定）：false ⇒ 每步**跳过**规则（老船零成本路径）。</summary>
+        internal bool HasPowerOrHeat;
+
+        /// <summary>上一步的电/热输入快照（供 `CanSupplyPropulsionNow` 在**点火前**问"够不够"）。</summary>
+        private PowerThermalCore.Inputs lastPowerInputs;
+
+        /// <summary>本步**推进通道是否被全额供给**（欠电 ⇒ false ⇒ 推力门关闭）。
+        /// 由 `StepPowerThermal` 每步写；并行区只读。</summary>
+        public bool PropulsionPowered = true;
+
+        /// <summary>最近一次点火被**欠电**拒绝（读数，不持久化）。用户 2026-10-26 裁定：欠电 ⇒ 拒绝点火。</summary>
+        public bool BurnIgnitionBlockedByPower;
+
+        /// <summary>最近一次燃烧因**欠电**被熄火（读数，不持久化；与"工质尽"同口径）。</summary>
+        public bool BurnEndedByPower;
+
+        // ── 控制核心（2026-10-26；用户口径 = KSP 命令舱/探测器核心）──
+        /// <summary>本群**装过**控制核心（粘性；由各实体 OR 上来，重算时刷新）。</summary>
+        public bool RequiresControlCore;
+
+        /// <summary>本群当前还有**未损毁**的控制核心（任一实体有 ⇒ 有）。</summary>
+        public bool HasIntactControlCore;
+
+        /// <summary>可被操作：没装过核心 ⇒ 恒 true；装过 ⇒ 必须还有完好核心。</summary>
+        public bool IsControllable => !RequiresControlCore || HasIntactControlCore;
+
+        /// <summary>最近一次点火被**无控制核心**拒绝（读数，不持久化）。</summary>
+        public bool BurnIgnitionBlockedNoControl;
+
+        /// <summary>本群还有轮子角动量没卸完（2026-10-26：滑行时也要继续卸载；不落盘，读档后由下一次燃烧重建）。</summary>
+        public bool WheelHasMomentum;
+
+        /// <summary>取当前控制权（需要时先刷派生量；读档/部件变化后由 `InvalidateSignal` 置脏）。</summary>
+        public bool IsControllableNow()
+        {
+            if (derivedDirty) RecomputeDerived();
+            return IsControllable;
+        }
+
+        /// <summary>
+        /// **点火前的"够不够"判断**：推进通道需求 &gt; 0 时，发电 + 电池可放能否全额覆盖
+        /// （用户 2026-10-26 裁定：**欠电即拒绝点火**，不是按比例降推力）。
+        /// 无推进功耗（旧船/目录没填）⇒ 恒 true ⇒ **零行为变化**。
+        /// </summary>
+        public bool CanSupplyPropulsionNow()
+        {
+            if (!(lastPowerInputs.nominalPropulsion > 0f)) return true;
+            var i = lastPowerInputs;
+            i.storedJoules = StoredEnergyJ;   // 存量是群级实时值（输入里那份可能是一步前的快照）
+            i.activityPropulsion = 1f;        // 假设现在就点火
+            return PowerThermalCore.CanSupplyChannel(i, lastPowerInputs.nominalPropulsion);
+        }
+
+        /// <summary>
+        /// **一步电/热规则**（由 `SpaceGameComp` 在主线程每物理步调一次）。
+        /// 纯 O(1)：输入已由 `RecomputeDerived` 把 Σ 聚合缓存好，这里只做分配算术。
+        /// 无发电、无需求、无产热 ⇒ 直接回到"全供/不超温"（老船零成本路径）。
+        /// </summary>
+        public void StepPowerThermal(in PowerThermalCore.Inputs inputs)
+        {
+            lastPowerInputs = inputs;   // 供 `CanSupplyPropulsionNow`（点火前问"够不够"）
+
+            if (inputs.genWatts <= 0f
+                && inputs.nominalPropulsion <= 0f && inputs.nominalShield <= 0f
+                && inputs.nominalWeapon <= 0f && inputs.nominalSensor <= 0f
+                && inputs.heatProduction <= 0f)
+            {
+                Brownout = 1f;
+                BrownoutPropulsion = 1f;
+                BrownoutShield = 1f;
+                BrownoutWeapon = 1f;
+                BrownoutSensor = 1f;
+                Overheat = 1f;
+                PowerSupplyW = 0f;
+                PowerDemandW = 0f;
+                PowerUsedW = 0f;
+                PropulsionPowered = true;
+                return;   // 存量不动（没发电也没需求 ⇒ 充放都是 0）
+            }
+
+            // §5（用户 2026-10-26 裁定）：推进**欠电即拒绝点火** ⇒ 本步推进通道要么全额、要么不需求。
+            // 不能"按比例给一点"：那会变成"点了火却推不动"，且白烧电池。所以先把活动位收掉再分配。
+            var effective = inputs;
+            bool canProp = CanSupplyPropulsionNow();
+            if (effective.activityPropulsion > 0f && !canProp)
+                effective.activityPropulsion = 0f;
+            // 推力门：本步**本来在点火**才看供给；没点火时门恒开（避免把"没在烧"误判成"欠电"）
+            PropulsionPowered = inputs.activityPropulsion <= 0f || canProp;
+
+            var o = PowerThermalCore.Step(effective);
+            StoredEnergyJ = o.storedJoules;
+            Brownout = o.brownout;
+            BrownoutPropulsion = o.brownoutPropulsion;
+            BrownoutShield = o.brownoutShield;
+            BrownoutWeapon = o.brownoutWeapon;
+            BrownoutSensor = o.brownoutSensor;
+            Overheat = o.overheat;
+            PowerSupplyW = o.supplyWatts;
+            PowerDemandW = o.demandWatts;
+            PowerUsedW = o.usedWatts;
+        }
+
+        /// <summary>用缓存快照 + 群级活动开关组装本步输入（`dt` = 物理步秒数）。</summary>
+        internal PowerThermalCore.Inputs BuildPowerInputs(float dtSeconds)
+        {
+            PowerThermalCore.Inputs i = default;
+            i.genWatts = cachedPowerGen;
+            i.dischargeLimitWatts = cachedPowerDischargeLimit;
+            i.chargeLimitWatts = cachedPowerChargeLimit;
+            i.capacityJoules = cachedPowerStorage;
+            i.storedJoules = StoredEnergyJ;
+            i.nominalPropulsion = cachedPowerDrawPropulsion;
+            i.nominalShield = cachedPowerDrawShield;
+            i.nominalWeapon = cachedPowerDrawWeapon;
+            i.nominalSensor = cachedPowerDrawSensor;
+            // 活动折算（§5：按活动状态折算，不是静态标称）：
+            // · 推进：只有点火中才吃电（`HasActiveBurn` 是群级开关，读它 = O(1)）；
+            // · 护盾/武器/传感器：本批**恒开**（护盾系统未落地；武器挂点数据层无"正在开火"开关；
+            //   被动阵列本来就常开）——留 hook，等各自子系统给活动位（见交接 §4 挂账）。
+            i.activityPropulsion = HasActiveBurn ? 1f : 0f;
+            i.activityShield = 1f;
+            i.activityWeapon = 1f;
+            i.activitySensor = 1f;
+            i.heatProduction = cachedHeatProduction;
+            i.heatDissipation = cachedHeatDissipation;
+            i.dtSeconds = dtSeconds;
+            return i;
+        }
+
         /// <summary>
         /// 信号强度（[V8]；无量纲，标称 1.0 = 一艘静默基准船）。
         ///
@@ -359,6 +523,22 @@ namespace PioneerFramework
             };
 
             var dt = new SensorTech();   // 编队级 = 各实体聚合的**求和**（与实体级聚合同口径）
+            // §5 电/热快照输入：整趟重算先清零（与上面 `SignalInputs` 同一次遍历收集）。
+            // ⚠ 注意 `cachedJamStrength` 没有清零（历史遗留，已登记为缺陷：每次重算都会累加 Σ干扰）；
+            //   本批**不动它**（属 EW 平衡改动，需单独裁定），新字段按"重算 = 全量覆盖"的纪律写。
+            cachedPowerGen = 0f;
+            cachedPowerDrawPropulsion = 0f;
+            cachedPowerDrawShield = 0f;
+            cachedPowerDrawWeapon = 0f;
+            cachedPowerDrawSensor = 0f;
+            cachedPowerStorage = 0f;
+            cachedPowerDischargeLimit = 0f;
+            cachedPowerChargeLimit = 0f;
+            cachedHeatProduction = 0f;
+            cachedHeatDissipation = 0f;
+
+            // 合并（2026-10-31）：远端把宿主来源改成"预演副本优先"；与上面的清零块无耦合
+            // （副本上跑同一段聚合正是他要的：算出来的是副本的预测值；主线 preparedPhysicsHost == null 不变）。
             var sg = (preparedPhysicsHost ?? Current.Game?.GetComponent<SpaceGameComp>());
             if (sg != null)
             {
@@ -367,10 +547,14 @@ namespace PioneerFramework
                 double uMinX = double.MaxValue, uMinY = double.MaxValue, uMinZ = double.MaxValue;
                 double uMaxX = double.MinValue, uMaxY = double.MinValue, uMaxZ = double.MinValue;
                 bool hasGeo = false;
+                bool hasControlCore = false;
                 foreach (int eid in entityIds)
                 {
                     var e = sg.GetEntityById(eid);
                     if (e == null) continue;
+                    // 控制核心：装过就粘住；任一实体还有完好核心 ⇒ 本群可操作
+                    if (e.RequiresControlCore) RequiresControlCore = true;
+                    if (e.HasIntactControlCore) hasControlCore = true;
                     e.GetAabbSystem(out DVector3 eMin, out DVector3 eMax);
                     DVector3 p = e.Position;
                     uMinX = System.Math.Min(uMinX, p.x + eMin.x);
@@ -384,6 +568,17 @@ namespace PioneerFramework
                     var st = e.AggregatedStats;
                     x.heatWatts += st.heatProduction + st.heatDissipation;
                     x.powerWatts += st.powerGen + st.powerDraw;
+                    // §5：电/热规则要的快照（每步只读这些缓存 float，不回头遍历组件）
+                    cachedPowerGen += st.powerGen;
+                    cachedPowerDrawPropulsion += st.powerDrawPropulsion;
+                    cachedPowerDrawShield += st.powerDrawShield;
+                    cachedPowerDrawWeapon += st.powerDrawWeapon;
+                    cachedPowerDrawSensor += st.powerDrawSensor;
+                    cachedPowerStorage += st.powerStorage;
+                    cachedPowerDischargeLimit += st.powerDischargeLimit;
+                    cachedPowerChargeLimit += st.powerChargeLimit;
+                    cachedHeatProduction += st.heatProduction;
+                    cachedHeatDissipation += st.heatDissipation;
                     x.activeRadiation += st.activeRadiation;   // [V7]/[E2] 部件级那一份（建筑级在循环之后加）
                     // [V7]：侦测技术（传感器组件 / 未来的 EW 建筑投影都进这里）
                     dt.sensitivityMeters += st.sensorRange;
@@ -393,6 +588,7 @@ namespace PioneerFramework
                     dt.ecmResist += st.ecmResist;
                     dt.eccmResist += st.eccmResist;
                 }
+                HasIntactControlCore = hasControlCore;
                 if (hasGeo)
                 {
                     double hx = (uMaxX - uMinX) * 0.5;
@@ -414,6 +610,24 @@ namespace PioneerFramework
 
             cachedSignal = SignalModel.Total(x);
             cachedDetect = dt;
+            // §5：本群是否需要每步跑电/热规则。false ⇒ 规则整条跳过（并把系数归位到"全供/不超温"，
+            // 防"电部件被拆光后 brownout 还停在 0"的陈旧读数）。
+            HasPowerOrHeat = cachedPowerGen > 0f
+                || cachedPowerDrawPropulsion > 0f || cachedPowerDrawShield > 0f
+                || cachedPowerDrawWeapon > 0f || cachedPowerDrawSensor > 0f
+                || cachedHeatProduction > 0f || cachedPowerStorage > 0f;
+            if (!HasPowerOrHeat)
+            {
+                Brownout = 1f;
+                BrownoutPropulsion = 1f;
+                BrownoutShield = 1f;
+                BrownoutWeapon = 1f;
+                BrownoutSensor = 1f;
+                Overheat = 1f;
+                PowerSupplyW = 0f;
+                PowerDemandW = 0f;
+                PowerUsedW = 0f;
+            }
             derivedDirty = false;
         }
 
@@ -481,6 +695,14 @@ namespace PioneerFramework
         /// </summary>
         public bool exemptPlanetCollision ;
 
+        // ── **Landed = 纯解析档**（2026-10-28 用户裁定）──────────────────────────────────
+        // 落地后位置由**天体固连坐标**给出（自转系里不变），每步只按自转解析成 ECI，
+        // **不积分、不燃烧、不做碰撞**（省性能 + 不漂移）。
+        /// <summary>已落地（解析档）。由 `SpaceGameComp.LandGroup` 置位。</summary>
+        public bool landed;
+        /// <summary>落点的**固连坐标**（自转系，米）；解析档每步用它算出 ECI 位置。</summary>
+        public double landedFixedX, landedFixedY, landedFixedZ;
+
         // ── 地表锚点（星座组网：为地表据点合成的不动 group，见《星座组网系统设计-20260828.md》§5 D11）──
         /// <summary>
         /// 地表据点的合成锚点 group：仅作星座成员载体（成员类型统一为 groupId），不是飞船。
@@ -511,6 +733,14 @@ namespace PioneerFramework
         public bool HasOrbitKeeping ;
         /// <summary>不抵消的天体 ID 白名单。null 或空 = 未启用过滤。</summary>
         public HashSet<int>? orbitKeepingWhitelist;
+
+        // ── 自动抛级（2026-10-28，落到组上；默认关 ⇒ 不改变既有飞行行为）──
+        /// <summary>自动抛级开关（存档）。</summary>
+        public bool autoStageEnabled;
+        /// <summary>触发油比（0.02 = 剩余 2%）。</summary>
+        public double autoStageFuelFraction = 0.02;
+        /// <summary>计划最短运行时间（s）。</summary>
+        public double autoStageMinSeconds = 20.0;
 
         // ── 引力掩码 + 单向闩锁（[A6]，2026-10-06，计划稿 §2.5/D6）──
         /// <summary>
@@ -574,8 +804,9 @@ namespace PioneerFramework
         /// <summary>本次 burn 已实际消耗的工质（kg，主线程累计）。</summary>
         public double burnConsumedPropellant;
         /// <summary>
-        /// 本次 burn 是否用 RCS（全矢量免对准）：交会/接近修正 burn 置 true，
-        /// 主引擎大 burn 保持 false。瞬态标记，EndBurn 清零，不序列化。
+        /// 本次 burn 是否用 RCS（全矢量免对准）：交会/接近/细修 burn 置 true，主引擎大 burn 保持 false。
+        /// **有图/无图同义**（2026-10-27）：true ⇒ 优先 RCS，RCS 干了回退主网。
+        /// 瞬态标记，EndBurn 清零，不序列化。
         /// </summary>
         public bool burnUseRcs;
 
@@ -719,9 +950,104 @@ namespace PioneerFramework
         public DVector3 pendingImpulse;
         /// <summary>
         /// 机动燃烧策略：启用的工质网络（键 = 工质 Def）。null/空 = 全启用。
-        /// 玩家可在机动队列 UI 调整；burn 只烧启用网络。
+        /// **只允许经 `ApplyNetworkSelection` / `SetBurnNetworkOverride` / `RestorePlayerNetworkSelection` 写**
+        /// （2026-10-27 收敛：此前机动/引导/圆轨/窗口四个爹直接赋值，语义靠调用顺序）。
         /// </summary>
-        public HashSet<PropellantDef>? burnEnabledNetworks;   // 契约改真（2026-10-15 手清）：文档即"null/空 = 全启用"，全体消费方本就 null 守卫（写入点 4462/5301 传的便是 null）
+        public HashSet<PropellantDef>? burnEnabledNetworks { get; private set; }
+
+        // ── 玩家选网（2026-10-27）：持久保存选择，运行时映射到 `burnEnabledNetworks` ──
+        /// <summary>玩家选中的推进网络工质（defName；空 = 全部）。存档保存。</summary>
+        public string enabledNetworkDefName = "";
+        /// <summary>选中的网络是否 RCS 类（决定 `burnUseRcs`：RCS 网必须显式模式才出力）。</summary>
+        public bool enabledNetworkRcsOnly;
+        private HashSet<PropellantDef>? playerEnabledNetworks;
+
+        /// <summary>玩家选择的网络集合（null = 全部）。机动/制导未显式指定网络时用它。</summary>
+        public HashSet<PropellantDef>? PlayerEnabledNetworks => playerEnabledNetworks;
+
+        /// <summary>应用玩家选网：`defName` 空 = 全部；否则只启用该工质，并按网络类属设 `burnUseRcs`。</summary>
+        public void ApplyNetworkSelection(string? defName, bool rcsOnly)
+        {
+            enabledNetworkDefName = defName ?? "";
+            enabledNetworkRcsOnly = rcsOnly;
+            if (string.IsNullOrEmpty(enabledNetworkDefName))
+            {
+                playerEnabledNetworks = null;
+            }
+            else
+            {
+                var def = DefDatabase<PropellantDef>.GetNamedSilentFail(enabledNetworkDefName);
+                playerEnabledNetworks = def != null ? new HashSet<PropellantDef> { def } : null;
+            }
+            RestorePlayerNetworkSelection();
+        }
+
+        /// <summary>当前燃烧**临时覆盖**网络/模式；`EndBurn` 会恢复到玩家选择。</summary>
+        public void SetBurnNetworkOverride(HashSet<PropellantDef>? networks, bool rcsOnly)
+        {
+            burnEnabledNetworks = networks;
+            burnUseRcs = rcsOnly;
+            networkSelectionVersion++;
+        }
+
+        /// <summary>恢复玩家选网（null = 全部；`burnUseRcs` = 玩家是否选了 RCS 网）。</summary>
+        public void RestorePlayerNetworkSelection()
+        {
+            burnEnabledNetworks = playerEnabledNetworks;
+            burnUseRcs = enabledNetworkRcsOnly;
+            networkSelectionVersion++;
+        }
+
+        // ── 姿态请求（2026-10-27）：各子系统只提交意图，`ComputeGroupPhysics` 每步解析一次 ──
+        /// <summary>本步姿态目标（世界系方向）。</summary>
+        public DVector3 attitudeTargetSystem;
+        /// <summary>本步胜出请求的优先级；`int.MinValue` = 无请求。</summary>
+        public int attitudePriority = int.MinValue;
+        /// <summary>本步胜出请求作用的船体轴。</summary>
+        public AttitudeAxis attitudeAxis;
+
+        /// <summary>提交姿态请求：优先级高者胜（同级后来者胜）；**不直接写角速度**。</summary>
+        public void RequestAttitude(AttitudeAxis axis, DVector3 targetSystem, int priority)
+        {
+            if (priority < attitudePriority) return;
+            attitudePriority = priority;
+            attitudeAxis = axis;
+            attitudeTargetSystem = targetSystem;
+        }
+
+        public void ClearAttitudeRequest()
+        {
+            attitudePriority = int.MinValue;
+            attitudeTargetSystem = DVector3.zero;
+        }
+
+        // ── 选网掩码（2026-10-27）：每步不再 `HashSet.Contains`，只在选择/网络列表变化时重建 ──
+        private IPropulsionSource? maskSource;
+        private int maskVersion = -1;
+        private bool[]? networkMask;
+        private int networkSelectionVersion;
+
+        /// <summary>返回与 `src.Networks` 同序的启用掩码；缓存键 = (源实例, 选择版本)。
+        /// 索引顺序固定 ⇒ 归约顺序确定。</summary>
+        public bool[] GetNetworkMask(IPropulsionSource src)
+        {
+            if (networkMask != null && ReferenceEquals(maskSource, src) && maskVersion == networkSelectionVersion)
+                return networkMask;
+
+            maskSource = src;
+            maskVersion = networkSelectionVersion;
+            var nets = src.Networks;
+            if (networkMask == null || networkMask.Length != nets.Count)
+                networkMask = new bool[nets.Count];
+
+            bool all = burnEnabledNetworks == null || burnEnabledNetworks.Count == 0;
+            for (int i = 0; i < nets.Count; i++)
+            {
+                var p = nets[i].propellant;
+                networkMask[i] = all || (p != null && burnEnabledNetworks!.Contains(p));
+            }
+            return networkMask;
+        }
 
         /// <summary>
         /// 空间站「当前网络」（单选）：此后加入的机动都继承此单一网络（null = 全启用）。
@@ -828,13 +1154,14 @@ namespace PioneerFramework
             /// </summary>
             public HashSet<PropellantDef>? useNetworks;
 
-            /// <summary>规划时刻算好的世界系 dV 向量（节点帧）。执行时直接用作惯性方向，
-            /// 避免在点火时刻用实际状态换算产生的帧旋转误差（MechJeb 同款）。零 = 未设置（退回分量换算）。</summary>
-            public DVector3 plannedDvSystem;
+            /// <summary>规划时刻算好的**天体参考系（体心）Δv 向量**（节点帧）。
+            /// 与世界系只差平移 ⇒ 方向相同；执行时直接用作方向，避免在点火时刻用实际状态换算出帧旋转误差
+            /// （MechJeb 同款）。零 = 未设置（退回分量换算）。</summary>
+            public DVector3 plannedDvBody;
 
             /// <summary>
             /// ★★ **本机动的参考轨道**（2026-09-21）——"这一发的 Δv 是在哪条轨道上算的"。
-            /// 执行器的靶 = `参考轨道@节点UT 的速度 + plannedDvSystem`（见 `PlanNode.refOrbit` 的完整说明）。
+            /// 执行器的靶 = `参考轨道@节点UT 的速度 + plannedDvBody`（见 `PlanNode.refOrbit` 的完整说明）。
             /// ⚠ `false` ⇒ 退回旧口径（点火前轨道@UT + Δv）⇒ 既有条目行为逐位不变。
             /// </summary>
             public bool hasResolvedRefOrbit;
@@ -852,7 +1179,7 @@ namespace PioneerFramework
 
             /// <summary>
             /// 是否**已按活轨道重解过一次**（P2）。进预点火窗口时解一次就置位——解失败也置位，
-            /// 免得每 tick 反复重试同一条解不出来的意图。重解结果会**写回本条机动的分量与 plannedDvSystem**
+            /// 免得每 tick 反复重试同一条解不出来的意图。重解结果会**写回本条机动的分量与 plannedDvBody**
             /// ⇒ 下游（预对准方向 / 可行性估算 / 点火）自动用活值，不需要各自改。
             /// </summary>
             public bool intentResolved;
@@ -884,7 +1211,7 @@ namespace PioneerFramework
                 Scribe_Values.Look(ref executeTick, "executeTick", 0);
                 Scribe_Values.Look(ref active, "active", false);
                 Scribe_Values.Look(ref armRendezvousGuidance, "armRendezvousGuidance", false);
-                DVector3.Scribe("plannedDvSystem", ref plannedDvSystem);
+                DVector3.Scribe("plannedDvBody", ref plannedDvBody);
                 Scribe_Collections.Look(ref useNetworks, "useNetworks", LookMode.Def);
 
                 // 意图（目标条件）：逐字段自己 Scribe（`PlanIntent` 是纯类型、不认识 Verse）
@@ -1025,7 +1352,7 @@ namespace PioneerFramework
         /// "节点自己携带 `node.patch`/`nextPatch`" 同构）。
         /// </summary>
         public void QueueManeuver(float radDV, float tanDV, float normDV, int deltaTicks,
-            PlanOwner owner, DVector3 plannedDvSystem)
+            PlanOwner owner, DVector3 plannedDvBody)
         {
             int execTick = (int)System.Math.Round(TimeScaleManager.GetPhysicsTickSafe()) + deltaTicks;
             // 归属规则（`PlanOwnerRules`，唯一权威）：**只有手动**条目才夺走引导。
@@ -1042,7 +1369,7 @@ namespace PioneerFramework
                 active = true,
                 owner = owner,
                 useNetworks = InheritNetworks(),
-                plannedDvSystem = plannedDvSystem
+                plannedDvBody = plannedDvBody
             });
         }
 
@@ -1052,7 +1379,7 @@ namespace PioneerFramework
         /// 执行器的靶 = `参考轨道@节点 + Δv`；不带参考轨道时退回"点火前轨道@节点 + Δv"。
         /// </summary>
         public void QueueManeuver(float radDV, float tanDV, float normDV, int deltaTicks,
-            PlanOwner owner, DVector3 plannedDvSystem, bool hasRefOrbit, OrbitView refOrbit)
+            PlanOwner owner, DVector3 plannedDvBody, bool hasRefOrbit, OrbitView refOrbit)
         {
             int execTick = (int)System.Math.Round(TimeScaleManager.GetPhysicsTickSafe()) + deltaTicks;
             if (PlanOwnerRules.TakesOverGuidance(owner))
@@ -1066,7 +1393,7 @@ namespace PioneerFramework
                 active = true,
                 owner = owner,
                 useNetworks = InheritNetworks(),
-                plannedDvSystem = plannedDvSystem,
+                plannedDvBody = plannedDvBody,
                 hasResolvedRefOrbit = hasRefOrbit,
                 resolvedRefOrbit = refOrbit,
                 ladderEpoch = ladderPlanEpoch
@@ -1331,6 +1658,31 @@ namespace PioneerFramework
         /// <summary>头步定点读数计时（只打头 6 步；`StartBurn` 复位）。</summary>
         public int burnHeadStepsLogged;
 
+        /// <summary>
+        /// **姿态角速度倍率**（默认 1.0；2026-10-28 用户裁定）。
+        /// 发射爬升时由 `RocketLaunchController` 置 3.0：大惯量火箭在一级燃烧期间靠惯量限速
+        /// 只能维持 ~24° 偏差（贴着 25° 点火锥上限，随时可能熄火），
+        /// 发射段给姿态环节一个明确的倍率，出段即复位。
+        /// </summary>
+        public double attitudeRateScale = 1.0;
+
+        /// <summary>
+        /// **"零 Δv"步计数**（2026-10-28 临时探针）：燃烧中网络有推力、油也还在，却算出 `burnDv = 0`
+        /// ⇒ `BurnExhausted` 被置位、质量冻结（用户实报"烧到 219 t 还剩 155 t 油就不掉了"）。
+        /// `StartBurn` 复位；探针只在前 5 次与每 50 次打一行。
+        /// </summary>
+        public int burnZeroDvSteps;
+
+        /// <summary>**"零扣料"步计数**（2026-10-28 探针）：燃烧中 `PropellantConsumed ≤ 0` 的连续步数。</summary>
+        public int burnDrySteps;
+
+        /// <summary>
+        /// **冲量探针已打印步数**（2026-10-29）。**不随 `StartBurn` 复位** ——
+        /// 发射链每步重开燃烧，用 `burnStepAuditCount` 当闸门会每步清零 ⇒ 20 发并发时每秒 4 万行日志、
+        /// 进程被 I/O 拖死（实测：5 秒写 12 MB、00:38:25 起日志停止、游戏卡住）。
+        /// </summary>
+        public int impulseProbeSteps;
+
         // ── 意图轨道靶（B2.2-b 的收口微调 + "MJ 优先"第 5 件起的**整段燃烧**共用）─────────────
         // 一个靶，两种时机（收口时调一次 = 微调；逐拍调 = 燃烧律）⇒ **只允许一份算式算它**（J2）。
         /// <summary>本次机动的**意图轨道**：计划在节点处的**脉冲**结果 `(a, |h|, ĥ)`。
@@ -1418,13 +1770,91 @@ namespace PioneerFramework
         }
 
         /// <summary>
+        /// **原地更新燃烧指令**（2026-10-27，制导重构第 1 步）：不重开状态机、不清点火质量/实际起始 tick、
+        /// 不置脏派生量。每步只把"这一步该交付的 Δv"与对应命令加速度写进去。
+        /// 未在燃烧时退化为 `StartBurn`（只发生一次）。
+        /// </summary>
+        public void SetBurnCommand(DVector3 dV, double commandAccel)
+        {
+            if (!HasActiveBurn)
+            {
+                StartBurn(dV);
+                burnCommandAccel = commandAccel > 0.0 ? commandAccel : 0.0;
+                return;
+            }
+            if (dV.sqrMagnitude > 1e-12)
+                burnDirectionSystem = dV.normalized;
+            remainingBurnDV = dV.magnitude;
+            appliedBurnDV = 0.0;          // 本步指令的交付从零计
+            burnCommandAccel = commandAccel > 0.0 ? commandAccel : 0.0;
+            BurnCommandVersion++;
+        }
+
+        /// <summary>
         /// 开始一次缓释燃烧。
         /// </summary>
         /// <param name="dV">本次燃烧的总 dV 向量 (m/s)</param>
+        /// <summary>
+        /// **点火唯一入口**（2026-10-27）：所有"给船一段 Δv"都构造 <see cref="ManeuverPlan" /> 走这里。
+        /// 只负责把计划变成燃烧状态（选网/模式/命令加速度/方向锚点/标志），不做安全校验与排队。
+        /// 返回 false = 被拒（损毁/控制核心/欠电/零 Δv）。
+        /// </summary>
+        public bool BeginBurn(in ManeuverPlan plan)
+        {
+            if (IsCrippled) return false;
+            if (plan.dv.sqrMagnitude <= 1e-12) return false;
+
+            switch (plan.networks)
+            {
+                case ManeuverNetworkMode.InheritPlayer:
+                    SetBurnNetworkOverride(PlayerEnabledNetworks, enabledNetworkRcsOnly);
+                    break;
+                case ManeuverNetworkMode.All:
+                    SetBurnNetworkOverride(null, plan.useRcs);
+                    break;
+                default:
+                    SetBurnNetworkOverride(plan.useNetworks, plan.useRcs);
+                    break;
+            }
+
+            if (plan.clearCircularOrbit && IsCircularOrbit)
+                ExitCircularOrbit();
+
+            StartBurn(plan.dv);
+            if (!HasActiveBurn) return false;
+
+            burnCommandAccel = plan.burnSeconds > 0.0
+                ? plan.dv.magnitude / plan.burnSeconds
+                : plan.commandAccel;
+            if (plan.hasSolution)
+                SetBurnSolution(plan.radialDV, plan.tangentialDV, plan.normalDV);
+            if (plan.isCorrection) burnIsCorrection = true;
+            if (plan.armRendezvousGuidance) ArmRendezvousGuidance();
+            if (plan.nodeTick >= 0 && abOneShotImpulse) abNodeTick = plan.nodeTick;
+            GetLinkedMapComp()?.SetThrustersBurning(true);
+            return true;
+        }
+
         public void StartBurn(DVector3 dV)
         {
             // B5：关键件损毁 ⇒ 失能，不再接受新点火（已有点火由 MarkPartDestroyed 的 EndBurn 熄掉）。
             if (IsCrippled) return;
+            // 控制核心（2026-10-26）：**装过核心的舰失去核心 ⇒ 拒绝点火**；没装过的舰不受影响。
+            if (!IsControllableNow())
+            {
+                BurnIgnitionBlockedNoControl = true;
+                return;
+            }
+            BurnIgnitionBlockedNoControl = false;
+            // §5（用户 2026-10-26 裁定）：**欠电 ⇒ 拒绝点火**（不是按比例降推力）。
+            // 判据 = 发电 + 电池可放能否全额覆盖推进通道；无推进功耗的旧船恒通过（零行为变化）。
+            if (!CanSupplyPropulsionNow())
+            {
+                BurnIgnitionBlockedByPower = true;
+                return;
+            }
+            BurnIgnitionBlockedByPower = false;
+            BurnEndedByPower = false;
             BurnCommandVersion++;
             HasActiveBurn = true;
             burnTargetReached = false;
@@ -1448,6 +1878,8 @@ namespace PioneerFramework
             burnPhaseSwept = false;        // 新机动 ⇒ 允许再扫一次点火相位
             burnPhaseShift = 0.0;          // …且偏移归零（扫描结果在 StartBurn 之前已用完）
             burnHeadStepsLogged = 0;       // 头步读数重新开始
+            burnZeroDvSteps = 0;           // 零 Δv 步计数重新开始（2026-10-28 探针）
+            burnDrySteps = 0;              // 零扣料步计数重新开始（2026-10-28 探针）
             burnLastCmdDv = 0.0;
             appliedDvAudit = 0.0;
             burnStepAuditCount = 0;
@@ -1485,7 +1917,7 @@ namespace PioneerFramework
             HasActiveBurn = false;
             derivedDirty = true;   // 失效点之一（熄火 ⇒ burning 项归零），与 StartBurn 成对
             remainingBurnDV = 0.0;
-            burnUseRcs = false;
+            RestorePlayerNetworkSelection();   // 2026-10-27：机动覆盖结束 ⇒ 回玩家选网（不再硬置 false）
             burnIsCorrection = false;
             intakeFlameoutLogged = false;   // [A5] 熄火读数复位（下次点火重新有机会报一次）
             envelopeRoutedOffLogged = false; // [A4] 包线归零读数复位（同上）
@@ -2152,6 +2584,8 @@ namespace PioneerFramework
             Scribe_Values.Look(ref IsCollidable, "isCollidable", true);
             Scribe_Values.Look(ref HasGravityWell, "hasGravityWell", false);
             Scribe_Values.Look(ref IsCrippled, "isCrippled", false);
+            // §5 电闭环：电池存量（群级状态；容量/充放上限从部件聚合来，不落这里）
+            Scribe_Values.Look(ref StoredEnergyJ, "powerStoredJ", 0f);
             // 匿踪闸门（[V1]）：旧存档无此节点 → 默认 false（公开坐标），与"飞船/站不广播"一致
             Scribe_Values.Look(ref IsStealth, "isStealth", false);
             // 主动探测开关（[V1]）：旧存档无节点 → false（被动）
@@ -2169,6 +2603,11 @@ namespace PioneerFramework
             Scribe_Collections.Look(ref entityIds, "entityIds", LookMode.Value);
             Scribe_Values.Look(ref CelestialBodyId, "celestialBodyId", -1);
             Scribe_Values.Look(ref exemptPlanetCollision, "exemptPlanetCollision", false);
+            // 落地解析档（2026-10-28）：旧档无此节点 ⇒ 默认在飞
+            Scribe_Values.Look(ref landed, "landed", false);
+            Scribe_Values.Look(ref landedFixedX, "landedFixedX", 0.0);
+            Scribe_Values.Look(ref landedFixedY, "landedFixedY", 0.0);
+            Scribe_Values.Look(ref landedFixedZ, "landedFixedZ", 0.0);
             // 地表锚点（星座成员载体）：旧存档无此节点 → 默认非锚点
             Scribe_Values.Look(ref IsSurfaceAnchor, "isSurfaceAnchor", false);
             Scribe_Values.Look(ref anchorWorldObjectId, "anchorWorldObjectId", -1);
@@ -2192,6 +2631,13 @@ namespace PioneerFramework
 
             // 轨道保持序列化
             Scribe_Values.Look(ref HasOrbitKeeping, "hasOrbitKeeping", false);
+            Scribe_Values.Look(ref autoStageEnabled, "autoStageEnabled", false);
+            Scribe_Values.Look(ref autoStageFuelFraction, "autoStageFuelFraction", 0.02);
+            Scribe_Values.Look(ref autoStageMinSeconds, "autoStageMinSeconds", 20.0);
+            Scribe_Values.Look(ref enabledNetworkDefName, "enabledNetworkDef", "");
+            Scribe_Values.Look(ref enabledNetworkRcsOnly, "enabledNetworkRcsOnly", false);
+            if (Scribe.mode == LoadSaveMode.PostLoadInit)
+                ApplyNetworkSelection(enabledNetworkDefName, enabledNetworkRcsOnly);
             if (Scribe.mode == LoadSaveMode.LoadingVars && HasOrbitKeeping && orbitKeepingWhitelist == null)
                 orbitKeepingWhitelist = new HashSet<int>();
             // Scribe 不支持直接序列化 HashSet<int>，转 List<int>

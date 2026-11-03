@@ -258,7 +258,8 @@ namespace PioneerFramework.SpaceAI
             if (dv.magnitude <= .1) return;
             if (group.IsCircularOrbit) group.ExitCircularOrbit();
             StopOwnedBurn(group, record);
-            group.StartBurn(dv); record.ownsBurn = true;
+            group.BeginBurn(new ManeuverPlan { dv = dv, networks = ManeuverNetworkMode.All });
+            record.ownsBurn = group.HasActiveBurn;
             record.ownedBurnVersion = group.BurnCommandVersion;
             record.burnExpires = now + Math.Max(30, dv.magnitude / Math.Max(.01, game.EstimateMaxAcceleration(group)) +
                 Math.PI / Math.Max(.001, group.maxAngularRate));

@@ -44,23 +44,21 @@ namespace PioneerFramework
         // ⚠ 本类**不另立枚举**（本库 J3：不许影子类型）—— 游戏那两处内联规则要的本来就是布尔。
 
         /// <summary>
-        /// ④ **是否走 RCS**（唯一算式）。语义与 `RendezvousGuidanceCore.SelectActuator` 逐条一致：
-        /// 小 Δv 优先 RCS → 大 Δv 且主推已对准走主网 → 主推未对准/主网尽则 RCS 兜底。
+        /// ④ **是否走 RCS**（唯一算式，2026-10-27 收敛为"只按 Δv 窗口"）：
+        /// **RCS 一个窗口烧得完的小修正才交给 RCS；大 Δv 一律主网（未对准就等对准），不跨类回退。**
+        /// 旧版"主推未对准/主网尽 ⇒ RCS 兜底"已删：把 500 m/s 交给 RCS（≈0.44 m/s²）要烧 19 分钟，
+        /// 那不是兜底，是把节点拖死。
         /// </summary>
         /// <param name="dvMagnitude">本次机动的 |Δv|（m/s）</param>
-        /// <param name="aMain">主网全油门加速度（m/s²，0 = 无主网）</param>
         /// <param name="aRcs">RCS 加速度（m/s²，0 = 无 RCS）</param>
-        /// <param name="mainAligned">主推轴是否已对准（未对准时主网本步不出力）</param>
+        public static bool UseRcs(double dvMagnitude, double aRcs,
+            double windowSeconds = RcsFineDvWindowSeconds)
+            => aRcs > 0.0 && dvMagnitude <= aRcs * windowSeconds;
+
+        /// <summary>兼容旧签名：`aMain`/`mainAligned` 不再参与判决（大 Δv 等对准，不换类）。</summary>
         public static bool UseRcs(double dvMagnitude, double aMain, double aRcs, bool mainAligned,
             double windowSeconds = RcsFineDvWindowSeconds)
-        {
-            bool hasMain = aMain > 0.0;
-            bool hasRcs = aRcs > 0.0;
-            if (!hasRcs) return false;                                  // 只剩主网（哪怕未对准：等姿态）
-            if (dvMagnitude <= aRcs * windowSeconds) return true;       // 小修正优先 RCS：全矢量、免对准
-            if (hasMain && mainAligned) return false;                   // 大 Δv：主网（要求对准）
-            return true;                                                // 主推未对准 / 主网尽：RCS 兜底
-        }
+            => UseRcs(dvMagnitude, aRcs, windowSeconds);
 
         /// <summary>有没有任何可用推进（主网或 RCS）。</summary>
         public static bool HasAnyActuator(double aMain, double aRcs) => aMain > 0.0 || aRcs > 0.0;

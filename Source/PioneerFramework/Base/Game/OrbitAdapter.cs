@@ -171,13 +171,14 @@ namespace PioneerFramework
         /// 把 `Operation.MakeNodes` 产出的计划**逐条**送进编队的机动队列。
         ///
         /// 每条的换算：**两条系同轴 ⇒ Δv 直传**（批6 S2：跨系只经 `OrbitView` 的进/出两个口），
-        /// 再按上游约定同时填**分量**（`OrbitMath.DeltaVSystemToComponents`）与 `plannedDvSystem`
-        /// （`PlannedManeuver` 的注释：点火时 dvMag 走分量、实际烧走 plannedDvSystem）。
+        /// 再按上游约定同时填**分量**（`OrbitMath.DeltaVSystemToComponents`）与 `plannedDvBody`
+        /// （`PlannedManeuver` 的注释：点火时 dvMag 走分量、实际烧走 plannedDvBody）。
         ///
         /// 失败时返回 false 并给出原因（队列里**一条都不会**被加入——宁可整条不做，也不要半条计划）。
         /// </summary>
         public static bool TryQueuePlan(SpaceEntityGroup g, OrbitView ov,
-            List<PlanNode>? nodes, out string reason, out string summary, PlanIntent? intent = null)
+            List<PlanNode>? nodes, out string reason, out string summary, PlanIntent? intent = null,
+            Func<SpaceEntityGroup.PlannedManeuver, SpaceEntityGroup.PlannedManeuver>? configure = null)
         {
             reason = "";
             summary = "";
@@ -217,20 +218,22 @@ namespace PioneerFramework
                 (DVector3 rAt, DVector3 vAt) = ov.GameFrameStateAtUT(node.ut);
                 OrbitMath.DeltaVSystemToComponents(rAt, vAt, dvSystem, out double rad, out double tan, out double norm);
 
-                prepared.Add(new SpaceEntityGroup.PlannedManeuver
+                var pm = new SpaceEntityGroup.PlannedManeuver
                 {
                     radialDV = (float)rad,
                     tangentialDV = (float)tan,
                     normalDV = (float)norm,
                     executeTick = (int)Math.Round(node.ut),
                     active = true,
-                    plannedDvSystem = dvSystem,
+                    plannedDvBody = dvSystem,
                     // 意图（目标条件）：P2 的执行层接上活重解后由它接管；现在至少可读可存（§2.5 / B1.2）
                     intent = intent,
                     // 归属（§2.4）：从节点原样带来 —— PlanNode 的默认是 Guidance，规划器窗口显式标 Manual
                     owner = node.owner,
                     burnSecondsPlanned = node.burnSeconds,
-                });
+                };
+                if (configure != null) pm = configure(pm);   // 预览等附加字段（2026-10-27）
+                prepared.Add(pm);
 
                 sb.Append(sb.Length > 0 ? "；" : "")
                   .Append(System.Globalization.CultureInfo.CurrentCulture, $"t={node.ut:F0}s |Δv|={node.dV.magnitude:F2}m/s（R/T/N {rad:F2}/{tan:F2}/{norm:F2}）");
@@ -245,7 +248,7 @@ namespace PioneerFramework
 
         /// <summary>
         /// **按活轨道重解一条机动的意图**（P2 / 《大修计划》§2.5）：返回"刷新后的条目"——
-        /// 分量与 `plannedDvSystem` 都换成**当前活轨道**算出来的值，`intentResolved` 置位。
+        /// 分量与 `plannedDvBody` 都换成**当前活轨道**算出来的值，`intentResolved` 置位。
         ///
         /// 调用点在执行侧（进预点火窗口时解一次）：解出来的值**写回队列条目** ⇒ 下游的
         /// 预对准方向、可行性估算、点火全都自动用活值，**不需要各自改**。
@@ -294,7 +297,7 @@ namespace PioneerFramework
             resolved.radialDV = (float)rad;
             resolved.tangentialDV = (float)tan;
             resolved.normalDV = (float)norm;
-            resolved.plannedDvSystem = dvSystem;
+            resolved.plannedDvBody = dvSystem;
             resolved.executeTick = (int)Math.Round(node.ut);
             resolved.intentResolved = true;
             return true;

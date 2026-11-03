@@ -104,7 +104,10 @@ namespace PioneerFramework
             izz = mass * (sx * sx + sy * sy) / 12.0;
         }
 
-        /// <summary>圆柱，对称轴 = 本体系 **Y**；`diameter` = 直径、`height` = 高。</summary>
+        /// <summary>
+        /// 圆柱，对称轴 = 本体系 **Z**（船体轴向；2026-10-29 从 Y 改过来，理由见
+        /// <see cref="PartSelfInertia"/> 的注释）；`diameter` = 直径、`height` = 高。
+        /// </summary>
         public static void CylinderInertia(double mass, double diameter, double height,
             out double ixx, out double iyy, out double izz)
         {
@@ -112,8 +115,8 @@ namespace PioneerFramework
             double axial = 0.5 * mass * r * r;
             double radial = mass * (3.0 * r * r + height * height) / 12.0;
             ixx = radial;
-            iyy = axial;
-            izz = radial;
+            iyy = radial;
+            izz = axial;
         }
 
         /// <summary>球（直径）。</summary>
@@ -127,7 +130,13 @@ namespace PioneerFramework
             izz = i;
         }
 
-        /// <summary>部件自惯量（绕自身质心、体轴）。`useCustom` ⇒ 直接用 6 分量；否则按形状 + 已解析尺寸。</summary>
+        /// <summary>部件自惯量（绕自身质心、体轴）。`useCustom` ⇒ 直接用 6 分量；否则按形状 + 已解析尺寸。
+        ///
+        /// **圆柱的轴向 = 体 Z**（2026-10-29 定；旧口径是体 Y，那是 2026-10-28 轴改前"沿 Y 堆叠"的遗留）：
+        /// 现在整船零件沿 −Z 堆、机头 +Z（`DesignPartAssembler`），目录里"长度"落在 Z 上，
+        /// 所以工质罐/引擎标 `Cylinder` 后，**直径取 X、高取 Z** 才是"立着的罐"。
+        /// 渲染（`PartShapeMeshes`）与碰撞胶囊（`CombatManager.CapsuleSegment`）同口径。
+        /// </summary>
         public static void PartSelfInertia(Shape shape, double mass,
             double dimX, double dimY, double dimZ,
             bool useCustom, double cxx, double cyy, double czz, double cxy, double cxz, double cyz,
@@ -150,7 +159,8 @@ namespace PioneerFramework
             switch (shape)
             {
                 case Shape.Cylinder:
-                    CylinderInertia(mass, sx, sy, out ixx, out iyy, out izz);
+                    // 直径 = X（圆截面 ⇒ Y 视为同径）、高 = Z（沿堆叠方向的长度）
+                    CylinderInertia(mass, sx, sz, out ixx, out iyy, out izz);
                     break;
                 case Shape.Sphere:
                     SphereInertia(mass, sx, out ixx, out iyy, out izz);

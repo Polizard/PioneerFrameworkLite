@@ -237,10 +237,10 @@ namespace PioneerFramework
                     if (queued && after > before)
                     {
                         SpaceEntityGroup.PlannedManeuver m = g2.plannedManeuvers[after - 1];
-                        DVector3 w = m.plannedDvSystem;
+                        DVector3 w = m.plannedDvBody;
                         bool finite = !double.IsNaN(w.x) && !double.IsNaN(w.y) && !double.IsNaN(w.z);
-                        Check(finite && m.active, "队列条目的 plannedDvSystem 有限且 active",
-                            $"plannedDvSystem=({w.x:F2},{w.y:F2},{w.z:F2}) active={m.active} executeTick={m.executeTick}");
+                        Check(finite && m.active, "队列条目的 plannedDvBody 有限且 active",
+                            $"plannedDvBody=({w.x:F2},{w.y:F2},{w.z:F2}) active={m.active} executeTick={m.executeTick}");
                         Check(Math.Abs(m.executeTick - nodes![0].ut) < 1.0, "executeTick 与计划时刻一致",
                             $"executeTick={m.executeTick} 计划 ut={nodes![0].ut:F1}");
                         Info("（这条会真的烧；不想烧可在轨道面板取消）", "");

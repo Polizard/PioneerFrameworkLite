@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -20,6 +20,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # BACKEND-LOCK.md：后端（物理步 / 时间基 / 状态提交）未经授权不得修改。
+      # 只在 PR 上强制：给"顺手改后端"的 PR 一个快速红灯，红字正文即规则。
+      # 命中时输出【NOSTEPANYMORE】，要求提 PR 的人先拿到 DesignNotes/后端变更授权-*.md。
+      - name: Backend lock check (BACKEND-LOCK.md)
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/check-backend-lock.ps1 -Base "${{ github.event.pull_request.base.sha }}" -Fail
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4

@@ -27,6 +27,25 @@ namespace PioneerFramework.Components
             ComponentRegistry.Register<IntakeComponentData>();
         }
 
+        public override PartRole Role => PartRole.Intake;
+
+        public override bool ApplyPreset(string key, string value)
+        {
+            switch (key)
+            {
+                case "intakeArea":
+                    if (!TryParseFloat(value, out float a)) return false;
+                    intakeArea = a;
+                    return true;
+                case "coefficient":
+                    if (!TryParseFloat(value, out float k)) return false;
+                    coefficient = k;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         public override void ExposeData()
         {
             Scribe_Values.Look(ref intakeArea, "intakeArea", 1f);

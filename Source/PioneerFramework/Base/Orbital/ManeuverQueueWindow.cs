@@ -170,7 +170,7 @@ namespace PioneerFramework
                 else
                 {
                     group.EndBurn();
-                    group.burnEnabledNetworks = null;
+                    group.RestorePlayerNetworkSelection();
                     group.GetLinkedMapComp()?.SetThrustersBurning(false);
                 }
             }

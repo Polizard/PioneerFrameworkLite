@@ -237,7 +237,7 @@ namespace PioneerFramework.Launch
                     transit.TargetOrbit.positionSystem.v, map.Size.x, map.Size.z);
                 entity.GroupId = groupId;
 
-                spaceGame.RegisterGroup(group);
+                spaceGame.RegisterGroup(group, GroupBirthKind.Instantiated);   // 转运落地建组：无母体
                 if (!ReferenceEquals(spaceGame.GetGroupById(groupId), group))
                     throw new InvalidOperationException("group 注册失败");
 

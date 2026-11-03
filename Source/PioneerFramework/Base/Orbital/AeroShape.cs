@@ -29,8 +29,12 @@ namespace PioneerFramework
     /// </summary>
     public readonly struct AeroShape
     {
-        /// <summary>钝体盒的默认阻力系数（数值与 ρ₀/H 同在"数据裁定"里；`FromBox` 的缺省入参）。</summary>
-        public const double DefaultDragCoefficient = 1.0;
+        /// <summary>
+        /// 默认阻力系数。**2026-10-28 从 1.0 改 0.35**（用户裁定"面积改投影轮廓"同批）：
+        /// 1.0 是"钝板/降落伞"口径，真实带整流罩的火箭是 0.3–0.5 ⇒ 旧值让同面积的阻力虚高约 3 倍。
+        /// 只影响 `FromBox` 的默认值；显式传参的调用点（台架/合成用例）不受影响。
+        /// </summary>
+        public const double DefaultDragCoefficient = 0.35;
 
         /// <summary>沿船体**前轴**（±z）的 `Cd·A` (m²)。</summary>
         public readonly double forwardCdA;
@@ -64,6 +68,20 @@ namespace PioneerFramework
         /// <summary>三轴相等的退化数据（球 / 近球火箭 / 悬浮平台；也为"任意姿态逐位一致"提供样本）。</summary>
         public static AeroShape Isotropic(double cdA, double referenceLength = 0.0)
             => new(cdA, cdA, cdA, referenceLength);
+
+        /// <summary>
+        /// **沿气流方向的解析投影面���（CdA 口径）**——盒子的标准公式：
+        /// `A(n) = |n·x̂|·A_x + |n·ŷ|·A_y + |n·ẑ|·A_z`，轴序 = 前(z)/左(x)/上(y)。
+        ///
+        /// 对**单个盒子精确**：立方体沿体对角 = √3·a²、沿面对角 = √2·a²、沿轴向 = a²。
+        /// 与旧口径（二次范数 `√(Σ((CdA)_i·p_i)²)`）的差别：斜向时范数**低估**（立方体体对角给 a²，
+        /// 真值 √3·a²）——旧值是 2026-10-06 为判"逐轴力相加"选的口径，2026-10-28 按盒子投影纠正：
+        /// 被禁用的一直是"**力**逐轴相加"，而**面积**的逐轴投影加权本来就是盒模型的正解。
+        /// </summary>
+        public double ProjectedCdA(DVector3 vHat, DVector3 axisForward, DVector3 axisLeft, DVector3 axisUp)
+            => Math.Abs(DVector3.Dot(vHat, axisForward)) * forwardCdA
+             + Math.Abs(DVector3.Dot(vHat, axisLeft)) * leftCdA
+             + Math.Abs(DVector3.Dot(vHat, axisUp)) * upCdA;
 
         /// <summary>
         /// **盒模型生产者**（无 Map 的默认导出）：面积 = 垂直于该轴的两个尺寸之积。

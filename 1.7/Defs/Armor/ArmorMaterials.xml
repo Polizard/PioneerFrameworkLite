@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- ════════════════════════════════════════════════════════════════════
+       2026-10-22 · 部件功能化 §11.1 装甲材料（**debug 数值，等台架/玩法定标**）
+       装甲只影响伤害计算：不参与碰撞几何、不参与命中判定、**不参与质量**。
+       装甲值 = 零件厚度(mm) × 本材料的 protectionPerMm；
+       结构伤害系数 = clamp(穿透 / (穿透 + 装甲值), 0.05, 1)（见 `ArmorMath`）。
+       ⚠ `Class` 必须写全名（RimWorld 按简单名查全局类型，命名空间里的类型会静默跳过）。
+       ════════════════════════════════════════════════════════════════════ -->
+  <ArmorMaterialDef Class="PioneerFramework.ArmorMaterialDef">
+    <defName>PF_Armor_Steel</defName>
+    <label>轧钢装甲</label>
+    <description>便宜、通用。每毫米防护 1.0（基准）。</description>
+    <protectionPerMm>1</protectionPerMm>
+  </ArmorMaterialDef>
+
+  <ArmorMaterialDef Class="PioneerFramework.ArmorMaterialDef">
+    <defName>PF_Armor_Ceramic</defName>
+    <label>陶瓷装甲</label>
+    <description>对动能弹更有效，但脆。每毫米防护 1.8。</description>
+    <protectionPerMm>1.8</protectionPerMm>
+  </ArmorMaterialDef>
+
+  <ArmorMaterialDef Class="PioneerFramework.ArmorMaterialDef">
+    <defName>PF_Armor_Composite</defName>
+    <label>复合装甲</label>
+    <description>贵。每毫米防护 2.6。</description>
+    <protectionPerMm>2.6</protectionPerMm>
+  </ArmorMaterialDef>
+</Defs>

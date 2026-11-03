@@ -77,8 +77,9 @@ namespace PioneerFramework.GroundAssembly
             for (int i = 0; i < parts.Count; i++)
             {
                 if (parts[i] == null) continue;
-                if (parts[i].category == "thruster") thrusterCount += parts[i].quantity;
-                if (parts[i].category == "tank") tankCount += parts[i].quantity;
+                // 件数 = 站数 × 并联台数（2026-10-29）：并联 6 台是 6 个推进器，不是 1 个。
+                if (parts[i].category == "thruster") thrusterCount += RocketDesignRules.PartCountOf(parts[i]);
+                if (parts[i].category == "tank") tankCount += RocketDesignRules.PartCountOf(parts[i]);
             }
 
             if (thrusterCount < 1)

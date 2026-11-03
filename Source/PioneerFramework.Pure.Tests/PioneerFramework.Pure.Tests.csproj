@@ -55,6 +55,15 @@
     <Compile Include="..\PioneerFramework\Base\Core\SlabMath.cs" Link="Pure\SlabMath.cs" />
     <Compile Include="..\PioneerFramework\Base\Core\SpaceConstants.cs" Link="Pure\SpaceConstants.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\OrbitMath.cs" Link="Pure\OrbitMath.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\HohmannCore.cs" Link="Pure\HohmannCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\AutoStageCore.cs" Link="Pure\AutoStageCore.cs" />
+    <!-- 2026-10-30：抛级分离刚体解算（质心重定 + 刚体速度场 + 中心冲量）——纯算术，无 Verse 依赖。 -->
+    <Compile Include="..\PioneerFramework\Base\Core\StageSeparationCore.cs" Link="Pure\StageSeparationCore.cs" />
+    <!-- 2026-10-31：出生种类策略表（纯函数，无 Verse/Unity）——链进来钉住"哪个种类要母体 / 要对账 / 当帧可入世界"，
+         避免合并后各出生点又按自己的理解分叉。 -->
+    <Compile Include="..\PioneerFramework\Base\Core\GroupBirth.cs" Link="Pure\GroupBirth.cs" />
+    <!-- 2026-10-30：火箭外壳几何（24 棱柱/棱台 + 整流罩 + 分站损毁色）——纯算术，无 Verse/Unity 依赖。 -->
+    <Compile Include="..\PioneerFramework\PFView\RocketHullCore.cs" Link="Pure\RocketHullCore.cs" />
     <!-- 适配层：纯文件（如 RendezvousGuidanceLaw）现在可以用它去调移植的 Astro（net48 打通之后）。 -->
     <Compile Include="..\PioneerFramework\Base\Orbital\OrbitView.cs" Link="Pure\OrbitView.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\Gooding.cs" Link="Pure\Gooding.cs" />
@@ -77,6 +86,7 @@
          `MechJebLibTest/LadderEndToEndTests.cs`）⇒ 这两行 `<Compile Include>` 一并删除。
          要取回：把文件搬回原路径 + 恢复这两行。 -->
     <Compile Include="..\PioneerFramework\Base\Orbital\LaunchGuidanceCore.cs" Link="Pure\LaunchGuidanceCore.cs" />
+    <Compile Include="..\PioneerFramework\Base\Orbital\LaunchTargeting.cs" Link="Pure\LaunchTargeting.cs" />
     <Compile Include="..\PioneerFramework\Base\Game\MissileGuidanceCore.cs" Link="Pure\MissileGuidanceCore.cs" />
     <Compile Include="..\PioneerFramework\Base\Game\ConstellationCore.cs" Link="Pure\ConstellationCore.cs" />
     <!-- 视野/电子战（实施计划 P1）：探测判据与认知对象形状——P2 的 SensorManager 与 P3/P4 的共同输入，

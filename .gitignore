@@ -80,6 +80,12 @@ Arena/
 .rimsearcher/*
 !.rimsearcher/README.md
 
+# ── DSH 长期记忆（2026-10-20 从 Zcode 接管）：本机工作记忆，不入库；AGENTS.md 已在上面单独忽略
+AgentMemory/
+
+# ── DSH 沙箱文件权限修复的备份/回滚件（2026-10-22；机器本机，不入库）
+_acl-repair-*/
+
 # Independently built celestial sample outputs; the real 1.7 deliverable remains tracked.
 /Examples/CelestialCompSample/Assemblies/
 /Examples/CelestialCompSample/bin/

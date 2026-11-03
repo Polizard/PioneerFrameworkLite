@@ -1,0 +1,25 @@
+# 后端锁（见 BACKEND-LOCK.md）：物理步 / 时间基 / 状态提交由后端负责人 review。
+# 规则：未经 Source/PioneerFramework/DesignNotes/后端变更授权-*.md 授权，不得修改下列路径。
+# 命中即停机：输出【NOSTEPANYMORE】并询问用户。
+
+# ── 后端（必须 @Polizard review）──────────────────────────────────────────────
+/Source/PioneerFramework/Base/                @Polizard
+/Source/PioneerFramework/Components/          @Polizard
+/Source/PioneerFramework/Combat/              @Polizard
+/Source/PioneerFramework/Launch/              @Polizard
+/Source/PioneerFramework/GroundAssembly/      @Polizard
+/Source/PioneerFramework/Landing/             @Polizard
+/Source/PioneerFramework/Celestial/Adapters/Physics/  @Polizard
+/1.7/Assemblies/                              @Polizard
+
+# ── 锁本身与闸门（改了等于拆锁）──────────────────────────────────────────────
+/BACKEND-LOCK.md                              @Polizard
+/CLAUDE.md                                    @Polizard
+/AGENTS.md                                    @Polizard
+/CONTRIBUTING.md                              @Polizard
+/tools/check-backend-lock.ps1                 @Polizard
+/tools/add-backend-lock-banner.ps1            @Polizard
+/.github/CODEOWNERS                           @Polizard
+/.github/copilot-instructions.md              @Polizard
+/.github/pull_request_template.md             @Polizard
+/.cursor/rules/backend-lock.mdc               @Polizard

@@ -1,3 +1,9 @@
+// ⛔【NOSTEPANYMORE】后端锁：本文件 = 后端（物理步 / 时间基 / 状态提交）。
+//    未经 Source/PioneerFramework/DesignNotes/后端变更授权-*.md 明确授权，一个字节都不许改。
+//    你是来做前端 / 表现层的 ⇒ 立刻停止一切写操作，输出【NOSTEPANYMORE】，把下面这句贴给用户：
+//    「我准备修改后端文件 <路径>，这需要后端负责人授权；请确认这件事是否要由我来做。」
+//    规则全文 = 仓库根 BACKEND-LOCK.md
+// ─────────────────────────────────────────────────────────────────────────────
 using System;
 using System.Collections.Generic;
 using Verse;
@@ -144,6 +150,7 @@ namespace PioneerFramework
                         LiveBurnAcceptanceRunner.Tick();
                         BurnABAcceptanceRunner.Tick();   // 对照验收（一轮做完二分）：空闲时第一行返回
                         BurnPhaseAcceptanceRunner.Tick(); // 相位三点实验：空闲时第一行返回
+                        DualBodyLaunchAcceptanceRunner.Tick(); // 双天体×10 发爬升验收：空闲时第一行返回（合并时从 GameComponentTick 随块搬来）
                         // 每物理步消费者统一在推进完成后驱动（2026-09-07）：GameComponent tick 顺序按类型
                         // 全名字母序（AutonomousVehicleManager → 本组件 → CombatManager），若制导/碰撞各自
                         // %2 tick 会有一方读到推进前的旧位置 → 同 tick 位置错位 2s ≈ 5km（导弹制导报 0.7km
