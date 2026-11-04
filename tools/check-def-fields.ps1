@@ -35,7 +35,11 @@ $retired = @(
     'worldDv', 'worldDir', 'vCircWorld', 'exitWorld', 'entityWorldPos', 'mainAxisWorld',
     'nodeLocalPos', 'nodeLocalVel', 'postBurnNodeLocalVel', 'departurePosWorld', 'departureVelWorld',
     'centerWorld', 'r1World', 'v1World', 'hitLocal', 'hitLocalMeters', 'entryLocal', 'entryLocalMeters',
-    'muzzleLocal', 'dirLocal', 'exitLocal', 'targetLocal'
+    'muzzleLocal', 'dirLocal', 'exitLocal', 'targetLocal',
+    # --- 2026-11-03 LatitudeBands retirement (moon moved to Parameterized + per-biome hilliness) ---
+    # These names no longer have a matching C# field/enum value; a leftover XML element would silently keep a default.
+    'LatitudeBands', 'polarBiome', 'primaryBiome', 'secondaryBiome',
+    'polarLatitude', 'secondaryChance', 'polarHilliness', 'primaryHilliness', 'secondaryHilliness'
 )
 
 # Scan every version package folder that exists (1.6 = frozen, 1.7 = mainline; 2026-10-13 tree split).

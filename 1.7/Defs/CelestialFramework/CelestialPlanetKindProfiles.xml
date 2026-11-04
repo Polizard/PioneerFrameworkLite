@@ -4,14 +4,6 @@
     <defName>PF_BarrenBiomes</defName>
     <label>荒芜地表生成</label>
     <mode>Parameterized</mode>
-    <polarBiome>PF_FrozenPlain</polarBiome>
-    <primaryBiome>PF_BarrenRock</primaryBiome>
-    <secondaryBiome>PF_BarrenRegolith</secondaryBiome>
-    <polarLatitude>75</polarLatitude>
-    <secondaryChance>0.45</secondaryChance>
-    <polarHilliness>Flat</polarHilliness>
-    <primaryHilliness>SmallHills</primaryHilliness>
-    <secondaryHilliness>Flat</secondaryHilliness>
     <temperature>-30</temperature>
     <rainfall>0</rainfall>
     <swampiness>0</swampiness>
@@ -74,14 +66,6 @@
     <defName>PF_FrozenBiomes</defName>
     <label>冰封地表生成</label>
     <mode>Parameterized</mode>
-    <polarBiome>PF_FrozenPlain</polarBiome>
-    <primaryBiome>PF_FrozenPlain</primaryBiome>
-    <secondaryBiome>PF_BarrenRock</secondaryBiome>
-    <polarLatitude>75</polarLatitude>
-    <secondaryChance>0.2</secondaryChance>
-    <polarHilliness>Flat</polarHilliness>
-    <primaryHilliness>SmallHills</primaryHilliness>
-    <secondaryHilliness>Flat</secondaryHilliness>
     <temperature>-160</temperature>
     <rainfall>0</rainfall>
     <swampiness>0</swampiness>
@@ -143,14 +127,6 @@
     <defName>PF_GreenhouseBiomes</defName>
     <label>温室地表生成</label>
     <mode>Parameterized</mode>
-    <polarBiome>PF_GreenhousePlain</polarBiome>
-    <primaryBiome>PF_GreenhousePlain</primaryBiome>
-    <secondaryBiome>PF_GreenhousePlain</secondaryBiome>
-    <polarLatitude>75</polarLatitude>
-    <secondaryChance>0</secondaryChance>
-    <polarHilliness>Flat</polarHilliness>
-    <primaryHilliness>SmallHills</primaryHilliness>
-    <secondaryHilliness>Flat</secondaryHilliness>
     <temperature>460</temperature>
     <rainfall>0</rainfall>
     <swampiness>0</swampiness>
@@ -329,7 +305,6 @@
     <label>温带行星地表</label>
     <mode>Parameterized</mode>
     <worldGenSteps>
-      <li>Terrain</li>
       <li>Lakes</li>
       <li>Rivers</li>
       <li>Mutators</li>

@@ -153,6 +153,7 @@ namespace PioneerFramework
                 var properties = runtime.Creation.GetProperties(description.Id);
                 var atmosphere = runtime.GetCapabilities<ICelestialAtmosphereCapability>(description.Id).SingleOrDefault()?.GetProfile() ?? default;
                 var visuals = runtime.GetCapabilities<ICelestialVisualCapability>(description.Id).Select(capability => capability.GetVisualDescription()).ToArray();
+                var visualAtmosphere = visuals.SingleOrDefault(visual => visual.Kind == CelestialVisualKind.Atmosphere);
                 var projected = CelestialRenderProjection.Create(description, visuals,
                     runtime.GetCapabilities<ICelestialSurfaceCapability>(description.Id).Count == 1, atmosphere, 0);
                 var registration = runtime.Creation.GetRegistration(description.Id);
@@ -164,7 +165,6 @@ namespace PioneerFramework
                 }
                 string originKey = model?.FrameOriginReference ?? "frameOrigin";
                 int origin = runtime.TryGetInitializationReference(description.Id, originKey, out var originId) && handles.TryGetValue(originId, out int originHandle) ? originHandle : description.Handle;
-                var environment = properties.OfType<ExistingEnvironmentResolvedProperties>().SingleOrDefault();
                 // category remains open metadata. Existing provider roles only adapt the legacy query/UI shape.
                 var type = projected.bodyType;
                 if (model != null && Enum.TryParse<CelestialBodyType>(model.BodyType, out var modelType) && Enum.IsDefined(modelType)) type = modelType;
@@ -173,7 +173,8 @@ namespace PioneerFramework
                     label = runtime.Creation.GetLabel(description.Id), bodyType = type,
                     ParentBodyId = query.ParentId.HasValue && handles.TryGetValue(query.ParentId.Value, out int parent) ? parent : -1,
                     ReferenceFrameBodyId = origin, atmosphereThickness = atmosphere.topAltitude,
-                    dayLengthTicks = model?.DayLengthTicks ?? environment?.Profile.DayLengthTicks ?? 0,
+                    atmosphereVisualThickness = visualAtmosphere == null ? 0 : visualAtmosphere.Profile.ShellHeightMeters * 2,
+                    dayLengthTicks = CelestialDayLength.ResolveFrom(properties),
                     orbitRadius = model?.OrbitRadius ?? 0, orbitPeriod = model?.OrbitPeriod ?? 0,
                     initialPhase = model?.InitialPhase ?? 0, orbitNormal = model == null ? Vector3.up : (Vector3)model.OrbitNormal });
             }

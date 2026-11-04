@@ -71,11 +71,12 @@ namespace PioneerFramework.Celestial
             bool hasAir = air != null ? air.DensityKilogramsPerCubicMeter > 0 : Context.GetCapabilities<ICelestialAtmosphereCapability>().Any(p => p.GetProfile().IsActive);
             var climateQuery = climate?.Mode == CelestialClimateMode.CommittedIllumination ? query with { DisplayTicksAbs = physicalSeconds } : query;
             double rainfall = climate?.RainfallMillimeters ?? 0, humidity = climate?.Humidity ?? 0;
-            var terrain = Context.GetCapabilities<ICelestialBiomeGenerationCapability>().SingleOrDefault()?.GetProfile().Terrain;
-            if (terrain?.Climate != null)
+            var generation = Context.GetCapabilities<ICelestialBiomeGenerationCapability>().SingleOrDefault()?.GetProfile();
+            if (generation?.Terrain is { } terrain)
             {
+                // 与参数化生成 tile 共用同一降雨/湿度公式；fallback 取 biomes profile 的 Rainfall/Swampiness。
                 var field = CelestialPlanetTerrain.Sample(terrain, query.LongitudeDegrees, query.LatitudeDegrees, terrain.FieldSeed);
-                rainfall *= .5 + field.Moisture; humidity = Math.Clamp(humidity * (.5 + field.Moisture), 0, 1);
+                (rainfall, humidity) = CelestialPlanetTerrain.SurfaceMoisture(terrain, generation.Rainfall, generation.Swampiness, field.Moisture);
             }
             return new(climate == null ? null : CelestialClimateModel.Temperature(climate, climateQuery, profile.DayLengthTicks, sunUp * intensity, quadrature * intensity, angularSpeed),
                 Math.Max(0, sunUp) * intensity * (climate?.LightMultiplier ?? 1), hasAir ? climate?.WindSpeed ?? 1 : 0,

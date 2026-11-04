@@ -2,53 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
+using RimWorld.Planet;
 
 namespace PioneerFramework.Celestial
 {
-    internal sealed class CelestialPlanetParameterSampler
-    {
-        private readonly Dictionary<string, CelestialDoubleParameterXml> parameters;
-        private readonly CelestialGenerationContext? context;
-        private readonly string prefix;
-        private readonly bool sample;
-        private readonly Dictionary<string, DoubleParameterSpec> intervals = new(StringComparer.Ordinal);
-        public CelestialPlanetParameterSampler(List<CelestialEnvironmentParameterXml> parameters, CelestialGenerationContext? context, string prefix, bool sample = true)
-        {
-            if (parameters == null || parameters.Any(p => p == null || string.IsNullOrWhiteSpace(p.key) || p.value == null) ||
-                parameters.Select(p => p.key).Distinct(StringComparer.Ordinal).Count() != parameters.Count) throw new ArgumentException("Invalid planet parameter keys.");
-            this.parameters = parameters.ToDictionary(p => p.key, p => p.value, StringComparer.Ordinal); this.context = context; this.prefix = prefix; this.sample = sample;
-        }
-        private DoubleParameterSpec Specification(string key, double fallback, double lower, double upper)
-        {
-            var parsed = parameters.Remove(key, out var parameter) ? parameter.ToSpec() : CelestialResult.Ok(DoubleParameterSpec.Fixed(fallback));
-            if (!parsed.Success) throw new ArgumentException("Invalid parameter: " + prefix + key);
-            var spec = context?.GetDoubleSpecification(prefix + key, parsed.Value) ?? parsed.Value;
-            CelestialPlanetTerrainConfiguration.Domain(spec.Minimum, lower, upper, prefix + key);
-            CelestialPlanetTerrainConfiguration.Domain(spec.Maximum, lower, upper, prefix + key);
-            intervals.Add(key, spec);
-            return spec;
-        }
-        public double Get(string key, double fallback, double lower, double upper)
-        {
-            var spec = Specification(key, fallback, lower, upper);
-            return context == null || !sample ? spec.Minimum : context.SampleResolvedDouble(prefix + key, spec);
-        }
-        public int GetInt(string key, int fallback)
-        {
-            var spec = Specification(key, fallback, int.MinValue, int.MaxValue);
-            if (Math.Truncate(spec.Minimum) != spec.Minimum || Math.Truncate(spec.Maximum) != spec.Maximum) throw new ArgumentException("Integer planet parameter required: " + prefix + key);
-            return context == null ? (int)spec.Minimum : CelestialParameterSampler.SampleInt(spec.IsFixed ? IntParameterSpec.Fixed((int)spec.Minimum) :
-                IntParameterSpec.Uniform((int)spec.Minimum, (int)spec.Maximum), context.SeedFor(prefix + key));
-        }
-        public DoubleParameterSpec Interval(string key) => intervals[key];
-        public void Complete()
-        {
-            if (parameters.Count != 0) throw new ArgumentException("Unknown planet parameter: " + prefix + parameters.Keys.First());
-            foreach (var lower in intervals.Where(p => p.Key.StartsWith("minimum", StringComparison.Ordinal)))
-                if (intervals.TryGetValue("maximum" + lower.Key[7..], out var upper) && lower.Value.Maximum > upper.Minimum)
-                    throw new ArgumentException("Planet rule intervals must remain ordered for every sample: " + prefix + lower.Key);
-        }
-    }
     public sealed class CelestialPlanetBiomeRuleXml
     {
         public string key = "";
@@ -66,17 +23,19 @@ namespace PioneerFramework.Celestial
         public double maximumAbsoluteLatitude = 90;
         public double minimumRoughness;
         public double maximumRoughness = 1;
+        public Hilliness hilliness = Hilliness.Undefined;
         public List<CelestialEnvironmentParameterXml> parameters = new();
         internal CelestialPlanetBiomeRule Resolve(CelestialGenerationContext? context)
         {
-            var s = new CelestialPlanetParameterSampler(parameters, context, "terrain.biomeRules." + key + ".");
+            var s = new CelestialParameterSamplerXml(parameters, context, "terrain.biomeRules." + key + ".");
             double Get(string name, double value, double low, double high) => s.Get(name, value, low, high);
             var result = new CelestialPlanetBiomeRule(key, biome?.defName ?? "", s.GetInt(nameof(priority), priority), Get(nameof(weight), weight, double.Epsilon, 1000000), fallback,
                 Get(nameof(minimumTemperatureCelsius), minimumTemperatureCelsius, -273.15, 10000), Get(nameof(maximumTemperatureCelsius), maximumTemperatureCelsius, -273.15, 10000),
                 Get(nameof(minimumRainfallMillimeters), minimumRainfallMillimeters, 0, 1000000), Get(nameof(maximumRainfallMillimeters), maximumRainfallMillimeters, 0, 1000000),
                 Get(nameof(minimumElevationMeters), minimumElevationMeters, -200000, 200000), Get(nameof(maximumElevationMeters), maximumElevationMeters, -200000, 200000),
                 Get(nameof(minimumAbsoluteLatitude), minimumAbsoluteLatitude, 0, 90), Get(nameof(maximumAbsoluteLatitude), maximumAbsoluteLatitude, 0, 90),
-                Get(nameof(minimumRoughness), minimumRoughness, 0, 1), Get(nameof(maximumRoughness), maximumRoughness, 0, 1));
+                Get(nameof(minimumRoughness), minimumRoughness, 0, 1), Get(nameof(maximumRoughness), maximumRoughness, 0, 1),
+                hilliness == Hilliness.Undefined ? null : (int?)hilliness);
             if (fallback)
                 foreach (string condition in new[] { nameof(minimumTemperatureCelsius), nameof(maximumTemperatureCelsius), nameof(minimumRainfallMillimeters),
                     nameof(maximumRainfallMillimeters), nameof(minimumElevationMeters), nameof(maximumElevationMeters), nameof(minimumAbsoluteLatitude),
@@ -95,7 +54,7 @@ namespace PioneerFramework.Celestial
         public List<CelestialEnvironmentParameterXml> parameters = new();
         internal CelestialWeightedReference Resolve(CelestialGenerationContext? context)
         {
-            var s = new CelestialPlanetParameterSampler(parameters, context, "terrain.landmarks." + mutator?.defName + ".");
+            var s = new CelestialParameterSamplerXml(parameters, context, "terrain.landmarks." + mutator?.defName + ".");
             var result = new CelestialWeightedReference(mutator?.defName ?? "", s.Get(nameof(weight), weight, double.Epsilon, 1000000)); s.Complete(); return result;
         }
     }
@@ -121,9 +80,9 @@ namespace PioneerFramework.Celestial
             var values = new List<CelestialEnvironmentParameterXml>(parameters);
             if (seaLevelMeters != null) values.Add(new() { key = nameof(seaLevelMeters), value = seaLevelMeters });
             if (oceanCoverage != null) values.Add(new() { key = nameof(oceanCoverage), value = oceanCoverage });
-            var s = new CelestialPlanetParameterSampler(values, context, "terrain.");
+            var s = new CelestialParameterSamplerXml(values, context, "terrain.");
             var surface = context?.GetResolved<SurfaceResolvedProperties>();
-            ulong seed = context != null && surface != null ? CelestialSeed.Derive(context.WorldSeed, context.GenerationPath, surface.Key, "surface.seed") : 0;
+            ulong seed = context != null && surface != null ? CelestialSeed.SurfaceSeed(context.WorldSeed, context.GenerationPath, surface.Key) : 0;
             var result = new CelestialPlanetTerrainConfiguration(s.Get(nameof(continentScale), continentScale, .01, 64),
                 s.Get(nameof(elevationAmplitudeMeters), elevationAmplitudeMeters, 0, 100000), s.Get(nameof(elevationOffsetMeters), elevationOffsetMeters, -100000, 100000),
                 s.Get(nameof(roughness), roughness, 0, 1), s.Get(nameof(mountainWeight), mountainWeight, 0, 1),
@@ -133,23 +92,24 @@ namespace PioneerFramework.Celestial
             ValidateClimateIntervals(s, climate, context);
             s.Complete(); return result;
         }
-        private void ValidateClimateIntervals(CelestialPlanetParameterSampler sampler, CelestialClimateConfiguration? climate, CelestialGenerationContext? context)
+        private void ValidateClimateIntervals(CelestialParameterSamplerXml sampler, CelestialClimateConfiguration? climate, CelestialGenerationContext? context)
         {
             if (climate == null) return;
             string? owner = context?.GetResolved<ExistingEnvironmentResolvedProperties>()?.Key;
             DoubleParameterSpec Spec(string key, double value) => owner != null && context!.TryGetSampledDoubleSpecification(owner, "climate." + key, out var interval) ? interval : DoubleParameterSpec.Fixed(value);
-            void Domain(string key, double value, double min, double max)
+            void Domain(string key, double value)
             {
                 var interval = Spec(key, value);
-                CelestialPlanetTerrainConfiguration.Domain(interval.Minimum, min, max, "terrain climate interval " + key);
-                CelestialPlanetTerrainConfiguration.Domain(interval.Maximum, min, max, "terrain climate interval " + key);
+                var domain = CelestialPlanetDomains.For(key);
+                CelestialPlanetTerrainConfiguration.Domain(interval.Minimum, domain.Minimum, domain.Maximum, "terrain climate interval " + key);
+                CelestialPlanetTerrainConfiguration.Domain(interval.Maximum, domain.Minimum, domain.Maximum, "terrain climate interval " + key);
             }
-            Domain("meanTemperatureCelsius", climate.MeanTemperatureCelsius, -273.15, 10000);
-            Domain("lapseCelsiusPerMeter", climate.LapseCelsiusPerMeter, -1, 1);
-            Domain("seasonalAmplitudeCelsius", climate.SeasonalAmplitudeCelsius, 0, 10000);
-            Domain("yearLengthTicks", climate.YearLengthTicks, .000001, 1e20);
-            Domain("thermalResponseSeconds", climate.ThermalResponseSeconds, 0, 1e12);
-            Domain("rainfallMillimeters", climate.RainfallMillimeters, 0, 1000000 / 1.5);
+            Domain("meanTemperatureCelsius", climate.MeanTemperatureCelsius);
+            Domain("lapseCelsiusPerMeter", climate.LapseCelsiusPerMeter);
+            Domain("seasonalAmplitudeCelsius", climate.SeasonalAmplitudeCelsius);
+            Domain("yearLengthTicks", climate.YearLengthTicks);
+            Domain("thermalResponseSeconds", climate.ThermalResponseSeconds);
+            Domain("rainfallMillimeters", climate.RainfallMillimeters);
             if (!allowRivers) return;
             var offset = sampler.Interval(nameof(elevationOffsetMeters)); var amplitude = sampler.Interval(nameof(elevationAmplitudeMeters));
             double lo = offset.Minimum - amplitude.Maximum, hi = offset.Maximum + amplitude.Maximum;

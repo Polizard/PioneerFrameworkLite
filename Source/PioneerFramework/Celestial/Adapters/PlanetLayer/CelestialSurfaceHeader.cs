@@ -38,6 +38,17 @@ namespace PioneerFramework.Celestial
             Validate();
         }
         internal CelestialSurfaceHeader WithLayerId(int id) => new(OwnerId, id, physicalRadius, nativeRadius, subdivisions, generationSeed, configuration) { State = state };
+
+        /// <summary>Shared header construction for both root bootstrap and on-demand surface creation.</summary>
+        internal static CelestialSurfaceHeader Create(CelestialBodyInstance instance, SurfaceResolvedProperties properties)
+        {
+            ArgumentNullException.ThrowIfNull(instance);
+            ArgumentNullException.ThrowIfNull(properties);
+            ulong seed = CelestialSeed.SurfaceSeed(instance.GenerationOrigin.WorldSeed, instance.GenerationOrigin.GenerationKey, properties.Key);
+            return new CelestialSurfaceHeader(instance.Id, -1, instance.Description.RadiusMeters,
+                (float)(instance.Description.RadiusMeters / properties.MetersPerLayerUnit), properties.Subdivisions,
+                unchecked((int)(seed ^ (seed >> 32))), CelestialGenerationConfiguration.Encode(instance.CompStateRecords.Values));
+        }
         public void ExposeData()
         {
             if (Scribe.mode == LoadSaveMode.Saving) serializedConfiguration = Convert.ToBase64String(configuration);

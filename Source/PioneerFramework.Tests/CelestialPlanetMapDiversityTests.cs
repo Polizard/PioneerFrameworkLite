@@ -308,7 +308,7 @@ public class CelestialPlanetMapDiversityTests
         finally { probe.UnpatchAll(probe.Id); BiomeDefOf.Ocean = previousOcean; BiomeDefOf.Lake = previousLake; }
     }
     [Fact]
-    public void OuterV2RestoreRetainsFrozenTerrainMapAndNativeObjectsAfterXmlChanges()
+    public void OuterV3RestoreRetainsFrozenTerrainMapAndNativeObjectsAfterXmlChanges()
     {
         var surface = new CelestialBiomeProfileDef { defName = "PD_SavedSurface", mode = CelestialBiomeGenerationMode.Parameterized,
             terrain = new() { parameters = new() { new() { key = "continentScale", value = new() { min = .5, max = 3 } } },
@@ -321,7 +321,7 @@ public class CelestialPlanetMapDiversityTests
         var map = f.Backend.LastMap; var tiles = f.Root.Tiles.Select(t => (t.PrimaryBiome, t.elevation, t.hilliness)).ToArray();
         var saved = new CelestialSaveAdapter(f.Scope.Runtime).CaptureCheckpoint(); Assert.True(saved.Success, string.Join(",", saved.Errors));
         var encoded = CelestialSaveCodec.Encode(saved.Value).Value; var decoded = CelestialSaveCodec.Decode(encoded).Value;
-        Assert.Equal(2, decoded.FormatVersion);
+        Assert.Equal(3, decoded.FormatVersion);
         var oldMapBytes = decoded.Bodies[0].Components.Single(c => c.HandlerId == MapGenerationResolvedProperties.Handler).ConfigurationPayload.ToArray();
         maps.diversity.mineralAbundance = 9; surface.terrain.elevationOffsetMeters = 50000; surface.terrain.parameters.Clear();
         var bridge = new PioneerFramework.TestSupport.Celestial.DeterministicTestPhysicsBridge(Guid.NewGuid());
@@ -335,15 +335,24 @@ public class CelestialPlanetMapDiversityTests
         Assert.Equal(tiles, f.Root.Tiles.Select(t => (t.PrimaryBiome, t.elevation, t.hilliness)).ToArray());
     }
     [Fact]
-    public void LegacyProfilePayloadBytesAndDecoderVersionsStayUnchanged()
+    public void BiomeAndMapProfilePayloadBytesAndDecoderVersionsStayPinned()
     {
-        var profile = new CelestialGenerationProfile("legacy", CelestialBiomeGenerationMode.LatitudeBands, "pole", "plain", "other", 75, .5,
-            1, 2, 1, 0, 0, 0, Array.Empty<string>(), Array.Empty<string>());
+        var profile = new CelestialGenerationProfile("legacy", CelestialBiomeGenerationMode.VanillaSurface, 0, 0, 0,
+            new[] { "Terrain" }, Array.Empty<string>());
         var properties = new BiomeGenerationResolvedProperties("biomes", profile);
-        const string expected = "{\"Id\":\"legacy\",\"Mode\":0,\"PolarBiomeId\":\"pole\",\"PrimaryBiomeId\":\"plain\",\"SecondaryBiomeId\":\"other\",\"PolarLatitude\":75,\"SecondaryChance\":0.5,\"PolarHilliness\":1,\"PrimaryHilliness\":2,\"SecondaryHilliness\":1,\"Temperature\":0,\"Rainfall\":0,\"Swampiness\":0,\"WorldGenSteps\":[],\"RootOnlySteps\":[]}";
+        const string expected = "{\"Id\":\"legacy\",\"Mode\":1,\"Temperature\":0,\"Rainfall\":0,\"Swampiness\":0,\"WorldGenSteps\":[\"Terrain\"],\"RootOnlySteps\":[]}";
         Assert.Equal(Encoding.UTF8.GetBytes(expected), properties.Serialize().ToArray()); Assert.Equal(1, properties.Version);
         Assert.True(BiomeGenerationResolvedProperties.Deserialize("biomes", 1, properties.Serialize()).Success);
         Assert.False(BiomeGenerationResolvedProperties.Deserialize("biomes", 2, properties.Serialize()).Success);
+        // v2 载荷按 terrain 判定；per-biome hilliness 随规则序列化并往返保持。
+        var terrain = new CelestialPlanetTerrainConfiguration(biomeRules: new[] { new CelestialPlanetBiomeRule("fallback", "plain", fallback: true, hilliness: 2) });
+        var parameterized = new BiomeGenerationResolvedProperties("biomes", new CelestialGenerationProfile("legacy", CelestialBiomeGenerationMode.Parameterized,
+            0, 0, 0, Array.Empty<string>(), Array.Empty<string>(), terrain));
+        Assert.Equal(2, parameterized.Version);
+        var roundTrip = BiomeGenerationResolvedProperties.Deserialize("biomes", 2, parameterized.Serialize());
+        Assert.True(roundTrip.Success, string.Join(",", roundTrip.Errors.Select(error => error.Code)));
+        Assert.Equal(2, roundTrip.Value.Profile.Terrain.BiomeRules[0].Hilliness);
+        Assert.False(BiomeGenerationResolvedProperties.Deserialize("biomes", 1, parameterized.Serialize()).Success);
         var map = new MapGenerationResolvedProperties("map", new("legacy-map", null, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), null, Array.Empty<CelestialMapBiomeProfile>()));
         const string expectedMap = "{\"Id\":\"legacy-map\",\"MapGeneratorId\":null,\"SkipStepNames\":[],\"SkipStepPrefixes\":[],\"SkipStepTypes\":[],\"ReplaceTerrainIds\":[],\"ReplacementTerrainId\":null,\"BiomeRules\":[]}";
         Assert.Equal(Encoding.UTF8.GetBytes(expectedMap), map.Serialize().ToArray()); Assert.Equal(1, map.Version);
@@ -372,7 +381,7 @@ public class CelestialPlanetMapDiversityTests
             "<seaLevelMeters><min>-200</min><max>200</max></seaLevelMeters><allowRivers>false</allowRivers><allowLakes>false</allowLakes>" +
             "<parameters><li><key>continentScale</key><value><min>1</min><max>3</max></value></li></parameters>" +
             "<biomeRules><li><key>fallback</key><biome>PD_Plain</biome><fallback>true</fallback></li>" +
-            "<li><key>cold</key><biome>PD_Plain</biome><minimumTemperatureCelsius>-100</minimumTemperatureCelsius><maximumTemperatureCelsius>-10</maximumTemperatureCelsius><priority>4</priority><weight>2</weight></li></biomeRules>" +
+            "<li><key>cold</key><biome>PD_Plain</biome><minimumTemperatureCelsius>-100</minimumTemperatureCelsius><maximumTemperatureCelsius>-10</maximumTemperatureCelsius><priority>4</priority><weight>2</weight><hilliness>SmallHills</hilliness></li></biomeRules>" +
             "</terrain></PioneerFramework.Celestial.CelestialBiomeProfileDef>");
         var mapDocument = new XmlDocument();
         mapDocument.LoadXml("<PioneerFramework.Celestial.CelestialMapProfileDef><defName>PD_XmlMap</defName><diversity>" +
@@ -390,6 +399,8 @@ public class CelestialPlanetMapDiversityTests
         Assert.Same(plant, maps.diversity.plants[0].def); Assert.Same(soil, maps.diversity.soils[0].def);
         var resolvedSurface = surface.ToProfile(new CelestialGenerationContext(1, "body", "biomes", new[] { new CelestialParameterOverride("biomes", "terrain.continentScale", Value: 1.75) }));
         Assert.True(resolvedSurface.Success, string.Join(",", resolvedSurface.Errors)); Assert.Equal(1.75, resolvedSurface.Value.Terrain.ContinentScale);
+        Assert.Equal((int)Hilliness.SmallHills, resolvedSurface.Value.Terrain.BiomeRules.Single(rule => rule.Key == "cold").Hilliness);
+        Assert.Null(resolvedSurface.Value.Terrain.BiomeRules.Single(rule => rule.Key == "fallback").Hilliness);
         var resolvedMaps = maps.ToProfile(new CelestialGenerationContext(1, "body", "maps", new[] { new CelestialParameterOverride("maps", "diversity.mineralAbundance", Value: 3) }));
         Assert.True(resolvedMaps.Success, string.Join(",", resolvedMaps.Errors)); Assert.Equal(3, resolvedMaps.Value.Diversity.MineralAbundance);
         Assert.Equal(rock.defName, Assert.Single(resolvedMaps.Value.Diversity.Rocks).Id); Assert.False(resolvedMaps.Value.Diversity.AllowCaves);
@@ -452,8 +463,8 @@ public class CelestialPlanetMapDiversityTests
             var records = new List<CelestialCompSaveRecord> { record };
             if (terrain != null)
             {
-                var generation = new BiomeGenerationResolvedProperties("biomes", new("PD_Surface", CelestialBiomeGenerationMode.Parameterized, null, null, null,
-                    75, .5, 1, 1, 1, 20, 1000, .5f, Array.Empty<string>(), Array.Empty<string>(), terrain));
+                var generation = new BiomeGenerationResolvedProperties("biomes", new("PD_Surface", CelestialBiomeGenerationMode.Parameterized, 20, 1000, .5f,
+                    Array.Empty<string>(), Array.Empty<string>(), terrain));
                 records.Add(new("biomes", generation.HandlerId, generation.Version, 1, generation.Serialize().Span, ReadOnlySpan<byte>.Empty));
             }
             var layer = RuntimePlanetLayerService.RegisterCelestialInstance(Native.Grid, Definition, new(CelestialInstanceId.Parse("pd:" + id), -1, 100000, 30, 0, seed, CelestialGenerationConfiguration.Encode(records)));

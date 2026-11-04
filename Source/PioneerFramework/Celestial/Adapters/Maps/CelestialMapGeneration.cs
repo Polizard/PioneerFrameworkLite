@@ -17,7 +17,7 @@ namespace PioneerFramework.Celestial
             public FrozenProfiles(CelestialSurfaceLayer layer)
             {
                 if (layer.Header.GenerationConfiguration.IsEmpty) return;
-                var records = CelestialGenerationConfiguration.Decode(layer.Header.GenerationConfiguration);
+                var records = CelestialLayerConfiguration.For(layer.Header);
                 if (!records.Success) throw new InvalidOperationException("Invalid celestial generation configuration.");
                 foreach (var record in records.Value)
                 {
@@ -61,12 +61,13 @@ namespace PioneerFramework.Celestial
             });
             return 1 + diversity.GeologyVariation * (2 * value - 1);
         }
+        /// <summary>Celestial layer without a map profile is a normal state (maps are optional); never throws.</summary>
         public static bool TryGetProfile(Map map, out CelestialMapProfile profile)
         {
             profile = null!;
             if (map?.Tile.Layer is not CelestialSurfaceLayer layer) return false;
-            profile = profiles.GetValue(layer, static value => new(value)).Map ?? throw new InvalidOperationException("MapGenerationCapabilityMissing");
-            return true;
+            profile = profiles.GetValue(layer, static value => new(value)).Map!;
+            return profile != null;
         }
         public static bool ShouldSkip(CelestialMapProfile profile, string biomeId, GenStepDef step)
         {

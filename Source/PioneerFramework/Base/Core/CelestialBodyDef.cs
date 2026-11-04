@@ -48,6 +48,8 @@ namespace PioneerFramework
                     errors.Add(new CelestialError("ComponentDefinitionFailed", CompKey: properties.key, Detail: exception.Message));
                 }
             }
+            if (errors.Count == 0)
+                errors.AddRange(CelestialBodyContentValidation.Validate(comps));
             return errors.Count > 0
                 ? CelestialResult.Reject<CelestialBodyTemplate>(errors.ToArray())
                 : CelestialBodyTemplate.Create(defName, label ?? defName, category, tags, definitions);

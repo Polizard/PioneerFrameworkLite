@@ -1,6 +1,6 @@
 # 通用行星种类
 
-适用 RimWorld 1.7 / 天体框架存档 v2。六类均为可以反复实例化的 `CelestialBodyDef`，已随主 Mod 加载。默认 `PF_DefaultCelestialSystem` 仍只生成太阳、地球和月球。
+适用 RimWorld 1.7 / 天体框架存档 v3（v1/v2 旧档明确拒绝为 UnsupportedSaveVersion，不迁移，需新建世界）。六类均为可以反复实例化的 `CelestialBodyDef`，已随主 Mod 加载。默认 `PF_DefaultCelestialSystem` 仍只生成太阳、地球和月球。
 
 | DefName | 种类 | 覆盖示例 | 默认地表 |
 | --- | --- | --- | --- |
@@ -73,6 +73,8 @@ public static CelestialOperation CreateBarrenPlanet(
 | 冰巨行星 | 8,000,000 | 5e14 | 40,000 |
 
 这些是框架尺度下的代表预设。精确制作某个真实天体时需覆盖其物理参数与运动初始化。默认圆轨道半径为 120,000,000 m、周期 58,400 s、相位 0；没有按太阳系八颗行星的真实轨道排列，也没有自动加入默认世界。六个可选模板现使用同一提供者的 readable motion v2，并保留旧圆轨道提供者兼容。
+
+表中的**自转周期以 motion 的 `rotation.periodSeconds` 为权威**（物理实例表、视觉缓存与投影共用同一解析）；`environment` profile 的 `dayLengthTicks` 只是没有物理绑定的天体才使用的兼容 fallback，不是第二真源。已发货模板同时声明两者时必须相等（有内容一致性回归测试）；制作新模板改自转请改 motion。大气同理拆成两个字段：**物理大气顶** `air.topAltitude`（阻力/天空 α/高度阈值/大气顶判定）与**视觉壳高度** `atmosphereVisual.shellHeightMeters`（壳半径 = R + 壳高度，壳厚度 = 高度 × 2），两者独立、可不等。逐字段域与覆盖路径见 [作者表](PlanetAuthoring.md)。
 
 组件 key：`shape`、`motion`、`surface`、`biomes`、`maps`、`environment`、`air`、`visual`、`atmosphereVisual`、`clouds`。只有实际具备的能力才提供对应组件。`ParameterOverrides` 可修改组件显式支持的数值参数；readable motion 数字支持 `motion.FIELD` / `motion.rotation.FIELD` 参数范围与覆盖；字符串/布尔/引用通过完整 typed motion 组件替换。精确字段、单位、有效区间与codec版本见 [作者表](PlanetAuthoring.md)。
 

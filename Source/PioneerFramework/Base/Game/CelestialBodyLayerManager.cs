@@ -147,7 +147,7 @@ namespace PioneerFramework
         {
             if (layer is not CelestialSurfaceLayer surface) return;
             if (celestialBodyLayers.TryGetValue(layer, out _)) return;
-            var configuration = CelestialGenerationConfiguration.Decode(surface.Header.GenerationConfiguration);
+            var configuration = CelestialLayerConfiguration.For(surface.Header);
             if (!configuration.Success) return;
             float day = 60000f;
             var saved = configuration.Value.SingleOrDefault(record => record.HandlerId == ExistingEnvironmentResolvedProperties.Handler);

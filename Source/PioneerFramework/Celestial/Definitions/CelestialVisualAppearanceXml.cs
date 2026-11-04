@@ -13,7 +13,7 @@ namespace PioneerFramework.Celestial
 
         internal CelestialVisualProfile Resolve(CelestialVisualProfileDef profile, CelestialGenerationContext? context, CelestialVisualKind? kind)
         {
-            var sampler = new CelestialPlanetParameterSampler(parameters, context, "appearance.");
+            var sampler = new CelestialParameterSamplerXml(parameters, context, "appearance.");
             if (kind == CelestialVisualKind.Stellar) throw new System.ArgumentException("Stellar visuals retain the v1 configuration.");
             double Read(string key, double fallback, double lower, double upper, bool active = true)
                 => active || !kind.HasValue ? sampler.Get(key, fallback, lower, upper) : fallback;

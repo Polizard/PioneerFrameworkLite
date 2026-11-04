@@ -32,6 +32,8 @@ namespace PioneerFramework
             Quaternion selfRot, double tick, double cameraAltitudeMeters, Vector3 toSun)
         {
             var visual = celestialRenderRuntime != null ? GetCelestialRenderVisual(body.bodyId, CelestialVisualKind.Clouds) : null;
+            // 旧路径（无 Celestial runtime）只有地球云层：门槛是**物理大气存在性**（`atmosphereThickness` = 大气顶），
+            // 与视觉壳厚度无关 —— 云层高度/尺寸走 `PFViewClouds` 的 binding，不读壳厚度。
             if (renderCamera == null || (celestialRenderRuntime != null ? visual == null : body.defName != "Earth" || body.atmosphereThickness <= 0.0)) return;
             var profile = visual?.Profile;
             var binding = PFViewVisualBindings.Clouds(profile, tick, cameraAltitudeMeters);

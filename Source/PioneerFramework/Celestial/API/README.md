@@ -1,6 +1,6 @@
 # 通用天体框架公开契约
 
-契约状态：2026-10-28 整改版。框架存档格式 v2；默认解析提供者检查点载荷 v2；运动协议仍为 `PhysicsContractVersion(1,0)`。本文是可交付的正文，`Docs/CelestialFrameworkAPI.md` 由本文件复制生成。
+契约状态：2026-10-28 整改版。框架存档格式 v3（v1/v2 存档明确拒绝，需新建世界）；默认解析提供者检查点载荷 v2；运动协议仍为 `PhysicsContractVersion(1,0)`。本文是可交付的正文，`Docs/CelestialFrameworkAPI.md` 由本文件复制生成。
 
 ## 范围与入口
 
@@ -71,6 +71,8 @@ var operation = SampleCreation.CreateProbe("create-probe-1", epoch, parent, ligh
 
 注册工厂、配置 codec 和状态 codec 到 `CelestialBuiltinCompRegistry.Global`；首次世界初始化后封表。工厂必须使用传入的不可变解析配置，并创建符合描述的能力接口。配置编码只在解析/恢复时冻结，按字段生成新的配置版本；运行状态在显式检查点采集，不要求扩展实现 dirty 标记。
 
+内置组件只有一张登记表：`CelestialBuiltinComps`（API 纯表）是 handler、解析配置类型、最高配置版本与能力契约的唯一来源。能力注册表、`CompProperties.Create` 的类型校验以及 `CelestialBuiltinCompRegistry` 的 handler/版本集都从该表派生，不再分别维护三处清单。新增内置 comp = 加一行表，并在 `CelestialBuiltinCompRegistry` 的 decode/factory switch 补齐同一 handler；漏登会在 `Create()` 显式抛错，并由 `CelestialBuiltinCompTableTests` 锁死表/注册表/能力契约的集合一致性，不会静默退化成读档 MissingHandler。扩展组件仍按上段自行注册工厂与 codec，不进入内置表。
+
 | 阶段 | 约定 |
 | --- | --- |
 | `OnInitialized` | 仅新建初始化业务状态 |
@@ -134,11 +136,11 @@ Creation 在创建流程生成；OnDemand 需显式 RequestSurface。地图另�
 
 ## 存档与版本
 
-v2 使用独立固定字段 DTO。外层包含 formatVersion、brotli 标识、decodedLength、SHA-256、块数及按 index 排列的块；压缩块最多 256 KiB，未压缩上限 128 MiB。缺字段、未知核心字段、重复键、截断、重复/调序块、哈希不符、尾随流和解压越界均拒绝。未知组件配置/状态与命名空间扩展 byte bag 原样保留；未知内容不推断默认值。
+v3 使用独立固定字段 DTO。外层包含 formatVersion、brotli 标识、decodedLength、SHA-256、块数及按 index 排列的块；压缩块最多 256 KiB，未压缩上限 128 MiB。缺字段、未知核心字段、重复键、截断、重复/调序块、哈希不符、尾随流和解压越界均拒绝。未知组件配置/状态与命名空间扩展 byte bag 原样保留；未知内容不推断默认值。
 
-创建/命令/物理/移除逻辑 hash schema 独立为 2/1/1/1，与存档 v2 分开版本化；按固定二进制字段顺序及确定数值格式编码。内建 profile 配置字段和顺序固定，已知版本的 JSON 配置同样拒绝缺字段、未知字段和重复字段；损坏载荷随诊断原样保留。已解码的原始配置字节冻结保留。默认物理检查点载荷 v2 同时保存开放代次与过期高水位。
+创建/命令/物理/移除逻辑 hash schema 独立为 2/1/1/1，与存档 v3 分开版本化；按固定二进制字段顺序及确定数值格式编码。内建 profile 配置字段和顺序固定，已知版本的 JSON 配置同样拒绝缺字段、未知字段和重复字段；损坏载荷随诊断原样保留。已解码的原始配置字节冻结保留。默认物理检查点载荷 v2 同时保存开放代次与过期高水位。
 
-v1 框架测试世界及此前旧 PFL 世界明确不兼容，要求新建测试世界。不自动迁移、不覆盖旧用户存档。原生地图身份、组件状态和物理检查点来自同一共同边界。
+v1/v2 框架测试世界及此前旧 PFL 世界明确不兼容：存档格式为 v3，v1/v2 文档一律 `UnsupportedSaveVersion`，要求新建测试世界。不自动迁移、不覆盖旧用户存档。原生地图身份、组件状态和物理检查点来自同一共同边界。
 
 全局恢复失败会暂停太空模拟、记录去重错误并向玩家提示。修复依赖后可由提示框、开发菜单或 CelestialBodyManager.RetryCelestialRestore 显式重试；成功后才允许保存。正常保存入口在 SafeSaver 接触目标文件前拒绝未恢复或不安全边界，防止 Scribe_Deep 捕获组件异常后仍写出部分文档。加载期 adapter 与未恢复 runtime 的 CaptureCheckpoint 仅供诊断保留，ExposeData 不会将其写成新存档。组件级缺失仍可保留原始配置/状态为 Blocked，依照故障策略完成其余世界的恢复。
 
@@ -152,4 +154,4 @@ v1 框架测试世界及此前旧 PFL 世界明确不兼容，要求新建测试
 
 固定 SDK 10.0.402；主交付仅 `1.7/Assemblies/PioneerFrameworkLite.dll`。样例 Debug 输出 bin/Debug，独立 Mod Release 输出自身 Assemblies；样例引用的框架编译隔离到 bin，避免重写真实交付件。构建及验证见根 README、tools/test-all.ps1 和样例说明。
 
-冻结 v1/v2 fixtures 与实际发货 XML 回归共同使用；fixtures 不随当前 writer 自动重生成。台架记录 CPU 延迟、分配、状态/配置编码次数与存档体积。自动测试覆盖纯核、托管原生入口和 Scribe 顺序，无法证明真实渲染、GPU 成本、交战手感或游戏内存读档；这些项目见本机人工验收单，由人工记录结果。
+冻结 v1/v2 fixtures 与实际发货 XML 回归共同使用；fixtures 不随当前 writer 自动重生成（v3 起 v1/v2 仅保留为明确拒绝的回归样本，生产读取器不再解码）。台架记录 CPU 延迟、分配、状态/配置编码次数与存档体积。自动测试覆盖纯核、托管原生入口和 Scribe 顺序，无法证明真实渲染、GPU 成本、交战手感或游戏内存读档；这些项目见本机人工验收单，由人工记录结果。

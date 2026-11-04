@@ -1,13 +1,8 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Defs>
   <WorldGenStepDef>
     <defName>PF_CelestialTiles</defName>
     <order>5</order>
     <worldGenStep Class="PioneerFramework.Celestial.CelestialWorldGenStep" />
-  </WorldGenStepDef>
-  <WorldGenStepDef>
-    <defName>PF_MoonTiles</defName>
-    <order>5</order>
-    <worldGenStep Class="PioneerFramework.WorldGenStep_MoonTiles" />
   </WorldGenStepDef>
 </Defs>

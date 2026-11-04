@@ -23,10 +23,10 @@ public class CelestialSaveCodecTests
     }
 
     [Theory]
-    [InlineData("{\"nested\":{\"formatVersion\":2}}")]
-    [InlineData("{\"nested\":[{\"formatVersion\":2}],\"formatVersion\":1}")]
-    [InlineData("{\"nested\":{\"formatVersion\":1},\"formatVersion\":99}")]
-    [InlineData("{\"formatVersion\":1,\"nested\":{\"formatVersion\":2}}")]
+    [InlineData("{\"nested\":{\"formatVersion\":3}}")]
+    [InlineData("{\"nested\":[{\"formatVersion\":3}],\"formatVersion\":2}")]
+    [InlineData("{\"nested\":{\"formatVersion\":2},\"formatVersion\":99}")]
+    [InlineData("{\"formatVersion\":2,\"nested\":{\"formatVersion\":3}}")]
     public void OnlyTheTopLevelVersionDeterminesSupport(string json)
     {
         var decoded = CelestialSaveCodec.Decode(Encoding.UTF8.GetBytes(json));
@@ -34,12 +34,12 @@ public class CelestialSaveCodecTests
     }
 
     [Theory]
-    [InlineData("{\"nested\":{\"formatVersion\":1},\"formatVersion\":2}")]
-    [InlineData("{\"formatVersion\":1,\"formatVersion\":2}")]
-    [InlineData("{\"formatVersion\":2,\"unknown\":0}")]
-    [InlineData("{\"formatVersion\":1,\"nested\":[}")]
-    [InlineData("{\"formatVersion\":1} true")]
-    [InlineData("{\"formatVersion\":2} {}")]
+    [InlineData("{\"nested\":{\"formatVersion\":2},\"formatVersion\":3}")]
+    [InlineData("{\"formatVersion\":2,\"formatVersion\":3}")]
+    [InlineData("{\"formatVersion\":3,\"unknown\":0}")]
+    [InlineData("{\"formatVersion\":2,\"nested\":[}")]
+    [InlineData("{\"formatVersion\":2} true")]
+    [InlineData("{\"formatVersion\":3} {}")]
     public void VersionScanPreservesEnvelopeAndJsonRejections(string json)
     {
         var decoded = CelestialSaveCodec.Decode(Encoding.UTF8.GetBytes(json));
@@ -83,7 +83,11 @@ public class CelestialSaveCodecTests
     {
         Assert.Contains(CelestialSaveCodec.Decode("{}"u8.ToArray()).Errors, e => e.Code == "UnsupportedSaveVersion");
         var empty = CelestialSaveDocument.CreateEmpty(Guid.NewGuid(), 0);
+        Assert.Equal("UnsupportedSaveVersion", Assert.Single(CelestialSaveCodec.Encode(empty with { FormatVersion = 2 }).Errors).Code);
         Assert.False(CelestialSaveCodec.Encode(empty with { FormatVersion = 99 }).Success);
+        var downgradedEnvelope = JsonNode.Parse(CelestialSaveCodec.Encode(empty).Value.Span)!.AsObject();
+        downgradedEnvelope["formatVersion"] = 2;
+        Assert.Equal("UnsupportedSaveVersion", Assert.Single(CelestialSaveCodec.Decode(JsonSerializer.SerializeToUtf8Bytes(downgradedEnvelope)).Errors).Code);
         var id = CelestialInstanceId.Parse("a");
         var body = new CelestialSavedBody(new(id, "def", 0, 1, "", 1), new(0, "a"), CelestialLifecycle.Ready, false, null,
             Array.Empty<CelestialError>(), Array.Empty<CelestialCompDescriptor>(), Array.Empty<CelestialCompSaveRecord>(), null);

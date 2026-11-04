@@ -2,12 +2,7 @@ using System;
 
 namespace PioneerFramework.Celestial
 {
-    public interface ICelestialParameterDistribution<out T>
-    {
-        T Sample(ulong sampleWord);
-    }
-
-    public sealed class DoubleParameterSpec : ICelestialParameterDistribution<double>
+    public sealed class DoubleParameterSpec
     {
         public double Minimum { get; }
         public double Maximum { get; }
@@ -25,10 +20,9 @@ namespace PioneerFramework.Celestial
 
         public static DoubleParameterSpec Fixed(double value) => new(value, value, true);
         public static DoubleParameterSpec Uniform(double minimum, double maximum) => new(minimum, maximum, false);
-        public double Sample(ulong sampleWord) => CelestialParameterSampler.SampleDouble(this, sampleWord);
     }
 
-    public sealed class IntParameterSpec : ICelestialParameterDistribution<int>
+    public sealed class IntParameterSpec
     {
         public int Minimum { get; }
         public int Maximum { get; }
@@ -44,6 +38,5 @@ namespace PioneerFramework.Celestial
 
         public static IntParameterSpec Fixed(int value) => new(value, value, true);
         public static IntParameterSpec Uniform(int minimum, int maximum) => new(minimum, maximum, false);
-        public int Sample(ulong sampleWord) => CelestialParameterSampler.SampleInt(this, sampleWord);
     }
 }

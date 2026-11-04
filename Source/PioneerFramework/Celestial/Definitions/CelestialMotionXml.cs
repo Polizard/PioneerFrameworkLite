@@ -49,7 +49,7 @@ namespace PioneerFramework.Celestial
         private PhysicsInitialization CompileCore(CelestialGenerationContext? context, bool sample)
         {
             if (xmlErrors.Count != 0 || rotation == null || rotation.HasXmlErrors) throw new ArgumentException("InvalidMotionXml");
-            var s = new CelestialPlanetParameterSampler(parameters, context, "motion.", sample);
+            var s = new CelestialParameterSamplerXml(parameters, context, "motion.", sample: sample);
             var value = new CelestialMotionXml {
                 orbitRadiusMeters = s.Get(nameof(orbitRadiusMeters), orbitRadiusMeters, 0, double.MaxValue),
                 orbitPeriodSeconds = s.Get(nameof(orbitPeriodSeconds), orbitPeriodSeconds, 0, double.MaxValue),

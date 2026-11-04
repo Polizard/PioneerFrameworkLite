@@ -52,7 +52,7 @@ namespace PioneerFramework.Celestial
             CelestialCostCounters.VisualHashComputed();
             var key = new CelestialViewCacheKey(runtime.WorldSessionId, description.Id, description.DescriptorRevision, layerId, Convert.ToHexString(SHA256.HashData(stream.ToArray())));
             entry = new(key, visuals, surface == null ? null : description.RadiusMeters / surface.MetersPerLayerUnit, components, capabilities,
-                capabilities.Select(capability => capability.VisualRevision).ToArray(), faultRevision, atmosphere, environment?.Profile.DayLengthTicks ?? 0, primaryLight);
+                capabilities.Select(capability => capability.VisualRevision).ToArray(), faultRevision, atmosphere, CelestialDayLength.ResolveFrom(components), primaryLight);
             entries[description.Id] = entry;
             return entry;
         }

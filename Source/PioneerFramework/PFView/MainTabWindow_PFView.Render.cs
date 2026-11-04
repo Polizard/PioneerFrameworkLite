@@ -353,15 +353,18 @@ namespace PioneerFramework
         private double lastFrameLogTick = double.MinValue;
 
         /// <summary>
-        /// 每帧解析参考系：`Auto` 按**相机高度**判（阈值 = `max(大气厚度一半, 100 km)`，见 `PFViewFrameCore`）；
+        /// 每帧解析参考系：`Auto` 按**相机高度**判（阈值 = `max(物理大气顶/2, 100 km)`，见 `PFViewFrameCore`）；
         /// 固连档取"绝对系 → 固连系"的旋转（`PFViewBodyRotation.EciToFixedRotation`）。
         /// ⚠ 只用**船所在天体**的自转 —— 与地表贴图/补丁用的是同一个旋转 ⇒ 地面真正静止。
+        /// ⚠ 高度阈值用**物理大气顶** `atmosphereThickness`（不是视觉壳厚度 `atmosphereVisualThickness`）：
+        ///   参考系切换是"大气内/外"的物理判据，与壳画多大无关。
         /// </summary>
         private void UpdateViewFrame(CelestialBodyManager mgr, double tick, DVector3 origin)
         {
             int bodyId = ResolveFocusBodyId();
             var def = mgr?.GetBodyById(bodyId);
             double altMeters = CameraAltitudeAboveBodyMeters(mgr, bodyId, tick, origin);
+            // 参考系阈值只看物理大气顶；视觉壳厚度不参与换档。
             double thickness = def != null ? def.atmosphereThickness : 0.0;
 
             viewFrameIsFixed = PFViewFrameCore.UseFixedFrame(viewFrameMode, altMeters, thickness);

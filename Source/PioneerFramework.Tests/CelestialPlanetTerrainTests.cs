@@ -18,8 +18,9 @@ public class CelestialPlanetTerrainTests
     public void ParameterizedTerrainRequiresAnExplicitNewGenerationMode()
     {
         Assert.True(Enum.IsDefined(typeof(CelestialBiomeGenerationMode), "Parameterized"));
-        Assert.Equal(0, (int)CelestialBiomeGenerationMode.LatitudeBands);
+        Assert.False(Enum.IsDefined(typeof(CelestialBiomeGenerationMode), "LatitudeBands"));
         Assert.Equal(1, (int)CelestialBiomeGenerationMode.VanillaSurface);
+        Assert.Equal(2, (int)CelestialBiomeGenerationMode.Parameterized);
     }
 
     private static Type TerrainType()
@@ -130,6 +131,24 @@ public class CelestialPlanetTerrainTests
         Assert.Throws<ArgumentException>(() => new CelestialPlanetBiomeRule("bad", "plain", fallback: true, minimumAbsoluteLatitude: 10));
     }
     [Fact]
+    public void PerBiomeHillinessIsOptionalValidatedAndSelectedWithTheBiomeRule()
+    {
+        var fallback = new CelestialPlanetBiomeRule("fallback", "plain", fallback: true, hilliness: 1);
+        var polar = new CelestialPlanetBiomeRule("polar", "ice", priority: 10, minimumAbsoluteLatitude: 75, hilliness: 1);
+        var warm = new CelestialPlanetBiomeRule("warm", "warm", weight: .5, hilliness: 2);
+        var wet = new CelestialPlanetBiomeRule("wet", "wet", weight: .5);
+        var configuration = new CelestialPlanetTerrainConfiguration(biomeRules: new[] { fallback, polar, warm, wet });
+        var polarSelection = CelestialPlanetTerrain.SelectBiome(configuration, 0, 0, 0, 80, .5, .9);
+        Assert.Equal("ice", polarSelection.BiomeId); Assert.Equal(1, polarSelection.Hilliness);
+        var primarySelection = CelestialPlanetTerrain.SelectBiome(configuration, 0, 0, 0, 10, .5, .1);
+        Assert.Equal("warm", primarySelection.BiomeId); Assert.Equal(2, primarySelection.Hilliness);
+        var secondarySelection = CelestialPlanetTerrain.SelectBiome(configuration, 0, 0, 0, 10, .5, .9);
+        Assert.Equal("wet", secondarySelection.BiomeId); Assert.Null(secondarySelection.Hilliness);
+        Assert.Equal(1, fallback.Hilliness);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CelestialPlanetBiomeRule("bad", "plain", hilliness: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CelestialPlanetBiomeRule("bad", "plain", hilliness: 6));
+    }
+    [Fact]
     public void WholeRuleIntervalsAndOverridesAreValidatedBeforeSampling()
     {
         var biome = new BiomeDef { defName = "plain" };
@@ -198,8 +217,8 @@ public class CelestialPlanetTerrainTests
     {
         CelestialClimateConfiguration Climate(double temperature) => new CelestialClimateXml { meanTemperatureCelsius = temperature }.Resolve();
         var climate = Climate(10);
-        CelestialGenerationProfile Profile(CelestialClimateConfiguration source) => new("PD_Binding", CelestialBiomeGenerationMode.Parameterized, null, null, null, 75, .5, 1, 1, 1,
-            0, 0, 0, Array.Empty<string>(), Array.Empty<string>(), new(climate: source, biomeRules: new[] { new CelestialPlanetBiomeRule("fallback", "plain", fallback: true) }));
+        CelestialGenerationProfile Profile(CelestialClimateConfiguration source) => new("PD_Binding", CelestialBiomeGenerationMode.Parameterized, 0, 0, 0,
+            Array.Empty<string>(), Array.Empty<string>(), new(climate: source, biomeRules: new[] { new CelestialPlanetBiomeRule("fallback", "plain", fallback: true) }));
         var properties = new BiomeGenerationResolvedProperties("biomes", Profile(climate));
         var validator = Assert.IsAssignableFrom<ICelestialResolvedConfigurationValidator>(properties);
         ExistingEnvironmentResolvedProperties Environment(CelestialClimateConfiguration source) => new("env", new("PD_Env", 60000, "sun", Array.Empty<string>(), source));
@@ -218,6 +237,7 @@ public class CelestialPlanetTerrainTests
         var unsafeRain = Profile(); unsafeRain.rainfall = float.MaxValue;
         Assert.False(unsafeRain.ToProfile().Success);
         var unsafeRiver = Profile(); unsafeRiver.temperature = -273; unsafeRiver.terrain.allowRivers = true;
+        unsafeRiver.worldGenSteps = new() { new() { defName = "Rivers", worldGenStep = new WorldGenStep_Terrain() } };
         Assert.False(unsafeRiver.ToProfile().Success);
         Assert.Throws<ArgumentException>(() => new CelestialClimateConfiguration(CelestialClimateMode.Authored, 20,
             new[] { new CelestialClimatePoint(0, 0), new CelestialClimatePoint(90, 0) }, 0, 0, 0, 3600000, 0, 0, 1, 1, double.MaxValue, .5));
@@ -225,6 +245,28 @@ public class CelestialPlanetTerrainTests
         Assert.False(invalidPriority.ToProfile().Success);
         var rangedPriority = Profile(); rangedPriority.terrain.biomeRules[0].parameters.Add(new() { key = "priority", value = new() { min = 2, max = 5 } });
         Assert.True(rangedPriority.ToProfile(new CelestialGenerationContext(1, "pd", "biomes")).Success);
+    }
+    [Fact]
+    public void SurfaceMoistureIsTheSingleBoundedFormulaForTilesAndEnvironmentSamples()
+    {
+        var neutral = CelestialPlanetTerrain.SurfaceMoisture(null, 1000, .4, .5);
+        Assert.Equal(1000, neutral.RainfallMillimeters, 12);
+        Assert.Equal(.4, neutral.Humidity, 12);
+        var dry = CelestialPlanetTerrain.SurfaceMoisture(null, 1000, .4, 0);
+        Assert.Equal(500, dry.RainfallMillimeters, 12);
+        Assert.Equal(.2, dry.Humidity, 12);
+        var climate = new CelestialClimateXml { rainfallMillimeters = 2000, humidity = .9 }.Resolve();
+        var terrain = new CelestialPlanetTerrainConfiguration(climate: climate,
+            biomeRules: new[] { new CelestialPlanetBiomeRule("fallback", "plain", fallback: true) });
+        var climateNeutral = CelestialPlanetTerrain.SurfaceMoisture(terrain, 0, 0, .5);
+        Assert.Equal(2000, climateNeutral.RainfallMillimeters, 12);
+        Assert.Equal(.9, climateNeutral.Humidity, 12);
+        var saturated = CelestialPlanetTerrain.SurfaceMoisture(terrain, 0, 0, 1);
+        Assert.Equal(3000, saturated.RainfallMillimeters, 12);
+        Assert.Equal(1, saturated.Humidity);
+        Assert.Throws<ArgumentOutOfRangeException>(() => CelestialPlanetTerrain.SurfaceMoisture(null, 1000, .5, 1.0001));
+        Assert.Throws<ArgumentOutOfRangeException>(() => CelestialPlanetTerrain.SurfaceMoisture(null, 1000, 1.1, .5));
+        Assert.Throws<ArgumentOutOfRangeException>(() => CelestialPlanetTerrain.SurfaceMoisture(null, -1, .5, .5));
     }
     [Fact]
     public void CoupledClimateAndAltitudeRejectUnsafeWholeIntervalsEvenWhenSomeSeedsWouldFit()
@@ -237,7 +279,8 @@ public class CelestialPlanetTerrainTests
         CelestialResult<CelestialBodyTemplate> Template() => new CelestialBodyDef { defName = "PD_CoupledDomain", comps = new() {
             new CompProperties_SphericalBody { key = "shape" }, new CompProperties_Surface { key = "surface" },
             new CompProperties_ExistingEnvironment { key = "env", profile = new() { defName = "PD_CoupledClimate", climate = climate } },
-            new CompProperties_BiomeGeneration { key = "biomes", profile = new() { defName = "PD_CoupledTerrain", mode = CelestialBiomeGenerationMode.Parameterized, terrain = terrain }, useEnvironmentClimate = true } } }.ToTemplate();
+            new CompProperties_BiomeGeneration { key = "biomes", profile = new() { defName = "PD_CoupledTerrain", mode = CelestialBiomeGenerationMode.Parameterized, terrain = terrain,
+                worldGenSteps = terrain.allowRivers ? new List<WorldGenStepDef> { new() { defName = "Rivers", worldGenStep = new WorldGenStep_Terrain() } } : new List<WorldGenStepDef>() }, useEnvironmentClimate = true } } }.ToTemplate();
         Assert.False(Template().Success);
         climate.parameters.Clear(); climate.lapseCelsiusPerMeter = .01; terrain.allowRivers = true;
         terrain.parameters.Add(new() { key = "elevationOffsetMeters", value = new() { min = 0, max = 20000 } });

@@ -67,10 +67,14 @@ public class CelestialDefaultContentTests
         var biomes = profilesXml.Root.Elements("PioneerFramework.Celestial.CelestialBiomeProfileDef").ToDictionary(
             element => element.Element("defName").Value, element => {
                 var profile = Parse<CelestialBiomeProfileDef>(element);
-                BiomeDef Biome(string field) => element.Element(field) is { } node ? new BiomeDef { defName = node.Value } : null;
-                profile.polarBiome = Biome("polarBiome"); profile.primaryBiome = Biome("primaryBiome"); profile.secondaryBiome = Biome("secondaryBiome");
+                // 夹具不经过 Def 交叉引用：按内容约定补齐原生 inVacuum（月球三群落为真空），供 P4 真空声明跨校验使用。
+                BiomeDef Biome(string name) => new() { defName = name, inVacuum = name.StartsWith("PF_MoonBiome", StringComparison.Ordinal) };
                 List<WorldGenStepDef> Steps(string field) => element.Element(field)?.Elements("li").Select(node => new WorldGenStepDef { defName = node.Value, worldGenStep = new WorldGenStep_Terrain() }).ToList() ?? new();
                 profile.worldGenSteps = Steps("worldGenSteps"); profile.rootOnlySteps = Steps("rootOnlySteps");
+                // Def 交叉引用在测试夹具里不经过 ResolveAllWantedCrossReferences；Parameterized 规则的 biome 引用按 XML 文本显式补齐。
+                if (element.Element("terrain")?.Element("biomeRules") is { } rules)
+                    for (int index = 0; index < profile.terrain.biomeRules.Count; index++)
+                        profile.terrain.biomeRules[index].biome = Biome(rules.Elements("li").ElementAt(index).Element("biome").Value);
                 return profile;
             });
         var maps = profilesXml.Root.Elements("PioneerFramework.Celestial.CelestialMapProfileDef").ToDictionary(

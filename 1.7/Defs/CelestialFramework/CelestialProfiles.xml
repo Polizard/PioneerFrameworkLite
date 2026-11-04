@@ -15,15 +15,19 @@
   </PioneerFramework.Celestial.CelestialBiomeProfileDef>
   <PioneerFramework.Celestial.CelestialBiomeProfileDef>
     <defName>PF_MoonBiomes</defName>
-    <label>月球纬度带</label>
-    <mode>LatitudeBands</mode>
-    <polarBiome>PF_MoonBiomeWater</polarBiome>
-    <primaryBiome>PF_MoonBiomeBasalt</primaryBiome>
-    <secondaryBiome>PF_MoonBiomeRegolith</secondaryBiome>
-    <polarLatitude>75</polarLatitude><secondaryChance>0.5</secondaryChance>
-    <polarHilliness>Flat</polarHilliness><primaryHilliness>SmallHills</primaryHilliness><secondaryHilliness>Flat</secondaryHilliness>
+    <label>月球参数化地表</label>
+    <mode>Parameterized</mode>
     <temperature>0</temperature><rainfall>0</rainfall><swampiness>0</swampiness>
     <rootOnlySteps><li>Factions</li><li>Roads</li><li>Features</li></rootOnlySteps>
+    <terrain>
+      <!-- 纬度带用 Parameterized 规则复刻：waterIce 极区（绝对纬度 75+，priority 10）优先；其余 basalt/regolith 同优先级同权重 50/50；fallback 只用于无候选。 -->
+      <biomeRules>
+        <li><key>waterIce</key><biome>PF_MoonBiomeWater</biome><priority>10</priority><minimumAbsoluteLatitude>75</minimumAbsoluteLatitude><hilliness>Flat</hilliness></li>
+        <li><key>basalt</key><biome>PF_MoonBiomeBasalt</biome><weight>0.5</weight><hilliness>SmallHills</hilliness></li>
+        <li><key>regolith</key><biome>PF_MoonBiomeRegolith</biome><weight>0.5</weight><hilliness>Flat</hilliness></li>
+        <li><key>fallback</key><biome>PF_MoonBiomeRegolith</biome><fallback>true</fallback><hilliness>Flat</hilliness></li>
+      </biomeRules>
+    </terrain>
   </PioneerFramework.Celestial.CelestialBiomeProfileDef>
   <PioneerFramework.Celestial.CelestialMapProfileDef>
     <defName>PF_EarthMaps</defName><label>原版殖民地地图</label>

@@ -11,13 +11,15 @@ namespace PioneerFramework.Celestial
         private readonly object gate = new();
         private bool sealedRegistry;
         public static CelestialCapabilityRegistry Global { get; } = CreateBuiltins();
-        public CelestialResult<bool> Register<T>(string name) where T : class
+        public CelestialResult<bool> Register<T>(string name) where T : class => Register(name, typeof(T));
+        internal CelestialResult<bool> Register(string name, Type contract)
         {
-            if (!typeof(T).IsInterface || string.IsNullOrWhiteSpace(name)) return CelestialResult.Reject<bool>(new CelestialError("InvalidCapabilityContract"));
+            if (contract == null || !contract.IsInterface || string.IsNullOrWhiteSpace(name))
+                return CelestialResult.Reject<bool>(new CelestialError("InvalidCapabilityContract"));
             lock (gate)
             {
                 if (sealedRegistry) return CelestialResult.Reject<bool>(new CelestialError("RegistrySealed"));
-                return contracts.TryAdd(name, typeof(T)) ? CelestialResult.Ok(true) :
+                return contracts.TryAdd(name, contract) ? CelestialResult.Ok(true) :
                     CelestialResult.Reject<bool>(new CelestialError("DuplicateCapabilityContract", Detail: name));
             }
         }
@@ -31,20 +33,18 @@ namespace PioneerFramework.Celestial
                 return errors.Length == 0 ? CelestialResult.Ok(true) : CelestialResult.Reject<bool>(errors);
             }
         }
+        internal bool TryGetContract(string name, out Type contract)
+        {
+            lock (gate) return contracts.TryGetValue(name, out contract!);
+        }
+        internal int ContractCount { get { lock (gate) return contracts.Count; } }
+        // 内置能力名与契约类型只从 CelestialBuiltinComps 表派生，注册顺序与旧手写列表逐项一致。
         private static CelestialCapabilityRegistry CreateBuiltins()
         {
             var result = new CelestialCapabilityRegistry();
-            result.Register<ICelestialGeometryCapability>("geometry");
-            result.Register<ICelestialSurfaceCapability>("surface");
-            result.Register<ICelestialPhysicsBinding>("physics.binding");
-            result.Register<ICelestialAtmosphereCapability>("atmosphere");
-            result.Register<ICelestialAtmosphereCompositionCapability>("atmosphere.composition");
-            result.Register<ICelestialLightSourceCapability>("light.source");
-            result.Register<ICelestialEnvironmentCapability>("environment.existing");
-            result.Register<ICelestialMapGenerationCapability>("map.generation");
-            result.Register<ICelestialBiomeGenerationCapability>("biomes");
-            foreach (string name in new[] { "visual.surface", "visual.atmosphere", "visual.clouds", "visual.stellar" })
-                result.Register<ICelestialVisualCapability>(name);
+            foreach (var row in CelestialBuiltinComps.All)
+                foreach (var (name, contract) in row.Capabilities)
+                    result.Register(name, contract);
             return result;
         }
     }

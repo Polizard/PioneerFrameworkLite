@@ -24,7 +24,7 @@ namespace PioneerFramework.Celestial
                     var template = resolveTemplate(input.DefinitionId);
                     if (!template.Success) return Rejected(scope.OperationId, template.Errors);
                     string path = "operation/" + Uri.EscapeDataString(scope.OperationId) + "/" + Uri.EscapeDataString(input.Key) + "[0]";
-                    ulong seed = input.Seed ?? CelestialSeed.Derive(worldSeed, path, "$create", "seed");
+                    ulong seed = input.Seed ?? CelestialSeed.CreateSeed(worldSeed, path);
                     CelestialGenerationContext generation;
                     try { generation = new(seed, path, parameterOverrides: input.ParameterOverrides); }
                     catch (ArgumentException exception) { return Rejected(scope.OperationId, new[] { new CelestialError("InvalidParameterOverride", Detail: exception.Message) }); }

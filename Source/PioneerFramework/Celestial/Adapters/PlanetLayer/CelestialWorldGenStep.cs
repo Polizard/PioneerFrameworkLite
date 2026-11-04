@@ -13,7 +13,7 @@ namespace PioneerFramework.Celestial
         public override void GenerateFresh(string seed, PlanetLayer layer)
         {
             if (layer is not CelestialSurfaceLayer surface) throw new InvalidOperationException("Celestial surface adapter required.");
-            var configuration = CelestialGenerationConfiguration.Decode(surface.Header.GenerationConfiguration);
+            var configuration = CelestialLayerConfiguration.For(surface.Header);
             if (!configuration.Success) { surface.Header.State = CelestialSurfaceState.Failed; throw new InvalidOperationException(configuration.Errors[0].Code); }
             var profiles = configuration.Value.Where(record => record.HandlerId == BiomeGenerationResolvedProperties.Handler).ToArray();
             if (profiles.Length != 1) { surface.Header.State = CelestialSurfaceState.Failed; throw new InvalidOperationException("BiomeProfileMissingOrAmbiguous"); }
@@ -34,13 +34,9 @@ namespace PioneerFramework.Celestial
             Rand.PushState();
             try
             {
-                if (profile.Mode == CelestialBiomeGenerationMode.LatitudeBands)
+                if (profile.Mode == CelestialBiomeGenerationMode.Parameterized)
                 {
-                    GenerateLatitudeBands(surface, profile);
-                    if (surface.IsRootSurface) GenerateNativeSteps(surface, profile, seedString ?? Find.World.info.seedString, rootOnly: true);
-                }
-                else if (profile.Mode == CelestialBiomeGenerationMode.Parameterized)
-                {
+                    // 单通道：参数化先写 tile；原生步骤只从 profile.WorldGenSteps 执行一次（构造器禁止 Terrain）。
                     GenerateParameterized(surface, profile, seedString ?? Find.World.info.seedString);
                     GenerateNativeSteps(surface, profile, seedString ?? Find.World.info.seedString);
                 }
@@ -58,27 +54,9 @@ namespace PioneerFramework.Celestial
             finally { Rand.PopState(); }
         }
 
-        private static void GenerateLatitudeBands(CelestialSurfaceLayer layer, CelestialGenerationProfile profile)
+        private static void GenerateNativeSteps(CelestialSurfaceLayer layer, CelestialGenerationProfile profile, string seedString)
         {
-            var biomes = new[] { profile.PolarBiomeId!, profile.PrimaryBiomeId!, profile.SecondaryBiomeId! }.Distinct(StringComparer.Ordinal)
-                .ToDictionary(id => id, id => DefDatabase<BiomeDef>.GetNamedSilentFail(id) ?? throw new InvalidOperationException("BiomeMissing: " + id), StringComparer.Ordinal);
-            foreach (int hilliness in new[] { profile.PolarHilliness, profile.PrimaryHilliness, profile.SecondaryHilliness })
-                if (!Enum.IsDefined((Hilliness)hilliness)) throw new InvalidOperationException("InvalidProfileHilliness");
-            Rand.Seed = Gen.HashCombineInt(layer.Header.GenerationSeed, 58474782);
-            layer.Tiles.Clear();
-            for (int index = 0; index < layer.TilesCount; index++)
-            {
-                // 与既有月球步骤保持同一抽样节奏：极区也消费一次选择随机数。
-                bool secondary = Rand.Chance((float)profile.SecondaryChance);
-                var selection = profile.SelectBiome(layer.LongLatOf(index).y, secondary);
-                layer.Tiles.Add(new SurfaceTile(new PlanetTile(index, layer)) {
-                    PrimaryBiome = biomes[selection.BiomeId], elevation = layer.Radius, hilliness = (Hilliness)selection.Hilliness,
-                    temperature = profile.Temperature, rainfall = profile.Rainfall, swampiness = profile.Swampiness });
-            }
-        }
-        private static void GenerateNativeSteps(CelestialSurfaceLayer layer, CelestialGenerationProfile profile, string seedString, bool rootOnly = false)
-        {
-            var names = (rootOnly ? Array.Empty<string>() : profile.WorldGenSteps).Concat(layer.IsRootSurface ? profile.RootOnlySteps : Array.Empty<string>());
+            var names = profile.WorldGenSteps.Concat(layer.IsRootSurface ? profile.RootOnlySteps : Array.Empty<string>());
             var steps = names.Select(name => DefDatabase<WorldGenStepDef>.GetNamedSilentFail(name) ?? throw new InvalidOperationException("WorldGenStepMissing: " + name))
                 .OrderBy(step => step.order).ToArray();
             if (steps.Any(step => step.worldGenStep == null || step.worldGenStep is CelestialWorldGenStep)) throw new InvalidOperationException("InvalidWorldGenStep");

@@ -61,6 +61,80 @@ public class CelestialPlanetParameterTests
         var physics = new ExternalPhysicsResolvedProperties("motion", 42, new("third.party", "opaque", 9, new byte[] { 1, 2, 3 }));
         Assert.Equal(physics.Serialize().ToArray(), ExternalPhysicsResolvedProperties.Deserialize("motion", 1, physics.Serialize()).Value.Serialize().ToArray());
     }
+    [Fact]
+    public void MergedXmlSamplerKeepsPlanetAndEnvironmentSamplingEquivalentForKey()
+    {
+        var context = new CelestialGenerationContext(11, "sampler", "biomes");
+        CelestialEnvironmentParameterXml Parameter() => new() { key = "meanTemperatureCelsius", value = new() { min = 0, max = 20 } };
+        var planet = new CelestialParameterSamplerXml(new List<CelestialEnvironmentParameterXml> { Parameter() }, context, "same.");
+        double planetValue = planet.Get("meanTemperatureCelsius", 15, -273.15, 10000);
+        planet.Complete();
+        var environment = new CelestialParameterSamplerXml(new List<CelestialEnvironmentParameterXml> { Parameter() }, context, "same.", CelestialParameterScope.Environment);
+        double environmentValue = environment.Get("meanTemperatureCelsius", 15);
+        environment.Complete();
+        Assert.Equal(planetValue, environmentValue);
+        Assert.Equal(planet.Interval("meanTemperatureCelsius").Minimum, environment.Interval("meanTemperatureCelsius").Minimum);
+        Assert.Equal(planet.Interval("meanTemperatureCelsius").Maximum, environment.Interval("meanTemperatureCelsius").Maximum);
+    }
+    [Fact]
+    public void EnvironmentDomainTableKeepsLegacyBoundsAndHiddenDefault()
+    {
+        Assert.Equal(-273.15, CelestialPlanetDomains.For("meanTemperatureCelsius").Minimum);
+        Assert.Equal(10000, CelestialPlanetDomains.For("meanTemperatureCelsius").Maximum);
+        Assert.Equal(-1, CelestialPlanetDomains.For("lapseCelsiusPerMeter").Minimum);
+        Assert.Equal(1, CelestialPlanetDomains.For("lapseCelsiusPerMeter").Maximum);
+        Assert.Equal(1, CelestialPlanetDomains.For("humidity").Maximum);
+        Assert.Equal(1e6, CelestialPlanetDomains.For("windSpeed").Maximum);
+        Assert.Equal(1000000 / 1.5, CelestialPlanetDomains.For("rainfallMillimeters").Maximum);
+        Assert.Equal(1e20, CelestialPlanetDomains.For("yearLengthTicks").Maximum);
+        Assert.True(CelestialPlanetDomains.For("yearLengthTicks").StrictlyPositive);
+        Assert.Equal(1e12, CelestialPlanetDomains.For("maximumPressurePascals").Maximum);
+        Assert.True(CelestialPlanetDomains.For("maximumPressurePascals").StrictlyPositive);
+        Assert.True(CelestialPlanetDomains.For("minimumOxygenPascals").StrictlyPositive);
+        Assert.True(CelestialPlanetDomains.For("carbonDioxideThresholdPascals").StrictlyPositive);
+        Assert.False(CelestialPlanetDomains.For("minimumPressurePascals").StrictlyPositive);
+        Assert.False(CelestialPlanetDomains.For("unknownEnvironmentKey").StrictlyPositive);
+        Assert.Equal(CelestialPlanetDomains.Default.Minimum, CelestialPlanetDomains.For("unknownEnvironmentKey").Minimum);
+        Assert.Equal(CelestialPlanetDomains.Default.Maximum, CelestialPlanetDomains.For("unknownEnvironmentKey").Maximum);
+    }
+    [Fact]
+    public void MergedSamplerKeepsScopeSpecificCompletionChecksAndMessages()
+    {
+        List<CelestialEnvironmentParameterXml> Pairs() => new() {
+            new() { key = "minimumRoughness", value = new() { min = 0, max = 1 } },
+            new() { key = "maximumRoughness", value = new() { min = .5, max = 1 } } };
+        // environment 不执行 planet 的成对区间检查（否则会误用 planet 消息）。
+        var environment = new CelestialParameterSamplerXml(Pairs(), null, "climate.", CelestialParameterScope.Environment);
+        environment.Get("minimumRoughness", 0); environment.Get("maximumRoughness", 1);
+        environment.Complete();
+        // planet 的成对检查只在 lower.Maximum > upper.Minimum 时拒绝。
+        var planet = new CelestialParameterSamplerXml(Pairs(), null, "terrain.");
+        planet.Get("minimumRoughness", 0, 0, 1); planet.Get("maximumRoughness", 1, 0, 1);
+        Assert.Contains("Planet rule intervals must remain ordered for every sample: terrain.minimumRoughness",
+            Assert.Throws<ArgumentException>(planet.Complete).Message);
+        // environment 的 pressure 严格序（>=）不能软化；planet 作用域不会套用该检查。
+        List<CelestialEnvironmentParameterXml> Pressure() => new() {
+            new() { key = "minimumPressurePascals", value = new() { min = 100, max = 200 } },
+            new() { key = "maximumPressurePascals", value = new() { min = 200, max = 300 } } };
+        var exposure = new CelestialParameterSamplerXml(Pressure(), null, "exposure.", CelestialParameterScope.Environment);
+        exposure.Get("minimumPressurePascals", 100); exposure.Get("maximumPressurePascals", 300);
+        Assert.Contains("Pressure ranges must remain strictly ordered for all samples.",
+            Assert.Throws<ArgumentException>(exposure.Complete).Message);
+        var planetPressure = new CelestialParameterSamplerXml(Pressure(), null, "terrain.");
+        planetPressure.Get("minimumPressurePascals", 0, 0, 1e12); planetPressure.Get("maximumPressurePascals", 0, 0, 1e12);
+        planetPressure.Complete();
+        // 未知 key 与非法列表消息继续按作用域区分。
+        var unknown = new List<CelestialEnvironmentParameterXml> { new() { key = "typo", value = new() { value = 1 } } };
+        Assert.Contains("Unknown planet parameter: terrain.typo",
+            Assert.Throws<ArgumentException>(new CelestialParameterSamplerXml(unknown, null, "terrain.").Complete).Message);
+        Assert.Contains("Unknown environment parameter: typo",
+            Assert.Throws<ArgumentException>(new CelestialParameterSamplerXml(unknown, null, "climate.", CelestialParameterScope.Environment).Complete).Message);
+        var invalid = new List<CelestialEnvironmentParameterXml> { new() { key = " ", value = new() { value = 1 } } };
+        Assert.Contains("Invalid planet parameter keys.",
+            Assert.Throws<ArgumentException>(() => new CelestialParameterSamplerXml(invalid, null, "terrain.")).Message);
+        Assert.Contains("Invalid environment parameters.",
+            Assert.Throws<ArgumentException>(() => new CelestialParameterSamplerXml(invalid, null, "climate.", CelestialParameterScope.Environment)).Message);
+    }
 }
 
 public class CelestialPlanetAtmosphereTests

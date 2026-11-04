@@ -23,7 +23,7 @@ public class CelestialBuiltinConfigurationStrictTests
             "light" => new LightSourceResolvedProperties("probe", new(1, 1, 1, 1)),
             "environment" => new ExistingEnvironmentResolvedProperties("probe", new("env", 60000, "sun", Array.Empty<string>())),
             "map" => new MapGenerationResolvedProperties("probe", new("map", null, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), null, Array.Empty<CelestialMapBiomeProfile>())),
-            "biomes" => new BiomeGenerationResolvedProperties("probe", new("biome", CelestialBiomeGenerationMode.LatitudeBands, "a", "a", "a", 75, .5, 0, 0, 0, 10, 0, 0, Array.Empty<string>(), Array.Empty<string>())),
+            "biomes" => new BiomeGenerationResolvedProperties("probe", new("biome", CelestialBiomeGenerationMode.VanillaSurface, 10, 0, 0, new[] { "Terrain" }, Array.Empty<string>())),
             _ => new VisualResolvedProperties("probe", CelestialVisualKind.Surface, new("visual", 1, 1, 1, 1, null, null, 0, 1, 60000, 60000)) };
         string raw = Encoding.UTF8.GetString(properties.Serialize().Span);
         var first = JsonNode.Parse(raw)!.AsObject().First();

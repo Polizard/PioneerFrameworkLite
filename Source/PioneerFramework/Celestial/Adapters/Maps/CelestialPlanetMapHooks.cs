@@ -52,7 +52,7 @@ namespace PioneerFramework.Celestial
             var candidates = diversity.Rocks.OrderBy(r => r.Id, StringComparer.Ordinal).ToList();
             var result = new List<ThingDef>();
             int count = Math.Min(candidates.Count, 1 + (int)(CelestialMapGeneration.GeologyFactor(tile, diversity) * 1.5));
-            ulong seed = CelestialSeed.Derive(unchecked((ulong)layer.Header.GenerationSeed), tile.tileId.ToString(System.Globalization.CultureInfo.InvariantCulture), "map", "rocks");
+            ulong seed = CelestialSeed.DeriveTile(unchecked((ulong)layer.Header.GenerationSeed), tile.tileId, "map", "rocks");
             for (int i = 0; i < count; i++)
             {
                 var selected = Pick(candidates, CelestialParameterSampler.SampleDouble(DoubleParameterSpec.Uniform(0, 1), seed + (ulong)i));
@@ -142,9 +142,12 @@ namespace PioneerFramework.Celestial
             var candidates = soils.GetValue(d, static p => p.Soils.OrderBy(r => r.Id, StringComparer.Ordinal).Select(r => (Definition<TerrainDef>(r.Id), r.Weight)).ToArray());
             double total = 0;
             foreach (var candidate in candidates) total += candidate.Weight / (.05 + Math.Abs(candidate.Terrain.fertility - fertility));
-            uint hash = unchecked((uint)((CelestialSurfaceLayer)map.Tile.Layer).Header.GenerationSeed * 747796405u + (uint)map.Tile.tileId * 2891336453u + (uint)c.x * 277803737u + (uint)c.z * 1597334677u);
-            hash ^= hash >> 16; hash *= 2246822519u; hash ^= hash >> 13;
-            double remaining = hash / ((double)uint.MaxValue + 1) * total;
+            // 2026-11-03 P4: the hand-written 32-bit hash was retired in favour of CelestialSeed's standard
+            // derivation. Soil distribution intentionally changes versus older builds and is frozen by
+            // CelestialMapDeterminismTests (deterministic, not a regression).
+            ulong soilWord = CelestialSeed.DeriveCell(unchecked((ulong)((CelestialSurfaceLayer)map.Tile.Layer).Header.GenerationSeed),
+                map.Tile.tileId, c.x, c.z, "map", "soil");
+            double remaining = (soilWord >> 11) / 9007199254740991d * total;
             foreach (var candidate in candidates)
             {
                 remaining -= candidate.Weight / (.05 + Math.Abs(candidate.Terrain.fertility - fertility));

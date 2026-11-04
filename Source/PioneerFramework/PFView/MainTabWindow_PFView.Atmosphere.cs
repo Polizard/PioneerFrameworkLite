@@ -15,9 +15,12 @@ namespace PioneerFramework
     /// 三件各自在哪：
     /// · **天空** = PFView 相机自己的 `clear color`（这个场景的"天空盒"就是它）⇒ 每帧按 α 混向 `atmosphereColor`。
     ///   为什么用 clear color 而不是整帧叠色：**天空要满 α、物体只要 0.3**（用户口径）—— 换个方式就得做像素掩码，不值当。
-    /// · **壳** = 半径 `R + 厚度/2` 的**双面半透明球**（复用现成球网格），受光 ⇒ 昼夜分界与星球同一出处、免费。
+    /// · **壳** = 半径 `R + 视觉壳厚度/2`（= `R + 视觉壳高度`，XML 的 `shellHeightMeters`）的**双面半透明球**（复用现成球网格），受光 ⇒ 昼夜分界与星球同一出处、免费。
     /// · **雾** = 整帧一层 `α × 0.3` 的大气色（`DrawAtmosphereHaze`，挂在画面之上、HUD 之下）。
     ///
+    /// ⚠ 两个厚度字段语义不同（2026-11-03 P2）：**壳/壳半径/壳偏移**读 `atmosphereVisualThickness`
+    ///   （视觉壳厚度 = 壳高度 × 2）；**天空 α / 高度阈值 / 大气顶判定**读 `atmosphereThickness`
+    ///   （物理大气顶 = `air.topAltitude`）。两者数值可以不等，不能互换。
     /// ⚠ 纯表现：不动大气线（L1）的任何物理（阻力/包线/掩码/准入都读 ρ₀/H/厚度，不读颜色），
     ///   也不进烘焙（天空与相机高度相关，静态图里表达不了）。
     /// ⚠ 太阳方向**只用** `sunLight`（PFView 场景那盏方向光）—— 与星球明暗面同一出处，不另算太阳。
@@ -31,7 +34,7 @@ namespace PioneerFramework
         /// 本帧**不画壳**的天体 id（-1 = 都画）。规则（用户 2026-10-10）：
         /// 「大气那个薄层不应该在观察的 Group 位于薄层下时显示，只需要按照高度调整天空盒的颜色就好了」
         /// —— 人已经在大气里了，再套一个"从外面看的球壳"是错的；此时**只有天空盒随高度变蓝**。
-        /// 判据：**观察中的编队**的高度 &lt; 壳的高度（= 大气厚度的一半）。
+        /// 判据：**观察中的编队**的高度 &lt; 壳的高度（= **视觉壳厚度**的一半 = `shellHeightMeters`）。
         /// </summary>
         private int shellHiddenBodyId = -1;
 
@@ -71,7 +74,7 @@ namespace PioneerFramework
             {
                 if (body == null) continue;
                 if (body.atmosphereThickness <= 0.0 || body.atmosphereRho0 <= 0.0 || body.atmosphereScaleHeight <= 0.0)
-                    continue;                                    // 没大气（月球）⇒ 天空不变蓝、不画壳
+                    continue;                                    // 物理大气顶/密度剖面缺失（月球）⇒ 天空不变蓝；壳另看 atmosphereVisualThickness
 
                 DVector3 bodyPosition = GetCelestialRenderPosition(mgr, body.bodyId, tick);
                 Vector3 bodyPos = AbsToView(bodyPosition, origin);
@@ -103,13 +106,13 @@ namespace PioneerFramework
             if (watched != null)
             {
                 var wb = GetCelestialRenderBody(mgr, watched.CelestialBodyId, tick);
-                if (wb != null && wb.atmosphereThickness > 0.0)
+                if (wb != null && wb.atmosphereVisualThickness > 0.0)
                 {
                     Vector3 gView = AbsToView(GetGroupPosAbs(watched, tick), origin);
                     Vector3 bView = AbsToView(GetCelestialRenderPosition(mgr, wb.bodyId, tick), origin);
                     float rView = Mathf.Max((float)(wb.radius * MetersToView), MinBodyVisRadius);
                     float groupAltMeters = (Vector3.Distance(gView, bView) - rView) / MetersToView;
-                    if (PFViewAtmosphere.ShellHiddenForGroupAltitude(groupAltMeters, wb.atmosphereThickness))
+                    if (PFViewAtmosphere.ShellHiddenForGroupAltitude(groupAltMeters, wb.atmosphereVisualThickness))
                         shellHiddenBodyId = wb.bodyId;
                 }
             }
@@ -131,16 +134,16 @@ namespace PioneerFramework
                     // 深度余量读数（2026-10-10"壳一闪一闪"的判据）：δz 与该处"壳离地高度"的比值，< 1 就是抢深度。
                     float deltaZ = PFViewAtmosphere.DepthResolution(bestDistView,
                         renderCamera != null ? renderCamera.nearClipPlane : 0.01f);
-                    float shellOffset = b != null ? (float)(b.atmosphereThickness * 0.5) * MetersToView : 0f;
+                    float shellOffset = b != null ? (float)(b.atmosphereVisualThickness * 0.5) * MetersToView : 0f;
                     float margin = deltaZ > 1e-6f && shellOffset > 0f ? shellOffset / deltaZ : float.MaxValue;
-                    Log.Message($"[PFView·大气] body={(b != null ? b.defName : bestBody.ToString())} 相机 h={bestAltKm:F1} km｜日照 {bestSunlit:F2} ⇒ 天空 α={bestAlpha:P1}（物体雾 {bestAlpha * PFViewAtmosphere.ObjectHazeFactor:P1}）· 壳半径 ×{(b != null ? PFViewAtmosphere.ShellRadiusFactor(b.radius, b.atmosphereThickness) : 1f):F3}（= R + {(b != null ? b.atmosphereThickness * 0.5 / 1000.0 : 0.0):F0} km）· 深度 δz≈{deltaZ * 10f / 1000f:F1} km（余量 ×{// view 单位 → 米（×10）→ km
+                    Log.Message($"[PFView·大气] body={(b != null ? b.defName : bestBody.ToString())} 相机 h={bestAltKm:F1} km｜日照 {bestSunlit:F2} ⇒ 天空 α={bestAlpha:P1}（物体雾 {bestAlpha * PFViewAtmosphere.ObjectHazeFactor:P1}）· 壳半径 ×{(b != null ? PFViewAtmosphere.ShellRadiusFactor(b.radius, b.atmosphereVisualThickness) : 1f):F3}（= R + {(b != null ? b.atmosphereVisualThickness * 0.5 / 1000.0 : 0.0):F0} km）· 深度 δz≈{deltaZ * 10f / 1000f:F1} km（余量 ×{// view 单位 → 米（×10）→ km
                         margin:F1}）");
                 }
             }
         }
 
         /// <summary>
-        /// 大气壳：半径 = `R + 大气厚度/2`（XML 定义）· **覆盖全球**（受光半球 + 夜半球都画）。
+        /// 大气壳：半径 = `R + 视觉壳厚度/2`（= R + 视觉壳高度，XML `shellHeightMeters`）· **覆盖全球**（受光半球 + 夜半球都画）。
         /// 口径演化：22:56"厚度一半的半透明壳" ⇒ 23:08"（首版不透明）改成只画受光半球" ⇒
         /// **23:2x 用户："我觉得半透明大气壳覆盖全球也对"** ⇒ 半球网格画两次：朝太阳的用昼侧材质、
         /// 背太阳的用夜侧更淡的材质（alpha = `PFViewAtmosphere.NightShellAlpha`；给 0 = 夜侧没有壳，给同值 = 不分昼夜）。
@@ -149,13 +152,13 @@ namespace PioneerFramework
         private void DrawAtmosphereShell(CelestialBodyInfo body, Vector3 renderPos, float renderR, Vector3 toSun)
         {
             if (body.bodyId == shellHiddenBodyId) return;   // 人已经在壳下（大气里）⇒ 不画壳，只靠天空盒（用户口径）
-            if (atmosphereDayCapMesh == null || body.atmosphereThickness <= 0.0) return;
+            if (atmosphereDayCapMesh == null || body.atmosphereVisualThickness <= 0.0) return;
             Material? dayMat = GetAtmosphereShellMaterial(body, false);
             Material? nightMat = GetAtmosphereShellMaterial(body, true);
             if (dayMat == null) return;
 
             float shellR = Mathf.Max(renderR, MinBodyVisRadius)
-                         * PFViewAtmosphere.ShellRadiusFactor(body.radius, body.atmosphereThickness);
+                         * PFViewAtmosphere.ShellRadiusFactor(body.radius, body.atmosphereVisualThickness);
             Vector3 sun = toSun.sqrMagnitude > 1e-9f ? toSun.normalized : Vector3.up;
 
             // 网格的极在 +Y ⇒ 转到"相机→太阳"= 受光半球；转到反向 = 夜半球（两个半球拼起来就是整球）

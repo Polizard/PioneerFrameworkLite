@@ -13,7 +13,7 @@ namespace PioneerFramework.Tests;
 public class CelestialWorldGenerationTests
 {
     [Fact]
-    public void LatitudeProfileRunsExplicitGlobalStepsOnceOnTheSelectedRootOnly()
+    public void ParameterizedProfileRunsExplicitGlobalStepsOnceOnTheSelectedRootOnly()
     {
         using var fixture = new CelestialWorldBootstrapTests.Fixture();
         var samples = new List<(string Name, int Value, bool Root)>();
@@ -36,15 +36,71 @@ public class CelestialWorldGenerationTests
         Assert.Single(samples);
     }
 
-    [Theory]
-    [InlineData(75, true, "PF_ProbePolar", Hilliness.Flat)]
-    [InlineData(-75, false, "PF_ProbePolar", Hilliness.Flat)]
-    [InlineData(74.9, false, "PF_ProbePrimary", Hilliness.SmallHills)]
-    [InlineData(-74.9, true, "PF_ProbeSecondary", Hilliness.Flat)]
-    public void ProfileKeepsExistingPolarBoundaryAndExplicitBiomeHilliness(double latitude, bool secondary, string biome, Hilliness hills)
+    [Fact]
+    public void ParameterizedNativeStepsRunOnceAndOnlyFromWorldGenSteps()
     {
         using var fixture = new CelestialWorldBootstrapTests.Fixture();
-        var selection = fixture.Profile.ToProfile().Value.SelectBiome(latitude, secondary);
+        var samples = new List<(string Name, int Value, bool Root)>();
+        var rivers = new WorldGenStepDef { defName = "Rivers", order = 1, worldGenStep = new RecordingStep("rivers", samples, fixture.Primary, false) };
+        var lakes = new WorldGenStepDef { defName = "Lakes", order = 2, worldGenStep = new RecordingStep("lakes", samples, fixture.Primary, false) };
+        var mutators = new WorldGenStepDef { defName = "Mutators", order = 3, worldGenStep = new RecordingStep("mutators", samples, fixture.Primary, false) };
+        fixture.Profile.worldGenSteps = new List<WorldGenStepDef> { rivers, lakes, mutators };
+        fixture.Profile.terrain.allowRivers = true; fixture.Profile.terrain.allowLakes = true;
+        fixture.Native.AddDefs(rivers, lakes, mutators);
+        riversImplicitCalls = lakesImplicitCalls = 0;
+        var harmony = new Harmony("PFL.Tests.ParameterizedSingleNativeChannel");
+        try
+        {
+            harmony.Patch(NativeGenerateFresh(typeof(WorldGenStep_Rivers)), prefix: new(typeof(CelestialWorldGenerationTests), nameof(CountImplicitRiver)));
+            harmony.Patch(NativeGenerateFresh(typeof(WorldGenStep_Lakes)), prefix: new(typeof(CelestialWorldGenerationTests), nameof(CountImplicitLake)));
+            using var scope = CelestialWorldBootstrap.Begin(fixture.System, 42, CelestialWorldBootstrapTests.Fixture.Connect).Value;
+            fixture.Native.Grid.GenerateFreshWorld();
+            var root = (CelestialSurfaceLayer)fixture.Native.Grid.Surface;
+            WorldGenerator.GeneratePlanetLayer(root, "single-native-channel", 1);
+            Assert.True(scope.Complete().Success);
+            // 唯一通道：隐式 new WorldGenStep_Rivers()/Lakes() 已删除，只能由 worldGenSteps 触发录制步骤。
+            Assert.Equal(0, riversImplicitCalls);
+            Assert.Equal(0, lakesImplicitCalls);
+            Assert.Equal(3, samples.Count);
+            Assert.Single(samples, sample => sample.Name == "rivers");
+            Assert.Single(samples, sample => sample.Name == "lakes");
+            Assert.Single(samples, sample => sample.Name == "mutators");
+        }
+        finally { harmony.UnpatchAll(harmony.Id); }
+    }
+
+    [Fact]
+    public void ParameterizedProfileRejectsNativeTerrainAndHydrologyStepMismatch()
+    {
+        CelestialPlanetTerrainConfiguration Terrain(bool rivers = false, bool lakes = false) => new(allowRivers: rivers, allowLakes: lakes,
+            biomeRules: new[] { new CelestialPlanetBiomeRule("fallback", "plain", fallback: true) });
+        CelestialGenerationProfile Profile(string[] steps, bool rivers = false, bool lakes = false) => new("steps",
+            CelestialBiomeGenerationMode.Parameterized, 0, 0, 0, steps, Array.Empty<string>(), Terrain(rivers, lakes));
+        var nativeTerrain = Assert.Throws<ArgumentException>(() => Profile(new[] { "Terrain" }));
+        Assert.Contains("ParameterizedNativeTerrainForbidden", nativeTerrain.Message);
+        Assert.Contains("RiverStepMismatch", Assert.Throws<ArgumentException>(() => Profile(Array.Empty<string>(), rivers: true)).Message);
+        Assert.Contains("RiverStepMismatch", Assert.Throws<ArgumentException>(() => Profile(new[] { "Rivers" })).Message);
+        Assert.Contains("LakeStepMismatch", Assert.Throws<ArgumentException>(() => Profile(Array.Empty<string>(), lakes: true)).Message);
+        Assert.Contains("LakeStepMismatch", Assert.Throws<ArgumentException>(() => Profile(new[] { "Lakes" })).Message);
+        Assert.NotNull(Profile(new[] { "Rivers", "Lakes" }, rivers: true, lakes: true));
+    }
+
+    private static int riversImplicitCalls, lakesImplicitCalls;
+    private static void CountImplicitRiver(WorldGenStep __instance) { if (__instance is WorldGenStep_Rivers) riversImplicitCalls++; }
+    private static void CountImplicitLake(WorldGenStep __instance) { if (__instance is WorldGenStep_Lakes) lakesImplicitCalls++; }
+    private static System.Reflection.MethodInfo NativeGenerateFresh(Type stepType) =>
+        AccessTools.Method(stepType, nameof(WorldGenStep.GenerateFresh))
+        ?? throw new InvalidOperationException("Native hydrology step GenerateFresh not found: " + stepType.Name);
+
+    [Theory]
+    [InlineData(75, .9, "PF_ProbePolar", Hilliness.Flat)]
+    [InlineData(-75, .1, "PF_ProbePolar", Hilliness.Flat)]
+    [InlineData(74.9, .1, "PF_ProbePrimary", Hilliness.SmallHills)]
+    [InlineData(-74.9, .9, "PF_ProbeSecondary", Hilliness.Flat)]
+    public void ProfileKeepsPolarBoundaryWeightedCandidatesAndPerBiomeHilliness(double latitude, double pick, string biome, Hilliness hills)
+    {
+        using var fixture = new CelestialWorldBootstrapTests.Fixture();
+        var selection = CelestialPlanetTerrain.SelectBiome(fixture.Profile.ToProfile().Value.Terrain, 0, 0, 0, latitude, .5, pick);
         Assert.Equal(biome, selection.BiomeId);
         Assert.Equal((int)hills, selection.Hilliness);
     }
@@ -100,16 +156,16 @@ public class CelestialWorldGenerationTests
     [Fact]
     public void NativeProfileRetainsOfficialStepSeedsAndRunsGlobalStepsOnlyForTheRoot()
     {
-        using var fixture = new CelestialWorldBootstrapTests.Fixture();
+        var fillBiome = new BiomeDef { defName = "PF_ProbeFillBiome", shortHash = 63004 };
         var samples = new List<(string Name, int Value, bool Root)>();
-        var first = new WorldGenStepDef { defName = "PF_ProbeNativeFirst", order = 1, worldGenStep = new RecordingStep("first", samples, fixture.Primary, true) };
-        var second = new WorldGenStepDef { defName = "PF_ProbeNativeSecond", order = 2, worldGenStep = new RecordingStep("second", samples, fixture.Primary, false) };
-        var rootOnly = new WorldGenStepDef { defName = "PF_ProbeNativeRootOnly", order = 3, worldGenStep = new RecordingStep("root", samples, fixture.Primary, false) };
-        fixture.Native.AddDefs(first, second, rootOnly);
-        fixture.Profile.mode = CelestialBiomeGenerationMode.VanillaSurface;
-        fixture.Profile.worldGenSteps = new() { first, second };
-        fixture.Profile.rootOnlySteps = new() { rootOnly };
-        using var scope = CelestialWorldBootstrap.Begin(fixture.System, 42, CelestialWorldBootstrapTests.Fixture.Connect).Value;
+        var first = new WorldGenStepDef { defName = "PF_ProbeNativeFirst", order = 1, worldGenStep = new RecordingStep("first", samples, fillBiome, true) };
+        var second = new WorldGenStepDef { defName = "PF_ProbeNativeSecond", order = 2, worldGenStep = new RecordingStep("second", samples, fillBiome, false) };
+        var rootOnly = new WorldGenStepDef { defName = "PF_ProbeNativeRootOnly", order = 3, worldGenStep = new RecordingStep("root", samples, fillBiome, false) };
+        using var fixture = new CelestialWorldBootstrapTests.Fixture(biomeMode: CelestialBiomeGenerationMode.VanillaSurface,
+            worldGenSteps: new[] { first, second }, rootOnlySteps: new[] { rootOnly });
+        var started = CelestialWorldBootstrap.Begin(fixture.System, 42, CelestialWorldBootstrapTests.Fixture.Connect);
+        Assert.True(started.Success, string.Join("|", started.Errors.Select(error => error.Code + ":" + error.Detail)));
+        using var scope = started.Value;
         fixture.Native.Grid.GenerateFreshWorld();
         var root = (CelestialSurfaceLayer)fixture.Native.Grid.Surface;
         WorldGenerator.GeneratePlanetLayer(root, "native-profile", 1);
@@ -135,17 +191,18 @@ public class CelestialWorldGenerationTests
     [Fact]
     public void FailedNativeStepCannotPublishAReadyHeaderEvenWhenTilesAlreadyExist()
     {
-        using var fixture = new CelestialWorldBootstrapTests.Fixture();
+        var fillBiome = new BiomeDef { defName = "PF_ProbeFillBiome", shortHash = 63004 };
         var samples = new List<(string Name, int Value, bool Root)>();
-        var first = new WorldGenStepDef { defName = "PF_ProbeFill", order = 1, worldGenStep = new RecordingStep("fill", samples, fixture.Primary, true) };
+        var first = new WorldGenStepDef { defName = "PF_ProbeFill", order = 1, worldGenStep = new RecordingStep("fill", samples, fillBiome, true) };
         var second = new WorldGenStepDef { defName = "PF_ProbeFail", order = 2, worldGenStep = new ThrowingStep() };
-        fixture.Native.AddDefs(first, second);
-        fixture.Profile.mode = CelestialBiomeGenerationMode.VanillaSurface;
-        fixture.Profile.worldGenSteps = new() { first, second };
-        using var scope = CelestialWorldBootstrap.Begin(fixture.System, 42, CelestialWorldBootstrapTests.Fixture.Connect).Value;
+        using var fixture = new CelestialWorldBootstrapTests.Fixture(biomeMode: CelestialBiomeGenerationMode.VanillaSurface,
+            worldGenSteps: new[] { first, second });
+        var started = CelestialWorldBootstrap.Begin(fixture.System, 42, CelestialWorldBootstrapTests.Fixture.Connect);
+        Assert.True(started.Success, string.Join("|", started.Errors.Select(error => error.Code + ":" + error.Detail)));
+        using var scope = started.Value;
         fixture.Native.Grid.GenerateFreshWorld();
         var root = (CelestialSurfaceLayer)fixture.Native.Grid.Surface;
-        var generated = CelestialWorldBootstrap.Generate(root, fixture.Profile.ToProfile().Value);
+        var generated = CelestialWorldGeneration.Generate(root, fixture.Profile.ToProfile().Value);
         Assert.False(generated.Success);
         Assert.Equal(root.TilesCount, root.Tiles.Count);
         Assert.Equal(CelestialSurfaceState.Failed, root.Header.State);

@@ -167,6 +167,6 @@ python tools/celestial_payload.py encode orbit.json --output orbit.base64
 
 将纬度带天体选为主地表时，可用 biome profile 的 `rootOnlySteps` 明确列出 Factions/Roads/Features 等原生全局步骤；这些步骤只在主地表执行，额外同模板天体不会重复执行。
 
-框架存档现为 v2，默认解析提供者检查点载荷 v2；需要新建测试世界，v1 明确拒绝。`failurePolicy` 默认 BlockBody，显式 DisableOptional 仅隔离安全的非关键闭包；已停用状态和原始载荷保存后不会自动激活。预测除 BasedOn 外还带 Source，调用者须验证 ProviderId、契约版本及 PredictionSchemaVersion（当前为1）。
+框架存档现为 v3，旧 v1/v2 明确拒绝（`UnsupportedSaveVersion`，不迁移、不重写旧档）；默认解析提供者检查点载荷 v2。`failurePolicy` 默认 BlockBody，显式 DisableOptional 仅隔离安全的非关键闭包；已停用状态和原始载荷保存后不会自动激活。预测除 BasedOn 外还带 Source，调用者须验证 ProviderId、契约版本及 PredictionSchemaVersion（当前为1）。
 
 `SampleCreation.CreateProbe` 的可选 radiusMeters 参数演示纯数据 ParameterOverrides。也可用 `new CelestialParameterOverride("shape", "radiusMeters", Min: 250000, Max: 650000)` 覆盖范围；参数名必须对应组件的显式采样键。内建已知配置版本严格拒绝缺失、拼错及重复字段，原始错误载荷保留。

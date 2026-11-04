@@ -84,15 +84,18 @@ namespace PioneerFramework.Celestial
         public double MaximumAbsoluteLatitude { get; }
         public double MinimumRoughness { get; }
         public double MaximumRoughness { get; }
+        // 可选的地形起伏覆盖（RimWorld Hilliness 的 1..5 数值）；null 表示沿用 MountainScore/Roughness 推导。纯 API 不引用 RimWorld 枚举。
+        public int? Hilliness { get; }
         public CelestialPlanetBiomeRule(string key, string biomeId, int priority = 0, double weight = 1, bool fallback = false,
             double minimumTemperatureCelsius = -273.15, double maximumTemperatureCelsius = 10000,
             double minimumRainfallMillimeters = 0, double maximumRainfallMillimeters = 1000000,
             double minimumElevationMeters = -200000, double maximumElevationMeters = 200000,
             double minimumAbsoluteLatitude = 0, double maximumAbsoluteLatitude = 90,
-            double minimumRoughness = 0, double maximumRoughness = 1)
+            double minimumRoughness = 0, double maximumRoughness = 1, int? hilliness = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(key); ArgumentException.ThrowIfNullOrWhiteSpace(biomeId);
             CelestialPlanetTerrainConfiguration.Domain(weight, double.Epsilon, 1000000, nameof(weight));
+            if (hilliness.HasValue && (hilliness.Value < 1 || hilliness.Value > 5)) throw new ArgumentOutOfRangeException(nameof(hilliness));
             void Interval(double min, double max, double lower, double upper)
             { CelestialPlanetTerrainConfiguration.Domain(min, lower, upper, nameof(min)); CelestialPlanetTerrainConfiguration.Domain(max, min, upper, nameof(max)); }
             Interval(minimumTemperatureCelsius, maximumTemperatureCelsius, -273.15, 10000);
@@ -105,6 +108,7 @@ namespace PioneerFramework.Celestial
             MinimumElevationMeters = minimumElevationMeters; MaximumElevationMeters = maximumElevationMeters;
             MinimumAbsoluteLatitude = minimumAbsoluteLatitude; MaximumAbsoluteLatitude = maximumAbsoluteLatitude;
             MinimumRoughness = minimumRoughness; MaximumRoughness = maximumRoughness;
+            Hilliness = hilliness;
             if (fallback && (minimumTemperatureCelsius != -273.15 || maximumTemperatureCelsius != 10000 || minimumRainfallMillimeters != 0 ||
                 maximumRainfallMillimeters != 1000000 || minimumElevationMeters != -200000 || maximumElevationMeters != 200000 ||
                 minimumAbsoluteLatitude != 0 || maximumAbsoluteLatitude != 90 || minimumRoughness != 0 || maximumRoughness != 1))
@@ -151,6 +155,20 @@ namespace PioneerFramework.Celestial
                 ((1 - configuration.Roughness) * land + configuration.Roughness * Field(x, y, z, configuration.ContinentScale * 4, seed, 3));
             return new(elevation, rough, configuration.MountainWeight * (Field(x, y, z, configuration.ContinentScale * 2, seed, 4) + 1) / 2,
                 (Field(x, y, z, configuration.ContinentScale * 3, seed, 5) + 1) / 2, (Field(x, y, z, configuration.ContinentScale, seed, 6) + 1) / 2);
+        }
+        /// <summary>
+        /// 降雨/湿度的唯一派生公式：有显式 climate 用 climate 值，否则用 profile 的 Rainfall/Swampiness；
+        /// 地形湿度把场值围绕 1 缩放（0.5+moisture）。生成 tile 与运行时环境采样必须共用此函数。
+        /// </summary>
+        public static (double RainfallMillimeters, double Humidity) SurfaceMoisture(CelestialPlanetTerrainConfiguration? terrain,
+            double fallbackRainfallMillimeters, double fallbackSwampiness, double moisture)
+        {
+            CelestialPlanetTerrainConfiguration.Domain(fallbackRainfallMillimeters, 0, 1000000 / 1.5, nameof(fallbackRainfallMillimeters));
+            CelestialPlanetTerrainConfiguration.Domain(fallbackSwampiness, 0, 1, nameof(fallbackSwampiness));
+            CelestialPlanetTerrainConfiguration.Domain(moisture, 0, 1, nameof(moisture));
+            double factor = .5 + moisture;
+            return ((terrain?.Climate?.RainfallMillimeters ?? fallbackRainfallMillimeters) * factor,
+                Math.Clamp((terrain?.Climate?.Humidity ?? fallbackSwampiness) * factor, 0, 1));
         }
         public static bool[] SelectOceanTiles(CelestialPlanetTerrainConfiguration configuration, double[] elevations)
         {

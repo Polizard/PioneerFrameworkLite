@@ -25,7 +25,8 @@ namespace PioneerFramework.Celestial
     /// <summary>共同发布边界上的独立快照。配置、状态、清单与物理成员关系均显式保存。</summary>
     public sealed record CelestialSaveDocument
     {
-        public const int CurrentVersion = 2;
+        // v3：LatitudeBands 模式移除后 BiomeGeneration 配置载荷 JSON 不再向后兼容；v1/v2 文档一律明确拒绝，不迁移、不改写旧档。
+        public const int CurrentVersion = 3;
         public int FormatVersion { get; init; }
         public int GenerationAlgorithmVersion { get; init; }
         public ulong WorldSeed { get; init; }

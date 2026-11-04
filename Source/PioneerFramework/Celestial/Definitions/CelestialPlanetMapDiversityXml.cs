@@ -13,7 +13,7 @@ namespace PioneerFramework.Celestial
         protected abstract Def? Reference { get; }
         internal CelestialWeightedReference Resolve(CelestialGenerationContext? context, string group)
         {
-            var s = new CelestialPlanetParameterSampler(parameters, context, "diversity." + group + "." + Reference?.defName + ".");
+            var s = new CelestialParameterSamplerXml(parameters, context, "diversity." + group + "." + Reference?.defName + ".");
             var result = new CelestialWeightedReference(Reference?.defName ?? "", s.Get(nameof(weight), weight, double.Epsilon, 1000000)); s.Complete(); return result;
         }
     }
@@ -52,7 +52,7 @@ namespace PioneerFramework.Celestial
                 plants.Any(r => r.def?.plant == null || r.def.category != ThingCategory.Plant) || animals.Any(r => r.def?.race?.race?.Animal != true) ||
                 soils.Any(r => r.def == null || r.def.IsWater || r.def.IsRock || !float.IsFinite(r.def.fertility) || r.def.fertility < 0))
                 throw new ArgumentException("Invalid native geology or ecology reference.");
-            var s = new CelestialPlanetParameterSampler(parameters, context, "diversity.");
+            var s = new CelestialParameterSamplerXml(parameters, context, "diversity.");
             CelestialWeightedReference[] Refs<T>(List<T> values, string name) where T : CelestialPlanetReferenceXml => values.Select(r => r.Resolve(context, name)).ToArray();
             var result = new CelestialPlanetMapDiversity(Refs(rocks, nameof(rocks)), Refs(minerals, nameof(minerals)), Refs(soils, nameof(soils)),
                 Refs(plants, nameof(plants)), Refs(animals, nameof(animals)), Refs(weather, nameof(weather)), Refs(conditions, nameof(conditions)), Refs(incidents, nameof(incidents)),

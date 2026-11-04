@@ -9,7 +9,7 @@ using System.Text.Json.Serialization;
 
 namespace PioneerFramework.Celestial
 {
-    /// <summary>Wire v2: bounded Brotli stream, ordered 256 KiB chunks, independent SHA-256 integrity.</summary>
+    /// <summary>Wire v3: bounded Brotli stream, ordered 256 KiB chunks, independent SHA-256 integrity.</summary>
     internal static class CelestialSaveEnvelope
     {
         internal const int ChunkBytes = 256 * 1024;
@@ -35,7 +35,7 @@ namespace PioneerFramework.Celestial
                 var data = bytes.Slice(offset, Math.Min(ChunkBytes, bytes.Length - offset)).ToArray();
                 chunks.Add(new(chunks.Count, Hash(data), data));
             }
-            return JsonSerializer.SerializeToUtf8Bytes(new Envelope(2, "brotli", length, "sha256", Hash(bytes), chunks.Count, chunks.ToArray()), Options);
+            return JsonSerializer.SerializeToUtf8Bytes(new Envelope(CelestialSaveDocument.CurrentVersion, "brotli", length, "sha256", Hash(bytes), chunks.Count, chunks.ToArray()), Options);
         }
 
         internal static CelestialSaveDocument Decode(ReadOnlyMemory<byte> payload, JsonSerializerOptions payloadOptions)
@@ -43,7 +43,7 @@ namespace PioneerFramework.Celestial
             if (payload.Length > MaximumEncodedBytes) throw new InvalidDataException("Encoded save exceeds the limit.");
             RejectDuplicates(payload.Span);
             var value = JsonSerializer.Deserialize<Envelope>(payload.Span, Options) ?? throw new JsonException("Missing envelope.");
-            if (value.FormatVersion != 2 || value.Compression != "brotli" || value.HashScheme != "sha256" ||
+            if (value.FormatVersion != CelestialSaveDocument.CurrentVersion || value.Compression != "brotli" || value.HashScheme != "sha256" ||
                 value.DecodedLength <= 0 || value.DecodedLength > MaximumDecodedBytes || value.ChunkCount <= 0 ||
                 value.ChunkCount > MaximumChunkCount || value.Chunks == null || value.Chunks.Length != value.ChunkCount)
                 throw new InvalidDataException("Invalid save envelope.");

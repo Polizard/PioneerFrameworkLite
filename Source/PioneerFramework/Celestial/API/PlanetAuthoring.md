@@ -1,6 +1,6 @@
 # 行星参数作者契约
 
-适用 RimWorld 1.7，框架外层存档 v2。入口见 [API](README.md)、[六类模板与测试面板](PlanetKinds.md)。本页对应实际组件消费者；category/tags/bodyType 是开放元数据，能力来自显式组件。省略 atmosphere、environment、surface、biomes、maps 不会补出类地环境、地图或伤害。视觉球体可以存在于无 surface 能力的巨行星。
+适用 RimWorld 1.7，框架外层存档 v3（v1/v2 旧档明确拒绝，不迁移，需要新世界）。入口见 [API](README.md)、[六类模板与测试面板](PlanetKinds.md)。本页对应实际组件消费者；category/tags/bodyType 是开放元数据，能力来自显式组件。省略 atmosphere、environment、surface、biomes、maps 不会补出类地环境、地图或伤害。视觉球体可以存在于无 surface 能力的巨行星。
 
 ## 解析、范围和替换
 
@@ -71,6 +71,8 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 
 `CelestialEnvironmentProfileDef` 的 `dayLengthTicks=60000`、`primaryLightReference="primaryLight"`、`vacuumBiomes=[]` 保留原字段；dayLength 必须能表示为正有限 float。添加 climate 或 exposure 显式启用 environment 配置 v2，省略两者保留 v1 字节和原生日历。下列数字通过 `climate.FIELD` / `exposure.FIELD` 参数路径覆盖；曲线、模式和布尔保持 typed。
 
+**自转周期只有一个优先级**（2026-11-03 P2 数据源单一化）：**物理 motion 的 `rotation.periodSeconds`（权威）→ environment 的 `dayLengthTicks`（无物理绑定的兼容 fallback）→ 0**。物理实例表、视觉描述缓存与视图投影都走同一份解析（`CelestialDayLength`），不再“渲染读 environment、物理读 motion”。两者同时存在时**必须相等**（已发货内容有回归测试锁死）；修改自转周期应改 motion，`environment.dayLengthTicks` 只用于没有物理绑定的天体，不要把它当第二真源。
+
 | climate 字段 | 默认；支持域/单位 | 消费者 |
 | --- | --- | --- |
 | mode | Authored；Authored / CommittedIllumination | 温度模式选择。存在物理绑定的显式 climate 在两模式下均以同一已提交快照取得光照 |
@@ -83,9 +85,11 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 | illuminationTemperatureCelsius | 50；[0,10000] °C | 已提交方向光加热 |
 | lightMultiplier | 1；[0,1e12] | 光强/加热；原生光照输出夹到[0,1] |
 | windSpeed | 1；[0,1e6]原生强度 | 活跃大气才有风；进入原生WindManager基准，天气/条件/风源修正仍保留 |
-| rainfallMillimeters / humidity | 1000 / .5；[0,1e6/1.5] mm / [0,1] | 地表湿度/群落；地形湿度可乘(.5+moisture)，原生雨量写入保持有限 |
+| rainfallMillimeters / humidity | 1000 / .5；[0,1e6/1.5] mm / [0,1] | 地表降雨/湿度由 `CelestialPlanetTerrain.SurfaceMoisture` 唯一派生（见下文）；地形湿度乘(.5+moisture)，原生雨量写入保持有限 |
 
 查询 `SampleSurface(new CelestialSurfaceEnvironmentQuery(displayTicks, longitudeDegrees, latitudeDegrees, altitudeMeters, biomeId))` 的全部数值必须有限，纬度[-90,90]；暴露单独开启、没有气候/大气的实例也检查这些条件。原生桥按实际层头的 instanceId 查询，查询不会创建地表或地图。结果的 nullable 压强/O2/温度/重力表示未知；不得填入类地默认值。坐标、群落、显示时间和已提交物理时刻应与样本一起记录。
+
+生成 tile 与运行时 `SampleSurface` 共用唯一降雨/湿度公式 `CelestialPlanetTerrain.SurfaceMoisture(terrain, fallbackRainfallMillimeters, fallbackSwampiness, moisture)`：`rain = (terrain.Climate?.RainfallMillimeters ?? fallbackRainfallMillimeters) * (.5+moisture)`，`humidity = Clamp((terrain.Climate?.Humidity ?? fallbackSwampiness) * (.5+moisture), 0, 1)`。fallback 分别取 biomes profile 的 `rainfall` / `swampiness`；terrain 无显式 climate 时仍应用同一湿度场。三个参数必须有限且处于各自域内。
 
 | exposure 字段 | 默认；支持域 | 消费者 |
 | --- | --- | --- |
@@ -102,7 +106,9 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 
 ## 地形、地图、候选与外观
 
-`CelestialBiomeProfileDef.mode=Parameterized` 需要显式 terrain 与一个无条件 fallback；组件设置 `useEnvironmentClimate=true`，绑定同次冻结的 environment climate。旧 LatitudeBands/VanillaSurface 和旧实例保留。`terrain` 启用 biomes v2，`diversity` 启用 maps v2；surface 配置仍v1，环境/空气/视觉组件状态schema均保持原版本1。
+`CelestialBiomeProfileDef.mode=Parameterized` 需要显式 terrain 与一个无条件 fallback；组件设置 `useEnvironmentClimate=true`，绑定同次冻结的 environment climate。唯一纬度带做法是 Parameterized 的 `minimum/maximumAbsoluteLatitude` 规则配合每条规则的显式 `hilliness`（见下表）；LatitudeBands 生成模式已移除。Parameterized 的原生步骤只有 `worldGenSteps` 一个通道：其中禁止 `Terrain`（原生地形会重选 biome、覆盖参数化结果），Rivers/Lakes 步骤必须与 `terrain.allowRivers/allowLakes` 成对出现（错误码 `ParameterizedNativeTerrainForbidden` / `RiverStepMismatch` / `LakeStepMismatch`）。`terrain` 启用 biomes v2，`diversity` 启用 maps v2；surface 配置仍v1，环境/空气/视觉组件状态schema均保持原版本1。
+
+**真空声明必须与 Parameterized 生成集合一致**（2026-11-03 P4 跨组件校验）：Parameterized terrain 能生成的 biome 集合（`terrain.biomeRules/li/biome` 加非空 `terrain.oceanBiome`）必须与同一天体 `environment.vacuumBiomes` 的声明一致——`BiomeDef.inVacuum=true` 的生成群落必须被声明，`inVacuum=false` 的生成群落不得被声明，否则 `CelestialBodyDef.ToTemplate()` 在逐组件 `ConfigErrors()` 全部通过后拒绝并给出错误码 `VacuumContractMismatch`（CompKey 指向应修正的 biomes/environment 组件，Detail 为 `defName inVacuum=...`）。声明集合允许包含未生成的群落（跨天体复用同一 environment profile），只校验“生成 ⇒ 声明”方向；`terrain` 省略的 VanillaSurface 不参与该跨校验。该检查需要原生 `BiomeDef`，因此位于 XML Def 层（`CelestialBodyContentValidation`），而非纯 API 的配置校验器。
 
 | 字段组 | 默认、域、覆盖路径 | 实际消费者 |
 | --- | --- | --- |
@@ -110,8 +116,8 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 | terrain.elevationAmplitudeMeters / elevationOffsetMeters | 3000 / 0，[0,100000] / [-100000,100000] m | 原生tile物理高度与地形 |
 | terrain.roughness / mountainWeight | .35 / .5，[0,1] | 起伏/原生hilliness |
 | terrain.seaLevelMeters 或 oceanCoverage | 均省略；[-200000,200000] m 或[0,1]；二者互斥 | 海平面或稳定高度排名选海洋；覆盖率按tile数取整 |
-| terrain.allowRivers / allowLakes / oceanBiome | false / false / Ocean，typed | 开启水步骤要求原生Ocean；河流另要求整个温度/海拔区间处于[-100,100]°C，不能仅检查抽样值 |
-| terrain.biomeRules/li.key / biome / priority / fallback / weight | 必需稳定key/原生BiomeDef，0/false/1；权重(0,1e6] | 同优先级可用群落加权；一个fallback；weight与以下条件均用`terrain.biomeRules.KEY.FIELD` |
+| terrain.allowRivers / allowLakes / oceanBiome | false / false / Ocean，typed | 开启水步骤要求原生Ocean；`allowRivers`/`allowLakes` 必须与 `worldGenSteps` 中的 Rivers/Lakes 步骤一致；河流另要求整个温度/海拔区间处于[-100,100]°C，不能仅检查抽样值 |
+| terrain.biomeRules/li.key / biome / priority / fallback / weight / hilliness | 必需稳定key/原生BiomeDef，0/false/1；权重(0,1e6]；hilliness=Undefined(缺省,null)或Flat..Impassable(1..5) | 同优先级可用群落加权；一个fallback；显式 hilliness 覆盖海拔/起伏推导（海洋仍为Flat）；weight与以下条件均用`terrain.biomeRules.KEY.FIELD` |
 | minimum/maximumTemperatureCelsius | -273.15 /10000，[-273.15,10000] °C | 包含边界的筛选 |
 | minimum/maximumRainfallMillimeters | 0 /1e6，[0,1e6] mm | 同上 |
 | minimum/maximumElevationMeters | -200000 /200000，[-200000,200000] m | 同上 |
@@ -132,7 +138,7 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 | --- | --- | --- |
 | appearance.style | Descriptive；GasBands仅Surface slot | 既有PFView球体材质；不授予surface能力 |
 | red/green/blue / alpha | profile.color对应通道，通常1；[0,1] | RGB调色；alpha仅Clouds/Atmosphere，Surface须不透明1 |
-| shellHeightMeters | 0，[0,1e9] m | Clouds/Atmosphere壳；Surface须0 |
+| shellHeightMeters | 0，[0,1e9] m | Clouds/Atmosphere 的**视觉壳高度**（Atmosphere 壳厚度 = 高度 × 2，壳半径 = R + 高度）；与物理大气顶 `air.topAltitude` 独立，见下段 |
 | fadeRangeMeters | 5000，[1e-6,1e9] m | 仅Clouds高度淡出 |
 | driftPeriodTicks / distortionPeriodTicks | 600000 /6000，[1,1e15] | 仅Clouds漂移/噪声时间 |
 | cloudCoverage | 1，[0,1] | 仅Clouds程序云图贡献乘数，非保证地理面积比例 |
@@ -140,9 +146,15 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 
 以上 appearance 数字无前缀的XML标量 fallback 位于appearance或profile原字段；非活跃参数列表/覆盖拒绝，即使与默认相同。Surface不支持v2 texture/biome，Atmosphere不支持texture/biome，Clouds可用原World/CloudMap；v2 backgroundBiome拒绝。Stellar保留v1。已生成地表patch优先，远景无patch时用描述/条带球体。缓存按世界会话/实例/描述修订/层/配置与patch修订失效；不连带其他实例，不隐式建层。
 
+**物理大气顶与视觉壳厚度是两个字段，语义边界不可互换**（2026-11-03 P2）：
+
+- **物理大气顶** = `air.topAltitude`（宿主投影字段 `CelestialBodyInfo.atmosphereThickness`）：阻力/包线/准入、**天空 α、低空高度阈值、大气顶判定**都读它。改它 = 改物理大气线。
+- **视觉壳厚度** = `atmosphereVisual.shellHeightMeters × 2`（宿主投影字段 `CelestialBodyInfo.atmosphereVisualThickness`）：**画壳、壳半径（R + 壳高度）、壳网格、壳偏移**读它。改它 = 只改外观壳大小。
+- 两者可以不等（例如浓厚大气行星的视觉壳比物理大气顶更大或更小）；作者不能假设它们同步，也不能用壳大小去暗示物理大气高度。没有 atmosphere 视觉组件时视觉壳厚度为 0（不画壳），与物理大气是否存在无关。
+
 ## 兼容与人工验收
 
-默认太阳/地球/月球的定义与共享profile输入保持原样。六个可选模板显式升级；历史实例、地图及其v1/v2配置从原字节恢复。外层存档仍v2；v1框架测试世界的原有拒绝规则保留。旧v1 motion/air/visual/environment/biomes/maps解码和旧公开签名保留；不修改冻结fixtures。所有DLC专有Def用MayRequire/原生条件patch；没有Odyssey不阻止加载。仅原生支持的温度、天气、候选、群落和地图生成行为承接结果。
+默认太阳/地球/月球的定义与共享profile输入保持原样。六个可选模板显式升级；历史实例、地图及其v1/v2配置从原字节恢复。外层存档为v3，v1/v2 旧档明确拒绝（不迁移）；v1框架测试世界的原有拒绝规则保留。旧v1 motion/air/visual/environment/biomes/maps解码和旧公开签名保留；不修改冻结fixtures。所有DLC专有Def用MayRequire/原生条件patch；没有Odyssey不阻止加载。仅原生支持的温度、天气、候选、群落和地图生成行为承接结果。
 
 以下各项当前均 **UNCHECKED（需要真实游戏观察）**：
 
