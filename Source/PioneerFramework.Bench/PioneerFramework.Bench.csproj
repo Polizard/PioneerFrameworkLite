@@ -24,40 +24,44 @@
   <ItemGroup>
     <Compile Include="..\PioneerFramework\ThirdParty\MechJebLib\**\*.cs"
              Exclude="..\PioneerFramework\ThirdParty\MechJebLib\ODE\**\*.cs;..\PioneerFramework\ThirdParty\MechJebLib\Interpolants\**\*.cs;..\PioneerFramework\ThirdParty\MechJebLib\TwoBody\Farnocchia.cs;..\PioneerFramework\ThirdParty\MechJebLib\Rootfinding\Bisection.cs;..\PioneerFramework\ThirdParty\MechJebLib\Rootfinding\Newton.cs;..\PioneerFramework\ThirdParty\MechJebLib\Primitives\Vec.cs;..\PioneerFramework\ThirdParty\MechJebLib\Primitives\VecOps.cs;..\PioneerFramework\ThirdParty\MechJebLib\Utils\ObjectPool.cs" />
-    <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Linked\DVector3.cs" />
-    <Compile Include="..\PioneerFramework\Base\Core\FrameVec3.cs" Link="Linked\FrameVec3.cs" />
-    <Compile Include="..\PioneerFramework\ThreadSafety\ParallelOps.cs" Link="Linked\ParallelOps.cs" />
-    <Compile Include="..\PioneerFramework\Base\Core\SlabMath.cs" Link="Linked\SlabMath.cs" />
-    <Compile Include="..\PioneerFramework\Base\Core\SpaceConstants.cs" Link="Linked\SpaceConstants.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OrbitMath.cs" Link="Linked\OrbitMath.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OrbitView.cs" Link="Linked\OrbitView.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\Gooding.cs" Link="Linked\Gooding.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\TransferGeometry.cs" Link="Linked\TransferGeometry.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\NBodyIntegrator.cs" Link="Linked\NBodyIntegrator.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\BodySampleCache.cs" Link="Linked\BodySampleCache.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\BurnCore.cs" Link="Linked\BurnCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousCore.cs" Link="Linked\RendezvousCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGuidanceCore.cs" Link="Linked\RendezvousGuidanceCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\LaunchGuidanceCore.cs" Link="Linked\LaunchGuidanceCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Game\MissileGuidanceCore.cs" Link="Linked\MissileGuidanceCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Game\ConstellationCore.cs" Link="Linked\ConstellationCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Game\SensorCore.cs" Link="Linked\SensorCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Game\ContactCore.cs" Link="Linked\ContactCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\MapComp\MapReliefPlan.cs" Link="Linked\MapReliefPlan.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\AtmosphereModel.cs" Link="Linked\AtmosphereModel.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\AeroShape.cs" Link="Linked\AeroShape.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\AirBreathingCore.cs" Link="Linked\AirBreathingCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\AeroDrag.cs" Link="Linked\AeroDrag.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\SurfaceFrame.cs" Link="Linked\SurfaceFrame.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\HoverCore.cs" Link="Linked\HoverCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\AnalyticTransferCore.cs" Link="Linked\AnalyticTransferCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\BurnStep.cs" Link="Linked\BurnStep.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\BurnExecutorPolicy.cs" Link="Linked\BurnExecutorPolicy.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\TrimBurn.cs" Link="Linked\TrimBurn.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\ManeuverRegime.cs" Link="Linked\ManeuverRegime.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGoal.cs" Link="Linked\RendezvousGoal.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Math\DVector3.cs" Link="Linked\DVector3.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Math\FrameVec3.cs" Link="Linked\FrameVec3.cs" />
+    <Compile Include="..\PioneerFramework\Platform\Threading\ParallelOps.cs" Link="Linked\ParallelOps.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Math\SlabMath.cs" Link="Linked\SlabMath.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Math\SpaceConstants.cs" Link="Linked\SpaceConstants.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OrbitMath.cs" Link="Linked\OrbitMath.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\Orbital\OrbitView.cs" Link="Linked\OrbitView.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\Gooding.cs" Link="Linked\Gooding.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\TransferGeometry.cs" Link="Linked\TransferGeometry.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\NBodyIntegrator.cs" Link="Linked\NBodyIntegrator.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\BodySampleCache.cs" Link="Linked\BodySampleCache.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\BurnCore.cs" Link="Linked\BurnCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\RendezvousCore.cs" Link="Linked\RendezvousCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\RendezvousGuidanceCore.cs" Link="Linked\RendezvousGuidanceCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\LaunchGuidanceCore.cs" Link="Linked\LaunchGuidanceCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\LaunchTargeting.cs" Link="Linked\LaunchTargeting.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\MissileGuidanceCore.cs" Link="Linked\MissileGuidanceCore.cs" />
+    <Compile Include="..\PioneerFramework\Gameplay\Fleet\ConstellationCore.cs" Link="Linked\ConstellationCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Systems\SensorCore.cs" Link="Linked\SensorCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Systems\ContactCore.cs" Link="Linked\ContactCore.cs" />
+    <Compile Include="..\PioneerFramework\Gameplay\Maps\MapReliefPlan.cs" Link="Linked\MapReliefPlan.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Aero\AtmosphereModel.cs" Link="Linked\AtmosphereModel.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Aero\AeroShape.cs" Link="Linked\AeroShape.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Aero\AirBreathingCore.cs" Link="Linked\AirBreathingCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Aero\AeroDrag.cs" Link="Linked\AeroDrag.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\SurfaceFrame.cs" Link="Linked\SurfaceFrame.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\HoverCore.cs" Link="Linked\HoverCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\AnalyticTransferCore.cs" Link="Linked\AnalyticTransferCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\BurnStep.cs" Link="Linked\BurnStep.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\BurnExecutorPolicy.cs" Link="Linked\BurnExecutorPolicy.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\TrimBurn.cs" Link="Linked\TrimBurn.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\ManeuverRegime.cs" Link="Linked\ManeuverRegime.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\TwoImpulseTransfer.cs" Link="Linked\TwoImpulseTransfer.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\ChangeOrbitalElement.cs" Link="Linked\ChangeOrbitalElement.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\HohmannCore.cs" Link="Linked\HohmannCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\RendezvousGoal.cs" Link="Linked\RendezvousGoal.cs" />
     <!-- 烘焙 CPU 细节核（唯一要 UnityStubs 的文件：Color32/Mathf 值类型） -->
-    <Compile Include="..\PioneerFramework\PFView\PFViewSurfaceDetails.cs" Link="Linked\PFViewSurfaceDetails.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\PFView\PFViewSurfaceDetails.cs" Link="Linked\PFViewSurfaceDetails.cs" />
   </ItemGroup>
 
   <ItemGroup>

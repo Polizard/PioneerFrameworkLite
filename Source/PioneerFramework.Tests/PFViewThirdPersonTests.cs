@@ -147,8 +147,11 @@ public class PFViewThirdPersonTests
         var method = typeof(MainTabWindow_PFView).GetMethod("ResolveOrbitFrame", Flags);
         Assert.NotNull(method);
         var members = PFViewUiIntegrationTests.ReferencedMembers(method).ToList();
-        Assert.True(members.FindIndex(m => m.Name == "CanInspectEntity") >= 0);
-        Assert.True(members.FindIndex(m => m.Name == "CanInspectEntity") < members.FindIndex(m => m.Name == "CurrentOrbit"));
+        // 批 5e §4.3：姿态改从快照读（字段 Rotation），准入改 id 版；"先判可见、再读姿态"不变。
+        int inspect = members.FindIndex(m => m.Name == "CanInspectGroup");
+        int attitude = members.FindIndex(m => m.Name == "Rotation" && m.DeclaringType == typeof(SpacecraftSnapshot));
+        Assert.True(inspect >= 0);
+        Assert.True(inspect < attitude);
         Assert.Contains(members, m => m.Name == "viewFrameRot");
         Assert.Contains(members, m => m.Name == "GroupOrbitFrame");
     }
@@ -186,13 +189,14 @@ public class PFViewThirdPersonTests
         var members = PFViewUiIntegrationTests.ReferencedMembers(method).ToList();
         Assert.Contains(members, m => m.Name == "GroupOrbitFrame");
         Assert.Contains(members, m => m.Name == "GroupVelocityOrbitFrame");
-        Assert.Contains(members, m => m.Name == "velocitySystem");
-        Assert.Contains(members, m => m.Name == "CurrentOrbit");
+        // 批 5e §4.3：速度/姿态从 SpacecraftSnapshot 取（字段），不再直接读引擎组。
+        Assert.Contains(members, m => m.Name == "VelocitySystem" && m.DeclaringType == typeof(SpacecraftSnapshot));
+        Assert.Contains(members, m => m.Name == "Rotation" && m.DeclaringType == typeof(SpacecraftSnapshot));
         Assert.Contains(members, m => m.Name == "viewFrameRot");
-        int inspect = members.FindIndex(m => m.Name == "CanInspectEntity");
-        int orbit = members.FindIndex(m => m.Name == "CurrentOrbit");
-        Assert.True(inspect >= 0, "ResolveOrbitFrame must check CanInspectEntity before reading ship attitude.");
-        Assert.True(inspect < orbit);
+        int inspect = members.FindIndex(m => m.Name == "CanInspectGroup");
+        int attitude = members.FindIndex(m => m.Name == "Rotation" && m.DeclaringType == typeof(SpacecraftSnapshot));
+        Assert.True(inspect >= 0, "ResolveOrbitFrame must check visibility before reading ship attitude.");
+        Assert.True(inspect < attitude);
     }
 
     [Fact]

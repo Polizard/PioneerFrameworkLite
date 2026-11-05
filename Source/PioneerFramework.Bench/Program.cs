@@ -9,6 +9,7 @@ using UnityEngine;
 using PioneerFramework;
 using MechJebLib.Lambert;   // TransferGeometry（我们那份移植文件刻意放在上游命名空间里）
 using MechJebLib.Maths;     // Izzo（注意：Izzo.cs 在 Lambert 文件夹里，命名空间却是 Maths）
+using MechJebLib.Maneuvers; // ChangeOrbitalElement / TwoImpulseTransfer（规划链纯核）
 using static PioneerFramework.PFViewSurfaceDetails;
 
 namespace PioneerFramework.Bench
@@ -38,6 +39,7 @@ namespace PioneerFramework.Bench
             BenchApplyReliefAB();
             BenchBakeKernelsAB();
             BenchSolvers();
+            BenchPlanning();
             BenchParallelFloor();
 
             Console.WriteLine();
@@ -287,8 +289,125 @@ namespace PioneerFramework.Bench
         }
 
         // ════════════════════════════════════════════════════
-        //  8. 烘焙另两核 A/B（M3）：AccumulateHills / BoxBlur（竖直半轴）
-        //  ⚠ 比对按 **float 位型**（抓 −0/+0、NaN 差异；逐值 == 会漏掉符号零）。
+        //  5. 规划链纯核（逐位 hash 供改前/改后对照）
+        // ════════════════════════════════════════════════════
+
+        private static long planningHash;
+
+        /// <summary>逐位混入：改前/改后两次跑必须同值（优化不得改结果）。</summary>
+        private static void Mix(double v) => planningHash = planningHash * 31 + BitConverter.DoubleToInt64Bits(v);
+
+        private static void BenchPlanning()
+        {
+            Console.WriteLine();
+            Console.WriteLine("── 5. 规划链纯核（单次调用；规划/交会路径）──");
+            const double mu = 3.986004418e14;
+            DVector3 r1 = new DVector3(7.0e6, 0, 0);
+            DVector3 v1 = new DVector3(0, Math.Sqrt(mu / 7.0e6), 0);
+            DVector3 r2 = new DVector3(0, 7.4e6, 0);
+            DVector3 v2 = new DVector3(-Math.Sqrt(mu / 7.4e6), 0, 0);
+            const double tof = 1800.0;
+
+            Bench("传播·两次（GetPosition + GetVelocity）", 200_000, () =>
+            {
+                DVector3 p = OrbitMath.GetPositionAtTimeDelta(r1, v1, tof, mu);
+                DVector3 q = OrbitMath.GetVelocityAtTimeDelta(r1, v1, tof, mu);
+                Mix(p.x + q.y);
+            });
+            Bench("传播·一次（OrbitView.Propagate）", 200_000, () =>
+            {
+                var (p, q) = OrbitView.Propagate(r1, v1, mu, tof);
+                Mix(p.x + q.y);
+            });
+            Bench("OrbitMath.GetOrbitPoints(60)", 20_000, () =>
+            {
+                var pts = OrbitMath.GetOrbitPoints(r1, v1, 60, mu);
+                Mix(pts[30].x);
+            });
+            Bench("ChangeOrbitalElement.ChangeApoapsis", 2_000, () =>
+            {
+                DVector3 dv = ChangeOrbitalElement.ChangeApoapsis(mu, r1, v1, 8.0e6);
+                Mix(dv.x + dv.y);
+            });
+            Bench("TwoImpulseTransfer.NextManeuver（12 起点）", 5, () =>
+            {
+                var (dv1, dt1, dv2, dt2) = TwoImpulseTransfer.NextManeuver(mu, r1, v1, r2, v2);
+                Mix(dv1.x + dv2.y + dt1 + dt2);
+            }, reps: 5);
+            // 同轮交错 A/B：dt 传播缓存开/关（结果必须逐位一致）
+            BenchVariants(5, 9,
+                ("NextManeuver（dt 传播缓存 开）", () =>
+                {
+                    TwoImpulseTransfer.UseBurnCache = true;
+                    var (a, b, c, d) = TwoImpulseTransfer.NextManeuver(mu, r1, v1, r2, v2);
+                    Mix(a.x + c.y + b + d);
+                }),
+                ("NextManeuver（dt 传播缓存 关）", () =>
+                {
+                    TwoImpulseTransfer.UseBurnCache = false;
+                    var (a, b, c, d) = TwoImpulseTransfer.NextManeuver(mu, r1, v1, r2, v2);
+                    Mix(a.x + c.y + b + d);
+                }));
+            TwoImpulseTransfer.UseBurnCache = true;
+            Bench("RendezvousCore.PlanRecovery（360 格）", 20, () =>
+            {
+                var plan = RendezvousCore.PlanRecovery(r1, v1, 0.0,
+                    t => OrbitView.Propagate(r2, v2, mu, t),
+                    mu, safeRadius: 6.6e6, selfPeriodOrbitRadius: 7.0e6,
+                    prograde: true, maxDepartureDv: 3000.0);
+                Mix(plan.Valid ? plan.TotalDv + plan.WaitSeconds : -1.0);
+            });
+
+            Console.WriteLine($"  planningHash（运行累计，仅供校核非零）= {planningHash}");
+            PlanningProbe();
+        }
+
+        private static long probeHash;
+
+        private static void ProbeMix(double v) => probeHash = probeHash * 31 + BitConverter.DoubleToInt64Bits(v);
+
+        /// <summary>
+        /// 确定性探针：固定输入、每个核**只调一次**，逐位混入 ⇒ 改前/改后必须同值。
+        /// 不放在 `Bench` 里（那里会按时间反复调用 ⇒ 累计 hash 不可比）。
+        /// </summary>
+        private static void PlanningProbe()
+        {
+            const double mu = 3.986004418e14;
+            DVector3 r1 = new DVector3(7.0e6, 0, 0);
+            DVector3 v1 = new DVector3(0, Math.Sqrt(mu / 7.0e6), 0);
+            DVector3 r2 = new DVector3(0, 7.4e6, 0);
+            DVector3 v2 = new DVector3(-Math.Sqrt(mu / 7.4e6), 0, 0);
+
+            var (p, q) = OrbitView.Propagate(r1, v1, mu, 1800.0);
+            ProbeMix(p.x); ProbeMix(p.y); ProbeMix(q.x); ProbeMix(q.y);
+
+            DVector3 dv = ChangeOrbitalElement.ChangeApoapsis(mu, r1, v1, 8.0e6);
+            ProbeMix(dv.x); ProbeMix(dv.y); ProbeMix(dv.z);
+
+            var (dv1, dt1, dv2, dt2) = TwoImpulseTransfer.NextManeuver(mu, r1, v1, r2, v2);
+            ProbeMix(dv1.x); ProbeMix(dv1.y); ProbeMix(dv2.x); ProbeMix(dv2.y);
+            ProbeMix(dt1); ProbeMix(dt2);
+
+            var plan = RendezvousCore.PlanRecovery(r1, v1, 0.0,
+                t => OrbitView.Propagate(r2, v2, mu, t),
+                mu, safeRadius: 6.6e6, selfPeriodOrbitRadius: 7.0e6,
+                prograde: true, maxDepartureDv: 3000.0);
+            ProbeMix(plan.Valid ? 1.0 : 0.0); ProbeMix(plan.WaitSeconds); ProbeMix(plan.TransferSeconds);
+            ProbeMix(plan.DepartureDv.x); ProbeMix(plan.DepartureDv.y); ProbeMix(plan.DepartureDv.z);
+            ProbeMix(plan.ArrivalDv); ProbeMix(plan.TotalDv);
+
+            Console.WriteLine($"  planningProbeHash = {probeHash}（固定输入逐位哈希，改前/改后必须同值）");
+
+            // 分配探针：先预热一次让 scratch 长到位，再量第二次调用
+            _ = RendezvousCore.PlanRecovery(r1, v1, 0.0, t => OrbitView.Propagate(r2, v2, mu, t),
+                mu, safeRadius: 6.6e6, selfPeriodOrbitRadius: 7.0e6, prograde: true, maxDepartureDv: 3000.0);
+            long a0 = GC.GetAllocatedBytesForCurrentThread();
+            _ = RendezvousCore.PlanRecovery(r1, v1, 0.0, t => OrbitView.Propagate(r2, v2, mu, t),
+                mu, safeRadius: 6.6e6, selfPeriodOrbitRadius: 7.0e6, prograde: true, maxDepartureDv: 3000.0);
+            long a1 = GC.GetAllocatedBytesForCurrentThread();
+            Console.WriteLine($"  PlanRecovery 稳态分配/次 = {a1 - a0} B（目标：只剩调用方委托/闭包的小额）");
+        }
+
         // ════════════════════════════════════════════════════
 
         private static void BenchBakeKernelsAB()

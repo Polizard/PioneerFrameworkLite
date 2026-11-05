@@ -33,122 +33,126 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Pure\DVector3.cs" />
-    <Compile Include="..\PioneerFramework\Celestial\API\**\*.cs" Link="Celestial\API\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\PioneerFramework\Celestial\Core\**\*.cs" Link="Celestial\Core\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\PioneerFramework\Base\Game\PhysicsTimeLine.cs" Link="Pure\PhysicsTimeLine.cs" />
-    <Compile Include="..\PioneerFramework\Combat\Shots\ShotMath.cs" Link="Pure\ShotMath.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Math\DVector3.cs" Link="Pure\DVector3.cs" />
+    <Compile Include="..\PioneerFramework\World\Celestial\API\**\*.cs" Link="Celestial\API\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\PioneerFramework\World\Celestial\Core\**\*.cs" Link="Celestial\Core\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Step\PhysicsTimeLine.cs" Link="Pure\PhysicsTimeLine.cs" />
+    <Compile Include="..\PioneerFramework\Gameplay\Combat\Shots\ShotMath.cs" Link="Pure\ShotMath.cs" />
     <!-- 批 0（2026-10-17）：**惯量张量**（形状预设 / 合成 / 主轴 / 分类器）。纯数学（只 System）⇒ 链进来钉解析样本。 -->
-    <Compile Include="..\PioneerFramework\Base\Core\InertiaTensor.cs" Link="Pure\InertiaTensor.cs" />
-    <Compile Include="..\PioneerFramework\SpaceAI\Core\*.cs" Link="SpaceAI\%(Filename)%(Extension)" />
-    <Compile Include="..\PioneerFramework\RingWorld\Core\*.cs" Link="RingWorld\%(Filename)%(Extension)" />
-    <Compile Include="..\PioneerFramework\Megastructures\Core\**\*.cs" Link="Megastructures\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\PioneerFramework\Launch\LaunchTransitPath.cs" Link="Pure\LaunchTransitPath.cs" />
-    <Compile Include="..\PioneerFramework\Landing\LandingTransitPath.cs" Link="Pure\LandingTransitPath.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Math\InertiaTensor.cs" Link="Pure\InertiaTensor.cs" />
+    <Compile Include="..\PioneerFramework\Gameplay\SpaceAI\Core\*.cs" Link="SpaceAI\%(Filename)%(Extension)" />
+    <Compile Include="..\PioneerFramework\World\RingWorld\Core\*.cs" Link="RingWorld\%(Filename)%(Extension)" />
+    <Compile Include="..\PioneerFramework\World\Megastructures\Core\**\*.cs" Link="Megastructures\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\PioneerFramework\Gameplay\Launch\LaunchTransitPath.cs" Link="Pure\LaunchTransitPath.cs" />
+    <Compile Include="..\PioneerFramework\Gameplay\Landing\LandingTransitPath.cs" Link="Pure\LandingTransitPath.cs" />
     <!-- 批6 S3-3c（2026-09-30）：**系载体**（`SystemVec3` / `BodyVec3` / `FrameConvert`）——纯类型（无引擎依赖）
          ⇒ 链进来用纯测试钉住"薄"（算子逐位等于 `DVector3`）与"跨系换算逐位可逆"。 -->
-    <Compile Include="..\PioneerFramework\Base\Core\FrameVec3.cs" Link="Pure\FrameVec3.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Math\FrameVec3.cs" Link="Pure\FrameVec3.cs" />
     <!-- 批7（2026-09-30）：**统一调度原语**（并行地板 / 并行区标记 / 唯一归约器）。纯文件（无 Verse）⇒ 链进来
          用纯测试钉住"并行路与串行路逐位相同 + 归约顺序确定"。 -->
-    <Compile Include="..\PioneerFramework\ThreadSafety\ParallelOps.cs" Link="Pure\ParallelOps.cs" />
+    <Compile Include="..\PioneerFramework\Platform\Threading\ParallelOps.cs" Link="Pure\ParallelOps.cs" />
     <!-- 批5 U4（2026-09-28）：`DVector3Extensions.cs` 已退役 ⇒ 这行连同删除（成员已并入 `DVector3`，零调用者）。 -->
-    <Compile Include="..\PioneerFramework\Base\Core\SlabMath.cs" Link="Pure\SlabMath.cs" />
-    <Compile Include="..\PioneerFramework\Base\Core\SpaceConstants.cs" Link="Pure\SpaceConstants.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OrbitMath.cs" Link="Pure\OrbitMath.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\HohmannCore.cs" Link="Pure\HohmannCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\AutoStageCore.cs" Link="Pure\AutoStageCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Math\SlabMath.cs" Link="Pure\SlabMath.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Math\SpaceConstants.cs" Link="Pure\SpaceConstants.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OrbitMath.cs" Link="Pure\OrbitMath.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\HohmannCore.cs" Link="Pure\HohmannCore.cs" />
+    <!-- 2026-11-04：SOI 三层剔除纯核（只 System）——链进来用纯测试钉住盒层/精筛一致、无假内/假外。 -->
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\SoiCheck.cs" Link="Pure\SoiCheck.cs" />
+    <!-- 2026-11-04：换系纯核（父链 LCA 偏移 + 状态搬运）——链进来钉住父/子/兄弟/根往返。 -->
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\FrameTransitionCore.cs" Link="Pure\FrameTransitionCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\AutoStageCore.cs" Link="Pure\AutoStageCore.cs" />
     <!-- 2026-10-30：抛级分离刚体解算（质心重定 + 刚体速度场 + 中心冲量）——纯算术，无 Verse 依赖。 -->
-    <Compile Include="..\PioneerFramework\Base\Core\StageSeparationCore.cs" Link="Pure\StageSeparationCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Propulsion\StageSeparationCore.cs" Link="Pure\StageSeparationCore.cs" />
     <!-- 2026-10-31：出生种类策略表（纯函数，无 Verse/Unity）——链进来钉住"哪个种类要母体 / 要对账 / 当帧可入世界"，
          避免合并后各出生点又按自己的理解分叉。 -->
-    <Compile Include="..\PioneerFramework\Base\Core\GroupBirth.cs" Link="Pure\GroupBirth.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Model\GroupBirth.cs" Link="Pure\GroupBirth.cs" />
     <!-- 2026-10-30：火箭外壳几何（24 棱柱/棱台 + 整流罩 + 分站损毁色）——纯算术，无 Verse/Unity 依赖。 -->
-    <Compile Include="..\PioneerFramework\PFView\RocketHullCore.cs" Link="Pure\RocketHullCore.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\PFView\RocketHullCore.cs" Link="Pure\RocketHullCore.cs" />
     <!-- 适配层：纯文件（如 RendezvousGuidanceLaw）现在可以用它去调移植的 Astro（net48 打通之后）。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\OrbitView.cs" Link="Pure\OrbitView.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\Gooding.cs" Link="Pure\Gooding.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\Orbital\OrbitView.cs" Link="Pure\OrbitView.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\Gooding.cs" Link="Pure\Gooding.cs" />
     <!-- `TransferGeometry` 是上游定义在 `Lambert/Gooding.cs` 里的共用枚举；逐字移植的 `Izzo.cs`
          （ThirdParty 那侧被本工程通配进来）需要它在**上游的命名空间**里存在。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\TransferGeometry.cs" Link="Pure\TransferGeometry.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\NBodyIntegrator.cs" Link="Pure\NBodyIntegrator.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\TransferGeometry.cs" Link="Pure\TransferGeometry.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\NBodyIntegrator.cs" Link="Pure\NBodyIntegrator.cs" />
     <!-- 第 24 条的缓存本体是纯类型（不可变采样 + 原子槽位写入）：链接进来是为了能用纯测试**直接压测
          它在多线程下的不变式**（命中 tick 相同 ⇒ 值必定属于该 tick）。游戏内的撕裂写入就是这么抓到的。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\BodySampleCache.cs" Link="Pure\BodySampleCache.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\BurnCore.cs" Link="Pure\BurnCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\BodySampleCache.cs" Link="Pure\BodySampleCache.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\BurnCore.cs" Link="Pure\BurnCore.cs" />
     <!-- 交会"恢复/兜底"纯核心（S1/S2）：重规划扫描 + 安全缩放上限——引导的失败自愈靠它，
          纯测试钉住"安全缩放单调二分"与"重规划能找回便宜窗口"。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousCore.cs" Link="Pure\RendezvousCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\RendezvousCore.cs" Link="Pure\RendezvousCore.cs" />
     <!-- 交会「不变量闭环」纯核心（2026-09-17）：近圆约化 ⇒ 面内交会是**标量双积分器**，
          原点即交会点。理论依据 DesignNotes/交会物理本质与闭环提法-20260917.md §5/§10。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGuidanceCore.cs" Link="Pure\RendezvousGuidanceCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\RendezvousGuidanceCore.cs" Link="Pure\RendezvousGuidanceCore.cs" />
     <!-- 批5.B（2026-09-28）：`CwRendezvousCore.cs`（CW 终端的"温柔解"）与 `RendezvousGuidanceLaw.cs`（远场律）
          已归档到 `Source/已弃置/`（用户 2026-09-22 裁定旧律作废；替代品 = 阶梯的端到端台架
          `MechJebLibTest/LadderEndToEndTests.cs`）⇒ 这两行 `<Compile Include>` 一并删除。
          要取回：把文件搬回原路径 + 恢复这两行。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\LaunchGuidanceCore.cs" Link="Pure\LaunchGuidanceCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\LaunchTargeting.cs" Link="Pure\LaunchTargeting.cs" />
-    <Compile Include="..\PioneerFramework\Base\Game\MissileGuidanceCore.cs" Link="Pure\MissileGuidanceCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Game\ConstellationCore.cs" Link="Pure\ConstellationCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\LaunchGuidanceCore.cs" Link="Pure\LaunchGuidanceCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\LaunchTargeting.cs" Link="Pure\LaunchTargeting.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\MissileGuidanceCore.cs" Link="Pure\MissileGuidanceCore.cs" />
+    <Compile Include="..\PioneerFramework\Gameplay\Fleet\ConstellationCore.cs" Link="Pure\ConstellationCore.cs" />
     <!-- 视野/电子战（实施计划 P1）：探测判据与认知对象形状——P2 的 SensorManager 与 P3/P4 的共同输入，
          先行在纯测试里钉住形状（秒级回路），避免形状定错导致两边返工。 -->
-    <Compile Include="..\PioneerFramework\Base\Game\SensorCore.cs" Link="Pure\SensorCore.cs" />
-    <Compile Include="..\PioneerFramework\Base\Game\ContactCore.cs" Link="Pure\ContactCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Systems\SensorCore.cs" Link="Pure\SensorCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Systems\ContactCore.cs" Link="Pure\ContactCore.cs" />
     <!-- PFView 地图浮雕（V-7，2026-10-02）：逐格分类 → 矩形盒体的纯逻辑（合并/降采样/确定性）——
          无 Verse/Unity 依赖，链进来用纯测试钉住"不重叠不漏格 + 超限降采样只增不减"。 -->
-    <Compile Include="..\PioneerFramework\Base\MapComp\MapReliefPlan.cs" Link="Pure\MapReliefPlan.cs" />
+    <Compile Include="..\PioneerFramework\Gameplay\Maps\MapReliefPlan.cs" Link="Pure\MapReliefPlan.cs" />
     <!-- 大气层 [A1]（2026-10-06）：**密度提供者**（64 点表 + 线性插值；纯函数、无 Verse/Unity）——
          链进来用纯测试钉住"单调 / 边界连续 / ρ(100 km)/ρ₀ ≈ 0 / ρ≡0 惰性分支 / 插值误差有界"。
          ⚠ [补2]：ρ₀/H 的正式数值延后裁定 ⇒ 测试用**合成参数**，测模型不测数据。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\AtmosphereModel.cs" Link="Pure\AtmosphereModel.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Aero\AtmosphereModel.cs" Link="Pure\AtmosphereModel.cs" />
     <!-- 大气层 [A2-1]（2026-10-06）：**气动形状**（三轴 Cd·A 薄 struct + 盒模型导出；纯、零消费者）——
          链进来钉住"盒→三轴映射 / 立方体 = 三轴相等退化 / 退化守卫（不许静默零面积）"。
          ⚠ [补1]：有 Map 生产者不第一批做；[补3]：测试火箭按"长棍"给数据（属 [A2] 数据裁定，不在本文件）。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\AeroShape.cs" Link="Pure\AeroShape.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Aero\AeroShape.cs" Link="Pure\AeroShape.cs" />
     <!-- 大气层 [A3]+[A4]+[A5]（2026-10-06）：**吸气式纯核心**（进气速率 / 包线因子 / Mach 折线 /
          混合比与熄火门）——链进来钉住"火箭退化恰 1.0""真空进气=0""抽干熄火"。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\AirBreathingCore.cs" Link="Pure\AirBreathingCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Aero\AirBreathingCore.cs" Link="Pure\AirBreathingCore.cs" />
     <!-- 大气层 [A2-2]（2026-10-06）：**阻力律**（唯一算式：二次范数 + 各向同性退化标量路径）——
          链进来跑风洞台架五条判据（含"共转 ⇒ 零"要用生产同一口 SurfaceFrame，一并链入）。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\AeroDrag.cs" Link="Pure\AeroDrag.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\SurfaceFrame.cs" Link="Pure\SurfaceFrame.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Aero\AeroDrag.cs" Link="Pure\AeroDrag.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\SurfaceFrame.cs" Link="Pure\SurfaceFrame.cs" />
     <!-- 大气层 [A7]（2026-10-06）：**悬浮控制律**（PD + 死区 + 上限 / 定点目标 / 姿态设定点 /
          解析档等效计费）——链进来跑"定律边界"与"抖幅 ∝ dt²"台架（后者是计划稿 §2.6 的断言）。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\HoverCore.cs" Link="Pure\HoverCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\HoverCore.cs" Link="Pure\HoverCore.cs" />
     <!-- [A8] 点到点解析搬运（2026-10-07）：路径（大圆+半径线性）/ 时长 / 等效计费 —— 链进来钉"端点、不穿天体、账单守恒"。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\AnalyticTransferCore.cs" Link="Pure\AnalyticTransferCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\AnalyticTransferCore.cs" Link="Pure\AnalyticTransferCore.cs" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\PioneerFramework\Base\Orbital\BurnStep.cs" Link="Pure\BurnStep.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\BurnStep.cs" Link="Pure\BurnStep.cs" />
     <!-- B5（2026-09-23）：烧执行器的**政策**（原子烧门 / 执行器选择 / 计划-实际燃时口径 / 诊断比值口径）。
          `RendezvousGuidanceCore.SelectActuator` 已转发到它 ⇒ 本工程必须一并链。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\BurnExecutorPolicy.cs" Link="Pure\BurnExecutorPolicy.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\BurnExecutorPolicy.cs" Link="Pure\BurnExecutorPolicy.cs" />
     <!-- B2.2-b 闭环微调（2026-09-20）：把本点速度拨到意图轨道的**唯一算式**。
          链接进来是为了用纯测试钉"定义判据"（打完 (a,|h|) 必须等于目标）与登记的局限（a 落在 r）。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\TrimBurn.cs" Link="Pure\TrimBurn.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\TrimBurn.cs" Link="Pure\TrimBurn.cs" />
     <!-- 区制判据（B2.1）：纯函数（无状态、无引擎）⇒ 链接进来钉住两档船的判定。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\ManeuverRegime.cs" Link="Pure\ManeuverRegime.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\ManeuverRegime.cs" Link="Pure\ManeuverRegime.cs" />
     <!-- 交会目的（B3 延伸，2026-09-22）：纯描述量（无状态、无引擎）⇒ 链进来钉住"有符号相位"的方向性
          与相位判据的三条条件。相位判据最容易错的方向就是**符号**（前/后不分）。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGoal.cs" Link="Pure\RendezvousGoal.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\RendezvousGoal.cs" Link="Pure\RendezvousGoal.cs" />
 
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\PioneerFramework\PFView\PFViewUiPolicy.cs" Link="Pure\PFViewUiPolicy.cs" />
-    <Compile Include="..\PioneerFramework\Base\Game\SteeringInputCore.cs" Link="Pure\SteeringInputCore.cs" />
-    <Compile Include="..\PioneerFramework\PFView\PFViewUiOperationContext.cs" Link="Pure\PFViewUiOperationContext.cs" />
-    <Compile Include="..\PioneerFramework\PFView\PFViewUiLayoutCore.cs" Link="Pure\PFViewUiLayoutCore.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\PFView\PFViewUiPolicy.cs" Link="Pure\PFViewUiPolicy.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Step\SteeringInputCore.cs" Link="Pure\SteeringInputCore.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\PFView\PFViewUiOperationContext.cs" Link="Pure\PFViewUiOperationContext.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\PFView\PFViewUiLayoutCore.cs" Link="Pure\PFViewUiLayoutCore.cs" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\PioneerFramework\PFView\PFViewUiObjectListCore.cs" Link="Pure\PFViewUiObjectListCore.cs" />
-    <Compile Include="..\PioneerFramework\PFView\PFViewFleetCore.cs" Link="Pure\PFViewFleetCore.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\PFView\PFViewUiObjectListCore.cs" Link="Pure\PFViewUiObjectListCore.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\PFView\PFViewFleetCore.cs" Link="Pure\PFViewFleetCore.cs" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\PioneerFramework\PFView\PFViewUiViewHistory.cs" Link="Pure\PFViewUiViewHistory.cs" />
-    <Compile Include="..\PioneerFramework\PFView\PFViewUiDragState.cs" Link="Pure\PFViewUiDragState.cs" />
-    <Compile Include="..\PioneerFramework\PFView\PFViewGroupCameraCore.cs" Link="Pure\PFViewGroupCameraCore.cs" />
-    <Compile Include="..\PioneerFramework\PFView\PFViewClouds.cs" Link="Pure\PFViewClouds.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\PFView\PFViewUiViewHistory.cs" Link="Pure\PFViewUiViewHistory.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\PFView\PFViewUiDragState.cs" Link="Pure\PFViewUiDragState.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\PFView\PFViewGroupCameraCore.cs" Link="Pure\PFViewGroupCameraCore.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\PFView\PFViewClouds.cs" Link="Pure\PFViewClouds.cs" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\TestSupport\Celestial\**\*.cs" Link="TestSupport\Celestial\%(RecursiveDir)%(Filename)%(Extension)" />

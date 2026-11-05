@@ -6,13 +6,13 @@
        Copy only initializationPayload text to/from orbit.base64; conversion preserves the JSON bytes. -->
   <PioneerFramework.CelestialBodyDef>
     <defName>Sun</defName>
-    <label>太阳</label>
+    <label>燧阳</label>
     <category>Star</category>
     <comps>
       <li Class="PioneerFramework.Celestial.CompProperties_SphericalBody">
         <key>shape</key>
         <radiusMeters>
-          <value>3000000</value>
+          <value>139140000</value>
         </radiusMeters>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
@@ -20,12 +20,16 @@
         <providerId>PFL.ExistingEphemeris</providerId>
         <modeId>existing.circular.v1</modeId>
         <gravitationalParameter>
-          <value>2.0e16</value>
+          <value>2.4369393583e19</value>
         </gravitationalParameter>
         <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjAsImRheUxlbmd0aFRpY2tzIjo2MDAwMCwib3JiaXRSYWRpdXMiOjAsImZyYW1lT3JpZ2luUmVmZXJlbmNlIjoiZnJhbWVPcmlnaW4iLCJib2R5VHlwZSI6IlN0YXIiLCJpbml0aWFsUGhhc2UiOjB9</initializationPayload>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_LightSource">
         <key>light</key>
+        <intensity><value>0.25</value></intensity>
+        <red><value>1</value></red>
+        <green><value>0.706</value></green>
+        <blue><value>0.459</value></blue>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
         <key>visual</key>
@@ -39,7 +43,7 @@
   </PioneerFramework.CelestialBodyDef>
   <PioneerFramework.CelestialBodyDef>
     <defName>Earth</defName>
-    <label>地球</label>
+    <label>Rimata</label>
     <category>Planet</category>
     <comps>
       <li Class="PioneerFramework.Celestial.CompProperties_SphericalBody">
@@ -55,7 +59,7 @@
         <gravitationalParameter>
           <value>2.0e14</value>
         </gravitationalParameter>
-        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjU4NDAwLjAsImRheUxlbmd0aFRpY2tzIjo2MDAwMC4wLCJvcmJpdFJhZGl1cyI6MTIwMDAwMDAwLjAsImZyYW1lT3JpZ2luUmVmZXJlbmNlIjoiZnJhbWVPcmlnaW4iLCJib2R5VHlwZSI6IlBsYW5ldCIsImluaXRpYWxQaGFzZSI6MC4wfQ==</initializationPayload>
+        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjM2MDAwMDAuMCwiZGF5TGVuZ3RoVGlja3MiOjYwMDAwLjAsIm9yYml0UmFkaXVzIjoyMDAwMDAwMDAwMC4wLCJmcmFtZU9yaWdpblJlZmVyZW5jZSI6ImZyYW1lT3JpZ2luIiwiYm9keVR5cGUiOiJQbGFuZXQiLCJpbml0aWFsUGhhc2UiOjAuMH0=</initializationPayload>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_Surface">
         <key>surface</key>
@@ -104,7 +108,7 @@
   </PioneerFramework.CelestialBodyDef>
   <PioneerFramework.CelestialBodyDef>
     <defName>Moon</defName>
-    <label>月球</label>
+    <label>Wardon</label>
     <category>Moon</category>
     <comps>
       <li Class="PioneerFramework.Celestial.CompProperties_SphericalBody">
@@ -144,6 +148,43 @@
       <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
         <key>visual</key>
         <profile>PF_MoonSurfaceVisual</profile>
+      </li>
+    </comps>
+  </PioneerFramework.CelestialBodyDef>
+  <PioneerFramework.CelestialBodyDef>
+    <defName>ZheSha</defName>
+    <label>赭砂</label>
+    <category>Planet</category>
+    <comps>
+      <li Class="PioneerFramework.Celestial.CompProperties_SphericalBody">
+        <key>shape</key>
+        <radiusMeters>
+          <value>5300000</value>
+        </radiusMeters>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
+        <key>motion</key>
+        <providerId>PFL.ExistingEphemeris</providerId>
+        <modeId>existing.circular.v1</modeId>
+        <gravitationalParameter>
+          <value>2.4e14</value>
+        </gravitationalParameter>
+        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjE5NTk1OTEuNzk0LCJkYXlMZW5ndGhUaWNrcyI6NjAwMDAuMCwib3JiaXRSYWRpdXMiOjEzMzMzMzMzMzMzLjMzMzMzNCwiZnJhbWVPcmlnaW5SZWZlcmVuY2UiOiJmcmFtZU9yaWdpbiIsImJvZHlUeXBlIjoiUGxhbmV0IiwiaW5pdGlhbFBoYXNlIjo0LjU5Nn0=</initializationPayload>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_Surface">
+        <key>surface</key>
+        <generationMode>Creation</generationMode>
+        <subdivisions>
+          <value>5</value>
+        </subdivisions>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_BiomeGeneration">
+        <key>biomes</key>
+        <profile>PF_MoonBiomes</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
+        <key>visual</key>
+        <profile>PF_ZheShaSurfaceVisual</profile>
       </li>
     </comps>
   </PioneerFramework.CelestialBodyDef>

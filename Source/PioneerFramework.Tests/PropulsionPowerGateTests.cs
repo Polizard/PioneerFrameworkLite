@@ -74,7 +74,7 @@ namespace PioneerFramework.Tests
 
             g.StepPowerThermal(Inputs(gen: 0f, prop: 0f));
             Assert.True(g.CanSupplyPropulsionNow());
-            Assert.True(g.PropulsionPowered);
+            Assert.True(g.powerThermal.PropulsionPowered);
         }
 
         [Fact]
@@ -88,7 +88,7 @@ namespace PioneerFramework.Tests
             g.StartBurn(new DVector3(100, 0, 0));
 
             Assert.False(g.HasActiveBurn);                  // 拒绝：不点火
-            Assert.True(g.BurnIgnitionBlockedByPower);      // 读数位
+            Assert.True(g.powerThermal.BurnIgnitionBlockedByPower);      // 读数位
             Assert.True(g.remainingBurnDV == 0.0);
         }
 
@@ -103,7 +103,7 @@ namespace PioneerFramework.Tests
             g.StartBurn(new DVector3(100, 0, 0));
 
             Assert.True(g.HasActiveBurn);
-            Assert.False(g.BurnIgnitionBlockedByPower);
+            Assert.False(g.powerThermal.BurnIgnitionBlockedByPower);
             Assert.Equal(100.0, g.remainingBurnDV, 6);
         }
 
@@ -111,12 +111,12 @@ namespace PioneerFramework.Tests
         public void Group_BatteryMakesUpTheDifference()
         {
             var g = new SpaceEntityGroup(1, 0);
-            g.StoredEnergyJ = 1000f;   // dt=2 ⇒ 可放 500 W（受存量约束）
+            g.powerThermal.StoredEnergyJ = 1000f;   // dt=2 ⇒ 可放 500 W（受存量约束）
             g.StepPowerThermal(Inputs(gen: 0f, discharge: 1200f, capacity: 10_000f, stored: 0f, prop: 1000f, actProp: 0f));
             // 输入里的 stored 快照是 0，但 `CanSupplyPropulsionNow` 用群级实时存量 ⇒ 500 W 仍不够 1000 W
             Assert.False(g.CanSupplyPropulsionNow());
 
-            g.StoredEnergyJ = 4000f;   // dt=2 ⇒ 可放 1200 W（受放电上限）⇒ 够 1000 W
+            g.powerThermal.StoredEnergyJ = 4000f;   // dt=2 ⇒ 可放 1200 W（受放电上限）⇒ 够 1000 W
             Assert.True(g.CanSupplyPropulsionNow());
         }
 
@@ -126,9 +126,9 @@ namespace PioneerFramework.Tests
             var g = new SpaceEntityGroup(1, 0);
             g.StepPowerThermal(Inputs(gen: 50_000f, prop: 100_000f, actProp: 1f));
 
-            Assert.False(g.PropulsionPowered);        // 推力门关闭
-            Assert.True(g.BrownoutPropulsion == 1f);  // 本步推进不需求（不是"给一半"）
-            Assert.Equal(0f, g.PowerDemandW, 6);      // 需求被收掉 ⇒ 不白烧电池
+            Assert.False(g.powerThermal.PropulsionPowered);        // 推力门关闭
+            Assert.True(g.powerThermal.BrownoutPropulsion == 1f);  // 本步推进不需求（不是"给一半"）
+            Assert.Equal(0f, g.powerThermal.PowerDemandW, 6);      // 需求被收掉 ⇒ 不白烧电池
         }
 
         [Fact]
@@ -137,9 +137,9 @@ namespace PioneerFramework.Tests
             var g = new SpaceEntityGroup(1, 0);
             g.StepPowerThermal(Inputs(gen: 120_000f, prop: 100_000f, actProp: 1f));
 
-            Assert.True(g.PropulsionPowered);
-            Assert.True(g.BrownoutPropulsion == 1f);
-            Assert.Equal(100_000f, g.PowerDemandW, 3);
+            Assert.True(g.powerThermal.PropulsionPowered);
+            Assert.True(g.powerThermal.BrownoutPropulsion == 1f);
+            Assert.Equal(100_000f, g.powerThermal.PowerDemandW, 3);
         }
 
         [Fact]

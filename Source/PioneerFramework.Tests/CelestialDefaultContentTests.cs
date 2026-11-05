@@ -100,10 +100,11 @@ public class CelestialDefaultContentTests
         var system = Parse<CelestialSystemDef>(systemXml);
         for (int i = 0; i < system.entries.Count; i++) system.entries[i].bodyDef = bodies[systemXml.Element("entries").Elements("li").ElementAt(i).Element("bodyDef").Value];
         var manifest = CelestialSystemGenerator.Expand(system.ToTemplate().Value, 987).Value;
-        Assert.Equal(3, manifest.Items.Count);
+        Assert.Equal(4, manifest.Items.Count);
         var earth = manifest.Items.Single(item => item.Template.DefinitionId == "Earth");
         var moon = manifest.Items.Single(item => item.Template.DefinitionId == "Moon");
         var sun = manifest.Items.Single(item => item.Template.DefinitionId == "Sun");
+        var zheSha = manifest.Items.Single(item => item.Template.DefinitionId == "ZheSha");
         Assert.Equal(earth.Id, manifest.RootSurfaceId);
         Assert.Equal(5000000, earth.Components.Select(c => c.Properties).OfType<ICelestialGeometryProperties>().Single().RadiusMeters);
         Assert.Equal(2e14, earth.Components.Select(c => c.Properties).OfType<ICelestialPhysicsBindingProperties>().Single().GravitationalParameter);
@@ -113,6 +114,13 @@ public class CelestialDefaultContentTests
         Assert.Equal(5e12, moon.Components.Select(c => c.Properties).OfType<ICelestialPhysicsBindingProperties>().Single().GravitationalParameter);
         Assert.Equal(317900, moon.Components.Select(c => c.Properties).OfType<ExistingEnvironmentResolvedProperties>().Single().Profile.DayLengthTicks);
         Assert.Equal(new[] { "Factions", "Roads", "Features" }, moon.Components.Select(c => c.Properties).OfType<BiomeGenerationResolvedProperties>().Single().Profile.RootOnlySteps);
+        Assert.Equal(5300000, zheSha.Components.Select(c => c.Properties).OfType<ICelestialGeometryProperties>().Single().RadiusMeters);
+        Assert.Equal(2.4e14, zheSha.Components.Select(c => c.Properties).OfType<ICelestialPhysicsBindingProperties>().Single().GravitationalParameter);
+        Assert.Contains(zheSha.Components, component => component.Properties is VisualResolvedProperties);
+        var zheShaSurface = zheSha.Components.Select(c => c.Properties).OfType<SurfaceResolvedProperties>().Single();
+        Assert.Equal(CelestialSurfaceGenerationMode.Creation, zheShaSurface.GenerationMode);
+        Assert.Equal(sun.Id, zheSha.InitializationReferences["primaryLight"]);
+        Assert.Equal(zheSha.Id, zheSha.InitializationReferences["frameOrigin"]);
         Assert.Equal(sun.Id, earth.InitializationReferences["primaryLight"]);
         Assert.Equal(sun.Id, moon.InitializationReferences["primaryLight"]);
         Assert.Equal(sun.Id, sun.InitializationReferences["frameOrigin"]);

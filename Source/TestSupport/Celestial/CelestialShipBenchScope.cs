@@ -25,7 +25,7 @@ internal sealed class CelestialShipBenchScope : IDisposable
     private TimeScaleLevel speed = TimeScaleLevel.Normal;
     internal void SetSpeed(TimeScaleLevel level)
     { speed = level; Current.Game.GetComponent<TimeScaleManager>().SetTimeScale(level); }
-    internal CelestialShipBenchScope(int ships, int maps)
+    internal CelestialShipBenchScope(int ships, int maps, int partsPerShip = 0, bool starRoot = false)
     {
         patches.Patch(AccessTools.Method(typeof(Log), nameof(Log.Message), new[] { typeof(string) }),
             prefix: new HarmonyMethod(typeof(CelestialShipBenchScope), nameof(Skip)));
@@ -41,7 +41,7 @@ internal sealed class CelestialShipBenchScope : IDisposable
         AccessTools.Field(typeof(TickManager), "curTimeSpeed").SetValue(Find.TickManager, TimeSpeed.Normal);
         RealTime.frameCount = 10000; RealTime.deltaTime = 1f / 240f;
         clock.GetPhysicsTick();
-        Runtime = CelestialBenchFactory.Create(3);
+        Runtime = CelestialBenchFactory.Create(3, starRoot: starRoot);
         CelestialBenchFactory.Require(manager.AttachCelestialRuntime(Runtime).Success, "Host attachment failed.");
         var fuel = new PropellantDef { defName = "PF_BenchFuel" };
         for (int i = 0; i < ships; i++)
@@ -53,7 +53,21 @@ internal sealed class CelestialShipBenchScope : IDisposable
             var entity = new SpaceEntity(1000 + i, 2) { GroupId = group.GroupId, IsAffectedByGravity = false };
             entity.AddPropulsion(new PropulsionData { propellant = fuel, ve = 1000, massFlow = 1,
                 mass = 1e6, capacity = 1e6, isVectoredRcs = true });
-            Space.RegisterEntity(entity); group.GetEntityIds().Add(entity.EntityId); group.StartBurn(new DVector3(1e8, 0, 0));
+            Space.RegisterEntity(entity); group.GetEntityIds().Add(entity.EntityId);
+            if (partsPerShip > 0)
+            {
+                var parts = new System.Collections.Generic.List<SpacePart>(partsPerShip);
+                for (int part = 0; part < partsPerShip; part++)
+                    parts.Add(new SpacePart
+                    {
+                        partId = 100 + part,
+                        positionShip = new DVector3(0, 0, -part * 2.0),
+                        boundsSizeShip = new DVector3(2, 2, 2),
+                        hp = 100f,
+                    });
+                entity.SetParts(parts);
+            }
+            group.StartBurn(new DVector3(1e8, 0, 0));
         }
         for (int i = 0; i < maps; i++)
         {

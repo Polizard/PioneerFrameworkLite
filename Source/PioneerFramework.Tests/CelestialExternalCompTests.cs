@@ -22,7 +22,7 @@ public class CelestialExternalCompTests
         patch.Load(Path.Combine(AppContext.BaseDirectory, "CelestialCompSample", "Patches", "SampleSystem.xml"));
         var operation = DirectXmlToObject.ObjectFromXml<PatchOperation>(patch.DocumentElement.FirstChild, false);
         Assert.True(operation.Apply(system));
-        Assert.Equal(5, system.SelectNodes("Defs/PioneerFramework.Celestial.CelestialSystemDef/entries/li").Count);
+        Assert.Equal(6, system.SelectNodes("Defs/PioneerFramework.Celestial.CelestialSystemDef/entries/li").Count);
         Assert.NotNull(system.SelectSingleNode("//entries/li[key='z_counterFixed' and bodyDef='PF_CounterSampleFixed']"));
         Assert.NotNull(system.SelectSingleNode("//entries/li[key='z_counterRanged' and bodyDef='PF_CounterSampleRanged']"));
     }

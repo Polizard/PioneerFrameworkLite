@@ -138,25 +138,33 @@ public class PFViewPhysicalBodiesTests
     [InlineData(14600d)]
     public void EachBodyIsLitFromItsOwnPositionTowardTheActualSun(double tick)
     {
-        var (manager, _) = SolarSystem();
+        var (manager, bodies) = SolarSystem();
         var light = typeof(MainTabWindow_PFView).Assembly.GetType("PioneerFramework.PFViewCelestialLighting");
         Assert.NotNull(light);
         var direction = light.GetMethod("Direction", Flags);
         Assert.NotNull(direction);
         var frame = PFViewCameraCore.OrbitRotation(37f, 19f, Quaternion.identity);
-        var sun = manager.GetBodyPositionAbs(0, tick);
-        foreach (int id in new[] { 1, 2 })
+        int sunId = bodies.Values.Single(b => b.bodyType == CelestialBodyType.Star).bodyId;
+        var sun = manager.GetBodyPositionAbs(sunId, tick);
+        foreach (var body in bodies.Values.Where(b => b.bodyId != sunId && b.bodyType != CelestialBodyType.Star))
         {
-            var position = manager.GetBodyPositionAbs(id, tick);
+            var position = manager.GetBodyPositionAbs(body.bodyId, tick);
             var actual = (Vector3)direction.Invoke(null, new object[] { sun, position, frame });
             var expected = frame * (Vector3)(sun - position).normalized;
             Assert.True(Vector3.Dot(actual, expected) > .999999f);
         }
         if (tick == 0)
         {
-            var earthLight = (Vector3)direction.Invoke(null, new object[] { sun, manager.GetBodyPositionAbs(1, tick), frame });
-            var moonLight = (Vector3)direction.Invoke(null, new object[] { sun, manager.GetBodyPositionAbs(2, tick), frame });
-            Assert.True(Vector3.Dot(earthLight, moonLight) < .95f, "The Moon must not reuse the Earth's lighting direction.");
+            // 太阳在原点、地球 200 亿米、月球离地球 8000 万米：平行光下两者光向夹角仅 ≈0.23°，
+            // 所以不能用“夹角必须大”判复用；真正要验的是每个天体按自己的位置算方向。
+            int earthId = bodies.Values.Single(b => b.defName == "Earth").bodyId;
+            int moonId = bodies.Values.Single(b => b.defName == "Moon").bodyId;
+            var earthPos = manager.GetBodyPositionAbs(earthId, tick);
+            var moonPos = manager.GetBodyPositionAbs(moonId, tick);
+            var earthLight = (Vector3)direction.Invoke(null, new object[] { sun, earthPos, frame });
+            var moonLight = (Vector3)direction.Invoke(null, new object[] { sun, moonPos, frame });
+            Assert.True((earthLight - moonLight).magnitude > 0f,
+                $"Each body must compute its own light direction. earth={earthPos} moon={moonPos}");
         }
     }
 

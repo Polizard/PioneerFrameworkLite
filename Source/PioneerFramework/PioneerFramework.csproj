@@ -37,6 +37,36 @@
     <PathMap>$(MSBuildProjectDirectory)=PioneerFramework</PathMap>
   </PropertyGroup>
 
+  <!--
+    P1-1（2026-11-02）：诊断日志的**编译期**开关。
+    · Debug   → PF_DIAG 开（开发版：全日志 + pdb）；
+    · Release → PF_DIAG 关（发布版：`PhysicsLogMessage` / `GroupPhysicsMessage` 的调用点
+                被 `[Conditional]` 整体切除，连插值参数都不求值）；
+    · 诊断版 Release（同优化 + 日志，用于 A/B）：
+        dotnet build -c Release -p:EnableDiagnostics=true -p:OutputPath=D:\tmp\p11-diag\
+      守卫会拒绝把诊断版写进 `1.7/Assemblies` 交付件路径。
+    Warning / Error 与用户可见 `Verse.Messages` 不受此开关影响。
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <EnableDiagnostics>true</EnableDiagnostics>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <EnableDiagnostics>false</EnableDiagnostics>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(EnableDiagnostics)' == 'true'">
+    <DefineConstants>$(DefineConstants);PF_DIAG</DefineConstants>
+  </PropertyGroup>
+
+  <!--
+    诊断版 Release 的输出保护：`EnableDiagnostics=true` 会把带日志的 DLL 写进默认 Release 输出
+    （= `1.7/Assemblies/` 交付件）。守卫在 `PrepareForBuild`（编译/拷贝之前）直接拦，
+    要求显式 OutputPath 到临时目录；交付件路径一律拒绝。
+  -->
+  <Target Name="GuardDiagnosticRelease" BeforeTargets="PrepareForBuild"
+          Condition="'$(Configuration)' == 'Release' and '$(EnableDiagnostics)' == 'true' and $(OutputPath.Contains('1.7'))">
+    <Error Text="诊断版 Release 不能写入交付件路径（OutputPath 含 1.7）。请用 -p:OutputPath=&lt;临时目录&gt; 输出，例如 -p:OutputPath=D:\tmp\p11-diag\。" />
+  </Target>
+
   <!-- Versioned RimWorld 1.7 / Harmony references, shared with clean CI builds. -->
   <Import Project="..\GameReferences.props" />
   <ItemGroup>

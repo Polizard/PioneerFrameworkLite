@@ -126,7 +126,7 @@ $resolvedModRoot = [System.IO.Path]::GetFullPath($ModRoot)
 $shaderSourceRoot = Join-Path $resolvedModRoot 'Shaders'
 $projectionSourcePath = Join-Path `
     $resolvedModRoot `
-    'Source\PioneerFramework\PFView\ToonOutline\PFViewOutlineProjection.cs'
+    'Source\PioneerFramework\Presentation\PFView\ToonOutline\PFViewOutlineProjection.cs'
 
 # Validate every input before creating the destination. This guarantees that a
 # missing source cannot leave a partially prepared Unity project behind.

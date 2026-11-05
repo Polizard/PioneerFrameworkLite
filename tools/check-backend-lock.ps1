@@ -25,13 +25,12 @@ Push-Location $root
 
 try {
     $patterns = @(
-        '^Source/PioneerFramework/Base/',
-        '^Source/PioneerFramework/Components/',
-        '^Source/PioneerFramework/Combat/',
-        '^Source/PioneerFramework/Launch/',
-        '^Source/PioneerFramework/GroundAssembly/',
-        '^Source/PioneerFramework/Landing/',
-        '^Source/PioneerFramework/Celestial/Adapters/Physics/',
+        '^Source/PioneerFramework/PhysicsEngine/',
+        '^Source/PioneerFramework/Gameplay/Combat/',
+        '^Source/PioneerFramework/Gameplay/Launch/',
+        '^Source/PioneerFramework/Gameplay/Landing/',
+        '^Source/PioneerFramework/Gameplay/GroundAssembly/',
+        '^Source/PioneerFramework/World/Celestial/Adapters/Physics/',
         '^1\.7/Assemblies/'
     )
 

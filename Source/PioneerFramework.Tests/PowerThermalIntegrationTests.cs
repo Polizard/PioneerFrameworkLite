@@ -105,31 +105,31 @@ namespace PioneerFramework.Tests
             // ⚠ 2026-10-26 用户裁定后：**推进通道是"全有或全无"**（欠电即拒绝点火），
             // 不再按比例给一部分 ⇒ 比例分配的读数改用**武器通道**（它仍是按比例的）。
             var g = new SpaceEntityGroup(1, 0);
-            g.StoredEnergyJ = 100f;
+            g.powerThermal.StoredEnergyJ = 100f;
 
             var inputs = new PowerThermalCore.Inputs
             {
                 genWatts = 0f,
                 dischargeLimitWatts = 100f,
                 capacityJoules = 1000f,
-                storedJoules = g.StoredEnergyJ,
+                storedJoules = g.powerThermal.StoredEnergyJ,
                 nominalWeapon = 100f,
                 activityWeapon = 1f,
                 dtSeconds = 2f,
             };
             g.StepPowerThermal(inputs);
 
-            Assert.Equal(50f, g.PowerSupplyW, 3);          // 存量 100 J / 2 s
-            Assert.Equal(0.5f, g.BrownoutWeapon, 6);
-            Assert.Equal(0.5f, g.Brownout, 6);
-            Assert.True(g.StoredEnergyJ == 0f, $"存量应放空，实际 {g.StoredEnergyJ:R}");
+            Assert.Equal(50f, g.powerThermal.PowerSupplyW, 3);          // 存量 100 J / 2 s
+            Assert.Equal(0.5f, g.powerThermal.BrownoutWeapon, 6);
+            Assert.Equal(0.5f, g.powerThermal.Brownout, 6);
+            Assert.True(g.powerThermal.StoredEnergyJ == 0f, $"存量应放空，实际 {g.powerThermal.StoredEnergyJ:R}");
         }
 
         [Fact]
         public void GroupStep_ChargesBatteryFromSurplus()
         {
             var g = new SpaceEntityGroup(1, 0);
-            g.StoredEnergyJ = 0f;
+            g.powerThermal.StoredEnergyJ = 0f;
 
             var inputs = new PowerThermalCore.Inputs
             {
@@ -140,23 +140,23 @@ namespace PioneerFramework.Tests
             };
             g.StepPowerThermal(inputs);
 
-            Assert.True(g.StoredEnergyJ == 20f, $"应充入 20 J，实际 {g.StoredEnergyJ:R}");
-            Assert.True(g.Brownout == 1f);
+            Assert.True(g.powerThermal.StoredEnergyJ == 20f, $"应充入 20 J，实际 {g.powerThermal.StoredEnergyJ:R}");
+            Assert.True(g.powerThermal.Brownout == 1f);
         }
 
         [Fact]
         public void GroupStep_NoInputs_ResetsToFullySupplied()
         {
             var g = new SpaceEntityGroup(1, 0);
-            g.Brownout = 0.25f;
-            g.BrownoutPropulsion = 0.25f;
-            g.Overheat = 0.25f;
+            g.powerThermal.Brownout = 0.25f;
+            g.powerThermal.BrownoutPropulsion = 0.25f;
+            g.powerThermal.Overheat = 0.25f;
 
             g.StepPowerThermal(default(PowerThermalCore.Inputs));
 
-            Assert.True(g.Brownout == 1f);
-            Assert.True(g.BrownoutPropulsion == 1f);
-            Assert.True(g.Overheat == 1f);
+            Assert.True(g.powerThermal.Brownout == 1f);
+            Assert.True(g.powerThermal.BrownoutPropulsion == 1f);
+            Assert.True(g.powerThermal.Overheat == 1f);
         }
 
         [Fact]
@@ -171,8 +171,8 @@ namespace PioneerFramework.Tests
             };
             g.StepPowerThermal(inputs);
 
-            Assert.Equal(0.5f, g.Overheat, 6);
-            Assert.Equal(0f, g.PowerDemandW, 6);
+            Assert.Equal(0.5f, g.powerThermal.Overheat, 6);
+            Assert.Equal(0f, g.powerThermal.PowerDemandW, 6);
         }
     }
 }

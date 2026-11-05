@@ -170,12 +170,12 @@ namespace PioneerFramework.Tests
             // 2026-10-11（D-1）：画船的绘制段抽到 `PFView/ShipModelRenderer.cs`（零件/朝向棒/浮雕）⇒ 一并扫。
             foreach (var file in new[]
             {
-                "PFView/MainTabWindow_PFView.cs",
-                "PFView/MainTabWindow_PFView.Render.cs",
-                "PFView/MainTabWindow_PFView.Scene.cs",
-                "PFView/MainTabWindow_PFView.GUI.cs",
-                "PFView/PFViewToonShader.cs",
-                "PFView/ShipModelRenderer.cs"
+                "Presentation/PFView/MainTabWindow_PFView.cs",
+                "Presentation/PFView/MainTabWindow_PFView.Render.cs",
+                "Presentation/PFView/MainTabWindow_PFView.Scene.cs",
+                "Presentation/PFView/MainTabWindow_PFView.GUI.cs",
+                "Presentation/PFView/PFViewToonShader.cs",
+                "Presentation/PFView/ShipModelRenderer.cs"
             })
             {
                 string source = File.ReadAllText(SourcePath(file));
@@ -199,8 +199,8 @@ namespace PioneerFramework.Tests
         [Fact]
         public void OutlineContractsAndProviderSource_KeepUsageDocumentation()
         {
-            string contracts = File.ReadAllText(SourcePath("PFView/ToonOutline/PFViewOutlineContracts.cs"));
-            string provider = File.ReadAllText(SourcePath("PFView/ToonOutline/PFViewOutlineAssetBundleProvider.cs"));
+            string contracts = File.ReadAllText(SourcePath("Presentation/PFView/ToonOutline/PFViewOutlineContracts.cs"));
+            string provider = File.ReadAllText(SourcePath("Presentation/PFView/ToonOutline/PFViewOutlineAssetBundleProvider.cs"));
 
             foreach (var token in new[]
             {
@@ -222,7 +222,7 @@ namespace PioneerFramework.Tests
         [Fact]
         public void ContractsExample_DrawsSameCameraAndSubmesh()
         {
-            string contracts = File.ReadAllText(SourcePath("PFView/ToonOutline/PFViewOutlineContracts.cs"));
+            string contracts = File.ReadAllText(SourcePath("Presentation/PFView/ToonOutline/PFViewOutlineContracts.cs"));
             string exampleText = string.Join("\n",
                 contracts.Split('\n').Select(line => line.TrimStart().StartsWith("///") ? line.TrimStart().Substring(3) : line));
 

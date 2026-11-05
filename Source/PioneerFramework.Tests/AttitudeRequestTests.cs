@@ -16,13 +16,13 @@ namespace PioneerFramework.Tests
             g.RequestAttitude(AttitudeAxis.Forward, new DVector3(0, 1, 0), 10);
             g.RequestAttitude(AttitudeAxis.Up, new DVector3(1, 0, 0), 50);
 
-            Assert.Equal(50, g.attitudePriority);
-            Assert.Equal(AttitudeAxis.Up, g.attitudeAxis);
-            Assert.Equal(1.0, g.attitudeTargetSystem.x, 6);
+            Assert.Equal(50, g.attitudeRequest.priority);
+            Assert.Equal(AttitudeAxis.Up, g.attitudeRequest.axis);
+            Assert.Equal(1.0, g.attitudeRequest.targetSystem.x, 6);
 
             g.RequestAttitude(AttitudeAxis.MainThrust, new DVector3(0, 0, 1), 20);   // 低级，忽略
-            Assert.Equal(AttitudeAxis.Up, g.attitudeAxis);
-            Assert.Equal(50, g.attitudePriority);
+            Assert.Equal(AttitudeAxis.Up, g.attitudeRequest.axis);
+            Assert.Equal(50, g.attitudeRequest.priority);
         }
 
         [Fact]
@@ -32,9 +32,9 @@ namespace PioneerFramework.Tests
             g.RequestAttitude(AttitudeAxis.MainThrust, new DVector3(0, 0, 1), 30);
             g.ClearAttitudeRequest();
 
-            Assert.Equal(int.MinValue, g.attitudePriority);
-            Assert.Equal(0.0, g.attitudeTargetSystem.sqrMagnitude, 6);
-            Assert.Equal(default, g.attitudeAxis);
+            Assert.Equal(int.MinValue, g.attitudeRequest.priority);
+            Assert.Equal(0.0, g.attitudeRequest.targetSystem.sqrMagnitude, 6);
+            Assert.Equal(default, g.attitudeRequest.axis);
         }
     }
 }

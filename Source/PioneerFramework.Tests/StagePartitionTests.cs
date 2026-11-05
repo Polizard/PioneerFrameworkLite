@@ -44,5 +44,54 @@ namespace PioneerFramework.Tests
             Assert.Single(jettisoned);
             Assert.Equal(2, jettisoned[0].stageId);
         }
+
+        // ── 块号（2026-11-03）：同一 stage 内可有多块 ──────────────
+        [Fact]
+        public void BlocksOf_ReturnsSortedDistinct()
+        {
+            var parts = new List<SpacePart> { P(1, 1), P(2, 1), P(3, 0) };
+            parts[0].blockId = 2;
+            parts[1].blockId = 0;
+            parts[2].blockId = 1;
+
+            Assert.Equal(new[] { 0, 2 }, StagePartition.BlocksOf(parts, 1));
+            Assert.Empty(StagePartition.BlocksOf(parts, 9));
+        }
+
+        [Fact]
+        public void SplitBlock_IsolatesOnlyThatBlock()
+        {
+            var parts = new List<SpacePart> { P(1, 1), P(2, 1), P(3, 1), P(4, 0) };
+            parts[0].blockId = 1;
+            parts[1].blockId = 2;
+            parts[2].blockId = 2;
+            parts[3].blockId = 1;
+
+            StagePartition.SplitBlock(parts, 1, 2, out var kept, out var jettisoned);
+
+            Assert.Equal(2, jettisoned.Count);
+            Assert.All(jettisoned, p => Assert.Equal(2, p.blockId));
+            Assert.Equal(2, kept.Count);
+            Assert.Contains(kept, p => p.stageId == 0 && p.blockId == 1);
+            Assert.Contains(kept, p => p.stageId == 1 && p.blockId == 1);
+        }
+
+        // ── 级标签 / 父级规则（2026-11-03）────────────────────────
+        [Fact]
+        public void Disposition_And_AttachedChildStage_Rules()
+        {
+            var parts = new List<SpacePart> { P(1, 0), P(2, 1) };
+            parts[1].stageDisposition = StageDisposition.Keep;
+
+            Assert.Equal(StageDisposition.Jettison, StagePartition.DispositionOf(parts, 0));
+            Assert.Equal(StageDisposition.Keep, StagePartition.DispositionOf(parts, 1));
+            Assert.True(StagePartition.IsKeptStage(parts, 1));
+            Assert.False(StagePartition.IsKeptStage(parts, 0));
+            Assert.False(StagePartition.HasAttachedChildStage(parts, 1));
+
+            parts[0].parentStageId = 1;   // 级 0 挂到级 1 上 ⇒ 级 1 有在场子级
+            Assert.True(StagePartition.HasAttachedChildStage(parts, 1));
+            Assert.False(StagePartition.HasAttachedChildStage(parts, 0));
+        }
     }
 }

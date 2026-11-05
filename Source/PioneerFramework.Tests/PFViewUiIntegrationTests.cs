@@ -31,8 +31,14 @@ namespace PioneerFramework.Tests
             var members = ReferencedMembers(method).ToArray();
             Assert.DoesNotContain(members, m => m is FieldInfo && m.Name == "selectedGroupId");
             Assert.Contains(members, m => m.DeclaringType == typeof(PFViewUiOperationContext) && m.Name == "CanFire");
-            Assert.Contains(members, m => m.DeclaringType == typeof(CombatManager) && m.Name == "TryGetMapWeaponMount");
+            Assert.Contains(members, m => m.DeclaringType == typeof(CombatManager) && m.Name == "GetGroupWeapons");
             Assert.Contains(members, m => m.DeclaringType == typeof(PioneerFramework.SpaceAI.ContactTargetService) && m.Name == "TryFire");
+            // 批 5e §4.3：挂载点解析下移到 ContactTargetService 的 id 重载——"落点前复核 + 宿主派发"仍在同一条链上。
+            var dispatch = typeof(PioneerFramework.SpaceAI.ContactTargetService).GetMethod("TryFire", Flags, null,
+                new[] { typeof(SensorManager), typeof(CombatManager), typeof(int), typeof(WeaponInstance),
+                    typeof(PioneerFramework.SpaceAI.ContactTarget) }, null);
+            Assert.NotNull(dispatch);
+            Assert.Contains(ReferencedMembers(dispatch), m => m.DeclaringType == typeof(CombatManager) && m.Name == "TryGetMapWeaponMount");
         }
 
         [Fact]
@@ -51,8 +57,9 @@ namespace PioneerFramework.Tests
         [InlineData("DrawNavballPanel")]
         public void InstrumentsUsePassedOperationSourceInsteadOfInspection(string name)
         {
+            // 批 5e §4.3：仪表面板改吃组 id（不再传引擎对象），"用传入源、不读 selectedGroupId" 的判据不变。
             var method = typeof(MainTabWindow_PFView).GetMethod(name, Flags, null,
-                new[] { typeof(SpaceEntityGroup) }, null);
+                new[] { typeof(int) }, null);
             Assert.NotNull(method);
             Assert.DoesNotContain(ReferencedMembers(method), m => m is FieldInfo && m.Name == "selectedGroupId");
         }
@@ -99,8 +106,9 @@ namespace PioneerFramework.Tests
         {
             var method = typeof(MainTabWindow_PFView).GetMethod(name, Flags);
             var calls = ReferencedMembers(method).OfType<MethodBase>().Select(m => m.Name).ToList();
-            Assert.True(calls.IndexOf("CanInspectEntity") >= 0);
-            Assert.True(calls.IndexOf("CanInspectEntity") < calls.IndexOf("GetGroupPosAbs"));
+            // 批 5e §4.3：准入判据从引擎对象版改为 id 版（同一个 UI 策略），顺序判据不变。
+            Assert.True(calls.IndexOf("CanInspectGroup") >= 0);
+            Assert.True(calls.IndexOf("CanInspectGroup") < calls.IndexOf("GetGroupPosAbs"));
         }
 
         [Fact]
@@ -204,7 +212,7 @@ namespace PioneerFramework.Tests
         public void KnownEntitiesOutsideRegionCannotBecomeUnidentifiedContacts()
         {
             var members = ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("RefreshObjectRows", Flags)).ToList();
-            int admission = members.FindIndex(m => m.Name == "CanInspectEntity");
+            int admission = members.FindIndex(m => m.Name == "CanInspectGroup");
             int knownSet = members.FindIndex(Math.Max(0, admission), m => m.Name == "knownEntityIds");
             int region = members.FindIndex(m => m.Name == "Contains" && m.DeclaringType == typeof(HashSet<int>));
             Assert.True(admission >= 0 && knownSet > admission && region > knownSet);

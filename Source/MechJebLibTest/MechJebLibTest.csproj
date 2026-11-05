@@ -61,79 +61,79 @@
   <ItemGroup>
     <!-- ② 我们自己的纯算术源码：只被互证台（MechJebLibPortTests.cs）用来做"移植面 ↔ 我们"的互证。
          与 Pure.Tests 同样用**链接**而非 ProjectReference，所以主工程零改动。 -->
-    <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Pure\DVector3.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Math\DVector3.cs" Link="Pure\DVector3.cs" />
     <!-- 批5 U4（2026-09-28）：`DVector3Extensions.cs` 已退役 ⇒ 这行 `<Compile Include>` 连同删除
          （它那 5 个成员 - 索引访问/安全单位化/北天极/xaxis/zaxis - 已全部由合并后的 `DVector3` 直接提供，
           且实测**零调用者**）。要取回：把文件搬回原路径并恢复本行。 -->
-    <Compile Include="..\PioneerFramework\Base\Core\SpaceConstants.cs" Link="Pure\SpaceConstants.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OrbitMath.cs" Link="Pure\OrbitMath.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Math\SpaceConstants.cs" Link="Pure\SpaceConstants.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OrbitMath.cs" Link="Pure\OrbitMath.cs" />
     <!-- 适配层（P-1 §3）：必须保持纯（不引 UnityEngine/Verse）——这是它的可测性来源。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\OrbitView.cs" Link="Adapter\OrbitView.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\Orbital\OrbitView.cs" Link="Adapter\OrbitView.cs" />
     <!-- 天地映射的纯数学（原在 Launch/GetSurfaceState.cs，2026-09-18 搬到纯层、原处转发） -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\SurfaceFrame.cs" Link="Adapter\SurfaceFrame.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\SurfaceFrame.cs" Link="Adapter\SurfaceFrame.cs" />
     <!-- 选 tile 主动降落的报价（2026-09-22）：Δv = |v 船 − v 落点地表| + 距离门；
          链进来钉住"平动不能丢""赤道/极地价差""地月量级"这些口径（纯测试）。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\LandingQuote.cs" Link="Adapter\LandingQuote.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\BodyView.cs" Link="Adapter\BodyView.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\PlanNode.cs" Link="Adapter\PlanNode.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\LandingQuote.cs" Link="Adapter\LandingQuote.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\Orbital\BodyView.cs" Link="Adapter\BodyView.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\PlanNode.cs" Link="Adapter\PlanNode.cs" />
     <!-- P2：计划的"意图/目标条件"（活重解的载体，§2.5） -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\PlanIntent.cs" Link="Adapter\PlanIntent.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\PlanIntent.cs" Link="Adapter\PlanIntent.cs" />
     <!-- P2：队列与引导的归属规则（§2.4）——纯谓词，宿主只调用不做判断 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\PlanOwnerRules.cs" Link="Adapter\PlanOwnerRules.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\PlanOwnerRules.cs" Link="Adapter\PlanOwnerRules.cs" />
     <!-- P2/B2.1：燃烧区制判据（准脉冲 vs 连续推力）；2026-10-27 起公式/阈值唯一权威在 ManeuverRegime -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\BurnRegime.cs" Link="Adapter\BurnRegime.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\ManeuverRegime.cs" Link="Adapter\ManeuverRegime.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\BurnRegime.cs" Link="Adapter\BurnRegime.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\ManeuverRegime.cs" Link="Adapter\ManeuverRegime.cs" />
     <!-- P2/B2.3 的"2° 节拍刷新"已于 2026-09-19 删除（台架定量：量化 = 残差之源）⇒ 不再链 BurnArcPolicy.cs -->
     <!-- 预对准可行性（居中点火吃掉对准时间；真飞验收的结论） -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\AlignFeasibility.cs" Link="Adapter\AlignFeasibility.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\AlignFeasibility.cs" Link="Adapter\AlignFeasibility.cs" />
     <!-- B2.2：有限燃烧弧的前向模型 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\BurnStep.cs" Link="Adapter\BurnStep.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\BurnArcCompensation.cs" Link="Adapter\BurnArcCompensation.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\BurnStep.cs" Link="Adapter\BurnStep.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\BurnArcCompensation.cs" Link="Adapter\BurnArcCompensation.cs" />
     <!-- KSA-①（2026-10-17）：候选搜索体（牛顿 + 半步回溯）；net48 兼容适配（Miss3 结构体 / 本地 IsFinite） -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\BurnRefineNewton.cs" Link="Adapter\BurnRefineNewton.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\BurnArc.cs" Link="Adapter\BurnArc.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\BurnRefineNewton.cs" Link="Adapter\BurnRefineNewton.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\BurnArc.cs" Link="Adapter\BurnArc.cs" />
     <!-- "MJ 优先"第 5 件（2026-09-20）：活差额律的靶 = `(a_t, h向量)` ⇒ 微调原语升级为唯一权威，
          台架必须能直接调它（否则又会写成"台架自己那份复刻"⇒ 漂移） -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\TrimBurn.cs" Link="Adapter\TrimBurn.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\TrimBurn.cs" Link="Adapter\TrimBurn.cs" />
     <!-- P2/B2.4：两冲量转移的相位窗口闭式 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\PhaseWindow.cs" Link="Adapter\PhaseWindow.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\ITargetView.cs" Link="Adapter\ITargetView.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\PhaseWindow.cs" Link="Adapter\PhaseWindow.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\Orbital\ITargetView.cs" Link="Adapter\ITargetView.cs" />
     <!-- A4：Operation 框架 + 第一个端到端操作（P-1 判据 A4 的 oracle 就测它） -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\Operation.cs" Link="Adapter\Operation.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OperationCircularize.cs" Link="Adapter\OperationCircularize.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\Operation.cs" Link="Adapter\Operation.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OperationCircularize.cs" Link="Adapter\OperationCircularize.cs" />
     <!-- P1：E4 阻塞解除后的四个（走 ChangeOrbitalElement 族） -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\OperationApoapsis.cs" Link="Adapter\OperationApoapsis.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OperationPeriapsis.cs" Link="Adapter\OperationPeriapsis.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OperationSemiMajor.cs" Link="Adapter\OperationSemiMajor.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OperationEccentricity.cs" Link="Adapter\OperationEccentricity.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OperationEllipticize.cs" Link="Adapter\OperationEllipticize.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OperationInclination.cs" Link="Adapter\OperationInclination.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OperationKillRelVel.cs" Link="Adapter\OperationKillRelVel.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OperationResonantOrbit.cs" Link="Adapter\OperationResonantOrbit.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OperationLan.cs" Link="Adapter\OperationLan.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OperationLongitude.cs" Link="Adapter\OperationLongitude.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OperationStationary.cs" Link="Adapter\OperationStationary.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OperationApoapsis.cs" Link="Adapter\OperationApoapsis.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OperationPeriapsis.cs" Link="Adapter\OperationPeriapsis.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OperationSemiMajor.cs" Link="Adapter\OperationSemiMajor.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OperationEccentricity.cs" Link="Adapter\OperationEccentricity.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OperationEllipticize.cs" Link="Adapter\OperationEllipticize.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OperationInclination.cs" Link="Adapter\OperationInclination.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OperationKillRelVel.cs" Link="Adapter\OperationKillRelVel.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OperationResonantOrbit.cs" Link="Adapter\OperationResonantOrbit.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OperationLan.cs" Link="Adapter\OperationLan.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OperationLongitude.cs" Link="Adapter\OperationLongitude.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OperationStationary.cs" Link="Adapter\OperationStationary.cs" />
     <!-- P1-7：`TransferGeometry` 是上游定义在 `Lambert/Gooding.cs` 里的共用枚举；我们没移植那个文件
          （我们的 Gooding 多两个护栏），所以按上游的命名空间单独放一份。逐字移植的 `Izzo.cs` 需要它。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\TransferGeometry.cs" Link="Lambert\TransferGeometry.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\TransferGeometry.cs" Link="Lambert\TransferGeometry.cs" />
     <!-- P1-7 的交叉验证：上游 `IzzoTests`（逐字）要拿 `Gooding` 互证，而上游那个 Gooding 我们故意不移植
          ⇒ 把**我们**那份（多两个护栏）链进来，测试里用 `LambertTests/GoodingShim.cs` 转发。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\Gooding.cs" Link="Lambert\Gooding.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\TimeSelector.cs" Link="Adapter\TimeSelector.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\EditableDoubles.cs" Link="Adapter\EditableDoubles.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\OrbitalManeuverCalculator.cs" Link="Adapter\OrbitalManeuverCalculator.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\Gooding.cs" Link="Lambert\Gooding.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\Orbital\TimeSelector.cs" Link="Adapter\TimeSelector.cs" />
+    <Compile Include="..\PioneerFramework\Presentation\Orbital\EditableDoubles.cs" Link="Adapter\EditableDoubles.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\OrbitalManeuverCalculator.cs" Link="Adapter\OrbitalManeuverCalculator.cs" />
     <!-- B3 交会阶梯（2026-09-20）：纯核心（只有 OrbitView + 已移植的 OrbitManeuverCalculator）⇒ 台架直接链进来测。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousLadder.cs" Link="Adapter\RendezvousLadder.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\RendezvousLadder.cs" Link="Adapter\RendezvousLadder.cs" />
     <!-- A4 对照（2026-09-20）：把交会台架（在 Pure.Tests 里）**链**进来 —— 而不是把 OrbitalManeuverCalculator
          链进 Pure.Tests（那会拉起 ChangeOrbitalElement/SurfaceFrame/OperationException 一整串）。
          阶梯 + 三个交会纯核心 + 台架 ⇒ 同一根跑道跑"阶梯 vs 连续律"。 -->
     <Compile Include="..\PioneerFramework.Pure.Tests\RendezvousFlightSim.cs" Link="Sim\RendezvousFlightSim.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousGuidanceCore.cs" Link="Sim\RendezvousGuidanceCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\RendezvousGuidanceCore.cs" Link="Sim\RendezvousGuidanceCore.cs" />
     <!-- B5：政策件（`RendezvousGuidanceCore.SelectActuator` 转发到它 ⇒ 本工程也要链） -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\BurnExecutorPolicy.cs" Link="Sim\BurnExecutorPolicy.cs" />
-    <Compile Include="..\PioneerFramework\Base\Orbital\RendezvousCore.cs" Link="Sim\RendezvousCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\BurnExecutorPolicy.cs" Link="Sim\BurnExecutorPolicy.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\RendezvousCore.cs" Link="Sim\RendezvousCore.cs" />
     <!-- 2026-10-01：近场终端律（位置+速度联合）—— 纯层、无 Verse；本工程要链它才能跑离线判据 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\TerminalRendezvousLaw.cs" Link="Sim\TerminalRendezvousLaw.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Guidance\TerminalRendezvousLaw.cs" Link="Sim\TerminalRendezvousLaw.cs" />
     <!-- 批5.B（2026-09-28）：`RendezvousGuidanceLaw.cs` 与 `CwRendezvousCore.cs` 已归档（`Source/已弃置/`）
          ⇒ 这两行 `<Compile Include>` 一并删除。要取回：把文件搬回原路径 + 恢复这两行。 -->
     <!-- 2026-10-01：**临时**把归档的 `CwRendezvousCore.cs` 链回**本测试工程**（文件仍在 `已弃置/`、**生产工程不编译**）
@@ -142,12 +142,12 @@
     <Compile Include="..\已弃置\CwRendezvousCore.cs" Link="Sim\CwRendezvousCore.cs" />
     <!-- P1：alglib 的替换品。**它不在 ThirdParty/ 里**（要偏离上游就破坏"diff 为空"这条唯一不变式），
          所以是我们的文件、但保留上游类名与命名空间。见该文件头的说明。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\ChangeOrbitalElement.cs" Link="Adapter\ChangeOrbitalElement.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\ChangeOrbitalElement.cs" Link="Adapter\ChangeOrbitalElement.cs" />
     <!-- P1-7：alglib `minbleic` 的替代品（模式搜索），同上：我们的文件、保留上游类名与命名空间。 -->
-    <Compile Include="..\PioneerFramework\Base\Orbital\TwoImpulseTransfer.cs" Link="Adapter\TwoImpulseTransfer.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\TwoImpulseTransfer.cs" Link="Adapter\TwoImpulseTransfer.cs" />
     <!-- 批7（2026-09-30）：`TwoImpulseTransfer` 的多起点现在走**统一调度原语**（并行地板 + 唯一归约器）
          ⇒ 本工程必须一并链（纯文件、无 Verse）。 -->
-    <Compile Include="..\PioneerFramework\ThreadSafety\ParallelOps.cs" Link="Adapter\ParallelOps.cs" />
+    <Compile Include="..\PioneerFramework\Platform\Threading\ParallelOps.cs" Link="Adapter\ParallelOps.cs" />
   </ItemGroup>
 
 </Project>

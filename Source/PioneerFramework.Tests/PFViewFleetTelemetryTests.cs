@@ -9,7 +9,7 @@ namespace PioneerFramework.Tests
     public class PFViewFleetTelemetryTests
     {
         private static bool Collect(SpaceGameComp space, int id, int faction, out PFViewFleetSnapshot snapshot)
-            => PFViewFleetTelemetry.TryCollect(space, null, id, faction, out snapshot);
+            => PFViewFleetTelemetry.TryCollect(null, id, faction, out snapshot);
 
         [Fact]
         public void OnlyActivePlayerOwnedGroupsExposeDetailedTelemetry()

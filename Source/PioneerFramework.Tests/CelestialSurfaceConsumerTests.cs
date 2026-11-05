@@ -147,7 +147,15 @@ public class CelestialSurfaceConsumerTests
             (offset.Velocity + DVector3.Cross(f.AngularVelocity, local))).magnitude < 1e-8);
 
         var window = (Window_Transfer)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Window_Transfer));
-        AccessTools.Method(typeof(Window_Transfer), "RefreshGeometry").Invoke(window, new object[] { ship, f.Manager, null, currentSeconds });
+        // 批 5e §4.3b：窗口几何刷新改吃快照（与生产同一个取数口）；这里按船的当前态构造一份。
+        var craft = new SpacecraftSnapshot
+        {
+            GroupId = ship.GroupId,
+            CelestialBodyId = ship.CelestialBodyId,
+            PositionSystem = ship.CurrentOrbit.positionSystem.v,
+            VelocitySystem = ship.CurrentOrbit.velocitySystem.v,
+        };
+        AccessTools.Method(typeof(Window_Transfer), "RefreshGeometry").Invoke(window, new object[] { craft, f.Manager, null, currentSeconds });
         Assert.Equal(0.2 * 180 / Math.PI, (float)AccessTools.Field(typeof(Window_Transfer), "shipLatDeg").GetValue(window), 4);
         Assert.Equal(0.7 * 180 / Math.PI, (float)AccessTools.Field(typeof(Window_Transfer), "shipLonDeg").GetValue(window), 4);
         Assert.True((float)AccessTools.Field(typeof(Window_Transfer), "shipGroundSpeed").GetValue(window) < 1e-8);

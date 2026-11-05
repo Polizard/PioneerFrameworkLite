@@ -28,7 +28,7 @@ namespace PioneerFramework.Tests
             var loaded = new[] { MapWithId(46), second, MapWithId(44), MapWithId(43), first };
             var result = new List<Map>();
 
-            CollectMaps(host.Space, group.GroupId, 2, loaded, result);
+            CollectMaps(group.GroupId, 2, loaded, result);
 
             Assert.Equal(new[] { first, second }, result);
         }
@@ -45,7 +45,7 @@ namespace PioneerFramework.Tests
             AddEntity(host, group, 31, 41);
             var result = new List<Map> { MapWithId(99) };
 
-            CollectMaps(host.Space, group.GroupId, playerFactionId, new[] { MapWithId(41) }, result);
+            CollectMaps(group.GroupId, playerFactionId, new[] { MapWithId(41) }, result);
 
             Assert.Empty(result);
         }
@@ -58,22 +58,22 @@ namespace PioneerFramework.Tests
             var entity = AddEntity(host, group, 31, 41);
             var loaded = new List<Map> { MapWithId(41) };
             var result = new List<Map>();
-            CollectMaps(host.Space, group.GroupId, 2, loaded, result);
+            CollectMaps(group.GroupId, 2, loaded, result);
             Assert.Single(result);
 
             entity.IsMapArchived = true;
-            CollectMaps(host.Space, group.GroupId, 2, loaded, result);
+            CollectMaps(group.GroupId, 2, loaded, result);
             Assert.Empty(result);
             entity.IsMapArchived = false;
-            CollectMaps(host.Space, group.GroupId, 2, loaded, result);
+            CollectMaps(group.GroupId, 2, loaded, result);
             Assert.Single(result);
 
             loaded.Clear();
-            CollectMaps(host.Space, group.GroupId, 2, loaded, result);
+            CollectMaps(group.GroupId, 2, loaded, result);
             Assert.Empty(result);
             loaded.Add(MapWithId(41));
             entity.GroupId = 20;
-            CollectMaps(host.Space, group.GroupId, 2, loaded, result);
+            CollectMaps(group.GroupId, 2, loaded, result);
             Assert.Empty(result);
         }
 
@@ -82,10 +82,13 @@ namespace PioneerFramework.Tests
         {
             using var host = new SpaceAiRuntimeTestHost();
             var result = new List<Map> { MapWithId(99) };
-            CollectMaps(host.Space, 999, 2, new[] { MapWithId(41) }, result);
+            CollectMaps(999, 2, new[] { MapWithId(41) }, result);
             Assert.Empty(result);
             result.Add(MapWithId(99));
-            CollectMaps(null, 10, 2, new[] { MapWithId(41) }, result);
+            var savedGame = Current.Game;
+            Current.Game = null;
+            try { CollectMaps(10, 2, new[] { MapWithId(41) }, result); }
+            finally { Current.Game = savedGame; }
             Assert.Empty(result);
         }
 
@@ -104,10 +107,10 @@ namespace PioneerFramework.Tests
             return map;
         }
 
-        private static void CollectMaps(SpaceGameComp space, int groupId, int playerFactionId,
+        private static void CollectMaps(int groupId, int playerFactionId,
             IReadOnlyList<Map> loadedMaps, List<Map> result)
         {
-            PFViewMapNavigation.CollectMaps(space, groupId, playerFactionId, loadedMaps, result);
+            PFViewMapNavigation.CollectMaps(groupId, playerFactionId, loadedMaps, result);
         }
     }
 }

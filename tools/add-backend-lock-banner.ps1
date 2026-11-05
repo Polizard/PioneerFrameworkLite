@@ -24,17 +24,17 @@ $frontBanner = @(
 )
 
 $backendFiles = @(
-    'Source/PioneerFramework/Base/Game/SpaceGameComp.cs',
-    'Source/PioneerFramework/Base/Game/SpaceGameComp.Time.cs',
-    'Source/PioneerFramework/Base/Game/TimeScaleManager.cs',
-    'Source/PioneerFramework/Base/Core/SpaceEntityGroup.cs',
-    'Source/PioneerFramework/Base/Core/SpaceEntity.cs',
-    'Source/PioneerFramework/Base/Core/SpacePart.cs',
-    'Source/PioneerFramework/Celestial/Adapters/Physics/CelestialPhysicsCoordinator.cs'
+    'Source/PioneerFramework/PhysicsEngine/Step/SpaceGameComp.cs',
+    'Source/PioneerFramework/PhysicsEngine/Step/SpaceGameComp.Time.cs',
+    'Source/PioneerFramework/PhysicsEngine/Step/TimeScaleManager.cs',
+    'Source/PioneerFramework/PhysicsEngine/Model/SpaceEntityGroup.cs',
+    'Source/PioneerFramework/PhysicsEngine/Model/SpaceEntity.cs',
+    'Source/PioneerFramework/PhysicsEngine/Model/SpacePart.cs',
+    'Source/PioneerFramework/World/Celestial/Adapters/Physics/CelestialPhysicsCoordinator.cs'
 )
 $frontFiles = @(
-    'Source/PioneerFramework/PFView/MainTabWindow_PFView.cs',
-    'Source/PioneerFramework/PFView/ShipModelRenderer.cs'
+    'Source/PioneerFramework/Presentation/PFView/MainTabWindow_PFView.cs',
+    'Source/PioneerFramework/Presentation/PFView/ShipModelRenderer.cs'
 )
 
 function Add-Banner([string]$rel, [string[]]$lines) {

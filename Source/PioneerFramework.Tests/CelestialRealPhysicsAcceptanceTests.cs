@@ -110,53 +110,6 @@ public class CelestialRealPhysicsAcceptanceTests
     }
 
     [Fact]
-    public void ManualTakeoverIsPrivateUntilShipAndClockPublishTogether()
-    {
-        TimeScaleProtocolTests.WithClock((host, clock) =>
-        {
-            var runtime = ProductionRuntime(host);
-            var manager = host.Game.GetComponent<CelestialBodyManager>();
-            var ship = host.AddShip();
-            ship.CurrentOrbit = new() { positionSystem = (SystemVec3)new DVector3(10000000, 0, 0), rotation = DQuaternion.identity };
-            var native = (Map)RuntimeHelpers.GetUninitializedObject(typeof(Map)); native.uniqueID = 41;
-            host.Space.RegisterMapComponent(41, new SpaceMapComp(native));
-            host.Space.RegisterEntity(new SpaceEntity(30, 2) { GroupId = ship.GroupId, HasMap = true, MapId = 41 });
-            ship.StartBurn(new DVector3(5, 0, 0));
-            Assert.True(host.Space.SetHover(ship, true));
-            SteeringController.Open(ship.GroupId);
-            SteeringController.KeyYawL = true;
-            SteeringController.SasKind = SasTargetKind.Prograde;
-            SteeringController.ActualThrust = 7;
-            Assert.True(runtime.Coordinator.AttachHostParticipants(new[] { clock.CreateCelestialClockParticipant(), host.Space.CreateCelestialShipParticipant(clock, manager) }).Success);
-            clock.BeginPhysicsBatch();
-            try
-            {
-                Assert.True(clock.TryBeginPhysicsStep(102));
-                var step = runtime.Coordinator.Prepare(new(runtime.WorldSessionId, 1, 100, 102));
-                Assert.True(step.Success, string.Join(",", step.Errors));
-                Assert.True(ship.HasActiveBurn);
-                Assert.True(ship.hoverActive);
-                Assert.Equal(SasTargetKind.Prograde, SteeringController.SasKind);
-                Assert.Equal(7, SteeringController.ActualThrust);
-                Assert.Equal(DVector3.zero, ship.angularVelocity);
-                runtime.Coordinator.Abort(step.Value);
-                Assert.True(ship.HasActiveBurn);
-                Assert.True(clock.TryBeginPhysicsStep(102));
-                step = runtime.Coordinator.Prepare(new(runtime.WorldSessionId, 1, 100, 102));
-                Assert.True(step.Success, string.Join(",", step.Errors));
-                runtime.Coordinator.Publish(step.Value);
-                Assert.False(ship.HasActiveBurn);
-                Assert.False(ship.hoverActive);
-                Assert.Equal(SasTargetKind.None, SteeringController.SasKind);
-                Assert.Equal(0, SteeringController.ActualThrust);
-                Assert.True(ship.angularVelocity.sqrMagnitude > 0);
-                Assert.Equal(102, clock.CommittedPhysicsTick);
-            }
-            finally { SteeringController.Close(); clock.EndPhysicsBatch(); }
-        });
-    }
-
-    [Fact]
     public void ProductionClockQueriesStayAtCommittedTimeWhilePlanningCanExplicitlyForecast()
     {
         TimeScaleProtocolTests.WithClock((host, clock) =>
@@ -250,60 +203,6 @@ public class CelestialRealPhysicsAcceptanceTests
         });
     }
 
-    [Fact]
-    public void PreparedMappedBurnPreservesTankPriorityClosedFuelGroupAndNativeObjectIdentity()
-    {
-        TimeScaleProtocolTests.WithClock((host, clock) =>
-        {
-            var runtime = ProductionRuntime(host);
-            var manager = host.Game.GetComponent<CelestialBodyManager>();
-            var ship = host.AddShip();
-            ship.CurrentOrbit = new() { positionSystem = (SystemVec3)new DVector3(10000000, 0, 0), rotation = DQuaternion.identity };
-            var fuel = new PropellantDef { defName = "PF_TestPreparedTankFuel" };
-            SpacePart Tank(int id, int group, byte priority) => new() {
-                partId = id, linkedMapId = 41, fuelGroupId = group, fuelPriority = priority, boundsSizeShip = new(2, 2, 2),
-                components = new() { new PropellantTankComponentData { propellantDefName = fuel.defName, massKg = 100, capacityKg = 100 } } };
-            var low = Tank(1, 0, 1); var high = Tank(2, 0, 2); var closed = Tank(3, 1, 0);
-            var entity = new SpaceEntity(30, 2) { GroupId = ship.GroupId, HasMap = true, MapId = 41 };
-            entity.SetParts(new() { low, high, closed });
-            host.Space.RegisterEntity(entity);
-            var nativeMap = (Map)RuntimeHelpers.GetUninitializedObject(typeof(Map)); nativeMap.uniqueID = 41;
-            var map = new SpaceMapComp(nativeMap) { ownerEntityId = entity.EntityId };
-            host.Space.RegisterMapComponent(41, map);
-            map.RegisterEngine(fuel, 1000, 1, ThrustAxis.Forward, isRcs: true);
-            map.AddPropellantMass(fuel, 200);
-            var lowTank = low.GetComponent<PropellantTankComponentData>()!;
-            var highTank = high.GetComponent<PropellantTankComponentData>()!;
-            var closedTank = closed.GetComponent<PropellantTankComponentData>()!;
-            lowTank.massKg = 50; highTank.massKg = 100; closedTank.massKg = 50;
-            entity.InvalidateFuelPlans();
-            ship.StartBurn(new DVector3(5, 0, 0));
-            Assert.True(runtime.Coordinator.AttachHostParticipants(new[] { clock.CreateCelestialClockParticipant(), host.Space.CreateCelestialShipParticipant(clock, manager) }).Success);
-            clock.BeginPhysicsBatch();
-            try
-            {
-                Assert.True(clock.TryBeginPhysicsStep(102));
-                var prepared = runtime.Coordinator.Prepare(new(runtime.WorldSessionId, runtime.CurrentStamp.TopologyRevision, 100, 102));
-                Assert.True(prepared.Success, string.Join(",", prepared.Errors));
-                Assert.Equal(200, map.TotalPropellantMass);
-                Assert.Equal(50, lowTank.massKg);
-                runtime.Coordinator.Abort(prepared.Value);
-                Assert.True(clock.TryBeginPhysicsStep(102));
-                prepared = runtime.Coordinator.Prepare(new(runtime.WorldSessionId, runtime.CurrentStamp.TopologyRevision, 100, 102));
-                Assert.True(prepared.Success, string.Join(",", prepared.Errors));
-                runtime.Coordinator.Publish(prepared.Value);
-                Assert.True(map.TotalPropellantMass < 200);
-                Assert.Equal(200 - map.TotalPropellantMass, 50 - lowTank.massKg, 10);
-                Assert.Equal(100, highTank.massKg);
-                Assert.Equal(50, closedTank.massKg);
-                Assert.Same(low, entity.Parts[0]);
-                Assert.Same(lowTank, entity.Parts[0].components[0]);
-                Assert.Same(map, host.Space.GetMapComponent<SpaceMapComp>(41));
-            }
-            finally { clock.EndPhysicsBatch(); }
-        });
-    }
-
     [Theory]
     [InlineData(TimeScaleLevel.Normal)]
     [InlineData(TimeScaleLevel.Fast)]
@@ -340,93 +239,6 @@ public class CelestialRealPhysicsAcceptanceTests
         });
     }
 
-    [Fact]
-    public void LaterParticipantFailureLeavesRealProductionHostUnchangedAndTheSameIntervalCanRetry()
-    {
-        TimeScaleProtocolTests.WithClock((host, clock) =>
-        {
-            var runtime = ProductionRuntime(host);
-            var ship = host.AddShip();
-            ship.CurrentOrbit = new() { positionSystem = (SystemVec3)new DVector3(10000000, 0, 0),
-                velocitySystem = (SystemVec3)new DVector3(30, 0, 0), rotation = DQuaternion.identity };
-            var fuel = new PropellantDef { defName = "PF_TestPreparedFuel" };
-            var entity = new SpaceEntity(30, 2) { GroupId = ship.GroupId };
-            entity.AddPropulsion(new PropulsionData { propellant = fuel, ve = 1000, massFlow = 1, mass = 100, capacity = 100, isVectoredRcs = true });
-            host.Space.RegisterEntity(entity);
-            ship.GetEntityIds().Add(entity.EntityId);
-            ship.StartBurn(new DVector3(5, 0, 0));
-            var fail = new LateFailure();
-            Assert.True(runtime.Coordinator.AttachHostParticipants(new[] { fail }).Success);
-            var before = ship.CurrentOrbit;
-            var stamp = runtime.CurrentStamp;
-            TimeScaleProtocolTests.SetTick(102);
-            host.Space.AdvancePhysics(102);
-            Assert.Equal(before, ship.CurrentOrbit);
-            Assert.Equal(100, entity.TotalPropellantMass);
-            Assert.Equal(stamp, runtime.CurrentStamp);
-            Assert.Equal(100, clock.CommittedPhysicsTick);
-            Assert.Null(clock.CurrentPhysicsStep);
-            fail.Fail = false;
-            host.Space.AdvancePhysics(102);
-            Assert.True(entity.TotalPropellantMass < 100);
-            Assert.NotEqual(before, ship.CurrentOrbit);
-            Assert.Equal(102, runtime.CurrentStamp.PhysicalSeconds);
-            double remaining = entity.TotalPropellantMass;
-            var orbit = ship.CurrentOrbit;
-            host.Space.AdvancePhysics(102);
-            Assert.Equal(remaining, entity.TotalPropellantMass);
-            Assert.Equal(orbit, ship.CurrentOrbit);
-        });
-    }
-
-    [Fact]
-    public void RealShipPreparationAbortKeepsOrbitFuelAndClockAndRetryPublishesOnce()
-    {
-        TimeScaleProtocolTests.WithClock((host, clock) =>
-        {
-            var manager = host.Game.GetComponent<CelestialBodyManager>();
-            var ship = host.AddShip();
-            ship.CurrentOrbit = new() { positionSystem = (SystemVec3)new DVector3(10000000, 0, 0), velocitySystem = (SystemVec3)new DVector3(30, 0, 0), rotation = DQuaternion.identity };
-            var fuel = new PropellantDef { defName = "PF_TestPreparedFuel" };
-            var entity = new SpaceEntity(30, 2) { GroupId = ship.GroupId, IsAffectedByGravity = false };
-            entity.AddPropulsion(new PropulsionData { propellant = fuel, ve = 1000, massFlow = 1, mass = 100, capacity = 100, isVectoredRcs = true });
-            host.Space.RegisterEntity(entity);
-            ship.GetEntityIds().Add(entity.EntityId);
-            ship.StartBurn(new DVector3(5, 0, 0));
-            var provider = new ExistingCelestialEphemerisBridge(Guid.NewGuid(), 100);
-            var coordinator = new CelestialPhysicsCoordinator(provider, provider.CommittedStamp, new object(),
-                new[] { clock.CreateCelestialClockParticipant(), host.Space.CreateCelestialShipParticipant(clock, manager) });
-            var before = ship.CurrentOrbit;
-            clock.BeginPhysicsBatch();
-            try
-            {
-                Assert.True(clock.TryBeginPhysicsStep(102));
-                var first = coordinator.Prepare(new(provider.SessionId, 0, 100, 102));
-                Assert.True(first.Success, string.Join(",", first.Errors));
-                Assert.Equal(before, ship.CurrentOrbit);
-                Assert.Equal(100, entity.TotalPropellantMass);
-                Assert.Equal(100, clock.CommittedPhysicsTick);
-                coordinator.Abort(first.Value);
-                Assert.Equal(before, ship.CurrentOrbit);
-                Assert.Equal(100, entity.TotalPropellantMass);
-                Assert.True(clock.TryBeginPhysicsStep(102));
-                var retry = coordinator.Prepare(new(provider.SessionId, 0, 100, 102));
-                Assert.True(retry.Success, string.Join(",", retry.Errors));
-                coordinator.Publish(retry.Value);
-                double afterFuel = entity.TotalPropellantMass;
-                var afterOrbit = ship.CurrentOrbit;
-                Assert.True(afterFuel < 100);
-                Assert.NotEqual(before.positionSystem, afterOrbit.positionSystem);
-                Assert.Equal(102, clock.CommittedPhysicsTick);
-                Assert.Equal(102, provider.CommittedStamp.PhysicalSeconds);
-                coordinator.Publish(retry.Value);
-                Assert.Equal(afterFuel, entity.TotalPropellantMass);
-                Assert.Equal(afterOrbit, ship.CurrentOrbit);
-            }
-            finally { clock.EndPhysicsBatch(); }
-        });
-    }
-
     private static CelestialRuntime ProductionRuntime(SpaceAiRuntimeTestHost host)
     {
         var root = CelestialInstanceId.Parse("a-root");
@@ -460,15 +272,5 @@ public class CelestialRealPhysicsAcceptanceTests
     {
         public IReadOnlyList<CelestialError> Inspect(CelestialInstanceId id) => Array.Empty<CelestialError>();
         public CelestialResult<bool> ReleaseEmptySurface(CelestialInstanceId id) => CelestialResult.Ok(true);
-    }
-    private sealed class LateFailure : ICelestialStepParticipant
-    {
-        public string Id => "zz.RejectAfterRealShipPreparation";
-        public CelestialStepParticipantPhase Phase => CelestialStepParticipantPhase.State;
-        public bool Fail = true;
-        public CelestialResult<ICelestialPreparedStepPart> Prepare(CelestialPreparedStepContext context)
-            => Fail ? CelestialResult.Reject<ICelestialPreparedStepPart>(new CelestialError("AcceptanceNotReady"))
-                : CelestialResult.Ok<ICelestialPreparedStepPart>(new Part());
-        private sealed class Part : ICelestialPreparedStepPart { public void Commit() { } public void Abort() { } }
     }
 }

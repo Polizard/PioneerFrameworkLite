@@ -43,6 +43,9 @@ namespace PioneerFramework.Tests
             rotationShip = DQuaternion.AngleAxis(0.5, DVector3.up),
             shape = InertiaTensor.Shape.Cylinder,
             stageId = 3,
+            blockId = 4,
+            stageDisposition = StageDisposition.Keep,
+            parentStageId = 2,
             parentId = 9,
         };
 
@@ -78,6 +81,9 @@ namespace PioneerFramework.Tests
                 Assert.Contains("<rotationShip_w>", xml);
                 Assert.Contains("<shape>Cylinder</shape>", xml);
                 Assert.Contains("<stageId>3</stageId>", xml);
+                Assert.Contains("<blockId>4</blockId>", xml);
+                Assert.Contains("<stageDisposition>Keep</stageDisposition>", xml);
+                Assert.Contains("<parentStageId>2</parentStageId>", xml);
                 Assert.Contains("<parentId>9</parentId>", xml);
             }
             finally
@@ -148,6 +154,9 @@ namespace PioneerFramework.Tests
                 Assert.Equal(55, dst.linkedMapId);
                 Assert.Equal(InertiaTensor.Shape.Cylinder, dst.shape);
                 Assert.Equal(3, dst.stageId);
+                Assert.Equal(4, dst.blockId);
+                Assert.Equal(StageDisposition.Keep, dst.stageDisposition);
+                Assert.Equal(2, dst.parentStageId);
                 Assert.Equal(9, dst.parentId);
                 Assert.Equal(MakePart().rotationShip, dst.rotationShip);
             }

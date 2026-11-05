@@ -15,7 +15,7 @@ namespace PioneerFramework.Tests
         private static string SourcePath =>
             Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
-                "Source", "PioneerFramework", "Base", "Game", "RuntimePlanetLayerService.cs");
+                "Source", "PioneerFramework", "World", "Visuals", "RuntimePlanetLayerService.cs");
 
         [Fact]
         public void CreateSurface_BuildsStableSurfaceSpec()

@@ -1,24 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Defs>
   <PioneerFramework.Celestial.CelestialVisualProfileDef>
-    <defName>PF_EarthSurfaceVisual</defName><label>地球地表表现</label>
+    <defName>PF_EarthSurfaceVisual</defName><label>Rimata 地表表现</label>
     <color>(0.282, 0.282, 0.408, 1)</color><backgroundBiome>Ocean</backgroundBiome>
   </PioneerFramework.Celestial.CelestialVisualProfileDef>
   <PioneerFramework.Celestial.CelestialVisualProfileDef>
-    <defName>PF_MoonSurfaceVisual</defName><label>月球地表表现</label>
+    <defName>PF_MoonSurfaceVisual</defName><label>Wardon 地表表现</label>
     <color>(0.7, 0.7, 0.7, 0)</color><backgroundBiome>PF_MoonBiomeWater</backgroundBiome>
   </PioneerFramework.Celestial.CelestialVisualProfileDef>
   <PioneerFramework.Celestial.CelestialVisualProfileDef>
-    <defName>PF_EarthAtmosphereVisual</defName><label>地球大气表现</label>
+    <defName>PF_EarthAtmosphereVisual</defName><label>Rimata 大气表现</label>
     <color>(0.35, 0.55, 0.85, 1)</color><shellHeightMeters>50000</shellHeightMeters>
   </PioneerFramework.Celestial.CelestialVisualProfileDef>
   <PioneerFramework.Celestial.CelestialVisualProfileDef>
-    <defName>PF_EarthCloudsVisual</defName><label>地球云层表现</label>
+    <defName>PF_EarthCloudsVisual</defName><label>Rimata 云层表现</label>
     <texturePath>World/CloudMap</texturePath><shellHeightMeters>10000</shellHeightMeters>
     <fadeRangeMeters>5000</fadeRangeMeters><driftPeriodTicks>600000</driftPeriodTicks><distortionPeriodTicks>6000</distortionPeriodTicks>
   </PioneerFramework.Celestial.CelestialVisualProfileDef>
   <PioneerFramework.Celestial.CelestialVisualProfileDef>
-    <defName>PF_StellarVisual</defName><label>现有恒星等离子体表现</label>
-    <color>(1, 0.8, 0.2, 1)</color>
+    <defName>PF_StellarVisual</defName><label>燧阳等离子体表现</label>
+    <color>(1, 0.706, 0.459, 1)</color>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_ZheShaSurfaceVisual</defName><label>赭砂地表表现</label>
+    <color>(0.72, 0.52, 0.32, 1)</color>
   </PioneerFramework.Celestial.CelestialVisualProfileDef>
 </Defs>

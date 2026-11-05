@@ -13,15 +13,15 @@ internal static class CelestialBenchFactory
     internal static CelestialInstanceId Id(int index) => CelestialInstanceId.Parse("bench:body-" + index.ToString("D5", System.Globalization.CultureInfo.InvariantCulture));
     internal static CelestialRuntime Create(int count, bool pending = false, bool stateful = false, bool visuals = false, bool commands = false,
         Func<CelestialBodyTemplate, CelestialBodyTemplate>? transform = null, System.Collections.Generic.IEnumerable<ICelestialStepParticipant>? participants = null,
-        Func<ExistingCelestialEphemerisBridge, ICelestialPhysicsBridge>? bridgeTransform = null)
+        Func<ExistingCelestialEphemerisBridge, ICelestialPhysicsBridge>? bridgeTransform = null, bool starRoot = false)
     {
         var provider = new ExistingCelestialEphemerisBridge(Session);
-        var prototype = transform?.Invoke(Template(1000, stateful, visuals)) ?? Template(1000, stateful, visuals);
+        var prototype = transform?.Invoke(Template(1000, stateful, visuals, starRoot ? "Star" : "Planet")) ?? Template(1000, stateful, visuals, starRoot ? "Star" : "Planet");
         var runtime = new CelestialRuntime(bridgeTransform?.Invoke(provider) ?? provider, provider.CommittedStamp, new Resources(), 17,
             _ => CelestialResult.Ok(prototype), participants);
         if (commands) Require(runtime.RegisterCommandHandler("bench.increment", new Increment(runtime)).Success, "Handler registration failed.");
         var items = Enumerable.Range(0, count).Select(index => {
-            var template = Template(1000 + index, stateful, visuals);
+            var template = Template(1000 + index, stateful, visuals, index == 0 && starRoot ? "Star" : "Planet");
             if (transform != null) template = transform(template);
             return new CelestialSpawnItem(Id(index), "body", index, "body[" + index + "]", template,
                 template.Resolve(new CelestialGenerationContext(17, "body[" + index + "]")).Value,
@@ -33,13 +33,13 @@ internal static class CelestialBenchFactory
         return runtime;
     }
 
-    internal static CelestialBodyTemplate Template(double radius, bool stateful, bool visuals = false)
+    internal static CelestialBodyTemplate Template(double radius, bool stateful, bool visuals = false, string bodyType = "Planet")
     {
         var binding = new CompProperties_ExternalPhysicsBinding { key = "motion", providerId = ExistingCelestialEphemerisBridge.Id,
             modeId = "existing.circular.v1", gravitationalParameter = new() { value = 1e8 },
             initializationPayload = Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(new {
                 orbitRadius = 0d, orbitPeriod = 0d, initialPhase = 0d, orbitNormal = new[] { 0, 1, 0 },
-                dayLengthTicks = 60000d, bodyType = "Planet", frameOriginReference = "frameOrigin" })) };
+                dayLengthTicks = 60000d, bodyType = bodyType, frameOriginReference = "frameOrigin" })) };
         var definition = new CelestialBodyDef { defName = "PF_BenchBody", label = "benchmark", comps = new() {
             new CompProperties_SphericalBody { key = "shape", radiusMeters = new() { value = radius } }, binding } };
         if (visuals) definition.comps.Add(new CompProperties_CelestialVisual { key = "visual",

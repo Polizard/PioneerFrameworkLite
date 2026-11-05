@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Defs>
   <PioneerFramework.Celestial.CelestialSystemDef>
-    <defName>PF_DefaultCelestialSystem</defName><label>默认地月系</label>
+    <defName>PF_DefaultCelestialSystem</defName><label>燧阳系</label>
     <rootSurfaceEntry>root</rootSurfaceEntry>
     <entries>
       <li>
@@ -20,6 +20,13 @@
         <initializationReferences>
           <li><key>primaryLight</key><entry>primary</entry><scope>Global</scope></li>
           <li><key>frameOrigin</key><entry>root</entry><scope>Parent</scope></li>
+        </initializationReferences>
+      </li>
+      <li>
+        <key>zhesha</key><bodyDef>ZheSha</bodyDef><count><value>1</value></count><parentEntry>primary</parentEntry>
+        <initializationReferences>
+          <li><key>primaryLight</key><entry>primary</entry><scope>Global</scope></li>
+          <li><key>frameOrigin</key><entry>zhesha</entry><scope>Self</scope></li>
         </initializationReferences>
       </li>
     </entries>

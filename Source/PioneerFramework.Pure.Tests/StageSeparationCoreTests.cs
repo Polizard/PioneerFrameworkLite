@@ -226,5 +226,139 @@ namespace PioneerFramework.Pure.Tests
             StageSeparationCore.Add(ref bad, 100.0, new DVector3(double.NaN, 0, 0));
             Assert.Equal(0.0, bad.mass, 12);          // 非有限位置不计入
         }
+
+        // ── 11. N 块：单块与 Solve 逐位相同（同序算术）─────────────
+        [Fact]
+        public void SolveMany_SingleBlock_MatchesSolveExactly()
+        {
+            var (a, b) = Halves();
+            DVector3 omega = new(0.02, 0.01, -0.03);
+            var blocks = new List<SeparationMass> { b };
+
+            Assert.True(StageSeparationCore.SolveMany(a, blocks, Origin, Velocity, omega,
+                DQuaternion.identity, 1.0, out var m), m.reason);
+            Assert.True(StageSeparationCore.Solve(a, b, Origin, Velocity, omega,
+                DQuaternion.identity, 1.0, out var s), s.reason);
+
+            Assert.Equal(s.originA.x, m.coreOrigin.x);
+            Assert.Equal(s.originA.y, m.coreOrigin.y);
+            Assert.Equal(s.originA.z, m.coreOrigin.z);
+            Assert.Equal(s.velocityA.x, m.coreVelocity.x);
+            Assert.Equal(s.velocityA.y, m.coreVelocity.y);
+            Assert.Equal(s.velocityA.z, m.coreVelocity.z);
+            Assert.Equal(s.originB.x, m.blockOrigins[0].x);
+            Assert.Equal(s.originB.y, m.blockOrigins[0].y);
+            Assert.Equal(s.originB.z, m.blockOrigins[0].z);
+            Assert.Equal(s.velocityB.x, m.blockVelocities[0].x);
+            Assert.Equal(s.velocityB.y, m.blockVelocities[0].y);
+            Assert.Equal(s.velocityB.z, m.blockVelocities[0].z);
+            Assert.Equal(s.impulseJ, m.impulseJ[0]);
+        }
+
+        // ── 12. 四块对称：芯级反冲相消、动量守恒、各块沿径向离开 ──────
+        [Fact]
+        public void SolveMany_FourSymmetric_CoreRecoilCancels_AndMomentumConserved()
+        {
+            var core = new SeparationMass();
+            StageSeparationCore.Add(ref core, 1000.0, DVector3.zero);
+
+            var blocks = new List<SeparationMass>();
+            foreach (var pos in new[]
+                     {
+                         new DVector3(2, 0, 0), new DVector3(-2, 0, 0),
+                         new DVector3(0, 2, 0), new DVector3(0, -2, 0),
+                     })
+            {
+                var b = new SeparationMass();
+                StageSeparationCore.Add(ref b, 100.0, pos);
+                blocks.Add(b);
+            }
+
+            DVector3 omega = new(0.01, -0.02, 0.03);
+            Assert.True(StageSeparationCore.SolveMany(core, blocks, Origin, Velocity, omega,
+                DQuaternion.identity, 1.0, out var m), m.reason);
+
+            // 芯级反冲相消 ⇒ 芯级速度 = 刚体速度（冲量前）
+            DVector3 coreV = Velocity + DVector3.Cross(omega, m.coreCenter);
+            Assert.True((m.coreVelocity - coreV).magnitude <= RelTol * coreV.magnitude,
+                $"core Δv={(m.coreVelocity - coreV).magnitude:G3}");
+
+            // 总动量守恒
+            double totalMass = core.mass;
+            DVector3 momentSum = core.Center * core.mass;
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                totalMass += blocks[i].mass;
+                momentSum += blocks[i].Center * blocks[i].mass;
+            }
+            DVector3 wholeCenter = momentSum / totalMass;
+            DVector3 before = (Velocity + DVector3.Cross(omega, wholeCenter)) * totalMass;
+            DVector3 after = m.coreVelocity * m.coreMass;
+            for (int i = 0; i < blocks.Count; i++)
+                after += m.blockVelocities[i] * blocks[i].mass;
+            Assert.True((after - before).magnitude <= RelTol * before.magnitude,
+                $"|Δp|={(after - before).magnitude:G3} |p|={before.magnitude:G3}");
+
+            // 各块沿“块质心 − 芯级质心”径向离开
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                DVector3 dir = (m.blockCenters[i] - m.coreCenter).normalized;
+                Assert.True(DVector3.Dot(m.blockVelocities[i] - m.coreVelocity, dir) > 0.0, $"block {i} 不是径向离开");
+            }
+        }
+
+        // ── 13. 两块非对称：动量守恒（芯级反冲不抵消）────────────────
+        [Fact]
+        public void SolveMany_TwoAsymmetric_ConservesMomentum()
+        {
+            var core = new SeparationMass();
+            StageSeparationCore.Add(ref core, 1000.0, DVector3.zero);
+            var b1 = new SeparationMass();
+            StageSeparationCore.Add(ref b1, 300.0, new DVector3(2, 0, -1));
+            var b2 = new SeparationMass();
+            StageSeparationCore.Add(ref b2, 50.0, new DVector3(0, 1.5, -2));
+            var blocks = new List<SeparationMass> { b1, b2 };
+
+            DVector3 omega = new(0.01, 0.02, 0.0);
+            Assert.True(StageSeparationCore.SolveMany(core, blocks, Origin, Velocity, omega,
+                DQuaternion.identity, 1.0, out var m), m.reason);
+
+            double totalMass = 1350.0;
+            DVector3 wholeCenter = (b1.Center * 300.0 + b2.Center * 50.0) / totalMass;
+            DVector3 before = (Velocity + DVector3.Cross(omega, wholeCenter)) * totalMass;
+            DVector3 after = m.coreVelocity * m.coreMass
+                + m.blockVelocities[0] * 300.0 + m.blockVelocities[1] * 50.0;
+            Assert.True((after - before).magnitude <= RelTol * before.magnitude,
+                $"|Δp|={(after - before).magnitude:G3}");
+        }
+
+        // ── 14. 退化输入：空块 / 零质量 / 块间重合 / 非有限 ────────────
+        [Fact]
+        public void SolveMany_DegenerateInputs_AreRejected()
+        {
+            var core = new SeparationMass();
+            StageSeparationCore.Add(ref core, 100.0, DVector3.zero);
+
+            Assert.False(StageSeparationCore.SolveMany(core, new List<SeparationMass>(),
+                DVector3.zero, DVector3.zero, DVector3.zero, DQuaternion.identity, 1.0, out var e1));
+            Assert.Equal("no-blocks", e1.reason);
+
+            Assert.False(StageSeparationCore.SolveMany(core, new List<SeparationMass> { default },
+                DVector3.zero, DVector3.zero, DVector3.zero, DQuaternion.identity, 1.0, out var e2));
+            Assert.Equal("zero-mass", e2.reason);
+
+            var same1 = new SeparationMass();
+            var same2 = new SeparationMass();
+            StageSeparationCore.Add(ref same1, 10.0, new DVector3(0, 0, 2));
+            StageSeparationCore.Add(ref same2, 10.0, new DVector3(0, 0, 2));
+            Assert.False(StageSeparationCore.SolveMany(core, new List<SeparationMass> { same1, same2 },
+                DVector3.zero, DVector3.zero, DVector3.zero, DQuaternion.identity, 1.0, out var e3));
+            Assert.Equal("coincident-centers", e3.reason);
+
+            var nonFinite = new SeparationMass { mass = 10.0, moment = new DVector3(double.NaN, 0, 0) };
+            Assert.False(StageSeparationCore.SolveMany(core, new List<SeparationMass> { nonFinite },
+                DVector3.zero, DVector3.zero, DVector3.zero, DQuaternion.identity, 1.0, out var e4));
+            Assert.Equal("non-finite", e4.reason);
+        }
     }
 }

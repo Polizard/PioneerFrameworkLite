@@ -77,7 +77,7 @@ $fixtureModRoot = Join-Path $fixtureRoot 'Mod'
 $shaderSourceRoot = Join-Path $fixtureModRoot 'Shaders'
 $projectionSourceRoot = Join-Path `
     $fixtureModRoot `
-    'Source\PioneerFramework\PFView\ToonOutline'
+    'Source\PioneerFramework\Presentation\PFView\ToonOutline'
 $preparedProject = Join-Path $fixtureRoot 'PreparedProject'
 $missingProject = Join-Path $fixtureRoot 'MissingSourceProject'
 

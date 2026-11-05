@@ -66,7 +66,7 @@ def main():
                     fail(f"{xml_path.relative_to(ROOT)}: XML parse error: {e}")
 
     # 2. PFDefs fields must exist in Defs
-    defof_path = ROOT / "Source" / "PioneerFramework" / "PFDefs.cs"
+    defof_path = ROOT / "Source" / "PioneerFramework" / "Platform" / "Content" / "PFDefs.cs"
     if not defof_path.exists():
         fail(f"missing {defof_path.relative_to(ROOT)}")
     text = defof_path.read_text(encoding="utf-8")
@@ -250,8 +250,8 @@ def main():
         return found
 
     celestial_index = build_schema_index([
-        ROOT / "Source/PioneerFramework/Celestial",
-        ROOT / "Source/PioneerFramework/Base/Core/CelestialBodyDef.cs",
+        ROOT / "Source/PioneerFramework/World/Celestial",
+        ROOT / "Source/PioneerFramework/Platform/Defs/CelestialBodyDef.cs",
         ROOT / "Examples/CelestialCompSample",
     ])
     celestial_example = ROOT / "Examples/CelestialCompSample"
@@ -285,7 +285,7 @@ def main():
             if type_name.startswith("ShotCompProperties_"):
                 # Custom ShotComp properties do not inherit Verse.CompProperties fields.
                 # Restrict each node to its own class, rather than the file-wide field union.
-                source = (ROOT / "Source/PioneerFramework/Combat/Shots/ShotComponents.cs").read_text(encoding="utf-8")
+                source = (ROOT / "Source/PioneerFramework/Gameplay/Combat/Shots/ShotComponents.cs").read_text(encoding="utf-8")
                 block = re.search(r"class\s+" + re.escape(type_name) + r"\s*:\s*ShotCompProperties\s*\{", source)
                 if block is None:
                     fail(f"{rel}: unknown built-in shot component {type_name}")

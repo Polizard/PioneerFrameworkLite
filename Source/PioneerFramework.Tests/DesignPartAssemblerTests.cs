@@ -223,6 +223,45 @@ namespace PioneerFramework.Tests
             Assert.Equal(parts[1].partId, append.parentId);
         }
 
+        // ── 级标签 / 块号 / 父级（2026-11-03）────────────────────
+        [Fact]
+        public void BuildParts_BakesBlockIdDispositionAndParentStage()
+        {
+            var parent = Entry("PF_ShipPart_Tank_Debug", "tank");
+            parent.stageId = 0;
+            var child = new DesignPartSpec
+            {
+                defName = "PF_ShipPart_Thruster_Debug",
+                category = "thruster",
+                stageId = 1,
+                blockId = 3,
+                parentIndex = 0,
+            };
+            var spec = DebugSpec(parent, child);
+            spec.keepStageIds.Add(0);
+            spec.recoverableStageIds.Add(1);
+
+            var parts = DesignPartAssembler.BuildParts(spec, 10, 10, out _, _ => null);
+
+            Assert.Equal(StageDisposition.Keep, parts[1].stageDisposition);
+            Assert.Equal(StageDisposition.JettisonRecoverable, parts[2].stageDisposition);
+            Assert.Equal(0, parts[1].blockId);
+            Assert.Equal(3, parts[2].blockId);
+            Assert.Equal(-1, parts[1].parentStageId);
+            Assert.Equal(0, parts[2].parentStageId);
+        }
+
+        [Fact]
+        public void BuildParts_LegacyDefaults_BlockZeroJettisonNoParentStage()
+        {
+            var parts = DesignPartAssembler.BuildParts(
+                DebugSpec(Entry("PF_ShipPart_Tank_Debug", "tank")), 10, 10, out _, _ => null);
+
+            Assert.Equal(0, parts[1].blockId);
+            Assert.Equal(StageDisposition.Jettison, parts[1].stageDisposition);
+            Assert.Equal(-1, parts[1].parentStageId);
+        }
+
         // ── 级间空隙（2026-10-30 用户方案：级边界留空当 ⇒ 抛级瞬间两组不接触）────
 
         private static DesignPartSpec Staged(string defName, string category, int stage, int qty = 1)

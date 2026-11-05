@@ -53,8 +53,8 @@ def validate_example_content(folder, schema_index, known_definitions=()):
 def main():
     workspace = Path(__file__).resolve().parents[1]
     folder = workspace / 'Examples/CelestialCompSample'
-    index = build_schema_index([workspace / 'Source/PioneerFramework/Celestial',
-                                workspace / 'Source/PioneerFramework/Base/Core/CelestialBodyDef.cs', folder])
+    index = build_schema_index([workspace / 'Source/PioneerFramework/World/Celestial',
+                                workspace / 'Source/PioneerFramework/Platform/Defs/CelestialBodyDef.cs', folder])
     known = set()
     for path in (workspace / '1.7/Defs').rglob('*.xml'):
         known.update(node.findtext('defName') for node in ET.parse(path).getroot() if node.findtext('defName'))

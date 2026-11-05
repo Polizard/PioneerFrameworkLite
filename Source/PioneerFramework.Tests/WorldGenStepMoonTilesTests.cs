@@ -230,7 +230,7 @@ namespace PioneerFramework.Tests
         [Fact]
         public void MoonTilesSource_InitializesSurfaceTile()
         {
-            string source = File.ReadAllText(SourcePath("WorldGenStep/WorldGenStep_MoonTiles.cs"));
+            string source = File.ReadAllText(SourcePath("World/Generation/WorldGenStep_MoonTiles.cs"));
             foreach (var required in new[]
             {
                 "new SurfaceTile(tile)",
@@ -315,7 +315,7 @@ namespace PioneerFramework.Tests
         [Fact]
         public void MoonSurfaceSource_ContainsRequiredBehavior()
         {
-            string source = File.ReadAllText(SourcePath("MapGeneration/MoonSurfaceMapGeneration.cs"));
+            string source = File.ReadAllText(SourcePath("World/Generation/MapGeneration/MoonSurfaceMapGeneration.cs"));
             foreach (var required in new[]
             {
                 "GenerateContentsIntoMap",
