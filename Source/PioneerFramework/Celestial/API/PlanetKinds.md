@@ -1,6 +1,6 @@
 # 通用行星种类
 
-适用 RimWorld 1.7 / 天体框架存档 v3（v1/v2 旧档明确拒绝为 UnsupportedSaveVersion，不迁移，需新建世界）。六类均为可以反复实例化的 `CelestialBodyDef`，已随主 Mod 加载。默认 `PF_DefaultCelestialSystem` 仍只生成太阳、地球和月球。
+适用 RimWorld 1.7 / 天体框架存档 v4（v1/v2/v3 旧档明确拒绝为 UnsupportedSaveVersion，不迁移，需新建世界）。六类均为可以反复实例化的 `CelestialBodyDef`，已随主 Mod 加载。默认 `PF_DefaultCelestialSystem` 仍只生成太阳、地球和月球。
 
 | DefName | 种类 | 覆盖示例 | 默认地表 |
 | --- | --- | --- | --- |

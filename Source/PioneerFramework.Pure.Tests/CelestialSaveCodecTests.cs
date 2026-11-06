@@ -34,9 +34,9 @@ public class CelestialSaveCodecTests
     }
 
     [Theory]
-    [InlineData("{\"nested\":{\"formatVersion\":2},\"formatVersion\":3}")]
+    [InlineData("{\"nested\":{\"formatVersion\":2},\"formatVersion\":4}")]
     [InlineData("{\"formatVersion\":2,\"formatVersion\":3}")]
-    [InlineData("{\"formatVersion\":3,\"unknown\":0}")]
+    [InlineData("{\"formatVersion\":4,\"unknown\":0}")]
     [InlineData("{\"formatVersion\":2,\"nested\":[}")]
     [InlineData("{\"formatVersion\":2} true")]
     [InlineData("{\"formatVersion\":3} {}")]

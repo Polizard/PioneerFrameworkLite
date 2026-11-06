@@ -1,6 +1,6 @@
 # 行星参数作者契约
 
-适用 RimWorld 1.7，框架外层存档 v3（v1/v2 旧档明确拒绝，不迁移，需要新世界）。入口见 [API](README.md)、[六类模板与测试面板](PlanetKinds.md)。本页对应实际组件消费者；category/tags/bodyType 是开放元数据，能力来自显式组件。省略 atmosphere、environment、surface、biomes、maps 不会补出类地环境、地图或伤害。视觉球体可以存在于无 surface 能力的巨行星。
+适用 RimWorld 1.7，框架外层存档 v4（v1/v2/v3 旧档明确拒绝，不迁移，需要新世界）。入口见 [API](README.md)、[六类模板与测试面板](PlanetKinds.md)。本页对应实际组件消费者；category/tags/bodyType 是开放元数据，能力来自显式组件。省略 atmosphere、environment、surface、biomes、maps 不会补出类地环境、地图或伤害。视觉球体可以存在于无 surface 能力的巨行星。
 
 ## 解析、范围和替换
 
@@ -106,7 +106,7 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 
 ## 地形、地图、候选与外观
 
-`CelestialBiomeProfileDef.mode=Parameterized` 需要显式 terrain 与一个无条件 fallback；组件设置 `useEnvironmentClimate=true`，绑定同次冻结的 environment climate。唯一纬度带做法是 Parameterized 的 `minimum/maximumAbsoluteLatitude` 规则配合每条规则的显式 `hilliness`（见下表）；LatitudeBands 生成模式已移除。Parameterized 的原生步骤只有 `worldGenSteps` 一个通道：其中禁止 `Terrain`（原生地形会重选 biome、覆盖参数化结果），Rivers/Lakes 步骤必须与 `terrain.allowRivers/allowLakes` 成对出现（错误码 `ParameterizedNativeTerrainForbidden` / `RiverStepMismatch` / `LakeStepMismatch`）。`terrain` 启用 biomes v2，`diversity` 启用 maps v2；surface 配置仍v1，环境/空气/视觉组件状态schema均保持原版本1。
+`CelestialBiomeProfileDef.mode=Parameterized` 需要显式 terrain 与一个无条件 fallback；组件设置 `useEnvironmentClimate=true`，绑定同次冻结的 environment climate。唯一纬度带做法是 Parameterized 的 `minimum/maximumAbsoluteLatitude` 规则配合每条规则的显式 `hilliness`（见下表）；LatitudeBands 生成模式已移除。Parameterized 的原生步骤只有 `worldGenSteps` 一个通道：其中禁止 `Terrain`（原生地形会重选 biome、覆盖参数化结果），Rivers/Lakes 步骤必须与 `terrain.allowRivers/allowLakes` 成对出现（错误码 `ParameterizedNativeTerrainForbidden` / `RiverStepMismatch` / `LakeStepMismatch`）。`terrain` 启用 biomes v2，`diversity` 的旧配置使用 maps v2，显式 `localRecipe` 使用 maps v3；surface 配置仍v1，环境/空气/视觉组件状态schema均保持原版本1。
 
 **真空声明必须与 Parameterized 生成集合一致**（2026-11-03 P4 跨组件校验）：Parameterized terrain 能生成的 biome 集合（`terrain.biomeRules/li/biome` 加非空 `terrain.oceanBiome`）必须与同一天体 `environment.vacuumBiomes` 的声明一致——`BiomeDef.inVacuum=true` 的生成群落必须被声明，`inVacuum=false` 的生成群落不得被声明，否则 `CelestialBodyDef.ToTemplate()` 在逐组件 `ConfigErrors()` 全部通过后拒绝并给出错误码 `VacuumContractMismatch`（CompKey 指向应修正的 biomes/environment 组件，Detail 为 `defName inVacuum=...`）。声明集合允许包含未生成的群落（跨天体复用同一 environment profile），只校验“生成 ⇒ 声明”方向；`terrain` 省略的 VanillaSurface 不参与该跨校验。该检查需要原生 `BiomeDef`，因此位于 XML Def 层（`CelestialBodyContentValidation`），而非纯 API 的配置校验器。
 
@@ -130,7 +130,7 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 | diversity.soils / animals | 空列表；typed TerrainDef / PawnKindDef+weight | 非水非岩有限肥力土壤 / 原生Animal种族候选 |
 | diversity.weather / conditions / incidents | 空列表；typed WeatherDef / GameConditionDef / IncidentDef+weight | 原生天气与事件候选；条件事件、海岸事件的原生适用性仍检查；无适用项保留原生回退规则 |
 
-各候选列表的 ID 唯一、默认weight=1，权重(0,1e6]，覆盖`diversity.GROUP.DEFNAME.weight`；空列表保留原生候选。共同字段来自同一冻结实例与tile上下文，不按共享Def或tile号共用状态。不新增资源、植物、动物或事件Def。
+本地地图配方和初始输入投影见 [本地地图生成 API](../../MapGeneration/API/README.md)。各候选列表的 ID 唯一、默认weight=1，权重(0,1e6]，覆盖`diversity.GROUP.DEFNAME.weight`；空列表保留原生候选。共同字段来自同一冻结实例与tile上下文，不按共享Def或tile号共用状态。不新增资源、植物、动物或事件Def。
 
 外观 profile 的 `visualVersion=2` 与 `appearance` 必须成对。v1和原11参数公开构造函数保留。每个视觉组件独立以 `appearance.FIELD` 覆盖数字，列表位于profile的appearance.parameters；style是typed枚举。
 
@@ -154,7 +154,7 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 
 ## 兼容与人工验收
 
-默认太阳/地球/月球的定义与共享profile输入保持原样。六个可选模板显式升级；历史实例、地图及其v1/v2配置从原字节恢复。外层存档为v3，v1/v2 旧档明确拒绝（不迁移）；v1框架测试世界的原有拒绝规则保留。旧v1 motion/air/visual/environment/biomes/maps解码和旧公开签名保留；不修改冻结fixtures。所有DLC专有Def用MayRequire/原生条件patch；没有Odyssey不阻止加载。仅原生支持的温度、天气、候选、群落和地图生成行为承接结果。
+默认太阳/地球/月球的定义与共享profile输入保持原样。六个可选模板显式升级；历史实例、地图及其v1/v2配置从原字节恢复。外层存档为 v4，v1/v2/v3 旧档明确拒绝。旧v1 motion/air/visual/environment/biomes/maps解码和旧公开签名保留；不修改冻结fixtures。所有DLC专有Def用MayRequire/原生条件patch；没有Odyssey不阻止加载。仅原生支持的温度、天气、候选、群落和地图生成行为承接结果。
 
 以下各项当前均 **UNCHECKED（需要真实游戏观察）**：
 

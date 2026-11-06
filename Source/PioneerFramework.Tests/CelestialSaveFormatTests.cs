@@ -70,7 +70,7 @@ public class CelestialSaveFormatTests
     }
 
     [Fact]
-    public void V1AndV2AreExplicitlyRejectedAndV3HasAnIntegrityCheckedCompressedEnvelope()
+    public void V1V2AndV3AreExplicitlyRejectedAndV4HasAnIntegrityCheckedCompressedEnvelope()
     {
         var v1 = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Celestial", "v1", "ready.json"));
         Assert.Equal("UnsupportedSaveVersion", Assert.Single(CelestialSaveCodec.Decode(v1).Errors).Code);
@@ -79,11 +79,12 @@ public class CelestialSaveFormatTests
         var legacy = CelestialSaveCodec.Encode(Empty() with { FormatVersion = 2 });
         Assert.False(legacy.Success);
         Assert.Equal("UnsupportedSaveVersion", Assert.Single(legacy.Errors).Code);
-        Assert.Equal(3, Empty().FormatVersion);
+        Assert.Equal("UnsupportedSaveVersion", Assert.Single(CelestialSaveCodec.Decode(System.Text.Encoding.UTF8.GetBytes("{\"formatVersion\":3}")).Errors).Code);
+        Assert.Equal(4, Empty().FormatVersion);
         var encoded = CelestialSaveCodec.Encode(Empty()).Value;
         var json = JsonNode.Parse(encoded.Span)!;
         Assert.Equal("brotli", json["compression"]!.GetValue<string>());
-        Assert.Equal(3, json["formatVersion"]!.GetValue<int>());
+        Assert.Equal(4, json["formatVersion"]!.GetValue<int>());
         Assert.True(json["decodedLength"]!.GetValue<int>() > 0);
         Assert.True(CelestialSaveCodec.Decode(encoded).Success);
     }

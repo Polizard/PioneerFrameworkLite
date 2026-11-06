@@ -31,7 +31,7 @@ public class CelestialBuiltinCompTableTests
         var expectedVersions = new Dictionary<string, int>(StringComparer.Ordinal)
         {
             ["PFL.Sphere"] = 1, ["PFL.Surface"] = 1, ["PFL.ExternalPhysicsBinding"] = 1, ["PFL.Atmosphere"] = 2,
-            ["PFL.LightSource"] = 1, ["PFL.ExistingEnvironment"] = 2, ["PFL.MapGeneration"] = 2, ["PFL.Biomes"] = 2,
+            ["PFL.LightSource"] = 1, ["PFL.ExistingEnvironment"] = 2, ["PFL.MapGeneration"] = 3, ["PFL.Biomes"] = 2,
             ["PFL.Visual.Surface"] = 2, ["PFL.Visual.Atmosphere"] = 2, ["PFL.Visual.Clouds"] = 2, ["PFL.Visual.Stellar"] = 2
         };
         Assert.Equal(ExpectedHandlers.Length, expectedVersions.Count);

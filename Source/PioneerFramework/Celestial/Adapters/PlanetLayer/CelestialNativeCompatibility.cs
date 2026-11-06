@@ -36,14 +36,19 @@ namespace PioneerFramework.Celestial
             Add("WorldObjectsHolder.Remove", lifecycle, "CaptureParentRemoval", "prefix");
             Add("WorldObjectsHolder.Remove", lifecycle, "ParentRemoved", "postfix");
             Add("GameDataSaveLoader.SaveGame", typeof(CelestialSaveGuard), "BeforeSave", "prefix");
-            Add("MapGenerator.GenerateContentsIntoMap", typeof(MoonSurfaceMapGeneration), "GenerateContentsIntoMap_Prefix", "prefix");
+            var local = typeof(PioneerFramework.MapGeneration.NativeLocalMapHooks);
+            Add("MapGenerator.GenerateMap", local, "Begin", "prefix");
+            Add("MapGenerator.GenerateMap", local, "AdaptLifecycle", "transpiler");
+            Add("MapGenerator.GenerateMap", local, "End", "finalizer");
+            Add("MapGenerator.GenerateContentsIntoMap", local, "Contents", "prefix");
+            Add("MapGenerator.MapGeneratorPostInit", local, "PostInitialize", "prefix");
             Add("WorldGrid.CreateRequiredLayers", typeof(CelestialBodyLayerManager), "CreateRequiredLayers_Postfix", "postfix");
             Add("WorldGrid.GetGizmos", typeof(CelestialBodyLayerManager), "GetGizmos_Postfix", "postfix");
             return result.AsReadOnly();
         }
         public static IReadOnlyList<CelestialNativeContractEntry> CaptureInstalledHooks() => ExpectedPatches().Select(binding => {
             var info = binding.Target == null ? null : Harmony.GetPatchInfo(binding.Target);
-            var patches = binding.Kind switch { "prefix" => info?.Prefixes, "postfix" => info?.Postfixes, _ => info?.Finalizers };
+            var patches = binding.Kind switch { "prefix" => info?.Prefixes, "postfix" => info?.Postfixes, "transpiler" => info?.Transpilers, _ => info?.Finalizers };
             return new CelestialNativeContractEntry(binding.Name, binding.Handler != null && patches?.Any(patch => patch.PatchMethod == binding.Handler) == true,
                 binding.Target?.DeclaringType?.FullName + "." + binding.Target?.Name);
         }).ToArray();
@@ -107,6 +112,10 @@ namespace PioneerFramework.Celestial
             Method("GameDataSaveLoader.SaveGame", typeof(GameDataSaveLoader), nameof(GameDataSaveLoader.SaveGame), typeof(void), true, typeof(string));
             Method("MapGenerator.GenerateContentsIntoMap", typeof(MapGenerator), "GenerateContentsIntoMap", typeof(void), true,
                 typeof(IEnumerable<GenStepWithParams>), typeof(Map), typeof(int), typeof(bool));
+            Method("MapGenerator.GenerateMap", typeof(MapGenerator), "GenerateMap", typeof(Map), true,
+                typeof(IntVec3), typeof(MapParent), typeof(MapGeneratorDef), typeof(IEnumerable<GenStepWithParams>), typeof(Action<Map>), typeof(bool), typeof(bool));
+            Method("MapGenerator.MapGeneratorPostInit", typeof(MapGenerator), "MapGeneratorPostInit", typeof(void), true,
+                typeof(IEnumerable<GenStepWithParams>), typeof(Map));
             Method("PlanetLayer.InitializeLayer", typeof(PlanetLayer), "InitializeLayer", typeof(void), false);
             return new(validField ? field : null, methods, report.AsReadOnly());
         }

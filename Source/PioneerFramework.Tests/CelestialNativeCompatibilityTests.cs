@@ -40,6 +40,9 @@ public class CelestialNativeCompatibilityTests
     [Fact]
     public void NativeSignaturesAndEveryInstalledHandlerCanBeVerifiedWithoutGeneratingAWorld()
     {
+        // Initialize the permanent owner before the temporary probe installs individual handlers.
+        // Otherwise the transpiler can initialize its declaring type during a temporary patch.
+        PioneerFramework.MapGeneration.NativeLocalMapHooks.Install();
         Assert.True(CelestialNativeCompatibility.ValidateNativeContracts().Success, string.Join(",", CelestialNativeCompatibility.Report.Where(entry => !entry.Available)));
         Assert.Equal("RootLayerAdapterMissing", Assert.Single(CelestialNativeCompatibility.ResolveRootDefinition(null).Errors).Code);
         Assert.Equal("NativePatchMissing", Assert.Single(CelestialNativeCompatibility.ValidateInstalledHooks("missing-probe-hook").Errors).Code);
@@ -48,10 +51,10 @@ public class CelestialNativeCompatibilityTests
         {
             foreach (var binding in CelestialNativeCompatibility.ExpectedPatches())
             {
-                if (Harmony.GetPatchInfo(binding.Target) is { } existing && existing.Prefixes.Concat(existing.Postfixes).Concat(existing.Finalizers).Any(p => p.PatchMethod == binding.Handler)) continue;
+                if (Harmony.GetPatchInfo(binding.Target) is { } existing && existing.Prefixes.Concat(existing.Postfixes).Concat(existing.Finalizers).Concat(existing.Transpilers).Any(p => p.PatchMethod == binding.Handler)) continue;
                 var handler = new HarmonyMethod(binding.Handler);
                 patch.Patch(binding.Target, prefix: binding.Kind == "prefix" ? handler : null, postfix: binding.Kind == "postfix" ? handler : null,
-                    finalizer: binding.Kind == "finalizer" ? handler : null);
+                    finalizer: binding.Kind == "finalizer" ? handler : null, transpiler: binding.Kind == "transpiler" ? handler : null);
             }
             Assert.True(CelestialNativeCompatibility.ValidateInstalledHooks().Success);
             Assert.All(CelestialNativeCompatibility.CaptureInstalledHooks(), entry => Assert.True(entry.Available));

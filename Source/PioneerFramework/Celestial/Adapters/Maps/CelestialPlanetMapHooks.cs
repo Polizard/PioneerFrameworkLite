@@ -14,6 +14,14 @@ namespace PioneerFramework.Celestial
     [StaticConstructorOnStartup]
     public static partial class CelestialPlanetMapHooks
     {
+        private static bool GenerationDiversity(Map map, out CelestialPlanetMapDiversity diversity) =>
+            PioneerFramework.MapGeneration.NativeLocalMapSession.TryInputs(map, out diversity, out _) || CelestialMapGeneration.TryGetDiversity(map.Tile, out diversity);
+        private static bool GenerationDiversity(PlanetTile tile, out CelestialPlanetMapDiversity diversity) =>
+            PioneerFramework.MapGeneration.NativeLocalMapSession.TryInputs(tile, out diversity, out _) || CelestialMapGeneration.TryGetDiversity(tile, out diversity);
+        private static double GenerationGeology(PlanetTile tile, CelestialPlanetMapDiversity diversity) =>
+            PioneerFramework.MapGeneration.NativeLocalMapSession.TryInputs(tile, out var local, out var source) && ReferenceEquals(local, diversity)
+                ? 1 + diversity.GeologyVariation * (2 * source.NumericData.GetValueOrDefault("geology", .5) - 1)
+                : CelestialMapGeneration.GeologyFactor(tile, diversity);
         private static bool installed;
         static CelestialPlanetMapHooks() => Install();
         public static void Install()
@@ -47,11 +55,11 @@ namespace PioneerFramework.Celestial
         }
         public static bool NaturalRocks(PlanetTile tile, ref IEnumerable<ThingDef> __result)
         {
-            if (!CelestialMapGeneration.TryGetDiversity(tile, out var diversity) || diversity.Rocks.Count == 0) return true;
+            if (!GenerationDiversity(tile, out var diversity) || diversity.Rocks.Count == 0) return true;
             var layer = (CelestialSurfaceLayer)tile.Layer;
             var candidates = diversity.Rocks.OrderBy(r => r.Id, StringComparer.Ordinal).ToList();
             var result = new List<ThingDef>();
-            int count = Math.Min(candidates.Count, 1 + (int)(CelestialMapGeneration.GeologyFactor(tile, diversity) * 1.5));
+            int count = Math.Min(candidates.Count, 1 + (int)(GenerationGeology(tile, diversity) * 1.5));
             ulong seed = CelestialSeed.DeriveTile(unchecked((ulong)layer.Header.GenerationSeed), tile.tileId, "map", "rocks");
             for (int i = 0; i < count; i++)
             {
@@ -62,11 +70,11 @@ namespace PioneerFramework.Celestial
         }
         public static void PlantDensity(Tile __instance, ref float __result)
         {
-            if (CelestialMapGeneration.TryGetDiversity(__instance.tile, out var d)) __result *= (float)(d.PlantDensity * CelestialMapGeneration.GeologyFactor(__instance.tile, d));
+            if (GenerationDiversity(__instance.tile, out var d)) __result *= (float)(d.PlantDensity * GenerationGeology(__instance.tile, d));
         }
         public static void AnimalDensity(Tile __instance, ref float __result)
         {
-            if (CelestialMapGeneration.TryGetDiversity(__instance.tile, out var d)) __result *= (float)(d.AnimalDensity * CelestialMapGeneration.GeologyFactor(__instance.tile, d));
+            if (GenerationDiversity(__instance.tile, out var d)) __result *= (float)(d.AnimalDensity * GenerationGeology(__instance.tile, d));
         }
         public static void HasCaves(PlanetTile tile, ref bool __result)
         { if (CelestialMapGeneration.TryGetDiversity(tile, out var d) && !d.AllowCaves) __result = false; }
@@ -75,20 +83,20 @@ namespace PioneerFramework.Celestial
             if (CelestialPlanetEnvironmentHooks.TryGetLayer(__instance.tile, out var layer) && CelestialMapGeneration.TryGetTerrain(layer, out var t))
                 __result = __instance.PrimaryBiome.defName == t.OceanBiomeId || __instance.PrimaryBiome == BiomeDefOf.Lake;
         }
-        public static bool Caves(Map map) => !CelestialMapGeneration.TryGetDiversity(map.Tile, out var d) || d.AllowCaves;
+        public static bool Caves(Map map) => !GenerationDiversity(map, out var d) || d.AllowCaves;
         [ThreadStatic] private static Map? mineralMap;
         public static void BeginMinerals(Map map, out Map? __state) { __state = mineralMap; mineralMap = map; }
         public static Exception? EndMinerals(Exception? __exception, Map? __state) { mineralMap = __state; return __exception; }
         public static bool ChooseMineral(GenStep_ScatterLumpsMineable __instance, ref ThingDef __result)
         {
-            if (__instance.forcedDefToScatter != null || mineralMap == null || !CelestialMapGeneration.TryGetDiversity(mineralMap.Tile, out var d) || d.Minerals.Count == 0) return true;
+            if (__instance.forcedDefToScatter != null || mineralMap == null || !GenerationDiversity(mineralMap, out var d) || d.Minerals.Count == 0) return true;
             var candidates = d.Minerals.Where(r => __instance.maxValue == float.MaxValue || Definition<ThingDef>(r.Id).building.mineableThing.BaseMarketValue <= __instance.maxValue).ToArray();
             __result = candidates.Length == 0 ? null! : Definition<ThingDef>(Pick(candidates, Rand.Value).Id); return false;
         }
         public static void MineralCount(GenStep_ScatterLumpsMineable __instance, Map map, ref int __result)
         {
-            if (__instance.forcedDefToScatter == null && CelestialMapGeneration.TryGetDiversity(map.Tile, out var d))
-                __result = (int)Math.Min(int.MaxValue, Math.Round(__result * d.MineralAbundance * CelestialMapGeneration.GeologyFactor(map.Tile, d), MidpointRounding.ToEven));
+            if (__instance.forcedDefToScatter == null && GenerationDiversity(map, out var d))
+                __result = (int)Math.Min(int.MaxValue, Math.Round(__result * d.MineralAbundance * GenerationGeology(map.Tile, d), MidpointRounding.ToEven));
         }
         private static readonly ConditionalWeakTable<CelestialPlanetMapDiversity, List<WeatherCommonalityRecord>> weather = new();
         private static List<WeatherCommonalityRecord> WeatherRecords(BiomeDef native, Map map)
@@ -120,8 +128,8 @@ namespace PioneerFramework.Celestial
         }
         public static void SoilFertility(Map map, ref float fertility)
         {
-            if (CelestialMapGeneration.TryGetDiversity(map.Tile, out var d))
-                fertility = (float)Math.Clamp(fertility * d.SoilFertility * CelestialMapGeneration.GeologyFactor(map.Tile, d), 0, 10);
+            if (GenerationDiversity(map, out var d))
+                fertility = (float)Math.Clamp(fertility * d.SoilFertility * GenerationGeology(map.Tile, d), 0, 10);
         }
         public static void IncidentChance(IncidentDef def, IIncidentTarget target, ref float __result)
         {
@@ -138,7 +146,7 @@ namespace PioneerFramework.Celestial
         public static void SoilTerrain(IntVec3 c, Map map, float fertility, bool preferRock, ref TerrainDef __result)
         {
             if (preferRock || __result == null || __result.IsWater || __result.IsRock || __result.IsIce ||
-                !CelestialMapGeneration.TryGetDiversity(map.Tile, out var d) || d.Soils.Count == 0) return;
+                !GenerationDiversity(map, out var d) || d.Soils.Count == 0) return;
             var candidates = soils.GetValue(d, static p => p.Soils.OrderBy(r => r.Id, StringComparer.Ordinal).Select(r => (Definition<TerrainDef>(r.Id), r.Weight)).ToArray());
             double total = 0;
             foreach (var candidate in candidates) total += candidate.Weight / (.05 + Math.Abs(candidate.Terrain.fertility - fertility));

@@ -135,6 +135,7 @@ namespace PioneerFramework.Celestial
                     document.Maps.Where(map => map.MapId.HasValue).Select(map => map.MapId).Distinct().Count() == document.Maps.Count(map => map.MapId.HasValue));
                 Require(document.Maps.All(map => bodies.ContainsKey(map.Address.InstanceId) && map.Address.LayerId >= 0 && map.Address.TileId >= 0 && map.MapParentId >= 0 &&
                     (!map.Address.MapParentId.HasValue || map.Address.MapParentId == map.MapParentId) && (!map.MapId.HasValue || map.MapId >= 0)));
+                foreach (var map in document.Maps) map.Generation?.Validate(map.Address.InstanceId.Value, map.Address.TileId, map.Failure);
                 Require(document.Maps.All(map => map.OperationIds != null && map.RetiredOperationIds != null &&
                     map.OperationIds.Distinct(StringComparer.Ordinal).Count() == map.OperationIds.Count &&
                     map.RetiredOperationIds.Distinct(StringComparer.Ordinal).Count() == map.RetiredOperationIds.Count &&

@@ -26,14 +26,14 @@ namespace PioneerFramework.Celestial
         }
         public static bool PlantCommonality(Map ___map, ThingDef plant, ref float __result)
         {
-            if (!CelestialMapGeneration.TryGetDiversity(___map.Tile, out var d) || d.Plants.Count == 0) return true;
+            if (!GenerationDiversity(___map, out var d) || d.Plants.Count == 0) return true;
             __result = (float)CelestialPlanetMapDiversity.Weight(d.Plants, plant.defName);
             foreach (var mutator in ___map.TileInfo.Mutators) if (mutator.Worker != null) __result *= mutator.Worker.PlantCommonalityFactorFor(plant, ___map.Tile);
             return false;
         }
         private static List<ThingDef> PlantCandidates(BiomeDef biome, Map map)
         {
-            if (!CelestialMapGeneration.TryGetDiversity(map.Tile, out var d) || d.Plants.Count == 0) return biome.AllWildPlants;
+            if (!GenerationDiversity(map, out var d) || d.Plants.Count == 0) return biome.AllWildPlants;
             return plantInputs.GetValue(d, static p => new(p)).Plants;
         }
         private sealed class PlantInputs
@@ -45,7 +45,7 @@ namespace PioneerFramework.Celestial
         }
         private static readonly ConditionalWeakTable<CelestialPlanetMapDiversity, PlantInputs> plantInputs = new();
         private static float LowestPlantOrder(BiomeDef biome, Map map) =>
-            CelestialMapGeneration.TryGetDiversity(map.Tile, out var d) && d.Plants.Count != 0 ? plantInputs.GetValue(d, static p => new(p)).LowestOrder : biome.LowestWildAndCavePlantOrder;
+            GenerationDiversity(map, out var d) && d.Plants.Count != 0 ? plantInputs.GetValue(d, static p => new(p)).LowestOrder : biome.LowestWildAndCavePlantOrder;
         public static IEnumerable<CodeInstruction> PlantCandidateInput(IEnumerable<CodeInstruction> instructions)
         {
             int replaced = 0, orderReplaced = 0;
@@ -73,7 +73,7 @@ namespace PioneerFramework.Celestial
         }
         public static void FilterPlants(Map ___map, List<ThingDef> outPlants)
         {
-            if (CelestialMapGeneration.TryGetDiversity(___map.Tile, out var d) && d.Plants.Count != 0)
+            if (GenerationDiversity(___map, out var d) && d.Plants.Count != 0)
                 outPlants.RemoveAll(p => CelestialPlanetMapDiversity.Weight(d.Plants, p.defName) == 0);
         }
         [ThreadStatic] private static Map? animalMap;
@@ -81,12 +81,12 @@ namespace PioneerFramework.Celestial
         public static Exception? EndAnimals(Exception? __exception, Map? __state) { animalMap = __state; return __exception; }
         public static bool AnimalCommonality(PawnKindDef animalDef, ref float __result)
         {
-            if (animalMap == null || !CelestialMapGeneration.TryGetDiversity(animalMap.Tile, out var d) || d.Animals.Count == 0) return true;
+            if (animalMap == null || !GenerationDiversity(animalMap, out var d) || d.Animals.Count == 0) return true;
             __result = (float)CelestialPlanetMapDiversity.Weight(d.Animals, animalDef.defName); return false;
         }
         public static bool CoastalAnimalCommonality(PawnKindDef animalDef, ref float __result)
         {
-            if (animalMap == null || !CelestialMapGeneration.TryGetDiversity(animalMap.Tile, out var d) || d.Animals.Count == 0) return true;
+            if (animalMap == null || !GenerationDiversity(animalMap, out var d) || d.Animals.Count == 0) return true;
             // Allowed coastal candidates retain the native DLC gate and biome weight.
             if (CelestialPlanetMapDiversity.Weight(d.Animals, animalDef.defName) > 0) return true;
             __result = 0; return false;

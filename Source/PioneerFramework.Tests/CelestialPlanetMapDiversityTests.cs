@@ -321,7 +321,7 @@ public class CelestialPlanetMapDiversityTests
         var map = f.Backend.LastMap; var tiles = f.Root.Tiles.Select(t => (t.PrimaryBiome, t.elevation, t.hilliness)).ToArray();
         var saved = new CelestialSaveAdapter(f.Scope.Runtime).CaptureCheckpoint(); Assert.True(saved.Success, string.Join(",", saved.Errors));
         var encoded = CelestialSaveCodec.Encode(saved.Value).Value; var decoded = CelestialSaveCodec.Decode(encoded).Value;
-        Assert.Equal(3, decoded.FormatVersion);
+        Assert.Equal(4, decoded.FormatVersion);
         var oldMapBytes = decoded.Bodies[0].Components.Single(c => c.HandlerId == MapGenerationResolvedProperties.Handler).ConfigurationPayload.ToArray();
         maps.diversity.mineralAbundance = 9; surface.terrain.elevationOffsetMeters = 50000; surface.terrain.parameters.Clear();
         var bridge = new PioneerFramework.TestSupport.Celestial.DeterministicTestPhysicsBridge(Guid.NewGuid());

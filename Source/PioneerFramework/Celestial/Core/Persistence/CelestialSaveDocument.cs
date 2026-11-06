@@ -26,7 +26,7 @@ namespace PioneerFramework.Celestial
     public sealed record CelestialSaveDocument
     {
         // v3：LatitudeBands 模式移除后 BiomeGeneration 配置载荷 JSON 不再向后兼容；v1/v2 文档一律明确拒绝，不迁移、不改写旧档。
-        public const int CurrentVersion = 3;
+        public const int CurrentVersion = 4;
         public int FormatVersion { get; init; }
         public int GenerationAlgorithmVersion { get; init; }
         public ulong WorldSeed { get; init; }

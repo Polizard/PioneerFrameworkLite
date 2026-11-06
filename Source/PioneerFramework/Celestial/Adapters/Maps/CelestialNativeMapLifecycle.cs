@@ -10,7 +10,7 @@ namespace PioneerFramework.Celestial
     {
         private static bool installed;
         internal sealed record Retirement(Game Game, World World, CelestialRuntime Runtime, CelestialMapAddress Address,
-            MapParent Parent, Map? Map);
+            MapParent Parent, Map? Map, bool MovedFailedSite = false);
         internal static void Install()
         {
             if (installed) return;
@@ -28,8 +28,15 @@ namespace PioneerFramework.Celestial
         private static Retirement? Capture(MapParent? parent, Map? map)
         {
             var game = Current.Game;
-            if (game?.World == null || parent?.Tile.Layer is not CelestialSurfaceLayer owned ||
+            if (game?.World == null || parent == null ||
                 game.GetComponent<CelestialBodyManager>()?.TryGetCelestialRuntime(out var runtime) != true || runtime.IsRestoring || runtime.Maps == null) return null;
+            if (runtime.Maps.FindFailedSite(parent, map) is { } failed)
+            {
+                bool moved = !game.World.grid.PlanetLayers.TryGetValue(failed.Address.LayerId, out var sourceLayer) ||
+                    parent.Tile != new PlanetTile(failed.Address.TileId, sourceLayer);
+                return new(game, game.World, runtime, failed.Address, parent, map, moved);
+            }
+            if (parent.Tile.Layer is not CelestialSurfaceLayer owned) return null;
             return new(game, game.World, runtime, new(owned.Header.OwnerId, owned.LayerID, parent.Tile.tileId, parent.ID), parent, map);
         }
         internal static void CaptureMapRemoval(Game __instance, Map map, out Retirement? __state)
@@ -43,7 +50,7 @@ namespace PioneerFramework.Celestial
         internal static void MapRemoved(Game __instance, Retirement? __state)
         {
             if (!IsCurrent(__state) || !ReferenceEquals(__state!.Game, __instance) || __state.Map == null || __instance.Maps.Contains(__state.Map)) return;
-            var retired = __state.Runtime.Maps!.RetireNativeMap(__state.Address, __state.Map.uniqueID);
+            var retired = __state.Runtime.Maps!.RetireNativeMap(__state.Address, __state.Map.uniqueID, __state.MovedFailedSite);
             if (!retired.Success) { Log.Error("Celestial map retirement failed: " + retired.Errors[0].Code); return; }
             RetireEmptyParent(__state);
         }

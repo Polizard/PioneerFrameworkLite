@@ -13,6 +13,24 @@ namespace PioneerFramework.Tests;
 
 public class CelestialMapIdentityTests
 {
+    [Fact]
+    public void NativeGenerationRequiresSupportedScopeAndExactReadyProvenance()
+    {
+        using var f = new Fixture();
+        var parent = f.Backend.CreateParent(f.Address);
+        var unsupported = new MapGeneratorDef { defName = "Base_Player", isUnderground = true };
+        Assert.Contains("LocalMapUnsupported", Assert.Throws<InvalidOperationException>(() => CelestialMapService.RequireNativeGenerator(parent, new IntVec3(50, 1, 50), unsupported)).Message);
+        var map = f.Backend.Generate(parent, 50, 50, null);
+        Assert.Contains("LocalMapProvenanceMissing", Assert.Throws<InvalidOperationException>(() => f.Service.RequireNativeReady(f.Address, parent, map)).Message);
+        var generator = new MapGeneratorDef { defName = "Encounter" };
+        var frozen = PioneerFramework.MapGeneration.LocalMapSourceResolver.Resolve(parent, new IntVec3(50, 1, 50), generator, false).Value;
+        var ready = PioneerFramework.MapGeneration.LocalMapGenerationRecord.Capture(new(frozen.Source, frozen.Specification, PioneerFramework.MapGeneration.MapGenerationPurpose.Encounter),
+            PioneerFramework.MapGeneration.MapGenerationState.Ready, "Done", null, null);
+        f.Service.RecordNativeGeneration(f.Address with { MapParentId = parent.ID }, map.uniqueID, ready);
+        f.Service.RequireNativeReady(f.Address, parent, map);
+        map.uniqueID++;
+        Assert.Contains("LocalMapProvenanceMissing", Assert.Throws<InvalidOperationException>(() => f.Service.RequireNativeReady(f.Address, parent, map)).Message);
+    }
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -178,11 +196,14 @@ public class CelestialMapIdentityTests
         Assert.Equal(2, f.Backend.Created);
     }
 
-    [Fact]
-    public void FailureCleansOnlyNewParentsWithoutMapsAndPreservesRand()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FailurePreservesParentMapAndRandAndSurvivesSaveRebindRestore(bool makeMap)
     {
         using var f = new Fixture();
         f.Backend.Fail = true;
+        f.Backend.MakeMapThenFail = makeMap;
         Rand.PushState(1337); float expected = Rand.Value; Rand.PopState();
         Rand.PushState(1337);
         try
@@ -191,18 +212,29 @@ public class CelestialMapIdentityTests
             Assert.Equal(expected, Rand.Value);
         }
         finally { Rand.PopState(); }
-        Assert.Equal(1, f.Backend.Removed);
-        Assert.Empty(f.Native.World.worldObjects.MapParents);
-        var existing = f.Backend.CreateParent(f.Address);
-        f.Request("existing-fail", CelestialMapAction.Generate);
-        Assert.Contains(existing, f.Native.World.worldObjects.MapParents);
-        Assert.Equal(1, f.Backend.Removed);
-        f.Backend.MakeMapThenFail = true;
-        f.Request("partial-map", CelestialMapAction.Generate);
-        Assert.Contains(existing, f.Native.World.worldObjects.MapParents);
-        Assert.NotNull(existing.Map);
+        Assert.Equal(0, f.Backend.Removed);
+        var existing = Assert.Single(f.Native.World.worldObjects.MapParents);
+        Assert.Equal(makeMap, existing.Map != null);
+        Assert.NotNull(Assert.Single(f.Service.CaptureSites()).Failure);
         Assert.Contains(f.Request("incomplete", CelestialMapAction.Generate).Operation.Errors, error => error.Code == "MapGenerationIncomplete");
-        Assert.Equal(3, f.Backend.Generated);
+        Assert.Equal(1, f.Backend.Generated);
+        var captured = new CelestialSaveAdapter(f.Scope.Runtime).CaptureCheckpoint();
+        Assert.True(captured.Success, string.Join(",", captured.Errors));
+        Assert.NotNull(Assert.Single(captured.Value.Maps).Failure);
+        var encoded = CelestialSaveCodec.Encode(captured.Value); Assert.True(encoded.Success, string.Join(",", encoded.Errors));
+        var decoded = CelestialSaveCodec.Decode(encoded.Value); Assert.True(decoded.Success, string.Join(",", decoded.Errors));
+        var bridge = new PioneerFramework.TestSupport.Celestial.DeterministicTestPhysicsBridge(Guid.NewGuid());
+        var restore = new CelestialRestoreCoordinator(bridge.SessionId, bridge, CelestialBuiltinCompRegistry.Create(), _ => throw new Exception("No resampling"), mapBackend: f.Backend);
+        Assert.True(restore.RestoreIdentities(decoded.Value).Success);
+        Assert.True(restore.BindNativeObjects().Success); Assert.True(restore.CompleteRestore().Success);
+        var rejected = restore.Runtime.RequestMap(new(new("after-load", restore.Runtime.WorldSessionId, restore.Runtime.Catalog.Revision), f.Address, CelestialMapAction.Generate, 250, 250));
+        Assert.Null(rejected.Handle); Assert.Contains(rejected.Operation.Errors, error => error.Code == "MapGenerationIncomplete");
+        Assert.Equal(1, f.Backend.Generated); Assert.Equal(0, f.Backend.Removed);
+        if (makeMap)
+        {
+            f.Backend.LastMap.generatorDef = new MapGeneratorDef { defName = "Encounter" };
+            Assert.Throws<InvalidOperationException>(() => GetOrGenerateMapUtility.GetOrGenerateMap(existing.Tile, new IntVec3(250, 1, 250), null));
+        }
     }
 
     [Fact]

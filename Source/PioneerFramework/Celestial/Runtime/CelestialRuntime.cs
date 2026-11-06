@@ -52,6 +52,9 @@ namespace PioneerFramework.Celestial
             ulong worldSeed, Func<string, CelestialResult<CelestialBodyTemplate>> resolveTemplate, IEnumerable<ICelestialStepParticipant>? participants,
             CelestialSaveDocument? document, CelestialCompRegistry? registry)
         {
+#if !PURE_MATH
+            PioneerFramework.MapGeneration.LocalMapGenerationModules.Freeze();
+#endif
             this.physics = physics;
             HostWork = new(this);
             WorldSeed = worldSeed;

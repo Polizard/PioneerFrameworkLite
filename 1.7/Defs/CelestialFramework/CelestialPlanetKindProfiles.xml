@@ -175,42 +175,11 @@
       <gravityStats>true</gravityStats>
     </exposure>
   </PioneerFramework.Celestial.CelestialEnvironmentProfileDef>
-  <PioneerFramework.Celestial.CelestialMapProfileDef Name="PF_PlanetKindDryMapBase" Abstract="True">
-    <skipStepNames>
-      <li>Plants</li>
-      <li>Animals</li>
-      <li>WildPlantSpawner</li>
-      <li>WildAnimalSpawner</li>
-      <li>River</li>
-      <li>Lakes</li>
-      <li>Snow</li>
-      <li>RockChunks</li>
-      <li>ScatterRuinsSimple</li>
-      <li>ScatterShrines</li>
-      <li>ScatterRoadDebris</li>
-      <li>ScatterCaveDebris</li>
-      <li>MechanoidRemains</li>
-      <li>VoidMonolith</li>
-    </skipStepNames>
-    <skipStepPrefixes>
-      <li>Ancient</li>
-    </skipStepPrefixes>
-    <skipStepTypes>
-      <li>RimWorld.GenStep_RockChunks</li>
-      <li>RimWorld.GenStep_ScatterRuinsSimple</li>
-      <li>RimWorld.GenStep_ScatterShrines</li>
-    </skipStepTypes>
-    <replaceTerrains>
-      <li>Soil</li>
-      <li>SoilRich</li>
-      <li>Gravel</li>
-      <li>Sand</li>
-    </replaceTerrains>
-  </PioneerFramework.Celestial.CelestialMapProfileDef>
-  <PioneerFramework.Celestial.CelestialMapProfileDef ParentName="PF_PlanetKindDryMapBase">
+  <PioneerFramework.Celestial.CelestialMapProfileDef>
     <defName>PF_BarrenMaps</defName>
     <label>荒芜殖民地地图</label>
-    <replacementTerrain>PF_MoonDirt</replacementTerrain>
+    <localRecipe>PF_LocalMapBarren</localRecipe>
+    <useDiversityAsInitialInputs>true</useDiversityAsInitialInputs>
     <diversity>
       <parameters>
         <li>
@@ -232,10 +201,11 @@
       </weather>
     </diversity>
   </PioneerFramework.Celestial.CelestialMapProfileDef>
-  <PioneerFramework.Celestial.CelestialMapProfileDef ParentName="PF_PlanetKindDryMapBase">
+  <PioneerFramework.Celestial.CelestialMapProfileDef>
     <defName>PF_FrozenMaps</defName>
     <label>冰封殖民地地图</label>
-    <replacementTerrain>Ice</replacementTerrain>
+    <localRecipe>PF_LocalMapFrozen</localRecipe>
+    <useDiversityAsInitialInputs>true</useDiversityAsInitialInputs>
     <diversity>
       <parameters>
         <li>
@@ -257,10 +227,11 @@
       </weather>
     </diversity>
   </PioneerFramework.Celestial.CelestialMapProfileDef>
-  <PioneerFramework.Celestial.CelestialMapProfileDef ParentName="PF_PlanetKindDryMapBase">
+  <PioneerFramework.Celestial.CelestialMapProfileDef>
     <defName>PF_GreenhouseMaps</defName>
     <label>温室殖民地地图</label>
-    <replacementTerrain>Sand</replacementTerrain>
+    <localRecipe>PF_LocalMapGreenhouse</localRecipe>
+    <useDiversityAsInitialInputs>true</useDiversityAsInitialInputs>
     <diversity>
       <parameters>
         <li>
@@ -348,6 +319,8 @@
   <PioneerFramework.Celestial.CelestialMapProfileDef>
     <defName>PF_TemperateMaps</defName>
     <label>温带行星地图</label>
+    <localRecipe>PF_LocalMapNative</localRecipe>
+    <useDiversityAsInitialInputs>true</useDiversityAsInitialInputs>
     <diversity>
       <parameters>
         <li>

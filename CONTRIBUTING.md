@@ -63,6 +63,8 @@ powershell -ExecutionPolicy Bypass -File tools/check-committed-dll.ps1
 - 轨道 / 数学逻辑优先放入纯 C# 核，便于单元测试。
 - 修改 Defs 时同步更新 `tools/validate_config.py` 覆盖的校验规则。
 
+本地地图配方、模块注册与宿主边界见 [本地地图生成 API](Source/PioneerFramework/MapGeneration/API/README.md)。
+
 ## 测试要求
 
 - 修改纯数学逻辑时，在 `Source/PioneerFramework.Pure.Tests` 补充/更新测试。

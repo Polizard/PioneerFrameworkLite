@@ -36,6 +36,8 @@
     <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Pure\DVector3.cs" />
     <Compile Include="..\PioneerFramework\Celestial\API\**\*.cs" Link="Celestial\API\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\PioneerFramework\Celestial\Core\**\*.cs" Link="Celestial\Core\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\PioneerFramework\MapGeneration\API\*.cs" Link="MapGeneration\API\%(Filename)%(Extension)" />
+    <Compile Include="..\PioneerFramework\MapGeneration\Core\*.cs" Link="MapGeneration\Core\%(Filename)%(Extension)" />
     <Compile Include="..\PioneerFramework\Base\Game\PhysicsTimeLine.cs" Link="Pure\PhysicsTimeLine.cs" />
     <Compile Include="..\PioneerFramework\Combat\Shots\ShotMath.cs" Link="Pure\ShotMath.cs" />
     <!-- 批 0（2026-10-17）：**惯量张量**（形状预设 / 合成 / 主轴 / 分类器）。纯数学（只 System）⇒ 链进来钉解析样本。 -->

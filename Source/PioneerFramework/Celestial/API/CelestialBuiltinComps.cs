@@ -64,7 +64,7 @@ namespace PioneerFramework.Celestial
                 ("light.source", typeof(ICelestialLightSourceCapability))),
             Comp(ExistingEnvironmentResolvedProperties.Handler, typeof(ExistingEnvironmentResolvedProperties), 2,
                 ("environment.existing", typeof(ICelestialEnvironmentCapability))),
-            Comp(MapGenerationResolvedProperties.Handler, typeof(MapGenerationResolvedProperties), 2,
+            Comp(MapGenerationResolvedProperties.Handler, typeof(MapGenerationResolvedProperties), 3,
                 ("map.generation", typeof(ICelestialMapGenerationCapability))),
             Comp(BiomeGenerationResolvedProperties.Handler, typeof(BiomeGenerationResolvedProperties), 2,
                 ("biomes", typeof(ICelestialBiomeGenerationCapability))),

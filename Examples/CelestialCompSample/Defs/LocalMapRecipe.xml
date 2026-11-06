@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <PioneerFramework.MapGeneration.LocalMapRecipeDef>
+    <defName>PF_SampleLandingContent</defName>
+    <steps>
+      <li>
+        <key>sample.landing-cell</key>
+        <handlerId>PFL.CelestialCompSample.LandingCell</handlerId>
+        <configVersion>1</configVersion>
+        <algorithmVersion>1</algorithmVersion>
+        <stage>Content</stage>
+        <domain>Purpose</domain>
+        <properties Class="PFL.CelestialCompSample.SampleLandingProperties">
+          <eastOfCenter>1</eastOfCenter>
+        </properties>
+      </li>
+    </steps>
+  </PioneerFramework.MapGeneration.LocalMapRecipeDef>
+</Defs>

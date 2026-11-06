@@ -4,6 +4,7 @@ using System.Linq;
 using RimWorld;
 using RimWorld.Planet;
 using Verse;
+using PioneerFramework.MapGeneration;
 
 namespace PioneerFramework.Celestial
 {
@@ -36,12 +37,23 @@ namespace PioneerFramework.Celestial
             if (!ReferenceEquals(Find.World, world)) return CelestialResult.Reject<bool>(new CelestialError("WorldChanged"));
             foreach (var parent in world.worldObjects.MapParents.ToArray())
             {
+                var map = parent.Map;
+                // A failed native session retains the source address even if its registered parent moved.
+                var failed = sites.FindFailedSite(parent.ID, map?.uniqueID);
+                if (failed?.Generation is { State: MapGenerationState.Failed })
+                {
+                    if (map != null && !failed.MapId.HasValue)
+                    {
+                        var rebound = sites.Bind(failed with { MapId = map.uniqueID });
+                        if (!rebound.Success) return rebound;
+                    }
+                    continue;
+                }
                 if (parent.Tile.Layer is not CelestialSurfaceLayer owned) continue;
                 var address = new CelestialMapAddress(owned.Header.OwnerId, owned.LayerID, parent.Tile.tileId, parent.ID);
                 var surface = surfaces.Find(address.InstanceId);
                 if (!surface.Success || surface.Value.LayerId != address.LayerId)
                     return CelestialResult.Reject<bool>(new CelestialError("SurfaceIdentityMismatch", address.InstanceId));
-                var map = parent.Map;
                 // Keep a saved missing map's original ID. A native loss must never become permission to generate a replacement.
                 if (map == null && sites.TryGet(address, out var known))
                 {
@@ -57,7 +69,7 @@ namespace PioneerFramework.Celestial
         public CelestialMapOperation RequestMap(CelestialMapRequest request)
         {
             var result = runtime.WithPublication(() => RequestCore(request));
-            if (result.Operation.Status != CelestialOperationStatus.Pending || runtime.IsPublicationHeld || runtime.IsExecutingCallbacks || !runtime.HostWork.IsHostThread) return result;
+            if (result.Operation.Status != CelestialOperationStatus.Pending || runtime.IsPublicationHeld || runtime.IsExecutingCallbacks || NativeLocalMapHooks.IsActive || !runtime.HostWork.IsHostThread) return result;
             runtime.ProcessHostWork();
             return runtime.WithPublication(() => RequestCore(request));
         }
@@ -98,6 +110,7 @@ namespace PioneerFramework.Celestial
             if (address.MapParentId.HasValue && (parent == null || parent.ID != address.MapParentId)) return Fail("MapIdentityMismatch");
             if (parent != null)
             {
+                if (FindFailedSite(parent, parent.Map) is { } failure) return Fail("MapGenerationIncomplete", failure.Failure);
                 var access = backend.CheckAccess(parent, request.Action);
                 if (!access.Success || !access.Value) return Fail(access.Errors.Count > 0 ? access.Errors[0].Code : "MapAccessDenied");
                 if (parent.Map != null) return Apply(parent, parent.Map);
@@ -109,8 +122,12 @@ namespace PioneerFramework.Celestial
             var capabilities = runtime.GetCapabilities<ICelestialMapGenerationCapability>(address.InstanceId);
             if (capabilities.Count != 1) return Fail("MapGenerationCapabilityMissing");
             requiredCapability = capabilities[0];
-            CelestialMapProfile profile;
-            try { profile = requiredCapability.GetProfile() ?? throw new InvalidOperationException("Missing map profile."); }
+            LocalMapGenerationSpec specification;
+            try
+            {
+                specification = requiredCapability is CelestialBodyComp comp && comp.ResolvedProperties is ICelestialLocalMapGenerationProperties properties ? properties.Specification : requiredCapability.GetSpecification();
+                LocalMapGenerationModules.ValidateSpecification(specification, LocalMapGenerationModules.Freeze());
+            }
             catch (Exception exception)
             {
                 if (requiredCapability is CelestialBodyComp component && runtime.Catalog.TryGetInstance(address.InstanceId, out var owner))
@@ -143,25 +160,22 @@ namespace PioneerFramework.Celestial
                 });
                 return reused;
             }
-            MapParent? created = null;
             Rand.PushState();
             try
             {
-                if (parent == null) parent = created = backend.CreateParent(address);
+                if (parent == null) parent = backend.CreateParent(address);
                 if (parent == null || parent.Tile != tile || !world.worldObjects.MapParents.Contains(parent)) throw new InvalidOperationException("Map parent was not registered at the requested address.");
-                var map = backend.Generate(parent, request.SizeX, request.SizeZ, profile.MapGeneratorId);
+                var map = backend.Generate(parent, request.SizeX, request.SizeZ, specification.NativeGeneratorId);
                 if (map == null || !ReferenceEquals(map.Parent, parent) || !ReferenceEquals(parent.Map, map) || !Current.Game.Maps.Contains(map))
                     throw new InvalidOperationException("Map generator returned a different identity.");
+                if (backend is NativeBackend) RequireNativeReady(address, parent, map);
                 return runtime.WithPublication(() => Apply(parent, map));
             }
             catch (Exception exception)
             {
-                if (parent?.Map != null) sites.Bind(new(address, parent.ID, parent.Map.uniqueID, exception.Message));
-                if (created != null && !created.HasMap && world.worldObjects.MapParents.Contains(created))
-                {
-                    try { backend.RemoveEmptyParent(created); }
-                    catch (Exception cleanup) { sites.Bind(new(address, created.ID, null)); return Fail("MapCleanupFailed", cleanup.Message); }
-                }
+                // Preserve every registered object, including a partially registered parent from CreateParent.
+                parent ??= world.worldObjects.MapParentAt(tile);
+                if (parent != null) sites.Bind(new(address, parent.ID, parent.Map?.uniqueID, exception.ToString()));
                 return Fail("MapGenerationFailed", exception.Message);
             }
             finally { Rand.PopState(); }
@@ -177,6 +191,7 @@ namespace PioneerFramework.Celestial
                 { sites.Bind(new(address, actualParent.ID, map.uniqueID, "MapGenerationCapabilityMissing")); return Fail("MapGenerationCapabilityMissing"); }
                 var bound = BindExistingCore(address, actualParent, map);
                 if (!bound.Success) return Fail("MapIdentityMismatch");
+                if (sites.TryGet(address, out var terminal) && terminal.Failure != null) return Fail("MapGenerationIncomplete", terminal.Failure);
                 var recorded = sites.RecordOperation(address, request.Context.OperationId);
                 if (!recorded.Success) return Fail("MapIdentityMismatch");
                 var operation = new CelestialOperation(request.Context.OperationId, CelestialOperationStatus.Applied, new[] { address.InstanceId });
@@ -197,6 +212,35 @@ namespace PioneerFramework.Celestial
         }
         public CelestialResult<bool> BindExisting(CelestialMapAddress address, MapParent parent, Map map)
             => runtime.WithPublication(() => BindExistingCore(address, parent, map));
+        internal CelestialMapSiteRecord? FindFailedSite(MapParent parent, Map? map)
+        {
+            if (!ReferenceEquals(Find.World, world)) return null;
+            var site = runtime.WithPublication(() => sites.FindFailedSite(parent.ID, map?.uniqueID));
+            if (site == null || site.Generation is { State: MapGenerationState.Failed }) return site;
+            return parent.Tile.Valid && parent.Tile.Layer is CelestialSurfaceLayer layer && site.Address.InstanceId == layer.Header.OwnerId &&
+                site.Address.LayerId == layer.LayerID && site.Address.TileId == parent.Tile.tileId ? site : null;
+        }
+        internal void RecordNativeGeneration(CelestialMapAddress address, int? mapId, LocalMapGenerationRecord generation)
+        {
+            if (address.MapParentId is not int parentId || generation.Source.SourceId != address.InstanceId.Value ||
+                generation.Source.TileId != address.TileId)
+                throw new InvalidOperationException("MapGenerationProvenanceIdentityMismatch");
+            var result = runtime.WithPublication(() => sites.Bind(new(address, parentId, mapId,
+                generation.State == MapGenerationState.Failed ? generation.Error : null) { Generation = generation }));
+            if (!result.Success) throw new InvalidOperationException("MapGenerationProvenanceIdentityMismatch");
+        }
+        internal static void RequireNativeGenerator(MapParent parent, IntVec3 size, MapGeneratorDef generator)
+        {
+            var resolved = LocalMapSourceResolver.Resolve(parent, size, generator, false);
+            if (!resolved.Success) throw new InvalidOperationException("LocalMapUnsupported: " + string.Join(", ", resolved.Errors.Select(e => e.Code)));
+        }
+        internal void RequireNativeReady(CelestialMapAddress address, MapParent parent, Map map)
+        {
+            var valid = runtime.WithPublication(() => sites.TryGet(address, out var site) && !site.ParentRetired && site.Failure == null &&
+                site.MapParentId == parent.ID && site.MapId == map.uniqueID && site.Generation?.State == MapGenerationState.Ready &&
+                ReferenceEquals(parent.Map, map) && ReferenceEquals(map.Parent, parent));
+            if (!valid) throw new InvalidOperationException("LocalMapProvenanceMissing");
+        }
         private CelestialResult<bool> BindExistingCore(CelestialMapAddress address, MapParent parent, Map map)
         {
             var surface = surfaces.Find(address.InstanceId);
@@ -220,8 +264,8 @@ namespace PioneerFramework.Celestial
         });
         public CelestialResult<bool> ReleaseEmptySurface(CelestialInstanceId id) => sites.Capture().Any(site => !site.ParentRetired && site.Address.InstanceId == id) ?
             CelestialResult.Reject<bool>(new CelestialError("MapIdentityMismatch", id)) : CelestialResult.Ok(true);
-        internal CelestialResult<bool> RetireNativeMap(CelestialMapAddress address, int mapId)
-            => runtime.WithPublication(() => sites.RetireMap(address, mapId));
+        internal CelestialResult<bool> RetireNativeMap(CelestialMapAddress address, int mapId, bool preserveFailure)
+            => runtime.WithPublication(() => sites.RetireMap(address, mapId, preserveFailure));
         internal CelestialResult<bool> RetireNativeParent(CelestialMapAddress address)
             => runtime.WithPublication(() => sites.RetireParent(address));
         private sealed class NativeBackend : ICelestialMapBackend
@@ -237,14 +281,14 @@ namespace PioneerFramework.Celestial
                 if (!TileFinder.IsValidTileForNewSettlement(tile)) throw new InvalidOperationException("Invalid settlement tile.");
                 var parent = (Settlement)WorldObjectMaker.MakeWorldObject(WorldObjectDefOf.Settlement);
                 parent.Tile = tile; parent.SetFaction(Faction.OfPlayer);
-                try { Find.WorldObjects.Add(parent); }
-                catch { if (parent.Spawned && !parent.HasMap) parent.Destroy(); throw; }
+                Find.WorldObjects.Add(parent);
                 return parent;
             }
             public Map Generate(MapParent parent, int sizeX, int sizeZ, string? generatorDefName)
             {
                 if (Current.ProgramState != ProgramState.Playing || Scribe.mode != LoadSaveMode.Inactive) throw new InvalidOperationException("Map generation requires an active game.");
                 var generator = generatorDefName == null ? parent.MapGeneratorDef : DefDatabase<MapGeneratorDef>.GetNamed(generatorDefName);
+                RequireNativeGenerator(parent, new IntVec3(sizeX, 1, sizeZ), generator);
                 return MapGenerator.GenerateMap(new(sizeX, 1, sizeZ), parent, generator, parent.ExtraGenStepDefs);
             }
             public void RemoveEmptyParent(MapParent parent) { if (!parent.HasMap && parent.Spawned) parent.Destroy(); }

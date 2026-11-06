@@ -28,6 +28,9 @@ namespace PioneerFramework.Celestial
         }
         internal void Process()
         {
+#if !PURE_MATH
+            if (PioneerFramework.MapGeneration.NativeLocalMapHooks.IsActive) return;
+#endif
             if (runtime.IsExecutingCallbacks) throw new InvalidOperationException("Native work must wait for committed callbacks to finish.");
             if (runtime.IsPublicationHeld) throw new InvalidOperationException("Native work cannot hold the publication lock.");
             if (Environment.CurrentManagedThreadId != hostThread) throw new InvalidOperationException("Native work requires the owning host thread.");

@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- Native candidates supply purpose-specific content. No extra handlers are needed on Earth or Temperate. -->
+  <PioneerFramework.MapGeneration.LocalMapRecipeDef><defName>PF_LocalMapNative</defName></PioneerFramework.MapGeneration.LocalMapRecipeDef>
+  <PioneerFramework.MapGeneration.LocalMapRecipeDef>
+    <defName>PF_LocalMapMoon</defName>
+    <steps>
+      <li>
+        <key>nativeRules</key>
+        <handlerId>PFL.LocalMap.NativeRules</handlerId>
+        <stage>Fields</stage>
+        <domain>Natural</domain>
+        <properties Class="PioneerFramework.MapGeneration.NativeRulesModuleProperties">
+          <skip>
+            <li>
+              <optionalNames><li>RockChunks</li><li>Snow</li><li>ScatterRuinsSimple</li><li>ScatterShrines</li><li>ScatterRoadDebris</li><li>ScatterCaveDebris</li><li>MechanoidRemains</li><li>VoidMonolith</li></optionalNames>
+              <prefixes><li>Ancient</li></prefixes>
+              <types><li>RimWorld.GenStep_RockChunks</li><li>RimWorld.GenStep_ScatterRuinsSimple</li><li>RimWorld.GenStep_ScatterShrines</li></types>
+            </li>
+            <li>
+              <biome>PF_MoonBiomeRegolith</biome>
+              <optionalNames><li>RocksFromGrid</li><li>RocksFromGrid_NoMinerals</li></optionalNames>
+              <types><li>RimWorld.GenStep_RocksFromGrid</li></types>
+            </li>
+            <li>
+              <biome>PF_MoonBiomeWater</biome>
+              <optionalNames><li>RocksFromGrid</li><li>RocksFromGrid_NoMinerals</li></optionalNames>
+              <types><li>RimWorld.GenStep_RocksFromGrid</li></types>
+            </li>
+          </skip>
+        </properties>
+      </li>
+      <li>
+        <key>surfaceTerrain</key>
+        <handlerId>PFL.LocalMap.TerrainReplacement</handlerId>
+        <stage>NaturalSurface</stage>
+        <domain>Natural</domain>
+        <properties Class="PioneerFramework.MapGeneration.TerrainReplacementModuleProperties">
+          <terrains><li>Gravel</li></terrains>
+          <target>PF_MoonDirt</target>
+          <rockBiomes><li>PF_MoonBiomeRegolith</li><li>PF_MoonBiomeWater</li></rockBiomes>
+        </properties>
+      </li>
+    </steps>
+  </PioneerFramework.MapGeneration.LocalMapRecipeDef>
+  <PioneerFramework.MapGeneration.LocalMapRecipeDef Name="PF_LocalMapDryBase" Abstract="True">
+    <steps>
+      <li>
+        <key>nativeRules</key>
+        <handlerId>PFL.LocalMap.NativeRules</handlerId>
+        <stage>Fields</stage>
+        <domain>Natural</domain>
+        <properties Class="PioneerFramework.MapGeneration.NativeRulesModuleProperties">
+          <skip>
+            <li>
+              <optionalNames><li>Plants</li><li>Animals</li><li>WildPlantSpawner</li><li>WildAnimalSpawner</li><li>River</li><li>Lakes</li><li>RockChunks</li><li>Snow</li><li>ScatterRuinsSimple</li><li>ScatterShrines</li><li>ScatterRoadDebris</li><li>ScatterCaveDebris</li><li>MechanoidRemains</li><li>VoidMonolith</li></optionalNames>
+              <prefixes><li>Ancient</li></prefixes>
+              <types><li>RimWorld.GenStep_RockChunks</li><li>RimWorld.GenStep_ScatterRuinsSimple</li><li>RimWorld.GenStep_ScatterShrines</li></types>
+            </li>
+          </skip>
+        </properties>
+      </li>
+    </steps>
+  </PioneerFramework.MapGeneration.LocalMapRecipeDef>
+  <PioneerFramework.MapGeneration.LocalMapRecipeDef ParentName="PF_LocalMapDryBase">
+    <defName>PF_LocalMapBarren</defName>
+    <steps>
+      <li>
+        <key>surfaceTerrain</key>
+        <handlerId>PFL.LocalMap.TerrainReplacement</handlerId>
+        <stage>NaturalSurface</stage>
+        <domain>Natural</domain>
+        <properties Class="PioneerFramework.MapGeneration.TerrainReplacementModuleProperties">
+          <terrains><li>Soil</li><li>SoilRich</li><li>Gravel</li><li>Sand</li></terrains>
+          <target>PF_MoonDirt</target>
+        </properties>
+      </li>
+    </steps>
+  </PioneerFramework.MapGeneration.LocalMapRecipeDef>
+  <PioneerFramework.MapGeneration.LocalMapRecipeDef ParentName="PF_LocalMapDryBase">
+    <defName>PF_LocalMapFrozen</defName>
+    <steps>
+      <li>
+        <key>surfaceTerrain</key>
+        <handlerId>PFL.LocalMap.TerrainReplacement</handlerId>
+        <stage>NaturalSurface</stage>
+        <domain>Natural</domain>
+        <properties Class="PioneerFramework.MapGeneration.TerrainReplacementModuleProperties">
+          <terrains><li>Soil</li><li>SoilRich</li><li>Gravel</li><li>Sand</li></terrains>
+          <target>Ice</target>
+        </properties>
+      </li>
+    </steps>
+  </PioneerFramework.MapGeneration.LocalMapRecipeDef>
+  <PioneerFramework.MapGeneration.LocalMapRecipeDef ParentName="PF_LocalMapDryBase">
+    <defName>PF_LocalMapGreenhouse</defName>
+    <steps>
+      <li>
+        <key>surfaceTerrain</key>
+        <handlerId>PFL.LocalMap.TerrainReplacement</handlerId>
+        <stage>NaturalSurface</stage>
+        <domain>Natural</domain>
+        <properties Class="PioneerFramework.MapGeneration.TerrainReplacementModuleProperties">
+          <terrains><li>Soil</li><li>SoilRich</li><li>Gravel</li><li>Sand</li></terrains>
+          <target>Sand</target>
+        </properties>
+      </li>
+    </steps>
+  </PioneerFramework.MapGeneration.LocalMapRecipeDef>
+</Defs>

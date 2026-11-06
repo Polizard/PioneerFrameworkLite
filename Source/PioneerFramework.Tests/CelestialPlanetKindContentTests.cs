@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Xml;
 using HarmonyLib;
 using PioneerFramework.Celestial;
+using PioneerFramework.MapGeneration;
 using RimWorld;
 using RimWorld.Planet;
 using Verse;
@@ -141,9 +142,12 @@ public class CelestialPlanetKindContentTests
         Assert.Equal(temperature, biomes.Temperature);
         Assert.Equal(0, biomes.Rainfall);
         var maps = values.OfType<MapGenerationResolvedProperties>().Single().Profile;
+        var rules = Assert.Single(maps.LocalSpecification.Recipe.Steps, step => step.HandlerId == LocalMapBuiltinConfigurations.NativeRules);
+        var selectors = LocalMapBuiltinConfigurations.Decode<NativeRulesConfiguration>(rules.Configuration).Skip;
         foreach (string step in new[] { "Plants", "Animals", "WildPlantSpawner", "WildAnimalSpawner", "River", "AncientUtilityBuilding", "ScatterRuinsSimple" })
-            Assert.True(CelestialMapGeneration.ShouldSkip(maps, primary, new GenStepDef { defName = step }), step);
-        Assert.True(maps.ShouldReplace(primary, "Soil", false));
+            Assert.Contains(selectors, selector => NativeMapStepSelection.Matches(selector, primary, new GenStepDef { defName = step }));
+        var replacement = Assert.Single(maps.LocalSpecification.Recipe.Steps, step => step.HandlerId == LocalMapBuiltinConfigurations.TerrainReplacement);
+        Assert.True(LocalMapBuiltinConfigurations.Decode<TerrainReplacementConfiguration>(replacement.Configuration).ShouldReplace(primary, "Soil", false));
         Assert.All(new[] { primary, secondary }.Distinct(), name => {
             Assert.Equal(0, content.Biomes[name].plantDensity);
             Assert.Equal(0, content.Biomes[name].animalDensity);
@@ -178,15 +182,17 @@ public class CelestialPlanetKindContentTests
     internal sealed class Content : IDisposable
     {
         private readonly CelestialXmlTestScope scope = new();
+        private readonly ShippedLocalMapRecipeDefs mapRecipes;
         public Dictionary<string, CelestialBodyDef> Bodies { get; } = new();
+        public Dictionary<string, CelestialMapProfileDef> Maps { get; } = new();
         public Dictionary<string, BiomeDef> Biomes { get; } = new();
         public Dictionary<string, CelestialBiomeProfileDef> BiomeProfiles { get; } = new();
         public Dictionary<string, CelestialEnvironmentProfileDef> Environments { get; } = new();
         private readonly Dictionary<string, XmlNode> nodes = new();
         public Content()
         {
-            try { Load(); }
-            catch { scope.Dispose(); throw; }
+            try { mapRecipes = new(); Load(); }
+            catch { Dispose(); throw; }
         }
         private void Load()
         {
@@ -227,12 +233,10 @@ public class CelestialPlanetKindContentTests
                 BiomeProfiles.Add(pair.Key, pair.Value);
             }
             var maps = nodes.Where(p => p.Value.Name.EndsWith(".CelestialMapProfileDef", StringComparison.Ordinal)).ToDictionary(p => p.Key, p => Parse<CelestialMapProfileDef>(p.Value));
-            TerrainDef Terrain(string name) { var value = (TerrainDef)RuntimeHelpers.GetUninitializedObject(typeof(TerrainDef)); value.defName = name; return value; }
             foreach (var pair in maps)
             {
-                pair.Value.replaceTerrains = Items(nodes[pair.Key], "replaceTerrains").Select(n => Terrain(n.InnerText)).ToList();
-                pair.Value.replacementTerrain = nodes[pair.Key]["replacementTerrain"] is { } n ? Terrain(n.InnerText) : null;
-                foreach (var rule in pair.Value.biomeRules.Select((rule, i) => (rule, i))) rule.rule.biome = Biome(Items(nodes[pair.Key], "biomeRules").ElementAt(rule.i)["biome"].InnerText);
+                Maps.Add(pair.Key, pair.Value);
+                pair.Value.localRecipe = mapRecipes.Recipes[nodes[pair.Key]["localRecipe"].InnerText];
                 if (pair.Value.diversity != null)
                     foreach (var item in pair.Value.diversity.weather.Select((item, i) => (item, i)))
                         item.item.def = new WeatherDef { defName = Items(nodes[pair.Key]["diversity"], "weather").ElementAt(item.i)["def"].InnerText };
@@ -253,6 +257,6 @@ public class CelestialPlanetKindContentTests
         }
         private static IEnumerable<XmlNode> Items(XmlNode node, string field) => XmlInheritance.GetResolvedNodeFor(node).SelectNodes(field + "/li").Cast<XmlNode>();
         private static T Parse<T>(XmlNode node) where T : new() => DirectXmlToObject.ObjectFromXml<T>(node, false);
-        public void Dispose() => scope.Dispose();
+        public void Dispose() { mapRecipes?.Dispose(); scope.Dispose(); }
     }
 }

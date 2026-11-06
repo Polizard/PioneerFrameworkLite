@@ -89,7 +89,7 @@ dotnet test Source/PioneerFramework.Pure.Tests/PioneerFramework.Pure.Tests.cspro
 
 ## 行星框架扩展
 
-公开契约以 [通用天体 API](Source/PioneerFramework/Celestial/API/README.md) 为准（存档 v3，旧 v1/v2 明确拒绝，要求新建测试世界）。从 [CelestialCompSample 使用说明](Examples/CelestialCompSample/README.md) 开始：示例包含可加载的固定/范围 XML、独立 C# 组件、保存 codec、生成配置 patch 和开发者检查动作。按说明构建并作为独立 Mod 启用后，可检查多个实例的计数与保存恢复。
+公开契约以 [通用天体 API](Source/PioneerFramework/Celestial/API/README.md) 为准（存档 v4，旧 v1/v2/v3 明确拒绝，要求新建测试世界）。地图配方与模块扩展见 [本地地图生成 API](Source/PioneerFramework/MapGeneration/API/README.md)。从 [CelestialCompSample 使用说明](Examples/CelestialCompSample/README.md) 开始：示例包含可加载的固定/范围 XML、独立 C# 组件、保存 codec、生成配置 patch 和开发者检查动作。按说明构建并作为独立 Mod 启用后，可检查多个实例的计数与保存恢复。
 
 ## 许可证
 

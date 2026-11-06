@@ -31,20 +31,11 @@
   </PioneerFramework.Celestial.CelestialBiomeProfileDef>
   <PioneerFramework.Celestial.CelestialMapProfileDef>
     <defName>PF_EarthMaps</defName><label>原版殖民地地图</label>
+    <localRecipe>PF_LocalMapNative</localRecipe>
   </PioneerFramework.Celestial.CelestialMapProfileDef>
   <PioneerFramework.Celestial.CelestialMapProfileDef>
     <defName>PF_MoonMaps</defName><label>月球殖民地地图</label>
-    <skipStepNames>
-      <li>RockChunks</li><li>Snow</li><li>ScatterRuinsSimple</li><li>ScatterShrines</li>
-      <li>ScatterRoadDebris</li><li>ScatterCaveDebris</li><li>MechanoidRemains</li><li>VoidMonolith</li>
-    </skipStepNames>
-    <skipStepPrefixes><li>Ancient</li></skipStepPrefixes>
-    <skipStepTypes><li>RimWorld.GenStep_RockChunks</li><li>RimWorld.GenStep_ScatterRuinsSimple</li><li>RimWorld.GenStep_ScatterShrines</li></skipStepTypes>
-    <replaceTerrains><li>Gravel</li></replaceTerrains><replacementTerrain>PF_MoonDirt</replacementTerrain>
-    <biomeRules>
-      <li><biome>PF_MoonBiomeRegolith</biome><skipStepNames><li>RocksFromGrid</li><li>RocksFromGrid_NoMinerals</li></skipStepNames><skipStepTypes><li>RimWorld.GenStep_RocksFromGrid</li></skipStepTypes><replaceRockTerrains>true</replaceRockTerrains></li>
-      <li><biome>PF_MoonBiomeWater</biome><skipStepNames><li>RocksFromGrid</li><li>RocksFromGrid_NoMinerals</li></skipStepNames><skipStepTypes><li>RimWorld.GenStep_RocksFromGrid</li></skipStepTypes><replaceRockTerrains>true</replaceRockTerrains></li>
-    </biomeRules>
+    <localRecipe>PF_LocalMapMoon</localRecipe>
   </PioneerFramework.Celestial.CelestialMapProfileDef>
   <PioneerFramework.Celestial.CelestialEnvironmentProfileDef>
     <defName>PF_EarthEnvironment</defName><label>地球现有环境</label>

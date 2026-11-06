@@ -129,66 +129,10 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
-        public void MoonSurfaceMapGenerationDefs_ArePresent()
+        public void NativeLocalMapGeneration_HarmonyPrefixIsRegistered()
         {
-            var doc = new System.Xml.XmlDocument();
-            doc.Load(DataPath("Defs/MapGeneration/MoonSurfaceMapGeneration.xml"));
-            var step = doc.SelectSingleNode("/Defs/GenStepDef[defName='PF_MoonSurfaceTerrain']");
-            Assert.NotNull(step);
-            Assert.Equal("230", step.SelectSingleNode("order")?.InnerText);
-            Assert.Equal("PioneerFramework.GenStep_MoonSurfaceTerrain",
-                step.SelectSingleNode("genStep/@Class")?.InnerText);
-
-            var patch = new System.Xml.XmlDocument();
-            patch.Load(DataPath("Patches/MoonSurfaceMapGeneration.xml"));
-            var add = patch.SelectSingleNode(
-                "/Patch/Operation[@Class='PatchOperationAdd']");
-            Assert.NotNull(add);
-            Assert.Equal("/Defs/MapGeneratorDef[defName=\"Base_Player\"]/genSteps",
-                add.SelectSingleNode("xpath")?.InnerText);
-            var values = add.SelectNodes("value/li")
-                .Cast<System.Xml.XmlNode>().Select(n => n.InnerText).ToList();
-            Assert.Contains("PF_MoonSurfaceTerrain", values);
-        }
-
-        [Fact]
-        public void MoonSurfaceMapGeneration_ClassificationAndSkipRules()
-        {
-            // Rules are data now: the only consumer contract is the celestial map profile lookup.
-            Assert.False(Celestial.CelestialMapGeneration.TryGetProfile(null, out _));
-        }
-
-        [Fact]
-        public void MoonSurfaceSource_IsProfileDrivenOnly()
-        {
-            string source = File.ReadAllText(DataPath("Source/PioneerFramework/MapGeneration/MoonSurfaceMapGeneration.cs"));
-            foreach (var required in new[]
-            {
-                "CelestialMapGeneration.TryGetProfile",
-                "CelestialMapGeneration.ShouldSkip",
-                "CelestialMapGeneration.ReplaceTerrain",
-                "PioneerFramework.MoonSurfaceMapGeneration"
-            })
-            {
-                Assert.True(source.Contains(required), $"Moon surface map generation is missing the profile contract: {required}");
-            }
-
-            // Single source of truth: no hard-coded moon biome/step/terrain rules may come back.
-            foreach (var forbidden in new[]
-            {
-                "PF_MoonBiome", "RockChunks", "Snow", "ScatterRuinsSimple", "ScatterShrines",
-                "GenStep_RocksFromGrid", "RocksFromGrid", "PF_MoonDirt", "\"Gravel\""
-            })
-            {
-                Assert.False(source.Contains(forbidden), $"Moon surface map generation re-introduced a hard-coded rule: {forbidden}");
-            }
-        }
-
-        [Fact]
-        public void MoonSurfaceMapGeneration_HarmonyPrefixIsRegistered()
-        {
-            // Run the static constructor so it installs its Harmony patch (no legacy helper left to touch).
-            System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(MoonSurfaceMapGeneration).TypeHandle);
+            // The native local-map host installs the scoped Harmony boundary.
+            MapGeneration.NativeLocalMapHooks.Install();
 
             var generateContentsIntoMap = typeof(MapGenerator).GetMethods(StaticFlags)
                 .Where(m => m.Name == "GenerateContentsIntoMap" && m.GetParameters().Length == 4)
@@ -199,7 +143,7 @@ namespace PioneerFramework.Tests
             Assert.NotNull(info);
             Assert.Contains(
                 info.Prefixes.Select(p => p.owner),
-                owner => owner == "PioneerFramework.MoonSurfaceMapGeneration");
+                owner => owner == "PioneerFramework.LocalMapGeneration");
         }
 
     }

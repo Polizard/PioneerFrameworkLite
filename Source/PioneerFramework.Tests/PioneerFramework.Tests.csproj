@@ -49,7 +49,6 @@
     <None Include="..\GameReferences.props" Link="Source\GameReferences.props" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PioneerFramework.csproj" Link="Source\PioneerFramework\PioneerFramework.csproj" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\Base\Game\RuntimePlanetLayerService.cs" Link="Source\PioneerFramework\Base\Game\RuntimePlanetLayerService.cs" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\PioneerFramework\MapGeneration\MoonSurfaceMapGeneration.cs" Link="Source\PioneerFramework\MapGeneration\MoonSurfaceMapGeneration.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\PFViewToonShader.cs" Link="Source\PioneerFramework\PFView\PFViewToonShader.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PFView\MainTabWindow_PFView.Render.cs" Link="Source\PioneerFramework\PFView\MainTabWindow_PFView.Render.cs" CopyToOutputDirectory="PreserveNewest" />
