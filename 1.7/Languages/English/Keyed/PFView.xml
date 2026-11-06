@@ -95,7 +95,7 @@
   <PFV_HelpSubjectsTitle>Inspection and operation</PFV_HelpSubjectsTitle>
   <PFV_HelpSubjects>The bottom bar shows inspection, follow, operator and target. Inspecting another object or hiding details keeps the operator. Shift+click sets a target; open the operating group's weapon panel before firing.</PFV_HelpSubjects>
   <PFV_HelpTimeTitle>Game time</PFV_HelpTimeTitle>
-  <PFV_HelpTime>The toolbar controls pause and speed. Default keys 1/2/3/4 select speed; Space pauses. Vanilla bindings remain rebindable. Search and foreground windows take input priority.</PFV_HelpTime>
+  <PFV_HelpTime>PFView displays the current physics rate. Use the toolbar button or the pause key (Space by default) to pause or resume. Search and foreground windows take input priority.</PFV_HelpTime>
   <PFV_HelpKnownTitle>Contacts and instruments</PFV_HelpKnownTitle>
   <PFV_HelpKnown>Unidentified contacts show observations and error only. Attitude markers: P prograde, A retrograde, R/r radial out/in, N/S normal/antinormal, T main thrust axis.</PFV_HelpKnown>
   <PFV_HelpLimitsTitle>Framing and debug</PFV_HelpLimitsTitle>
@@ -223,12 +223,13 @@
   <PFV_Pilot_Sas_Antinormal>Antinormal</PFV_Pilot_Sas_Antinormal>
   <PFV_Pilot_Sas_RadialOut>Radial out</PFV_Pilot_Sas_RadialOut>
   <PFV_Pilot_Sas_RadialIn>Radial in</PFV_Pilot_Sas_RadialIn>
+  <PFV_TogglePause>Pause or resume</PFV_TogglePause>
   <PFV_TimeSpaceRate>Space {0}×</PFV_TimeSpaceRate>
   <PFV_TimeCombat>Combat</PFV_TimeCombat>
   <PFV_TimeTerminal>Approach</PFV_TimeTerminal>
   <PFV_TimeManeuver>Maneuver</PFV_TimeManeuver>
   <PFV_TimeUnrestricted>Using your selected space time rate</PFV_TimeUnrestricted>
-  <PFV_TimeStatusTip>The buttons control game speed; space time also uses its current rate.\nCurrent: {0}\nStatus: {1}\nYour preferred space time rate resumes when precision limits end. Space simulation stops while paused.</PFV_TimeStatusTip>
+  <PFV_TimeStatusTip>The physics clock manages the space time rate.\nCurrent: {0}\nStatus: {1}\nYour preferred space time rate resumes when precision limits end. Space simulation stops while paused.</PFV_TimeStatusTip>
   <PFV_FleetOverview>Fleet status ({0})</PFV_FleetOverview>
   <PFV_FleetAttention>Attention ({0})</PFV_FleetAttention>
   <PFV_FleetShowAll>Show all</PFV_FleetShowAll>

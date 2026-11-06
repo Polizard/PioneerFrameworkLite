@@ -127,7 +127,7 @@ namespace PioneerFramework
                 lastFrameLogTick = double.MinValue;
             }
             Rect time = NextToolbarRect(ref x, ref by, PFViewToolbarItem.Time);
-            DrawTimeSpeedButtons(time.x, time.y, time.height);
+            DrawPauseAndTimeStatus(time);
             var source = ResolveOperationGroup();
             if (source != null && ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Weapons),
                     "PFV_Weapons".Translate("G" + source.GroupId), "PFV_OpenOperationsTip".Translate()))
@@ -171,42 +171,19 @@ namespace PioneerFramework
         }
 
 
-        /// <summary>
-        /// PFView 内的游戏时间速度控制（2026-10-18 用户：视图内仍要能控制时间流逝）。
-        /// 宿主 HUD 的时间档按钮被 PFView 的 HUD 隔离补丁挡住（视觉上也被全屏视图盖住），
-        /// 按钮通过时间服务设置宿主速度，档位/倍率与原版一致，右侧显示空间时间与精度限制。
-        /// </summary>
-        private void DrawTimeSpeedButtons(float x, float by, float bh)
+        private static void DrawPauseAndTimeStatus(Rect rect)
         {
-            const float w = 30f;
-            const float gap = 2f;
-            DrawTimeSpeedButton(new Rect(x, by, w, bh), "II", TimeSpeed.Paused, "暂停");
-            x += w + gap;
-            DrawTimeSpeedButton(new Rect(x, by, w, bh), "1×", TimeSpeed.Normal, "正常速度（1×）");
-            x += w + gap;
-            DrawTimeSpeedButton(new Rect(x, by, w, bh), "3×", TimeSpeed.Fast, "快速（3×）");
-            x += w + gap;
-            DrawTimeSpeedButton(new Rect(x, by, w, bh), "6×", TimeSpeed.Superfast, "超快（6×；无地图时可到 12/18×）");
-            x += w + gap;
-            DrawTimeSpeedButton(new Rect(x, by, w, bh), "15×", TimeSpeed.Ultrafast, "极速（15×；无地图时可到 150×）");
-            var clock = Current.Game?.GetComponent<TimeScaleManager>();
-            if (clock != null)
-            {
-                var status = new Rect(x + w + gap + 4f, by, 164f, bh);
-                TooltipHandler.TipRegion(status, clock.StatusTip);
-                Widgets.Label(status, clock.StatusLabel);
-            }
-        }
+            var ticks = Find.TickManager;
+            var pause = new Rect(rect.x, rect.y, 30f, rect.height);
+            string label = ticks.CurTimeSpeed == TimeSpeed.Paused ? "▸" : "II";
+            if (ToolbarButton(pause, label, "PFV_TogglePause".Translate()))
+                ticks.TogglePaused();
 
-        private static void DrawTimeSpeedButton(Rect rr, string label, TimeSpeed speed, string tip)
-        {
-            TooltipHandler.TipRegion(rr, tip);
-            bool active = Find.TickManager.CurTimeSpeed == speed;
-            Color prev = GUI.color;
-            GUI.color = active ? Color.white : new Color(0.62f, 0.62f, 0.62f);
-            if (Widgets.ButtonText(rr, label))
-                SetGameSpeed(speed);
-            GUI.color = prev;
+            var clock = Current.Game?.GetComponent<TimeScaleManager>();
+            if (clock == null) return;
+            var status = new Rect(pause.xMax + 6f, rect.y, rect.width - 36f, rect.height);
+            TooltipHandler.TipRegion(status, clock.StatusTip);
+            Widgets.Label(status, clock.StatusLabel);
         }
 
         // ════════════════════════════════════════════════════

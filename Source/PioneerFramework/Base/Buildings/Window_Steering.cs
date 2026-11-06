@@ -342,9 +342,8 @@ namespace PioneerFramework
                 }
                 if (SteeringInputHost.HandleGroupShortcut(Event.current)) return;
                 var view = Find.WindowStack?.WindowOfType<MainTabWindow_PFView>();
-                if (view != null && view.HandlePilotCameraShortcut(Event.current)) return;
-                if (view != null && SteeringInputHost.AcceptNativeTimeKey(Event.current) && view.HandleTimeSpeedKeys())
-                    Event.current.Use();
+                if (view == null || view.HandlePilotCameraShortcut(Event.current)) return;
+                MainTabWindow_PFView.TryHandlePauseShortcut(Event.current);
             }
         }
 

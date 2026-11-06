@@ -609,57 +609,13 @@ namespace PioneerFramework
         // ════════════════════════════════════════════════════
 
 
-        /// <summary>设置游戏时间档（按钮与数字键共用）。暂停走 TogglePaused，保留原版 prePause。</summary>
-        internal static void SetGameSpeed(TimeSpeed speed)
+        internal static bool TryHandlePauseShortcut(Event e)
         {
-            var clock = Current.Game?.GetComponent<TimeScaleManager>();
-            if (clock != null)
-            {
-                clock.SetGameSpeed(speed);
-                return;
-            }
-            var tm = Find.TickManager;
-            if (tm == null) return;
-            if (speed == TimeSpeed.Paused)
-            {
-                if (tm.CurTimeSpeed != TimeSpeed.Paused) tm.TogglePaused();
-                return;
-            }
-            tm.CurTimeSpeed = speed;
-        }
-
-        /// <summary>
-        /// 原版数字键时间档（2026-10-18 用户：像原版一样数字键控制时间）。
-        /// 1/2/3/4 = 正常/快速/超快/极速，Space = 暂停（均读 KeyBindingDef，可被玩家重绑）。
-        /// </summary>
-        internal bool HandleTimeSpeedKeys()
-        {
-            if (KeyBindingDefOf.TogglePause.KeyDownEvent)
-            {
-                Find.TickManager.TogglePaused();
-                return true;
-            }
-            if (KeyBindingDefOf.TimeSpeed_Normal.KeyDownEvent)
-            {
-                SetGameSpeed(TimeSpeed.Normal);
-                return true;
-            }
-            if (KeyBindingDefOf.TimeSpeed_Fast.KeyDownEvent)
-            {
-                SetGameSpeed(TimeSpeed.Fast);
-                return true;
-            }
-            if (KeyBindingDefOf.TimeSpeed_Superfast.KeyDownEvent)
-            {
-                SetGameSpeed(TimeSpeed.Superfast);
-                return true;
-            }
-            if (KeyBindingDefOf.TimeSpeed_Ultrafast.KeyDownEvent)
-            {
-                SetGameSpeed(TimeSpeed.Ultrafast);
-                return true;
-            }
-            return false;
+            if (!KeyBindingDefOf.TogglePause.KeyDownEvent || !SteeringInputHost.AcceptNativeTimeKey(e))
+                return false;
+            Find.TickManager.TogglePaused();
+            e.Use();
+            return true;
         }
 
         private void HandleInput(Rect inRect)
@@ -684,12 +640,7 @@ namespace PioneerFramework
                 if (GUI.GetNameOfFocusedControl() == "PFViewSearch") return;
                 if (SteeringInputHost.HandleGroupShortcut(e)) return;
                 if (HandlePilotCameraShortcut(e)) return;
-                if (e.type == EventType.Used) return;
-                if (SteeringInputHost.AcceptNativeTimeKey(e) && HandleTimeSpeedKeys())
-                {
-                    e.Use();
-                    return;
-                }
+                if (e.type == EventType.Used || TryHandlePauseShortcut(e)) return;
             }
 
             // 已在视口内开始的拖拽持续拥有输入，跨过本窗口的侧栏仍逐次更新鼠标位置。

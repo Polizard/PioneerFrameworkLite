@@ -241,6 +241,20 @@ namespace PioneerFramework.Tests
             Assert.True(load >= 0 && refresh > load);
         }
 
+        [Theory]
+        [InlineData(typeof(MainTabWindow_PFView))]
+        [InlineData(typeof(Window_Steering))]
+        public void ViewAndSteeringCannotSelectAGameSpeed(Type window)
+        {
+            foreach (var method in window.GetMethods(Flags | BindingFlags.DeclaredOnly))
+            {
+                Assert.DoesNotContain(ReferencedMembers(method), member =>
+                    member.DeclaringType == typeof(TimeScaleManager) && member.Name == nameof(TimeScaleManager.SetGameSpeed)
+                    || member.DeclaringType == typeof(Verse.TickManager) && member.Name == "set_CurTimeSpeed"
+                    || member.Name.StartsWith("TimeSpeed_", StringComparison.Ordinal));
+            }
+        }
+
         [Fact]
         public void BothInputOwnersDispatchTheSameCameraShortcuts()
         {
