@@ -35,7 +35,7 @@ public class ShippedLocalMapContentTests
             var candidates = NativeLocalMapExecutionTests.CoreCandidateSnapshot(player);
             var suffix = new GenStepDef { defName = "VoidMonolithExtension", order = 900, genStep = new GenStep_Plants() };
             candidates.Add(new(suffix, default));
-            var frozen = new FrozenLocalMapContext(new(profileId, 42, 0, 64, 64, biome), specification, profile);
+            var frozen = new FrozenLocalMapContext(new(profileId, 42, 0, 64, 64, biome), specification);
             var plan = NativeLocalMapPlan.Build(frozen, purpose, candidates, LocalMapGenerationModules.Registry);
             if (profile.Diversity is { } diversity)
             {
@@ -111,7 +111,7 @@ public class ShippedLocalMapContentTests
         var candidates = Array.Empty<GenStepWithParams>();
         var plan = NativeLocalMapPlan.Build(frozen, purpose, candidates, registry);
         Assert.Same(sampleAssembly, Assert.Single(plan.Modules).Value.GetType().Assembly);
-        var services = new NativeMapGenerationServices(map, source, null, plan.NativeSteps);
+        var services = new NativeMapGenerationServices(map, source, plan.NativeSteps);
         var run = new MapGenerationExecutor(plan.Plan, source, new NativeServices(services), preparedModules: plan.Modules);
 
         NativeLocalMapHooks.ClearWorkingData();

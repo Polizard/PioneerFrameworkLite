@@ -26,6 +26,13 @@ namespace PioneerFramework.Celestial
         {
             foreach (string error in base.ConfigErrors()) yield return error;
             foreach (var error in ToProfile().Errors) yield return error.Code + ": " + error.Detail;
+            // 2026-11-07 A-2：mode 专属字段静默失效的加载期诊断（不改运行期行为）。
+            if (climate == null) yield break;
+            if (climate.mode == CelestialClimateMode.CommittedIllumination && climate.diurnalAmplitudeCelsius != 0)
+                yield return "CommittedIlluminationIgnoresDiurnalAmplitude";
+            if (climate.mode == CelestialClimateMode.Authored &&
+                climate.illuminationTemperatureCelsius != CelestialClimateXml.DefaultIlluminationTemperatureCelsius)
+                yield return "AuthoredIgnoresIlluminationTemperature";
         }
     }
 }

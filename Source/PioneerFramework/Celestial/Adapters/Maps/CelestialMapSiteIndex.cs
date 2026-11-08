@@ -33,7 +33,35 @@ namespace PioneerFramework.Celestial
                 record.OperationIds.Concat(record.RetiredOperationIds).Any(string.IsNullOrWhiteSpace) ||
                 record.OperationIds.Intersect(record.RetiredOperationIds, StringComparer.Ordinal).Any())
                 return CelestialResult.Reject<bool>(new CelestialError("MapIdentityMismatch", record.Address.InstanceId));
-            sites.TryGetValue(Key(record.Address), out var old);
+            var key = Key(record.Address);
+            sites.TryGetValue(key, out var old);
+            // P2-7：「父对象移动后的同一站点迁移」。原生 MapParent 可能被换到同层另一 tile（例：Odyssey 重力飞船换点落地），
+            // 而站点身份不变；在跨 key 唯一性检查之前把旧 key 的同一站点迁到新地址。只在同实例、同层、同 MapParentId
+            // 且 MapId 兼容时迁移：旧记录无 MapId（已退役）或双方 MapId 相等；旧记录仍有 MapId 而新记录 MapId 为空
+            // 属于"地图未通知丢失"，不迁移并交给后续身份检查拒绝（保持丢失/替换必须显式拒绝的防线）。
+            if (old == null && !record.ParentRetired)
+            {
+                var moved = sites.Values.SingleOrDefault(site => Key(site.Address) != key && !site.ParentRetired &&
+                    site.Address.InstanceId == record.Address.InstanceId && site.Address.LayerId == record.Address.LayerId &&
+                    site.MapParentId == record.MapParentId &&
+                    (!site.MapId.HasValue || site.MapId == record.MapId));
+                if (moved != null)
+                {
+                    record = record with {
+                        OperationIds = moved.OperationIds.Concat(record.OperationIds).Distinct(StringComparer.Ordinal).ToArray(),
+                        RetiredOperationIds = moved.RetiredOperationIds.Concat(record.RetiredOperationIds).Distinct(StringComparer.Ordinal).ToArray(),
+                        Generation = record.Generation ?? moved.Generation,
+                        Failure = record.Failure ?? moved.Failure };
+                    // 迁移不得制造 OperationIds 与 RetiredOperationIds 交叉（既有站点不变量，codec 也会校验）。
+                    if (record.OperationIds.Intersect(record.RetiredOperationIds, StringComparer.Ordinal).Any())
+                        return CelestialResult.Reject<bool>(new CelestialError("MapIdentityMismatch", record.Address.InstanceId));
+                    // 唯一性在移除旧 key 之前完成：若仍有其它重复身份则直接拒绝，索引保持原样（不留半迁移状态）。
+                    if (sites.Values.Any(site => !ReferenceEquals(site, moved) && Key(site.Address) != key &&
+                        (site.MapParentId == record.MapParentId || record.MapId.HasValue && site.MapId == record.MapId)))
+                        return CelestialResult.Reject<bool>(new CelestialError("MapIdentityMismatch", record.Address.InstanceId));
+                    sites.Remove(Key(moved.Address));
+                }
+            }
             if (old != null && record.OperationIds.Intersect(old.RetiredOperationIds, StringComparer.Ordinal).Any())
                 return CelestialResult.Reject<bool>(new CelestialError("MapIdentityMismatch", record.Address.InstanceId));
             if (old != null && (!old.ParentRetired && (old.MapParentId != record.MapParentId || old.MapId.HasValue && old.MapId != record.MapId) ||

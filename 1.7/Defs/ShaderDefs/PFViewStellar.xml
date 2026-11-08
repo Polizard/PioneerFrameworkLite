@@ -55,4 +55,33 @@
       <renderQueue>2900</renderQueue>
     </shaderProgram>
   </ShaderDef>
+  <!-- 2026-11-07 S3-a optional-but-default region-skipping integration (PFViewStellarProbe.S3AEnabled).
+       Same pipeline states as the legacy pair; fragment shader keeps the approved sampling grid in
+       the dense region and only skips/coarse-integrates the r > 1.42 outer tail. -->
+  <ShaderDef>
+    <defName>PF_StellarSurfaceS3A</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_StellarVolume.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_StellarVolumeS3A.frag.glsl</fragmentShaderFileName>
+      <blendMode>Opaque</blendMode>
+      <depthTest>true</depthTest>
+      <depthWrite>true</depthWrite>
+      <cullMode>Front</cullMode>
+      <renderQueue>2000</renderQueue>
+    </shaderProgram>
+  </ShaderDef>
+  <ShaderDef>
+    <defName>PF_StellarHaloS3A</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_StellarVolume.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_StellarVolumeS3A.frag.glsl</fragmentShaderFileName>
+      <blendMode>Custom</blendMode>
+      <blendSrcFactor>One</blendSrcFactor>
+      <blendDstFactor>OneMinusSrcAlpha</blendDstFactor>
+      <depthTest>true</depthTest>
+      <depthWrite>false</depthWrite>
+      <cullMode>Front</cullMode>
+      <renderQueue>2900</renderQueue>
+    </shaderProgram>
+  </ShaderDef>
 </Defs>

@@ -19,7 +19,8 @@ namespace PioneerFramework.Celestial
         public double seasonalAmplitudeCelsius;
         public double yearLengthTicks = 3600000;
         public double thermalResponseSeconds;
-        public double illuminationTemperatureCelsius = 50;
+        public const double DefaultIlluminationTemperatureCelsius = 50;
+        public double illuminationTemperatureCelsius = DefaultIlluminationTemperatureCelsius;
         public double lightMultiplier = 1;
         public double windSpeed = 1;
         public double rainfallMillimeters = 1000;

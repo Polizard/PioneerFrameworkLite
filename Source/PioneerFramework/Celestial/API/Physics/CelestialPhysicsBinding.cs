@@ -15,6 +15,11 @@ namespace PioneerFramework.Celestial
         CelestialResult<CelestialBodyRegistration> CreateRegistration(CelestialBodyDescription description, CelestialInstanceId? parentId,
             IReadOnlyDictionary<string, CelestialInstanceId> initializationReferences);
     }
+    /// <summary>
+    /// 可选能力：物理绑定给出权威自转周期（tick，沿用「1 物理 tick = 1 秒」口径）。
+    /// 环境采样据此实现文档承诺的日长优先级「物理 motion → environment 兼容 fallback」，不再各读一侧。
+    /// </summary>
+    public interface ICelestialDayLengthSource { double DayLengthTicks { get; } }
 
     public sealed class ExternalPhysicsResolvedProperties : ICelestialPhysicsBindingProperties
     {

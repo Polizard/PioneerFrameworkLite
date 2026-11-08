@@ -63,7 +63,7 @@ public static CelestialOperation CreateBarrenPlanet(
 
 ## 代表性参数与覆盖
 
-| 模板 | 半径 m | GM m³/s² | 自转周期 tick |
+| 模板 | 半径 m | GM m³/s² | 自转周期（motion `rotation.periodSeconds`） |
 | --- | ---: | ---: | ---: |
 | 荒芜 | 2,500,000 | 4e12 | 60,000 |
 | 温带 | 5,000,000 | 2e14 | 60,000 |
@@ -91,7 +91,7 @@ public static CelestialOperation CreateBarrenPlanet(
 ## 文件
 
 - `1.7/Defs/CelestialBodies/CelestialBodies_PlanetKinds.xml`：六种可创建、可继承的模板。
-- `1.7/Defs/CelestialFramework/CelestialPlanetKindProfiles.xml`：三个外星地表/地图/环境组合。
+- `1.7/Defs/CelestialFramework/CelestialPlanetKindProfiles.xml`：四个外星地表/地图/环境组合（荒芜、冰封、温室、温带）。
 - `1.7/Defs/CelestialFramework/CelestialPlanetKindVisuals.xml`：地表、大气和云层外观。
 - `1.7/Defs/BiomesDefs/Biome_PlanetKinds.xml`：专用群落与原生 XML 继承基类。
 - `1.7/Languages/{ChineseSimplified,English}/DefInjected/*/PlanetKinds.xml`：完整配套本地化。

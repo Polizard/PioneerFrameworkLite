@@ -23,6 +23,22 @@ public class CelestialPlanetClimateTests
     }
 
     [Fact]
+    public void AuthoredPhaseOverridePutsTheDiurnalPeakAtLocalNoon()
+    {
+        // 2026-11-07 P1-1：纯核新增的可选 authoredPhaseRadians（0 = 本地正午）。传 null 保持旧日历相位。
+        var climate = new CelestialClimateXml { meanTemperatureCelsius = 0, diurnalAmplitudeCelsius = 100,
+            thermalResponseSeconds = 0, latitudeCurve = new() { new() { latitudeDegrees = 0 }, new() { latitudeDegrees = 90 } } }.Resolve();
+        var query = new CelestialSurfaceEnvironmentQuery(12345, 0, 0);
+        Assert.Equal(100, CelestialClimateModel.Temperature(climate, query, 60000, 1, authoredPhaseRadians: 0), 9);
+        Assert.Equal(-100, CelestialClimateModel.Temperature(climate, query, 60000, 1, authoredPhaseRadians: Math.PI), 9);
+        Assert.Equal(0, CelestialClimateModel.Temperature(climate, query, 60000, 1, authoredPhaseRadians: Math.PI / 2), 9);
+        Assert.Equal(CelestialClimateModel.Temperature(climate, query, 60000, 1),
+            CelestialClimateModel.Temperature(climate, query, 60000, 1, authoredPhaseRadians: null), 12);
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            CelestialClimateModel.Temperature(climate, query, 60000, 1, authoredPhaseRadians: double.NaN));
+    }
+
+    [Fact]
     public void ConfigurationVersionMismatchAndInvalidCurveReject()
     {
         var xml = new CelestialClimateXml();

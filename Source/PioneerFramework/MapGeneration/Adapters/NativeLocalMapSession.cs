@@ -30,6 +30,11 @@ namespace PioneerFramework.MapGeneration
         internal bool Logging;
         private int ownerThread;
         private bool contentFinished, postFinished;
+        // P1-2: only PFL-out-sourced native callbacks may turn a Log.Error into session failure.
+        // EnterHost(...) covers Run(stage) host callbacks, EnterErrorWindow() covers ConstructComponents,
+        // and Enter(...) adds the wrapped native GenStep callbacks (handler PFL.LocalMap.NativeGenStep).
+        // Plain module code and all log traffic outside those windows are ignored.
+        private int errorWindowDepth;
         internal NativeLocalMapSession(FrozenLocalMapContext frozen, MapGenerationPurpose purpose, MapParent parent)
         {
             Frozen = frozen; Purpose = purpose; Parent = parent;
@@ -51,21 +56,42 @@ namespace PioneerFramework.MapGeneration
         internal void Release() => Interlocked.CompareExchange(ref active, null, this);
         internal void Check()
         { if (Error != null) throw new InvalidOperationException("LocalMapGenerationFailed: " + Stage + ": " + Error); }
-        internal void ObserveError(string text) { if (Environment.CurrentManagedThreadId == ownerThread && !Logging) Error ??= text; }
+        internal void ObserveError(string text)
+        {
+            // 只观察 PFL 外包给原生回调的窗口（见 errorWindowDepth 注释）。Logging 只包失败摘要的
+            // Log.Message，因此 !Logging 当前恒真；保留它是为了将来摘要若改回 Log.Error 时不回灌自身。
+            if (Environment.CurrentManagedThreadId == ownerThread && Volatile.Read(ref errorWindowDepth) > 0 && !Logging) Error ??= text;
+        }
         internal static int Fold(ulong seed) => unchecked((int)(seed ^ (seed >> 32)));
         internal IDisposable EnterHost(string stage)
         {
             Stage = stage; Check();
-            return EnterSeed(CelestialSeed.Derive(MapGenerationSeeds.Root(Frozen.Source), "local-map", "native-host", stage));
+            return EnterSeed(CelestialSeed.Derive(MapGenerationSeeds.Root(Frozen.Source), "local-map", "native-host", stage), errorWindow: true);
         }
         internal IDisposable EnterPreparation(MapGenerationStepSpec step)
         {
             Stage = "Plan:" + step.Key; Check();
-            return EnterSeed(MapGenerationSeeds.ForStep(Frozen.Source, Purpose, step));
+            return EnterSeed(MapGenerationSeeds.ForStep(Frozen.Source, Purpose, step), errorWindow: false);
         }
-        private IDisposable EnterSeed(ulong seed)
-        { Rand.PushState(Fold(seed)); return new Scope(this); }
-        private sealed class Scope(NativeLocalMapSession owner) : IDisposable
+        private IDisposable EnterSeed(ulong seed, bool errorWindow)
+        {
+            Rand.PushState(Fold(seed));
+            if (errorWindow) errorWindowDepth++;
+            return new Scope(this, errorWindow);
+        }
+        /// <summary>Error-attribution window without a Rand scope (ConstructComponents keeps the early root stream).</summary>
+        internal IDisposable EnterErrorWindow()
+        {
+            errorWindowDepth++;
+            return new ErrorWindow(this);
+        }
+        private sealed class ErrorWindow(NativeLocalMapSession owner) : IDisposable
+        {
+            // No Check() here: Construct() checks right after the window so an exception thrown by
+            // ConstructComponents itself is never replaced by the logged-error boundary exception.
+            public void Dispose() => owner.errorWindowDepth--;
+        }
+        private sealed class Scope(NativeLocalMapSession owner, bool errorWindow) : IDisposable
         {
             public void Dispose()
             {
@@ -77,14 +103,21 @@ namespace PioneerFramework.MapGeneration
                         owner.Error ??= "Native path incremental dirtying left disabled.";
                     }
                 }
-                finally { Rand.PopState(); }
+                finally
+                {
+                    Rand.PopState();
+                    if (errorWindow) owner.errorWindowDepth--;
+                }
                 owner.Check();
             }
         }
         public IDisposable Enter(MapGenerationContext context, bool postInitialize)
         {
             Stage = (postInitialize ? "PostInitialize:" : "Generate:") + context.Step.Key;
-            Check(); return EnterSeed(context.Seed);
+            Check();
+            // The native GenStep wrapper is the other PFL-out-sourced native callback surface: a Log.Error
+            // raised by the wrapped GenStep must still fail the session (native catch-and-continue is not used).
+            return EnterSeed(context.Seed, context.Step.HandlerId == LocalMapBuiltinConfigurations.Native);
         }
         public object? GetService(Type type) => type == typeof(INativeMapGenerationServices) ? Native : type == typeof(IMapGenerationExecutionScopeFactory) ? this : null;
         internal void Generate(IEnumerable<GenStepWithParams> candidates, Map map)
@@ -99,7 +132,7 @@ namespace PioneerFramework.MapGeneration
                 for (int i = 0; i < materialized.Length; i++)
                 { var parms = materialized[i].parms; parms.gravship = gravship; materialized[i] = new(materialized[i].def, parms); }
             var plan = NativeLocalMapPlan.Build(Frozen, Purpose, materialized, LocalMapGenerationModules.Registry, EnterPreparation, Parent is Site);
-            Native = new(map, Frozen.Source, Frozen.CompatibilityProfile, plan.NativeSteps);
+            Native = new(map, Frozen.Source, plan.NativeSteps);
             foreach (var input in plan.InitialInputs) Native.SetInitialOverrides(input);
             Executor = new(plan.Plan, Frozen.Source, this, preparedModules: plan.Modules);
             Exception? contentError = null;
@@ -140,6 +173,11 @@ namespace PioneerFramework.MapGeneration
                 !ReferenceEquals(layer, initialLayer) || Parent.ID != address?.MapParentId ||
                 layer.Header?.OwnerId.Value != Frozen.Source.SourceId || Parent.Tile.tileId != Frozen.Source.TileId))
                 Error = "Native map identity changed before publication.";
+            // P1-1: the native Map was registered by Game.AddMap before content/FinalizeInit could fail.
+            // Remove it before Capture/RecordNativeGeneration so the published provenance keeps MapId=null;
+            // CelestialNativeMapLifecycle then sees a site without MapId and RetireMap early-returns,
+            // preserving the failure/Generation/operation history.
+            if (Error != null) RemoveRegisteredMap();
             var state = Error == null ? MapGenerationState.Ready : MapGenerationState.Failed;
             var record = LocalMapGenerationRecord.Capture(new(Frozen.Source, Frozen.Specification, Purpose), state, Stage, Error, Executor?.Report);
             // PlanetTile resolves through the current world. Publication uses the captured world service and address.
@@ -151,6 +189,27 @@ namespace PioneerFramework.MapGeneration
                 try { Log.Message($"[PFL LocalMap] Failed source={Frozen.Source.SourceId} tile={Frozen.Source.TileId} parent={Parent.ID} map={Map?.uniqueID} purpose={Purpose} recipe={record.RecipeHash} stage={Stage} seed={record.RootSeed} steps={System.Text.Json.JsonSerializer.Serialize(record.Steps)} exception={Error}"); }
                 finally { Logging = false; }
             }
+        }
+        /// <summary>Best-effort removal of this session's partially generated Map; never touches other maps.</summary>
+        private void RemoveRegisteredMap()
+        {
+            var map = Map;
+            if (map == null) return;
+            var owner = game;
+            if (!ReferenceEquals(Current.Game, owner))
+            {
+                Error += "\nMapCleanup: current game changed; the registered map was not removed.";
+                return;
+            }
+            if (owner?.Maps == null || !owner.Maps.Contains(map)) return;
+            try
+            {
+                // Best effort: a partially initialized map can throw inside native deinit. Error already holds the
+                // original failure as its prefix, so a cleanup diagnostic is appended instead of replacing it.
+                owner.DeinitAndRemoveMap(map, false);
+            }
+            catch (Exception cleanup) { Error += "\nMapCleanup: " + cleanup; }
+            if (owner.Maps.Contains(map)) Error += "\nMapCleanup: the registered map is still present after DeinitAndRemoveMap.";
         }
         internal static bool TryInputs(Map map, out CelestialPlanetMapDiversity diversity, out MapSourceContext source)
         {

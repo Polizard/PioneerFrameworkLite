@@ -27,6 +27,7 @@ namespace PioneerFramework.Celestial
             double sunEast = 0, sunNorth = 0, sunUp = legacy.SunGlow, quadrature = 0, angularSpeed = 0;
             double intensity = 1;
             double? gravity = null;
+            double? authoredPhase = null;
             // Temperature mode does not select the light clock: explicit physical motion owns lighting in both modes.
             bool usesPhysicalLight = climate != null && (climate.Mode == CelestialClimateMode.CommittedIllumination ||
                 Context.GetCapabilities<ICelestialPhysicsBinding>().Count == 1);
@@ -54,6 +55,10 @@ namespace PioneerFramework.Celestial
                 var east = new DVector3(Math.Cos(lon), 0, Math.Sin(lon));
                 var north = new DVector3(-Math.Sin(lon) * Math.Sin(lat), Math.Cos(lat), Math.Cos(lon) * Math.Sin(lat));
                 sunUp = DVector3.Dot(direction, normal); sunEast = DVector3.Dot(direction, east); sunNorth = DVector3.Dot(direction, north);
+                // Authored 温度相位对齐物理太阳：小时角 0 = 本地正午（2026-11-07 P1-1）。
+                // 有物理绑定时光照已是物理快照，日温度若仍用日历 tick 会与太阳错相；无物理时 authoredPhase 保持 null，退回日历相位。
+                if (climate?.Mode == CelestialClimateMode.Authored)
+                    authoredPhase = lon - Math.Atan2(direction.x, -direction.z);
                 var relative = light.LinearVelocity - body.LinearVelocity;
                 var orbitalAngular = DVector3.Cross(delta, relative) / delta.sqrMagnitude;
                 var localAngular = DVector3.Rotate(body.AngularVelocity - orbitalAngular, new DQuaternion(-q.x, -q.y, -q.z, q.w));
@@ -78,7 +83,7 @@ namespace PioneerFramework.Celestial
                 var field = CelestialPlanetTerrain.Sample(terrain, query.LongitudeDegrees, query.LatitudeDegrees, terrain.FieldSeed);
                 (rainfall, humidity) = CelestialPlanetTerrain.SurfaceMoisture(terrain, generation.Rainfall, generation.Swampiness, field.Moisture);
             }
-            return new(climate == null ? null : CelestialClimateModel.Temperature(climate, climateQuery, profile.DayLengthTicks, sunUp * intensity, quadrature * intensity, angularSpeed),
+            return new(climate == null ? null : CelestialClimateModel.Temperature(climate, climateQuery, DayLength(profile), sunUp * intensity, quadrature * intensity, angularSpeed, authoredPhase),
                 Math.Max(0, sunUp) * intensity * (climate?.LightMultiplier ?? 1), hasAir ? climate?.WindSpeed ?? 1 : 0,
                 rainfall, humidity, pressure, oxygen, toxicity,
                 profile.Exposure?.RadiationPerDay ?? 0, gravity, sunEast, sunNorth, sunUp, physicalSeconds, vacuum, profile.Exposure,

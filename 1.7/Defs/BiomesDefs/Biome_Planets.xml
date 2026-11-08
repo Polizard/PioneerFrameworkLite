@@ -3,7 +3,7 @@
   <BiomeDef>
     <defName>PF_MoonBiomeWater</defName>
     <label>水冰带</label>
-    <description>占位</description>
+    <description>极区洼地与永久阴影区，水冰在低温下长期保存。昼间升温有限，夜间骤降至约 -170°C。</description>
     <workerClass>BiomeWorker_Desert</workerClass>
     <implemented>true</implemented>
     <canBuildBase>true</canBuildBase>
@@ -56,7 +56,7 @@
   <BiomeDef>
     <defName>PF_MoonBiomeBasalt</defName>
     <label>玄武岩平原</label>
-    <description>占位</description>
+    <description>古老熔岩流冷却形成的玄武岩台地，起伏多碎石。无大气保温，日照处可升至约 +120°C，阴影处迅速跌至 -170°C。</description>
     <workerClass>BiomeWorker_Desert</workerClass>
     <implemented>true</implemented>
     <canBuildBase>true</canBuildBase>
@@ -100,7 +100,7 @@
   <BiomeDef>
     <defName>PF_MoonBiomeRegolith</defName>
     <label>月壤带</label>
-    <description>占位</description>
+    <description>覆盖细碎月壤的开阔平原，松软且无植被。真空与极端昼夜温差使户外活动必须依赖舱外服或密封舱段。</description>
     <workerClass>BiomeWorker_Desert</workerClass>
     <implemented>true</implemented>
     <canBuildBase>true</canBuildBase>

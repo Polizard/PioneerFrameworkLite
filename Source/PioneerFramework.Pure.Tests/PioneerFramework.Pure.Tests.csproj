@@ -33,6 +33,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\PioneerFramework\PFView\ShipBuildingVisuals\Core\*.cs" Link="ShipBuildingVisuals\%(Filename)%(Extension)" />
     <Compile Include="..\PioneerFramework\Base\Core\DVector3.cs" Link="Pure\DVector3.cs" />
     <Compile Include="..\PioneerFramework\Celestial\API\**\*.cs" Link="Celestial\API\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\PioneerFramework\Celestial\Core\**\*.cs" Link="Celestial\Core\%(RecursiveDir)%(Filename)%(Extension)" />
@@ -66,6 +67,8 @@
     <Compile Include="..\PioneerFramework\Base\Core\GroupBirth.cs" Link="Pure\GroupBirth.cs" />
     <!-- 2026-10-30：火箭外壳几何（24 棱柱/棱台 + 整流罩 + 分站损毁色）——纯算术，无 Verse/Unity 依赖。 -->
     <Compile Include="..\PioneerFramework\PFView\RocketHullCore.cs" Link="Pure\RocketHullCore.cs" />
+    <!-- 2026-11-08：PFView 引擎喷焰纯核（选引擎/锚点/LOD/闪烁）——纯算术，无 Verse/Unity 依赖。 -->
+    <Compile Include="..\PioneerFramework\PFView\EnginePlume\EnginePlumeCore.cs" Link="Pure\EnginePlumeCore.cs" />
     <!-- 适配层：纯文件（如 RendezvousGuidanceLaw）现在可以用它去调移植的 Astro（net48 打通之后）。 -->
     <Compile Include="..\PioneerFramework\Base\Orbital\OrbitView.cs" Link="Pure\OrbitView.cs" />
     <Compile Include="..\PioneerFramework\Base\Orbital\Gooding.cs" Link="Pure\Gooding.cs" />

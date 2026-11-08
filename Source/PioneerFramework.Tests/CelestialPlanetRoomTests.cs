@@ -167,19 +167,21 @@ public class CelestialPlanetRoomTests
         var doorDef = (ThingDef)RuntimeHelpers.GetUninitializedObject(typeof(ThingDef)); doorDef.defName = "PF_DoorProbe"; doorDef.size = new IntVec2(1, 1);
         var door = new Building_Door { def = doorDef, Position = new IntVec3(3, 0, 1) };
         map.edificeGrid.Register(door);
-        Assert.Equal(2, MapComponent_CelestialEnvironment.CaptureTopology(map).Count);
+        // 2026-11-07 C-1：只有封闭组进入拓扑/存档；未铺顶的第二间房属于开放组，因此不出现。
+        Assert.Single(MapComponent_CelestialEnvironment.CaptureTopology(map));
         AccessTools.Field(typeof(Building_Door), "openInt").SetValue(door, true);
-        var connected = Assert.Single(MapComponent_CelestialEnvironment.CaptureTopology(map));
-        Assert.True(connected.OpenToOutside); Assert.Equal(6, connected.Cells.Length);
+        // 开门把封闭房与开放房并成开放组 -> 整组不捕获。
+        Assert.Empty(MapComponent_CelestialEnvironment.CaptureTopology(map));
         AccessTools.Field(typeof(Building_Door), "openInt").SetValue(door, false);
-        Assert.Equal(2, MapComponent_CelestialEnvironment.CaptureTopology(map).Count);
+        Assert.Single(MapComponent_CelestialEnvironment.CaptureTopology(map));
         // Native room reassignment is how wall demolition/room merging presents to consumers.
+        // 夹具没有 room updater：合并后的 room.OpenRoofCount 仍是旧值，因此这里仍按封闭组捕获 6 格。
         otherDistrict.Room = room;
         Assert.Equal(6, Assert.Single(MapComponent_CelestialEnvironment.CaptureTopology(map)).Cells.Length);
         temperature.Patch(AccessTools.PropertyGetter(typeof(MapTemperature), nameof(MapTemperature.OutdoorTemp)), prefix:
             new HarmonyMethod(typeof(CelestialPlanetRoomTests), nameof(SetupOutdoorTemperature)));
         try { otherDistrict.Room = Room.MakeNew(map); } finally { temperature.UnpatchAll(temperature.Id); }
-        Assert.Equal(2, MapComponent_CelestialEnvironment.CaptureTopology(map).Count);
+        Assert.Single(MapComponent_CelestialEnvironment.CaptureTopology(map));
         otherDistrict.Room = null;
         foreach (var cell in otherRegion.extentsClose.Cells) map.regionGrid.SetRegionAt(cell, null);
         map.edificeGrid.DeRegister(door);
@@ -216,7 +218,8 @@ public class CelestialPlanetRoomTests
         Assert.True(protectedComponent.Effective(outside, new(1, 0, 1)).PressurePascals < 300000);
         roofs[map.cellIndices.CellToIndex(new(1, 0, 1))] = null;
         district.Notify_RoofChanged();
-        Assert.True(Assert.Single(MapComponent_CelestialEnvironment.CaptureTopology(map)).OpenToOutside);
+        // 破顶后该组变为开放组 -> 不再进入拓扑（Effective 也回退室外样本）。
+        Assert.Empty(MapComponent_CelestialEnvironment.CaptureTopology(map));
         Assert.Equal(500000, protectedComponent.Effective(outside, new(1, 0, 1)).PressurePascals);
 
         var state = new CelestialRoomEnvironmentState("planet:saved");
@@ -250,7 +253,8 @@ public class CelestialPlanetRoomTests
         region.extentsClose = new CellRect(0, 0, 2, 2);
         foreach (var cell in region.extentsClose.Cells) map.regionGrid.SetRegionAt(cell, region);
         district.Notify_RoofChanged();
-        Assert.True(Assert.Single(MapComponent_CelestialEnvironment.CaptureTopology(map)).OpenToOutside);
+        // 贴地图边缘的室外组不进入拓扑/存档（C-1），其空气始终按室外样本处理。
+        Assert.Empty(MapComponent_CelestialEnvironment.CaptureTopology(map));
     }
     private static bool SetupOutdoorTemperature(ref float __result) { __result = 20; return false; }
     [Fact]

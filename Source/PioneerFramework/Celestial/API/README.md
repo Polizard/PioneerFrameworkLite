@@ -130,9 +130,17 @@ Provider diagnostics 公开 Ready/Unavailable/Restoring/Faulted 和结构化 Err
 
 Creation 在创建流程生成；OnDemand 需显式 RequestSurface。地图另经 RequestMap 的 Inspect/Settle/Land/Generate 行为请求。地址包含实例、层、tile 及可选 MapParent 身份。同一 Def 的多实例、多地图独立保存。查询与 Inspect 不触发生成。新建地图从有效的 ICelestialMapGenerationCapability 获取冻结的 LocalMapGenerationSpec，排队执行前和完成时再次核对能力和原生层对象身份，停用组件的历史配置不能授权新生成。已知对象缺失/替换返回身份错误；仅明确退役允许新的明确请求创建替代对象。地图、WorldObject、飞船、运输、巨构与扩展引用会阻止框架移除，主地表不能移除。天然配方、用途配方、原生候选、扩展注册和地图失败诊断见 [本地地图生成 API](../../MapGeneration/API/README.md)。
 
+地图生成失败会回收半成品：原生在内容与收尾之前已把 Map 注册进 `Game.Maps`，失败结算先 best-effort 移除本次会话注册的那张 Map（不触碰其他地图），再把失败写入站点记录。因此站点保留 `Failure` 与失败 Generation 而 `MapId` 为空，父对象保留，同地址后续请求继续以 `MapGenerationIncomplete` 拒绝，保存重载后仍为失败身份。移除失败不掩盖原始异常：清理诊断追加在原始失败之后，记录保留当时已知的 `MapId`。
+
+保存入口在 SafeSaver 接触目标文件前完成一次捕获：恢复态、未收敛的宿主作业（prepared interval、执行中回调、queued/running 原生工作）、地图或地表身份不一致与文档校验失败都在该前缀直接拒绝保存并提示首个错误 Code（`RuntimeUnavailable`/`RestorePending`/`HostWorkPending`/`MapIdentityMismatch`/`SurfaceIdentityMismatch`/`InvalidSaveDocument`/`CheckpointCaptureFailed` 等）；捕获成功才继续写档，同一次捕获的文档由随后 ExposeData 消费一次后立即清空，非 SaveGame 路径仍回退现场捕获。v4 编码、Brotli 分块框架与 Scribe 键名均未改变。
+
+地形数值语义有独立版本锚：`CelestialPlanetTerrain.AlgorithmVersion` 唯一决定 Sample/SelectBiome/SurfaceMoisture/SelectOceanTiles/Field 的语义。地表构造头持久化 terrainAlgorithmVersion 并在读档时校验，与当前值不等即 `UnsupportedTerrainAlgorithmVersion`（原生 Scribe 侧重载时以地表存档拒绝呈现、框架 v4 侧由 codec 返回 `InvalidSaveDocument`）；世界层生成/再生成前也会先比对 header 版本。引入该字段之前写出的 v4 档缺少此字段，按 `LegacyVersionWithoutHeaderField` 读取，因此当前版本仍为 1 时旧档可读；一旦公式语义变化必须 +1，此后旧档被显式拒绝，而不是按新公式静默重算。恢复以原生 Header 的保存值为准，并与框架 v4 的 surface 记录交叉校验，不假设当前常量；该字段使 v4 payload 新增一个 JSON 属性，新构建可读旧 v4 档（缺字段按 Legacy），旧构建读新档会因未知字段显式拒绝（单向兼容）。
+
 原生 WorldGrid 的删除通知会退役已关联的非主地表，仅清理该层关联，保留天体及其他层。生成期间删除的层不能发布为成功。历史地表回执保留 Applied 及 SurfaceRetired 诊断；再次提交该旧请求返回 Rejected/SurfaceRetired，保存重载后仍然有效，新的明确请求可以重新生成。直接丢失或替换层对象且没有原生删除通知时，仍拒绝保存与替代生成并报告 SurfaceIdentityMismatch。该通知不授权删除主地表，也不绕过原生对地图和世界对象的清理。
 
 内建球面 subdivisions 只允许 0～10，原生半径与物理半径分开保存。此上限是资源保护，10000 天体是受控台架规模，均不构成 FPS 或高细分生成性能承诺。更大地表需自有能力和明确适配。父子关系及初始化引用的移除检查仍扫描目录，不承诺常数时间。本轮保留原数值判据、浮点归约顺序与物理算法。
+
+地图生成的边界与取舍见 [本地地图生成 API](../../MapGeneration/API/README.md) 的「已知限制与有意取舍」一节：P2-2/P2-4/P2-6/P2-7 已在 2026-11-06 第二批修复后写明新边界（原生步骤语义阶段重排与用途派生种子、profile diversity 与显式初始输入必须字节一致、记录 v2 的 `RecipeHash` 改为对冻结配方字符串取 SHA-256、站点在父对象换 tile 后的同站点迁移判据）；启动契约预检范围、嵌套生成单例保护与宿主线程请求要求仍按原边界保留。
 
 ## 存档与版本
 
@@ -148,7 +156,7 @@ v1/v2/v3 文档一律返回 `UnsupportedSaveVersion`，需要新建测试世界�
 
 ## 行星参数与作者示例
 
-[PlanetAuthoring.md](PlanetAuthoring.md) 是数值字段、完整有效区间、覆盖路径、组件版本与实际消费者的完整表，包含气体注册、typed列表/组件替换与手工验收边界。[PlanetKinds.md](PlanetKinds.md) 说明现有六个可选模板、开发者变体与检查面板。默认太阳/地球/月球与历史实例保持原行为；新增能力均由明确组件启用。
+[PlanetAuthoring.md](PlanetAuthoring.md) 是数值字段、完整有效区间、覆盖路径、组件版本与实际消费者的完整表，包含气体注册、typed列表/组件替换与手工验收边界。[PlanetKinds.md](PlanetKinds.md) 说明现有六个可选模板、开发者变体与检查面板。默认太阳/地球保持原行为；默认月球已显式启用 `climate`/`exposure`（环境配置 v2，极端昼夜温差 + 真空暴露）；历史实例从原字节恢复。新增能力均由明确组件启用。
 
 ## 构建与验证
 

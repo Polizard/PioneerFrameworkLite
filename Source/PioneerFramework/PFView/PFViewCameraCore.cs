@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace PioneerFramework
@@ -76,6 +77,32 @@ namespace PioneerFramework
             float distance = (float)(current * Math.Exp(Math.Log((double)target / current) * blend));
             if (Math.Abs(distance - target) <= target * 1e-6f) return target;
             return Mathf.Clamp(distance, Math.Min(current, target), Math.Max(current, target));
+        }
+
+        /// <summary>取裁剪范围内最靠前的球面。射线方向的相机空间 Z 分量为 1。</summary>
+        public static int PickCelestialBody(Vector3 cameraPosition, Vector3 direction, float nearDepth, float farDepth,
+            IReadOnlyList<(int BodyId, Vector3 Center, float Radius)> spheres)
+        {
+            DVector3 ray = (DVector3)direction;
+            double inverseLengthSquared = 1.0 / ray.sqrMagnitude;
+            double bestDepth = farDepth;
+            int bestBody = -1;
+            foreach (var sphere in spheres)
+            {
+                DVector3 offset = (DVector3)sphere.Center - (DVector3)cameraPosition;
+                // 叉积直接求到射线的垂距，避免远处小球在两个大平方数相减时丢失精度。
+                double perpendicularSquared = DVector3.Cross(offset, ray).sqrMagnitude * inverseLengthSquared;
+                double halfChordSquared = (double)sphere.Radius * sphere.Radius - perpendicularSquared;
+                if (halfChordSquared < 0.0) continue;
+
+                double depth = DVector3.Dot(offset, ray) * inverseLengthSquared
+                    - Math.Sqrt(halfChordSquared * inverseLengthSquared);
+                if (!(depth >= nearDepth && depth < bestDepth)) continue;
+
+                bestDepth = depth;
+                bestBody = sphere.BodyId;
+            }
+            return bestBody;
         }
 
         /// <summary>

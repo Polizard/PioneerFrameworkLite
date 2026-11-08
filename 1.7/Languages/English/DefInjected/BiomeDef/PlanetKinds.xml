@@ -12,4 +12,19 @@
   <PF_GreenhousePlain.label>scorching plains</PF_GreenhousePlain.label>
   <PF_GreenhousePlain.description>A scorching, dry surface beneath a dense atmosphere, without natural ecology. Pressure and gas toxicity require additional environment capabilities.</PF_GreenhousePlain.description>
   <PF_GreenhousePlain.settleWarning>Surface temperatures are extreme. Ordinary colonists and equipment cannot safely remain exposed outdoors.</PF_GreenhousePlain.settleWarning>
+  <PF_MoonBiomeWater.label>water ice belt</PF_MoonBiomeWater.label>
+  <PF_MoonBiomeWater.description>Polar depressions and permanently shadowed ground where water ice survives the cold. Daytime warming stays limited and night falls to about -170°C.</PF_MoonBiomeWater.description>
+  <PF_MoonBiomeWater.settleWarning>The moon has no breathable atmosphere and no magnetic shielding. Colonists exposed outdoors face vacuum and extreme day-night temperature swings.
+
+Are your ships, EVA suits and heating/cooling systems reliable enough?</PF_MoonBiomeWater.settleWarning>
+  <PF_MoonBiomeBasalt.label>basalt plains</PF_MoonBiomeBasalt.label>
+  <PF_MoonBiomeBasalt.description>Ancient lava flows cooled into basalt plateaus strewn with rubble. Without an atmosphere to hold heat, sunlit ground reaches about +120°C and shadowed ground drops to -170°C.</PF_MoonBiomeBasalt.description>
+  <PF_MoonBiomeBasalt.settleWarning>The moon has no breathable atmosphere and no magnetic shielding. Colonists exposed outdoors face vacuum and extreme day-night temperature swings.
+
+Are your ships, EVA suits and heating/cooling systems reliable enough?</PF_MoonBiomeBasalt.settleWarning>
+  <PF_MoonBiomeRegolith.label>regolith plains</PF_MoonBiomeRegolith.label>
+  <PF_MoonBiomeRegolith.description>Open plains covered by fine regolith, soft and without vegetation. Vacuum and extreme day-night temperature swings make outdoor work depend on EVA suits or sealed modules.</PF_MoonBiomeRegolith.description>
+  <PF_MoonBiomeRegolith.settleWarning>The moon has no breathable atmosphere and no magnetic shielding. Colonists exposed outdoors face vacuum and extreme day-night temperature swings.
+
+Are your ships, EVA suits and heating/cooling systems reliable enough?</PF_MoonBiomeRegolith.settleWarning>
 </LanguageData>

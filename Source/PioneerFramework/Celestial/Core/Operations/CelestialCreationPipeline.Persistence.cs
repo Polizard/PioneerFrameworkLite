@@ -72,7 +72,7 @@ namespace PioneerFramework.Celestial
                 foreach (var validator in properties.OfType<ICelestialResolvedConfigurationValidator>()) errors.AddRange(validator.Validate(properties).Errors);
                 if (errors.Count > 0) { BlockRestored(instance, decoded, errors); continue; }
                 var template = CelestialBodyTemplate.Create(saved.Description.DefinitionId, saved.Assembly!.Label, saved.Description.Category, saved.Description.Tags,
-                    ordered.Select(resolved => new CelestialCompDefinition(resolved.Descriptor, resolved.Factory, _ => CelestialResult.Ok(resolved.Properties)))).Value;
+                    ordered.Select(resolved => new CelestialCompDefinition(resolved.Descriptor, resolved.Factory, _ => CelestialResult.Ok(resolved.Properties), resolved.Properties.Version))).Value;
                 var spawn = new CelestialSpawnItem(instance.Id, saved.Assembly.EntryKey, saved.Assembly.Index, saved.Assembly.GenerationPath, template, ordered,
                     saved.ParentId, saved.Assembly.InitializationReferences);
                 var assembly = new Assembly(instance, spawn) { Registration = saved.Assembly.Registration };

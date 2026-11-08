@@ -12,29 +12,28 @@ namespace PioneerFramework
             if (group == null) return;
             var rect = rPilotPanel;
             Widgets.DrawBoxSolid(rect, PFViewPalette.PanelBg);
-            Text.Font = GameFont.Small;
-            string mode = (SteeringController.AssistedStop ? "PFV_Pilot_Assisted" : "PFV_Pilot_Inertial").Translate();
-            string heading = "G" + group.GroupId + " · " + Window_Steering.PrecisionStatus() + " · " + mode
-                + " · " + Window_Steering.SasLabel(SteeringController.SasKind);
-            var headingRect = new Rect(rect.x + 6, rect.y + 2, rect.width - 12, 20);
-            Text.Font = rect.width < 450 ? GameFont.Tiny : GameFont.Small;
-            Widgets.Label(headingRect, heading);
-            TooltipHandler.TipRegion(headingRect, heading + "\n" + Window_Steering.PrecisionHelp());
-            Text.Font = GameFont.Small;
-            Widgets.Label(new(rect.x + 6, rect.y + 22, rect.width - 12, 20),
-                "PFV_Pilot_ActualThrust".Translate((SteeringController.ActualThrust / 1000f).ToString("F1"))
-                + " · " + "PFV_Pilot_Spin".Translate((group.angularVelocity.magnitude * Mathf.Rad2Deg).ToString("F1")));
-            float width = (rect.width - 16) / 3;
-            if (Widgets.ButtonText(new(rect.x + 4, rect.y + 44, width, 26), "PFV_Pilot_Focus".Translate()))
-                FocusGroup(group.GroupId);
-            if (Widgets.ButtonText(new(rect.x + 8 + width, rect.y + 44, width, 26), "PFV_Pilot_Details".Translate()))
+            bool narrow = rect.width < 380f;
+            DrawPilotReadouts(rect, group, narrow);
+
+            const float pad = 6f, gap = 4f;
+            float directionWidth = rect.width >= 460f ? 136f : 0;
+            float actionsWidth = rect.width - 2 * pad - directionWidth - (narrow ? 112f : 0f);
+            bool showReturn = CanReturnToPilotShip(group.GroupId);
+            float buttonWidth = Mathf.Min(156f, (actionsWidth - gap) * .5f);
+            float x = rect.x + pad, y = rect.y + 24f;
+            Text.Font = narrow ? GameFont.Tiny : GameFont.Small;
+            if (showReturn)
             {
-                ResetCameraDrag();
-                if (FindSteeringWindow() == null) Find.WindowStack.Add(new Window_Steering(false, false));
+                if (CockpitButton(new(x, y, buttonWidth, 26), (narrow ? "PFV_Focus" : "PFV_Pilot_Focus").Translate(),
+                    tip: "PFV_Pilot_Focus".Translate()))
+                    FocusGroup(group.GroupId);
+                x += buttonWidth + gap;
             }
-            if (Widgets.ButtonText(new(rect.x + 12 + 2 * width, rect.y + 44, width, 26), "PFV_EndSteering".Translate()))
-                EndSteering();
-            if (rect.height >= 104) DrawPilotDirections(new(rect.x + 6, rect.y + 76, rect.width - 12, 28), group);
+            if (Widgets.ButtonText(new(x, y, buttonWidth, 26), "PFV_Pilot_Details".Translate()))
+                OpenPilotDetails();
+            if (directionWidth > 0)
+                DrawPilotDirections(new(rect.xMax - directionWidth, y, directionWidth - pad, 26), group);
+            Text.Font = GameFont.Small;
             if (SteeringController.ThrustUnavailable)
                 TooltipHandler.TipRegion(rect, "PFV_Pilot_NoThrust".Translate());
             if (SteeringController.TakeoverNotice)
@@ -42,6 +41,35 @@ namespace PioneerFramework
                 SteeringController.TakeoverNotice = false;
                 QueueToast("PFV_Pilot_Takeover".Translate());
             }
+        }
+
+        private static void DrawPilotReadouts(Rect rect, SpaceEntityGroup group, bool narrow)
+        {
+            string mode = (SteeringController.AssistedStop ? "PFV_Pilot_Assisted" : "PFV_Pilot_Inertial").Translate();
+            string heading = "G" + group.GroupId + " · " + Window_Steering.PrecisionStatus() + " · " + mode
+                + " · " + Window_Steering.SasLabel(SteeringController.SasKind);
+            string thrust = (SteeringController.ActualThrust / 1000f).ToString("F1");
+            string rate = (group.angularVelocity.magnitude * Mathf.Rad2Deg).ToString("F1");
+            string fullReadouts = "PFV_Pilot_ActualThrust".Translate(thrust) + " · " + "PFV_Pilot_Spin".Translate(rate);
+            string readouts = rect.width >= 520f ? fullReadouts : $"T {thrust} kN · ω {rate}°/s";
+            float readoutWidth = narrow ? 108f : Mathf.Clamp(rect.width * .42f, 116f, 270f);
+            float headingWidth = rect.width - (narrow ? 12f : readoutWidth + 16f);
+            var headingRect = new Rect(rect.x + 6, rect.y + 2, headingWidth, 20);
+            var readoutRect = new Rect(rect.xMax - readoutWidth - 6, rect.y + (narrow ? 27f : 2f), readoutWidth, 20);
+            bool previousWrap = Text.WordWrap;
+            Text.WordWrap = false;
+            MiniLabel(headingRect, heading, PFViewPalette.TextPrimary);
+            MiniLabel(readoutRect, readouts, PFViewPalette.TextSecondary, TextAnchor.MiddleRight);
+            Text.WordWrap = previousWrap;
+            TooltipHandler.TipRegion(headingRect, heading + "\n" + Window_Steering.PrecisionHelp());
+            TooltipHandler.TipRegion(readoutRect, fullReadouts);
+        }
+
+        private void OpenPilotDetails()
+        {
+            if (!SteeringController.IsOpen) return;
+            ResetCameraDrag();
+            if (FindSteeringWindow() == null) Find.WindowStack.Add(new Window_Steering(false, false));
         }
 
         private void DrawPilotDirections(Rect rect, SpaceEntityGroup group)

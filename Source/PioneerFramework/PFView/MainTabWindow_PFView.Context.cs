@@ -20,13 +20,17 @@ namespace PioneerFramework
         private void ResetUiSession()
         {
             ResetCameraDrag();
+            presentedBodySpheres.Clear();
             navigableGroupMaps.Clear();
             fleetSnapshots.Clear();
             fleetAlertsOnly = false;
             showFleetMembers = false;
             objectSearchFocused = false;
             navballMode = PFViewPanelMode.Automatic;
-            radarMode = PFViewPanelMode.Automatic;
+            radarMode = PFViewPanelMode.Expanded;
+            drawerTab = PFViewDrawerTab.None;
+            preferObjectList = true;
+            ResetWeaponSelection();
             operationContext.Reset();
             objectsDirty = true;
         }
@@ -36,6 +40,7 @@ namespace PioneerFramework
             selectedGroupId = -1;
             inspectedContactKey = null;
             preferObjectList = true;
+            if (drawerTab == PFViewDrawerTab.Details) drawerTab = PFViewDrawerTab.None;
         }
 
         private void InvalidateInspection()
@@ -83,6 +88,7 @@ namespace PioneerFramework
             }
             if (selectedGroupId >= 0 && !CanInspectEntity(space?.GetGroupById(selectedGroupId)))
                 InvalidateInspection();
+            SynchronizeCockpitSource();
             if (weaponTarget.IsSet && !TryGetWeaponTarget(out _))
             {
                 targetGroupId = -1;
@@ -115,20 +121,20 @@ namespace PioneerFramework
             return CanOperateGroup(group, false, out _) ? group : null;
         }
 
-        /// <summary>
-        /// **仪表基准**（2026-10-18 用户裁定③）：雷达 / 姿态球**总是显示当前选中的编队**（查看对象），
-        /// 不再跟随"操作编队"——操作编队只决定命令来源。这样只要左侧选中了编队，两块仪表就有内容；
-        /// 没有选中编队时返回 null（面板画空态）。
-        /// </summary>
-        private SpaceEntityGroup? ResolveInstrumentGroup()
-            => selectedGroupId >= 0
-                ? Current.Game?.GetComponent<SpaceGameComp>()?.GetGroupById(selectedGroupId)
-                : null;
+        private SpaceEntityGroup? ResolveCockpitGroup()
+        {
+            var source = ResolveOperationGroup();
+            if (source != null) return source;
+            var group = Current.Game?.GetComponent<SpaceGameComp>()?.GetGroupById(selectedGroupId);
+            return group?.IsActive == true && Faction.OfPlayer?.loadID == group.FactionId ? group : null;
+        }
+
+        private SpaceEntityGroup? ResolveInstrumentGroup() => ResolveCockpitGroup();
 
         private SpaceEntityGroup? ResolveNavballGroup()
             => SteeringController.IsOpen
                 ? Current.Game?.GetComponent<SpaceGameComp>()?.GetGroupById(SteeringController.GroupId)
-                : ResolveInstrumentGroup();
+                : Current.Game?.GetComponent<SpaceGameComp>()?.GetGroupById(selectedGroupId);
 
         private bool TryGetKnownContact(int groupId, out Contact known)
         {
@@ -192,10 +198,19 @@ namespace PioneerFramework
             bool allowed = CanOperateGroup(group, false, out string reason);
             if (!operationContext.TryOpenWeapons(groupId, allowed, SteeringController.GroupId))
                 QueueToast(allowed ? "PFV_KeepOperator".Translate() : reason);
-            else preferObjectList = false;
+            else
+            {
+                SynchronizeCockpitSource();
+                SetDrawer(PFViewDrawerTab.Weapons);
+            }
         }
 
-        private void CloseWeaponsPanel() => operationContext.CloseWeapons();
+        private void CloseWeaponsPanel()
+        {
+            operationContext.CloseWeapons();
+            ResetWeaponSelection();
+            SynchronizeCockpitSource();
+        }
 
         private void ShowInstrumentModeMenu(PFViewUiInstrument instrument)
         {
@@ -246,9 +261,10 @@ namespace PioneerFramework
             var window = FindSteeringWindow();
             if (window != null) window.Close();
             if (SteeringController.IsOpen) Window_Steering.StopControl();
+            SynchronizeCockpitSource();
         }
 
-        private bool TryFireAtTarget(int sourceGroupId, WeaponInstance weapon)
+        private bool TryFireAtTarget(int sourceGroupId, WeaponInstance weapon, bool reportFailure = true)
         {
             var space = Current.Game?.GetComponent<SpaceGameComp>();
             var combat = Current.Game?.GetComponent<CombatManager>();
@@ -256,19 +272,19 @@ namespace PioneerFramework
             bool operable = operationContext.WeaponsOpen && ResolveOperationGroup()?.GroupId == sourceGroupId
                 && CanOperateGroup(source, false, out _);
             bool knownTarget = TryGetWeaponTarget(out _);
-            bool ready = combat != null && weapon != null && weapon.CanFire()
-                && combat.GetGroupWeapons(sourceGroupId).Contains(weapon);
+            bool ready = combat != null && weapon?.def != null && weapon.CanFire();
             if (!PFViewUiOperationContext.CanFire(sourceGroupId, weaponTarget, operable, knownTarget, ready))
             {
-                QueueToast("PFV_CannotFire".Translate());
+                if (reportFailure) QueueToast("PFV_CannotFire".Translate());
                 return false;
             }
             // 使用真实设备的炮口与共同接触开火入口，继续遵守影子、假接触、弹药和射程限制。
             if (combat!.TryGetMapWeaponMount(sourceGroupId, weapon!, out var entity, out var building)
-                && ContactTargetService.TryFire(space!, Current.Game.GetComponent<SensorManager>(), combat,
+                && Current.Game?.GetComponent<SensorManager>() is { } sensor
+                && ContactTargetService.TryFire(space!, sensor, combat,
                     source!, entity!, building!, weapon!, new ContactTarget(weaponTarget.GroupId, weaponTarget.DecoyId),
                     building!.TryGetComp<CompMissileLauncher>()?.EffectiveVolleyCount() ?? 1)) return true;
-            QueueToast("PFV_CannotFire".Translate());
+            if (reportFailure) QueueToast("PFV_CannotFire".Translate());
             return false;
         }
     }

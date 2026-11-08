@@ -17,14 +17,17 @@ namespace PioneerFramework
         public static PFViewStellarFrame Frame(double tick)
         {
             float phase = Phase(tick);
-            float flow = phase * 17f * FlowSpeed;
-            return new PFViewStellarFrame(phase,
-                new Vector4(MathF.Sin(flow), MathF.Cos(flow), MathF.Sin(flow * 2f + 1.3f), 0f),
+            return new PFViewStellarFrame(phase, DriftAtFlow(FlowAngle(phase)),
                 new Vector4(ArchHeight(phase, .27f, .4f), ArchHeight(phase, .31f, 1.8f),
                     ArchHeight(phase, .22f, 3.2f), ArchHeight(phase, .23f, 4.7f)),
                 new Vector4(ArchHeight(phase, .19f, 1.1f), ArchHeight(phase, .28f, 5.6f),
                     ArchHeight(phase, .23f, 2.5f), ArchHeight(phase, .17f, 3.9f)));
         }
+
+        internal static float FlowAngle(float phase) => phase * 17f * FlowSpeed;
+
+        internal static Vector4 DriftAtFlow(float flow)
+            => new(MathF.Sin(flow), MathF.Cos(flow), MathF.Sin(flow * 2f + 1.3f), 0f);
 
         private static float ArchHeight(float phase, float height, float offset)
             => height * (.85f + .15f * MathF.Sin(phase * 7f + offset));

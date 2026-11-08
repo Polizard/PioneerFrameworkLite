@@ -49,6 +49,21 @@ public class PFViewUiOperationContextTests
     }
 
     [Fact]
+    public void OperationSourceChangesOnlyInvalidateWeaponSelectionOnce()
+    {
+        var context = new PFViewUiOperationContext();
+        Assert.True(context.TryOpenWeapons(3, true, -1));
+        Assert.False(context.ObserveSourceChange(-1));
+        Assert.False(context.ObserveSourceChange(3));
+        Assert.True(context.ObserveSourceChange(8));
+        Assert.False(context.ObserveSourceChange(8));
+        Assert.False(context.ObserveSourceChange(-1));
+        context.CloseWeapons();
+        Assert.True(context.ObserveSourceChange(-1));
+        Assert.False(context.ObserveSourceChange(-1));
+    }
+
+    [Fact]
     public void InvalidatingUnrelatedObjectKeepsSourceButInvalidatingSourceClosesIt()
     {
         var context = new PFViewUiOperationContext();

@@ -18,6 +18,13 @@ public class NativeLocalMapExecutionTests
     private static GenStepWithParams Native(string name, GenStep step, float order = 450, GenStepParams parms = default) => new(new GenStepDef { defName = name, genStep = step, order = order }, parms);
     private static MapGenerationStepSpec Rules(params string[] names) => new("rules", LocalMapBuiltinConfigurations.NativeRules, 1, 1,
         MapGenerationStage.Fields, MapGenerationDomain.Natural, LocalMapBuiltinConfigurations.Encode(new NativeRulesConfiguration(new[] { new NativeMapStepSelector(names) })));
+    private static GenStep NativeStep(string typeName)
+    {
+        var type = AccessTools.TypeByName("RimWorld." + typeName)
+            ?? throw new InvalidOperationException("Missing native step type: " + typeName);
+        return (GenStep)(Activator.CreateInstance(type)
+            ?? throw new InvalidOperationException("Could not create native step: " + typeName));
+    }
 
     [Fact]
     public void SkippedNativeStepsHaveNoCallbacksAndIncludedStepsKeepParametersAndObjectIdentity()
@@ -27,7 +34,7 @@ public class NativeLocalMapExecutionTests
         var map = f.Map(f.Layer("session", 1, new()));
         var frozen = Frozen(Rules("skip"));
         var plan = NativeLocalMapPlan.Build(frozen, MapGenerationPurpose.Encounter, new[] { Native("skip", a), Native("keep", b) }, LocalMapGenerationModules.CreateRegistry());
-        var services = new NativeMapGenerationServices(map, frozen.Source, null, plan.NativeSteps);
+        var services = new NativeMapGenerationServices(map, frozen.Source, plan.NativeSteps);
         var run = new MapGenerationExecutor(plan.Plan, frozen.Source, new Services(services), preparedModules: plan.Modules);
         Assert.Equal(MapGenerationState.Generated, run.Execute().State); Assert.Equal(MapGenerationState.Ready, run.PostInitialize().State);
         Assert.Equal(0, a.Generated + a.Posted); Assert.Equal(1, b.Generated); Assert.Equal(1, b.Posted);
@@ -45,6 +52,32 @@ public class NativeLocalMapExecutionTests
         var purpose = new MapGenerationStepSpec("purpose", "purpose", 1, 1, MapGenerationStage.Content, MapGenerationDomain.Purpose);
         Assert.Contains("PurposeCannotRemoveNaturalStep", Assert.Throws<InvalidOperationException>(() => NativeLocalMapPlan.Build(Frozen(purpose),
             MapGenerationPurpose.Quest, new[] { Native("terrain", new GenStep_Terrain(), 210) }, registry)).Message);
+    }
+    [Fact]
+    public void QuestSiteContentIsRequiredOnlyWhenTheSiteFlagIsSet()
+    {
+        var scen = Native("scenParts", NativeStep("GenStep_ScenParts"), 875);
+        var start = Native("findStart", NativeStep("GenStep_FindPlayerStartSpot"), 850);
+        var candidates = new[] { scen, start };
+        var rules = Rules("scenParts", "findStart");
+        var registry = LocalMapGenerationModules.CreateRegistry();
+        // requiredSiteContent:false keeps the previous behavior: a natural selector may remove both nodes.
+        Assert.Empty(NativeLocalMapPlan.Build(Frozen(rules), MapGenerationPurpose.Colony, candidates, registry, requiredSiteContent: false).NativeSteps);
+        // Quest + requiredSiteContent:true keeps both in the plan when nothing selects them.
+        var kept = NativeLocalMapPlan.Build(Frozen(), MapGenerationPurpose.Quest, candidates, registry, requiredSiteContent: true);
+        Assert.Contains(kept.Plan.Steps, step => step.Spec.Key == "native/scenParts/0");
+        Assert.Contains(kept.Plan.Steps, step => step.Spec.Key == "native/findStart/0");
+        // NativeRules removal is rejected.
+        Assert.Contains("RequiredNativeStepConflict", Assert.Throws<InvalidOperationException>(() =>
+            NativeLocalMapPlan.Build(Frozen(rules), MapGenerationPurpose.Quest, candidates, registry, requiredSiteContent: true)).Message);
+        // A purpose contributor's removal is rejected too; without the flag it is allowed (Content > NaturalSurface).
+        var purposeRegistry = LocalMapGenerationModules.CreateRegistry();
+        purposeRegistry.Register(new("purpose", 1, new[] { 1 }, _ => { },
+            _ => new Contributor(new(remove: new[] { new NativeMapStepSelector(new[] { "scenParts", "findStart" }) }))));
+        var purpose = new MapGenerationStepSpec("purpose", "purpose", 1, 1, MapGenerationStage.Content, MapGenerationDomain.Purpose);
+        Assert.Contains("RequiredNativeStepConflict", Assert.Throws<InvalidOperationException>(() =>
+            NativeLocalMapPlan.Build(Frozen(purpose), MapGenerationPurpose.Quest, candidates, purposeRegistry, requiredSiteContent: true)).Message);
+        Assert.Empty(NativeLocalMapPlan.Build(Frozen(purpose), MapGenerationPurpose.Quest, candidates, purposeRegistry, requiredSiteContent: false).NativeSteps);
     }
     [Fact]
     public void PurposeContributorCannotPreloadInitialInputs()
@@ -73,6 +106,27 @@ public class NativeLocalMapExecutionTests
         Assert.Equal(nodes.Count, plan.NativeSteps.Count);
         Assert.Contains(plan.Plan.Steps, s => s.Spec.Key == "native/Terrain/0");
         Assert.Contains(plan.Plan.Steps, s => s.Spec.Key == (player ? "native/RocksFromGrid/0" : "native/RocksFromGrid_NoMinerals/0"));
+    }
+    [Fact]
+    public void AdaptedNativeOrderMatchesVanillaAcrossStageBarriers()
+    {
+        var plan = NativeLocalMapPlan.Build(Frozen(), MapGenerationPurpose.Encounter,
+            CoreCandidateSnapshot(false), LocalMapGenerationModules.CreateRegistry());
+        var keys = plan.Plan.Steps.Select(step => step.Spec.Key).ToArray();
+        int Index(string key)
+        {
+            var index = Array.IndexOf(keys, key);
+            Assert.True(index >= 0, "Missing native step: " + key);
+            return index;
+        }
+        // P2-2: vanilla slot order is Content(500-875) -> Plants(900) -> Geysers(950) -> Chunks(970) -> Snow(1150).
+        Assert.True(Index("native/Terrain/0") < Index("native/FindPlayerStartSpot/0"));
+        Assert.True(Index("native/FindPlayerStartSpot/0") < Index("native/Plants/0"));
+        Assert.True(Index("native/Plants/0") < Index("native/SteamGeysers/0"));
+        Assert.True(Index("native/SteamGeysers/0") < Index("native/RockChunks/0"));
+        Assert.True(Index("native/RockChunks/0") < Index("native/Snow/0"));
+        Assert.Equal(MapGenerationStage.Populate, plan.Plan.Steps.Single(step => step.Spec.Key == "native/SteamGeysers/0").Spec.Stage);
+        Assert.Equal(MapGenerationStage.Populate, plan.Plan.Steps.Single(step => step.Spec.Key == "native/RockChunks/0").Spec.Stage);
     }
     internal static List<GenStepWithParams> CoreCandidateSnapshot(bool player)
     {
@@ -104,7 +158,7 @@ public class NativeLocalMapExecutionTests
         var plan = NativeLocalMapPlan.Build(frozen, MapGenerationPurpose.Colony, new[] { terrain }, registry);
         var map = f.Map(f.Layer("inputs", 1, new()));
         NativeLocalMapHooks.ClearWorkingData();
-        var run = new MapGenerationExecutor(plan.Plan, frozen.Source, new Services(new NativeMapGenerationServices(map, frozen.Source, null, plan.NativeSteps)), preparedModules: plan.Modules);
+        var run = new MapGenerationExecutor(plan.Plan, frozen.Source, new Services(new NativeMapGenerationServices(map, frozen.Source, plan.NativeSteps)), preparedModules: plan.Modules);
         var report = run.Execute();
         Assert.Equal(MapGenerationState.Failed, report.State); Assert.Contains("NativeInputUnavailable", report.Steps.Last().Error);
         Assert.False(MapGenerator.TryGetVar<MapGenFloatGrid>("Elevation", out _));
@@ -121,7 +175,8 @@ public class NativeLocalMapExecutionTests
         var plan = NativeLocalMapPlan.Build(Frozen(initial, replace), MapGenerationPurpose.Encounter, nodes, LocalMapGenerationModules.CreateRegistry());
         var keys = plan.Plan.Steps.Select(s => s.Spec.Key).ToArray();
         Assert.Equal("z.inputs", keys[0]);
-        Assert.True(Array.IndexOf(keys, "a.replace") > Array.IndexOf(keys, "native/chunks/0"));
+        // P2-2: RockChunks is a Populate node again (vanilla slot 970), so terrain replacement now precedes it.
+        Assert.True(Array.IndexOf(keys, "a.replace") < Array.IndexOf(keys, "native/chunks/0"));
         Assert.True(Array.IndexOf(keys, "a.replace") < Array.IndexOf(keys, "native/content/0"));
     }
     [Theory]
@@ -158,7 +213,7 @@ public class NativeLocalMapExecutionTests
         var layer = f.Layer("isolation", 1, new(soilFertility: 2, geologyVariation: .5));
         var map = f.Map(layer); var other = f.Map(layer);
         var frozen = new FrozenLocalMapContext(new("isolation", 1, 0, 6, 6, f.Biome.defName, new Dictionary<string,double> { ["geology"] = 1 }), Frozen().Specification);
-        var native = new NativeMapGenerationServices(map, frozen.Source, null, Array.Empty<NativeMapGenerationStep>());
+        var native = new NativeMapGenerationServices(map, frozen.Source, Array.Empty<NativeMapGenerationStep>());
         native.SetInitialOverrides(new(soilFertility: 3, geologyVariation: 1, allowCaves: false));
         var session = new NativeLocalMapSession(frozen, MapGenerationPurpose.Colony, map.Parent) { Map = map, Native = native };
         Assert.True(CelestialMapGeneration.TryGetDiversity(map.Tile, out var original));
@@ -176,7 +231,7 @@ public class NativeLocalMapExecutionTests
         float after = 1; CelestialPlanetMapHooks.SoilFertility(map, ref after); Assert.Equal((float)(2 * baseline), after);
     }
     [Fact]
-    public void AsyncErrorsDoNotPoisonSynchronousSession()
+    public void ErrorsOutsidePflNativeWindowsDoNotPoisonSynchronousSession()
     {
         using var f = new CelestialPlanetMapDiversityTests.NativeFixture();
         var map = f.Map(f.Layer("thread", 1, new()));
@@ -187,8 +242,17 @@ public class NativeLocalMapExecutionTests
             var thread = new System.Threading.Thread(() => NativeLocalMapHooks.ObserveError("async"));
             thread.Start(); thread.Join();
             Assert.Null(session.Error);
-            NativeLocalMapHooks.ObserveError("synchronous");
-            Assert.Equal("synchronous", session.Error);
+            // P1-2: a synchronous Log.Error raised outside a PFL-out-sourced native callback is not this map's failure.
+            NativeLocalMapHooks.ObserveError("outside-window");
+            Assert.Null(session.Error);
+            // Inside a host window the same log still aborts at the window boundary.
+            Assert.Throws<InvalidOperationException>(() =>
+            {
+                using (session.EnterHost("probe")) NativeLocalMapHooks.ObserveError("inside-window");
+            });
+            Assert.Contains("inside-window", session.Error);
+            // The window depth must be balanced even when the callback threw.
+            Assert.Equal(0, (int)AccessTools.Field(typeof(NativeLocalMapSession), "errorWindowDepth").GetValue(session));
         }
         finally { session.Release(); }
     }
@@ -412,7 +476,19 @@ public class NativeLocalMapExecutionTests
             session.PostInitialize(map);
             var destination = moveOutsideCelestialSurface ? new PlanetTile(0, vanilla) : new PlanetTile(1, f.Root);
             AccessTools.Field(typeof(WorldObject), "tile").SetValue(parent, destination);
-            Assert.Contains("Native map identity changed", NativeLocalMapHooks.End(null, map, session).Message);
+            // P1-1 cleanup runs native MapDeiniter, which logs errors for the test-double map; the fixture turns an
+            // unexpected Log.Error into an exception, so this window intentionally tolerates the cleanup diagnostics.
+            var previousExpected = CelestialXmlTestScope.ExpectedError;
+            CelestialXmlTestScope.ExpectedError = _ => true;
+            try
+            {
+                Assert.Contains("Native map identity changed", NativeLocalMapHooks.End(null, map, session).Message);
+            }
+            finally { CelestialXmlTestScope.ExpectedError = previousExpected; }
+            // P1-1: the failed session removed its registered map; the parent itself is retained for failure identity.
+            Assert.DoesNotContain(f.Native.Game.Maps, existing => ReferenceEquals(existing, map));
+            Assert.Null(parent.Map);
+            Assert.Contains(parent, f.Native.World.worldObjects.MapParents);
             var captured = new CelestialSaveAdapter(f.Scope.Runtime).CaptureCheckpoint();
             Assert.True(captured.Success, string.Join(",", captured.Errors));
             var encoded = CelestialSaveCodec.Encode(captured.Value);
@@ -422,7 +498,7 @@ public class NativeLocalMapExecutionTests
             Assert.Equal(4, CelestialSaveDocument.CurrentVersion);
             var site = Assert.Single(decoded.Value.Maps);
             Assert.Equal(f.Address with { MapParentId = parent.ID }, site.Address);
-            Assert.Equal(map.uniqueID, site.MapId);
+            Assert.Null(site.MapId);
             Assert.Equal(MapGenerationState.Failed, site.Generation.State);
             Assert.Equal(f.Address.InstanceId.Value, site.Generation.Source.SourceId);
             Assert.Equal(f.Address.TileId, site.Generation.Source.TileId);
@@ -440,18 +516,22 @@ public class NativeLocalMapExecutionTests
                 () => NativeLocalMapHooks.CheckReuse(new object[] { destination })).Message);
             Assert.Contains("MapGenerationIncomplete", Assert.Throws<InvalidOperationException>(
                 () => NativeLocalMapHooks.Begin(new(50, 1, 50), parent, generator, false, false, out _)).Message);
-            map.generatorDef = new MapGeneratorDef { defName = "Encounter", isUnderground = true };
+            var underground = new MapGeneratorDef { defName = "Encounter", isUnderground = true };
+            map.generatorDef = underground;
+            // With no live map left, CheckReuse derives the generator from the parent, so the parent def carries it.
+            parent.def.mapGenerator = underground;
             NativeLocalMapHooks.CheckReuse(new object[] { destination });
-            NativeLocalMapHooks.Begin(new(50, 1, 50), parent, map.generatorDef, false, false, out var excluded);
+            NativeLocalMapHooks.Begin(new(50, 1, 50), parent, underground, false, false, out var excluded);
             Assert.Null(excluded);
+            parent.def.mapGenerator = generator;
             map.generatorDef = generator;
-            map.uniqueID++;
-            NativeLocalMapHooks.CheckReuse(new object[] { destination });
-            map.uniqueID--;
+            // P1-1: the failed site has no MapId, so every reuse at this parent stays rejected.
+            Assert.Contains("MapGenerationIncomplete", Assert.Throws<InvalidOperationException>(
+                () => NativeLocalMapHooks.CheckReuse(new object[] { destination })).Message);
+            // Finish already removed the partially generated map; there is no live map left to retire.
+            Assert.DoesNotContain(f.Native.Game.Maps, existing => ReferenceEquals(existing, map));
             CelestialNativeMapLifecycle.CaptureMapRemoval(f.Native.Game, map, out var removal);
-            Assert.Equal(site.Address, removal?.Address);
-            f.Native.Game.Maps.Remove(map);
-            CelestialNativeMapLifecycle.MapRemoved(f.Native.Game, removal);
+            Assert.Null(removal);
             CelestialNativeMapLifecycle.CaptureParentRemoval(f.Native.World.worldObjects, parent, out removal);
             Assert.Equal(site.Address, removal?.Address);
             f.Backend.RemoveEmptyParent(parent);
@@ -548,17 +628,47 @@ public class NativeLocalMapExecutionTests
         {
             var error = Assert.ThrowsAny<Exception>(() => session.Generate(new[] { Native("content", new CountingStep { Failure = contentFails ? "throw" : null }) }, map));
             if (contentFails) Assert.Contains("native test failure", error.ToString()); else Assert.Contains("cleanup-probe", error.ToString());
-            session.Finish(map, error);
+            // P1-1 removes the registered test-double map; native MapDeiniter logs, which the fixture turns into
+            // exceptions unless tolerated for this explicit cleanup window.
+            var previousExpected = CelestialXmlTestScope.ExpectedError;
+            CelestialXmlTestScope.ExpectedError = _ => true;
+            try { session.Finish(map, error); }
+            finally { CelestialXmlTestScope.ExpectedError = previousExpected; }
             var record = Assert.Single(f.Service.CaptureSites()).Generation;
             Assert.Equal(MapGenerationState.Failed, record.State);
             Assert.Contains("cleanup-probe", record.Error);
             if (contentFails) Assert.Contains("native test failure", record.Error);
+            // P1-1: the partially generated map must not survive the failed session.
+            Assert.DoesNotContain(map, f.Native.Game.Maps);
+            Assert.Null(Assert.Single(f.Service.CaptureSites()).MapId);
         }
         finally { patch.UnpatchAll(patch.Id); session.Release(); MapGenerator.mapBeingGenerated = null; NativeLocalMapHooks.ClearWorkingData(); }
     }
     private static bool Skip() => false;
     private static int capturedSeed;
     private static double caveNoise;
+    private static Map registeredMap;
+    private static bool RegisterMapThenFail(Game __instance, Map map)
+    {
+        // Headless Game.AddMap ends with Find.ColonistBar.MarkColonistsDirty(), which needs a UIRoot that the
+        // test scope does not build. Reproduce only the registration half so the native finalizer path under
+        // test sees the map inside Game.Maps before the failure is raised.
+        if (map == null || __instance.Maps.Contains(map)) throw new InvalidOperationException("addmap-contract");
+        __instance.Maps.Add(map);
+        registeredMap = map;
+        throw new InvalidOperationException("addmap-probe");
+    }
+    private static bool FailMapRemoval(Game __instance, Map map) => throw new InvalidOperationException("remove-probe");
+    private static Map finalizedMap;
+    private static bool RegisterMapOnly(Game __instance, Map map)
+    {
+        // Headless Game.AddMap tail touches UIRoot (ColonistBar); keep only the registration half so the
+        // native GenerateMap flow can continue to the injected host-callback failure with the map registered.
+        if (map == null || __instance.Maps.Contains(map)) throw new InvalidOperationException("addmap-contract");
+        __instance.Maps.Add(map);
+        finalizedMap = map;
+        return false;
+    }
     private static void CaptureCaveAndAbort(TileMutatorWorker_Caves __instance)
     {
         var noise = (Verse.Noise.ModuleBase)AccessTools.Field(typeof(TileMutatorWorker_Caves), "directionNoise").GetValue(__instance);
@@ -635,6 +745,128 @@ public class NativeLocalMapExecutionTests
             Assert.Equal(failed.Generation.RecipeHash, Assert.Single(decoded.Value.Maps).Generation.RecipeHash);
         }
         finally { h.UnpatchAll(h.Id); Rand.PopState(); }
+    }
+    [Fact]
+    public void ActualNativeGenerateMapFailureAfterRegistrationRemovesPartialMapAndKeepsFailedProvenance()
+    {
+        using var f = new CelestialMapIdentityTests.Fixture();
+        NativeLocalMapHooks.Install();
+        f.Native.Game.tickManager = new TickManager();
+        AccessTools.Field(typeof(Game), "uniqueIDsManager").SetValue(f.Native.Game, new UniqueIDsManager());
+        var generator = new MapGeneratorDef { defName = "Encounter", genSteps = new() };
+        var parent = f.Backend.CreateParent(f.Address);
+        // Headless: no mutator workers may run before the injected AddMap failure (their Init is unrelated to P1-1).
+        AccessTools.Field(typeof(Tile), "mutatorsNullable").SetValue(f.Root[0], null);
+        var h = new Harmony("PFL.Tests.LocalMapFailureCleanup");
+        h.Patch(AccessTools.Method(typeof(Map), nameof(Map.ConstructComponents)), prefix: new(typeof(NativeLocalMapExecutionTests), nameof(Skip)));
+        h.Patch(AccessTools.Method(typeof(Game), nameof(Game.AddMap)), prefix: new(typeof(NativeLocalMapExecutionTests), nameof(RegisterMapThenFail)));
+        registeredMap = null;
+        var previousExpected = CelestialXmlTestScope.ExpectedError;
+        // P1-1 cleanup deinits the registered map; its native diagnostics are tolerated only inside this window.
+        CelestialXmlTestScope.ExpectedError = _ => true;
+        try
+        {
+            var exception = Assert.ThrowsAny<Exception>(() => MapGenerator.GenerateMap(new(50, 1, 50), parent, generator));
+            Assert.Contains("addmap-probe", exception.ToString());
+            Assert.NotNull(registeredMap);
+            // P1-1: the registered partial map is removed; the parent stays for the failed identity.
+            Assert.DoesNotContain(registeredMap, f.Native.Game.Maps);
+            Assert.Null(parent.Map);
+            Assert.Contains(parent, f.Native.World.worldObjects.MapParents);
+            Assert.False(NativeLocalMapHooks.IsActive);
+            var failed = Assert.Single(f.Service.CaptureSites());
+            Assert.NotNull(failed.Failure);
+            Assert.Null(failed.MapId);
+            Assert.NotNull(failed.Generation);
+            Assert.Equal(MapGenerationState.Failed, failed.Generation.State);
+            Assert.Equal(parent.ID, failed.MapParentId);
+            Assert.Equal(f.Address.TileId, failed.Generation.Source.TileId);
+            // Reuse is rejected by the preserved failed identity, not by an unknown orphan map.
+            Assert.Contains("MapGenerationIncomplete",
+                Assert.Throws<InvalidOperationException>(() => MapGenerator.GenerateMap(new(50, 1, 50), parent, generator)).Message);
+            var saved = new CelestialSaveAdapter(f.Scope.Runtime).CaptureCheckpoint();
+            Assert.True(saved.Success, string.Join(",", saved.Errors));
+            var encoded = CelestialSaveCodec.Encode(saved.Value);
+            Assert.True(encoded.Success, string.Join(",", encoded.Errors));
+            var decoded = CelestialSaveCodec.Decode(encoded.Value);
+            Assert.True(decoded.Success, string.Join(",", decoded.Errors));
+            var savedSite = Assert.Single(decoded.Value.Maps);
+            Assert.Null(savedSite.MapId);
+            Assert.NotNull(savedSite.Failure);
+            Assert.NotNull(savedSite.Generation);
+            Assert.Equal(MapGenerationState.Failed, savedSite.Generation.State);
+            Assert.Equal(failed.Generation.RecipeHash, savedSite.Generation.RecipeHash);
+        }
+        finally { CelestialXmlTestScope.ExpectedError = previousExpected; h.UnpatchAll(h.Id); registeredMap = null; }
+    }
+    [Fact]
+    public void MapCleanupFailureKeepsOriginalFailureAndLeavesMapRegistered()
+    {
+        using var f = new CelestialMapIdentityTests.Fixture();
+        var parent = f.Backend.CreateParent(f.Address);
+        var map = f.Backend.Generate(parent, 50, 50, null);
+        map.info.Size = new(50, 1, 50);
+        var generator = new MapGeneratorDef { defName = "Encounter" };
+        var frozen = LocalMapSourceResolver.Resolve(parent, map.info.Size, generator, false).Value;
+        var session = new NativeLocalMapSession(frozen, MapGenerationPurpose.Encounter, parent) { Map = map };
+        var patch = new Harmony("PFL.Tests.LocalMapCleanupFailure");
+        patch.Patch(AccessTools.Method(typeof(Game), nameof(Game.DeinitAndRemoveMap)), prefix: new(typeof(NativeLocalMapExecutionTests), nameof(FailMapRemoval)));
+        session.Activate();
+        try
+        {
+            var original = new InvalidOperationException("original-probe");
+            // The original exception is preserved; the cleanup diagnostic is appended, never substituted.
+            Assert.Same(original, NativeLocalMapHooks.End(original, map, session));
+            Assert.Contains("original-probe", session.Error);
+            Assert.Contains("remove-probe", session.Error);
+            Assert.Contains(map, f.Native.Game.Maps);
+            var site = Assert.Single(f.Service.CaptureSites());
+            Assert.NotNull(site.Failure);
+            Assert.Equal(map.uniqueID, site.MapId);
+            Assert.Equal(MapGenerationState.Failed, site.Generation.State);
+        }
+        finally { patch.UnpatchAll(patch.Id); session.Release(); }
+    }
+    [Fact]
+    public void ActualNativeExtraInitFailureAfterRegistrationRemovesPartialMap()
+    {
+        using var f = new CelestialMapIdentityTests.Fixture();
+        NativeLocalMapHooks.Install();
+        f.Native.Game.tickManager = new TickManager();
+        AccessTools.Field(typeof(Game), "uniqueIDsManager").SetValue(f.Native.Game, new UniqueIDsManager());
+        var generator = new MapGeneratorDef { defName = "Encounter", genSteps = new() };
+        var parent = f.Backend.CreateParent(f.Address);
+        // No mutator workers before the injected failure (their Init is unrelated to the cleanup path).
+        AccessTools.Field(typeof(Tile), "mutatorsNullable").SetValue(f.Root[0], null);
+        var h = new Harmony("PFL.Tests.LocalMapExtraInitCleanup");
+        h.Patch(AccessTools.Method(typeof(Map), nameof(Map.ConstructComponents)), prefix: new(typeof(NativeLocalMapExecutionTests), nameof(Skip)));
+        h.Patch(AccessTools.Method(typeof(Game), nameof(Game.AddMap)), prefix: new(typeof(NativeLocalMapExecutionTests), nameof(RegisterMapOnly)));
+        finalizedMap = null;
+        var previousExpected = CelestialXmlTestScope.ExpectedError;
+        // Cleanup deinits the partial map; native diagnostics are tolerated only inside this window.
+        CelestialXmlTestScope.ExpectedError = _ => true;
+        try
+        {
+            // The failure is raised through the native extraInit callback, i.e. a PFL-out-sourced host window,
+            // after Game.AddMap registered the map. This is the end-to-end path the AddMap-prefix test cannot cover.
+            var exception = Assert.ThrowsAny<Exception>(() => MapGenerator.GenerateMap(new(50, 1, 50), parent, generator,
+                extraInitBeforeContentGen: _ => throw new InvalidOperationException("extra-init-probe")));
+            Assert.Contains("extra-init-probe", exception.ToString());
+            Assert.NotNull(finalizedMap);
+            Assert.DoesNotContain(finalizedMap, f.Native.Game.Maps);
+            Assert.Null(parent.Map);
+            Assert.Contains(parent, f.Native.World.worldObjects.MapParents);
+            Assert.False(NativeLocalMapHooks.IsActive);
+            var failed = Assert.Single(f.Service.CaptureSites());
+            Assert.NotNull(failed.Failure);
+            Assert.Null(failed.MapId);
+            Assert.NotNull(failed.Generation);
+            Assert.Equal(MapGenerationState.Failed, failed.Generation.State);
+            Assert.Equal(parent.ID, failed.MapParentId);
+            Assert.Contains("MapGenerationIncomplete",
+                Assert.Throws<InvalidOperationException>(() => MapGenerator.GenerateMap(new(50, 1, 50), parent, generator)).Message);
+        }
+        finally { CelestialXmlTestScope.ExpectedError = previousExpected; h.UnpatchAll(h.Id); finalizedMap = null; }
     }
     private sealed class Contributor(NativeMapPlanContribution contribution) : IMapGenerationModule, INativeMapPlanContributor
     { public void Execute(MapGenerationContext context) { } public NativeMapPlanContribution Contribute(MapSourceContext source) => contribution; }

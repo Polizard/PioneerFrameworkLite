@@ -129,6 +129,7 @@ namespace PioneerFramework.Celestial
                     document.Surfaces.Select(surface => surface.LayerId).Distinct().Count() == document.Surfaces.Count);
                 Require(document.Surfaces.All(surface => bodies.TryGetValue(surface.OwnerId, out var body) && surface.LayerId >= 0 && surface.PhysicalRadiusMeters == body.Description.RadiusMeters &&
                     float.IsFinite(surface.NativeRadius) && surface.NativeRadius > 0 && surface.Subdivisions >= 0 && surface.Subdivisions <= SurfaceResolvedProperties.MaxBuiltinSubdivisions &&
+                    surface.TerrainAlgorithmVersion == CelestialPlanetTerrain.AlgorithmVersion &&
                     Enum.IsDefined(surface.State) && CelestialGenerationConfiguration.Decode(surface.GenerationConfiguration).Success));
                 Require(document.Maps.Select(map => (map.Address.InstanceId, map.Address.LayerId, map.Address.TileId)).Distinct().Count() == document.Maps.Count &&
                     document.Maps.Select(map => map.MapParentId).Distinct().Count() == document.Maps.Count &&

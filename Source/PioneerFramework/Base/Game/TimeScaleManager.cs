@@ -128,6 +128,16 @@ namespace PioneerFramework
         }
 
         public double GetDisplayTicksAbs() => GetPhysicsTick() + gameStartAbsTickCapture;
+        /// <summary>
+        /// 把原生 absTick 映射到当前显示时钟（2026-11-07 C-4）：`OutdoorTemperatureAt` 与 `GetOutdoorTemp`
+        /// 必须同源，否则 Fast/Combat 档或非 60000 日长的天体会给出两套温度读数。
+        /// </summary>
+        public double GetDisplayTicksForNativeTick(int absTick)
+        {
+            EnsureTimeline();
+            int realTick = (int)Math.Max(0.0, absTick - gameStartAbsTickCapture);
+            return timeline!.At(realTick) + gameStartAbsTickCapture;
+        }
 
         public void QueueCommand(TimeScaleCommand command) => SetTimeScale(command.TargetLevel);
         public void SetTimeScale(TimeScaleLevel level)

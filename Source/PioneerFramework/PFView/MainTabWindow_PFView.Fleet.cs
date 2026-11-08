@@ -12,7 +12,7 @@ namespace PioneerFramework
         private bool fleetAlertsOnly;
         private bool showFleetMembers;
         private int fleetAlertCount;
-        private const float FleetRowHeight = 128f;
+        private const float FleetRowHeight = 96f;
 
         private static string FleetDuration(double seconds)
         {
@@ -63,20 +63,18 @@ namespace PioneerFramework
             Widgets.DrawBoxSolid(new(rowRect.x, rowRect.y + 2, selected ? 3 : 1, rowRect.height - 4),
                 selected ? PFViewPalette.Accent : PFViewPalette.Divider);
             float x = rowRect.x + 8, w = rowRect.width - 16, y = rowRect.y + 3;
-            MiniLabel(new(x, y, w, 21), row.Label + " · " + row.Status, PFViewPalette.TextPrimary);
+            string title = row.Label;
+            if (selected) title += " · " + "PFV_CockpitViewing".Translate();
+            if (row.GroupId == operationContext.ResolveSource(SteeringController.GroupId))
+                title += " · " + "PFV_CockpitOperating".Translate();
+            MiniLabel(new(x, y, w, 21), title, PFViewPalette.TextPrimary);
             MiniLabel(new(x, y + 23, w, 20), FleetFuel(snapshot) + " · " + FleetMobility(snapshot), PFViewPalette.TextSecondary);
-            MiniLabel(new(x, y + 44, w, 20), FleetAlerts(snapshot), PFViewPalette.TextPrimary);
+            MiniLabel(new(x, y + 44, w, 20), snapshot.ActivityKey.Translate() + " · "
+                + "PFV_CockpitNodes".Translate(snapshot.ManeuverCount), PFViewPalette.TextPrimary);
             MiniLabel(new(x, y + 65, w, 20), FleetNextEvent(snapshot), PFViewPalette.TextSecondary);
             TooltipHandler.TipRegion(new(x, y, w, 87), row.Label + "\n" + FleetFuel(snapshot) + " · " + FleetMobility(snapshot)
                 + "\n" + FleetAlerts(snapshot) + "\n" + snapshot.ActivityKey.Translate() + "\n" + FleetNextEvent(snapshot)
                 + "\n" + "PFV_FleetEstimateTip".Translate());
-            Text.Font = GameFont.Small;
-            if (Widgets.ButtonText(new(x, y + 89, (w - 6) * .5f, 25), "PFV_Focus".Translate())) FocusGroup(row.GroupId);
-            bool enabled = GUI.enabled;
-            GUI.enabled = enabled && snapshot.HasMap;
-            if (Widgets.ButtonText(new(x + (w + 6) * .5f, y + 89, (w - 6) * .5f, 25), "PFV_EnterMap".Translate()))
-                ShowGroupMapMenu(row.GroupId);
-            GUI.enabled = enabled;
             if (!Mouse.IsOver(rowRect) || Event.current.type != EventType.MouseDown || Event.current.button != 0) return;
             if (Event.current.shift) SetTargetGroup(row.GroupId);
             else

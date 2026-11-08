@@ -45,7 +45,6 @@
     <dayLengthTicks>60000</dayLengthTicks>
     <primaryLightReference>primaryLight</primaryLightReference>
     <vacuumBiomes>
-      <li>PF_FrozenPlain</li>
       <li>PF_BarrenRock</li>
       <li>PF_BarrenRegolith</li>
     </vacuumBiomes>

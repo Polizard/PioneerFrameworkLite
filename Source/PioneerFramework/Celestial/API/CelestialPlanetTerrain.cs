@@ -135,6 +135,18 @@ namespace PioneerFramework.Celestial
     public sealed record CelestialPlanetTerrainSample(double ElevationMeters, double Roughness, double MountainScore, double Geology, double Moisture);
     public static class CelestialPlanetTerrain
     {
+        /// <summary>
+        /// 当前地形数值语义版本。改动 Sample/SelectBiome/SurfaceMoisture/SelectOceanTiles/Field 的任何数值语义
+        /// 都必须 +1：已生成的 tile 与运行期采样会因 header/存档中记录的版本不等于当前值而被显式拒绝，
+        /// 而不是按新公式静默重算（旧世界层、地图地质与水面判定三套数值不允许分叉）。
+        /// </summary>
+        public const int AlgorithmVersion = 1;
+        /// <summary>
+        /// header 增加 terrainAlgorithmVersion 字段之前写出的 v4 存档所对应的语义版本，即字段缺失时的读取默认值。
+        /// 不能写成 AlgorithmVersion：将来提升当前版本后，缺字段的旧档必须被判定为旧版本并拒绝，
+        /// 否则会以新公式静默重算旧世界层。
+        /// </summary>
+        public const int LegacyVersionWithoutHeaderField = 1;
         // Smooth three-dimensional waves sample directions on the physical sphere. No latitude/longitude raster seam or polar coordinate noise.
         private static double Field(double x, double y, double z, double scale, int seed, int channel)
         {

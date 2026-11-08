@@ -9,6 +9,8 @@ namespace PioneerFramework
     /// <summary>武器面板的命令来源。查看状态完全由窗口管理，不进入命令来源计算。</summary>
     internal sealed class PFViewUiOperationContext
     {
+        private int previousSource = -1;
+
         public bool WeaponsOpen { get; private set; }
         public int WeaponSourceGroupId { get; private set; } = -1;
 
@@ -42,7 +44,19 @@ namespace PioneerFramework
             if (WeaponSourceGroupId == groupId) CloseWeapons();
         }
 
-        public void Reset() => CloseWeapons();
+        public bool ObserveSourceChange(int steeringGroupId)
+        {
+            int source = ResolveSource(steeringGroupId);
+            bool changed = previousSource >= 0 && previousSource != source;
+            previousSource = source;
+            return changed;
+        }
+
+        public void Reset()
+        {
+            CloseWeapons();
+            previousSource = -1;
+        }
 
         public static bool CanFire(int sourceId, int targetId, bool sourceOperable,
             bool targetKnownAndActive, bool weaponReady)

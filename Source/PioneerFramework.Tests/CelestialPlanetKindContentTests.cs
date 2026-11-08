@@ -82,7 +82,7 @@ public class CelestialPlanetKindContentTests
         using var content = new Content();
         var moon = content.BiomeProfiles["PF_MoonBiomes"].ToProfile().Value;
         Assert.Equal(CelestialBiomeGenerationMode.Parameterized, moon.Mode);
-        Assert.Equal(0, moon.Temperature); Assert.Equal(0, moon.Rainfall); Assert.Equal(0, moon.Swampiness);
+        Assert.Equal(-25, moon.Temperature); Assert.Equal(0, moon.Rainfall); Assert.Equal(0, moon.Swampiness);
         Assert.Equal(new[] { "Factions", "Roads", "Features" }, moon.RootOnlySteps);
         var environment = content.Environments["PF_MoonEnvironment"].ToProfile().Value;
         Assert.All(moon.Terrain.BiomeRules.Select(rule => rule.BiomeId).Distinct(), biome => Assert.Contains(biome, environment.VacuumBiomeIds));

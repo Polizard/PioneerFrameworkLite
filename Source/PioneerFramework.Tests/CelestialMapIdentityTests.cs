@@ -3,6 +3,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using HarmonyLib;
 using PioneerFramework.Celestial;
+using PioneerFramework.MapGeneration;
 using RimWorld;
 using RimWorld.Planet;
 using UnityEngine;
@@ -41,7 +42,7 @@ public class CelestialMapIdentityTests
                 var d = component.Descriptor;
                 if (!d.Provides.Contains("map.generation")) return component;
                 return new CelestialCompDefinition(new(d.Key, d.HandlerId, d.SchemaVersion, d.Provides, d.Requires, d.ExclusiveSlot, d.Before, d.After, d.UpdatePolicy,
-                    CelestialCompFailurePolicy.DisableOptional), component.Factory, context => CelestialResult.Ok(component.Resolve(context).Value.Properties));
+                    CelestialCompFailurePolicy.DisableOptional), component.Factory, context => CelestialResult.Ok(component.Resolve(context).Value.Properties), component.ConfigurationVersion);
             })).Value);
         var runtime = f.Scope.Runtime;
         if (queued)
@@ -262,6 +263,91 @@ public class CelestialMapIdentityTests
         Assert.Equal(1, f.Backend.Created);
     }
 
+    [Fact]
+    public void MovedParentWithTheSameLiveMapMigratesTheSiteToTheNewTile()
+    {
+        using var f = new Fixture();
+        Assert.Equal(CelestialOperationStatus.Applied, f.Request("first", CelestialMapAction.Generate).Operation.Status);
+        var map = f.Backend.LastMap;
+        var parent = map.Parent;
+        var before = Assert.Single(f.Service.CaptureSites());
+        AccessTools.Field(typeof(WorldObject), "tile").SetValue(parent, new PlanetTile(1, f.Root));
+        var bound = f.Service.BindNativeMapsForSave();
+        Assert.True(bound.Success, string.Join(",", bound.Errors.Select(error => error.Code)));
+        var after = Assert.Single(f.Service.CaptureSites());
+        Assert.Equal(1, after.Address.TileId);
+        Assert.Equal(before.Address.InstanceId, after.Address.InstanceId);
+        Assert.Equal(before.Address.LayerId, after.Address.LayerId);
+        Assert.Equal(before.MapParentId, after.MapParentId);
+        Assert.Equal(before.MapId, after.MapId);
+        Assert.Contains("first", after.OperationIds);
+        Assert.Empty(after.RetiredOperationIds);
+        var saved = new CelestialSaveAdapter(f.Scope.Runtime).CaptureCheckpoint();
+        Assert.True(saved.Success, string.Join(",", saved.Errors.Select(error => error.Code)));
+        Assert.Equal(1, Assert.Single(saved.Value.Maps).Address.TileId);
+    }
+
+    [Fact]
+    public void RetiredSiteFollowsMovedParentAndKeepsHistoricalOperationIds()
+    {
+        using var f = new Fixture();
+        Assert.Equal(CelestialOperationStatus.Applied, f.Request("first", CelestialMapAction.Generate).Operation.Status);
+        var oldMap = f.Backend.LastMap;
+        var parent = oldMap.Parent;
+        CelestialNativeMapLifecycle.CaptureMapRemoval(f.Native.Game, oldMap, out var removal);
+        Assert.NotNull(removal);
+        f.Native.Game.Maps.Remove(oldMap);
+        CelestialNativeMapLifecycle.MapRemoved(f.Native.Game, removal);
+        var retired = Assert.Single(f.Service.CaptureSites());
+        Assert.Null(retired.MapId);
+        Assert.Contains("first", retired.RetiredOperationIds);
+        AccessTools.Field(typeof(WorldObject), "tile").SetValue(parent, new PlanetTile(1, f.Root));
+        var newMap = f.Backend.Generate(parent, 50, 50, null);
+        var generator = new MapGeneratorDef { defName = "Encounter" };
+        var frozen = PioneerFramework.MapGeneration.LocalMapSourceResolver.Resolve(parent, new IntVec3(50, 1, 50), generator, false).Value;
+        var record = PioneerFramework.MapGeneration.LocalMapGenerationRecord.Capture(new(frozen.Source, frozen.Specification,
+            PioneerFramework.MapGeneration.MapGenerationPurpose.Colony), PioneerFramework.MapGeneration.MapGenerationState.Ready, "Done", null, null);
+        f.Service.RecordNativeGeneration(new(f.Address.InstanceId, f.Root.LayerID, 1, parent.ID), newMap.uniqueID, record);
+        var after = Assert.Single(f.Service.CaptureSites());
+        Assert.Equal(1, after.Address.TileId);
+        Assert.Equal(newMap.uniqueID, after.MapId);
+        Assert.Equal(parent.ID, after.MapParentId);
+        Assert.Contains("first", after.RetiredOperationIds);
+        Assert.Empty(after.OperationIds);
+        Assert.NotNull(after.Generation);
+        Assert.Equal(PioneerFramework.MapGeneration.LocalMapGenerationRecord.CurrentVersion, after.Generation.Version);
+    }
+
+    [Fact]
+    public void SiteMigrationDoesNotCrossInstanceLayerOrMapIdentity()
+    {
+        using var f = new Fixture();
+        Assert.Equal(CelestialOperationStatus.Applied, f.Request("first", CelestialMapAction.Generate).Operation.Status);
+        var map = f.Backend.LastMap;
+        var parent = map.Parent;
+        var before = Assert.Single(f.Service.CaptureSites());
+        AccessTools.Field(typeof(WorldObject), "tile").SetValue(parent, new PlanetTile(1, f.Root));
+        // 同一父对象但 MapId 不同：不是同一个地图身份，不能迁移。
+        map.uniqueID++;
+        var bound = f.Service.BindNativeMapsForSave();
+        Assert.False(bound.Success);
+        Assert.Contains(bound.Errors, error => error.Code == "MapIdentityMismatch");
+        Assert.Equal(before, Assert.Single(f.Service.CaptureSites()));
+        // 跨实例/跨层即使 MapParentId 相同也不能迁移。
+        var otherInstance = f.Scope.Manifest.Items.First(item => item.Id != f.Root.Header.OwnerId).Id;
+        var wrongInstance = f.Service.RestoreSite(before with { Address = before.Address with { InstanceId = otherInstance } });
+        Assert.False(wrongInstance.Success);
+        Assert.Contains(wrongInstance.Errors, error => error.Code == "MapIdentityMismatch");
+        var wrongLayer = f.Service.RestoreSite(before with { Address = before.Address with { LayerId = before.Address.LayerId + 1 } });
+        Assert.False(wrongLayer.Success);
+        Assert.Contains(wrongLayer.Errors, error => error.Code == "MapIdentityMismatch");
+        // 父对象移动后地图未通知丢失（站点仍记录 live MapId、原生已无图）：不得迁移，保存仍必须拒绝。
+        f.Native.Game.Maps.Remove(map);
+        var lost = f.Service.BindNativeMapsForSave();
+        Assert.False(lost.Success);
+        Assert.Contains(lost.Errors, error => error.Code == "MapIdentityMismatch");
+    }
+
     internal sealed class Fixture : IDisposable
     {
         private readonly CelestialWorldBootstrapTests.Fixture world;
@@ -273,7 +359,7 @@ public class CelestialMapIdentityTests
         public CelestialMapAddress Address => new(Root.Header.OwnerId, Root.LayerID, 0);
         public Fixture(Func<CelestialBodyTemplate, CelestialBodyTemplate> transform = null)
         {
-            world = new(new CelestialMapProfileDef { defName = "PF_ProbeMaps" }, transform);
+            world = new(new CelestialMapProfileDef { defName = "PF_ProbeMaps", localRecipe = new LocalMapRecipeDef { defName = "PF_ProbeLocal" } }, transform);
             Scope = CelestialWorldBootstrap.Begin(world.System, 17, CelestialWorldBootstrapTests.Fixture.Connect, Backend).Value;
             Native.Grid.GenerateFreshWorld();
             Root = (CelestialSurfaceLayer)Native.Grid.Surface;

@@ -138,7 +138,12 @@ namespace PioneerFramework.MapGeneration
             if (s == null) { map.ConstructComponents(); return; }
             s.Map = map;
             // Do not reseed here: components and mutator setup consume the early stable root stream.
-            s.Stage = "ConstructComponents"; s.Check(); map.ConstructComponents(); s.Check();
+            s.Stage = "ConstructComponents"; s.Check();
+            // P1-2: ConstructComponents is a PFL-out-sourced native callback, so its Log.Error is attributed to
+            // this map only while the error window is open. EnterErrorWindow deliberately does not push a Rand
+            // seed, so the early root stream documented above is unchanged.
+            using (s.EnterErrorWindow()) map.ConstructComponents();
+            s.Check();
         }
         private static void FinalizeMap(Map map) => Run("FinalizeInit", map.FinalizeInit);
         private static void Generated(Map map) => Run("MapComponent.MapGenerated", () => MapComponentUtility.MapGenerated(map));

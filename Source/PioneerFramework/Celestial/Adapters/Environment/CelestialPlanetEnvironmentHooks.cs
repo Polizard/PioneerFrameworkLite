@@ -14,6 +14,13 @@ namespace PioneerFramework.Celestial
         private static bool installed;
         private static readonly Func<GameConditionManager, float> temperatureOffset =
             AccessTools.Method(typeof(GameConditionManager), "AggregateTemperatureOffset").CreateDelegate<Func<GameConditionManager, float>>();
+        // 2026-11-07 C-2：热路径不再逐次 Game.GetComponent（组件表线性扫描）。
+        private static readonly GameComponentRef<TimeScaleManager> timeScaleRef = new();
+        // 2026-11-07 C-2：同 (world, layer, tile, 显示时刻) 的采样结果缓存一次；失败不缓存。
+        private static bool sampleCacheValid;
+        private static int sampleCacheWorld = -1, sampleCacheLayer = -1, sampleCacheTile = -1;
+        private static long sampleCacheTime;
+        private static CelestialSurfaceEnvironmentSample sampleCache = null!;
         static CelestialPlanetEnvironmentHooks() => Install();
         public static void Install()
         {
@@ -32,7 +39,7 @@ namespace PioneerFramework.Celestial
                 postfix: new HarmonyMethod(typeof(CelestialPlanetEnvironmentHooks), nameof(SafeTemperatureDestination)));
             installed = true;
         }
-        internal static double DisplayTime => Current.Game?.GetComponent<TimeScaleManager>()?.GetDisplayTicksAbs() ?? Find.TickManager?.TicksAbs ?? 0;
+        internal static double DisplayTime => timeScaleRef.Get()?.GetDisplayTicksAbs() ?? Find.TickManager?.TicksAbs ?? 0;
         internal static bool TryGetLayer(PlanetTile tile, out PlanetLayer layer)
         {
             layer = null!;
@@ -44,8 +51,26 @@ namespace PioneerFramework.Celestial
         {
             sample = null!;
             if (!TryGetLayer(tile, out var layer) || layer is not CelestialSurfaceLayer) return false;
+            if (displayTime is null)
+            {
+                double now = DisplayTime;
+                int world = Find.WorldGrid == null ? 0 : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Find.WorldGrid);
+                long bits = BitConverter.DoubleToInt64Bits(now);
+                if (sampleCacheValid && sampleCacheWorld == world && sampleCacheLayer == layer.LayerID &&
+                    sampleCacheTile == tile.tileId && sampleCacheTime == bits)
+                { sample = sampleCache; return true; }
+                if (!SampleNow(tile, layer, now, out sample)) return false;
+                sampleCacheWorld = world; sampleCacheLayer = layer.LayerID; sampleCacheTile = tile.tileId;
+                sampleCacheTime = bits; sampleCache = sample; sampleCacheValid = true;
+                return true;
+            }
+            return SampleNow(tile, layer, displayTime.Value, out sample);
+        }
+        private static bool SampleNow(PlanetTile tile, PlanetLayer layer, double displayTime, out CelestialSurfaceEnvironmentSample sample)
+        {
+            sample = null!;
             var coords = Find.WorldGrid.LongLatOf(tile);
-            return CelestialEnvironmentBridge.TrySample(layer, new(displayTime ?? DisplayTime, coords.x, coords.y,
+            return CelestialEnvironmentBridge.TrySample(layer, new(displayTime, coords.x, coords.y,
                 Find.WorldGrid[tile].elevation, Find.WorldGrid[tile].PrimaryBiome?.defName), out sample);
         }
         public static bool OutdoorTemperature(PlanetTile tile, ref float __result)
@@ -58,9 +83,12 @@ namespace PioneerFramework.Celestial
         }
         public static bool OutdoorTemperatureAt(PlanetTile tile, int absTick, ref float __result)
         {
-            if (!TrySample(tile, out var sample, absTick) || !sample.TemperatureCelsius.HasValue) return true;
+            // 2026-11-07 C-4：原生 absTick 先映射到显示时钟，避免 Fast/Combat 档与 GetOutdoorTemp 不同源。
+            if (!TrySample(tile, out var sample, DisplayTickForNative(absTick)) || !sample.TemperatureCelsius.HasValue) return true;
             __result = (float)sample.TemperatureCelsius.Value; return false;
         }
+        private static double DisplayTickForNative(int absTick) =>
+            timeScaleRef.Get()?.GetDisplayTicksForNativeTick(absTick) ?? absTick;
         public static bool SeasonalTemperature(PlanetTile tile, ref float __result)
         {
             if (!TrySample(tile, out var sample) || !sample.SeasonalTemperatureCelsius.HasValue) return true;

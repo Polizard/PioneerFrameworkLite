@@ -108,14 +108,22 @@ namespace PioneerFramework.Celestial
             return Math.Clamp(temperature, -273.15, 10000);
         }
 
+        /// <summary>
+        /// 地表温度。<paramref name="authoredPhaseRadians"/> 允许适配层用**已提交物理太阳的实际小时角**（0 = 本地正午）
+        /// 代替日历 tick 驱动的 Authored 日相位；传 null 保留旧日历相位。只有 Authored 分支读它。
+        /// 2026-11-07 P1-1：存在物理绑定时光照走物理快照，若日相位仍用日历 tick，温度峰值会落在物理日出/日落。
+        /// </summary>
         public static double Temperature(CelestialClimateConfiguration climate, CelestialSurfaceEnvironmentQuery query,
-            double dayLengthTicks, double signedSun, double signedSunQuadrature = 0, double angularSpeed = 0)
+            double dayLengthTicks, double signedSun, double signedSunQuadrature = 0, double angularSpeed = 0,
+            double? authoredPhaseRadians = null)
         {
             if (!double.IsFinite(query.DisplayTicksAbs) || !double.IsFinite(query.LongitudeDegrees) ||
                 !double.IsFinite(query.LatitudeDegrees) || Math.Abs(query.LatitudeDegrees) > 90 || !double.IsFinite(query.AltitudeMeters))
                 throw new ArgumentOutOfRangeException(nameof(query));
             if (!double.IsFinite(dayLengthTicks) || dayLengthTicks <= 0) throw new ArgumentOutOfRangeException(nameof(dayLengthTicks));
-            double phase = 2 * Math.PI * ((query.DisplayTicksAbs % dayLengthTicks) / dayLengthTicks + (query.LongitudeDegrees % 360) / 360 - .5);
+            if (authoredPhaseRadians is { } supplied && !double.IsFinite(supplied)) throw new ArgumentOutOfRangeException(nameof(authoredPhaseRadians));
+            double phase = authoredPhaseRadians ??
+                2 * Math.PI * ((query.DisplayTicksAbs % dayLengthTicks) / dayLengthTicks + (query.LongitudeDegrees % 360) / 360 - .5);
             double season = 2 * Math.PI * (query.DisplayTicksAbs % climate.YearLengthTicks) / climate.YearLengthTicks;
             double temperature = climate.MeanTemperatureCelsius + climate.LatitudeOffset(query.LatitudeDegrees) -
                 query.AltitudeMeters * climate.LapseCelsiusPerMeter;

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <Operation Class="PatchOperationConditional">
+    <xpath>Defs/ThingDef[(defName="PF_Building_Turret_Cannon" or defName="PF_Building_Turret_Laser" or defName="PF_Building_ActiveRadar" or defName="PF_Building_SensorArray") and not(modExtensions)]</xpath>
+    <match Class="PatchOperationAdd">
+      <xpath>Defs/ThingDef[(defName="PF_Building_Turret_Cannon" or defName="PF_Building_Turret_Laser" or defName="PF_Building_ActiveRadar" or defName="PF_Building_SensorArray") and not(modExtensions)]</xpath>
+      <value><modExtensions /></value>
+    </match>
+  </Operation>
+  <Operation Class="PatchOperationAdd">
+    <xpath>Defs/ThingDef[defName="PF_Building_Turret_Cannon" or defName="PF_Building_Turret_Laser"]/modExtensions</xpath>
+    <value>
+      <li Class="PioneerFramework.PFView.ShipBuildingVisuals.ShipBuildingVisualExtension">
+        <mounts><li><id>main</id><visual>PF_Visual_DeckTurret</visual><stateProvider>PFL.MapTurret.v1</stateProvider></li></mounts>
+      </li>
+    </value>
+  </Operation>
+  <Operation Class="PatchOperationAdd">
+    <xpath>Defs/ThingDef[defName="PF_Building_ActiveRadar"]/modExtensions</xpath>
+    <value>
+      <li Class="PioneerFramework.PFView.ShipBuildingVisuals.ShipBuildingVisualExtension">
+        <mounts><li><id>main</id><visual>PF_Visual_ActiveRadar</visual><stateProvider>PFL.ActiveRadar.v1</stateProvider></li></mounts>
+      </li>
+    </value>
+  </Operation>
+  <Operation Class="PatchOperationAdd">
+    <xpath>Defs/ThingDef[defName="PF_Building_SensorArray"]/modExtensions</xpath>
+    <value>
+      <li Class="PioneerFramework.PFView.ShipBuildingVisuals.ShipBuildingVisualExtension">
+        <mounts><li><id>main</id><visual>PF_Visual_SensorAntenna</visual></li></mounts>
+      </li>
+    </value>
+  </Operation>
+</Patch>

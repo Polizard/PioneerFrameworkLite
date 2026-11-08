@@ -13,12 +13,59 @@ namespace PioneerFramework.Tests
         private const BindingFlags Flags = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static;
 
         [Theory]
-        [InlineData("DrawInspector")]
+        [InlineData("TargetInspectedObject")]
         [InlineData("DrawRadarPanel")]
         public void ObservedContactHasExplicitTargetAction(string method)
         {
             Assert.Contains(ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod(method, Flags)),
                 member => member.Name == "SetTargetContact");
+        }
+
+        [Theory]
+        [InlineData("DrawInspector", "SetTargetContact")]
+        [InlineData("DrawInspector", "SetTargetGroup")]
+        [InlineData("DrawInspector", "ShowGroupMapMenu")]
+        [InlineData("DrawInspector", "RequestManualSteering")]
+        [InlineData("DrawInspector", "TryOpenWeaponsFor")]
+        [InlineData("DrawFleetCard", "ShowGroupMapMenu")]
+        [InlineData("DrawObjectActions", "RequestManualSteering")]
+        [InlineData("DrawPilotPanel", "EndSteering")]
+        public void ActionCommandsAreNotDuplicatedInOtherPanels(string panel, string command)
+        {
+            var method = typeof(MainTabWindow_PFView).GetMethod(panel, Flags);
+            Assert.DoesNotContain(ReferencedMembers(method), member => member.Name == command);
+        }
+
+        [Fact]
+        public void ObjectActionsOwnMapEntryTargetSelectionAndInspectionDetails()
+        {
+            var method = typeof(MainTabWindow_PFView).GetMethod("DrawObjectActions", Flags);
+            var commands = ReferencedMembers(method).Select(member => member.Name).ToList();
+            Assert.Contains("ShowGroupMapMenu", commands);
+            Assert.Contains("TargetInspectedObject", commands);
+            Assert.Contains("ShowObjectDetails", commands);
+        }
+
+        [Fact]
+        public void EscapeUsesVisiblePanelsRatherThanARememberedDrawerTab()
+        {
+            var method = typeof(MainTabWindow_PFView).GetMethod("HandleInput", Flags);
+            var members = ReferencedMembers(method).ToArray();
+            Assert.Contains(members, member => member.Name == "get_Drawer");
+            Assert.DoesNotContain(members, member => member.Name == "drawerTab");
+        }
+
+        [Fact]
+        public void RadarReferenceUsesCockpitSourceBeforeBrowsingSelection()
+        {
+            var owner = typeof(MainTabWindow_PFView);
+            var radar = ReferencedMembers(owner.GetMethod("ResolveInstrumentGroup", Flags));
+            Assert.Contains(radar, m => m.Name == "ResolveCockpitGroup");
+            var members = ReferencedMembers(owner.GetMethod("ResolveCockpitGroup", Flags)).ToList();
+            int source = members.FindIndex(m => m.Name == "ResolveOperationGroup");
+            int selection = members.FindIndex(m => m.Name == "selectedGroupId");
+            Assert.True(source >= 0 && source < selection);
+            Assert.Contains(members, m => m.Name == "get_OfPlayer");
         }
 
         // These guards exercise compiled routing boundaries; rendering/input still require the game.
@@ -177,12 +224,16 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
-        public void DisplayMenuAlwaysOffersFullNavballReadouts()
+        public void NavballReadoutsUseDisplayOrTheDetachedToolbarEntry()
         {
             var callbacks = typeof(MainTabWindow_PFView).GetNestedTypes(Flags).SelectMany(t => t.GetMethods(Flags))
                 .Concat(typeof(MainTabWindow_PFView).GetMethods(Flags))
                 .Where(m => m.Name.Contains("<ShowDisplayMenu>", StringComparison.Ordinal));
             Assert.Contains(callbacks, m => ReferencedMembers(m).Any(r => r.Name == "OpenInstrumentWindow"));
+            Assert.Contains(ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("ShowDisplayMenu", Flags)),
+                member => member.Name == "get_RequiresInstrumentDrawer");
+            Assert.Contains(ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("DrawToolbar", Flags)),
+                member => member.Name == "OpenInstrumentWindow");
             Assert.Contains(ReferencedMembers(typeof(Window_PFViewInstrument).GetMethod("DoWindowContents", Flags)),
                 m => m.Name == "BeginScrollView");
         }

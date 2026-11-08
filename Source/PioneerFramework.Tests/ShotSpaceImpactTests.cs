@@ -39,6 +39,9 @@ namespace PioneerFramework.Tests
             Assert.Equal(1, record.logicalCount);
             Assert.Empty(combat.ActiveProjectiles);
             Assert.Single(combat.ActiveExplosions);
+            var detonation = Assert.Single(Array.FindAll(ReadImpacts(combat), e => e.Kind == CombatImpactKind.Detonation));
+            Assert.Equal(missileName, detonation.SourceDef.defName);
+            Assert.Equal(target.EntityId, detonation.SourceEntityId);
         }
 
         [Fact]
@@ -82,11 +85,22 @@ namespace PioneerFramework.Tests
             }};
             var weapon = new WeaponInstance { def = new WeaponDef { defName = "TestGun", weaponType = WeaponType.Projectile,
                 defaultShot = shot, allowedShots = new() { shot }, maxRange = 500 }, ammo = 2 };
-            host.Game.GetComponent<CombatManager>().FireWeapon(shooter.GroupId, weapon, new DVector3(300, 0, 0));
+            var combat = host.Game.GetComponent<CombatManager>();
+            combat.FireWeapon(shooter.GroupId, weapon, new DVector3(300, 0, 0));
             Assert.Equal(83, nearer.Parts[0].hp);
             Assert.Equal(100, farther.Parts[0].hp);
             Assert.Empty(host.Game.GetComponent<CombatManager>().ActiveProjectiles);
             Assert.Equal(1, weapon.ammo);
+            var impact = Assert.Single(ReadImpacts(combat));
+            Assert.Equal(CombatImpactKind.Contact, impact.Kind);
+            Assert.True(impact.IsInstant);
+            Assert.Same(shot, impact.SourceDef);
+            Assert.Equal(nearer.EntityId, impact.TargetEntityId);
+            Assert.Equal(new DVector3(-5, 0, 0), impact.TargetLocalPoint);
+
+            weapon.cooldownRemaining = 0;
+            combat.FireWeapon(shooter.GroupId, weapon, new DVector3(0, 300, 0));
+            Assert.Single(ReadImpacts(combat));
         }
 
         [Fact]
@@ -105,11 +119,45 @@ namespace PioneerFramework.Tests
                 new ShotCompProperties_Penetration { initialBudget = 1000, damageRetention = 0.5f, maxHits = 3 }
             }};
             var weapon = new WeaponInstance { def = new WeaponDef { defName = "PiercingGun", defaultShot = definition, allowedShots = new() { definition }, maxRange = 500 } };
-            host.Game.GetComponent<CombatManager>().FireWeapon(shooter.GroupId, weapon, new DVector3(500, 0, 0));
+            var combat = host.Game.GetComponent<CombatManager>();
+            combat.FireWeapon(shooter.GroupId, weapon, new DVector3(500, 0, 0));
             Assert.Equal(68, first.Parts[0].hp);
             Assert.Equal(84, second.Parts[0].hp);
             Assert.Equal(92, third.Parts[0].hp);
             Assert.Equal(100, fourth.Parts[0].hp);
+            var impacts = ReadImpacts(combat);
+            Assert.Equal(new[] { first.EntityId, second.EntityId, third.EntityId },
+                Array.ConvertAll(impacts, e => e.TargetEntityId));
+            Assert.All(impacts, e => Assert.Equal(impacts[0].HostTick, e.HostTick));
+        }
+
+        [Fact]
+        public void LegacyRayPublishesConfirmedContactsInTheSameHostTick()
+        {
+            using var host = new SpaceAiRuntimeTestHost();
+            var shooter = host.AddShip();
+            var target = AddTarget(host, 21, 100);
+            var def = new WeaponDef { defName = "LegacyRay", weaponType = WeaponType.Ray,
+                damagePerShot = 10, maxRange = 500, rayMaxLength = 500 };
+            var weapon = new WeaponInstance { def = def, ammo = 3 };
+            var combat = host.Game.GetComponent<CombatManager>();
+            combat.FireWeapon(shooter.GroupId, weapon, new DVector3(300, 0, 0));
+            weapon.cooldownRemaining = 0;
+            combat.FireWeapon(shooter.GroupId, weapon, new DVector3(300, 0, 0));
+            weapon.cooldownRemaining = 0;
+            combat.FireWeapon(shooter.GroupId, weapon, new DVector3(0, 300, 0));
+
+            var hits = ReadImpacts(combat);
+            Assert.Equal(2, hits.Length);
+            Assert.Equal(hits[0].Sequence + 1, hits[1].Sequence);
+            Assert.All(hits, hit =>
+            {
+                Assert.Same(def, hit.SourceDef);
+                Assert.True(hit.IsInstant);
+                Assert.Equal(target.EntityId, hit.TargetEntityId);
+                Assert.Equal(hits[0].HostTick, hit.HostTick);
+            });
+            Assert.True(target.Parts[0].hp < 100);
         }
 
         [Fact]
@@ -126,10 +174,16 @@ namespace PioneerFramework.Tests
                 new ShotCompProperties_Explosion { mapCenterDamage = 0, mapRadiusCells = 0, spaceRadiusMeters = 20, partCenterDamage = 60 }
             }};
             var weapon = new WeaponInstance { def = new WeaponDef { defName = "ExplosiveGun", defaultShot = definition, allowedShots = new() { definition }, maxRange = 500 } };
-            host.Game.GetComponent<CombatManager>().FireWeapon(shooter.GroupId, weapon, new DVector3(500, 0, 0));
+            var combat = host.Game.GetComponent<CombatManager>();
+            combat.FireWeapon(shooter.GroupId, weapon, new DVector3(500, 0, 0));
             Assert.Equal(55, first.Parts[0].hp);
             Assert.Equal(85, second.Parts[0].hp);
             Assert.Equal(100, outside.Parts[0].hp);
+            var detonation = Assert.Single(Array.FindAll(ReadImpacts(combat), e => e.Kind == CombatImpactKind.Detonation));
+            Assert.Equal(20, detonation.RadiusMeters);
+            Assert.True(detonation.IsInstant);
+            Assert.Equal(first.EntityId, detonation.TargetEntityId);
+            Assert.True(Assert.Single(combat.ActiveExplosions).HasImpactEvent);
         }
 
         [Fact]
@@ -162,6 +216,14 @@ namespace PioneerFramework.Tests
             host.Space.RegisterGroup(group);
             host.Space.RegisterEntity(entity);
             return entity;
+        }
+
+        private static CombatImpactEvent[] ReadImpacts(CombatManager combat)
+        {
+            var events = new CombatImpactEvent[16];
+            int count = combat.CopyImpactEvents(0, events);
+            Array.Resize(ref events, count);
+            return events;
         }
     }
 }

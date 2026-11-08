@@ -17,7 +17,8 @@
     <defName>PF_MoonBiomes</defName>
     <label>月球参数化地表</label>
     <mode>Parameterized</mode>
-    <temperature>0</temperature><rainfall>0</rainfall><swampiness>0</swampiness>
+    <!-- temperature 只作为未绑定 environment climate 时的 fallback（月球现由 useEnvironmentClimate 绑定 -25 均值）。 -->
+    <temperature>-25</temperature><rainfall>0</rainfall><swampiness>0</swampiness>
     <rootOnlySteps><li>Factions</li><li>Roads</li><li>Features</li></rootOnlySteps>
     <terrain>
       <!-- 纬度带用 Parameterized 规则复刻：waterIce 极区（绝对纬度 75+，priority 10）优先；其余 basalt/regolith 同优先级同权重 50/50；fallback 只用于无候选。 -->
@@ -45,5 +46,40 @@
     <defName>PF_MoonEnvironment</defName><label>月球现有环境</label>
     <dayLengthTicks>317900</dayLengthTicks><primaryLightReference>primaryLight</primaryLightReference>
     <vacuumBiomes><li>PF_MoonBiomeWater</li><li>PF_MoonBiomeBasalt</li><li>PF_MoonBiomeRegolith</li></vacuumBiomes>
+    <!-- 月球：无大气 + 无磁场。真空声明让压强/O2 判为 0（缺氧+低压两通道）；
+         温度用 Authored 对称日周期表达极端昼夜温差：赤道 mean -25 ± 145 => 约 -170..+120°C。
+         lapse=0：无大气就没有对流层递减率，海拔不应再削温。
+         windSpeed=0 只是冗余表达，无大气时框架本身已强制风速为 0。
+         已知依赖：Authored 日相位按日历时钟，与物理光照的相位对齐是另一条待修项（2026-11-06 审查 P1-1）。 -->
+    <climate>
+      <mode>Authored</mode>
+      <meanTemperatureCelsius>-25</meanTemperatureCelsius>
+      <latitudeCurve>
+        <li><latitudeDegrees>0</latitudeDegrees><offsetCelsius>0</offsetCelsius></li>
+        <li><latitudeDegrees>90</latitudeDegrees><offsetCelsius>-40</offsetCelsius></li>
+      </latitudeCurve>
+      <lapseCelsiusPerMeter>0</lapseCelsiusPerMeter>
+      <diurnalAmplitudeCelsius>145</diurnalAmplitudeCelsius>
+      <seasonalAmplitudeCelsius>0</seasonalAmplitudeCelsius>
+      <thermalResponseSeconds>600</thermalResponseSeconds>
+      <!-- Authored 忽略 illuminationTemperatureCelsius（默认 50），这里不显式写，避免触发 mode 字段诊断。 -->
+      <lightMultiplier>1</lightMultiplier>
+      <windSpeed>0</windSpeed>
+      <rainfallMillimeters>0</rainfallMillimeters>
+      <humidity>0</humidity>
+    </climate>
+    <!-- 缺氧/低压各 2 严重度/游戏日（6 小时到 lethalSeverity=1）；毒性/辐射保持 0：
+         房间模型不吸附辐射，室内也会累积，因此暂时不给月球辐射通道。gravityStats 需要恰好 1 个物理绑定，月球满足。 -->
+    <exposure>
+      <minimumOxygenPascals>16000</minimumOxygenPascals>
+      <minimumPressurePascals>20000</minimumPressurePascals>
+      <maximumPressurePascals>300000</maximumPressurePascals>
+      <hypoxiaPerDay>2</hypoxiaPerDay>
+      <pressurePerDay>2</pressurePerDay>
+      <toxicityPerDay>0</toxicityPerDay>
+      <radiationPerDay>0</radiationPerDay>
+      <carbonDioxideThresholdPascals>1000</carbonDioxideThresholdPascals>
+      <gravityStats>true</gravityStats>
+    </exposure>
   </PioneerFramework.Celestial.CelestialEnvironmentProfileDef>
 </Defs>

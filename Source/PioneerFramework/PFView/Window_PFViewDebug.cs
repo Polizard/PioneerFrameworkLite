@@ -13,13 +13,13 @@ namespace PioneerFramework
     ///
     /// 2026-10-28 P0 恒星性能探针：本窗口另承担"拉近恒星掉帧"的测量入口（surface/halo 开关、
     /// 步数预算、RT 缩放、距离跳转、帧时读数）。**窗口关闭即停止记录（零开销）**；
-    /// 所有开关默认值 = 现状，测量结束请按「恢复默认」。
+    /// 测量结束可按「恢复默认」还原渲染设置。
     /// </summary>
     public class Window_PFViewDebug : Window
     {
         private readonly MainTabWindow_PFView win;
         private Vector2 scroll;
-        private const float ContentHeight = 1040f;
+        private const float ContentHeight = 1266f;
 
         public override Vector2 InitialSize => new Vector2(620f, 760f);
 
@@ -86,6 +86,48 @@ namespace PioneerFramework
             if (v != before) MainTabWindow_PFView.DebugShowSunMarker = v;
             y += Row;
 
+            // 2026-11-08：PFView 引擎喷焰（P0/P1）。锚点检查 = 只画喷口点；强制显示 = 不看点火判据。
+            v = PFViewEnginePlumeProbe.Enabled;
+            before = v;
+            Widgets.CheckboxLabeled(new Rect(0f, y, w, Row), "引擎喷焰（PFView 3D）", ref v);
+            if (v != before) PFViewEnginePlumeProbe.Enabled = v;
+            y += Row;
+
+            v = PFViewEnginePlumeProbe.NozzleOnly;
+            before = v;
+            Widgets.CheckboxLabeled(new Rect(0f, y, w, Row), "引擎喷焰：只画喷口点（诊断，不是尾焰）", ref v);
+            if (v != before) PFViewEnginePlumeProbe.NozzleOnly = v;
+            y += Row;
+
+            v = PFViewEnginePlumeProbe.ForceAllEngines;
+            before = v;
+            Widgets.CheckboxLabeled(new Rect(0f, y, w, Row), "引擎喷焰：强制显示全部喷口（不点火也画）", ref v);
+            if (v != before) PFViewEnginePlumeProbe.ForceAllEngines = v;
+            y += Row;
+
+            v = PFViewEnginePlumeProbe.DrawOnlySelectedGroup;
+            before = v;
+            Widgets.CheckboxLabeled(new Rect(0f, y, w, Row), "引擎喷焰：只看当前选中编队", ref v);
+            if (v != before) PFViewEnginePlumeProbe.DrawOnlySelectedGroup = v;
+            y += Row;
+
+            if (Widgets.ButtonText(new Rect(0f, y, w * 0.24f, Row), "强度 -"))
+                PFViewEnginePlumeProbe.IntensityScale = Mathf.Max(0.3f, PFViewEnginePlumeProbe.IntensityScale - 0.1f);
+            if (Widgets.ButtonText(new Rect(w * 0.26f, y, w * 0.24f, Row), "强度 +"))
+                PFViewEnginePlumeProbe.IntensityScale = Mathf.Min(2f, PFViewEnginePlumeProbe.IntensityScale + 0.1f);
+            Widgets.Label(new Rect(w * 0.52f, y, w * 0.48f, Row),
+                $"喷焰强度 ×{PFViewEnginePlumeProbe.IntensityScale:F1}");
+            y += Row;
+
+            Text.Font = GameFont.Tiny;
+            GUI.color = new Color(0.62f, 0.68f, 0.78f);
+            Widgets.Label(new Rect(4f, y, w - 4f, 18f),
+                $"引擎 {PFViewEnginePlumeProbe.LastEngineCount} · 片 {PFViewEnginePlumeProbe.LastQuadCount}"
+                + $" · 推进器 {PFViewEnginePlumeProbe.LastMapThrusters}"
+                + $" · 超限 {PFViewEnginePlumeProbe.LastSkippedEngines}");
+            GUI.color = Color.white;
+            y += 20f;
+
             v = win.DebugMapRelief;
             before = v;
             Widgets.CheckboxLabeled(new Rect(0f, y, w, Row), "地图浮雕（有 Map 的编队）", ref v);
@@ -138,7 +180,7 @@ namespace PioneerFramework
 
             // ════════ P0 恒星性能探针（2026-10-28） ════════
             GUI.color = new Color(0.85f, 0.9f, 1f);
-            Widgets.Label(new Rect(0f, y, w, 20f), "— 恒星性能探针（P0；默认全开 = 现状）—");
+            Widgets.Label(new Rect(0f, y, w, 20f), "— 恒星性能探针 —");
             GUI.color = Color.white;
             y += 22f;
 
@@ -154,12 +196,36 @@ namespace PioneerFramework
             if (v != before) PFViewStellarProbe.HaloPass = v;
             y += Row + 2f;
 
+            v = win.DebugUseStellarHeatCache;
+            Widgets.CheckboxLabeled(new Rect(0f, y, w, Row), "PFV_StellarHeatCache".Translate(), ref v);
+            if (v != win.DebugUseStellarHeatCache)
+            {
+                win.DebugUseStellarHeatCache = v;
+                win.DebugStellarResetStats();
+            }
+            y += Row;
+            if (v)
+            {
+                Widgets.Label(new Rect(0f, y, w, Row), win.DebugStellarHeatCacheStatus.Translate());
+                y += Row;
+            }
+
+            v = PFViewStellarProbe.S3AEnabled;
+            before = v;
+            Widgets.CheckboxLabeled(new Rect(0f, y, w, Row), "区域跳过积分（S3A；重开 PFView 生效）", ref v);
+            if (v != before)
+            {
+                PFViewStellarProbe.S3AEnabled = v;
+                win.DebugStellarResetStats();
+            }
+            y += Row + 2f;
+
             Widgets.Label(new Rect(0f, y, w, 18f), "步数预算（两 pass 同步；默认 64）");
             y += 18f;
             DrawBudgetRow(y, w);
             y += 26f;
 
-            Widgets.Label(new Rect(0f, y, w, 18f), "渲染纹理缩放（判填充率；默认 1.00）");
+            Widgets.Label(new Rect(0f, y, w, 18f), "PFView 渲染纹理缩放");
             y += 18f;
             DrawScaleRow(y, w);
             y += 26f;
@@ -174,7 +240,7 @@ namespace PioneerFramework
             y += 28f;
 
             if (Widgets.ButtonText(new Rect(0f, y, w * 0.46f, Row), "恢复默认（全部开关）"))
-                PFViewStellarProbe.ResetDefaults();
+                win.DebugStellarResetDefaults();
             if (Widgets.ButtonText(new Rect(w * 0.50f, y, w * 0.50f, Row), "清空帧时样本"))
                 win.DebugStellarResetStats();
             y += Row + 8f;
@@ -218,9 +284,9 @@ namespace PioneerFramework
         private static void DrawScaleRow(float y, float w)
         {
             float bw = w * 0.31f;
-            DrawScaleButton(0f, y, bw, 1f, "1.00（现状）");
+            DrawScaleButton(0f, y, bw, PFViewStellarProbe.DefaultRenderScale, "1.00（默认）");
             DrawScaleButton(bw * 1.03f, y, bw, 0.75f, "0.75");
-            DrawScaleButton(bw * 2.06f, y, bw, 0.5f, "0.50");
+            DrawScaleButton(bw * 2.06f, y, bw, 0.5f, "0.50（降采样）");
         }
 
         private static void DrawScaleButton(float x, float y, float width, float scale, string label)

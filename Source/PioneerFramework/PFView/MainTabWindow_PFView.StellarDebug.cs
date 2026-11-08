@@ -17,7 +17,7 @@ namespace PioneerFramework
     /// 帧时采样、读数和"把相机挪到指定距离"。
     ///
     /// 纪律：
-    /// · **所有开关默认值 = 现状**（surface/halo 开、步数 0=64、RT 缩放 1.0）；
+    /// · 默认绘制光球和日冕，采样预算 64 步，RT 缩放 1.0（原分辨率），旧版光球缓存开启；
     /// · 探针只在 PFView 调试窗打开时记录（`PFViewStellarProbe.Active`），关窗零开销；
     /// · 不控制相机取景策略：距离跳转只是把现有 `FocusBody` + `camDistance` 设到目标值，
     ///   不改相机/轨道/夹取规则（P0 仍走普通天体相机，测试钉死）。
@@ -36,8 +36,13 @@ namespace PioneerFramework
             nextStellarProbeLogTime = Time.realtimeSinceStartup + 2f;
         }
 
-        /// <summary>把所有 P0 开关恢复成现状默认（测量结束后必须按一下，防忘记）。</summary>
-        internal static void DebugStellarResetDefaults() => PFViewStellarProbe.ResetDefaults();
+        /// <summary>恢复性能探针和光球缓存默认值，并清空样本。</summary>
+        internal void DebugStellarResetDefaults()
+        {
+            PFViewStellarProbe.ResetDefaults();
+            DebugUseStellarHeatCache = PFViewStellarProbe.DefaultHeatCacheEnabled;
+            DebugStellarResetStats();
+        }
 
         /// <summary>RenderScene 每帧调用；探针未激活时只是读一个 static bool。</summary>
         private void RecordStellarPerfFrame()

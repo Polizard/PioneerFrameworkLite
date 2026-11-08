@@ -53,7 +53,13 @@ namespace PioneerFramework.Celestial
             if (version != 1) return CelestialResult.Reject<T>(new CelestialError("UnsupportedConfigurationVersion", CompKey: key));
             try { return CelestialResult.Ok(create(Read<TData>(payload))); }
             catch (Exception exception) when (exception is JsonException or ArgumentException)
-            { return CelestialResult.Reject<T>(new CelestialError("InvalidConfigurationPayload", CompKey: key, Detail: exception.Message)); }
+            {
+                // 2026-11-07 A-4：未知字段通常是「存档来自更新版本」，诊断里显式给出字段路径而不是只有解析器原文。
+                string detail = exception is JsonException json && !string.IsNullOrEmpty(json.Path)
+                    ? exception.Message + " (path: " + json.Path + "; unknown/mismatched fields usually mean the payload came from a newer build)"
+                    : exception.Message;
+                return CelestialResult.Reject<T>(new CelestialError("InvalidConfigurationPayload", CompKey: key, Detail: detail));
+            }
         }
     }
     public sealed partial class AtmosphereResolvedProperties : ICelestialResolvedProperties

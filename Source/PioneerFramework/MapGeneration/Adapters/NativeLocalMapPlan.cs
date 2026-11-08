@@ -49,7 +49,8 @@ namespace PioneerFramework.MapGeneration
                 occurrences.TryGetValue(step.def.defName, out int occurrence);
                 occurrences[step.def.defName] = occurrence + 1;
                 return new Candidate(step, "native/" + step.def.defName + "/" + occurrence, index, Classify(step.def),
-                    step.parms.sitePart != null || step.def.linkWithSite != null); }).ToList();
+                    step.parms.sitePart != null || step.def.linkWithSite != null ||
+                    requiredSiteContent && IsRequiredSiteContent(step.def)); }).ToList();
             foreach (var step in authored)
             {
                 if (!contributions.TryGetValue(step.Key, out var contribution)) continue;
@@ -138,15 +139,20 @@ namespace PioneerFramework.MapGeneration
             return new(result.Plan!, modules, nativeSteps, initial);
         }
         private sealed record Candidate(GenStepWithParams Step, string Key, int Index, MapGenerationStage Stage, bool Required);
+        // P2-3: quest/site content must survive selector and prevention removal when the session targets a Site
+        // parent. Type-name comparison mirrors RequiredInputs and avoids a direct reference to optional/DLC types.
+        private static bool IsRequiredSiteContent(GenStepDef step)
+            => step.genStep?.GetType().Name is "GenStep_ScenParts" or "GenStep_FindPlayerStartSpot";
         private static readonly IReadOnlyDictionary<string, MapGenerationStage> semanticStages = new Dictionary<string, MapGenerationStage>(StringComparer.Ordinal) {
             ["GenStep_ElevationFertility"] = MapGenerationStage.Fields, ["GenStep_MutatorPostElevationFertility"] = MapGenerationStage.Fields,
             ["GenStep_RocksFromGrid"] = MapGenerationStage.NaturalSurface, ["GenStep_Terrain"] = MapGenerationStage.NaturalSurface,
             ["GenStep_MutatorPostTerrain"] = MapGenerationStage.NaturalSurface, ["GenStep_RemoveTinyIslands"] = MapGenerationStage.NaturalSurface,
-            ["GenStep_Roads"] = MapGenerationStage.NaturalSurface, ["GenStep_RockChunks"] = MapGenerationStage.NaturalSurface,
-            ["GenStep_ScatterGeysers"] = MapGenerationStage.NaturalSurface,
+            ["GenStep_Roads"] = MapGenerationStage.NaturalSurface,
             ["GenStep_FindPlayerStartSpot"] = MapGenerationStage.Content, ["GenStep_ScenParts"] = MapGenerationStage.Content,
             ["GenStep_MutatorCriticalStructures"] = MapGenerationStage.Content, ["GenStep_MutatorNonCriticalStructures"] = MapGenerationStage.Content,
             ["GenStep_Plants"] = MapGenerationStage.Populate, ["GenStep_Animals"] = MapGenerationStage.Populate,
+            // P2-2: vanilla slots 950/970 run after Content and Plants; NaturalSurface would hoist them ahead of Content.
+            ["GenStep_ScatterGeysers"] = MapGenerationStage.Populate, ["GenStep_RockChunks"] = MapGenerationStage.Populate,
             ["GenStep_Snow"] = MapGenerationStage.Populate, ["GenStep_Fog"] = MapGenerationStage.Populate,
             ["GenStep_CaveHives"] = MapGenerationStage.Populate, ["GenStep_MutatorFinal"] = MapGenerationStage.Populate };
         internal static bool IsAdapted(GenStepDef step) => step.genStep.GetType().Assembly == typeof(GenStep).Assembly && semanticStages.ContainsKey(step.genStep.GetType().Name);

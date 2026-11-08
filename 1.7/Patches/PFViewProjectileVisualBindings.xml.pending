@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <Operation Class="PatchOperationAdd">
+    <xpath>Defs/PioneerFramework.Combat.ShotDef[defName='PF_Shot_AP']</xpath>
+    <value>
+      <modExtensions>
+        <li Class="PioneerFramework.ProjectileVisuals.ProjectileVisualExtension">
+          <visualProfile>PF_Visual_KineticAP</visualProfile>
+        </li>
+      </modExtensions>
+    </value>
+  </Operation>
+  <Operation Class="PatchOperationAdd">
+    <xpath>Defs/PioneerFramework.Combat.ShotDef[defName='PF_Shot_HE']</xpath>
+    <value>
+      <modExtensions>
+        <li Class="PioneerFramework.ProjectileVisuals.ProjectileVisualExtension">
+          <visualProfile>PF_Visual_KineticHE</visualProfile>
+        </li>
+      </modExtensions>
+    </value>
+  </Operation>
+  <Operation Class="PatchOperationAdd">
+    <xpath>Defs/PioneerFramework.Combat.ShotDef[defName='PF_Shot_PulseLaser']</xpath>
+    <value>
+      <modExtensions>
+        <li Class="PioneerFramework.ProjectileVisuals.ProjectileVisualExtension">
+          <visualProfile>PF_Visual_LaserContact</visualProfile>
+        </li>
+      </modExtensions>
+    </value>
+  </Operation>
+</Patch>

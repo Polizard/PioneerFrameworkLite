@@ -16,6 +16,10 @@ namespace PioneerFramework.Celestial
         private readonly Dictionary<int, CelestialRoomAir> airByCell = new();
         private readonly Dictionary<int, CelestialRoomVolume> volumeByCell = new();
         private int lastProcessedTick = -1;
+        private bool faulted;
+        private int groupCacheTick = -1;
+        private bool tickCacheActive;
+        private readonly Dictionary<Room, (HashSet<Room> Group, bool Open, HashSet<int> Members)> groupCache = new();
         public string? BlockedReason { get; private set; }
         public override void ExposeData()
         {
@@ -34,7 +38,7 @@ namespace PioneerFramework.Celestial
                 try
                 {
                     if (!HasEnvironmentOwner(state.OwnerId)) return Block("RoomEnvironmentDependencyUnavailable");
-                    if (state.LastGameTick > Find.TickManager.TicksGame) return Block("RoomEnvironmentClockReversed");
+                    if (state.LastGameTick > Find.TickManager.TicksGame) RecoverClock();
                     // Validate repaired read dependencies only. Keep both the committed state and exposure interval claim.
                     _ = CaptureTopology(map);
                     foreach (var pawn in map.mapPawns.AllPawnsSpawned)
@@ -65,32 +69,56 @@ namespace PioneerFramework.Celestial
         }
         public override void MapComponentTick()
         {
+            if (faulted) return;
             int tick = Find.TickManager.TicksGame;
             if (tick % 60 != 0 || tick == lastProcessedTick) return;
+            try { Update(tick); }
+            catch (Exception exception)
+            {
+                // 2026-11-07 C-3：环境读取/结算异常不再冲进宿主 tick，也不锁存档；停用本图环境结算并保留一次日志。
+                faulted = true;
+                Log.ErrorOnce("[PFL Celestial] room environment update disabled after failure: " + exception.GetType().Name + ": " + exception.Message,
+                    ("roomenv:" + exception.GetType().Name + ":" + exception.Message).GetHashCode());
+            }
+        }
+        private void Update(int tick)
+        {
             if (!EnsureRestored()) return;
             if (!CelestialPlanetEnvironmentHooks.TrySample(map.Tile, out var sample) || sample.Exposure == null) return;
             if (map.Tile.Layer is not CelestialSurfaceLayer layer) return;
             state ??= new(layer.Header.OwnerId.Value);
-            if (state.LastGameTick > tick) { Block("RoomEnvironmentClockReversed"); return; }
+            if (state.LastGameTick > tick) RecoverClock();
             var outdoors = new CelestialRoomAir(sample.PressurePascals, sample.OxygenPartialPressurePascals, sample.ToxicityPerDay, sample.RadiationPerDay);
             try
             {
-                long previousTick = state.LastGameTick;
+                long previousTick = state!.LastGameTick;
                 state.Advance(tick, CaptureTopology(map), outdoors);
                 Reindex();
                 // Claim the interval before applying damage; reentrant reads cannot repeat its exposure.
                 int elapsed = previousTick < 0 ? 0 : (int)Math.Min(60, tick - previousTick);
                 lastProcessedTick = tick;
-                foreach (var pawn in map.mapPawns.AllPawnsSpawned)
+                tickCacheActive = true;
+                try
                 {
-                    if (pawn.Dead) continue;
-                    var local = Effective(sample, pawn.Position);
-                    bool native = ModsConfig.OdysseyActive && map.Biome.inVacuum;
-                    CelestialPawnEnvironment.Apply(pawn, CelestialExposureModel.Dose(local, CelestialPawnEnvironment.Protection(pawn), elapsed, native));
+                    foreach (var pawn in map.mapPawns.AllPawnsSpawned)
+                    {
+                        if (pawn.Dead) continue;
+                        var local = Effective(sample, pawn.Position);
+                        bool native = ModsConfig.OdysseyActive && map.Biome.inVacuum;
+                        CelestialPawnEnvironment.Apply(pawn, CelestialExposureModel.Dose(local, CelestialPawnEnvironment.Protection(pawn), elapsed, native));
+                    }
                 }
+                finally { tickCacheActive = false; }
             }
             catch (Exception exception)
             { Block("RoomEnvironmentUpdateFailed: " + exception.Message); }
+        }
+        /// <summary>时钟回拨：夹到当前 tick 并只记录一次诊断，避免永久暂停太空/拒绝保存（2026-11-07 A-5）。</summary>
+        private void RecoverClock()
+        {
+            Log.WarningOnce("[PFL Celestial] room environment committed tick is ahead of the current tick; clamping it (map " + map.uniqueID + ").",
+                ("roomenv-clock:" + map.uniqueID).GetHashCode());
+            state!.Rebase(Find.TickManager.TicksGame);
         }
         private void Reindex()
         {
@@ -107,10 +135,10 @@ namespace PioneerFramework.Celestial
             int index = map.cellIndices.CellToIndex(cell);
             if (airByCell.TryGetValue(index, out var air) && cell.GetRoom(map) is { IsDoorway: false } room)
             {
-                var group = ConnectedRooms(map, room, new(), out bool open);
-                var members = group.SelectMany(r => r.Cells).Select(map.cellIndices.CellToIndex).ToHashSet();
+                // 2026-11-07 C-1：每 tick 每房间只做一次连通分组；members 只在封闭组构造。
+                var info = GroupInfo(room);
                 // Never advertise a stale protected volume after a breach, split or merge, even within one update interval.
-                if (!open && volumeByCell.TryGetValue(index, out var volume) && members.SetEquals(volume.Cells))
+                if (!info.Open && volumeByCell.TryGetValue(index, out var volume) && info.Members.SetEquals(volume.Cells))
                     result = outside with { PressurePascals = air.PressurePascals, OxygenPartialPressurePascals = air.OxygenPascals,
                         ToxicityPerDay = air.ToxicityPerDay, RadiationPerDay = air.RadiationPerDay };
             }
@@ -120,6 +148,27 @@ namespace PioneerFramework.Celestial
                 result = result with { PressurePascals = 101325 * fraction, OxygenPartialPressurePascals = 21200 * fraction };
             }
             return result;
+        }
+        /// <summary>每 tick 缓存一次房间连通分组（C-1）：同一房间的 BFS 不再按 pawn 重复。</summary>
+        /// <remarks>
+        /// 只在一次 60-tick 结算的 pawn 循环里启用；宿主查询（Alert/JobGiver）必须现算，
+        /// 否则同一 tick 内拆顶/开门/合并会让缓存返回已失效的封闭分组。
+        /// </remarks>
+        private (HashSet<Room> Group, bool Open, HashSet<int> Members) GroupInfo(Room room)
+        {
+            if (!tickCacheActive) return ComputeGroup(room);
+            int tick = Find.TickManager?.TicksGame ?? 0;
+            if (tick != groupCacheTick) { groupCache.Clear(); groupCacheTick = tick; }
+            if (groupCache.TryGetValue(room, out var cached)) return cached;
+            var info = ComputeGroup(room);
+            groupCache[room] = info;
+            return info;
+        }
+        private (HashSet<Room> Group, bool Open, HashSet<int> Members) ComputeGroup(Room room)
+        {
+            var group = ConnectedRooms(map, room, new(), out bool open);
+            var members = open ? new HashSet<int>() : group.SelectMany(r => r.Cells).Select(map.cellIndices.CellToIndex).ToHashSet();
+            return (group, open, members);
         }
         public bool IsDangerous(Pawn pawn, IntVec3 cell)
         {
@@ -139,6 +188,9 @@ namespace PioneerFramework.Celestial
             {
                 if (visited.Contains(first)) continue;
                 var group = ConnectedRooms(map, first, visited, out bool open);
+                // 2026-11-07 C-1：开放/室外组不持久化、不结算——Effective 对 open 组本来就返回室外空气，
+                // 新封闭的房间下次 Advance 会从 outdoor 继承，语义等价且避免整图 6 万格进入状态/存档。
+                if (open) continue;
                 int[] cells = group.SelectMany(r => r.Cells).Select(map.cellIndices.CellToIndex).Distinct().ToArray();
                 if (cells.Length == 0) continue;
                 var localDevices = devices.Where(d => group.Contains(d!.parent.GetRoom())).ToArray();

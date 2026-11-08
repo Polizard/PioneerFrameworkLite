@@ -150,6 +150,7 @@ namespace PioneerFramework
 
         private float MeasureRenderedGroupRadius(SpaceEntityGroup group)
         {
+            EnsureBuildingVisualSession();
             float radius = 0;
             var space = Current.Game?.GetComponent<SpaceGameComp>();
             foreach (int id in group.GetEntityIds())
@@ -157,35 +158,46 @@ namespace PioneerFramework
                 var entity = space?.GetEntityById(id);
                 if (entity == null) continue;
                 float entityRadius = 0;
-                bool relief = false;
-                if (debugMapRelief && entity.MapId >= 0 && !entity.IsMapArchived)
+                bool wholeEntityRelief = false;
+                cameraReliefPartIds.Clear();
+                CollectVisualMaps(entity, cameraMapContexts);
+                if (debugMapRelief)
                 {
-                    var map = SpaceMapGenerator.GetEntityMap(entity);
-                    var comp = map?.GetComponent<SpaceMapComp>();
-                    byte[]? classes = comp?.GetReliefClasses();
-                    if (map != null && comp != null && classes != null && comp.ReliefHasContent)
+                    foreach (var context in cameraMapContexts)
                     {
+                        if (!context.AllowsRelief) continue;
+                        var map = context.Map;
+                        var comp = map.GetComponent<SpaceMapComp>();
+                        byte[]? classes = comp?.GetReliefClasses();
+                        if (comp == null || classes == null || !comp.ReliefHasContent) continue;
                         var set = GetOrBuildReliefMeshes(map, comp, classes);
+                        bool hasMesh = false;
                         foreach (var mesh in set.Meshes)
                         {
                             if (mesh == null) continue;
                             Bounds bounds = mesh.bounds;
-                            entityRadius = Mathf.Max(entityRadius, bounds.center.magnitude + bounds.extents.magnitude);
-                            relief = true;
+                            var mapCenter = System.Numerics.Vector3.Transform(PFView.ShipBuildingVisuals.VisualConvert.N(bounds.center), context.MapToShip);
+                            entityRadius = Mathf.Max(entityRadius, mapCenter.Length() + bounds.extents.magnitude);
+                            hasMesh = true;
                         }
+                        if (!hasMesh) continue;
+                        if (context.OwnerPart is { } owner) cameraReliefPartIds.Add(owner.partId);
+                        else wholeEntityRelief = true;
                     }
                 }
-                if (!relief)
+                if (!wholeEntityRelief)
                 {
                     foreach (var part in entity.Parts)
                     {
-                        if (part.isDestroyed) continue;
+                        if (part.isDestroyed || cameraReliefPartIds.Contains(part.partId)) continue;
                         Vector3 size = (Vector3)part.boundsSizeShip;
                         size = new(Mathf.Max(size.x, 1), Mathf.Max(size.y, 1), Mathf.Max(size.z, 1));
                         entityRadius = Mathf.Max(entityRadius, (float)part.positionShip.magnitude + size.magnitude * .5f);
                     }
                     if (entityRadius <= 0) entityRadius = (float)entity.AabbHalfSize.magnitude;
                 }
+                entityRadius = Mathf.Max(entityRadius, MeasureBuildingVisualRadius(entity));
+                cameraMapContexts.Clear();
                 float scale = DebugScaleParts ? 200f : 1f;
                 radius = Mathf.Max(radius, (float)entity.Position.magnitude + entityRadius * scale);
             }

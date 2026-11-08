@@ -322,7 +322,7 @@ namespace PioneerFramework
             if (groupId < 0)
             {
                 targetGroupId = -1;
-                QueueToast("已清除目标");
+                QueueToast("PFV_CockpitTargetCleared".Translate());
                 return;
             }
             if (!TryGetKnownContact(groupId, out var contact))
@@ -632,7 +632,7 @@ namespace PioneerFramework
                 {
                     if (GUI.GetNameOfFocusedControl() == "PFViewSearch") GUI.FocusControl(null);
                     else if (SteeringController.IsOpen) EndSteering();
-                    else if (WantsInspector) preferObjectList = true;
+                    else if (rInspector.width > 0 || uiLayout.Drawer.Width > 0) SetDrawer(PFViewDrawerTab.None);
                     else Close();
                     e.Use();
                     return;

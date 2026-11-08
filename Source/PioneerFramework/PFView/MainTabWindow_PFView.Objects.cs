@@ -22,13 +22,13 @@ namespace PioneerFramework
         private bool objectsDirty = true;
         private string? inspectedContactKey;
         private int nextContactDisplayId;
-        private bool preferObjectList;
+        private bool preferObjectList = true;
         private bool objectSearchFocused;
         internal bool HasTextInputFocus => objectSearchFocused;
         private string distanceReferenceLabel = "—";
 
         private bool WantsInspector => !preferObjectList
-            && (selectedGroupId >= 0 || inspectedContactKey != null || operationContext.WeaponsOpen);
+            && (selectedGroupId >= 0 || inspectedContactKey != null);
 
         private static string ContactKey(in Contact contact)
             => contact.targetGroupId >= 0 ? "g:" + contact.targetGroupId.ToString(CultureInfo.InvariantCulture)
@@ -40,7 +40,6 @@ namespace PioneerFramework
             selectedGroupId = groupId;
             showFleetMembers = false;
             inspectedContactKey = null;
-            preferObjectList = false;
         }
 
         private void SelectContactForInspection(in Contact contact, int observerFactionId)
@@ -48,7 +47,6 @@ namespace PioneerFramework
             if (Faction.OfPlayer?.loadID != observerFactionId) return;
             selectedGroupId = -1;
             inspectedContactKey = ContactKey(contact);
-            preferObjectList = false;
         }
 
         private void RefreshObjectRows()
@@ -98,6 +96,7 @@ namespace PioneerFramework
 
             contactBuf.Clear();
             sensor?.AppendVisible(player.loadID, contactBuf);
+            double now = TimeScaleManager.GetPhysicsTickSafe();
             for (int i = 0; i < contactBuf.Count; i++)
             {
                 Contact contact = contactBuf[i];
@@ -111,9 +110,11 @@ namespace PioneerFramework
                 visibleContacts[key] = contact;
                 // Contact 不携带参考系 ID，不能用隐藏实体元数据给不同接触补距离。
                 // 所有未识别接触使用相同只读操作，身份 Key 只用于会话内关联。
+                string identity = (contact.isDecoy ? "PFV_DecoyIdentified" : "PFV_Unidentified").Translate();
+                string freshness = (PFViewUiObjectListCore.ObservationIsCurrent(now, contact.lastUpdatePhysics)
+                    ? "PFV_TrackLive" : "PFV_TrackRecord").Translate();
                 objectRows.Add(new(key, "PFV_Contact".Translate(identifier), identifier,
-                    PFViewUiObjectKind.Contact, null,
-                    (contact.isDecoy ? "PFV_DecoyIdentified" : "PFV_Unidentified").Translate(), false, -1));
+                    PFViewUiObjectKind.Contact, null, identity + " · " + freshness, false, -1));
             }
             PFViewUiObjectListCore.FilterAndSort(objectRows, filteredObjectRows, objectQuery, objectFilter, objectSort);
             if (fleetAlertsOnly && objectFilter == PFViewUiObjectFilter.OwnGroups)
@@ -193,9 +194,10 @@ namespace PioneerFramework
                 if (rr.yMax < objectScroll.y || rr.y > objectScroll.y + scrollRect.height) continue;
                 bool selected = row.Kind == PFViewUiObjectKind.Contact ? row.Key == inspectedContactKey : row.GroupId == selectedGroupId;
                 if (selected || Mouse.IsOver(rr)) Widgets.DrawBoxSolid(rr, selected ? PFViewPalette.PanelBgRaised : PFViewPalette.PanelBgHover);
-                Widgets.Label(new(rr.x + 5, rr.y + 2, rr.width - 10, 24), row.Label);
-                string secondary = row.Status + " · " + (row.DistanceMeters.HasValue
-                    ? PFViewUiObjectListCore.FormatDistance(row.DistanceMeters.Value) : "—");
+                string title = selected ? row.Label + " · " + "PFV_CockpitViewing".Translate() : row.Label;
+                MiniLabel(new(rr.x + 5, rr.y + 2, rr.width - 10, 24), title, PFViewPalette.TextPrimary);
+                string secondary = row.DistanceMeters is double distance
+                    ? row.Status + " · " + PFViewUiObjectListCore.FormatDistance(distance) : row.Status;
                 MiniLabel(new(5, rr.y + 27, rr.width - 10, 20), secondary, PFViewPalette.TextSecondary);
                 TooltipHandler.TipRegion(rr, row.Label + "\n" + secondary + "\n" + "PFV_TargetShortcut".Translate());
                 if (!Mouse.IsOver(rr) || Event.current.type != EventType.MouseDown || Event.current.button != 0) continue;

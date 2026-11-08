@@ -71,11 +71,11 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 
 `CelestialEnvironmentProfileDef` 的 `dayLengthTicks=60000`、`primaryLightReference="primaryLight"`、`vacuumBiomes=[]` 保留原字段；dayLength 必须能表示为正有限 float。添加 climate 或 exposure 显式启用 environment 配置 v2，省略两者保留 v1 字节和原生日历。下列数字通过 `climate.FIELD` / `exposure.FIELD` 参数路径覆盖；曲线、模式和布尔保持 typed。
 
-**自转周期只有一个优先级**（2026-11-03 P2 数据源单一化）：**物理 motion 的 `rotation.periodSeconds`（权威）→ environment 的 `dayLengthTicks`（无物理绑定的兼容 fallback）→ 0**。物理实例表、视觉描述缓存与视图投影都走同一份解析（`CelestialDayLength`），不再“渲染读 environment、物理读 motion”。两者同时存在时**必须相等**（已发货内容有回归测试锁死）；修改自转周期应改 motion，`environment.dayLengthTicks` 只用于没有物理绑定的天体，不要把它当第二真源。
+**自转周期只有一个优先级**（2026-11-03 P2 数据源单一化，2026-11-07 B-2 补齐环境采样）：**物理 motion 的 `rotation.periodSeconds`（权威）→ environment 的 `dayLengthTicks`（无物理绑定的兼容 fallback）→ 0**。物理实例表、视觉描述缓存、视图投影**以及环境采样**（`CompExistingEnvironment.DayLength` 经可选能力 `ICelestialDayLengthSource` 读取物理绑定解析出的权威日长）走同一优先级；物理绑定解析失败或外部 provider 时退回 `environment.dayLengthTicks`。两者同时存在时**必须相等**（已发货内容有回归测试锁死）；修改自转周期应改 motion，`environment.dayLengthTicks` 只用于没有物理绑定的天体，不要把它当第二真源。
 
 | climate 字段 | 默认；支持域/单位 | 消费者 |
 | --- | --- | --- |
-| mode | Authored；Authored / CommittedIllumination | 温度模式选择。存在物理绑定的显式 climate 在两模式下均以同一已提交快照取得光照 |
+| mode | Authored；Authored / CommittedIllumination | 温度模式选择。存在物理绑定的显式 climate 在两模式下均以同一已提交快照取得光照；Authored 的日相位在有物理绑定时由物理太阳的实际小时角驱动（0 = 本地正午），无物理绑定时退回显示 tick 的日历相位（2026-11-07 P1-1）。加载期会对被当前 mode 忽略的字段给出诊断（`AuthoredIgnoresIlluminationTemperature` / `CommittedIlluminationIgnoresDiurnalAmplitude`），仅为日志、不拒绝加载 |
 | meanTemperatureCelsius | 15；[-273.15,10000] °C | 原生当前地表/季节温度 |
 | latitudeCurve/li.latitudeDegrees / offsetCelsius | (0,0),(90,-40)；严格递增[0,90]绝对纬度，偏移[-10000,10000] °C；至少2点 | 纬度插值与端点夹取 |
 | lapseCelsiusPerMeter | .0065；[-1,1] °C/m | 海拔偏移 |
@@ -89,6 +89,8 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 
 查询 `SampleSurface(new CelestialSurfaceEnvironmentQuery(displayTicks, longitudeDegrees, latitudeDegrees, altitudeMeters, biomeId))` 的全部数值必须有限，纬度[-90,90]；暴露单独开启、没有气候/大气的实例也检查这些条件。原生桥按实际层头的 instanceId 查询，查询不会创建地表或地图。结果的 nullable 压强/O2/温度/重力表示未知；不得填入类地默认值。坐标、群落、显示时间和已提交物理时刻应与样本一起记录。
 
+**`SunGlow` 两套语义**（2026-11-07 记录，不承诺跨版本一致）：v1 兼容路径沿用原版 `PF_SunMath` 的饱和曲线 `clamp01(InverseLerp(0, 0.7, dot))`；v2 物理路径输出 `max(0, SunUp) · intensity · lightMultiplier` 的线性值。同一太阳高度下两者不同（例如 30°：约 0.714 vs 0.5），因此 v2 天体的白天亮度/太阳能输出通常低于 v1 天体。
+
 生成 tile 与运行时 `SampleSurface` 共用唯一降雨/湿度公式 `CelestialPlanetTerrain.SurfaceMoisture(terrain, fallbackRainfallMillimeters, fallbackSwampiness, moisture)`：`rain = (terrain.Climate?.RainfallMillimeters ?? fallbackRainfallMillimeters) * (.5+moisture)`，`humidity = Clamp((terrain.Climate?.Humidity ?? fallbackSwampiness) * (.5+moisture), 0, 1)`。fallback 分别取 biomes profile 的 `rainfall` / `swampiness`；terrain 无显式 climate 时仍应用同一湿度场。三个参数必须有限且处于各自域内。
 
 | exposure 字段 | 默认；支持域 | 消费者 |
@@ -96,13 +98,15 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 | minimumOxygenPascals | 16000；(0,1e12] Pa | 缺氧阈值 |
 | minimumPressurePascals / maximumPressurePascals | 20000 / 300000；[0,1e12] / (0,1e12] Pa；整个低阈值区间严格低于高阈值区间 | 低/高压独立剂量 |
 | hypoxiaPerDay / pressurePerDay | 2 / 2；[0,1e12]严重度/60000游戏tick | 原生缺氧/压力健康效果 |
-| toxicityPerDay / radiationPerDay | 0 / 0；[0,1e12]严重度/60000游戏tick | ToxicBuildup / 辐射效果；CO2超过阈值还增加毒性 |
+| toxicityPerDay / radiationPerDay | 0 / 0；[0,1e12]严重度/60000游戏tick | ToxicBuildup / 辐射效果；CO2 增量 = `max(0, CO2分压 / carbonDioxideThresholdPascals - 1) * toxicityPerDay`（与毒性速率相加，不饱和；温室 9.2MPa×0.965 时约 8878 倍有毒气体毒性，属极端环境设计） |
 | carbonDioxideThresholdPascals | 1000；(0,1e12] Pa | CO2毒性比例阈值 |
 | gravityStats | false；bool，开启要求物理绑定 | MoveSpeed/CarryingCapacity，各有界且只应用一次 |
 
-生物/机械体分支、供氧、低压、高压、毒性与辐射抗性独立。原生 StatWorker 聚合装备/基因；VacuumResistance 不提供高压/毒性/辐射抗性。真实 Odyssey 真空的缺氧/低压伤害与免疫归原生系统，补充模型不重复施加。无 Odyssey 时走补充模型。房间温度、热设备与室内真空仍由原生维护。
+生物/机械体分支、供氧、低压、高压、毒性与辐射抗性独立。原生 StatWorker 聚合装备/基因；VacuumResistance 不提供高压/毒性/辐射抗性。真实 Odyssey 真空的缺氧/低压伤害与免疫归原生系统，补充模型不重复施加。无 Odyssey 时走补充模型。房间温度、热设备与室内真空仍由原生维护。宿主读取入口（温度/季节温度/光照/风/安全目的地/重力属性/室内判定）在采样失败时按 fail-open 返回「无样本」让原版逻辑继续，首个失败原因以 `Log.ErrorOnce` 记录，不会每帧刷日志（2026-11-07 P1-2）。
 
 现有 `PF_AtmosphereRegulator` 使用原生电力/开关/故障，供氧/调压渐近到21200/101325 Pa；屋顶本身不提供安全空气。原生房间成员在分裂合并时按格子体积重映射；开放房间2秒交换、失能封闭房间120秒交换。滤毒采用有界游戏近似：每秒移除 `ToxinConditioningPerSecond` 个 toxicityPerDay 单位，负值截到精确0，速率按设备与房间大小折算。足额工作的密封过滤可到达严格安全；不足能力、断电或破口重新危险。没有数值 epsilon、安全阈值放宽或额外室内状态。辐射不由设备过滤。原生安全目的地与警报复用同一 `IsDangerous`；间隔先认领再伤害，重试不重复剂量。
+
+**房间状态的持久化边界**（2026-11-07 C-1）：只有**封闭组**进入房间状态与存档；贴地图边缘、露天或开门的开放组不持久化、不参与化学推进——它们的空气本来就按室外样本处理，新封闭的房间下次结算时从室外继承，语义等价且避免整图数万格进入存档。宿主查询（警报/安全目的地）每次现算连通组，只有一次 60-tick 结算内的 pawn 循环复用同 tick 缓存，因此同一 tick 内拆顶/开门/合并不会读到失效的封闭分组。结算异常不再冲进宿主 tick：整方法兜底后按 `Log.ErrorOnce` 停用该图的环境结算（不锁存档，`RoomEnvironmentUpdateFailed` 只在伤害循环内仍走既有 Block 契约）。存档里的 `LastGameTick` 超前于当前 tick（调试回拨/改 tick）时夹到当前值并只记录一次 `Log.WarningOnce`，不再永久暂停太空或拒绝保存。
 
 ## 地形、地图、候选与外观
 
@@ -154,7 +158,7 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 
 ## 兼容与人工验收
 
-默认太阳/地球/月球的定义与共享profile输入保持原样。六个可选模板显式升级；历史实例、地图及其v1/v2配置从原字节恢复。外层存档为 v4，v1/v2/v3 旧档明确拒绝。旧v1 motion/air/visual/environment/biomes/maps解码和旧公开签名保留；不修改冻结fixtures。所有DLC专有Def用MayRequire/原生条件patch；没有Odyssey不阻止加载。仅原生支持的温度、天气、候选、群落和地图生成行为承接结果。
+默认太阳/地球的定义与共享profile输入保持原样；默认月球自 2026-11-07 起显式启用 `climate`/`exposure`（环境配置 v2）并把 Parameterized 地形绑定到同一次冻结的 climate（`useEnvironmentClimate=true`），因此月面具有约 -170..+120°C 的极端昼夜温差与真空缺氧/低压暴露。六个可选模板显式升级；历史实例从原字节恢复，地图配置只接受当前 maps 配置版本 4（旧 v4 档中的 v1/v2/v3 maps 载荷显式拒绝，不迁移）。外层存档为 v4，v1/v2/v3 旧档明确拒绝。旧v1 motion/air/visual/environment/biomes解码和旧公开签名保留；不修改冻结fixtures。所有DLC专有Def用MayRequire/原生条件patch；没有Odyssey不阻止加载。仅原生支持的温度、天气、候选、群落和地图生成行为承接结果。
 
 以下各项当前均 **UNCHECKED（需要真实游戏观察）**：
 

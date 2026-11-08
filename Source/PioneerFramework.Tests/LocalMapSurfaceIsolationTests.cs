@@ -109,9 +109,8 @@ public class LocalMapSurfaceIsolationTests(ITestOutputHelper output)
             var profile = new CelestialGenerationProfile("PFL_IsolationSurface", CelestialBiomeGenerationMode.Parameterized, 20, 1000, .5f,
                 new[] { "Rivers", "Lakes" }, Array.Empty<string>(), terrain);
             var props = new BiomeGenerationResolvedProperties("biomes", profile);
-            var map = new MapGenerationResolvedProperties("maps", new CelestialMapProfile("PFL_IsolationCompatibility", null,
-                Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), null,
-                Array.Empty<CelestialMapBiomeProfile>(), new(allowCaves: true)));
+            var map = new MapGenerationResolvedProperties("maps", new CelestialMapProfile("PFL_IsolationCompatibility", new(allowCaves: true),
+                new LocalMapGenerationSpec(new LocalMapRecipe("PFL_IsolationLocal", Array.Empty<MapGenerationStepSpec>()))));
             var configuration = CelestialGenerationConfiguration.Encode(new[] {
                 new CelestialCompSaveRecord(props.Key, props.HandlerId, props.Version, 1, props.Serialize().Span, ReadOnlySpan<byte>.Empty),
                 new CelestialCompSaveRecord(map.Key, map.HandlerId, map.Version, 1, map.Serialize().Span, ReadOnlySpan<byte>.Empty) });

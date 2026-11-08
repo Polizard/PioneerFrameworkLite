@@ -59,12 +59,14 @@ namespace PioneerFramework
             }
             if (toasts.Count == 0) return;
 
-            float w = Mathf.Min(560f, inRect.width - 40f);
-            float h = 24f;
-            float y = rToolbar.yMax + 8f + PanelPad;
-            for (int i = 0; i < toasts.Count; i++)
+            var area = FromUiRect(uiLayout.ToastArea, inRect);
+            const float height = 24f, stride = 28f;
+            if (area.width <= 0 || area.height < height) return;
+            int visible = Mathf.Min(toasts.Count, Mathf.FloorToInt((area.height + stride - height) / stride));
+            int first = toasts.Count - visible;
+            for (int i = first; i < toasts.Count; i++)
             {
-                var r = new Rect(inRect.center.x - w * 0.5f, y + i * (h + 4f), w, h);
+                var r = new Rect(area.x, area.y + (i - first) * stride, area.width, height);
                 Widgets.DrawBoxSolid(r, PFViewPalette.PanelBg);
                 UiKit.SpacecraftUIDecor.DrawColoredLabel(r, toasts[i].Text, PFViewPalette.TextPrimary,
                     GameFont.Tiny, TextAnchor.MiddleCenter);

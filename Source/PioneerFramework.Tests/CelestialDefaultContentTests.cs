@@ -113,6 +113,18 @@ public class CelestialDefaultContentTests
         Assert.Equal(5e12, moon.Components.Select(c => c.Properties).OfType<ICelestialPhysicsBindingProperties>().Single().GravitationalParameter);
         Assert.Equal(317900, moon.Components.Select(c => c.Properties).OfType<ExistingEnvironmentResolvedProperties>().Single().Profile.DayLengthTicks);
         Assert.Equal(new[] { "Factions", "Roads", "Features" }, moon.Components.Select(c => c.Properties).OfType<BiomeGenerationResolvedProperties>().Single().Profile.RootOnlySteps);
+        // 月球环境（2026-11-07 修复）：必须是 v2（climate+exposure），昼夜温差与真空通道真的生效，且参数化地表绑定同一份冻结 climate。
+        var moonEnvironment = moon.Components.Select(c => c.Properties).OfType<ExistingEnvironmentResolvedProperties>().Single().Profile;
+        Assert.NotNull(moonEnvironment.Climate); Assert.NotNull(moonEnvironment.Exposure);
+        Assert.Equal(3, moonEnvironment.VacuumBiomeIds.Count);
+        Assert.True(moonEnvironment.Exposure.HypoxiaPerDay > 0 && moonEnvironment.Exposure.PressurePerDay > 0);
+        // Authored 相位：t=0 为最冷、t=dayLength/2 为最热（赤道，热响应 600s 只带来微小滞后）。
+        Assert.InRange(CelestialClimateModel.Temperature(moonEnvironment.Climate, new(0, 0, 0), 317900, 1), -171, -169);
+        Assert.InRange(CelestialClimateModel.Temperature(moonEnvironment.Climate, new(317900 * 0.5, 0, 0), 317900, 1), 119, 121);
+        var moonGeneration = moon.Components.Select(c => c.Properties).OfType<BiomeGenerationResolvedProperties>().Single().Profile;
+        Assert.NotNull(moonGeneration.Terrain.Climate);
+        Assert.Equal(moonEnvironment.Climate.DiurnalAmplitudeCelsius, moonGeneration.Terrain.Climate.DiurnalAmplitudeCelsius);
+        Assert.Equal(moonEnvironment.Climate.MeanTemperatureCelsius, moonGeneration.Terrain.Climate.MeanTemperatureCelsius);
         Assert.Equal(sun.Id, earth.InitializationReferences["primaryLight"]);
         Assert.Equal(sun.Id, moon.InitializationReferences["primaryLight"]);
         Assert.Equal(sun.Id, sun.InitializationReferences["frameOrigin"]);

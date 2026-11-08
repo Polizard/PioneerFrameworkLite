@@ -28,7 +28,7 @@ namespace PioneerFramework
             var content = new Rect(0, 0, Mathf.Max(inRect.width - 18f, radar ? 260f : 522f), 280f);
             Widgets.BeginScrollView(inRect, ref scroll, content);
             var rect = radar ? new Rect(0, 22, 260, 260)
-                : new Rect(0, 28, content.width, 222);
+                : new Rect(0, 28, content.width, PFViewUiLayoutCore.BallSize);
             owner.DrawDetachedInstrument(radar, rect);
             Widgets.EndScrollView();
         }

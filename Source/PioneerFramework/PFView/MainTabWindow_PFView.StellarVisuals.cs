@@ -10,12 +10,42 @@ namespace PioneerFramework
         private Shader? stellarHaloShader;
         private bool stellarShadersChecked;
         private bool stellarShadersAreFast;
+        private bool stellarShadersAreS3A;
+        private PFViewStellarHeatCache? stellarHeatCache;
+        private bool debugUseStellarHeatCache = PFViewStellarProbe.DefaultHeatCacheEnabled;
         private readonly Dictionary<int, Material> stellarHaloMaterials = new();
         private readonly List<(int Handle, Mesh Mesh, Matrix4x4 Matrix, Material Material)> stellarHaloDraws = new();
 
+        internal bool DebugUseStellarHeatCache
+        {
+            get => debugUseStellarHeatCache;
+            set
+            {
+                debugUseStellarHeatCache = value;
+                if (!value && stellarHeatCache != null && stellarHeatCache.Texture == null)
+                {
+                    stellarHeatCache.Dispose();
+                    stellarHeatCache = null;
+                }
+            }
+        }
+
+        internal string DebugStellarHeatCacheStatus
+        {
+            get
+            {
+                if (stellarShadersAreFast) return "PFV_StellarHeatCacheFast";
+                if (stellarHeatCache?.Texture != null) return "PFV_StellarHeatCacheReady";
+                if (stellarHeatCache?.Failed == true || (stellarShadersChecked && (stellarSurfaceShader == null || stellarHaloShader == null)))
+                    return "PFV_StellarHeatCacheFailed";
+                return "PFV_StellarHeatCachePreparing";
+            }
+        }
+
         /// <summary>
-        /// 选取本窗口使用的恒星 shader：**默认 legacy（旧视觉）**；只有玩家在 Mod 设置勾选
-        /// "使用新版恒星渲染" 时才用 Fast 版。Fast 版缺失时自动回退 legacy（不让恒星变普通材质）。
+        /// 选取本窗口使用的恒星 shader，优先级：**Fast（玩家显式勾选）> S3-a（默认）> legacy**。
+        /// S3-a = 区域跳过积分（保留 legacy 密集区采样网格，仅外层相位对齐跳过/粗积分，含 S1 剪枝）。
+        /// 任一候选缺失时自动回退 legacy（不让恒星变普通材质）。
         /// 设置切换在重开 PFView 后生效（材质按 body 缓存，见 CleanupResources）。
         /// </summary>
         private void EnsureStellarShaders()
@@ -23,25 +53,40 @@ namespace PioneerFramework
             if (stellarShadersChecked) return;
             stellarShadersChecked = true;
             stellarShadersAreFast = PFViewStellarProbe.FastRendererEnabled;
+            stellarShadersAreS3A = false;
             if (stellarShadersAreFast)
             {
                 stellarSurfaceShader = Shader.Find("PF_StellarSurfaceFast");
                 stellarHaloShader = Shader.Find("PF_StellarHaloFast");
                 if (stellarSurfaceShader == null || stellarHaloShader == null)
                 {
-                    Log.Warning("[PFView·恒星材质] 新版恒星 shader 未加载，回退旧版视觉。");
+                    Log.Warning("[PFView·恒星材质] 新版恒星 shader 未加载，回退。");
                     stellarShadersAreFast = false;
                 }
             }
             if (!stellarShadersAreFast)
             {
-                stellarSurfaceShader = Shader.Find("PF_StellarSurface");
-                stellarHaloShader = Shader.Find("PF_StellarHalo");
+                stellarShadersAreS3A = PFViewStellarProbe.S3AEnabled;
+                if (stellarShadersAreS3A)
+                {
+                    stellarSurfaceShader = Shader.Find("PF_StellarSurfaceS3A");
+                    stellarHaloShader = Shader.Find("PF_StellarHaloS3A");
+                    if (stellarSurfaceShader == null || stellarHaloShader == null)
+                    {
+                        Log.Warning("[PFView·恒星材质] S3-a 恒星 shader 未加载，回退 legacy。");
+                        stellarShadersAreS3A = false;
+                    }
+                }
+                if (!stellarShadersAreS3A)
+                {
+                    stellarSurfaceShader = Shader.Find("PF_StellarSurface");
+                    stellarHaloShader = Shader.Find("PF_StellarHalo");
+                }
             }
             if (stellarSurfaceShader == null || stellarHaloShader == null)
                 Log.Warning("[PFView·恒星材质] 等离子体着色器未加载，本次窗口使用普通自发光材质。");
             else
-                Log.Message($"[PFView·恒星材质] 使用{(stellarShadersAreFast ? "新版（性能优先）" : "旧版（默认视觉）")}恒星渲染。");
+                Log.Message($"[PFView·恒星材质] 使用{(stellarShadersAreFast ? "新版（性能优先）" : stellarShadersAreS3A ? "S3-a（区域跳过积分）" : "旧版体积")}恒星渲染。");
         }
 
         private Material CreateStellarSurfaceMaterial(CelestialBodyInfo body)
@@ -66,10 +111,14 @@ namespace PioneerFramework
 
             int steps = PFViewStellarProbe.ResolveStepBudget();
             Vector3 eye = PFViewStellarVisualCore.Eye(GetCameraViewPos(), center, rotation, radius);
-            Vector4 eyeValue = new(eye.x, eye.y, eye.z, 0f);
             var frame = PFViewStellarVisualCore.Frame(tick);
+            Texture2D? heat = DebugUseStellarHeatCache && !stellarShadersAreFast
+                ? (stellarHeatCache ??= new PFViewStellarHeatCache()).GetTexture()
+                : null;
+            Vector4 eyeValue = new(eye.x, eye.y, eye.z, heat != null ? 1f : 0f);
+            float framePosition = heat != null ? PFViewStellarHeatCacheCore.FramePosition(frame.Phase) : PFViewStellarVisualCore.FlowSpeed;
             surface.SetVector("_StellarEye", eyeValue);
-            ApplyStellarFrame(surface, in frame);
+            ApplyStellarFrame(surface, in frame, heat, framePosition);
             surface.SetVector("_StellarParams", new Vector4(steps, 0f, .19f, PFViewStellarVisualCore.Extent));
 
             float proxyRadius = radius * PFViewStellarVisualCore.Extent;
@@ -84,15 +133,17 @@ namespace PioneerFramework
                 stellarHaloMaterials.Add(body.bodyId, halo);
             }
             halo.SetVector("_StellarEye", eyeValue);
-            ApplyStellarFrame(halo, in frame);
+            ApplyStellarFrame(halo, in frame, heat, framePosition);
             halo.SetVector("_StellarParams", new Vector4(steps, 1f, .19f, PFViewStellarVisualCore.Extent));
             stellarHaloDraws.Add((body.bodyId, mesh, Matrix4x4.TRS(center, rotation, Vector3.one * proxyRadius * 2f), halo));
             return proxyRadius;
         }
 
-        private static void ApplyStellarFrame(Material material, in PFViewStellarFrame frame)
+        private static void ApplyStellarFrame(Material material, in PFViewStellarFrame frame, Texture2D? heat, float framePosition)
         {
-            material.SetVector("_StellarTime", new Vector4(frame.Phase, PFViewStellarVisualCore.FlowSpeed, 2f, 2f));
+            if (heat != null && material.GetTexture("_StellarHeatCache") != heat)
+                material.SetTexture("_StellarHeatCache", heat);
+            material.SetVector("_StellarTime", new Vector4(frame.Phase, framePosition, 2f, 2f));
             material.SetVector("_StellarDrift", frame.Drift);
             material.SetVector("_StellarArchHeight0", frame.ArchHeight0);
             material.SetVector("_StellarArchHeight1", frame.ArchHeight1);
@@ -121,6 +172,7 @@ namespace PioneerFramework
             stellarHaloShader = null;
             stellarShadersChecked = false;
             stellarShadersAreFast = false;
+            stellarShadersAreS3A = false;
         }
     }
 }

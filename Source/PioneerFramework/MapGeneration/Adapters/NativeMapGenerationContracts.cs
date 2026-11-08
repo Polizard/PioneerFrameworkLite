@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using PioneerFramework.Celestial;
 using Verse;
 
 namespace PioneerFramework.MapGeneration
@@ -17,7 +16,6 @@ namespace PioneerFramework.MapGeneration
     {
         Map Map { get; }
         MapSourceContext Source { get; }
-        CelestialMapProfile? CompatibilityProfile { get; }
         IReadOnlyList<NativeMapGenerationStep> NativeSteps { get; }
         InitialMapInputs? InitialOverrides { get; }
         void SetInitialOverrides(InitialMapInputs inputs);
@@ -80,13 +78,11 @@ namespace PioneerFramework.MapGeneration
     {
         public Map Map { get; }
         public MapSourceContext Source { get; }
-        public CelestialMapProfile? CompatibilityProfile { get; }
         public IReadOnlyList<NativeMapGenerationStep> NativeSteps { get; }
         public InitialMapInputs? InitialOverrides { get; private set; }
-        public NativeMapGenerationServices(Map map, MapSourceContext source, CelestialMapProfile? compatibilityProfile, IEnumerable<NativeMapGenerationStep> nativeSteps)
+        public NativeMapGenerationServices(Map map, MapSourceContext source, IEnumerable<NativeMapGenerationStep> nativeSteps)
         {
             Map = map ?? throw new ArgumentNullException(nameof(map)); Source = source ?? throw new ArgumentNullException(nameof(source));
-            CompatibilityProfile = compatibilityProfile;
             var copy = nativeSteps?.ToArray() ?? throw new ArgumentNullException(nameof(nativeSteps));
             if (copy.Any(step => step == null) || copy.Select(step => step.Token).Distinct(StringComparer.Ordinal).Count() != copy.Length)
                 throw new ArgumentException("Duplicate/null native step token.");

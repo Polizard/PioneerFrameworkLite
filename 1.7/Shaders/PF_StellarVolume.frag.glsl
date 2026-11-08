@@ -16,6 +16,32 @@ layout(set = 2, binding = 0) uniform MaterialUniforms
     vec4 _StellarArchHeight0;
     vec4 _StellarArchHeight1;
 } uMaterial;
+layout(set = 2, binding = 1) uniform sampler2D _StellarHeatCache;
+
+// Matches PFViewStellarHeatCacheCore. Each tile packs four 512x256 frames into RGBA.
+vec4 cachedHeatTile(vec2 uv, float tileIndex)
+{
+    vec2 tile = vec2(mod(tileIndex, 4.0), floor(tileIndex / 4.0));
+    vec2 pixel = tile * vec2(514.0, 258.0) + vec2(1.0)
+        + vec2(uv.x * 512.0, clamp(uv.y * 256.0, .5, 255.5));
+    // UnityStubs.SetPixels32 reverses CPU rows when uploading to Waylith.
+    vec2 atlasUv = vec2(pixel.x / 2056.0, 1.0 - pixel.y / 1032.0);
+    return textureLod(_StellarHeatCache, atlasUv, 0.0);
+}
+
+float cachedSurfaceHeat(vec3 q)
+{
+    float longitude = atan(q.z, q.x == 0.0 ? 1e-8 : q.x);
+    vec2 uv = vec2(longitude / 6.28318530718 + .5, acos(clamp(q.y, -1.0, 1.0)) / 3.14159265359);
+    float position = uMaterial._StellarTime.y;
+    float frameIndex = floor(position);
+    float tileIndex = floor(frameIndex / 4.0);
+    int channel = int(mod(frameIndex, 4.0));
+    vec4 phases = cachedHeatTile(uv, tileIndex);
+    float nextHeat = channel < 3 ? phases[channel + 1] : cachedHeatTile(uv, mod(tileIndex + 1.0, 16.0)).r;
+    return mix(phases[channel], nextHeat, fract(position)) * 1.16;
+}
+
 float hash(vec3 p)
 {
     p = fract(p * vec3(0.1031, 0.1030, 0.0973));
@@ -140,10 +166,18 @@ void main()
         float start = max(0.0, -b - sqrt(h)), end = -b + sqrt(h);
         float photoT = max(0.0, -b - sqrt(max(1.04 * 1.04 - impact * impact, 0.0)));
         vec3 photoQ = spin(normalize(eye + photoT * ray), -phase);
-        vec3 photoWarp = vec3(noise(photoQ * 7.0 + drift), noise(photoQ * 7.0 + drift.yzx + 7.0),
-            noise(photoQ * 7.0 + drift.zxy + 9.0)) - .5;
-        float cells = granulation(photoQ * 49.0 + photoWarp * 1.9 + drift * 1.1);
-        float surfaceHeat = .59 + .48 * cells + .09 * noise(photoQ * 130.0 + photoWarp * 2.0);
+        float surfaceHeat;
+        if (uMaterial._StellarEye.w > .5)
+        {
+            surfaceHeat = cachedSurfaceHeat(photoQ);
+        }
+        else
+        {
+            vec3 photoWarp = vec3(noise(photoQ * 7.0 + drift), noise(photoQ * 7.0 + drift.yzx + 7.0),
+                noise(photoQ * 7.0 + drift.zxy + 9.0)) - .5;
+            float cells = granulation(photoQ * 49.0 + photoWarp * 1.9 + drift * 1.1);
+            surfaceHeat = .59 + .48 * cells + .09 * noise(photoQ * 130.0 + photoWarp * 2.0);
+        }
         // Both passes use identical steps, so the opacity partition cannot leave a seam.
         // 2026-10-28: this is the LEGACY (default) path = the visual users approved before P2.
         // The P0 clamp lower bound is 4 so the debug probe can still A/B step budgets; default is 64.
