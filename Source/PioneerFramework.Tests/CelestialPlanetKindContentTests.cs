@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Xml;
 using HarmonyLib;
 using PioneerFramework.Celestial;
@@ -128,6 +129,31 @@ public class CelestialPlanetKindContentTests
         Assert.True(temperate.terrain.allowLakes);
     }
 
+    [Fact]
+    public void BarrenProfileUsesRockFieldAndLegacyPayloadsStillReadAsWaves()
+    {
+        using var content = new Content();
+        var profile = content.BiomeProfiles["PF_BarrenBiomes"].ToProfile();
+        Assert.True(profile.Success, string.Join(",", profile.Errors.Select(error => error.Detail)));
+        var terrain = profile.Value.Terrain!;
+        Assert.Equal(CelestialPlanetTerrainFieldKind.Rock, terrain.FieldKind);
+
+        // 旧 payload（没有 FieldKind 字段）必须仍解码成 Waves：缺失 = null，逐字段语义不变。
+        var resolved = new BiomeGenerationResolvedProperties("biomes", profile.Value);
+        string json = Encoding.UTF8.GetString(resolved.Serialize().ToArray());
+        string legacy = json.Replace(",\"FieldKind\":1", string.Empty, StringComparison.Ordinal);
+        Assert.NotEqual(json, legacy);
+        var decoded = BiomeGenerationResolvedProperties.Deserialize("biomes", 2, Encoding.UTF8.GetBytes(legacy));
+        Assert.True(decoded.Success, string.Join(",", decoded.Errors.Select(error => error.Detail)));
+        Assert.Null(decoded.Value.Profile.Terrain!.FieldKind);
+
+        // 同一份内容参数下，Rock 与 Waves 必须是不同的场（否则"换了 kind 却没换地貌"）。
+        var waves = new CelestialPlanetTerrainConfiguration(terrain.ContinentScale, terrain.ElevationAmplitudeMeters, terrain.ElevationOffsetMeters,
+            terrain.Roughness, terrain.MountainWeight, terrain.SeaLevelMeters, terrain.OceanCoverage, terrain.AllowRivers, terrain.AllowLakes,
+            terrain.OceanBiomeId, terrain.Climate, terrain.BiomeRules, terrain.Landmarks, terrain.FieldSeed, null);
+        Assert.NotEqual(CelestialPlanetTerrain.Sample(terrain, 0, 0, terrain.FieldSeed),
+            CelestialPlanetTerrain.Sample(waves, 0, 0, waves.FieldSeed));
+    }
     [Theory]
     [InlineData("PF_BarrenPlanet", "PF_BarrenRock", "PF_BarrenRegolith", -30f)]
     [InlineData("PF_FrozenPlanet", "PF_FrozenPlain", "PF_BarrenRock", -160f)]
@@ -197,7 +223,8 @@ public class CelestialPlanetKindContentTests
         private void Load()
         {
             scope.InheritanceUsed = true;
-            foreach (string file in new[] { "BiomesDefs/Biome_PlanetKinds.xml", "CelestialFramework/CelestialProfiles.xml", "CelestialFramework/CelestialVisualProfiles.xml",
+            // 2026-11-08 B1：荒芜行星的 Rock 场会生成 PF_MoonBiome*（高地/极区），因此内容夹必须连同 Biome_Planets.xml 一起加载。
+            foreach (string file in new[] { "BiomesDefs/Biome_PlanetKinds.xml", "BiomesDefs/Biome_Planets.xml", "CelestialFramework/CelestialProfiles.xml", "CelestialFramework/CelestialVisualProfiles.xml",
                 "CelestialFramework/CelestialPlanetKindProfiles.xml", "CelestialFramework/CelestialPlanetKindVisuals.xml", "CelestialBodies/CelestialBodies_PlanetKinds.xml" })
             {
                 string path = CelestialDefaultContentTests.DataPath(file);

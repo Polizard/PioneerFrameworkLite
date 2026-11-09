@@ -12,6 +12,9 @@ namespace PioneerFramework
         private bool cloudResourcesUnavailable;
         private static Mesh? cloudSphereMesh;
         private readonly Dictionary<CelestialViewCacheKey, Material> celestialCloudMaterials = new();
+        /// <summary>低层云材质（与主层同 shader/贴图，参数在绘制时按层覆盖）。</summary>
+        private readonly Dictionary<CelestialViewCacheKey, Material> celestialCloudDetailMaterials = new();
+        private Material? cloudDetailMaterial;
 
         private static Mesh GetCloudSphereMesh()
         {
@@ -51,10 +54,46 @@ namespace PioneerFramework
             mat.SetVector("_CloudParams", binding.Parameters);
             mat.SetVector("_CloudTint", binding.Tint);
 
-            float radius = renderR * (float)PFViewClouds.RadiusFactor(body.radius, altitude);
+            // ── 双层云（A 方案 P1-5，参考「天体运行」的双云带）──
+            // 先画**低层**（离相机更远），再画主层：两层同为透明队列，提交顺序即叠放顺序。
+            // 低层用同一张图、不同相位与更低的覆盖率，只表达"云有厚度"，不引入第二份资产/字段。
+            Material? detail = celestialRenderRuntime != null
+                ? GetCelestialCloudDetailMaterial(celestialRenderSnapshots[body.bodyId].CacheKey, profile)
+                : GetCloudDetailMaterial();
+            DrawCloudShell(detail, renderPos, renderR, selfRot, body.radius, altitude * CloudDetailAltitudeFactor,
+                toSun, cameraFromBody, binding, detailLayer: true);
+            DrawCloudShell(mat, renderPos, renderR, selfRot, body.radius, altitude,
+                toSun, cameraFromBody, binding, detailLayer: false);
+        }
+
+        /// <summary>低层云高度 = 主层 × 此系数（0.62 ⇒ 10 km 主云 + 6.2 km 低云）。</summary>
+        private const double CloudDetailAltitudeFactor = 0.62;
+
+        /// <summary>画一层云壳（主层/低层共用）：半径、near 收紧、参数都按层算。</summary>
+        private void DrawCloudShell(Material? mat, Vector3 renderPos, float renderR, Quaternion selfRot, double bodyRadius,
+            double altitudeMeters, Vector3 toSun, Vector3 cameraFromBody, PFViewVisualBindings.CloudPlan binding, bool detailLayer)
+        {
+            if (mat == null) return;
+            Vector3 localSun = Quaternion.Inverse(selfRot) * toSun;
+            mat.SetVector("_CloudToSun", new Vector4(toSun.x, toSun.y, toSun.z, 0f));
+            mat.SetVector("_CloudSunLocal", new Vector4(localSun.x, localSun.y, localSun.z, 0f));
+            mat.SetVector("_CloudCameraFromBody", new Vector4(cameraFromBody.x, cameraFromBody.y, cameraFromBody.z, 0f));
+            Vector4 parameters = binding.Parameters;
+            Vector4 tint = binding.Tint;
+            if (detailLayer)
+            {
+                // 低层：透明度 ×0.55、漂移相位偏移 0.37 圈、噪声相位 ×1.7、覆盖率 ×0.8、色调压暗一档。
+                parameters = new Vector4(parameters.x * 0.55f,
+                    (parameters.y + 0.37f) % 1f, (parameters.z * 1.7f) % 1f, parameters.w * 0.8f);
+                tint = new Vector4(tint.x * 0.85f, tint.y * 0.85f, tint.z * 0.9f, tint.w);
+            }
+            mat.SetVector("_CloudParams", parameters);
+            mat.SetVector("_CloudTint", tint);
+
+            float radius = renderR * (float)PFViewClouds.RadiusFactor(bodyRadius, altitudeMeters);
             // 低空看向云层时，仅按地表余量算 near 会切掉云壳近侧；取实际渲染尺度的云壳余量。
             float shellGapView = cameraFromBody.magnitude - radius;
-            renderCamera.nearClipPlane = (float)PFViewClouds.LimitNearClip(renderCamera.nearClipPlane, shellGapView, NearClip);
+            renderCamera!.nearClipPlane = (float)PFViewClouds.LimitNearClip(renderCamera.nearClipPlane, shellGapView, NearClip);
             var matrix = Matrix4x4.TRS(renderPos, selfRot, Vector3.one * (radius * 2f));
             Graphics.DrawMesh(GetCloudSphereMesh(), matrix, mat, SceneLayer);
         }
@@ -95,10 +134,33 @@ namespace PioneerFramework
             return material;
         }
 
+        /// <summary>旧路径（无 Celestial runtime）的地球低层云材质。</summary>
+        private Material? GetCloudDetailMaterial()
+        {
+            if (cloudDetailMaterial != null) return cloudDetailMaterial;
+            var template = GetCloudMaterial();
+            if (template == null) return null;
+            cloudDetailMaterial = new Material(template) { renderQueue = PFViewLayers.Clouds };
+            return cloudDetailMaterial;
+        }
+
+        /// <summary>实例路径的低层云材质：克隆本实例的主层材质（贴图同源，参数按层覆盖）。</summary>
+        private Material? GetCelestialCloudDetailMaterial(CelestialViewCacheKey key, CelestialVisualProfile? profile)
+        {
+            if (celestialCloudDetailMaterials.TryGetValue(key, out var material)) return material;
+            var baseMaterial = GetCelestialCloudMaterial(key, profile!);
+            if (baseMaterial == null) return null;
+            material = new Material(baseMaterial) { renderQueue = PFViewLayers.Clouds };
+            celestialCloudDetailMaterials.Add(key, material);
+            return material;
+        }
+
         private void DestroyCloudResourcesForBody(CelestialViewCacheKey owner)
         {
             foreach (var key in celestialCloudMaterials.Keys.Where(key => key.WorldSessionId == owner.WorldSessionId && key.InstanceId == owner.InstanceId).ToArray())
                 DestroyOwnedResource(celestialCloudMaterials, key);
+            foreach (var key in celestialCloudDetailMaterials.Keys.Where(key => key.WorldSessionId == owner.WorldSessionId && key.InstanceId == owner.InstanceId).ToArray())
+                DestroyOwnedResource(celestialCloudDetailMaterials, key);
         }
 
         private void DestroyCloudResources()
@@ -106,8 +168,13 @@ namespace PioneerFramework
             foreach (var material in celestialCloudMaterials.Values)
                 if (material != null) UnityEngine.Object.Destroy(material);
             celestialCloudMaterials.Clear();
+            foreach (var material in celestialCloudDetailMaterials.Values)
+                if (material != null) UnityEngine.Object.Destroy(material);
+            celestialCloudDetailMaterials.Clear();
             if (cloudMaterial != null) UnityEngine.Object.Destroy(cloudMaterial);
             cloudMaterial = null;
+            if (cloudDetailMaterial != null) UnityEngine.Object.Destroy(cloudDetailMaterial);
+            cloudDetailMaterial = null;
             cloudResourcesUnavailable = false;
             // 网格和原版贴图均为借用资源，生命周期由各自的缓存持有。
         }

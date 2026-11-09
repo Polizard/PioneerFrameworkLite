@@ -37,6 +37,8 @@ namespace PioneerFramework
 
         private void ClearInspection()
         {
+            ClearTilePick();
+            ClearInspectedSurfaceTile();
             selectedGroupId = -1;
             inspectedContactKey = null;
             preferObjectList = true;

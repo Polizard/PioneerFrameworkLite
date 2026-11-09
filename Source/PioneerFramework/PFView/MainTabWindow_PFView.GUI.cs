@@ -24,6 +24,12 @@ namespace PioneerFramework
             // 点在 UI 或上层窗口上时不点选（画 UI 在前、控件已消费自己身上的左键；本判据是第二道保险）
             if (e.type == EventType.MouseDown && e.button == 0 && !isDraggingRight && MouseInViewport(inRect))
                 HandleViewportClick(e, inRect);
+            // F2 = 焦点天体信息面板开关（工具条太挤；双击天体也能打开）。
+            if (e.type == EventType.KeyDown && e.keyCode == KeyCode.F2)
+            {
+                TogglePlanetInfoForFocusedBody();
+                e.Use();
+            }
         }
 
         /// <summary>
@@ -46,12 +52,16 @@ namespace PioneerFramework
 
             if (TrySelectMegastructure(mouseInView, inRect.size, float.MaxValue)) return;
 
+            // Ctrl+左键 = 检视行星地表格（A 方案：逐格拾取 + 高亮 + 检视面板）。
+            if (e.control && TryInspectPlanetTile(mouseInView, inRect.size)) { e.Use(); return; }
+
             if (!e.shift && e.clickCount >= 2 && !dragState.IsActive && focusKind == PFViewFocusKind.Body)
             {
                 int bodyId = PickViewportBody(mouseInView, inRect.size);
                 if (bodyId >= 0 && bodyId != focusBodyId)
                 {
                     FocusBody(bodyId);
+                    OpenPlanetInfo(bodyId);   // 双击天体 = 聚焦 + 看信息（A 方案行星信息面板的自然入口）
                     objectsDirty = true;
                     e.Use();
                     return;
@@ -145,6 +155,8 @@ namespace PioneerFramework
             DrawFlightControls(FromUiRect(uiLayout.FlightControls, inRect), cockpit);
             DrawCockpitAlert(FromUiRect(uiLayout.Alert, inRect), cockpit);
             DrawStatusLine();
+            DrawPlanetInfoPanel(inRect);
+            DrawSurfaceInspectPanel(inRect);
 
             // 视图内 toast 最后画（必须在所有面板之上）
             DrawToasts(inRect);

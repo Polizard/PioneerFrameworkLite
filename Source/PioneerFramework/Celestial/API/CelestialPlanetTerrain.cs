@@ -4,6 +4,18 @@ using System.Linq;
 
 namespace PioneerFramework.Celestial
 {
+    /// <summary>
+    /// 地形场种类（冻结在配置里；**默认 Waves 与旧存档逐字节一致**）。
+    /// · Waves = 既有 6 通道正弦叠加（2026-10 起的全部已发货内容）；
+    /// · Rock  = 岩质行星场地貌（B 方案 2026-11-08 新增：陨坑/山脊/干河谷；由既有配置旋钮驱动，无新增参数）。
+    /// 新增 kind 必须显式编号：它进冻结 JSON，编号变了旧档就换了语义。
+    /// </summary>
+    public enum CelestialPlanetTerrainFieldKind
+    {
+        Waves = 0,
+        Rock = 1,
+    }
+
     /// <summary>Versioned instance data. Elevation is meters above the body's reference sphere, never native display radius.</summary>
     public sealed class CelestialPlanetTerrainConfiguration
     {
@@ -21,11 +33,19 @@ namespace PioneerFramework.Celestial
         public IReadOnlyList<CelestialPlanetBiomeRule> BiomeRules { get; }
         public IReadOnlyList<CelestialWeightedReference> Landmarks { get; }
         public int FieldSeed { get; }
+        /// <summary>
+        /// 地形场种类；**null = Waves**（旧 payload 没有该字段 ⇒ 读成 null ⇒ 旧语义）。
+        /// 只在非默认时写进 JSON（`JsonIgnore(WhenWritingNull)`）⇒ 既有内容的冻结字节/哈希不变。
+        /// </summary>
+        [System.Text.Json.Serialization.JsonPropertyName("FieldKind"), System.Text.Json.Serialization.JsonPropertyOrder(14),
+            System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public CelestialPlanetTerrainFieldKind? FieldKind { get; }
         public CelestialPlanetTerrainConfiguration(double continentScale = 2, double elevationAmplitudeMeters = 3000,
             double elevationOffsetMeters = 0, double roughness = .35, double mountainWeight = .5,
             double? seaLevelMeters = null, double? oceanCoverage = null, bool allowRivers = false, bool allowLakes = false,
             string oceanBiomeId = "Ocean", CelestialClimateConfiguration? climate = null,
-            IReadOnlyList<CelestialPlanetBiomeRule>? biomeRules = null, IReadOnlyList<CelestialWeightedReference>? landmarks = null, int fieldSeed = 0)
+            IReadOnlyList<CelestialPlanetBiomeRule>? biomeRules = null, IReadOnlyList<CelestialWeightedReference>? landmarks = null, int fieldSeed = 0,
+            CelestialPlanetTerrainFieldKind? fieldKind = null)
         {
             Domain(continentScale, .01, 64, nameof(continentScale)); Domain(elevationAmplitudeMeters, 0, 100000, nameof(elevationAmplitudeMeters));
             Domain(elevationOffsetMeters, -100000, 100000, nameof(elevationOffsetMeters)); Domain(roughness, 0, 1, nameof(roughness));
@@ -58,11 +78,12 @@ namespace PioneerFramework.Celestial
             if (rules.Any(r => r == null) || rules.Select(r => r.Key).Distinct(StringComparer.Ordinal).Count() != rules.Length ||
                 rules.Length > 0 && rules.Count(r => r.Fallback) != 1) throw new ArgumentException("Biome rules require unique keys and one fallback.");
             if (rules.Any(r => r.BiomeId == oceanBiomeId || r.BiomeId == "Lake")) throw new ArgumentException("Water biomes must use the water field rather than land biome rules.");
+            if (fieldKind.HasValue && !Enum.IsDefined(fieldKind.Value)) throw new ArgumentOutOfRangeException(nameof(fieldKind));
             ContinentScale = continentScale; ElevationAmplitudeMeters = elevationAmplitudeMeters; ElevationOffsetMeters = elevationOffsetMeters;
             Roughness = roughness; MountainWeight = mountainWeight; SeaLevelMeters = seaLevelMeters; OceanCoverage = oceanCoverage;
             AllowRivers = allowRivers; AllowLakes = allowLakes; OceanBiomeId = oceanBiomeId; Climate = climate;
             BiomeRules = Array.AsReadOnly(rules); Landmarks = CelestialWeightedReference.Copy(landmarks);
-            FieldSeed = fieldSeed;
+            FieldSeed = fieldSeed; FieldKind = fieldKind;
         }
         internal static void Domain(double value, double min, double max, string name)
         { if (!double.IsFinite(value) || value < min || value > max) throw new ArgumentOutOfRangeException(name); }
@@ -86,12 +107,22 @@ namespace PioneerFramework.Celestial
         public double MaximumRoughness { get; }
         // 可选的地形起伏覆盖（RimWorld Hilliness 的 1..5 数值）；null 表示沿用 MountainScore/Roughness 推导。纯 API 不引用 RimWorld 枚举。
         public int? Hilliness { get; }
+        /// <summary>可选湿度下限/上限（0..1）。null = 不约束；只对显式写了该条件的规则生效。
+        /// 用途：Rock 场的干河床/湖盆要按水系湿度而不是单纯海拔识别。
+        /// JSON 里为 null 时不写字段 ⇒ 既有内容的冻结字节不变。</summary>
+        [System.Text.Json.Serialization.JsonPropertyName("MinimumMoisture"), System.Text.Json.Serialization.JsonPropertyOrder(20),
+            System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public double? MinimumMoisture { get; }
+        [System.Text.Json.Serialization.JsonPropertyName("MaximumMoisture"), System.Text.Json.Serialization.JsonPropertyOrder(21),
+            System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public double? MaximumMoisture { get; }
         public CelestialPlanetBiomeRule(string key, string biomeId, int priority = 0, double weight = 1, bool fallback = false,
             double minimumTemperatureCelsius = -273.15, double maximumTemperatureCelsius = 10000,
             double minimumRainfallMillimeters = 0, double maximumRainfallMillimeters = 1000000,
             double minimumElevationMeters = -200000, double maximumElevationMeters = 200000,
             double minimumAbsoluteLatitude = 0, double maximumAbsoluteLatitude = 90,
-            double minimumRoughness = 0, double maximumRoughness = 1, int? hilliness = null)
+            double minimumRoughness = 0, double maximumRoughness = 1, int? hilliness = null,
+            double? minimumMoisture = null, double? maximumMoisture = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(key); ArgumentException.ThrowIfNullOrWhiteSpace(biomeId);
             CelestialPlanetTerrainConfiguration.Domain(weight, double.Epsilon, 1000000, nameof(weight));
@@ -109,15 +140,20 @@ namespace PioneerFramework.Celestial
             MinimumAbsoluteLatitude = minimumAbsoluteLatitude; MaximumAbsoluteLatitude = maximumAbsoluteLatitude;
             MinimumRoughness = minimumRoughness; MaximumRoughness = maximumRoughness;
             Hilliness = hilliness;
+            if (minimumMoisture.HasValue) Interval(minimumMoisture.Value, maximumMoisture ?? 1, 0, 1);
+            else if (maximumMoisture.HasValue) Interval(0, maximumMoisture.Value, 0, 1);
+            MinimumMoisture = minimumMoisture; MaximumMoisture = maximumMoisture;
             if (fallback && (minimumTemperatureCelsius != -273.15 || maximumTemperatureCelsius != 10000 || minimumRainfallMillimeters != 0 ||
                 maximumRainfallMillimeters != 1000000 || minimumElevationMeters != -200000 || maximumElevationMeters != 200000 ||
-                minimumAbsoluteLatitude != 0 || maximumAbsoluteLatitude != 90 || minimumRoughness != 0 || maximumRoughness != 1))
+                minimumAbsoluteLatitude != 0 || maximumAbsoluteLatitude != 90 || minimumRoughness != 0 || maximumRoughness != 1 ||
+                minimumMoisture.HasValue || maximumMoisture.HasValue))
                 throw new ArgumentException("Fallback cannot have conditions.");
         }
-        public bool Matches(double temperature, double rainfall, double elevation, double latitude, double roughness) =>
+        public bool Matches(double temperature, double rainfall, double elevation, double latitude, double roughness, double moisture = 0.5) =>
             temperature >= MinimumTemperatureCelsius && temperature <= MaximumTemperatureCelsius && rainfall >= MinimumRainfallMillimeters &&
             rainfall <= MaximumRainfallMillimeters && elevation >= MinimumElevationMeters && elevation <= MaximumElevationMeters &&
-            Math.Abs(latitude) >= MinimumAbsoluteLatitude && Math.Abs(latitude) <= MaximumAbsoluteLatitude && roughness >= MinimumRoughness && roughness <= MaximumRoughness;
+            Math.Abs(latitude) >= MinimumAbsoluteLatitude && Math.Abs(latitude) <= MaximumAbsoluteLatitude && roughness >= MinimumRoughness && roughness <= MaximumRoughness &&
+            (!MinimumMoisture.HasValue || moisture >= MinimumMoisture.Value) && (!MaximumMoisture.HasValue || moisture <= MaximumMoisture.Value);
     }
     public sealed class CelestialWeightedReference
     {
@@ -161,6 +197,9 @@ namespace PioneerFramework.Celestial
             if (!double.IsFinite(longitudeDegrees) || !double.IsFinite(latitudeDegrees) || Math.Abs(latitudeDegrees) > 90) throw new ArgumentOutOfRangeException(nameof(latitudeDegrees));
             double lon = Math.IEEERemainder(longitudeDegrees, 360) * Math.PI / 180, lat = latitudeDegrees * Math.PI / 180;
             double x = Math.Sin(lon) * Math.Cos(lat), y = Math.Sin(lat), z = -Math.Cos(lon) * Math.Cos(lat);
+            // 新场地貌走独立纯核；Waves 分支逐字保留（旧存档/旧 golden 不受影响）。
+            if (configuration.FieldKind == CelestialPlanetTerrainFieldKind.Rock)
+                return CelestialRockField.Sample(configuration, x, y, z, seed);
             double land = Field(x, y, z, configuration.ContinentScale, seed, 1);
             double rough = configuration.Roughness * (Field(x, y, z, configuration.ContinentScale * 5, seed, 2) + 1) / 2;
             double elevation = configuration.ElevationOffsetMeters + configuration.ElevationAmplitudeMeters *
@@ -196,10 +235,10 @@ namespace PioneerFramework.Celestial
             return result;
         }
         public static CelestialPlanetBiomeRule SelectBiome(CelestialPlanetTerrainConfiguration configuration, double temperature, double rainfall,
-            double elevation, double latitude, double roughness, double randomUnit)
+            double elevation, double latitude, double roughness, double randomUnit, double moisture = 0.5)
         {
             CelestialPlanetTerrainConfiguration.Domain(randomUnit, 0, 1, nameof(randomUnit));
-            var candidates = configuration.BiomeRules.Where(r => !r.Fallback && r.Matches(temperature, rainfall, elevation, latitude, roughness))
+            var candidates = configuration.BiomeRules.Where(r => !r.Fallback && r.Matches(temperature, rainfall, elevation, latitude, roughness, moisture))
                 .OrderByDescending(r => r.Priority).ThenBy(r => r.Key, StringComparer.Ordinal).ToArray();
             if (candidates.Length == 0) return configuration.BiomeRules.Single(r => r.Fallback);
             candidates = candidates.Where(r => r.Priority == candidates[0].Priority).ToArray();

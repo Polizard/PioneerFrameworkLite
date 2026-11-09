@@ -121,6 +121,90 @@ public class PlanetKindDebugTests
         public void Dispose() => Content.Dispose();
     }
 
+    /// <summary>2026-11-09：恒星 + 根行星的两体夹具，用于判据"测试面板创建的天体绕主光源恒星而非根行星"。</summary>
+    internal sealed class StarHarness : IDisposable, ICelestialRemovalResources
+    {
+        internal static readonly CelestialInstanceId Star = CelestialInstanceId.Parse("planet-debug-star");
+        internal static readonly CelestialInstanceId Root = CelestialInstanceId.Parse("planet-debug-root");
+        internal CelestialPlanetKindContentTests.Content Content { get; } = new();
+        internal CelestialRuntime Runtime { get; }
+        internal StarHarness()
+        {
+            var bridge = new ExistingCelestialEphemerisBridge(Guid.NewGuid());
+            Runtime = new(bridge, bridge.CommittedStamp, this, 42,
+                id => Content.Bodies.TryGetValue(id, out var body) ? body.ToTemplate() : CelestialResult.Reject<CelestialBodyTemplate>(new CelestialError("DefinitionMissing")));
+            var starDefinition = new CelestialBodyDef { defName = "PF_DebugTestStar", label = "star", category = "Star", comps = new() {
+                new CompProperties_SphericalBody { key = "shape", radiusMeters = new() { value = 3000000 } },
+                new CompProperties_ExternalPhysicsBinding { key = "motion", providerId = ExistingCelestialEphemerisBridge.Id, modeId = "existing.circular.v1",
+                    gravitationalParameter = new() { value = 2e16 },
+                    initializationPayload = Convert.ToBase64String(CelestialExistingEphemerisTests.Registration(Star, 0, type: "Star").Initialization.Payload.Span) },
+                new CompProperties_LightSource { key = "light" } } };
+            Create(starDefinition, Star, null, null, new Dictionary<string, CelestialInstanceId> { ["frameOrigin"] = Star, ["primaryLight"] = Star });
+            var rootDefinition = new CelestialBodyDef { defName = "PF_DebugTestRoot", label = "root", comps = new() {
+                new CompProperties_SphericalBody { key = "shape", radiusMeters = new() { value = 5000000 } },
+                new CompProperties_ExternalPhysicsBinding { key = "motion", providerId = ExistingCelestialEphemerisBridge.Id, modeId = "existing.circular.v1",
+                    gravitationalParameter = new() { value = 2e14 },
+                    initializationPayload = Convert.ToBase64String(CelestialExistingEphemerisTests.Registration(Root, 1, Star, 1.2e8, 58400).Initialization.Payload.Span) },
+                new CompProperties_Surface { key = "surface", subdivisions = new() { value = 0 } } } };
+            Create(rootDefinition, Root, Star, Root, new Dictionary<string, CelestialInstanceId> { ["frameOrigin"] = Star, ["primaryLight"] = Star });
+        }
+        private void Create(CelestialBodyDef definition, CelestialInstanceId id, CelestialInstanceId? parent, CelestialInstanceId? rootSurface,
+            Dictionary<string, CelestialInstanceId> references)
+        {
+            var template = definition.ToTemplate();
+            Assert.True(template.Success, string.Join(",", definition.ConfigErrors()));
+            var resolved = template.Value.Resolve(new(42, id.Value));
+            Assert.True(resolved.Success, string.Join(",", resolved.Errors.Select(error => error.Code)));
+            var manifest = new CelestialSpawnManifest("setup", 42, rootSurface,
+                new[] { new CelestialSpawnItem(id, id.Value, 0, id.Value, template.Value, resolved.Value, parent, references) });
+            var context = new CelestialOperationContext("setup-" + id.Value, Runtime.WorldSessionId, Runtime.CaptureCatalog().Revision);
+            var batch = Runtime.CreateBatch(new(context, manifest));
+            Assert.NotEqual(CelestialOperationStatus.Rejected, batch.Status);
+            Advance();
+            Assert.Equal(CelestialLifecycle.Ready, Runtime.Query(id).Value.Lifecycle);
+        }
+        internal void Advance()
+        {
+            var stamp = Runtime.CurrentStamp;
+            var result = Runtime.Advance(new(Runtime.WorldSessionId, stamp.TopologyRevision, stamp.PhysicalSeconds, stamp.PhysicalSeconds));
+            Assert.True(result.Success, string.Join(",", result.Errors.Select(error => error.Code)));
+        }
+        public IReadOnlyList<CelestialError> Inspect(CelestialInstanceId id) => Array.Empty<CelestialError>();
+        public CelestialResult<bool> ReleaseEmptySurface(CelestialInstanceId id) => CelestialResult.Ok(true);
+        public void Dispose() => Content.Dispose();
+    }
+
+    [Fact]
+    public void PanelCreatedKindsOrbitThePrimaryStarInsteadOfTheRootPlanet()
+    {
+        using var harness = new StarHarness();
+        var session = PlanetKindDebugSession.For(harness.Runtime);
+        var created = session.Create(harness.Content.Bodies.Values.ToArray());
+        Assert.Equal(CelestialOperationStatus.Pending, created.Status);
+        harness.Advance();
+        session.Refresh();
+        Assert.Equal(CelestialOperationStatus.Applied, session.LastOperation.Status);
+        Assert.Empty(session.Errors);
+        var bridge = Assert.IsType<ExistingCelestialEphemerisBridge>(harness.Runtime.Physics);
+        var planets = harness.Runtime.CaptureCatalog().Bodies.Select(description => harness.Runtime.Query(description.Id).Value)
+            .Where(body => body.ParentId == StarHarness.Star && PlanetKindDebugScenario.IsTestBody(body.Description)).ToArray();
+        Assert.Equal(6, planets.Length);
+        var periods = new List<double>();
+        foreach (var body in planets)
+        {
+            Assert.True(harness.Runtime.TryGetInitializationReference(body.Id, "frameOrigin", out var origin));
+            Assert.Equal(StarHarness.Star, origin);
+            Assert.True(harness.Runtime.TryGetInitializationReference(body.Id, "primaryLight", out var light));
+            Assert.Equal(StarHarness.Star, light);
+            Assert.True(bridge.TryGetParameters(body.Id, out var parameters));
+            Assert.True(parameters.HasOrbit);
+            Assert.True(parameters.OrbitRadius > 120000000.0 + 5000000.0, "panel planets must start outside the root planet's orbit");
+            Assert.Equal(2 * Math.PI * Math.Sqrt(Math.Pow(parameters.OrbitRadius, 3) / 2e16), parameters.OrbitPeriod, 6);
+            periods.Add(parameters.OrbitPeriod);
+        }
+        Assert.Equal(6, periods.Distinct().Count());
+    }
+
     [Fact]
     public void CleanupRetainsReferencedTestsAndNeverTargetsTheDefaultRoot()
     {

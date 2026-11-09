@@ -83,6 +83,9 @@ namespace PioneerFramework
                 || lastSceneRenderFrame == RealTime.frameCount) return;
             lastSceneRenderFrame = RealTime.frameCount;
 
+            // 实时逐格表面：与绘制同帧推进（4 ms 预算），构建期不阻塞输入。
+            PumpTileSurfaceBuilds();
+
             // ⚠ 2026-10-11（"别的航天器整体位置在抖"的治本）：这里用**帧级连续时钟**（不是阶梯的物理 tick）。
             //   物理 tick 由整数 `TicksGame` 推出 ⇒ 渲染帧率高于 tick 率时，位置一格一格跳；
             //   两台站不同轨道时相对速度可达 km/s（每 tick 相对位移上千米）⇒ 肉眼就是"抖"。
@@ -246,7 +249,12 @@ namespace PioneerFramework
                 //   · **补丁**只离地一点点（`PatchEpsilon`，地球 1 km）⇒ 低飞的相机永远不会钻到它下面；
                 //   · **基底球**在有补丁时**下沉** `BaseSinkFactor`（地球 40 km）⇒ 深度余量由下沉买（两层间距 ≫ δz），
                 //     而不是把补丁抬高（上一批抬到 30 km，低飞相机于是跑到了补丁底下、朝下只看到基底球 = 那次的病根）。
-                float baseRenderR = hasPatch ? renderR * (1f - PFViewSurfaceBake.BaseSinkFactor) : renderR;
+                // 没有烘焙补丁时，实时逐格表面顶上：基底球同样要下沉。
+                // 深度余量只能靠"基底球下沉"买（抬高表面会把低飞相机关到面下，2026-10-11 的事故）。
+                bool hasTileSurface = !hasPatch && HasPlanetTileSurface(body.bodyId, bodyLayer, bodyLayer?.TilesCount ?? 0);
+                // 几何起伏可下探到 0.97R ⇒ 基底球必须沉得比"补丁时代"的 0.8% 更深，否则低洼顶点会从基底球里穿出来。
+                float baseSink = hasTileSurface && TileSurfaceReliefActive(body.bodyId) ? 0.09f : PFViewSurfaceBake.BaseSinkFactor;
+                float baseRenderR = (hasPatch || hasTileSurface) ? renderR * (1f - baseSink) : renderR;
                 if (isStar ? PFViewStellarProbe.SurfacePass : drawSurface)
                     presentedBodySpheres.Add((body.bodyId, renderPos, Mathf.Max(renderR, MinBodyVisRadius)));
                 if (drawSurface || isStar)
@@ -270,6 +278,12 @@ namespace PioneerFramework
                 else
                     DrawCelestialSphere(renderPos, baseRenderR, c, selfRot, lodMesh, renderMat, true);
                 }
+
+                // 实时逐格表面：只在没有烘焙补丁时画（有补丁时补丁带河/路/山体细节，更细）。
+                if (hasTileSurface)
+                    DrawPlanetTileSurface(body.bodyId, bodyLayer, renderPos, renderR, selfRot, camPos, toSun, sunColor);
+                if (bodyLayer != null)
+                    DrawTilePickHighlight(body, bodyLayer, renderPos, renderR, selfRot);
 
                 if (hasPatch && patchMat != null)
                 {

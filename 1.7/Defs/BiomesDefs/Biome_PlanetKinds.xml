@@ -59,6 +59,25 @@
     </terrainsByFertility>
   </BiomeDef>
   <BiomeDef ParentName="PF_PlanetKindBiomeBase">
+    <defName>PF_BarrenRiverbed</defName>
+    <label>干河床</label>
+    <description>古水系遗留的干涸河床与湖盆，裸露深色基底；没有液态水，只有更低的地形与更细的沉积物。</description>
+    <texture>World/Biomes/PF_RiverbedDark</texture>
+    <inVacuum>true</inVacuum>
+    <noAmbientWind>true</noAmbientWind>
+    <settleWarning>这里没有可呼吸大气。登陆前请准备密闭生存空间、舱外装备与温度防护。</settleWarning>
+    <baseWeatherCommonalities>
+      <PF_Vaccum>1</PF_Vaccum>
+    </baseWeatherCommonalities>
+    <terrainsByFertility>
+      <li>
+        <terrain>PF_MoonDirt</terrain>
+        <min>-999</min>
+        <max>999</max>
+      </li>
+    </terrainsByFertility>
+  </BiomeDef>
+  <BiomeDef ParentName="PF_PlanetKindBiomeBase">
     <defName>PF_FrozenPlain</defName>
     <label>冰封平原</label>
     <description>长期低温下形成的冰质地表，可与岩石露头共同组成冰封天体。</description>

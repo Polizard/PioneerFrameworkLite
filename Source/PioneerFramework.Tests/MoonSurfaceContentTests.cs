@@ -76,7 +76,8 @@ namespace PioneerFramework.Tests
             var expected = new[]
             {
                 new { Def = "PF_MoonBiomeWater", Texture = "World/Biomes/IceSheetOcean" },
-                new { Def = "PF_MoonBiomeBasalt", Texture = "World/Biomes/ExtremeDesert" },
+                // 2026-11-09：玄武岩改用深灰贴图（与荒芜平原区分，荒芜行星高地可见）。
+                new { Def = "PF_MoonBiomeBasalt", Texture = "World/Biomes/PF_BasaltDark" },
                 new { Def = "PF_MoonBiomeRegolith", Texture = "World/Biomes/Desert" }
             };
 

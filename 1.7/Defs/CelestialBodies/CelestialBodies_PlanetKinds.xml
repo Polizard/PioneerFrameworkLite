@@ -40,8 +40,9 @@
       <li Class="PioneerFramework.Celestial.CompProperties_Surface">
         <key>surface</key>
         <generationMode>OnDemand</generationMode>
+        <!-- B3 目标 A：5 → 6（2432 → 7290 格，约 100 km/格）才能画出线性山脊与河网。 -->
         <subdivisions>
-          <value>5</value>
+          <value>6</value>
         </subdivisions>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_BiomeGeneration">

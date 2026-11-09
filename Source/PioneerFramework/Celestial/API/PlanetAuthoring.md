@@ -119,8 +119,10 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 | terrain.continentScale | 2，[.01,64] | 球面连续方向场 |
 | terrain.elevationAmplitudeMeters / elevationOffsetMeters | 3000 / 0，[0,100000] / [-100000,100000] m | 原生tile物理高度与地形 |
 | terrain.roughness / mountainWeight | .35 / .5，[0,1] | 起伏/原生hilliness |
+| terrain.fieldKind | 省略 = Waves；可选 `Waves` / `Rock` | 场种类。Waves = 既有 6 通道正弦场（旧语义，逐字节不变）；Rock = 岩质场地貌（陨坑/山脊/干河谷/**水系**），只由上面几个既有旋钮驱动，**不新增参数**。Rock 内部每天体预计算一张 4096 点流域图（缓存、确定性），采样按最近网格点刻河道/湖盆；改 Rock 数值语义必须让 `AlgorithmVersion` +1。Rock 的实例把 kind 冻结进配置；旧 payload 缺该字段 ⇒ 读回 Waves |
 | terrain.seaLevelMeters 或 oceanCoverage | 均省略；[-200000,200000] m 或[0,1]；二者互斥 | 海平面或稳定高度排名选海洋；覆盖率按tile数取整 |
 | terrain.allowRivers / allowLakes / oceanBiome | false / false / Ocean，typed | 开启水步骤要求原生Ocean；`allowRivers`/`allowLakes` 必须与 `worldGenSteps` 中的 Rivers/Lakes 步骤一致；河流另要求整个温度/海拔区间处于[-100,100]°C，不能仅检查抽样值 |
+| terrain.biomeRules/li.minimumMoisture / maximumMoisture | 可选，0..1；省略/ null = 不约束（不进冻结 JSON） | 按地形湿度选 biome（Rock 场用它识别干河床/湖盆，避免把整片低地染成河床） |
 | terrain.biomeRules/li.key / biome / priority / fallback / weight / hilliness | 必需稳定key/原生BiomeDef，0/false/1；权重(0,1e6]；hilliness=Undefined(缺省,null)或Flat..Impassable(1..5) | 同优先级可用群落加权；一个fallback；显式 hilliness 覆盖海拔/起伏推导（海洋仍为Flat）；weight与以下条件均用`terrain.biomeRules.KEY.FIELD` |
 | minimum/maximumTemperatureCelsius | -273.15 /10000，[-273.15,10000] °C | 包含边界的筛选 |
 | minimum/maximumRainfallMillimeters | 0 /1e6，[0,1e6] mm | 同上 |

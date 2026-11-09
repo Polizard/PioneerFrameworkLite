@@ -322,6 +322,8 @@ namespace PioneerFramework
             flatColorTextures.Clear();
 
             DestroySurfacePatch();
+            DestroyAllTileSurfaces();
+            DestroyTilePickVisual();
             PFViewSurfaceBake.UnloadReloadable();
         }
 
@@ -343,6 +345,9 @@ namespace PioneerFramework
             DestroyOwnedResource(flatColorTextures, handle);
             baseSphereLogged.Remove(handle);
             DestroySurfacePatchForBody(handle);
+            DestroyTileSurfaceForBody(handle);
+            // 该天体被移除/失效时，别把它的高亮网格挂在窗口上。
+            if (tilePickBodyId == handle) ClearTilePick();
         }
 
         private void DestroySurfacePatchForBody(int handle)

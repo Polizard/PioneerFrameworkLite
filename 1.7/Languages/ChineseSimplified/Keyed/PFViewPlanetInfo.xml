@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PFView_PlanetInfo_Title>天体信息</PFView_PlanetInfo_Title>
+  <PFView_PlanetInfo_Close>关闭</PFView_PlanetInfo_Close>
+  <PFView_PlanetInfo_NoBody>未选择天体</PFView_PlanetInfo_NoBody>
+  <PFView_PlanetInfo_Tab_Summary>简介</PFView_PlanetInfo_Tab_Summary>
+  <PFView_PlanetInfo_Tab_Ecology>生态</PFView_PlanetInfo_Tab_Ecology>
+  <PFView_PlanetInfo_Tab_Orbit>运行</PFView_PlanetInfo_Tab_Orbit>
+  <PFView_PlanetInfo_Field_Name>名称</PFView_PlanetInfo_Field_Name>
+  <PFView_PlanetInfo_Field_DefName>定义名</PFView_PlanetInfo_Field_DefName>
+  <PFView_PlanetInfo_Field_Type>类型</PFView_PlanetInfo_Field_Type>
+  <PFView_PlanetInfo_Field_Radius>半径</PFView_PlanetInfo_Field_Radius>
+  <PFView_PlanetInfo_Field_Gravity>引力参数 μ</PFView_PlanetInfo_Field_Gravity>
+  <PFView_PlanetInfo_Field_Surface>地表</PFView_PlanetInfo_Field_Surface>
+  <PFView_PlanetInfo_Field_Layer>地表层</PFView_PlanetInfo_Field_Layer>
+  <PFView_PlanetInfo_Field_Moons>卫星数</PFView_PlanetInfo_Field_Moons>
+  <PFView_PlanetInfo_BodyType_Star>恒星</PFView_PlanetInfo_BodyType_Star>
+  <PFView_PlanetInfo_BodyType_Planet>行星</PFView_PlanetInfo_BodyType_Planet>
+  <PFView_PlanetInfo_BodyType_Moon>卫星</PFView_PlanetInfo_BodyType_Moon>
+  <PFView_PlanetInfo_Value_Yes>是</PFView_PlanetInfo_Value_Yes>
+  <PFView_PlanetInfo_Value_No>否</PFView_PlanetInfo_Value_No>
+  <PFView_PlanetInfo_Value_None>无</PFView_PlanetInfo_Value_None>
+  <PFView_PlanetInfo_Value_Count>{0}</PFView_PlanetInfo_Value_Count>
+  <PFView_PlanetInfo_Value_Kilometers>{0} km</PFView_PlanetInfo_Value_Kilometers>
+  <PFView_PlanetInfo_Value_Meters>{0} m</PFView_PlanetInfo_Value_Meters>
+  <PFView_PlanetInfo_Value_Celsius>{0} ℃</PFView_PlanetInfo_Value_Celsius>
+  <PFView_PlanetInfo_Value_Millimeters>{0} mm</PFView_PlanetInfo_Value_Millimeters>
+  <PFView_PlanetInfo_Value_Percent>{0}%</PFView_PlanetInfo_Value_Percent>
+  <PFView_PlanetInfo_Value_Hours>{0} h</PFView_PlanetInfo_Value_Hours>
+  <PFView_PlanetInfo_Value_Seconds>{0} s</PFView_PlanetInfo_Value_Seconds>
+  <PFView_PlanetInfo_Value_Vector>({0}, {1}, {2})</PFView_PlanetInfo_Value_Vector>
+  <PFView_PlanetInfo_Value_GravitationalParameter>{0} m³/s²</PFView_PlanetInfo_Value_GravitationalParameter>
+  <PFView_PlanetInfo_Value_LayerTiles>{0}（{1} 格）</PFView_PlanetInfo_Value_LayerTiles>
+  <PFView_PlanetInfo_Ecology_TopBiomes>主要生物群系（前 5）</PFView_PlanetInfo_Ecology_TopBiomes>
+  <PFView_PlanetInfo_Ecology_Biome>{0}（{1}）</PFView_PlanetInfo_Ecology_Biome>
+  <PFView_PlanetInfo_Ecology_AvgElevation>平均海拔</PFView_PlanetInfo_Ecology_AvgElevation>
+  <PFView_PlanetInfo_Ecology_AvgTemperature>平均温度</PFView_PlanetInfo_Ecology_AvgTemperature>
+  <PFView_PlanetInfo_Ecology_AvgRainfall>平均降水</PFView_PlanetInfo_Ecology_AvgRainfall>
+  <PFView_PlanetInfo_Ecology_Hilliness>地形起伏分布</PFView_PlanetInfo_Ecology_Hilliness>
+  <PFView_PlanetInfo_Ecology_NoLayer>该天体没有地表层</PFView_PlanetInfo_Ecology_NoLayer>
+  <PFView_PlanetInfo_Ecology_Counting>正在统计地表…</PFView_PlanetInfo_Ecology_Counting>
+  <PFView_PlanetInfo_Ecology_NoData>无可用地表数据</PFView_PlanetInfo_Ecology_NoData>
+  <PFView_PlanetInfo_Hilliness_Undefined>未定义</PFView_PlanetInfo_Hilliness_Undefined>
+  <PFView_PlanetInfo_Hilliness_Flat>平坦</PFView_PlanetInfo_Hilliness_Flat>
+  <PFView_PlanetInfo_Hilliness_SmallHills>小丘</PFView_PlanetInfo_Hilliness_SmallHills>
+  <PFView_PlanetInfo_Hilliness_LargeHills>大丘</PFView_PlanetInfo_Hilliness_LargeHills>
+  <PFView_PlanetInfo_Hilliness_Mountainous>山地</PFView_PlanetInfo_Hilliness_Mountainous>
+  <PFView_PlanetInfo_Hilliness_Impassable>不可通行</PFView_PlanetInfo_Hilliness_Impassable>
+  <PFView_PlanetInfo_Orbit_Radius>轨道半径</PFView_PlanetInfo_Orbit_Radius>
+  <PFView_PlanetInfo_Orbit_Period>轨道周期</PFView_PlanetInfo_Orbit_Period>
+  <PFView_PlanetInfo_Orbit_Normal>轨道法线</PFView_PlanetInfo_Orbit_Normal>
+  <PFView_PlanetInfo_Orbit_DayLength>日长</PFView_PlanetInfo_Orbit_DayLength>
+  <PFView_PlanetInfo_Orbit_AtmoPhysical>大气总厚度</PFView_PlanetInfo_Orbit_AtmoPhysical>
+  <PFView_PlanetInfo_Orbit_AtmoVisual>视觉壳厚度</PFView_PlanetInfo_Orbit_AtmoVisual>
+  <PFView_PlanetInfo_Orbit_AtmoColor>大气颜色</PFView_PlanetInfo_Orbit_AtmoColor>
+  <PFView_PlanetInfo_Orbit_NoOrbit>该天体没有轨道</PFView_PlanetInfo_Orbit_NoOrbit>
+  <PFView_TileInspect_Title>地块检视</PFView_TileInspect_Title>
+  <PFView_TileInspect_Body>天体</PFView_TileInspect_Body>
+  <PFView_TileInspect_Tile>地块</PFView_TileInspect_Tile>
+  <PFView_TileInspect_TileFormat>#{0}</PFView_TileInspect_TileFormat>
+  <PFView_TileInspect_Biome>生物群系</PFView_TileInspect_Biome>
+  <PFView_TileInspect_BiomeFormat>{0}（{1}）</PFView_TileInspect_BiomeFormat>
+  <PFView_TileInspect_Elevation>海拔</PFView_TileInspect_Elevation>
+  <PFView_TileInspect_Temperature>温度</PFView_TileInspect_Temperature>
+  <PFView_TileInspect_Rainfall>降水</PFView_TileInspect_Rainfall>
+  <PFView_TileInspect_Hilliness>地形起伏</PFView_TileInspect_Hilliness>
+  <PFView_TileInspect_Water>水体</PFView_TileInspect_Water>
+  <PFView_TileInspect_Rivers>河流数</PFView_TileInspect_Rivers>
+  <PFView_TileInspect_PotentialRivers>潜在河流</PFView_TileInspect_PotentialRivers>
+  <PFView_TileInspect_PotentialRoads>潜在道路</PFView_TileInspect_PotentialRoads>
+  <PFView_TileInspect_Yes>有</PFView_TileInspect_Yes>
+  <PFView_TileInspect_No>无</PFView_TileInspect_No>
+  <PFView_TileInspect_Unknown>未知</PFView_TileInspect_Unknown>
+  <PFView_TileInspect_Value_Count>{0}</PFView_TileInspect_Value_Count>
+  <PFView_TileInspect_Value_Meters>{0} m</PFView_TileInspect_Value_Meters>
+  <PFView_TileInspect_Value_Celsius>{0} ℃</PFView_TileInspect_Value_Celsius>
+  <PFView_TileInspect_Value_Millimeters>{0} mm</PFView_TileInspect_Value_Millimeters>
+</LanguageData>

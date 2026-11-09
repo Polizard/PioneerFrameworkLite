@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Defs>
   <BiomeDef>
     <defName>PF_MoonBiomeWater</defName>
@@ -69,7 +69,8 @@
     <plantDensity>0</plantDensity>
     <settlementSelectionWeight>0</settlementSelectionWeight>
     <movementDifficulty>3</movementDifficulty>
-    <texture>World/Biomes/ExtremeDesert</texture>
+    <!-- 2026-11-09：改用深灰玄武岩贴图。原先与 PF_BarrenRock 同用 ExtremeDesert ⇒ 荒芜行星的高地/河床在视觉上与平原无差别。 -->
+    <texture>World/Biomes/PF_BasaltDark</texture>
     <forageability>0</forageability>
     <geyserCountFactor>0</geyserCountFactor>
     <maxFishPopulation>0</maxFishPopulation>
