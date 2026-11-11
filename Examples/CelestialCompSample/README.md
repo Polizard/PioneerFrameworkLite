@@ -11,7 +11,7 @@
 dotnet build Examples/CelestialCompSample/CelestialCompSample.csproj -c Release
 ```
 
-Release 输出为 `Examples/CelestialCompSample/Assemblies/PFL.CelestialCompSample.dll`。Debug 输出为 `Examples/CelestialCompSample/bin/Debug/`，不进入可加载目录。框架引用在独立 bin 目录编译，不会重写主 Mod 的交付 DLL。示例项目单独编译，只引用框架公开契约；其工程引用设为 `Private="false"`，运行时从已启用的 PFL 取得框架程序集。
+Release 输出为 `Examples/CelestialCompSample/Assemblies/PFL.CelestialCompSample.dll`。Debug 输出为 `Examples/CelestialCompSample/bin/Debug/`，不进入可加载目录。示例引用主工程，运行时使用 PFL 已交付的程序集。示例项目单独编译，只引用框架公开契约；其工程引用设为 `Private="false"`，运行时从已启用的 PFL 取得框架程序集。
 
 将本目录的 `About`、`Assemblies`、`Defs`、`Patches`、`Languages` 放入游戏 `Mods/PFL_CelestialCompSample/`，在 Mod 列表中将示例排在 Harmony、PioneerFrameworkLite 后方，重启游戏并新建世界。PFL 自身应使用包含通用行星框架的同版本源码与 Release DLL。
 
@@ -167,6 +167,12 @@ python tools/celestial_payload.py encode orbit.json --output orbit.base64
 
 将纬度带天体选为主地表时，可用 biome profile 的 `rootOnlySteps` 明确列出 Factions/Roads/Features 等原生全局步骤；这些步骤只在主地表执行，额外同模板天体不会重复执行。
 
-框架存档现为 v2，默认解析提供者检查点载荷 v2；需要新建测试世界，v1 明确拒绝。`failurePolicy` 默认 BlockBody，显式 DisableOptional 仅隔离安全的非关键闭包；已停用状态和原始载荷保存后不会自动激活。预测除 BasedOn 外还带 Source，调用者须验证 ProviderId、契约版本及 PredictionSchemaVersion（当前为1）。
+框架存档现为 v4，旧 v1/v2/v3 明确拒绝（`UnsupportedSaveVersion`，不迁移、不重写旧档）；默认解析提供者检查点载荷 v2。`failurePolicy` 默认 BlockBody，显式 DisableOptional 仅隔离安全的非关键闭包；已停用状态和原始载荷保存后不会自动激活。预测除 BasedOn 外还带 Source，调用者须验证 ProviderId、契约版本及 PredictionSchemaVersion（当前为1）。
 
 `SampleCreation.CreateProbe` 的可选 radiusMeters 参数演示纯数据 ParameterOverrides。也可用 `new CelestialParameterOverride("shape", "radiusMeters", Min: 250000, Max: 650000)` 覆盖范围；参数名必须对应组件的显式采样键。内建已知配置版本严格拒绝缺失、拼错及重复字段，原始错误载荷保留。
+
+## 8. 本地地图模块
+
+[SampleLandingModule.cs](SampleLandingModule.cs) 展示配置版本 1 和算法版本 1 的用途模块。样例 Mod 构造时注册验证器与工厂，以便游戏加载 [配方 Def](Defs/LocalMapRecipe.xml) 时可校验 handler。XML 字段 `eastOfCenter` 冻结为四字节整数，模块在 `Content` 阶段从实际 `Map.Center` 计算指定格，验证地图边界后写入本次生成的原生工作数据 `PFL.CelestialCompSample.landingCell`。工作数据在会话结束后清除，适合作为后续步骤的输入。样例不改变地图外观。
+
+样例的 [着陆配方 patch](Patches/LocalMapRecipe.xml) 仅在安装并启用独立样例 Mod 时，为 `PF_EarthMaps` 绑定 `Landing` 用途。要观察完整流程，可在新测试世界触发 PFL 舰船降落并用调试器检查该工作数据，或在集成测试中运行 `IndependentSampleLandingRecipeExecutesAgainstTheNativeMap`。完整扩展契约见 [本地地图生成 API](../../Source/PioneerFramework/MapGeneration/API/README.md)。

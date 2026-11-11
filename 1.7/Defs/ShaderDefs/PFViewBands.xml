@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <ShaderDef>
+    <defName>PF_PlanetBands</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_PlanetClouds.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_PlanetBands.frag.glsl</fragmentShaderFileName>
+      <blendMode>Opaque</blendMode>
+      <depthTest>true</depthTest>
+      <depthWrite>true</depthWrite>
+      <cullMode>Back</cullMode>
+      <renderQueue>2000</renderQueue>
+      <flipTextureST>false</flipTextureST>
+    </shaderProgram>
+  </ShaderDef>
+</Defs>

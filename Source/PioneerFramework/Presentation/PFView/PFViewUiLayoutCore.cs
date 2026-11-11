@@ -37,7 +37,7 @@ namespace PioneerFramework
                 PFViewToolbarItem.Display => 76f,
                 PFViewToolbarItem.Camera => 144f,
                 PFViewToolbarItem.Frame => 132f,
-                PFViewToolbarItem.Time => 330f,
+                PFViewToolbarItem.Time => 200f,
                 PFViewToolbarItem.Weapons => 88f,
                 PFViewToolbarItem.Help => 30f,
                 _ => 60f

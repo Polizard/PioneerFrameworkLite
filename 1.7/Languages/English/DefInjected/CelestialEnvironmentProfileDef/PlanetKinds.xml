@@ -3,4 +3,5 @@
   <PF_BarrenEnvironment.label>barren environment</PF_BarrenEnvironment.label>
   <PF_FrozenEnvironment.label>frozen environment</PF_FrozenEnvironment.label>
   <PF_GreenhouseEnvironment.label>greenhouse environment</PF_GreenhouseEnvironment.label>
+  <PF_TemperateEnvironment.label>temperate planet environment</PF_TemperateEnvironment.label>
 </LanguageData>

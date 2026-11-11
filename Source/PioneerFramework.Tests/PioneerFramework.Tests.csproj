@@ -34,6 +34,8 @@
     <None Include="..\..\Examples\CelestialCompSample\Patches\*.xml" Link="CelestialCompSample\Patches\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\Shaders\*.shader" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Shaders\PF_PlanetClouds.*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\1.7\Shaders\PF_PlanetBands.*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PioneerFramework\Presentation\PFView\MainTabWindow_PFView.Terrain.cs" Link="Source\PioneerFramework\Presentation\PFView\MainTabWindow_PFView.Terrain.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Shaders\PF_Stellar*.glsl" Link="Shaders\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\Presentation\PFView\MainTabWindow_PFView.StellarVisuals.cs" Link="Source\PioneerFramework\Presentation\PFView\MainTabWindow_PFView.StellarVisuals.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\Presentation\PFView\PFViewStellarVisualCore.cs" Link="Source\PioneerFramework\Presentation\PFView\PFViewStellarVisualCore.cs" CopyToOutputDirectory="PreserveNewest" />
@@ -47,8 +49,6 @@
     <None Include="..\GameReferences.props" Link="Source\GameReferences.props" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PioneerFramework.csproj" Link="Source\PioneerFramework\PioneerFramework.csproj" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\World\Visuals\RuntimePlanetLayerService.cs" Link="Source\PioneerFramework\World\Visuals\RuntimePlanetLayerService.cs" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\PioneerFramework\World\Generation\WorldGenStep_MoonTiles.cs" Link="Source\PioneerFramework\World\Generation\WorldGenStep_MoonTiles.cs" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\PioneerFramework\World\Generation\MapGeneration\MoonSurfaceMapGeneration.cs" Link="Source\PioneerFramework\World\Generation\MapGeneration\MoonSurfaceMapGeneration.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\Presentation\PFView\MainTabWindow_PFView.cs" Link="Source\PioneerFramework\Presentation\PFView\MainTabWindow_PFView.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\Presentation\PFView\PFViewToonShader.cs" Link="Source\PioneerFramework\Presentation\PFView\PFViewToonShader.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\Presentation\PFView\MainTabWindow_PFView.Render.cs" Link="Source\PioneerFramework\Presentation\PFView\MainTabWindow_PFView.Render.cs" CopyToOutputDirectory="PreserveNewest" />

@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Xml;
 using System.Xml.Linq;
 using PioneerFramework.Celestial;
+using PioneerFramework.MapGeneration;
 using RimWorld;
 using RimWorld.Planet;
 using Verse;
@@ -45,12 +45,11 @@ public class CelestialDefaultContentTests
         var xml = new XmlDocument(); xml.LoadXml(element.ToString());
         return DirectXmlToObject.ObjectFromXml<T>(xml.DocumentElement, false);
     }
-    private static TerrainDef Terrain(string id)
-    { var terrain = (TerrainDef)RuntimeHelpers.GetUninitializedObject(typeof(TerrainDef)); terrain.defName = id; return terrain; }
     [Fact]
     public void DefaultSystemUsesFixedExistingNumbersAndExplicitProfilesAndLightBindings()
     {
         using var scope = new CelestialXmlTestScope();
+        using var mapRecipes = new ShippedLocalMapRecipeDefs();
         var profilesXml = XDocument.Load(DataPath("CelestialFramework/CelestialProfiles.xml"));
         var visualsXml = XDocument.Load(DataPath("CelestialFramework/CelestialVisualProfiles.xml"));
         var visuals = visualsXml.Root.Elements("PioneerFramework.Celestial.CelestialVisualProfileDef").ToDictionary(element => element.Element("defName").Value, element => {
@@ -67,19 +66,20 @@ public class CelestialDefaultContentTests
         var biomes = profilesXml.Root.Elements("PioneerFramework.Celestial.CelestialBiomeProfileDef").ToDictionary(
             element => element.Element("defName").Value, element => {
                 var profile = Parse<CelestialBiomeProfileDef>(element);
-                BiomeDef Biome(string field) => element.Element(field) is { } node ? new BiomeDef { defName = node.Value } : null;
-                profile.polarBiome = Biome("polarBiome"); profile.primaryBiome = Biome("primaryBiome"); profile.secondaryBiome = Biome("secondaryBiome");
+                // 夹具不经过 Def 交叉引用：按内容约定补齐原生 inVacuum（月球三群落为真空），供 P4 真空声明跨校验使用。
+                BiomeDef Biome(string name) => new() { defName = name, inVacuum = name.StartsWith("PF_MoonBiome", StringComparison.Ordinal) };
                 List<WorldGenStepDef> Steps(string field) => element.Element(field)?.Elements("li").Select(node => new WorldGenStepDef { defName = node.Value, worldGenStep = new WorldGenStep_Terrain() }).ToList() ?? new();
                 profile.worldGenSteps = Steps("worldGenSteps"); profile.rootOnlySteps = Steps("rootOnlySteps");
+                // Def 交叉引用在测试夹具里不经过 ResolveAllWantedCrossReferences；Parameterized 规则的 biome 引用按 XML 文本显式补齐。
+                if (element.Element("terrain")?.Element("biomeRules") is { } rules)
+                    for (int index = 0; index < profile.terrain.biomeRules.Count; index++)
+                        profile.terrain.biomeRules[index].biome = Biome(rules.Elements("li").ElementAt(index).Element("biome").Value);
                 return profile;
             });
         var maps = profilesXml.Root.Elements("PioneerFramework.Celestial.CelestialMapProfileDef").ToDictionary(
             element => element.Element("defName").Value, element => {
                 var profile = Parse<CelestialMapProfileDef>(element);
-                profile.replaceTerrains = element.Element("replaceTerrains")?.Elements("li").Select(item => Terrain(item.Value)).ToList() ?? new();
-                profile.replacementTerrain = element.Element("replacementTerrain") is { } terrain ? Terrain(terrain.Value) : null;
-                if (element.Element("biomeRules") != null)
-                    for (int i = 0; i < profile.biomeRules.Count; i++) profile.biomeRules[i].biome = new BiomeDef { defName = element.Element("biomeRules").Elements("li").ElementAt(i).Element("biome").Value };
+                profile.localRecipe = mapRecipes.Recipes[element.Element("localRecipe").Value];
                 return profile;
             });
         var bodyXml = XDocument.Load(DataPath("CelestialBodies/CelestialBodies_SolarSystem.xml"));
@@ -125,6 +125,14 @@ public class CelestialDefaultContentTests
         Assert.Equal(sun.Id, moon.InitializationReferences["primaryLight"]);
         Assert.Equal(sun.Id, sun.InitializationReferences["frameOrigin"]);
         Assert.Equal(earth.Id, earth.InitializationReferences["frameOrigin"]);
+        // 2026-11-11：月球改真潮汐锁定 —— 同步目标必须是 Parent 作用域的 frameOrigin（⇒ 母星 Earth），
+        // 且载荷走 v2 权威自转（旧版是"日长=公转周期"的数值近似）。
+        Assert.Equal(earth.Id, moon.InitializationReferences["frameOrigin"]);
+        var moonMotion = ExistingEphemerisParameters.Parse(
+            moon.Components.Select(component => component.Properties).OfType<ICelestialPhysicsBindingProperties>().Single().Initialization).Value;
+        Assert.True(moonMotion.UsesAuthoritativeRotation);
+        Assert.Equal("frameOrigin", moonMotion.SynchronousTargetReference);
+        Assert.Equal(317900, moonMotion.DayLengthTicks);
         Assert.Equal(earth.Id, moon.InitializationReferences["frameOrigin"]);
         Assert.Single(sun.Components.Where(c => c.Properties is LightSourceResolvedProperties));
         Assert.Contains(sun.Components, component => component.Properties is VisualResolvedProperties { Kind: CelestialVisualKind.Stellar });
@@ -133,9 +141,14 @@ public class CelestialDefaultContentTests
         Assert.Equal(CelestialSurfaceGenerationMode.OnDemand, earth.Components.Select(c => c.Properties).OfType<SurfaceResolvedProperties>().Single().GenerationMode);
         Assert.Equal(CelestialSurfaceGenerationMode.Creation, moon.Components.Select(c => c.Properties).OfType<SurfaceResolvedProperties>().Single().GenerationMode);
         var moonMap = moon.Components.Select(c => c.Properties).OfType<MapGenerationResolvedProperties>().Single().Profile;
-        Assert.True(CelestialMapGeneration.ShouldSkip(moonMap, "PF_MoonBiomeBasalt", new GenStepDef { defName = "Snow" }));
-        Assert.True(moonMap.ShouldReplace("PF_MoonBiomeRegolith", "AnyRock", true));
-        Assert.False(moonMap.ShouldReplace("PF_MoonBiomeBasalt", "AnyRock", true));
+        var steps = moonMap.LocalSpecification.Recipe.Steps;
+        var rules = Assert.Single(steps, step => step.HandlerId == LocalMapBuiltinConfigurations.NativeRules);
+        Assert.Contains(LocalMapBuiltinConfigurations.Decode<NativeRulesConfiguration>(rules.Configuration).Skip,
+            selector => NativeMapStepSelection.Matches(selector, "PF_MoonBiomeBasalt", new GenStepDef { defName = "Snow" }));
+        var replacement = LocalMapBuiltinConfigurations.Decode<TerrainReplacementConfiguration>(
+            Assert.Single(steps, step => step.HandlerId == LocalMapBuiltinConfigurations.TerrainReplacement).Configuration);
+        Assert.True(replacement.ShouldReplace("PF_MoonBiomeRegolith", "AnyRock", true));
+        Assert.False(replacement.ShouldReplace("PF_MoonBiomeBasalt", "AnyRock", true));
     }
 
     [Fact]

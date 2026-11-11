@@ -216,6 +216,9 @@ namespace PioneerFramework.Celestial
             foreach (var pair in candidates)
             {
                 if (pair.Value.Registration.InitializationReferences.Values.Any(id => !candidates.ContainsKey(id))) return new("ReferenceTargetMissing", pair.Key);
+                string synchronous = pair.Value.Parameters.SynchronousTargetReference;
+                if (synchronous.Length > 0 && (!pair.Value.Registration.InitializationReferences.TryGetValue(synchronous, out var target) || target == pair.Key || !candidates.ContainsKey(target)))
+                    return new("InvalidSynchronousTarget", pair.Key);
                 var seen = new HashSet<CelestialInstanceId> { pair.Key };
                 var current = pair.Value;
                 while (current.Registration.ParentInstanceId is { } parent)
@@ -230,28 +233,52 @@ namespace PioneerFramework.Celestial
             IReadOnlyList<CelestialInstanceId> ids, PhysicsSampleKind kind)
         {
             var states = new Dictionary<CelestialInstanceId, CelestialMotionState>();
-            CelestialMotionState Evaluate(CelestialInstanceId id)
+            var positions = new Dictionary<CelestialInstanceId, (DVector3 Position, DVector3 Velocity)>();
+            (DVector3 Position, DVector3 Velocity) Position(CelestialInstanceId id)
             {
-                if (states.TryGetValue(id, out var known)) return known;
+                if (positions.TryGetValue(id, out var known)) return known;
                 var body = source[id]; var model = body.Parameters;
                 var local = model.SampleParent(stamp.PhysicalSeconds);
                 DVector3 position = local.Position, velocity = local.Velocity;
                 if (body.Registration.ParentInstanceId is { } parent)
                 {
-                    var parentState = Evaluate(parent);
-                    position += parentState.Position; velocity += parentState.LinearVelocity;
+                    var parentState = Position(parent);
+                    position += parentState.Position; velocity += parentState.Velocity;
+                }
+                positions.Add(id, (position, velocity)); return (position, velocity);
+            }
+            CelestialMotionState Evaluate(CelestialInstanceId id)
+            {
+                if (states.TryGetValue(id, out var known)) return known;
+                var body = source[id]; var model = body.Parameters;
+                var local = Position(id);
+                if (model.UsesAuthoritativeRotation)
+                {
+                    DVector3 offset = DVector3.zero, relativeVelocity = DVector3.zero;
+                    if (model.SynchronousTargetReference.Length > 0)
+                    {
+                        var target = Position(body.Registration.InitializationReferences[model.SynchronousTargetReference]);
+                        offset = target.Position - local.Position; relativeVelocity = target.Velocity - local.Velocity;
+                    }
+                    var rotation = model.Rotation(stamp.PhysicalSeconds, offset, relativeVelocity);
+                    var modern = new CelestialMotionState(body.Registration.Descriptor.DescriptorRevision, local.Position, local.Velocity, rotation.Orientation, rotation.AngularVelocity);
+                    states.Add(id, modern); return modern;
                 }
                 double omega = 2.0 * Math.PI / model.DayLengthTicks;
                 double half = -omega * stamp.PhysicalSeconds * 0.5;
-                var state = new CelestialMotionState(body.Registration.Descriptor.DescriptorRevision, position, velocity,
+                var state = new CelestialMotionState(body.Registration.Descriptor.DescriptorRevision, local.Position, local.Velocity,
                     new DQuaternion(0, Math.Sin(half), 0, Math.Cos(half)), new DVector3(0, -omega, 0));
                 states.Add(id, state); return state;
             }
-            foreach (var id in ids)
+            try
             {
-                if (!source.ContainsKey(id)) return PhysicsSnapshotResult.Reject(new CelestialError("BodyMissing", id));
-                Evaluate(id);
+                foreach (var id in ids)
+                {
+                    if (!source.ContainsKey(id)) return PhysicsSnapshotResult.Reject(new CelestialError("BodyMissing", id));
+                    Evaluate(id);
+                }
             }
+            catch (ArgumentException exception) { return PhysicsSnapshotResult.Reject(new CelestialError("InvalidRotationState", Detail: exception.Message)); }
             var selected = ids.Distinct().ToDictionary(id => id, id => states[id]);
             return CelestialPhysicsSnapshot.Create(stamp with { SampleKind = kind }, selected.Keys.Select(id => source[id].Registration.Descriptor), selected);
         }

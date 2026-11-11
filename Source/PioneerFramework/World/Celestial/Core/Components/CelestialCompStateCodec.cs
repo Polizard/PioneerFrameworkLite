@@ -46,7 +46,7 @@ namespace PioneerFramework.Celestial
                 var decoded = registration.Codec.DecodeProperties(record.Key, record.ConfigurationVersion, record.ConfigurationPayload);
                 if (!decoded.Success) return Blocked(record, decoded.Errors);
                 var properties = decoded.Value;
-                if (properties.Key != record.Key || properties.HandlerId != record.HandlerId || properties.Version != registration.ConfigurationVersion)
+                if (properties.Key != record.Key || properties.HandlerId != record.HandlerId || properties.Version != record.ConfigurationVersion || properties.Version > registration.ConfigurationVersion)
                     return Blocked(record, new[] { new CelestialError("HandlerContractViolation", CompKey: record.Key) });
                 CelestialFrozenConfiguration.Retain(properties, record.ConfigurationPayload);
                 component = registration.Factory.Create(properties);

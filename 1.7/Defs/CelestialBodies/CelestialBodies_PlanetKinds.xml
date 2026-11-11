@@ -23,11 +23,19 @@
       <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
         <key>motion</key>
         <providerId>PFL.ExistingEphemeris</providerId>
-        <modeId>existing.circular.v1</modeId>
         <gravitationalParameter>
           <value>4e12</value>
         </gravitationalParameter>
-        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjU4NDAwLCJkYXlMZW5ndGhUaWNrcyI6NjAwMDAsIm9yYml0UmFkaXVzIjoxMjAwMDAwMDAsImZyYW1lT3JpZ2luUmVmZXJlbmNlIjoiZnJhbWVPcmlnaW4iLCJib2R5VHlwZSI6IlBsYW5ldCIsImluaXRpYWxQaGFzZSI6MH0=</initializationPayload>
+        <motion>
+          <orbitRadiusMeters>120000000</orbitRadiusMeters>
+          <orbitPeriodSeconds>58400</orbitPeriodSeconds>
+          <orbitPhaseRadians>0</orbitPhaseRadians>
+          <bodyType>Planet</bodyType>
+          <frameOriginReference>frameOrigin</frameOriginReference>
+          <rotation>
+            <periodSeconds>60000</periodSeconds>
+          </rotation>
+        </motion>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_Surface">
         <key>surface</key>
@@ -39,6 +47,7 @@
       <li Class="PioneerFramework.Celestial.CompProperties_BiomeGeneration">
         <key>biomes</key>
         <profile>PF_BarrenBiomes</profile>
+        <useEnvironmentClimate>true</useEnvironmentClimate>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_MapGeneration">
         <key>maps</key>
@@ -76,11 +85,19 @@
       <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
         <key>motion</key>
         <providerId>PFL.ExistingEphemeris</providerId>
-        <modeId>existing.circular.v1</modeId>
         <gravitationalParameter>
           <value>2e14</value>
         </gravitationalParameter>
-        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjU4NDAwLCJkYXlMZW5ndGhUaWNrcyI6NjAwMDAsIm9yYml0UmFkaXVzIjoxMjAwMDAwMDAsImZyYW1lT3JpZ2luUmVmZXJlbmNlIjoiZnJhbWVPcmlnaW4iLCJib2R5VHlwZSI6IlBsYW5ldCIsImluaXRpYWxQaGFzZSI6MH0=</initializationPayload>
+        <motion>
+          <orbitRadiusMeters>120000000</orbitRadiusMeters>
+          <orbitPeriodSeconds>58400</orbitPeriodSeconds>
+          <orbitPhaseRadians>0</orbitPhaseRadians>
+          <bodyType>Planet</bodyType>
+          <frameOriginReference>frameOrigin</frameOriginReference>
+          <rotation>
+            <periodSeconds>60000</periodSeconds>
+          </rotation>
+        </motion>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_Surface">
         <key>surface</key>
@@ -91,27 +108,42 @@
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_BiomeGeneration">
         <key>biomes</key>
-        <profile>PF_EarthBiomes</profile>
+        <profile>PF_TemperateBiomes</profile>
+        <useEnvironmentClimate>true</useEnvironmentClimate>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_MapGeneration">
         <key>maps</key>
-        <profile>PF_EarthMaps</profile>
+        <profile>PF_TemperateMaps</profile>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_ExistingEnvironment">
         <key>environment</key>
-        <profile>PF_EarthEnvironment</profile>
+        <profile>PF_TemperateEnvironment</profile>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_Atmosphere">
         <key>air</key>
-        <rho0>
-          <value>1.2</value>
-        </rho0>
-        <scaleHeight>
-          <value>8000</value>
-        </scaleHeight>
         <topAltitude>
           <value>100000</value>
         </topAltitude>
+        <pressurePascals>
+          <value>101325</value>
+        </pressurePascals>
+        <temperatureKelvin>
+          <value>288</value>
+        </temperatureKelvin>
+        <composition>
+          <li>
+            <gas>Oxygen</gas>
+            <moleFraction>0.21</moleFraction>
+          </li>
+          <li>
+            <gas>Nitrogen</gas>
+            <moleFraction>0.7896</moleFraction>
+          </li>
+          <li>
+            <gas>CarbonDioxide</gas>
+            <moleFraction>0.0004</moleFraction>
+          </li>
+        </composition>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
         <key>visual</key>
@@ -130,7 +162,7 @@
   <PioneerFramework.CelestialBodyDef Name="PF_GreenhousePlanetBase">
     <defName>PF_GreenhousePlanet</defName>
     <label>温室行星</label>
-    <description>浓厚大气包裹的灼热岩质天体，适用于金星一类环境。预设提供高温地表、大气阻力与浓云；高压伤害和气体毒性需额外组件。</description>
+    <description>浓厚大气包裹的灼热岩质天体，适用于金星一类环境。预设显式提供高温、高压、缺氧与二氧化碳毒性环境，以及浓云外观。</description>
     <category>Greenhouse</category>
     <tags>
       <li>PlanetKind</li>
@@ -150,11 +182,19 @@
       <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
         <key>motion</key>
         <providerId>PFL.ExistingEphemeris</providerId>
-        <modeId>existing.circular.v1</modeId>
         <gravitationalParameter>
           <value>2e14</value>
         </gravitationalParameter>
-        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjU4NDAwLCJkYXlMZW5ndGhUaWNrcyI6MTIwMDAwMCwib3JiaXRSYWRpdXMiOjEyMDAwMDAwMCwiZnJhbWVPcmlnaW5SZWZlcmVuY2UiOiJmcmFtZU9yaWdpbiIsImJvZHlUeXBlIjoiUGxhbmV0IiwiaW5pdGlhbFBoYXNlIjowfQ==</initializationPayload>
+        <motion>
+          <orbitRadiusMeters>120000000</orbitRadiusMeters>
+          <orbitPeriodSeconds>58400</orbitPeriodSeconds>
+          <orbitPhaseRadians>0</orbitPhaseRadians>
+          <bodyType>Planet</bodyType>
+          <frameOriginReference>frameOrigin</frameOriginReference>
+          <rotation>
+            <periodSeconds>1200000</periodSeconds>
+          </rotation>
+        </motion>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_Surface">
         <key>surface</key>
@@ -166,6 +206,7 @@
       <li Class="PioneerFramework.Celestial.CompProperties_BiomeGeneration">
         <key>biomes</key>
         <profile>PF_GreenhouseBiomes</profile>
+        <useEnvironmentClimate>true</useEnvironmentClimate>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_MapGeneration">
         <key>maps</key>
@@ -177,15 +218,25 @@
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_Atmosphere">
         <key>air</key>
-        <rho0>
-          <value>65</value>
-        </rho0>
-        <scaleHeight>
-          <value>15900</value>
-        </scaleHeight>
         <topAltitude>
           <value>250000</value>
         </topAltitude>
+        <pressurePascals>
+          <value>9200000</value>
+        </pressurePascals>
+        <temperatureKelvin>
+          <value>733</value>
+        </temperatureKelvin>
+        <composition>
+          <li>
+            <gas>CarbonDioxide</gas>
+            <moleFraction>0.965</moleFraction>
+          </li>
+          <li>
+            <gas>Nitrogen</gas>
+            <moleFraction>0.035</moleFraction>
+          </li>
+        </composition>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
         <key>visual</key>
@@ -224,11 +275,19 @@
       <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
         <key>motion</key>
         <providerId>PFL.ExistingEphemeris</providerId>
-        <modeId>existing.circular.v1</modeId>
         <gravitationalParameter>
           <value>8e11</value>
         </gravitationalParameter>
-        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjU4NDAwLCJkYXlMZW5ndGhUaWNrcyI6NjAwMDAsIm9yYml0UmFkaXVzIjoxMjAwMDAwMDAsImZyYW1lT3JpZ2luUmVmZXJlbmNlIjoiZnJhbWVPcmlnaW4iLCJib2R5VHlwZSI6IlBsYW5ldCIsImluaXRpYWxQaGFzZSI6MH0=</initializationPayload>
+        <motion>
+          <orbitRadiusMeters>120000000</orbitRadiusMeters>
+          <orbitPeriodSeconds>58400</orbitPeriodSeconds>
+          <orbitPhaseRadians>0</orbitPhaseRadians>
+          <bodyType>Planet</bodyType>
+          <frameOriginReference>frameOrigin</frameOriginReference>
+          <rotation>
+            <periodSeconds>60000</periodSeconds>
+          </rotation>
+        </motion>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_Surface">
         <key>surface</key>
@@ -240,6 +299,7 @@
       <li Class="PioneerFramework.Celestial.CompProperties_BiomeGeneration">
         <key>biomes</key>
         <profile>PF_FrozenBiomes</profile>
+        <useEnvironmentClimate>true</useEnvironmentClimate>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_MapGeneration">
         <key>maps</key>
@@ -277,23 +337,41 @@
       <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
         <key>motion</key>
         <providerId>PFL.ExistingEphemeris</providerId>
-        <modeId>existing.circular.v1</modeId>
         <gravitationalParameter>
           <value>2e15</value>
         </gravitationalParameter>
-        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjU4NDAwLCJkYXlMZW5ndGhUaWNrcyI6MjUwMDAsIm9yYml0UmFkaXVzIjoxMjAwMDAwMDAsImZyYW1lT3JpZ2luUmVmZXJlbmNlIjoiZnJhbWVPcmlnaW4iLCJib2R5VHlwZSI6IlBsYW5ldCIsImluaXRpYWxQaGFzZSI6MH0=</initializationPayload>
+        <motion>
+          <orbitRadiusMeters>120000000</orbitRadiusMeters>
+          <orbitPeriodSeconds>58400</orbitPeriodSeconds>
+          <orbitPhaseRadians>0</orbitPhaseRadians>
+          <bodyType>Planet</bodyType>
+          <frameOriginReference>frameOrigin</frameOriginReference>
+          <rotation>
+            <periodSeconds>25000</periodSeconds>
+          </rotation>
+        </motion>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_Atmosphere">
         <key>air</key>
-        <rho0>
-          <value>0.16</value>
-        </rho0>
-        <scaleHeight>
-          <value>27000</value>
-        </scaleHeight>
         <topAltitude>
           <value>500000</value>
         </topAltitude>
+        <pressurePascals>
+          <value>1000000</value>
+        </pressurePascals>
+        <temperatureKelvin>
+          <value>165</value>
+        </temperatureKelvin>
+        <composition>
+          <li>
+            <gas>Hydrogen</gas>
+            <moleFraction>0.85</moleFraction>
+          </li>
+          <li>
+            <gas>Helium</gas>
+            <moleFraction>0.15</moleFraction>
+          </li>
+        </composition>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
         <key>visual</key>
@@ -331,23 +409,41 @@
       <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
         <key>motion</key>
         <providerId>PFL.ExistingEphemeris</providerId>
-        <modeId>existing.circular.v1</modeId>
         <gravitationalParameter>
           <value>5e14</value>
         </gravitationalParameter>
-        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjU4NDAwLCJkYXlMZW5ndGhUaWNrcyI6NDAwMDAsIm9yYml0UmFkaXVzIjoxMjAwMDAwMDAsImZyYW1lT3JpZ2luUmVmZXJlbmNlIjoiZnJhbWVPcmlnaW4iLCJib2R5VHlwZSI6IlBsYW5ldCIsImluaXRpYWxQaGFzZSI6MH0=</initializationPayload>
+        <motion>
+          <orbitRadiusMeters>120000000</orbitRadiusMeters>
+          <orbitPeriodSeconds>58400</orbitPeriodSeconds>
+          <orbitPhaseRadians>0</orbitPhaseRadians>
+          <bodyType>Planet</bodyType>
+          <frameOriginReference>frameOrigin</frameOriginReference>
+          <rotation>
+            <periodSeconds>40000</periodSeconds>
+          </rotation>
+        </motion>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_Atmosphere">
         <key>air</key>
-        <rho0>
-          <value>0.45</value>
-        </rho0>
-        <scaleHeight>
-          <value>40000</value>
-        </scaleHeight>
         <topAltitude>
           <value>400000</value>
         </topAltitude>
+        <pressurePascals>
+          <value>1000000</value>
+        </pressurePascals>
+        <temperatureKelvin>
+          <value>75</value>
+        </temperatureKelvin>
+        <composition>
+          <li>
+            <gas>Hydrogen</gas>
+            <moleFraction>0.85</moleFraction>
+          </li>
+          <li>
+            <gas>Helium</gas>
+            <moleFraction>0.15</moleFraction>
+          </li>
+        </composition>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
         <key>visual</key>

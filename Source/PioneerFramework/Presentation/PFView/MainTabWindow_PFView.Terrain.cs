@@ -48,6 +48,16 @@ namespace PioneerFramework
                 mat = CreateStellarSurfaceMaterial(body);
                 baseLabel = "普通天体位置与球网格，局部等离子体材质";
             }
+            else if (configured?.Appearance?.Style == Celestial.CelestialSurfaceStyle.GasBands)
+            {
+                var shader = Shader.Find("PF_PlanetBands");
+                if (shader == null) return null;
+                var binding = PFViewVisualBindings.Bands(configured);
+                mat = new Material(shader);
+                mat.SetVector("_BandParams", binding.Parameters);
+                mat.SetVector("_BandColor", binding.Color);
+                baseLabel = "Explicit gas bands";
+            }
             else if (configured?.TexturePath != null)
             {
                 var texture = ContentFinder<Texture2D>.Get(configured.TexturePath, false);
@@ -83,11 +93,19 @@ namespace PioneerFramework
             return mat;
         }
 
-        // ── 数据区补丁（烘焙产出）：材质 + 网格，按 `PFViewSurfaceBake.Version` 失效 ──
+        // ── 数据区补丁（烘焙产出）：材质 + 网格，按所属天体的烘焙修订失效 ──
         private readonly Dictionary<int, Material> patchMaterials = new();
         private readonly Dictionary<int, Mesh> patchMeshes = new();
         private readonly HashSet<int> patchLogged = new();
-        private int patchVersion = -1;
+        private readonly Dictionary<int, int> patchVersions = new();
+
+        private void RefreshSurfacePatch(int handle)
+        {
+            int revision = PFViewSurfaceBake.GetRevision(handle);
+            if (patchVersions.TryGetValue(handle, out int previous) && previous == revision) return;
+            DestroySurfacePatchForBody(handle);
+            patchVersions[handle] = revision;
+        }
 
         /// <summary>
         /// 取该天体的补丁（网格 + 材质）。没有烘焙补丁 ⇒ false（调用方只画基底球）。
@@ -106,11 +124,7 @@ namespace PioneerFramework
             if (layer == null) return false;
 
             // 补丁图换了（重烤 / 从旁挂加载 / 切世界）⇒ 丢掉本体的网格与材质缓存重建。
-            if (patchVersion != PFViewSurfaceBake.Version)
-            {
-                DestroySurfacePatch();
-                patchVersion = PFViewSurfaceBake.Version;
-            }
+            RefreshSurfacePatch(body.bodyId);
 
             if (patchMeshes.TryGetValue(body.bodyId, out var cachedMesh) && cachedMesh != null
                 && patchMaterials.TryGetValue(body.bodyId, out var cachedMat) && cachedMat != null)
@@ -121,6 +135,7 @@ namespace PioneerFramework
             }
 
             if (!PFViewSurfaceBake.EnsureReady(body.bodyId, layer)) return false;
+            RefreshSurfacePatch(body.bodyId);
             if (!PFViewSurfaceBake.TryGetPatch(body.bodyId, out var tex, out Vector3 center, out float thetaMaxRad)
                 || tex == null) return false;
 
@@ -293,7 +308,7 @@ namespace PioneerFramework
         /// <summary>
         /// 销毁表面层的运行时资源（基底球材质 + 补丁材质/网格），并**把补丁图从显存里放掉**
         /// （能重新读回来的才放：`PFViewSurfaceBake.UnloadReloadable` —— 收起 PFView 就不该扣着 12 MiB/天体）。
-        /// 缓存下次取用时按 `PFViewSurfaceBake.Version` 自动重建；补丁图按需从旁挂 PNG 重新加载。
+        /// 缓存下次取用时按所属天体的烘焙修订自动重建；补丁图按需从旁挂 PNG 重新加载。
         /// </summary>
         private void DestroySurfaceResources()
         {
@@ -319,6 +334,30 @@ namespace PioneerFramework
                 if (kv.Value != null) UnityEngine.Object.Destroy(kv.Value);
             patchMeshes.Clear();
             patchLogged.Clear();
+            patchVersions.Clear();
+        }
+
+        private void DestroySurfaceResourcesForBody(int handle)
+        {
+            DestroyOwnedResource(baseSphereMaterials, handle);
+            DestroyOwnedResource(flatColorTextures, handle);
+            baseSphereLogged.Remove(handle);
+            DestroySurfacePatchForBody(handle);
+        }
+
+        private void DestroySurfacePatchForBody(int handle)
+        {
+            DestroyOwnedResource(patchMaterials, handle);
+            DestroyOwnedResource(patchMeshes, handle);
+            patchLogged.Remove(handle);
+            patchVersions.Remove(handle);
+        }
+
+        private static void DestroyOwnedResource<TKey, TResource>(Dictionary<TKey, TResource> resources, TKey key)
+            where TKey : notnull where TResource : UnityEngine.Object
+        {
+            if (!resources.Remove(key, out var resource)) return;
+            if (resource != null) UnityEngine.Object.Destroy(resource);
         }
     }
 }

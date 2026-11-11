@@ -3,4 +3,5 @@
   <PF_BarrenBiomes.label>barren surface generation</PF_BarrenBiomes.label>
   <PF_FrozenBiomes.label>frozen surface generation</PF_FrozenBiomes.label>
   <PF_GreenhouseBiomes.label>greenhouse surface generation</PF_GreenhouseBiomes.label>
+  <PF_TemperateBiomes.label>temperate planet biomes</PF_TemperateBiomes.label>
 </LanguageData>

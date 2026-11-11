@@ -35,15 +35,32 @@ class CelestialPayloadTests(unittest.TestCase):
         self.assertEqual(0, decoded.returncode, decoded.stderr.decode())
         self.assertEqual(VALID, decoded.stdout)
 
-    def test_shipped_payloads_decode_and_reencode_without_changes(self):
+    def test_shipped_solar_system_authors_readable_motion_without_v1_payloads(self):
+        # 2026-11-11：四个太阳系天体从 v1 烘焙载荷改为可读 <motion>（existing.circular.v2）。
+        # 这条用例原来只对 "xml 里还有几个 payload" 做往返；改成钉住新授权形态与逐值数值，
+        # 避免"零 payload ⇒ 零循环 ⇒ 假绿"。
         document = ET.parse(ROOT / "1.7/Defs/CelestialBodies/CelestialBodies_SolarSystem.xml")
-        for element in document.iter("initializationPayload"):
-            payload = element.text.encode("ascii")
-            decoded = self.run_tool("decode", payload)
-            self.assertEqual(0, decoded.returncode, decoded.stderr.decode())
-            encoded = self.run_tool("encode", decoded.stdout)
-            self.assertEqual(0, encoded.returncode, encoded.stderr.decode())
-            self.assertEqual(payload, encoded.stdout)
+        bodies = document.getroot().findall("PioneerFramework.CelestialBodyDef")
+        self.assertEqual({"Sun", "Earth", "Moon", "ZheSha"}, {body.findtext("defName") for body in bodies})
+        self.assertEqual([], list(document.iter("initializationPayload")))
+        expected = {
+            "Sun": (0.0, 0.0, 0.0, 60000.0),
+            "Earth": (20000000000.0, 3600000.0, 0.0, 60000.0),
+            # Moon 自 2026-11-11 起是真潮汐锁定（synchronousTargetReference），不再 author 周期。
+            "Moon": (80000000.0, 317900.0, 1.5, None),
+            "ZheSha": (13333333333.333334, 1959591.794, 4.596, 60000.0),
+        }
+        for body in bodies:
+            name = body.findtext("defName")
+            motion = body.find("./comps/li[@Class='PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding']/motion")
+            self.assertIsNotNone(motion, name)
+            actual = tuple(float(motion.findtext(field)) for field in
+                           ("orbitRadiusMeters", "orbitPeriodSeconds", "orbitPhaseRadians"))
+            period = motion.findtext("rotation/periodSeconds")
+            self.assertEqual(expected[name], actual + (None if period is None else float(period),), name)
+        moon = next(body for body in bodies if body.findtext("defName") == "Moon")
+        self.assertEqual("frameOrigin",
+                         moon.findtext("./comps/li[@Class='PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding']/motion/rotation/synchronousTargetReference"))
 
     def test_opaque_provider_payload_is_binary_and_not_interpreted_as_json(self):
         payload = b"\x00\xffexternal provider payload\r\n"

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <Operation Class="PatchOperationAdd">
+    <xpath>/Defs/PioneerFramework.Celestial.CelestialMapProfileDef[defName="PF_EarthMaps"]</xpath>
+    <value>
+      <purposeRecipes>
+        <li><purpose>Landing</purpose><recipe>PF_SampleLandingContent</recipe></li>
+      </purposeRecipes>
+    </value>
+  </Operation>
+</Patch>

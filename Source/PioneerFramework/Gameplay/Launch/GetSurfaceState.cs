@@ -32,7 +32,13 @@ namespace PioneerFramework.Launch
     {
         public const double DefaultDayLengthTicks = 60000.0;
 
-        /// <summary>自转角速度 ω (rad/s)：2π/dayLengthTicks（1 tick = 1 s）。</summary>
+        /// <summary>
+        /// 自转角速度 ω (rad/s)：2π/dayLengthTicks（1 tick = 1 s）。
+        /// **标量、绕 +Y** 的口径；有运行时时取惯性角速度的 Y 分量（轴=+Y 时即速率本身）。
+        /// 2026-11-11 起曲面上所有位姿/经度/共转速度都改走 `UsesProviderPose` 的四元数姿态
+        /// （见 GetSurfaceState.Pose.cs），这里只剩**无运行时兜底**与需要标量的旧接口在用；
+        /// 倾斜自转轴的天体请勿以本函数当速率模长（会按 cos 倾角缩小）。
+        /// </summary>
         public static double RotationOmega(CelestialBodyManager? mgr, int bodyId)
         {
             if (mgr?.TryGetCelestialRuntime(out _) == true)

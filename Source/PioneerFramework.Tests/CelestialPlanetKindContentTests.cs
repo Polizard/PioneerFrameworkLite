@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Xml;
 using HarmonyLib;
 using PioneerFramework.Celestial;
+using PioneerFramework.MapGeneration;
 using RimWorld;
 using RimWorld.Planet;
 using Verse;
@@ -73,16 +74,58 @@ public class CelestialPlanetKindContentTests
             Assert.True(restored.Success, string.Join(",", restored.Errors.Select(error => error.Code)));
             Assert.Equal(value.Serialize().ToArray(), restored.Value.Serialize().ToArray());
         }
-        foreach (var biome in values.OfType<BiomeGenerationResolvedProperties>().Where(p => p.Profile.Mode == CelestialBiomeGenerationMode.LatitudeBands))
+    }
+
+    [Fact]
+    public void MoonBiomesExpressLatitudeBandsThroughParameterizedRulesAndPerBiomeHilliness()
+    {
+        using var content = new Content();
+        var moon = content.BiomeProfiles["PF_MoonBiomes"].ToProfile().Value;
+        Assert.Equal(CelestialBiomeGenerationMode.Parameterized, moon.Mode);
+        Assert.Equal(0, moon.Temperature); Assert.Equal(0, moon.Rainfall); Assert.Equal(0, moon.Swampiness);
+        Assert.Equal(new[] { "Factions", "Roads", "Features" }, moon.RootOnlySteps);
+        var environment = content.Environments["PF_MoonEnvironment"].ToProfile().Value;
+        Assert.All(moon.Terrain.BiomeRules.Select(rule => rule.BiomeId).Distinct(), biome => Assert.Contains(biome, environment.VacuumBiomeIds));
+        var waterIce = moon.Terrain.BiomeRules.Single(rule => rule.BiomeId == "PF_MoonBiomeWater");
+        Assert.Equal(10, waterIce.Priority); Assert.Equal(75, waterIce.MinimumAbsoluteLatitude); Assert.Equal((int)Hilliness.Flat, waterIce.Hilliness);
+        // 极区优先：waterIce 的 priority 10 高于 basalt/regolith，抽样值落点不影响结果。
+        foreach (double pick in new[] { .1, .9 })
         {
-            var environment = Assert.Single(values.OfType<ExistingEnvironmentResolvedProperties>()).Profile;
-            foreach (double latitude in new[] { -90.0, 0, 90 })
-                foreach (bool secondary in new[] { false, true })
-                {
-                    var selection = content.Biomes[biome.Profile.SelectBiome(latitude, secondary).BiomeId];
-                    Assert.Equal(selection.inVacuum, environment.VacuumBiomeIds.Contains(selection.defName));
-                }
+            var polar = CelestialPlanetTerrain.SelectBiome(moon.Terrain, 0, 0, 0, 75, .5, pick);
+            Assert.Equal("PF_MoonBiomeWater", polar.BiomeId); Assert.Equal((int)Hilliness.Flat, polar.Hilliness);
         }
+        // 非极区：basalt/regolith 同优先级同权重 50/50，hilliness 由规则给出。
+        Assert.Equal(.5, moon.Terrain.BiomeRules.Single(rule => rule.BiomeId == "PF_MoonBiomeBasalt").Weight);
+        Assert.Equal(.5, moon.Terrain.BiomeRules.Single(rule => rule.BiomeId == "PF_MoonBiomeRegolith" && !rule.Fallback).Weight);
+        var basalt = CelestialPlanetTerrain.SelectBiome(moon.Terrain, 0, 0, 0, 10, .5, .1);
+        Assert.Equal("PF_MoonBiomeBasalt", basalt.BiomeId); Assert.Equal((int)Hilliness.SmallHills, basalt.Hilliness);
+        var regolith = CelestialPlanetTerrain.SelectBiome(moon.Terrain, 0, 0, 0, 10, .5, .9);
+        Assert.Equal("PF_MoonBiomeRegolith", regolith.BiomeId); Assert.Equal((int)Hilliness.Flat, regolith.Hilliness);
+        var fallback = moon.Terrain.BiomeRules.Single(rule => rule.Fallback);
+        Assert.Equal("PF_MoonBiomeRegolith", fallback.BiomeId); Assert.Equal((int)Hilliness.Flat, fallback.Hilliness);
+    }
+
+    [Fact]
+    public void ShippedParameterizedProfilesKeepNativeStepsOffTerrainAndInSyncWithWaterFlags()
+    {
+        using var content = new Content();
+        var parameterized = content.BiomeProfiles.Where(pair => pair.Value.mode == CelestialBiomeGenerationMode.Parameterized).ToArray();
+        Assert.NotEmpty(parameterized);
+        foreach (var pair in parameterized)
+        {
+            var steps = pair.Value.worldGenSteps.Select(step => step.defName).ToArray();
+            Assert.DoesNotContain("Terrain", steps);
+            Assert.Equal(pair.Value.terrain.allowRivers, steps.Contains("Rivers"));
+            Assert.Equal(pair.Value.terrain.allowLakes, steps.Contains("Lakes"));
+            var profile = pair.Value.ToProfile();
+            Assert.True(profile.Success, pair.Key + ": " + string.Join(",", profile.Errors.Select(error => error.Detail)));
+        }
+        var temperate = content.BiomeProfiles["PF_TemperateBiomes"];
+        var temperateSteps = temperate.worldGenSteps.Select(step => step.defName).ToArray();
+        Assert.Contains("Lakes", temperateSteps);
+        Assert.Contains("Rivers", temperateSteps);
+        Assert.True(temperate.terrain.allowRivers);
+        Assert.True(temperate.terrain.allowLakes);
     }
 
     [Theory]
@@ -94,14 +137,17 @@ public class CelestialPlanetKindContentTests
         using var content = new Content();
         var values = content.Bodies[id].ToTemplate().Value.Resolve(new(42, id)).Value.Select(c => c.Properties).ToArray();
         var biomes = values.OfType<BiomeGenerationResolvedProperties>().Single().Profile;
-        Assert.Equal(primary, biomes.SelectBiome(0, false).BiomeId);
-        Assert.Equal(secondary, biomes.SelectBiome(0, true).BiomeId);
+        Assert.Equal(primary, CelestialPlanetTerrain.SelectBiome(biomes.Terrain, temperature, 0, 0, 0, 0, .5).BiomeId);
+        Assert.Equal(secondary, CelestialPlanetTerrain.SelectBiome(biomes.Terrain, temperature, 0, 0, 0, .5, .5).BiomeId);
         Assert.Equal(temperature, biomes.Temperature);
         Assert.Equal(0, biomes.Rainfall);
         var maps = values.OfType<MapGenerationResolvedProperties>().Single().Profile;
+        var rules = Assert.Single(maps.LocalSpecification.Recipe.Steps, step => step.HandlerId == LocalMapBuiltinConfigurations.NativeRules);
+        var selectors = LocalMapBuiltinConfigurations.Decode<NativeRulesConfiguration>(rules.Configuration).Skip;
         foreach (string step in new[] { "Plants", "Animals", "WildPlantSpawner", "WildAnimalSpawner", "River", "AncientUtilityBuilding", "ScatterRuinsSimple" })
-            Assert.True(CelestialMapGeneration.ShouldSkip(maps, primary, new GenStepDef { defName = step }), step);
-        Assert.True(maps.ShouldReplace(primary, "Soil", false));
+            Assert.Contains(selectors, selector => NativeMapStepSelection.Matches(selector, primary, new GenStepDef { defName = step }));
+        var replacement = Assert.Single(maps.LocalSpecification.Recipe.Steps, step => step.HandlerId == LocalMapBuiltinConfigurations.TerrainReplacement);
+        Assert.True(LocalMapBuiltinConfigurations.Decode<TerrainReplacementConfiguration>(replacement.Configuration).ShouldReplace(primary, "Soil", false));
         Assert.All(new[] { primary, secondary }.Distinct(), name => {
             Assert.Equal(0, content.Biomes[name].plantDensity);
             Assert.Equal(0, content.Biomes[name].animalDensity);
@@ -136,13 +182,17 @@ public class CelestialPlanetKindContentTests
     internal sealed class Content : IDisposable
     {
         private readonly CelestialXmlTestScope scope = new();
+        private readonly ShippedLocalMapRecipeDefs mapRecipes;
         public Dictionary<string, CelestialBodyDef> Bodies { get; } = new();
+        public Dictionary<string, CelestialMapProfileDef> Maps { get; } = new();
         public Dictionary<string, BiomeDef> Biomes { get; } = new();
+        public Dictionary<string, CelestialBiomeProfileDef> BiomeProfiles { get; } = new();
+        public Dictionary<string, CelestialEnvironmentProfileDef> Environments { get; } = new();
         private readonly Dictionary<string, XmlNode> nodes = new();
         public Content()
         {
-            try { Load(); }
-            catch { scope.Dispose(); throw; }
+            try { mapRecipes = new(); Load(); }
+            catch { Dispose(); throw; }
         }
         private void Load()
         {
@@ -166,24 +216,30 @@ public class CelestialPlanetKindContentTests
             var visuals = nodes.Where(p => p.Value.Name.EndsWith(".CelestialVisualProfileDef", StringComparison.Ordinal)).ToDictionary(p => p.Key, p => Parse<CelestialVisualProfileDef>(p.Value));
             foreach (var pair in visuals) if (nodes[pair.Key]["backgroundBiome"] is { } n) pair.Value.backgroundBiome = Biome(n.InnerText);
             var environments = nodes.Where(p => p.Value.Name.EndsWith(".CelestialEnvironmentProfileDef", StringComparison.Ordinal)).ToDictionary(p => p.Key, p => Parse<CelestialEnvironmentProfileDef>(p.Value));
-            foreach (var pair in environments) pair.Value.vacuumBiomes = Items(nodes[pair.Key], "vacuumBiomes").Select(n => Biome(n.InnerText)).ToList();
+            foreach (var pair in environments)
+            {
+                pair.Value.vacuumBiomes = Items(nodes[pair.Key], "vacuumBiomes").Select(n => Biome(n.InnerText)).ToList();
+                Environments.Add(pair.Key, pair.Value);
+            }
             var biomes = nodes.Where(p => p.Value.Name.EndsWith(".CelestialBiomeProfileDef", StringComparison.Ordinal)).ToDictionary(p => p.Key, p => Parse<CelestialBiomeProfileDef>(p.Value));
             foreach (var pair in biomes)
             {
                 var n = nodes[pair.Key];
-                pair.Value.polarBiome = n["polarBiome"] is { } polar ? Biome(polar.InnerText) : null;
-                pair.Value.primaryBiome = n["primaryBiome"] is { } primary ? Biome(primary.InnerText) : null;
-                pair.Value.secondaryBiome = n["secondaryBiome"] is { } secondary ? Biome(secondary.InnerText) : null;
                 pair.Value.worldGenSteps = Items(n, "worldGenSteps").Select(s => new WorldGenStepDef { defName = s.InnerText, worldGenStep = new WorldGenStep_Terrain() }).ToList();
                 pair.Value.rootOnlySteps = Items(n, "rootOnlySteps").Select(s => new WorldGenStepDef { defName = s.InnerText, worldGenStep = new WorldGenStep_Terrain() }).ToList();
+                if (pair.Value.terrain != null)
+                    foreach (var rule in pair.Value.terrain.biomeRules.Select((rule, i) => (rule, i)))
+                        rule.rule.biome = Biome(Items(n["terrain"], "biomeRules").ElementAt(rule.i)["biome"].InnerText);
+                BiomeProfiles.Add(pair.Key, pair.Value);
             }
             var maps = nodes.Where(p => p.Value.Name.EndsWith(".CelestialMapProfileDef", StringComparison.Ordinal)).ToDictionary(p => p.Key, p => Parse<CelestialMapProfileDef>(p.Value));
-            TerrainDef Terrain(string name) { var value = (TerrainDef)RuntimeHelpers.GetUninitializedObject(typeof(TerrainDef)); value.defName = name; return value; }
             foreach (var pair in maps)
             {
-                pair.Value.replaceTerrains = Items(nodes[pair.Key], "replaceTerrains").Select(n => Terrain(n.InnerText)).ToList();
-                pair.Value.replacementTerrain = nodes[pair.Key]["replacementTerrain"] is { } n ? Terrain(n.InnerText) : null;
-                foreach (var rule in pair.Value.biomeRules.Select((rule, i) => (rule, i))) rule.rule.biome = Biome(Items(nodes[pair.Key], "biomeRules").ElementAt(rule.i)["biome"].InnerText);
+                Maps.Add(pair.Key, pair.Value);
+                pair.Value.localRecipe = mapRecipes.Recipes[nodes[pair.Key]["localRecipe"].InnerText];
+                if (pair.Value.diversity != null)
+                    foreach (var item in pair.Value.diversity.weather.Select((item, i) => (item, i)))
+                        item.item.def = new WeatherDef { defName = Items(nodes[pair.Key]["diversity"], "weather").ElementAt(item.i)["def"].InnerText };
             }
             foreach (var pair in nodes.Where(p => p.Value.Name == "PioneerFramework.CelestialBodyDef"))
             {
@@ -201,6 +257,6 @@ public class CelestialPlanetKindContentTests
         }
         private static IEnumerable<XmlNode> Items(XmlNode node, string field) => XmlInheritance.GetResolvedNodeFor(node).SelectNodes(field + "/li").Cast<XmlNode>();
         private static T Parse<T>(XmlNode node) where T : new() => DirectXmlToObject.ObjectFromXml<T>(node, false);
-        public void Dispose() => scope.Dispose();
+        public void Dispose() { mapRecipes?.Dispose(); scope.Dispose(); }
     }
 }

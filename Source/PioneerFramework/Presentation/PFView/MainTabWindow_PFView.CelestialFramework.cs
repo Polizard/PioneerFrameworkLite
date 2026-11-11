@@ -53,7 +53,6 @@ namespace PioneerFramework
             celestialRenderStamp = stamp; celestialRenderTime = tick; celestialRenderCatalog = runtime.Catalog.Revision;
             celestialRenderSurfaces = surfaces; celestialRenderStatus = runtime.Physics.Status;
             celestialRenderSnapshots.Clear(); celestialRenderBodies.Clear();
-            bool changedConfiguration = false;
             var catalog = runtime.CaptureCatalog();
             if (changedCatalog)
             {
@@ -62,8 +61,8 @@ namespace PioneerFramework
                 var handles = catalog.Bodies.Select(description => description.Handle).ToHashSet();
                 foreach (int retired in celestialRenderConfigurations.Keys.Where(handle => !handles.Contains(handle)).ToArray())
                 {
+                    InvalidateCelestialRenderResources(retired);
                     celestialRenderKeys.Remove(retired); celestialRenderProjections.Remove(retired); celestialRenderConfigurations.Remove(retired);
-                    PFViewSurfaceBake.ForgetMemory(retired); changedConfiguration = true;
                 }
             }
             var presentation = celestialRenderAdapter!.CapturePresentationBatch(catalog.Bodies.Select(body => body.Id), stamp, tick);
@@ -75,21 +74,45 @@ namespace PioneerFramework
                 var snapshot = captured.Value;
                 celestialRenderSnapshots.Add(description.Handle, snapshot);
                 if (!celestialRenderAdapter.TryGetConfiguration(snapshot, out var configuration)) continue;
-                bool changedEntry = !celestialRenderConfigurations.TryGetValue(description.Handle, out var previous) || !ReferenceEquals(previous, configuration);
-                celestialRenderConfigurations[description.Handle] = configuration;
-                changedConfiguration |= changedEntry && previous != null;
-                if (snapshot.Visuals.Count == 0) continue;
-                if (!celestialRenderKeys.TryGetValue(description.Handle, out var key) || key != snapshot.CacheKey || changedEntry)
+                celestialRenderConfigurations.TryGetValue(description.Handle, out var previous);
+                celestialRenderKeys.TryGetValue(description.Handle, out var key);
+                // FaultRevision can rebuild every descriptor entry; only changed consumer inputs own resources.
+                bool changedOwner = key != null && (key != snapshot.CacheKey || (previous != null &&
+                    (!previous.Revisions.SequenceEqual(configuration.Revisions) || !previous.Atmosphere.Equals(configuration.Atmosphere) ||
+                     previous.NativeRadius != configuration.NativeRadius || previous.DayLengthTicks != configuration.DayLengthTicks)));
+                if (changedOwner)
                 {
-                    changedConfiguration |= key != null;
-                    celestialRenderKeys[description.Handle] = snapshot.CacheKey;
+                    bool sameSurfaceOwner = key!.WorldSessionId == snapshot.CacheKey.WorldSessionId && key.InstanceId == snapshot.CacheKey.InstanceId &&
+                        key.DescriptorRevision == snapshot.CacheKey.DescriptorRevision && key.LayerId == snapshot.CacheKey.LayerId &&
+                        previous != null && previous.NativeRadius == configuration.NativeRadius;
+                    InvalidateCelestialRenderResources(description.Handle, sameSurfaceOwner);
+                }
+                celestialRenderConfigurations[description.Handle] = configuration;
+                celestialRenderKeys[description.Handle] = snapshot.CacheKey;
+                if (snapshot.Visuals.Count == 0)
+                {
+                    celestialRenderProjections.Remove(description.Handle);
+                    continue;
+                }
+                if (key != snapshot.CacheKey || changedOwner)
+                {
                     celestialRenderProjections[description.Handle] = CelestialRenderProjection.Create(snapshot, configuration.Atmosphere, configuration.DayLengthTicks);
                 }
                 celestialRenderBodies.Add(celestialRenderProjections[description.Handle]);
             }
-            if (changedConfiguration)
-            { DestroySurfaceResources(); DestroyCloudResources(); DestroyStellarVisualResources(); DestroyAtmosphereShellMaterials(); }
             return celestialRenderBodies;
+        }
+
+        // Numeric handles belong to this runtime. Release before replacing its existing world/instance key.
+        private void InvalidateCelestialRenderResources(int handle, bool sameSurfaceOwner = false)
+        {
+            celestialRenderKeys.TryGetValue(handle, out var owner);
+            DestroySurfaceResourcesForBody(handle);
+            if (owner != null) DestroyCloudResourcesForBody(owner);
+            DestroyStellarVisualResourcesForBody(handle);
+            DestroyAtmosphereShellMaterialsForBody(handle);
+            if (sameSurfaceOwner) PFViewSurfaceBake.InvalidateVisualMemory(handle, owner?.LayerId);
+            else PFViewSurfaceBake.ForgetMemory(handle, owner?.LayerId);
         }
         private CelestialBodyInfo? GetCelestialRenderBody(CelestialBodyManager manager, int handle, double tick)
         {

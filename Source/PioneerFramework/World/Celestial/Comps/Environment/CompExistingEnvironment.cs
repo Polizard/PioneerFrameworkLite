@@ -4,10 +4,10 @@ using System.Linq;
 
 namespace PioneerFramework.Celestial
 {
-    public sealed class CompExistingEnvironment(CelestialCompDescriptor descriptor) : CelestialBodyComp(descriptor), ICelestialEnvironmentCapability
+    public class CompExistingEnvironment(CelestialCompDescriptor descriptor) : CelestialBodyComp(descriptor), ICelestialEnvironmentCapability
     {
         private CelestialInstanceId? primaryLight;
-        private CelestialInstanceId PrimaryLight()
+        protected CelestialInstanceId PrimaryLight()
         {
             if (primaryLight.HasValue) return primaryLight.Value;
             var profile = ((ExistingEnvironmentResolvedProperties)Context.Properties).Profile;
@@ -19,7 +19,7 @@ namespace PioneerFramework.Celestial
         }
         public override void OnReady() => _ = PrimaryLight();
         public override void OnRestored() => _ = PrimaryLight();
-        public CelestialEnvironmentSample Evaluate(CelestialEnvironmentQuery query)
+        public virtual CelestialEnvironmentSample Evaluate(CelestialEnvironmentQuery query)
         {
             if (!double.IsFinite(query.DisplayTicksAbs) || !float.IsFinite(query.LongitudeDegrees) || !float.IsFinite(query.LatitudeDegrees) || Math.Abs(query.LatitudeDegrees) > 90)
                 throw new ArgumentOutOfRangeException(nameof(query));
@@ -29,17 +29,26 @@ namespace PioneerFramework.Celestial
                 query.BiomeId != null && profile.VacuumBiomeIds.Contains(query.BiomeId, StringComparer.Ordinal) ? query.BiomeId : null, cycle.DayOfYearFraction);
         }
     }
-    public sealed class CompProperties_ExistingEnvironment : CelestialCompProperties
+    public sealed class CompProperties_ExistingEnvironment : CelestialCompProperties, ICelestialCompFactory
     {
         public CelestialEnvironmentProfileDef profile = null!;
+        public override int ConfigurationVersion => profile?.climate != null || profile?.exposure != null ? 2 : 1;
         public override string HandlerId => ExistingEnvironmentResolvedProperties.Handler;
         protected override IEnumerable<string> Provides => new[] { "environment.existing" };
         protected override IEnumerable<string> IntrinsicRequires => new[] { "geometry" };
         protected override string ExclusiveSlot => "environment.existing";
-        public override CelestialBodyComp CreateComp() => new CompExistingEnvironment(Descriptor);
+        public override CelestialBodyComp CreateComp() => profile?.climate != null || profile?.exposure != null ?
+            new CompPlanetEnvironment(Descriptor) : new CompExistingEnvironment(Descriptor);
+        CelestialBodyComp ICelestialCompFactory.Create(ICelestialResolvedProperties properties)
+        {
+            if (properties is not ExistingEnvironmentResolvedProperties resolved || resolved.Key != key)
+                throw new ArgumentException("Environment properties do not match factory.");
+            CelestialBodyComp component = resolved.Version == 2 ? new CompPlanetEnvironment(Descriptor) : new CompExistingEnvironment(Descriptor);
+            component.Initialize(resolved); return component;
+        }
         public override CelestialResult<ICelestialResolvedProperties> Resolve(CelestialGenerationContext context)
         {
-            var value = profile?.ToProfile();
+            var value = profile?.ToProfile(context);
             return value == null ? CelestialResult.Reject<ICelestialResolvedProperties>(new CelestialError("EnvironmentProfileMissing", CompKey: key)) :
                 value.Success ? CelestialResult.Ok<ICelestialResolvedProperties>(new ExistingEnvironmentResolvedProperties(key, value.Value)) : CelestialResult.Reject<ICelestialResolvedProperties>(value.Errors.ToArray());
         }

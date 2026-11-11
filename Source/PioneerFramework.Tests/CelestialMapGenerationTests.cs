@@ -1,6 +1,8 @@
 using System;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using PioneerFramework.Celestial;
+using PioneerFramework.MapGeneration;
 using RimWorld;
 using Verse;
 using Xunit;
@@ -22,16 +24,23 @@ public class CelestialMapGenerationTests
                 skipStepTypes = new() { typeof(GenStep_RocksFromGrid) } } } };
         var resolved = new MapGenerationResolvedProperties("map", profile.ToProfile().Value);
         profile.skipStepNames.Clear();
-        var restored = MapGenerationResolvedProperties.Deserialize("map", 1, resolved.Serialize()).Value.Profile;
-        Assert.True(CelestialMapGeneration.ShouldSkip(restored, "Elsewhere", new GenStepDef { defName = "Snow" }));
-        Assert.True(CelestialMapGeneration.ShouldSkip(restored, "Elsewhere", new GenStepDef { defName = "AncientCustom" }));
-        Assert.True(CelestialMapGeneration.ShouldSkip(restored, "Elsewhere", new GenStepDef { defName = "ModChunks", genStep = new DerivedChunks() }));
+        var restored = MapGenerationResolvedProperties.Deserialize("map", 1, resolved.Serialize()).Value.Specification;
+        var rules = LocalMapBuiltinConfigurations.Decode<NativeRulesConfiguration>(
+            Assert.Single(restored.Recipe.Steps, step => step.HandlerId == LocalMapBuiltinConfigurations.NativeRules).Configuration);
+        bool ShouldSkip(string biome, GenStepDef step) =>
+            rules.Skip.Any(selector => NativeMapStepSelection.Matches(selector, biome, step));
+        var replacement = LocalMapBuiltinConfigurations.Decode<TerrainReplacementConfiguration>(
+            Assert.Single(restored.Recipe.Steps, step => step.HandlerId == LocalMapBuiltinConfigurations.TerrainReplacement).Configuration);
+
+        Assert.True(ShouldSkip("Elsewhere", new GenStepDef { defName = "Snow" }));
+        Assert.True(ShouldSkip("Elsewhere", new GenStepDef { defName = "AncientCustom" }));
+        Assert.True(ShouldSkip("Elsewhere", new GenStepDef { defName = "ModChunks", genStep = new DerivedChunks() }));
         var rocks = new GenStepDef { defName = "ModRocks", genStep = new GenStep_RocksFromGrid() };
-        Assert.True(CelestialMapGeneration.ShouldSkip(restored, "CustomFlat", rocks));
-        Assert.False(CelestialMapGeneration.ShouldSkip(restored, "Elsewhere", rocks));
-        Assert.True(restored.ShouldReplace("Elsewhere", "Gravel", false));
-        Assert.True(restored.ShouldReplace("CustomFlat", "AnyRock", true));
-        Assert.False(restored.ShouldReplace("Elsewhere", "AnyRock", true));
+        Assert.True(ShouldSkip("CustomFlat", rocks));
+        Assert.False(ShouldSkip("Elsewhere", rocks));
+        Assert.True(replacement.ShouldReplace("Elsewhere", "Gravel", false));
+        Assert.True(replacement.ShouldReplace("CustomFlat", "AnyRock", true));
+        Assert.False(replacement.ShouldReplace("Elsewhere", "AnyRock", true));
     }
     [Fact]
     public void InvalidTypesAndIncompleteTerrainReplacementAreRejected()

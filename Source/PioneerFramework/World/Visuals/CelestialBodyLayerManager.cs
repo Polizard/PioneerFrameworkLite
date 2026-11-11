@@ -147,7 +147,7 @@ namespace PioneerFramework
         {
             if (layer is not CelestialSurfaceLayer surface) return;
             if (celestialBodyLayers.TryGetValue(layer, out _)) return;
-            var configuration = CelestialGenerationConfiguration.Decode(surface.Header.GenerationConfiguration);
+            var configuration = CelestialLayerConfiguration.For(surface.Header);
             if (!configuration.Success) return;
             float day = 60000f;
             var saved = configuration.Value.SingleOrDefault(record => record.HandlerId == ExistingEnvironmentResolvedProperties.Handler);
@@ -297,6 +297,8 @@ namespace PioneerFramework
 
         private static Command_Action BuildCelestialViewCommand()
         {
+            var commandGame = Current.Game;
+            var commandGrid = Find.WorldGrid;
             var cmd = new Command_Action
             {
                 defaultLabel = "查看天体",
@@ -304,6 +306,11 @@ namespace PioneerFramework
                 icon = ViewCelestialBodyIcon,
                 action = () =>
                 {
+                    if (!ReferenceEquals(Current.Game, commandGame) || !ReferenceEquals(Find.WorldGrid, commandGrid)) return;
+                    // Native UI consumers can retain a command after its initial enumeration.
+                    // Read current layer objects at the explicit click boundary, including new instance surfaces.
+                    cachedBodies.Clear();
+                    cachedBodies.AddRange(GetAllCelestialBodyLayers());
                     if (cachedBodies.Count == 0)
                     {
                         Messages.Message("没有已注册的天体 layer。请检查 CelestialBodyDef XML 配置。",
@@ -323,7 +330,7 @@ namespace PioneerFramework
                         var captured = manager?.CaptureTarget(handle);
                         if (captured?.Success != true) continue;
                         string bodyName = manager!.GetBodyName(handle);
-                        string label = bodyName;
+                        string label = bodyName + " · PlanetLayer #" + layer.LayerID.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
                         if (layer.IsSelected)
                             label += " (当前)";

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using PioneerFramework.MapGeneration;
 
 namespace PioneerFramework.Celestial
 {
@@ -12,11 +13,21 @@ namespace PioneerFramework.Celestial
     public sealed record CelestialMapOperation(CelestialOperation Operation, CelestialMapHandle? Handle = null);
     public sealed record CelestialMapSiteRecord(CelestialMapAddress Address, int MapParentId, int? MapId, string? Failure = null)
     {
+        public LocalMapGenerationRecord? Generation { get; init; }
         public bool ParentRetired { get; init; }
         public IReadOnlyList<string> OperationIds { get; init; } = Array.Empty<string>();
         public IReadOnlyList<string> RetiredOperationIds { get; init; } = Array.Empty<string>();
     }
-    public interface ICelestialMapGenerationCapability { CelestialMapProfile GetProfile(); }
+    public interface ICelestialMapGenerationCapability
+    {
+        LocalMapGenerationSpec GetSpecification() => CelestialLocalMapCompatibility.ToSpecification(GetProfile());
+        CelestialMapProfile GetProfile() => throw new NotSupportedException("This capability has no compatibility profile.");
+    }
+    public interface ICelestialLocalMapGenerationProperties : ICelestialResolvedProperties
+    {
+        LocalMapGenerationSpec Specification { get; }
+        CelestialMapProfile? CompatibilityProfile { get; }
+    }
 
     public sealed class CelestialMapBiomeProfile
     {
@@ -55,8 +66,16 @@ namespace PioneerFramework.Celestial
         public string? ReplacementTerrainId { get; }
         [System.Text.Json.Serialization.JsonPropertyName("BiomeRules"), System.Text.Json.Serialization.JsonPropertyOrder(12)]
         public IReadOnlyList<CelestialMapBiomeProfile> BiomeRules { get; }
+        [System.Text.Json.Serialization.JsonPropertyName("Diversity"), System.Text.Json.Serialization.JsonPropertyOrder(13),
+            System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public CelestialPlanetMapDiversity? Diversity { get; }
+        [System.Text.Json.Serialization.JsonPropertyOrder(14),
+            System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull),
+            System.Text.Json.Serialization.JsonConverter(typeof(LocalMapGenerationJsonConverter))]
+        public LocalMapGenerationSpec? LocalSpecification { get; }
         public CelestialMapProfile(string id, string? mapGeneratorId, IReadOnlyList<string> skipStepNames, IReadOnlyList<string> skipStepPrefixes,
-            IReadOnlyList<string> skipStepTypes, IReadOnlyList<string> replaceTerrainIds, string? replacementTerrainId, IReadOnlyList<CelestialMapBiomeProfile> biomeRules)
+            IReadOnlyList<string> skipStepTypes, IReadOnlyList<string> replaceTerrainIds, string? replacementTerrainId, IReadOnlyList<CelestialMapBiomeProfile> biomeRules,
+            CelestialPlanetMapDiversity? diversity = null, LocalMapGenerationSpec? localSpecification = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(id);
             Id = id; MapGeneratorId = mapGeneratorId;
@@ -68,6 +87,8 @@ namespace PioneerFramework.Celestial
             if ((ReplaceTerrainIds.Count > 0 || BiomeRules.Any(rule => rule.ReplaceRockTerrains)) && string.IsNullOrWhiteSpace(replacementTerrainId))
                 throw new ArgumentException("Terrain replacement requires a target.");
             ReplacementTerrainId = replacementTerrainId;
+            Diversity = diversity;
+            LocalSpecification = localSpecification;
         }
         internal static IReadOnlyList<string> CopyNames(IReadOnlyList<string> names)
         {
@@ -75,23 +96,32 @@ namespace PioneerFramework.Celestial
                 throw new ArgumentException("Invalid map rule references.");
             return Array.AsReadOnly(names.ToArray());
         }
-        public bool ShouldReplace(string biomeId, string terrainId, bool isRock) => ReplaceTerrainIds.Contains(terrainId, StringComparer.Ordinal) ||
-            (isRock && BiomeRules.Any(rule => rule.BiomeId == biomeId && rule.ReplaceRockTerrains));
     }
-    public sealed class MapGenerationResolvedProperties : ICelestialResolvedProperties
+    public sealed class MapGenerationResolvedProperties : ICelestialLocalMapGenerationProperties
     {
         public const string Handler = "PFL.MapGeneration";
         public string Key { get; }
         public string HandlerId => Handler;
-        public int Version => 1;
+        public int Version => Profile.LocalSpecification != null ? 3 : Profile.Diversity == null ? 1 : 2;
         public CelestialMapProfile Profile { get; }
+        public CelestialMapProfile CompatibilityProfile => Profile;
+        public LocalMapGenerationSpec Specification { get; }
         public MapGenerationResolvedProperties(string key, CelestialMapProfile profile)
-        { ArgumentException.ThrowIfNullOrWhiteSpace(key); Key = key; Profile = profile ?? throw new ArgumentNullException(nameof(profile)); }
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(key); Key = key; Profile = profile ?? throw new ArgumentNullException(nameof(profile));
+            Specification = profile.LocalSpecification ?? CelestialLocalMapCompatibility.ToSpecification(profile);
+        }
         public ReadOnlyMemory<byte> Serialize() => JsonSerializer.SerializeToUtf8Bytes(Profile);
         public static CelestialResult<MapGenerationResolvedProperties> Deserialize(string key, int version, ReadOnlyMemory<byte> payload)
         {
-            if (version != 1) return CelestialResult.Reject<MapGenerationResolvedProperties>(new CelestialError("UnsupportedConfigurationVersion", CompKey: key));
-            try { return CelestialResult.Ok(new MapGenerationResolvedProperties(key, CelestialResolvedJson.Read<CelestialMapProfile>(payload))); }
+            if (version is not (1 or 2 or 3)) return CelestialResult.Reject<MapGenerationResolvedProperties>(new CelestialError("UnsupportedConfigurationVersion", CompKey: key));
+            try
+            {
+                var profile = CelestialResolvedJson.Read<CelestialMapProfile>(payload);
+                var properties = new MapGenerationResolvedProperties(key, profile);
+                if (properties.Version != version) throw new ArgumentException("Map configuration version mismatch.");
+                return CelestialResult.Ok(properties);
+            }
             catch (Exception exception) when (exception is JsonException or ArgumentException)
             { return CelestialResult.Reject<MapGenerationResolvedProperties>(new CelestialError("InvalidConfigurationPayload", CompKey: key, Detail: exception.Message)); }
         }

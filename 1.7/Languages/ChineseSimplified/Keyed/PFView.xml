@@ -95,7 +95,7 @@
   <PFV_HelpSubjectsTitle>查看与操作</PFV_HelpSubjectsTitle>
   <PFV_HelpSubjects>底部依次显示查看、跟随、操作编队、目标。查看其他对象或收起详情不会切换操控编队。Shift+左键设目标；开火前需明确打开操作编队的武器面板。</PFV_HelpSubjects>
   <PFV_HelpTimeTitle>游戏时间</PFV_HelpTimeTitle>
-  <PFV_HelpTime>工具条控制暂停与时间档。默认数字键 1/2/3/4 调整速度，Space 暂停，沿用原版可重绑键位。搜索和上层窗口优先占用输入。</PFV_HelpTime>
+  <PFV_HelpTime>PFView 显示物理模拟当前采用的倍率。可用工具栏按钮或暂停快捷键（默认 Space）暂停或继续。搜索和上层窗口优先接收输入。</PFV_HelpTime>
   <PFV_HelpKnownTitle>接触与仪表</PFV_HelpKnownTitle>
   <PFV_HelpKnown>未识别接触只显示观测记录与误差。姿态球记号：P 顺行、A 逆行、R/r 径外/径内、N/S 法向/反法向、T 主推轴。</PFV_HelpKnown>
   <PFV_HelpLimitsTitle>取景与调试</PFV_HelpLimitsTitle>
@@ -223,12 +223,13 @@
   <PFV_Pilot_Sas_Antinormal>反法向</PFV_Pilot_Sas_Antinormal>
   <PFV_Pilot_Sas_RadialOut>径外</PFV_Pilot_Sas_RadialOut>
   <PFV_Pilot_Sas_RadialIn>径内</PFV_Pilot_Sas_RadialIn>
+  <PFV_TogglePause>暂停或继续</PFV_TogglePause>
   <PFV_TimeSpaceRate>空间 {0}×</PFV_TimeSpaceRate>
   <PFV_TimeCombat>交战</PFV_TimeCombat>
   <PFV_TimeTerminal>交会收尾</PFV_TimeTerminal>
   <PFV_TimeManeuver>机动中</PFV_TimeManeuver>
   <PFV_TimeUnrestricted>采用玩家选择的空间倍率</PFV_TimeUnrestricted>
-  <PFV_TimeStatusTip>按钮控制游戏运行速度；空间时间同时采用当前倍率。\n当前：{0}\n状态：{1}\n精度限制解除后自动恢复空间倍率偏好。暂停时空间模拟停止。</PFV_TimeStatusTip>
+  <PFV_TimeStatusTip>空间倍率由物理时钟管理。\n当前：{0}\n状态：{1}\n精度限制解除后自动恢复空间倍率偏好。暂停时空间模拟停止。</PFV_TimeStatusTip>
   <PFV_FleetOverview>我方舰况 ({0})</PFV_FleetOverview>
   <PFV_FleetAttention>需关注 ({0})</PFV_FleetAttention>
   <PFV_FleetShowAll>显示全部</PFV_FleetShowAll>

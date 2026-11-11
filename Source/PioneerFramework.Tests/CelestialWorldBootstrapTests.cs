@@ -143,12 +143,12 @@ public class CelestialWorldBootstrapTests
     {
         using var fixture = new Fixture();
         using var scope = CelestialWorldBootstrap.Begin(fixture.System, 17, Fixture.Connect).Value;
-        fixture.Profile.polarLatitude = 0;
+        fixture.Profile.temperature = 123;
         fixture.Native.Grid.GenerateFreshWorld();
         var root = (CelestialSurfaceLayer)fixture.Native.Grid.Surface;
         var configuration = CelestialGenerationConfiguration.Decode(root.Header.GenerationConfiguration).Value;
         var biome = configuration.Single(record => record.HandlerId == BiomeGenerationResolvedProperties.Handler);
-        Assert.Equal(75, BiomeGenerationResolvedProperties.Deserialize(biome.Key, biome.ConfigurationVersion, biome.ConfigurationPayload).Value.Profile.PolarLatitude);
+        Assert.Equal(0, BiomeGenerationResolvedProperties.Deserialize(biome.Key, biome.ConfigurationVersion, biome.ConfigurationPayload).Value.Profile.Temperature);
         WorldGenerator.GeneratePlanetLayer(root, "profile-freeze", 1);
         Assert.True(scope.Complete().Success);
         Assert.Contains(root.Tiles, tile => tile.PrimaryBiome == fixture.Primary || tile.PrimaryBiome == fixture.Secondary);
@@ -222,13 +222,22 @@ public class CelestialWorldBootstrapTests
         public CelestialBiomeProfileDef Profile { get; }
         public PlanetLayerDef RootDefinition { get; }
         public CelestialSystemTemplate System { get; }
-        public Fixture(CelestialMapProfileDef mapProfile = null, Func<CelestialBodyTemplate, CelestialBodyTemplate> transform = null)
+        public Fixture(CelestialMapProfileDef mapProfile = null, Func<CelestialBodyTemplate, CelestialBodyTemplate> transform = null,
+            CelestialBiomeGenerationMode biomeMode = CelestialBiomeGenerationMode.Parameterized,
+            IReadOnlyList<WorldGenStepDef> worldGenSteps = null, IReadOnlyList<WorldGenStepDef> rootOnlySteps = null)
         {
             Native.AddDefs(Polar, Primary, Secondary);
-            Profile = new CelestialBiomeProfileDef { defName = "PF_ProbeProfile", mode = CelestialBiomeGenerationMode.LatitudeBands,
-                polarBiome = Polar, primaryBiome = Primary, secondaryBiome = Secondary, polarLatitude = 75, secondaryChance = 0.5,
-                polarHilliness = Hilliness.Flat, primaryHilliness = Hilliness.SmallHills, secondaryHilliness = Hilliness.Flat };
+            Profile = new CelestialBiomeProfileDef { defName = "PF_ProbeProfile", mode = biomeMode,
+                worldGenSteps = worldGenSteps?.ToList() ?? new(),
+                rootOnlySteps = rootOnlySteps?.ToList() ?? new(),
+                terrain = biomeMode == CelestialBiomeGenerationMode.Parameterized ? new() { biomeRules = new() {
+                    new() { key = "waterIce", biome = Polar, priority = 10, minimumAbsoluteLatitude = 75, hilliness = Hilliness.Flat },
+                    new() { key = "basalt", biome = Primary, weight = .5, hilliness = Hilliness.SmallHills },
+                    new() { key = "regolith", biome = Secondary, weight = .5, hilliness = Hilliness.Flat },
+                    new() { key = "fallback", biome = Secondary, fallback = true, hilliness = Hilliness.Flat } } } : null };
             Native.AddDefs(Profile);
+            if (worldGenSteps != null || rootOnlySteps != null)
+                Native.AddDefs((worldGenSteps ?? Array.Empty<WorldGenStepDef>()).Concat(rootOnlySteps ?? Array.Empty<WorldGenStepDef>()).ToArray());
             var definition = new PlanetLayerDef { defName = "PF_ProbeRootSurface", layerType = typeof(CelestialSurfaceLayer),
                 tileType = typeof(SurfaceTile), worldDrawLayers = new List<Type>() };
             RootDefinition = definition;

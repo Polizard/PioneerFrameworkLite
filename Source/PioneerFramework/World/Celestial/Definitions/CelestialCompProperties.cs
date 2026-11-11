@@ -34,18 +34,8 @@ namespace PioneerFramework.Celestial
             ArgumentNullException.ThrowIfNull(properties);
             if (properties.Key != key || properties.HandlerId != HandlerId)
                 throw new ArgumentException("Resolved properties do not match this definition.", nameof(properties));
-            Type? expected = HandlerId switch {
-                SphericalBodyResolvedProperties.Handler => typeof(SphericalBodyResolvedProperties),
-                SurfaceResolvedProperties.Handler => typeof(SurfaceResolvedProperties),
-                ExternalPhysicsResolvedProperties.Handler => typeof(ExternalPhysicsResolvedProperties),
-                AtmosphereResolvedProperties.Handler => typeof(AtmosphereResolvedProperties),
-                LightSourceResolvedProperties.Handler => typeof(LightSourceResolvedProperties),
-                ExistingEnvironmentResolvedProperties.Handler => typeof(ExistingEnvironmentResolvedProperties),
-                MapGenerationResolvedProperties.Handler => typeof(MapGenerationResolvedProperties),
-                BiomeGenerationResolvedProperties.Handler => typeof(BiomeGenerationResolvedProperties),
-                _ when this is CelestialVisualCompProperties => typeof(VisualResolvedProperties),
-                _ => null };
-            if (expected != null && !expected.IsInstanceOfType(properties))
+            // 内置 handler 的解析配置类型只从 CelestialBuiltinComps 表查；扩展 handler 不在表内，不做内置类型校验。
+            if (CelestialBuiltinComps.TryGet(HandlerId, out var builtin) && !builtin.PropertiesType.IsInstanceOfType(properties))
                 throw new ArgumentException("Resolved properties have the wrong type.", nameof(properties));
             var component = CreateComp();
             component.Initialize(properties);

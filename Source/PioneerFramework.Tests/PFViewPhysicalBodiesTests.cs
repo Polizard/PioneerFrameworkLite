@@ -189,6 +189,22 @@ public class PFViewPhysicalBodiesTests
     private static MemberInfo[] Members(string name) => PFViewUiIntegrationTests.ReferencedMembers(
         typeof(MainTabWindow_PFView).GetMethod(name, Flags)).ToArray();
 
+    /// <summary>
+    /// 2026-11-11：太阳系四体改用可读 &lt;motion&gt; 授权（existing.circular.v2）⇒ 走同一 Compile 路径；
+    /// 仍兼容旧 &lt;initializationPayload&gt; 夹具（存档/回归）。
+    /// </summary>
+    private static PhysicsInitialization Initialization(XElement physics)
+    {
+        if (physics.Element("motion") is { } motion)
+        {
+            var document = new System.Xml.XmlDocument();
+            document.LoadXml(motion.ToString());
+            return Verse.DirectXmlToObject.ObjectFromXml<CelestialMotionXml>(document.DocumentElement, false).Compile();
+        }
+        return new(physics.Element("providerId").Value, physics.Element("modeId").Value,
+            (int?)physics.Element("initializationVersion") ?? 1, Convert.FromBase64String(physics.Element("initializationPayload").Value));
+    }
+
     private static (CelestialBodyManager, Dictionary<int, CelestialBodyInfo>) SolarSystem()
     {
         var root = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "Defs", "CelestialBodies", "CelestialBodies_SolarSystem.xml")).Root;
@@ -203,8 +219,7 @@ public class PFViewPhysicalBodiesTests
             var comps = e.Element("comps").Elements("li").ToArray();
             var geometry = comps.Single(comp => comp.Attribute("Class").Value.EndsWith("CompProperties_SphericalBody", StringComparison.Ordinal));
             var physics = comps.Single(comp => comp.Attribute("Class").Value.EndsWith("CompProperties_ExternalPhysicsBinding", StringComparison.Ordinal));
-            var decoded = ExistingEphemerisParameters.Parse(new(physics.Element("providerId").Value, physics.Element("modeId").Value,
-                (int?)physics.Element("initializationVersion") ?? 1, Convert.FromBase64String(physics.Element("initializationPayload").Value)));
+            var decoded = ExistingEphemerisParameters.Parse(Initialization(physics));
             Assert.True(decoded.Success);
             var parameters = decoded.Value;
             return new CelestialBodyInfo {

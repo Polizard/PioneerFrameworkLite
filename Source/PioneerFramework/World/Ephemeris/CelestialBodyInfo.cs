@@ -19,7 +19,10 @@ namespace PioneerFramework
         public double radius { get; init; }
         public double gravitationalParameter { get; init; }
         public bool hasSurface { get; init; }
+        /// <summary>物理大气顶高度 (m)（= `air.topAltitude`）：天空 α、高度阈值、大气顶/进入判定用它。</summary>
         public double atmosphereThickness { get; init; }
+        /// <summary>视觉大气壳厚度 (m)（= 视觉壳高度 × 2 = `atmosphereVisual.shellHeightMeters × 2`）：画壳/壳半径/壳网格/壳偏移用它。0 = 没有视觉壳。</summary>
+        public double atmosphereVisualThickness { get; init; }
         public double atmosphereRho0 { get; init; }
         public double atmosphereScaleHeight { get; init; }
         public double atmosphereRestoreScaleHeights { get; init; } = 9.5;

@@ -106,9 +106,7 @@ namespace PioneerFramework.Celestial
             if (properties == null) return Fail(new[] { new CelestialError("SurfaceCapabilityMissing", request.InstanceId) });
             double nativeRadius = instance.Description.RadiusMeters / properties.MetersPerLayerUnit;
             if (!float.IsFinite((float)nativeRadius) || (float)nativeRadius <= 0) return Fail(new[] { new CelestialError("InvalidSurfaceScale", request.InstanceId) });
-            ulong seed = CelestialSeed.Derive(instance.GenerationOrigin.WorldSeed, instance.GenerationOrigin.GenerationKey, properties.Key, "surface.seed");
-            var header = new CelestialSurfaceHeader(instance.Id, -1, instance.Description.RadiusMeters, (float)nativeRadius, properties.Subdivisions,
-                unchecked((int)(seed ^ (seed >> 32))), CelestialGenerationConfiguration.Encode(instance.CompStateRecords.Values));
+            var header = CelestialSurfaceHeader.Create(instance, properties);
             long expectedDescriptorRevision = instance.Description.DescriptorRevision;
             return new(runtime.HostWork.Enqueue(operationId, instance.Id, expectedDescriptorRevision, () => Generate().Operation));
             CelestialSurfaceOperation Generate()

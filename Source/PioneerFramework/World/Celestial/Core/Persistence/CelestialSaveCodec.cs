@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 
 namespace PioneerFramework.Celestial
 {
-    /// <summary>严格 v2 编解码：先流式定位版本，再校验有界 envelope；未知组件字节保留，坏核心字段拒绝。</summary>
+    /// <summary>严格 v3 编解码：先流式定位版本，再校验有界 envelope；未知组件字节保留，坏核心字段拒绝。</summary>
     public static partial class CelestialSaveCodec
     {
         private static readonly JsonSerializerOptions Options = CreateOptions();
@@ -23,7 +23,7 @@ namespace PioneerFramework.Celestial
             try
             {
                 if (payload.Length > CelestialSaveEnvelope.MaximumEncodedBytes) throw new System.IO.InvalidDataException("Encoded save exceeds the limit.");
-                // Old raw JSON documents are deliberately unsupported. Do not migrate or rewrite user saves.
+                // Raw JSON and v1/v2 envelopes are deliberately unsupported. Do not migrate or rewrite user saves.
                 if (!HasSupportedEnvelopeVersion(payload.Span))
                     return CelestialResult.Reject<CelestialSaveDocument>(new CelestialError("UnsupportedSaveVersion"));
                 var document = CelestialSaveEnvelope.Decode(payload, Options);
@@ -34,7 +34,7 @@ namespace PioneerFramework.Celestial
             { return CelestialResult.Reject<CelestialSaveDocument>(new CelestialError("InvalidSaveDocument", Detail: exception.Message)); }
         }
 
-        // 仅流式探测顶层版本，不为 chunk Base64 或未知载荷建立 DOM；完整格式与完整性仍由 envelope 校验。
+        // 仅流式探测顶层版本，不接受历史 v1/v2；不为 chunk Base64 或未知载荷建立 DOM；完整格式与完整性仍由 envelope 校验。
         private static bool HasSupportedEnvelopeVersion(ReadOnlySpan<byte> payload)
         {
             var reader = new Utf8JsonReader(payload);
@@ -135,6 +135,7 @@ namespace PioneerFramework.Celestial
                     document.Maps.Where(map => map.MapId.HasValue).Select(map => map.MapId).Distinct().Count() == document.Maps.Count(map => map.MapId.HasValue));
                 Require(document.Maps.All(map => bodies.ContainsKey(map.Address.InstanceId) && map.Address.LayerId >= 0 && map.Address.TileId >= 0 && map.MapParentId >= 0 &&
                     (!map.Address.MapParentId.HasValue || map.Address.MapParentId == map.MapParentId) && (!map.MapId.HasValue || map.MapId >= 0)));
+                foreach (var map in document.Maps) map.Generation?.Validate(map.Address.InstanceId.Value, map.Address.TileId, map.Failure);
                 Require(document.Maps.All(map => map.OperationIds != null && map.RetiredOperationIds != null &&
                     map.OperationIds.Distinct(StringComparer.Ordinal).Count() == map.OperationIds.Count &&
                     map.RetiredOperationIds.Distinct(StringComparer.Ordinal).Count() == map.RetiredOperationIds.Count &&

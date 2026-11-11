@@ -32,7 +32,7 @@ internal static class CelestialFixtureAuthoring
             if (!result.Success) throw new InvalidOperationException(pair.Key + ": " + string.Join(",", result.Errors.Select(error => error.Code)));
             File.WriteAllBytes(Path.Combine(directory, pair.Key), result.Value.ToArray());
         }
-        File.WriteAllText(Path.Combine(directory, "malformed.json"), "{\"formatVersion\":2,", new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(directory, "malformed.json"), "{\"formatVersion\":" + CelestialSaveDocument.CurrentVersion + ",", new UTF8Encoding(false));
         File.WriteAllText(Path.Combine(directory, "unsupported.json"), "{\"formatVersion\":99}", new UTF8Encoding(false));
         var manifest = Directory.GetFiles(directory, "*.json").Order().ToDictionary(file => Path.GetFileName(file)!,
             file => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(file))));

@@ -66,14 +66,16 @@ namespace PioneerFramework.Celestial
                 chunks = envelope["chunks"]!.AsArray().Select(chunk => chunk!.ToJsonString()).ToList();
                 envelope.Remove("chunks");
                 envelopeHeader = envelope.ToJsonString();
-                formatVersion = 2;
+                formatVersion = CelestialSaveDocument.CurrentVersion;
             }
             Scribe_Values.Look(ref formatVersion, "celestialFormatVersion");
+            // Scribe keys keep their historical names: renaming them would turn an old save into a
+            // silently empty celestial section instead of the explicit UnsupportedSaveVersion below.
             Scribe_Values.Look(ref envelopeHeader, "celestialV2Header");
             Scribe_Collections.Look(ref chunks, "celestialV2Chunks", LookMode.Value);
             if (Scribe.mode == LoadSaveMode.LoadingVars)
             {
-                if (formatVersion != 2) throw new InvalidOperationException("UnsupportedSaveVersion: create a new test world.");
+                if (formatVersion != CelestialSaveDocument.CurrentVersion) throw new InvalidOperationException("UnsupportedSaveVersion: create a new test world.");
                 if (envelopeHeader == null || envelopeHeader.Length > MaximumHeaderCharacters || chunks == null || chunks.Count > CelestialSaveEnvelope.MaximumChunkCount ||
                     chunks.Any(chunk => chunk == null || chunk.Length > MaximumChunkCharacters))
                     throw new InvalidOperationException("InvalidSaveDocument");

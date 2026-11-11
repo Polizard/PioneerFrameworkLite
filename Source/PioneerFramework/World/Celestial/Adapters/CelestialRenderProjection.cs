@@ -21,7 +21,10 @@ namespace PioneerFramework.Celestial
                 radius = description.RadiusMeters, gravitationalParameter = description.GravitationalParameter ?? 0,
                 bodyType = stellar == null ? CelestialBodyType.Planet : CelestialBodyType.Star,
                 hasSurface = hasSurface, baseSphereColor = color == null ? Color.clear : ColorOf(color),
-                atmosphereThickness = air == null ? 0 : air.Profile.ShellHeightMeters * 2,
+                // 两个厚度字段语义不同：物理大气顶来自 AtmosphereProfile.topAltitude；
+                // 视觉壳厚度保持既有壳尺寸（壳高度 × 2 ⇒ 壳半径 = R + 壳高度）。
+                atmosphereThickness = atmosphere.topAltitude,
+                atmosphereVisualThickness = air == null ? 0 : air.Profile.ShellHeightMeters * 2,
                 atmosphereRho0 = atmosphere.rho0, atmosphereScaleHeight = atmosphere.scaleHeight,
                 atmosphereColor = air == null ? Color.clear : ColorOf(air.Profile), dayLengthTicks = dayLengthTicks };
         }

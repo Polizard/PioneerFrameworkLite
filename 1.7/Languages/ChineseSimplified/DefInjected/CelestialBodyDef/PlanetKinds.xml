@@ -5,7 +5,7 @@
   <PF_TemperatePlanet.label>温带行星</PF_TemperatePlanet.label>
   <PF_TemperatePlanet.description>气候相对温和的岩质天体，使用原版地表生成，能够容纳海洋、森林、草原、沙漠和极地等多种生态。</PF_TemperatePlanet.description>
   <PF_GreenhousePlanet.label>温室行星</PF_GreenhousePlanet.label>
-  <PF_GreenhousePlanet.description>浓厚大气包裹的灼热岩质天体，适用于金星一类环境。预设提供高温地表、大气阻力与浓云；高压伤害和气体毒性需额外组件。</PF_GreenhousePlanet.description>
+  <PF_GreenhousePlanet.description>浓厚大气包裹的灼热岩质天体，适用于金星一类环境。预设显式提供高温、高压、缺氧与二氧化碳毒性环境，以及浓云外观。</PF_GreenhousePlanet.description>
   <PF_FrozenPlanet.label>冰封行星</PF_FrozenPlanet.label>
   <PF_FrozenPlanet.description>以冰质平原和岩石露头为主的寒冷天体，可覆盖冰卫星和外太阳系冰质小天体。此预设采用真空地表，地下海洋需扩展能力。</PF_FrozenPlanet.description>
   <PF_GasGiant.label>气态巨行星</PF_GasGiant.label>

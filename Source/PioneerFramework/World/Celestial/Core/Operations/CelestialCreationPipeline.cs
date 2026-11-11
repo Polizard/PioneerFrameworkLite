@@ -54,7 +54,7 @@ namespace PioneerFramework.Celestial
                 template = template.Value.WithOverrides(request.Overrides);
                 if (!template.Success) return Rejected(request.Context.OperationId, template.Errors);
                 string path = "operation/" + Uri.EscapeDataString(request.Context.OperationId) + "/" + Uri.EscapeDataString(request.GenerationKey) + "[0]";
-                ulong seed = request.Seed ?? CelestialSeed.Derive(worldSeed, path, "$create", "seed");
+                ulong seed = request.Seed ?? CelestialSeed.CreateSeed(worldSeed, path);
                 var resolved = template.Value.Resolve(new CelestialGenerationContext(seed, path));
                 if (!resolved.Success) return Rejected(request.Context.OperationId, resolved.Errors);
                 var item = new CelestialSpawnItem(CelestialInstanceId.Parse("dynamic:" + path), request.GenerationKey, 0, path, template.Value, resolved.Value, request.ParentId);

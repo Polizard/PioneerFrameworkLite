@@ -6,18 +6,21 @@ namespace PioneerFramework.Celestial
     public sealed class CompMapGeneration(CelestialCompDescriptor descriptor) : CelestialBodyComp(descriptor), ICelestialMapGenerationCapability
     {
         public CelestialMapProfile GetProfile() => ((MapGenerationResolvedProperties)Context.Properties).Profile;
+        public PioneerFramework.MapGeneration.LocalMapGenerationSpec GetSpecification() => ((ICelestialLocalMapGenerationProperties)Context.Properties).Specification;
     }
     public sealed class CompProperties_MapGeneration : CelestialCompProperties
     {
         public CelestialMapProfileDef profile = null!;
         public override string HandlerId => MapGenerationResolvedProperties.Handler;
+        public override int ConfigurationVersion => profile?.localRecipe != null || profile?.purposeRecipes.Count > 0 ? 3 : profile?.diversity == null ? 1 : 2;
         protected override IEnumerable<string> Provides => new[] { "map.generation" };
         protected override IEnumerable<string> IntrinsicRequires => new[] { "surface" };
         protected override string ExclusiveSlot => "map.generation";
         public override CelestialBodyComp CreateComp() => new CompMapGeneration(Descriptor);
         public override CelestialResult<ICelestialResolvedProperties> Resolve(CelestialGenerationContext context)
         {
-            var resolved = profile?.ToProfile();
+            PioneerFramework.MapGeneration.LocalMapGenerationModules.Freeze();
+            var resolved = profile?.ToProfile(context);
             return resolved == null ? CelestialResult.Reject<ICelestialResolvedProperties>(new CelestialError("MapProfileMissing", CompKey: key)) :
                 resolved.Success ? CelestialResult.Ok<ICelestialResolvedProperties>(new MapGenerationResolvedProperties(key, resolved.Value)) :
                 CelestialResult.Reject<ICelestialResolvedProperties>(resolved.Errors.ToArray());

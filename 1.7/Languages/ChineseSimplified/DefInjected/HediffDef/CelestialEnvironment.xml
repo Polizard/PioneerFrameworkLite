@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_CelestialHypoxia.label>缺氧</PF_CelestialHypoxia.label>
+  <PF_CelestialHypoxia.description>氧分压不足造成的生存暴露。需要供氧；普通防毒能力无法提供氧气。</PF_CelestialHypoxia.description>
+  <PF_CelestialPressureStress.label>气压应激</PF_CelestialPressureStress.label>
+  <PF_CelestialPressureStress.description>气压超出适应范围造成的生存暴露。真空防护只适用于低压，高压需要独立防护。</PF_CelestialPressureStress.description>
+  <PF_CelestialRadiationExposure.label>环境辐射暴露</PF_CelestialRadiationExposure.label>
+  <PF_CelestialRadiationExposure.description>行星环境辐射造成的简化累积损伤。需要专门辐射防护，供氧和毒气过滤不抵消辐射。</PF_CelestialRadiationExposure.description>
+</LanguageData>

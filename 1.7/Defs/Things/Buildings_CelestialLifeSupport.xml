@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <ThingDef ParentName="BuildingBase">
+    <defName>PF_AtmosphereRegulator</defName>
+    <label>环境调节器</label>
+    <description>为启用了行星生存规则的密闭房间供氧、过滤毒气并调节气压。复用原版电网，每台适合约100格房间；更大的房间调节较慢。开门连通室外、失电或故障会失去保护。不能阻挡辐射，不替代室内温控；奥德赛真空仍需氧气泵。</description>
+    <thingClass>Building</thingClass>
+    <category>Building</category>
+    <altitudeLayer>Building</altitudeLayer>
+    <tickerType>Normal</tickerType>
+    <graphicData>
+      <texPath>Things/Building/Misc/TempControl/Cooler</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
+    </graphicData>
+    <size>(1,1)</size>
+    <passability>PassThroughOnly</passability>
+    <fillPercent>0.5</fillPercent>
+    <selectable>true</selectable>
+    <rotatable>true</rotatable>
+    <designationCategory>Temperature</designationCategory>
+    <terrainAffordanceNeeded>Light</terrainAffordanceNeeded>
+    <researchPrerequisites><li>AirConditioning</li></researchPrerequisites>
+    <costList><Steel>100</Steel><ComponentIndustrial>4</ComponentIndustrial></costList>
+    <statBases><MaxHitPoints>120</MaxHitPoints><WorkToBuild>3000</WorkToBuild><Flammability>0.5</Flammability><Mass>20</Mass></statBases>
+    <comps>
+      <li Class="CompProperties_Power"><compClass>CompPowerTrader</compClass><basePowerConsumption>600</basePowerConsumption></li>
+      <li Class="CompProperties_Flickable" />
+      <li Class="CompProperties_Breakdownable" />
+      <li Class="PioneerFramework.Celestial.CompProperties_CelestialLifeSupport">
+        <conditioningPerSecondPerHundredCells>0.5</conditioningPerSecondPerHundredCells>
+        <suppliesOxygen>true</suppliesOxygen><filtersToxins>true</filtersToxins><regulatesPressure>true</regulatesPressure>
+      </li>
+    </comps>
+  </ThingDef>
+</Defs>

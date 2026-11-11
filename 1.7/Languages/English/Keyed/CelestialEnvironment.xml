@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_CelestialLifeSupportActive>Planetary life support: active (sealed room required)</PF_CelestialLifeSupportActive>
+  <PF_CelestialLifeSupportOffline>Planetary life support: offline</PF_CelestialLifeSupportOffline>
+  <PF_CelestialGravityEffect>Local planetary gravity</PF_CelestialGravityEffect>
+  <PF_CelestialEnvironmentAlert>Dangerous planetary environment</PF_CelestialEnvironmentAlert>
+  <PF_CelestialEnvironmentAlertDesc>Colonists are exposed to insufficient oxygen, unsafe pressure, toxic atmosphere or radiation. Check each hazard separately. A roof alone does not provide protection.</PF_CelestialEnvironmentAlertDesc>
+</LanguageData>

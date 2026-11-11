@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_CelestialLifeSupportActive>行星生命维持：运行中（需要密闭房间）</PF_CelestialLifeSupportActive>
+  <PF_CelestialLifeSupportOffline>行星生命维持：离线</PF_CelestialLifeSupportOffline>
+  <PF_CelestialGravityEffect>当地行星重力</PF_CelestialGravityEffect>
+  <PF_CelestialEnvironmentAlert>危险行星环境</PF_CelestialEnvironmentAlert>
+  <PF_CelestialEnvironmentAlertDesc>殖民者正处于缺氧、危险气压、毒性大气或辐射环境。请分别检查各类危险；仅有屋顶不能提供保护。</PF_CelestialEnvironmentAlertDesc>
+</LanguageData>

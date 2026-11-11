@@ -35,7 +35,11 @@ $retired = @(
     'worldDv', 'worldDir', 'vCircWorld', 'exitWorld', 'entityWorldPos', 'mainAxisWorld',
     'nodeLocalPos', 'nodeLocalVel', 'postBurnNodeLocalVel', 'departurePosWorld', 'departureVelWorld',
     'centerWorld', 'r1World', 'v1World', 'hitLocal', 'hitLocalMeters', 'entryLocal', 'entryLocalMeters',
-    'muzzleLocal', 'dirLocal', 'exitLocal', 'targetLocal'
+    'muzzleLocal', 'dirLocal', 'exitLocal', 'targetLocal',
+    # --- 2026-11-03 LatitudeBands retirement (moon moved to Parameterized + per-biome hilliness) ---
+    # These names no longer have a matching C# field/enum value; a leftover XML element would silently keep a default.
+    'LatitudeBands', 'polarBiome', 'primaryBiome', 'secondaryBiome',
+    'polarLatitude', 'secondaryChance', 'polarHilliness', 'primaryHilliness', 'secondaryHilliness'
 )
 
 # Scan every version package folder that exists (1.6 = frozen, 1.7 = mainline; 2026-10-13 tree split).
@@ -66,9 +70,16 @@ foreach ($file in Get-ChildItem -LiteralPath $activeDefs -Recurse -Filter *.xml 
         }
     }
 }
+# The old standalone map step is retired only in the active package.
+$activePrefix = (Join-Path $root '1.7') + [IO.Path]::DirectorySeparatorChar
 foreach ($f in $xmlFiles) {
+    $activeLine = $f.FullName.StartsWith($activePrefix, [StringComparison]::OrdinalIgnoreCase)
     $lines = [System.IO.File]::ReadAllLines($f.FullName, [System.Text.Encoding]::UTF8)
     for ($i = 0; $i -lt $lines.Length; $i++) {
+        if ($activeLine -and $lines[$i] -cmatch '\b(PF_MoonSurfaceTerrain|GenStep_MoonSurfaceTerrain)\b') {
+            $hits++
+            Write-Host ("{0}({1}): retired standalone moon terrain step" -f $f.FullName.Substring($root.Length + 1), ($i + 1))
+        }
         foreach ($name in $retired) {
             if ($retiredRe[$name].IsMatch($lines[$i])) {
                 $hits++

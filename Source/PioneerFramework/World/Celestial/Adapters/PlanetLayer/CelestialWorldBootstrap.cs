@@ -95,7 +95,6 @@ namespace PioneerFramework.Celestial
             if (CelestialSurfaceCreationScope.CurrentHeader != null) return CelestialSurfaceCreationScope.Bind(layerId);
             throw new InvalidOperationException("Missing celestial surface construction header.");
         }
-        public static CelestialResult<bool> Generate(PlanetLayer layer, CelestialGenerationProfile profile) => CelestialWorldGeneration.Generate(layer, profile);
         private static CelestialResult<CelestialWorldBootstrapScope> Reject(string code, string detail = "")
             => CelestialResult.Reject<CelestialWorldBootstrapScope>(new CelestialError(code, Detail: detail));
         private sealed class NativeResources : ICelestialRemovalResources
@@ -139,9 +138,7 @@ namespace PioneerFramework.Celestial
             var id = manifest.RootSurfaceId!.Value;
             runtime.Catalog.TryGetInstance(id, out var instance);
             var properties = runtime.Creation.GetProperties(id).OfType<SurfaceResolvedProperties>().Single();
-            ulong seed = CelestialSeed.Derive(instance.GenerationOrigin.WorldSeed, instance.GenerationOrigin.GenerationKey, properties.Key, "surface.seed");
-            RootHeader = new CelestialSurfaceHeader(id, -1, instance.Description.RadiusMeters, (float)(instance.Description.RadiusMeters / properties.MetersPerLayerUnit),
-                properties.Subdivisions, unchecked((int)(seed ^ (seed >> 32))), CelestialGenerationConfiguration.Encode(instance.CompStateRecords.Values));
+            RootHeader = CelestialSurfaceHeader.Create(instance, properties);
         }
         internal bool MatchesRoot(PlanetLayerDef definition) => !constructedRootId.HasValue && ReferenceEquals(rootDefinition, definition);
         internal CelestialSurfaceHeader ConstructRootHeader(int layerId)

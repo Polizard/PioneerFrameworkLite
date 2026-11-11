@@ -32,7 +32,14 @@ namespace PioneerFramework.Celestial
             }
         }
         private CelestialGenerationContext(CelestialGenerationContext parent, string key)
-        { WorldSeed = parent.WorldSeed; GenerationPath = parent.GenerationPath; CompKey = key; overrides = parent.overrides; used = parent.used; }
+        { WorldSeed = parent.WorldSeed; GenerationPath = parent.GenerationPath; CompKey = key; overrides = parent.overrides; used = parent.used; resolved = parent.resolved; sampledDoubles = parent.sampledDoubles; }
+        private readonly List<ICelestialResolvedProperties> resolved = new();
+        private readonly Dictionary<(string Comp, string Parameter), DoubleParameterSpec> sampledDoubles = new();
+        public IReadOnlyList<ICelestialResolvedProperties> ResolvedProperties => resolved.AsReadOnly();
+        public T? GetResolved<T>() where T : class, ICelestialResolvedProperties => resolved.OfType<T>().SingleOrDefault();
+        internal CelestialGenerationContext BeginResolution()
+            => new(WorldSeed, GenerationPath, CompKey, overrides?.Values.ToArray());
+        internal void AddResolved(ICelestialResolvedProperties properties) => resolved.Add(properties);
         public CelestialGenerationContext ForComp(string key) => new(this, key);
         internal CelestialResult<bool> ValidateOverrides()
         {
@@ -49,9 +56,21 @@ namespace PioneerFramework.Celestial
         }
         public double SampleDouble(string parameterKey, DoubleParameterSpec specification)
         {
-            var value = Override(parameterKey);
-            if (value != null) specification = value.Value.HasValue ? DoubleParameterSpec.Fixed(value.Value.Value) : DoubleParameterSpec.Uniform(value.Min!.Value, value.Max!.Value);
+            specification = GetDoubleSpecification(parameterKey, specification);
+            return SampleResolvedDouble(parameterKey, specification);
+        }
+        internal double SampleResolvedDouble(string parameterKey, DoubleParameterSpec specification)
+        {
+            sampledDoubles[(CompKey, parameterKey)] = specification;
             return CelestialParameterSampler.SampleDouble(specification, SeedFor(parameterKey));
+        }
+        internal bool TryGetSampledDoubleSpecification(string compKey, string parameterKey, out DoubleParameterSpec specification)
+            => sampledDoubles.TryGetValue((compKey, parameterKey), out specification!);
+        /// <summary>Returns the effective complete interval, including an explicit override, before a consumer validates and samples it.</summary>
+        public DoubleParameterSpec GetDoubleSpecification(string parameterKey, DoubleParameterSpec specification)
+        {
+            var value = Override(parameterKey);
+            return value == null ? specification : value.Value.HasValue ? DoubleParameterSpec.Fixed(value.Value.Value) : DoubleParameterSpec.Uniform(value.Min!.Value, value.Max!.Value);
         }
         public int SampleInt(string parameterKey, IntParameterSpec specification)
         {

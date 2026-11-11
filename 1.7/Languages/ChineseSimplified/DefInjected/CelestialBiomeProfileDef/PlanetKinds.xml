@@ -3,4 +3,5 @@
   <PF_BarrenBiomes.label>荒芜地表生成</PF_BarrenBiomes.label>
   <PF_FrozenBiomes.label>冰封地表生成</PF_FrozenBiomes.label>
   <PF_GreenhouseBiomes.label>温室地表生成</PF_GreenhouseBiomes.label>
+  <PF_TemperateBiomes.label>温带行星地表</PF_TemperateBiomes.label>
 </LanguageData>

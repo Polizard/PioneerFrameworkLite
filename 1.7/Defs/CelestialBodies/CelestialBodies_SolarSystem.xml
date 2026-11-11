@@ -1,9 +1,8 @@
 <?xml version='1.0' encoding='utf-8'?>
 <Defs>
-  <!-- Author existing.circular.v1 payloads from the repository root:
-       python tools/celestial_payload.py decode orbit.base64 -o orbit.json
-       python tools/celestial_payload.py encode orbit.json -o orbit.base64
-       Copy only initializationPayload text to/from orbit.base64; conversion preserves the JSON bytes. -->
+  <!-- 2026-11-11：四个太阳系天体改用可读 <motion> 授权（existing.circular.v2），
+       与 CelestialBodies_PlanetKinds.xml 同一写法；数值逐项等于旧 v1 载荷（半径/周期/相位/日长）。
+       v1 载荷工具（tools/celestial_payload.py）保留给存档夹具与旧存档兼容解析。 -->
   <PioneerFramework.CelestialBodyDef>
     <defName>Sun</defName>
     <label>燧阳</label>
@@ -18,11 +17,19 @@
       <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
         <key>motion</key>
         <providerId>PFL.ExistingEphemeris</providerId>
-        <modeId>existing.circular.v1</modeId>
         <gravitationalParameter>
           <value>2.4369393583e19</value>
         </gravitationalParameter>
-        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjAsImRheUxlbmd0aFRpY2tzIjo2MDAwMCwib3JiaXRSYWRpdXMiOjAsImZyYW1lT3JpZ2luUmVmZXJlbmNlIjoiZnJhbWVPcmlnaW4iLCJib2R5VHlwZSI6IlN0YXIiLCJpbml0aWFsUGhhc2UiOjB9</initializationPayload>
+        <motion>
+          <orbitRadiusMeters>0</orbitRadiusMeters>
+          <orbitPeriodSeconds>0</orbitPeriodSeconds>
+          <orbitPhaseRadians>0</orbitPhaseRadians>
+          <bodyType>Star</bodyType>
+          <frameOriginReference>frameOrigin</frameOriginReference>
+          <rotation>
+            <periodSeconds>60000</periodSeconds>
+          </rotation>
+        </motion>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_LightSource">
         <key>light</key>
@@ -55,11 +62,19 @@
       <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
         <key>motion</key>
         <providerId>PFL.ExistingEphemeris</providerId>
-        <modeId>existing.circular.v1</modeId>
         <gravitationalParameter>
           <value>2.0e14</value>
         </gravitationalParameter>
-        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjM2MDAwMDAuMCwiZGF5TGVuZ3RoVGlja3MiOjYwMDAwLjAsIm9yYml0UmFkaXVzIjoyMDAwMDAwMDAwMC4wLCJmcmFtZU9yaWdpblJlZmVyZW5jZSI6ImZyYW1lT3JpZ2luIiwiYm9keVR5cGUiOiJQbGFuZXQiLCJpbml0aWFsUGhhc2UiOjAuMH0=</initializationPayload>
+        <motion>
+          <orbitRadiusMeters>20000000000</orbitRadiusMeters>
+          <orbitPeriodSeconds>3600000</orbitPeriodSeconds>
+          <orbitPhaseRadians>0</orbitPhaseRadians>
+          <bodyType>Planet</bodyType>
+          <frameOriginReference>frameOrigin</frameOriginReference>
+          <rotation>
+            <periodSeconds>60000</periodSeconds>
+          </rotation>
+        </motion>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_Surface">
         <key>surface</key>
@@ -120,11 +135,21 @@
       <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
         <key>motion</key>
         <providerId>PFL.ExistingEphemeris</providerId>
-        <modeId>existing.circular.v1</modeId>
         <gravitationalParameter>
           <value>5.0e12</value>
         </gravitationalParameter>
-        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjMxNzkwMC4wLCJkYXlMZW5ndGhUaWNrcyI6MzE3OTAwLjAsIm9yYml0UmFkaXVzIjo4MDAwMDAwMC4wLCJmcmFtZU9yaWdpblJlZmVyZW5jZSI6ImZyYW1lT3JpZ2luIiwiYm9keVR5cGUiOiJNb29uIiwiaW5pdGlhbFBoYXNlIjoxLjV9</initializationPayload>
+        <motion>
+          <orbitRadiusMeters>80000000</orbitRadiusMeters>
+          <orbitPeriodSeconds>317900</orbitPeriodSeconds>
+          <orbitPhaseRadians>1.5</orbitPhaseRadians>
+          <bodyType>Moon</bodyType>
+          <frameOriginReference>frameOrigin</frameOriginReference>
+          <rotation>
+            <!-- 2026-11-11：由「日长=公转周期」的数值近似改为真潮汐锁定（v2 的同步目标）。
+                 frameOrigin 在卫星条目里是 Parent 作用域 ⇒ 解析到母星 Earth。 -->
+            <synchronousTargetReference>frameOrigin</synchronousTargetReference>
+          </rotation>
+        </motion>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_Surface">
         <key>surface</key>
@@ -165,11 +190,19 @@
       <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
         <key>motion</key>
         <providerId>PFL.ExistingEphemeris</providerId>
-        <modeId>existing.circular.v1</modeId>
         <gravitationalParameter>
           <value>2.4e14</value>
         </gravitationalParameter>
-        <initializationPayload>eyJvcmJpdE5vcm1hbCI6WzAsMSwwXSwib3JiaXRQZXJpb2QiOjE5NTk1OTEuNzk0LCJkYXlMZW5ndGhUaWNrcyI6NjAwMDAuMCwib3JiaXRSYWRpdXMiOjEzMzMzMzMzMzMzLjMzMzMzNCwiZnJhbWVPcmlnaW5SZWZlcmVuY2UiOiJmcmFtZU9yaWdpbiIsImJvZHlUeXBlIjoiUGxhbmV0IiwiaW5pdGlhbFBoYXNlIjo0LjU5Nn0=</initializationPayload>
+        <motion>
+          <orbitRadiusMeters>13333333333.333334</orbitRadiusMeters>
+          <orbitPeriodSeconds>1959591.794</orbitPeriodSeconds>
+          <orbitPhaseRadians>4.596</orbitPhaseRadians>
+          <bodyType>Planet</bodyType>
+          <frameOriginReference>frameOrigin</frameOriginReference>
+          <rotation>
+            <periodSeconds>60000</periodSeconds>
+          </rotation>
+        </motion>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_Surface">
         <key>surface</key>

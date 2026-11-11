@@ -1,12 +1,11 @@
-﻿using RimWorld;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using RimWorld;
 
 namespace PioneerFramework
 {
+    /// <summary>
+    /// DefOf 校验锚点（tools/validate_config.py 按本文件声明的字段核对同名 Def）。
+    /// 当前没有需要强类型引用的 Def；新增 [DefOf] 字段放这里，同时保证 Defs 里存在同名 defName。
+    /// </summary>
     [DefOf]
     public static class PFDefs
     {
@@ -14,8 +13,5 @@ namespace PioneerFramework
         {
             DefOfHelper.EnsureInitializedInCtor(typeof(PFDefs));
         }
-        public static BiomeDef PF_MoonBiomeWater = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
-        public static BiomeDef PF_MoonBiomeBasalt = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
-        public static BiomeDef PF_MoonBiomeRegolith = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
     }
 }

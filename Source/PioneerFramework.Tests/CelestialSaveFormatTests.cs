@@ -13,40 +13,47 @@ using Xunit;
 
 namespace PioneerFramework.Tests;
 
-public class CelestialSaveV2Tests
+public class CelestialSaveFormatTests
 {
+    // 由冻结 v2 样本 Fixtures/Celestial/v2/ready.json（字节由 manifest 锁定）解出的已复核创建逻辑 hash。
+    // v3 不改创建 hash schema（HashSchemas["creation"] == 2），因此该值仍是 v3 写出的基线；
+    // 提取脚本：.zcode/tmp/inspect-v2-fixture.mjs（只读冻结字节，不经过生产解码器）。
+    private const string ReviewedV2CreationHash = "D8B95CEDB1C918C0F73CFC130EA3CD0D4F76E2CE64B03BEC7E955A4BAFC816D4";
+
     private static CelestialSaveDocument Empty() => CelestialSaveDocument.CreateEmpty(Guid.Parse("28c10000-0000-4000-8000-000000000001"), 28);
 
     [Theory]
-    [InlineData("ready.json")]
-    [InlineData("pending.json")]
-    [InlineData("unknown.json")]
-    [InlineData("retired-map.json")]
-    public void FrozenV2InputsHaveIndependentKnownValuesAndUnchangedManifestBytes(string name)
+    [InlineData("ready.json", "UnsupportedSaveVersion")]
+    [InlineData("pending.json", "UnsupportedSaveVersion")]
+    [InlineData("unknown.json", "UnsupportedSaveVersion")]
+    [InlineData("retired-map.json", "UnsupportedSaveVersion")]
+    [InlineData("malformed.json", "InvalidSaveDocument")]
+    [InlineData("unsupported.json", "UnsupportedSaveVersion")]
+    public void FrozenV2InputsKeepManifestBytesAndAreExplicitlyRejected(string name, string error)
     {
         string directory = Path.Combine(AppContext.BaseDirectory, "Fixtures", "Celestial", "v2");
         var bytes = File.ReadAllBytes(Path.Combine(directory, name));
         var hashes = JsonNode.Parse(File.ReadAllBytes(Path.Combine(directory, "manifest.json")))!;
         Assert.Equal(hashes[name]!.GetValue<string>(), Convert.ToHexString(SHA256.HashData(bytes)));
-        var document = CelestialSaveCodec.Decode(bytes).Value;
-        Assert.Equal(1000, document.Bodies[0].Description.RadiusMeters);
-        Assert.Equal(1e8, document.Bodies[0].Description.GravitationalParameter);
-        Assert.Equal(2, document.PhysicsCheckpoint!.PayloadVersion);
-        if (name == "pending.json") { Assert.Empty(document.CommittedBodies); Assert.Single(document.Creations); }
-        else Assert.Equal(3, document.CommittedBodies.Count);
-        if (name == "unknown.json")
-        {
-            var unknown = document.Bodies.SelectMany(b => b.Components).Single(c => c.HandlerId == "fixture.missing");
-            Assert.Equal(new byte[] { 0, 255, 7 }, unknown.ConfigurationPayload.ToArray());
-            Assert.Equal(new byte[] { 31, 0, 0, 72 }, unknown.StatePayload.ToArray());
-        }
-        if (name == "retired-map.json") Assert.True(Assert.Single(document.Maps).ParentRetired);
-        Assert.True(CelestialSaveCodec.Decode(CelestialSaveCodec.Encode(document).Value).Success);
+        var decoded = CelestialSaveCodec.Decode(bytes);
+        Assert.False(decoded.Success);
+        Assert.Equal(error, Assert.Single(decoded.Errors).Code);
+    }
+
+    [Fact]
+    public void FrozenV2EnvelopesStillDeclareTheRejectedVersionInsteadOfByteCorruption()
+    {
+        string directory = Path.Combine(AppContext.BaseDirectory, "Fixtures", "Celestial", "v2");
+        var header = JsonNode.Parse(File.ReadAllBytes(Path.Combine(directory, "ready.json")))!;
+        Assert.Equal(2, header["formatVersion"]!.GetValue<int>());
+        Assert.Equal("brotli", header["compression"]!.GetValue<string>());
+        Assert.Equal(1, header["chunkCount"]!.GetValue<int>());
     }
 
     [Fact]
     public void LogicalCreationHashIgnoresTranslationAndRoutingRevisionWhileMatchingTheFrozenSchema()
     {
+        using var native = new CelestialMapIdentityTests.Fixture();
         var runtime = CelestialBenchFactory.Create(3, pending: true);
         var items = Enumerable.Range(0, 3).Select(index => {
             var original = CelestialBenchFactory.Template(1000 + index, false);
@@ -56,23 +63,52 @@ public class CelestialSaveV2Tests
                 new Dictionary<string, CelestialInstanceId> { ["frameOrigin"] = CelestialBenchFactory.Id(0) });
         }).ToArray();
         Assert.Equal(CelestialOperationStatus.Pending, runtime.CreateBatch(new(new("bench/bootstrap", runtime.WorldSessionId, 999), new("bench", 17, null, items))).Status);
-        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "Celestial", "v2", "ready.json");
-        Assert.Equal(Assert.Single(CelestialSaveCodec.Decode(File.ReadAllBytes(path)).Value.Operations).ContentHash,
-            Assert.Single(runtime.Operations.Capture()).ContentHash);
+        Assert.Equal(ReviewedV2CreationHash, Assert.Single(runtime.Operations.Capture()).ContentHash);
+        var saved = CelestialSaveCodec.Decode(CelestialSaveCodec.Encode(new CelestialSaveAdapter(runtime).CaptureCheckpoint().Value).Value).Value;
+        Assert.Equal(ReviewedV2CreationHash, Assert.Single(saved.Operations).ContentHash);
+        Assert.Equal(2, saved.HashSchemas["creation"]);
     }
 
     [Fact]
-    public void V1IsExplicitlyRejectedAndV2HasAnIntegrityCheckedCompressedEnvelope()
+    public void V1V2AndV3AreExplicitlyRejectedAndV4HasAnIntegrityCheckedCompressedEnvelope()
     {
-        var old = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Celestial", "v1", "ready.json"));
-        Assert.Equal("UnsupportedSaveVersion", Assert.Single(CelestialSaveCodec.Decode(old).Errors).Code);
-        Assert.Equal(2, Empty().FormatVersion);
+        var v1 = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Celestial", "v1", "ready.json"));
+        Assert.Equal("UnsupportedSaveVersion", Assert.Single(CelestialSaveCodec.Decode(v1).Errors).Code);
+        var v2 = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Celestial", "v2", "ready.json"));
+        Assert.Equal("UnsupportedSaveVersion", Assert.Single(CelestialSaveCodec.Decode(v2).Errors).Code);
+        var legacy = CelestialSaveCodec.Encode(Empty() with { FormatVersion = 2 });
+        Assert.False(legacy.Success);
+        Assert.Equal("UnsupportedSaveVersion", Assert.Single(legacy.Errors).Code);
+        Assert.Equal("UnsupportedSaveVersion", Assert.Single(CelestialSaveCodec.Decode(System.Text.Encoding.UTF8.GetBytes("{\"formatVersion\":3}")).Errors).Code);
+        Assert.Equal(4, Empty().FormatVersion);
         var encoded = CelestialSaveCodec.Encode(Empty()).Value;
         var json = JsonNode.Parse(encoded.Span)!;
         Assert.Equal("brotli", json["compression"]!.GetValue<string>());
-        Assert.Equal(2, json["formatVersion"]!.GetValue<int>());
+        Assert.Equal(4, json["formatVersion"]!.GetValue<int>());
         Assert.True(json["decodedLength"]!.GetValue<int>() > 0);
         Assert.True(CelestialSaveCodec.Decode(encoded).Success);
+    }
+
+    [Fact]
+    public void V3ProgrammaticReadyRoundTripPreservesKnownPhysicalValuesWithoutDecodingFrozenPayloads()
+    {
+        using var native = new CelestialMapIdentityTests.Fixture();
+        var ready = CelestialSaveCodec.Decode(CelestialSaveCodec.Encode(new CelestialSaveAdapter(CelestialBenchFactory.Create(3)).CaptureCheckpoint().Value).Value).Value;
+        Assert.Equal(3, ready.Bodies.Count);
+        Assert.Equal(3, ready.CommittedBodies.Count);
+        Assert.Equal(1000, ready.Bodies[0].Description.RadiusMeters);
+        Assert.Equal(1e8, ready.Bodies[0].Description.GravitationalParameter);
+        Assert.Equal(2, ready.PhysicsCheckpoint!.PayloadVersion);
+    }
+
+    [Fact]
+    public void V3ProgrammaticPendingRoundTripPreservesUncommittedMembershipWithoutDecodingFrozenPayloads()
+    {
+        using var native = new CelestialMapIdentityTests.Fixture();
+        var pending = CelestialSaveCodec.Decode(CelestialSaveCodec.Encode(new CelestialSaveAdapter(CelestialBenchFactory.Create(3, pending: true)).CaptureCheckpoint().Value).Value).Value;
+        Assert.Empty(pending.CommittedBodies);
+        Assert.Equal(3, pending.Bodies.Count);
+        Assert.Single(pending.Creations);
     }
 
     [Theory]

@@ -11,7 +11,7 @@ namespace PioneerFramework
         private bool stellarShadersChecked;
         private bool stellarShadersAreFast;
         private readonly Dictionary<int, Material> stellarHaloMaterials = new();
-        private readonly List<(Mesh Mesh, Matrix4x4 Matrix, Material Material)> stellarHaloDraws = new();
+        private readonly List<(int Handle, Mesh Mesh, Matrix4x4 Matrix, Material Material)> stellarHaloDraws = new();
 
         /// <summary>
         /// 选取本窗口使用的恒星 shader：**默认 legacy（旧视觉）**；只有玩家在 Mod 设置勾选
@@ -86,7 +86,7 @@ namespace PioneerFramework
             halo.SetVector("_StellarEye", eyeValue);
             ApplyStellarFrame(halo, in frame);
             halo.SetVector("_StellarParams", new Vector4(steps, 1f, .19f, PFViewStellarVisualCore.Extent));
-            stellarHaloDraws.Add((mesh, Matrix4x4.TRS(center, rotation, Vector3.one * proxyRadius * 2f), halo));
+            stellarHaloDraws.Add((body.bodyId, mesh, Matrix4x4.TRS(center, rotation, Vector3.one * proxyRadius * 2f), halo));
             return proxyRadius;
         }
 
@@ -105,10 +105,17 @@ namespace PioneerFramework
             stellarHaloDraws.Clear();
         }
 
+        private void DestroyStellarVisualResourcesForBody(int handle)
+        {
+            stellarHaloDraws.RemoveAll(draw => draw.Handle == handle);
+            DestroyOwnedResource(stellarHaloMaterials, handle);
+        }
+
         private void DestroyStellarVisualResources()
         {
             stellarHaloDraws.Clear();
-            foreach (var material in stellarHaloMaterials.Values) UnityEngine.Object.Destroy(material);
+            foreach (var material in stellarHaloMaterials.Values)
+                if (material != null) UnityEngine.Object.Destroy(material);
             stellarHaloMaterials.Clear();
             stellarSurfaceShader = null;
             stellarHaloShader = null;

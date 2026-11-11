@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using PioneerFramework.MapGeneration;
 using RimWorld;
 using RimWorld.Planet;
 using Verse;
@@ -71,7 +72,10 @@ namespace PioneerFramework.Celestial
                 foreach (var site in document.Maps.Where(site => !site.ParentRetired))
                 {
                     if (!Find.WorldGrid.PlanetLayers.TryGetValue(site.Address.LayerId, out var layer)) return Reject("MapIdentityMismatch");
-                    var parent = Find.WorldObjects.MapParentAt(new(site.Address.TileId, layer));
+                    // Failed native provenance retains the requested address even when the native parent moved.
+                    var parent = site.Generation is { State: MapGenerationState.Failed }
+                        ? Find.WorldObjects.MapParents.SingleOrDefault(parent => parent.ID == site.MapParentId)
+                        : Find.WorldObjects.MapParentAt(new(site.Address.TileId, layer));
                     if (parent == null || parent.ID != site.MapParentId || site.MapId.HasValue && parent.Map?.uniqueID != site.MapId) return Reject("MapIdentityMismatch");
                     // 半生成地图只核对保存身份，保留其失败诊断。
                     if (site.MapId.HasValue && site.Failure == null)
