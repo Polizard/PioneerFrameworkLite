@@ -9,7 +9,7 @@ from validate_config import validate_ship_building_visuals
 
 ROOT = Path(__file__).resolve().parents[2]
 NS = "PioneerFramework.PFView.ShipBuildingVisuals."
-INDEX = build_schema_index([ROOT / "Source/PioneerFramework/PFView/ShipBuildingVisuals/Definitions"])
+INDEX = build_schema_index([ROOT / "Source/PioneerFramework/Presentation/PFView/ShipBuildingVisuals/Definitions"])
 
 
 def fixture(node, mount):

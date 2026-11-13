@@ -159,7 +159,7 @@ public class PFViewStellarS3ATests
             "FocusBody" or "InitializeSunCameraPose" or "get_IsStarFocus" or "set_position" or "set_rotation" or "set_fieldOfView");
 
         // 六个 shader 名字必须真的出现在选择方法所在文件里（Shader.Find 的字面量无法从 IL 还原）。
-        string source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Source", "PioneerFramework", "PFView",
+        string source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Source", "PioneerFramework", "Presentation", "PFView",
             "MainTabWindow_PFView.StellarVisuals.cs"));
         foreach (string name in new[]
                  {
@@ -229,7 +229,7 @@ public class PFViewStellarS3ATests
     {
         // 材质/ shader 按 body 缓存，切换开关只在重开 PFView 后生效 ⇒ 清理必须把 S3A 标志清零，
         // 否则重开页签会沿用旧选择（与 stellarShadersAreFast 同处置）。
-        string source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Source", "PioneerFramework", "PFView",
+        string source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Source", "PioneerFramework", "Presentation", "PFView",
             "MainTabWindow_PFView.StellarVisuals.cs"));
         Assert.Matches(@"DestroyStellarVisualResources[\s\S]*?stellarShadersAreS3A\s*=\s*false\s*;", source);
     }

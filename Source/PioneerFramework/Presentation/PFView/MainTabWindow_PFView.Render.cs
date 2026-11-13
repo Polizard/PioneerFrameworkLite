@@ -306,7 +306,7 @@ namespace PioneerFramework
             if (!PhysicsQueries.TryGetGroupSystemPosition(groupId, tick, out var posSystem)) return DVector3.zero;
             var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
             if (mgr == null || !PhysicsApi.TryGetSpacecraft(groupId, out var snap)) return posSystem;
-            int planetBodyId = mgr.GetRootPlanetId(snap.CelestialBodyId);
+            int planetBodyId = mgr.GetReferenceFrameId(snap.CelestialBodyId);
             DVector3 planetPosAbs = planetBodyId >= 0 ? mgr.GetBodyPositionAbs(planetBodyId, tick) : DVector3.zero;
             return posSystem + planetPosAbs;
         }

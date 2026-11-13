@@ -77,7 +77,7 @@ namespace PioneerFramework
         {
             if (rect.height < 28f) return;
             var selected = Current.Game?.GetComponent<SpaceGameComp>()?.GetGroupById(selectedGroupId);
-            bool groupKnown = CanInspectEntity(selected);
+            bool groupKnown = CanInspectGroup(selected?.GroupId ?? -1);
             var contact = default(Contact);
             bool contactKnown = inspectedContactKey != null && visibleContacts.TryGetValue(inspectedContactKey, out contact);
             string label = groupKnown ? CockpitGroupLabel(selected) : contactKnown ? ContactDisplayLabel(contact) : "—";
@@ -140,7 +140,7 @@ namespace PioneerFramework
             var game = Current.Game;
             var group = game?.GetComponent<SpaceGameComp>()?.GetGroupById(groupId);
             if (SteeringController.IsOpen && SteeringController.GroupId == groupId) return;
-            if (!CanOperateGroup(group, true, out string reason))
+            if (!CanOperateGroup(group?.GroupId ?? -1, true, out string reason))
             {
                 QueueToast(reason);
                 return;
@@ -148,7 +148,7 @@ namespace PioneerFramework
             var source = ResolveOperationGroup();
             if (source == null || source.GroupId == groupId)
             {
-                ToggleManualSteering(group);
+                ToggleManualSteering(group!.GroupId);
                 return;
             }
 
@@ -163,7 +163,7 @@ namespace PioneerFramework
                         return;
                     }
                     var current = game?.GetComponent<SpaceGameComp>()?.GetGroupById(groupId);
-                    if (CanOperateGroup(current, true, out string rejected)) ToggleManualSteering(current);
+                    if (CanOperateGroup(current?.GroupId ?? -1, true, out string rejected)) ToggleManualSteering(current!.GroupId);
                     else QueueToast(rejected);
                 }));
         }
@@ -184,7 +184,7 @@ namespace PioneerFramework
                     return;
                 }
                 var group = game?.GetComponent<SpaceGameComp>()?.GetGroupById(groupId);
-                if (!CanOperateGroup(group, false, out string reason))
+                if (!CanOperateGroup(group?.GroupId ?? -1, false, out string reason))
                 {
                     QueueToast(reason);
                     return;
@@ -240,13 +240,13 @@ namespace PioneerFramework
             int id = cockpit?.GroupId ?? -1;
             bool manual = SteeringController.IsOpen;
             var inspected = Current.Game?.GetComponent<SpaceGameComp>()?.GetGroupById(selectedGroupId);
-            int inspectedId = CanOperateGroup(inspected, false, out _) ? inspected.GroupId : -1;
-            bool canTakeInspection = CanOperateGroup(inspected, true, out _) && inspectedId != id;
-            bool cockpitCanSteer = CanOperateGroup(cockpit, true, out string manualReason);
+            int inspectedId = CanOperateGroup(inspected?.GroupId ?? -1, false, out _) ? inspected!.GroupId : -1;
+            bool canTakeInspection = CanOperateGroup(inspected?.GroupId ?? -1, true, out _) && inspectedId != id;
+            bool cockpitCanSteer = CanOperateGroup(cockpit?.GroupId ?? -1, true, out string manualReason);
             var manualGroup = !manual && !cockpitCanSteer && canTakeInspection ? inspected : cockpit;
             int alternateManualId = !manual && cockpitCanSteer && canTakeInspection ? inspectedId : -1;
             int manualId = manual ? SteeringController.GroupId : manualGroup?.GroupId ?? -1;
-            bool canAuto = CanOperateGroup(cockpit, false, out string autoReason);
+            bool canAuto = CanOperateGroup(cockpit?.GroupId ?? -1, false, out string autoReason);
             bool canManual = cockpitCanSteer || (!manual && canTakeInspection);
             bool canTransfer = manual && canTakeInspection;
             bool needsPilotMenu = manual && rPilotPanel.width <= 0;

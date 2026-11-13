@@ -48,7 +48,7 @@ public class ShipBuildingVisualHostTests
     {
         var group = new SpaceEntityGroup(90, 2) { RadarCap = new RadarCapability { beamRangeMeters = 1000, scanRateDegPerSec = 6 }, ActivePingEnabled = true };
         group.CurrentOrbit.rotation = new DQuaternion(0, Math.Sin(groupYaw * Math.PI / 360), 0, Math.Cos(groupYaw * Math.PI / 360));
-        group.RadarAimMode = SpaceEntityGroup.RadarAim.Manual;
+        group.RadarAimMode = RadarAim.Manual;
         group.RadarManualDir = new DVector3(1, 0, 0);
         var provider = new ActiveRadarVisualStateProvider();
         var input = new VisualStateContext(null, null, group, Quaternion.Identity, 10);
@@ -56,7 +56,7 @@ public class ShipBuildingVisualHostTests
         Assert.True(state.Active);
         Assert.Equal(expectedYaw, state.Yaw, 3);
         Assert.InRange(state.ScanFraction, 0, 1);
-        Assert.Equal(SpaceEntityGroup.RadarAim.Manual, group.RadarAimMode);
+        Assert.Equal(RadarAim.Manual, group.RadarAimMode);
         Assert.Equal(new DVector3(1, 0, 0), group.RadarManualDir);
         Assert.True(group.ActivePingEnabled);
         group.ActivePingEnabled = false;

@@ -47,7 +47,7 @@ namespace PioneerFramework
                 foreach (var projectile in combat.ActiveProjectiles)
                 {
                     if (!projectile.IsVisibleAt(tick) ||
-                        (projectile.factionId != playerFaction && !CanSeeProjectileSource(projectile.sourceGroupId, space, sensor)) ||
+                        (projectile.factionId != playerFaction && !CanSeeProjectileSource(projectile.sourceGroupId, sensor)) ||
                         projectileVisuals.Resolve(projectile) is not { } style)
                         continue;
 
@@ -87,11 +87,10 @@ namespace PioneerFramework
 #endif
         }
 
-        private bool CanSeeProjectileSource(int groupId, SpaceGameComp? space, SensorManager? sensor)
+        private bool CanSeeProjectileSource(int groupId, SensorManager? sensor)
         {
             if (projectileSourceVisibility.TryGetValue(groupId, out bool visible)) return visible;
-            var group = space?.GetGroupById(groupId);
-            visible = CanInspectEntity(group) && sensor?.PlayerCanSee(group) == true;
+            visible = CanInspectGroup(groupId) && sensor?.PlayerCanSee(groupId) == true;
             projectileSourceVisibility.Add(groupId, visible);
             return visible;
         }
@@ -101,13 +100,14 @@ namespace PioneerFramework
             // Sample the same focus twice in simulation time. Orbit dragging, zoom and focus transitions
             // only affect the current projection and cannot create a spurious velocity spike.
             double earlierTick = tick - ProjectileMotionSampleSeconds;
-            if (GetFocusGroup() is { } group)
+            int groupId = GetFocusGroupId();
+            if (Current.Game?.GetComponent<SpaceGameComp>()?.GetGroupById(groupId) is { IsActive: true } group)
             {
                 if (group.IsCircularOrbit)
-                    return (origin - GetGroupPosAbs(group, earlierTick)) / ProjectileMotionSampleSeconds;
+                    return (origin - GetGroupPosAbs(groupId, earlierTick)) / ProjectileMotionSampleSeconds;
 
                 var bodies = Current.Game?.GetComponent<CelestialBodyManager>();
-                int frameId = bodies?.GetRootPlanetId(group.CelestialBodyId) ?? -1;
+                int frameId = bodies?.GetReferenceFrameId(group.CelestialBodyId) ?? -1;
                 DVector3 velocity = ProjectileProjection.CarrierVelocity(group.physicsRenderPreviousPosition,
                     group.CurrentOrbit.positionSystem.v, group.CurrentOrbit.velocitySystem.v,
                     group.physicsRenderPreviousTick, group.physicsRenderCurrentTick, tick);

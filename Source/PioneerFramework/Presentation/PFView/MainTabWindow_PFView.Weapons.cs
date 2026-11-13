@@ -159,13 +159,13 @@ namespace PioneerFramework
             var weapon = selectedCockpitWeapons.Count == 1 && single.MoveNext() ? single.Current : null;
             int id = cockpit?.GroupId ?? -1;
             var target = weaponTarget;
-            bool canEnable = CanOperateGroup(cockpit, false, out string reason);
+            bool canEnable = CanOperateGroup(cockpit?.GroupId ?? -1, false, out string reason);
             string? targetBlocked = CockpitTargetBlockReason(cockpit, out var contact);
             string? selectedBlocked = targetBlocked ?? PFViewWeaponSalvo.BlockReason(cockpit!, combat, weapons, contact, selectedCockpitWeapons);
             string? allBlocked = targetBlocked ?? PFViewWeaponSalvo.BlockReason(cockpit!, combat, weapons, contact, null);
             var inspected = game?.GetComponent<SpaceGameComp>()?.GetGroupById(selectedGroupId);
-            int alternate = active && !SteeringController.IsOpen && CanOperateGroup(inspected, false, out _)
-                && inspected.GroupId != id ? inspected.GroupId : -1;
+            int alternate = active && !SteeringController.IsOpen && CanOperateGroup(inspected?.GroupId ?? -1, false, out _)
+                && inspected.GroupId != id ? inspected!.GroupId : -1;
             string toggle = (alternate >= 0 ? "PFV_CockpitFireSource" : active
                 ? "PFV_CockpitEndFireControl" : "PFV_CockpitEnableFireControl").Translate();
             string shot = "PFV_CockpitSelectShot".Translate();

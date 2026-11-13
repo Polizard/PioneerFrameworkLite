@@ -122,7 +122,7 @@ namespace PioneerFramework
                     visibleGroup = entity.GroupId;
                     if (impact.TargetLocalPoint is { } local && space.GetGroupById(entity.GroupId) is { } group)
                     {
-                        anchor = GetGroupPosAbs(group, tick) + entity.Position + DVector3.Rotate(local, group.CurrentOrbit.rotation);
+                        anchor = GetGroupPosAbs(entity.GroupId, tick) + entity.Position + DVector3.Rotate(local, group.CurrentOrbit.rotation);
                         return true;
                     }
                 }

@@ -201,7 +201,7 @@ def main():
                     fail(f"{xml_path.relative_to(ROOT)}: XML parse error: {e}")
 
     # Validate PFView fields against their declaring C# classes, including XML patch payloads.
-    visual_index = build_schema_index([ROOT / "Source/PioneerFramework/PFView/ShipBuildingVisuals/Definitions"])
+    visual_index = build_schema_index([ROOT / "Source/PioneerFramework/Presentation/PFView/ShipBuildingVisuals/Definitions"])
     visual_errors = validate_ship_building_visuals(
         [(path.relative_to(ROOT), root) for path, root in xml_roots + patch_roots
          if path.relative_to(ROOT).parts[0] == "1.7"], visual_index)

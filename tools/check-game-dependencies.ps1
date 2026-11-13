@@ -16,6 +16,6 @@ foreach ($entry in (@($manifest.files) + @($manifest.testFiles))) {
 }
 if (Get-ChildItem -LiteralPath $libs -Recurse -File -Filter 'UnityEngine*.dll') { throw 'Stale UnityEngine references remain' }
 if (Test-Path -LiteralPath (Join-Path $libs 'RimWorld/netstandard.dll')) { throw 'Stale netstandard shim remains' }
-[xml]$project = Get-Content -LiteralPath (Join-Path $root 'Source/PioneerFramework/PioneerFramework.csproj') -Raw
-if ($project.Project.PropertyGroup.TargetFramework -ne 'net10.0') { throw 'Main project must target net10.0' }
+[xml]$project = Get-Content -LiteralPath (Join-Path $root 'Source/PioneerFramework/PioneerFramework.csproj') -Raw -Encoding UTF8
+if ($project.SelectSingleNode('/Project/PropertyGroup/TargetFramework').InnerText -ne 'net10.0') { throw 'Main project must target net10.0' }
 Write-Host "Dependencies OK: RimWorld $($manifest.gameVersion), Harmony $($manifest.harmonyVersion), $($manifest.files.Count) game + $(@($manifest.testFiles).Count) test SHA256-verified assemblies"
