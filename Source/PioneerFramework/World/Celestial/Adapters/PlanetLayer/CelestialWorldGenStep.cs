@@ -29,6 +29,10 @@ namespace PioneerFramework.Celestial
         public static CelestialResult<bool> Generate(PlanetLayer layer, CelestialGenerationProfile profile, string? seedString = null)
         {
             if (layer is not CelestialSurfaceLayer surface) return CelestialResult.Reject<bool>(new CelestialError("SurfaceAdapterMissing"));
+            // 世界层 tile 只在生成时写死：header 记录的算法版本必须与当前公式一致，否则拒绝生成/重生成。
+            if (surface.Header.TerrainAlgorithmVersion != CelestialPlanetTerrain.AlgorithmVersion)
+                return CelestialResult.Reject<bool>(new CelestialError("UnsupportedTerrainAlgorithmVersion", surface.Header.OwnerId,
+                    Detail: surface.Header.TerrainAlgorithmVersion + " != " + CelestialPlanetTerrain.AlgorithmVersion));
             if (surface.Header.State == CelestialSurfaceState.Ready) return CelestialResult.Ok(true);
             if (surface.Header.State == CelestialSurfaceState.Failed) return CelestialResult.Reject<bool>(new CelestialError("SurfaceGenerationFailed", surface.Header.OwnerId));
             Rand.PushState();

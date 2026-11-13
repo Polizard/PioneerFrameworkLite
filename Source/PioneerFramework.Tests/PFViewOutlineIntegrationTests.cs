@@ -173,6 +173,8 @@ namespace PioneerFramework.Tests
                 "Presentation/PFView/MainTabWindow_PFView.cs",
                 "Presentation/PFView/MainTabWindow_PFView.Render.cs",
                 "Presentation/PFView/MainTabWindow_PFView.Scene.cs",
+                "Presentation/PFView/MainTabWindow_PFView.ProjectileVisuals.cs",
+                "Presentation/PFView/MainTabWindow_PFView.ImpactVisuals.cs",
                 "Presentation/PFView/MainTabWindow_PFView.GUI.cs",
                 "Presentation/PFView/PFViewToonShader.cs",
                 "Presentation/PFView/ShipModelRenderer.cs"

@@ -1020,6 +1020,9 @@ namespace PioneerFramework.Combat
                     interceptedRec = missileRec;
                     interceptedEntityId = entityId;
                     interceptedHitCenter = groupPos + entity.Position; // 命中实体世界位（爆心）
+                    DVector3 contact = startShip + (endShip - startShip) * Math.Max(0, tEntry);
+                    RecordProjectileContact(proj, group, entity,
+                        interceptedHitCenter + DVector3.Rotate(contact, entity.Rotation), contact);
                     break;   // 摘除/引爆在循环外执行（见方法尾部）
                 }
 
@@ -1104,7 +1107,10 @@ namespace PioneerFramework.Combat
                         // 原用 proj.position（步末点）作爆炸中心——高速弹头一步穿 ~3.4km，
                         // 偏深超出 AoE 半径导致 damaged=0）。（命中即移除，外层处理。）
                         if (proj.isWarhead)
-                            HandleWarheadImpact(proj, group, hitPointSystem);
+                            HandleWarheadImpact(proj, group, hitPointSystem, entityId);
+                        DVector3 contact = entryPoint + dirShip * (partEnterT * maxDistShip);
+                        RecordProjectileContact(proj, group, entity,
+                            entityPosSystem + DVector3.Rotate(contact, entity.Rotation), contact);
                         return true;
                     }
                 }
@@ -1120,7 +1126,10 @@ namespace PioneerFramework.Combat
                         Log.Message($"[命中!] 射弹击中 Entity {entityId} (Group {group.GroupId}) 位置({groupPos.x:F0},{groupPos.y:F0},{groupPos.z:F0})");
                     }
                     if (proj.isWarhead)
-                        HandleWarheadImpact(proj, group, proj.position.v);
+                        HandleWarheadImpact(proj, group, proj.position.v, entityId);
+                    DVector3 contact = startShip + (endShip - startShip) * Math.Max(0, tEntry);
+                    RecordProjectileContact(proj, group, entity,
+                        groupPos + entity.Position + DVector3.Rotate(contact, entity.Rotation), contact);
                     return true;
                 }
             }
@@ -1131,7 +1140,7 @@ namespace PioneerFramework.Combat
             {
                 var interceptMgr = GetAvm();
                 bool groupEmpty = interceptMgr.RemoveMissileEntity(interceptedRec, interceptedEntityId, "拦截");
-                ExplodeMissileEntityAt(group, interceptedRec, interceptedHitCenter, spaceGame, group.GroupId);
+                ExplodeMissileEntityAt(group, interceptedRec, interceptedHitCenter, spaceGame, group.GroupId, interceptedEntityId);
                 if (groupEmpty)
                 {
                     interceptMgr.UnregisterGroup(group.GroupId);
@@ -5016,7 +5025,7 @@ namespace PioneerFramework.Combat
                         destroyedMissileIds.Add(xGroup.GroupId);
                     continue;
                 }
-                CreateWarheadProjectile(xGroup, recX, missileDef, contacts[i].point,
+                CreateWarheadProjectile(xGroup, recX, missileDef, exId, contacts[i].point,
                     GetGroupVelocity(xGroup), spaceGame, combatGrid);
                 Log.Message($"[导弹撞击] G{xGroup.GroupId} E{exId}→G{yGroup.GroupId} 接触=({contacts[i].point.x:F0},{contacts[i].point.y:F0},{contacts[i].point.z:F0})m 单枚转化弹头（弹群剩余继续）");
                 if (avm.RemoveMissileEntity(recX, exId, "撞击转化"))
@@ -5030,11 +5039,11 @@ namespace PioneerFramework.Combat
         /// 弹头 = 普通射弹 + isWarhead/AoE 参数；命中结算由 CheckSegmentGroupHit 现有链完成。
         /// </summary>
         private void CreateWarheadProjectile(SpaceEntityGroup missileGroup,
-            AutonomousVehicleManager.VehicleRecord rec, MissileDef missileDef,
+            AutonomousVehicleManager.VehicleRecord rec, MissileDef missileDef, int sourceEntityId,
             DVector3 pos, DVector3 vel, SpaceGameComp spaceGame, CombatGrid combatGrid)
         {
             SpawnWarheadProjectileCore(missileGroup.GroupId, missileGroup.FactionId, missileGroup.CelestialBodyId,
-                rec.weaponDefName, missileDef, pos, vel, spaceGame, combatGrid);
+                rec.weaponDefName, missileDef, pos, vel, spaceGame, combatGrid, sourceEntityId);
         }
 
         /// <summary>
@@ -5061,7 +5070,7 @@ namespace PioneerFramework.Combat
         /// <summary>弹头生成的**唯一实现**（实战与调试共用，避免两条路各自演化）。</summary>
         private void SpawnWarheadProjectileCore(int sourceGroupId, int factionId, int celestialBodyId,
             string weaponDefName, MissileDef missileDef,
-            DVector3 pos, DVector3 vel, SpaceGameComp spaceGame, CombatGrid combatGrid)
+            DVector3 pos, DVector3 vel, SpaceGameComp spaceGame, CombatGrid combatGrid, int sourceEntityId = -1)
         {
             var warhead = new ProjectileInstance
             {
@@ -5087,6 +5096,8 @@ namespace PioneerFramework.Combat
                 prevUpdatePhysicsTick = TimeScaleManager.GetPhysicsTickSafe(),
                 systemBodyId = spaceGame.ResolveReferenceFrameId(celestialBodyId),
                 isWarhead = true,
+                impactMissileDef = missileDef,
+                impactSourceEntityId = sourceEntityId,
                 blastRadius = missileDef.blastRadius,
                 mapBlastRadiusCells = missileDef.mapBlastRadiusCells,
                 blastCenterDamage = missileDef.blastCenterDamage,
@@ -5101,7 +5112,7 @@ namespace PioneerFramework.Combat
         /// 弹头命中结算（§10）：part 大额直扣与 F3 Map 落点已由命中现链完成，
         /// 此处补 3D AoE（伤害线性衰减 + 径向冲量 + 扩散视觉），以精确命中点 hitPointSystem 为心。
         /// </summary>
-        private void HandleWarheadImpact(ProjectileInstance proj, SpaceEntityGroup target, DVector3 hitPointSystem)
+        private void HandleWarheadImpact(ProjectileInstance proj, SpaceEntityGroup target, DVector3 hitPointSystem, int targetEntityId)
         {
             // B：弹头源自某弹群成员（sourceGroupId=来源组）——其死亡爆炸豁免自家残组；
             // C：AoE 击毁的导弹成员当场脱队，变空的组当场销毁（射弹路径不在 pair 迭代中，安全）
@@ -5123,7 +5134,10 @@ namespace PioneerFramework.Combat
                 maxRadius = proj.blastRadius,
                 remainingTicks = 60,
                 totalTicks = 60,
-                systemBodyId = proj.systemBodyId
+                systemBodyId = proj.systemBodyId,
+                HasImpactEvent = RecordDetonation((Def?)proj.impactMissileDef ?? proj.weaponDef, proj.sourceGroupId,
+                    proj.impactSourceEntityId, proj.id, proj.systemBodyId, hitPointSystem, proj.blastRadius,
+                    target.GroupId, targetEntityId)
             });
             Log.Message($"[弹头命中] proj={proj.id}→G{target.GroupId} 爆炸中心=({hitPointSystem.x:F0},{hitPointSystem.y:F0},{hitPointSystem.z:F0})m 直扣={proj.damage:F0} AoE R={proj.blastRadius:F0}m D0={proj.blastCenterDamage:F0} damaged={damaged}");
         }
@@ -5146,7 +5160,7 @@ namespace PioneerFramework.Combat
                 var e = spaceGame.GetEntityById(eid);
                 if (e == null) continue;
                 ExplodeAtPointSystem(missileGroup, rec, spaceGame, gpos + e.Position,
-                    n == 0 ? "[导弹引爆]" : "[导弹群自毁]", missileGroup.GroupId);
+                    n == 0 ? "[导弹引爆]" : "[导弹群自毁]", missileGroup.GroupId, eid);
                 n++;
             }
             if (n == 0)
@@ -5163,16 +5177,16 @@ namespace PioneerFramework.Combat
         /// </summary>
         internal void ExplodeMissileEntityAt(SpaceEntityGroup missileGroup,
             AutonomousVehicleManager.VehicleRecord rec, DVector3 center, SpaceGameComp spaceGame,
-            int excludeGroupId = -1)
+            int excludeGroupId = -1, int sourceEntityId = -1)
         {
-            ExplodeAtPointSystem(missileGroup, rec, spaceGame, center, "[导弹单枚引爆]", excludeGroupId);
+            ExplodeAtPointSystem(missileGroup, rec, spaceGame, center, "[导弹单枚引爆]", excludeGroupId, sourceEntityId);
         }
 
         /// <summary>弹头 AoE 核心（伤害/冲量/视觉/日志）。excludeGroupId：豁免自家残组（B）；
         /// AoE 击毁变空的导弹组当场销毁（C）——调用点均在射弹路径/UI 事件，不在 pair 迭代中。</summary>
         private void ExplodeAtPointSystem(SpaceEntityGroup missileGroup,
             AutonomousVehicleManager.VehicleRecord rec, SpaceGameComp spaceGame,
-            DVector3 center, string tag, int excludeGroupId = -1)
+            DVector3 center, string tag, int excludeGroupId = -1, int sourceEntityId = -1)
         {
             var missileDef = rec.missileDefName == null
                 ? null
@@ -5195,13 +5209,16 @@ namespace PioneerFramework.Combat
                 spaceGame.DestroyGroup(gid, "战斗中损毁（转化交接）");
             }
             ApplyExplosionImpulse(frameId, center, R, E, excludeGroupId);
+            int visualFrameId = spaceGame.ResolveReferenceFrameId(missileGroup.CelestialBodyId);
             activeExplosions.Add(new ExplosionInstance
             {
                 position = center,
                 maxRadius = R,
                 remainingTicks = 60,
                 totalTicks = 60,
-                systemBodyId = spaceGame.ResolveReferenceFrameId(missileGroup.CelestialBodyId)
+                systemBodyId = visualFrameId,
+                HasImpactEvent = RecordDetonation(missileDef, missileGroup.GroupId, sourceEntityId, -1,
+                    visualFrameId, center, R)
             });
             Log.Message($"{tag} G{missileGroup.GroupId} 位置=({center.x:F0},{center.y:F0},{center.z:F0})m AoE R={R:F0}m D0={D0:F0} damaged={damaged}");
         }
@@ -5562,6 +5579,9 @@ namespace PioneerFramework.Combat
             if (hit && hitEntity != null)
             {
                 DVector3 hitPoint = startPos + dir * (closestT * beamLength);
+                DVector3 targetCenter = GetGroupPos(hitGroup) + hitEntity.Position;
+                DVector3 impactLocal = hitPartIndex >= 0 ? hitShip : DVector3.Rotate(hitPoint - targetCenter, hitEntity.RotationInverse());
+                DVector3 impactPoint = targetCenter + DVector3.Rotate(impactLocal, hitEntity.Rotation);
                 lastHitPosition = hitPoint;
                 lastHitGroupId = hitGroup.GroupId;
                 lastHitTick = Find.TickManager.TicksGame;
@@ -5612,6 +5632,7 @@ namespace PioneerFramework.Combat
                     totalTicks = 60,
                     systemBodyId = systemBodyId
                 });
+                RecordContact(-1, weapon.def, true, groupId, -1, hitGroup, hitEntity, systemBodyId, impactPoint, impactLocal, dir);
 
                 // 命中判定汇总（详细日志）：候选船数 + 命中距离（遮挡语义下 = 最近一艘）
                 if (DebugDetailedCombat)
@@ -5703,6 +5724,7 @@ namespace PioneerFramework.Combat
     /// </summary>
     public class ExplosionInstance
     {
+        internal bool HasImpactEvent;
         public DVector3 position;
         public double maxRadius;
         public int remainingTicks;

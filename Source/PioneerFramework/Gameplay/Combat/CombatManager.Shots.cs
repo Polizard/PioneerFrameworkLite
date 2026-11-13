@@ -20,6 +20,7 @@ namespace PioneerFramework.Combat
             public Thing? Thing;
             public Map? Map;
             public DVector3 PointSystem;
+            public DVector3 PointShip;
             public Vector3 PointMap;
         }
 
@@ -128,18 +129,21 @@ namespace PioneerFramework.Combat
                                 double t = entry + (exit - entry) * Math.Max(0, localT);
                                 hits.Add(new ShotHit { T = t, Group = group, Entity = entity, Part = part, Thing = thing, Map = map,
                                     PointMap = Vector3.Lerp(ma, mb, (float)Math.Max(0, localT)),
-                                    PointSystem = projectile.prevPosition.v + (projectile.position.v - projectile.prevPosition.v) * t });
+                                    PointSystem = projectile.prevPosition.v + (projectile.position.v - projectile.prevPosition.v) * t,
+                                    PointShip = a + (b - a) * t });
                             }
                         }
                         // Map carriers expose their internal structures; ordinary parts retain component damage callbacks.
                         if (!part.isIndestructible || map == null)
                             hits.Add(new ShotHit { T = entry, Group = group, Entity = entity, Part = part,
-                                PointSystem = projectile.prevPosition.v + (projectile.position.v - projectile.prevPosition.v) * entry });
+                                PointSystem = projectile.prevPosition.v + (projectile.position.v - projectile.prevPosition.v) * entry,
+                                PointShip = a + (b - a) * entry });
                     }
                     if (entity.Parts.Count == 0)
                         if (CombatGrid.RaySlabIntersection(a, b, -entity.AabbHalfSize, entity.AabbHalfSize, out double t, out _, out _))
                             hits.Add(new ShotHit { T = Math.Max(0, t), Group = group, Entity = entity,
-                                PointSystem = projectile.prevPosition.v + (projectile.position.v - projectile.prevPosition.v) * Math.Max(0, t) });
+                                PointSystem = projectile.prevPosition.v + (projectile.position.v - projectile.prevPosition.v) * Math.Max(0, t),
+                                PointShip = a + (b - a) * Math.Max(0, t) });
                 }
             }
             hits.Sort((a, b) =>
@@ -166,7 +170,8 @@ namespace PioneerFramework.Combat
                 if (intercepted)
                 {
                     bool empty = avm!.RemoveMissileEntity(missile!, hit.Entity.EntityId, "拦截");
-                    ExplodeMissileEntityAt(hit.Group, missile!, GetGroupPos(hit.Group) + hit.Entity.Position, space, hit.Group.GroupId);
+                    ExplodeMissileEntityAt(hit.Group, missile!, GetGroupPos(hit.Group) + hit.Entity.Position, space,
+                        hit.Group.GroupId, hit.Entity.EntityId);
                     if (empty)
                     {
                         avm.UnregisterGroup(hit.Group.GroupId);
@@ -194,6 +199,7 @@ namespace PioneerFramework.Combat
                     ApplyExplosion = (properties, scale) => ApplyShotExplosion(projectile, hit, properties, scale)
                 };
                 shot.Contact(context);
+                RecordProjectileContact(projectile, hit.Group, hit.Entity, hit.PointSystem, hit.PointShip);
                 lastHitPosition = hit.PointSystem;
                 lastHitGroupId = hit.Group.GroupId;
                 lastHitTick = Find.TickManager.TicksGame;
@@ -294,7 +300,10 @@ namespace PioneerFramework.Combat
                 { victim.part.ApplyDamage(victim.damage); if (victim.part.isDestroyed) victim.entity.MarkPartDestroyed(victim.part.partId); }
                 foreach (var victim in victims) CleanupShotMissile(victim.entity);
                 activeExplosions.Add(new ExplosionInstance { position = hit.PointSystem, maxRadius = properties.spaceRadiusMeters,
-                    remainingTicks = 60, totalTicks = 60, systemBodyId = projectile.systemBodyId });
+                    remainingTicks = 60, totalTicks = 60, systemBodyId = projectile.systemBodyId,
+                    HasImpactEvent = RecordDetonation(projectile.shot?.Definition, projectile.sourceGroupId, -1,
+                        projectile.id, projectile.systemBodyId, hit.PointSystem, properties.spaceRadiusMeters,
+                        hit.Group.GroupId, hit.Entity.EntityId, projectile.shot?.Profile.Instant == true) });
             }
         }
     }

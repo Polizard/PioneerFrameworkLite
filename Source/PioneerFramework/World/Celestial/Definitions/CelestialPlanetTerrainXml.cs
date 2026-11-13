@@ -24,6 +24,9 @@ namespace PioneerFramework.Celestial
         public double minimumRoughness;
         public double maximumRoughness = 1;
         public Hilliness hilliness = Hilliness.Undefined;
+        /// <summary>可选湿度条件（0..1）。只对 Rock 场有意义；省略 = 不约束。</summary>
+        public double? minimumMoisture;
+        public double? maximumMoisture;
         public List<CelestialEnvironmentParameterXml> parameters = new();
         internal CelestialPlanetBiomeRule Resolve(CelestialGenerationContext? context)
         {
@@ -35,7 +38,7 @@ namespace PioneerFramework.Celestial
                 Get(nameof(minimumElevationMeters), minimumElevationMeters, -200000, 200000), Get(nameof(maximumElevationMeters), maximumElevationMeters, -200000, 200000),
                 Get(nameof(minimumAbsoluteLatitude), minimumAbsoluteLatitude, 0, 90), Get(nameof(maximumAbsoluteLatitude), maximumAbsoluteLatitude, 0, 90),
                 Get(nameof(minimumRoughness), minimumRoughness, 0, 1), Get(nameof(maximumRoughness), maximumRoughness, 0, 1),
-                hilliness == Hilliness.Undefined ? null : (int?)hilliness);
+                hilliness == Hilliness.Undefined ? null : (int?)hilliness, minimumMoisture, maximumMoisture);
             if (fallback)
                 foreach (string condition in new[] { nameof(minimumTemperatureCelsius), nameof(maximumTemperatureCelsius), nameof(minimumRainfallMillimeters),
                     nameof(maximumRainfallMillimeters), nameof(minimumElevationMeters), nameof(maximumElevationMeters), nameof(minimumAbsoluteLatitude),
@@ -73,6 +76,8 @@ namespace PioneerFramework.Celestial
         public BiomeDef? oceanBiome;
         public List<CelestialPlanetBiomeRuleXml> biomeRules = new();
         public List<CelestialPlanetLandmarkXml> landmarks = new();
+        /// <summary>地形场种类：省略 = Waves（旧语义）；目前可选 "Waves"/"Rock"。显式 Waves 归一成 null ⇒ 冻结字节不变。</summary>
+        public string? fieldKind;
         public CelestialPlanetTerrainConfiguration Resolve(CelestialGenerationContext? context = null, CelestialClimateConfiguration? climate = null)
         {
             if (parameters == null || biomeRules == null || landmarks == null || biomeRules.Any(r => r == null) || landmarks.Any(r => r?.mutator?.Worker == null))
@@ -81,6 +86,17 @@ namespace PioneerFramework.Celestial
             if (seaLevelMeters != null) values.Add(new() { key = nameof(seaLevelMeters), value = seaLevelMeters });
             if (oceanCoverage != null) values.Add(new() { key = nameof(oceanCoverage), value = oceanCoverage });
             var s = new CelestialParameterSamplerXml(values, context, "terrain.");
+            CelestialPlanetTerrainFieldKind? kind = null;
+            if (!string.IsNullOrWhiteSpace(fieldKind))
+            {
+                string requested = fieldKind.Trim();
+                string? match = Array.Find(Enum.GetNames<CelestialPlanetTerrainFieldKind>(),
+                    name => string.Equals(name, requested, StringComparison.OrdinalIgnoreCase));
+                if (match == null) throw new ArgumentException("Unknown terrain.fieldKind: " + fieldKind + " (expected Waves/Rock).");
+                var parsed = Enum.Parse<CelestialPlanetTerrainFieldKind>(match);
+                // 显式 Waves 与省略等价：归一成 null，保证既有内容的冻结字节/哈希逐位不变。
+                if (parsed != CelestialPlanetTerrainFieldKind.Waves) kind = parsed;
+            }
             var surface = context?.GetResolved<SurfaceResolvedProperties>();
             ulong seed = context != null && surface != null ? CelestialSeed.SurfaceSeed(context.WorldSeed, context.GenerationPath, surface.Key) : 0;
             var result = new CelestialPlanetTerrainConfiguration(s.Get(nameof(continentScale), continentScale, .01, 64),
@@ -88,7 +104,7 @@ namespace PioneerFramework.Celestial
                 s.Get(nameof(roughness), roughness, 0, 1), s.Get(nameof(mountainWeight), mountainWeight, 0, 1),
                 seaLevelMeters == null ? null : s.Get(nameof(seaLevelMeters), 0, -200000, 200000), oceanCoverage == null ? null : s.Get(nameof(oceanCoverage), 0, 0, 1),
                 allowRivers, allowLakes, oceanBiome?.defName ?? "Ocean", climate,
-                biomeRules.Select(r => r.Resolve(context)).ToArray(), landmarks.Select(r => r.Resolve(context)).ToArray(), unchecked((int)(seed ^ (seed >> 32))));
+                biomeRules.Select(r => r.Resolve(context)).ToArray(), landmarks.Select(r => r.Resolve(context)).ToArray(), unchecked((int)(seed ^ (seed >> 32))), kind);
             ValidateClimateIntervals(s, climate, context);
             s.Complete(); return result;
         }

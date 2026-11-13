@@ -110,7 +110,12 @@ public class PlanetKindSurfaceNavigationTests
             Native.AddDefs(definition);
             Native.AddDefs(tiles);
             Harness = new(runtime => { _ = new CelestialSurfaceService(runtime, definition); });
-            Native.AddDefs(Harness.Content.Biomes.Values.ToArray());
+            // 2026-11-08 B1：荒芜 Rock 场会用到 PF_MoonBiome*，而测试环境可能已由真实 Def 预加载；
+            // 夹具只补注册缺失的那些（重复 Add 会触发 DefDatabase 的重名异常）。
+            var biomeValues = Harness.Content.Biomes.Values
+                .Where(b => DefDatabase<BiomeDef>.GetNamedSilentFail(b.defName) == null)
+                .ToArray();
+            Native.AddDefs(biomeValues);
             Assert.True(Manager.AttachCelestialRuntime(Harness.Runtime).Success);
         }
         internal CelestialBodySnapshot Create(string definition)

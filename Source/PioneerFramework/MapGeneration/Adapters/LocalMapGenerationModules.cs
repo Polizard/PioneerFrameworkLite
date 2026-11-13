@@ -52,7 +52,7 @@ namespace PioneerFramework.MapGeneration
             }, config => new InitialInputsModule(config));
             return registry;
         }
-        /// <summary>Static validation deliberately defers candidate-dependent ordering and resource graph checks to final compilation.</summary>
+        /// <summary>Static validation rejects unresolved recipe inputs; candidate-dependent ordering is deferred to final compilation.</summary>
         public static void ValidateRecipe(LocalMapRecipe recipe, MapGenerationRegistry registry)
         {
             ArgumentNullException.ThrowIfNull(recipe); ArgumentNullException.ThrowIfNull(registry);
@@ -71,23 +71,19 @@ namespace PioneerFramework.MapGeneration
                     throw new ArgumentException("Terrain replacement must be a NaturalSurface module.");
                 registration.ValidateConfiguration(step.Configuration);
             }
+            // P2-1: the native host never supplies external inputs (NativeLocalMapPlan.Build compiles without them),
+            // so an input no step of this recipe produces must fail static validation instead of deferring the
+            // failure to the first map generation. Compiler.Compile keeps its externalInputs parameter for pure hosts.
             var produced = recipe.Steps.SelectMany(step => step.Outputs).Select(port => port.Key).ToHashSet(StringComparer.Ordinal);
-            var external = new Dictionary<string, MapGenerationPortContract>(StringComparer.Ordinal);
-            foreach (var step in recipe.Steps)
-            {
-                registry.TryResolve(step.HandlerId, step.ConfigurationVersion, out var registration);
-                foreach (var input in step.Inputs.Where(input => !produced.Contains(input.Key)))
-                {
-                    var contract = registration!.Inputs.Single(port => port.Name == input.Name);
-                    if (external.TryGetValue(input.Key, out var existing) && (existing.TypeId != contract.TypeId || existing.RuntimeType != contract.RuntimeType))
-                        throw new ArgumentException("Conflicting external resource types: " + input.Key);
-                    external[input.Key] = new(input.Key, contract.TypeId, contract.RuntimeType);
-                }
-            }
+            var unresolved = recipe.Steps.SelectMany(step => step.Inputs).Where(port => !produced.Contains(port.Key))
+                .Select(port => port.Key).Distinct(StringComparer.Ordinal).ToArray();
+            if (unresolved.Length > 0)
+                throw new ArgumentException("Unresolved recipe input: " + string.Join(", ", unresolved) +
+                    ". No step output provides it and the native host supplies no external inputs.");
             var local = recipe.Steps.Select(step => new MapGenerationStepSpec(step.Key, step.HandlerId, step.ConfigurationVersion, step.AlgorithmVersion,
                 step.Stage, step.Domain, step.Configuration, step.Before.Where(keys.Contains), step.After.Where(keys.Contains), step.Inputs, step.Outputs,
                 step.NativeOrder, step.IsOpaque));
-            var validation = MapGenerationCompiler.Compile(new(new LocalMapRecipe(recipe.Id, local)), MapGenerationPurpose.Colony, registry, externalInputs: external.Values);
+            var validation = MapGenerationCompiler.Compile(new(new LocalMapRecipe(recipe.Id, local)), MapGenerationPurpose.Colony, registry);
             if (!validation.Success) throw new ArgumentException("Invalid static local recipe: " + string.Join("; ", validation.Diagnostics.Where(d => !d.IsWarning).Select(d => d.Code + ":" + d.StepKey + ":" + d.Detail)));
         }
         public static void ValidateSpecification(LocalMapGenerationSpec specification, MapGenerationRegistry registry)

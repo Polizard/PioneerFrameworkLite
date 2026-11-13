@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PFView_PlanetInfo_Title>Body info</PFView_PlanetInfo_Title>
+  <PFView_PlanetInfo_Close>Close</PFView_PlanetInfo_Close>
+  <PFView_PlanetInfo_NoBody>No body selected</PFView_PlanetInfo_NoBody>
+  <PFView_PlanetInfo_Tab_Summary>Summary</PFView_PlanetInfo_Tab_Summary>
+  <PFView_PlanetInfo_Tab_Ecology>Ecology</PFView_PlanetInfo_Tab_Ecology>
+  <PFView_PlanetInfo_Tab_Orbit>Motion</PFView_PlanetInfo_Tab_Orbit>
+  <PFView_PlanetInfo_Field_Name>Name</PFView_PlanetInfo_Field_Name>
+  <PFView_PlanetInfo_Field_DefName>Def name</PFView_PlanetInfo_Field_DefName>
+  <PFView_PlanetInfo_Field_Type>Type</PFView_PlanetInfo_Field_Type>
+  <PFView_PlanetInfo_Field_Radius>Radius</PFView_PlanetInfo_Field_Radius>
+  <PFView_PlanetInfo_Field_Gravity>Gravity parameter μ</PFView_PlanetInfo_Field_Gravity>
+  <PFView_PlanetInfo_Field_Surface>Surface</PFView_PlanetInfo_Field_Surface>
+  <PFView_PlanetInfo_Field_Layer>Surface layer</PFView_PlanetInfo_Field_Layer>
+  <PFView_PlanetInfo_Field_Moons>Moons</PFView_PlanetInfo_Field_Moons>
+  <PFView_PlanetInfo_BodyType_Star>Star</PFView_PlanetInfo_BodyType_Star>
+  <PFView_PlanetInfo_BodyType_Planet>Planet</PFView_PlanetInfo_BodyType_Planet>
+  <PFView_PlanetInfo_BodyType_Moon>Moon</PFView_PlanetInfo_BodyType_Moon>
+  <PFView_PlanetInfo_Value_Yes>Yes</PFView_PlanetInfo_Value_Yes>
+  <PFView_PlanetInfo_Value_No>No</PFView_PlanetInfo_Value_No>
+  <PFView_PlanetInfo_Value_None>None</PFView_PlanetInfo_Value_None>
+  <PFView_PlanetInfo_Value_Count>{0}</PFView_PlanetInfo_Value_Count>
+  <PFView_PlanetInfo_Value_Kilometers>{0} km</PFView_PlanetInfo_Value_Kilometers>
+  <PFView_PlanetInfo_Value_Meters>{0} m</PFView_PlanetInfo_Value_Meters>
+  <PFView_PlanetInfo_Value_Celsius>{0} ℃</PFView_PlanetInfo_Value_Celsius>
+  <PFView_PlanetInfo_Value_Millimeters>{0} mm</PFView_PlanetInfo_Value_Millimeters>
+  <PFView_PlanetInfo_Value_Percent>{0}%</PFView_PlanetInfo_Value_Percent>
+  <PFView_PlanetInfo_Value_Hours>{0} h</PFView_PlanetInfo_Value_Hours>
+  <PFView_PlanetInfo_Value_Seconds>{0} s</PFView_PlanetInfo_Value_Seconds>
+  <PFView_PlanetInfo_Value_Vector>({0}, {1}, {2})</PFView_PlanetInfo_Value_Vector>
+  <PFView_PlanetInfo_Value_GravitationalParameter>{0} m³/s²</PFView_PlanetInfo_Value_GravitationalParameter>
+  <PFView_PlanetInfo_Value_LayerTiles>{0} ({1} tiles)</PFView_PlanetInfo_Value_LayerTiles>
+  <PFView_PlanetInfo_Ecology_TopBiomes>Dominant biomes (top 5)</PFView_PlanetInfo_Ecology_TopBiomes>
+  <PFView_PlanetInfo_Ecology_Biome>{0} ({1})</PFView_PlanetInfo_Ecology_Biome>
+  <PFView_PlanetInfo_Ecology_AvgElevation>Average elevation</PFView_PlanetInfo_Ecology_AvgElevation>
+  <PFView_PlanetInfo_Ecology_AvgTemperature>Average temperature</PFView_PlanetInfo_Ecology_AvgTemperature>
+  <PFView_PlanetInfo_Ecology_AvgRainfall>Average rainfall</PFView_PlanetInfo_Ecology_AvgRainfall>
+  <PFView_PlanetInfo_Ecology_Hilliness>Hilliness distribution</PFView_PlanetInfo_Ecology_Hilliness>
+  <PFView_PlanetInfo_Ecology_NoLayer>This body has no surface layer</PFView_PlanetInfo_Ecology_NoLayer>
+  <PFView_PlanetInfo_Ecology_Counting>Counting surface tiles...</PFView_PlanetInfo_Ecology_Counting>
+  <PFView_PlanetInfo_Ecology_NoData>No surface data available</PFView_PlanetInfo_Ecology_NoData>
+  <PFView_PlanetInfo_Hilliness_Undefined>Undefined</PFView_PlanetInfo_Hilliness_Undefined>
+  <PFView_PlanetInfo_Hilliness_Flat>Flat</PFView_PlanetInfo_Hilliness_Flat>
+  <PFView_PlanetInfo_Hilliness_SmallHills>Small hills</PFView_PlanetInfo_Hilliness_SmallHills>
+  <PFView_PlanetInfo_Hilliness_LargeHills>Large hills</PFView_PlanetInfo_Hilliness_LargeHills>
+  <PFView_PlanetInfo_Hilliness_Mountainous>Mountainous</PFView_PlanetInfo_Hilliness_Mountainous>
+  <PFView_PlanetInfo_Hilliness_Impassable>Impassable</PFView_PlanetInfo_Hilliness_Impassable>
+  <PFView_PlanetInfo_Orbit_Radius>Orbit radius</PFView_PlanetInfo_Orbit_Radius>
+  <PFView_PlanetInfo_Orbit_Period>Orbit period</PFView_PlanetInfo_Orbit_Period>
+  <PFView_PlanetInfo_Orbit_Normal>Orbit normal</PFView_PlanetInfo_Orbit_Normal>
+  <PFView_PlanetInfo_Orbit_DayLength>Day length</PFView_PlanetInfo_Orbit_DayLength>
+  <PFView_PlanetInfo_Orbit_AtmoPhysical>Atmosphere thickness</PFView_PlanetInfo_Orbit_AtmoPhysical>
+  <PFView_PlanetInfo_Orbit_AtmoVisual>Visual shell thickness</PFView_PlanetInfo_Orbit_AtmoVisual>
+  <PFView_PlanetInfo_Orbit_AtmoColor>Atmosphere color</PFView_PlanetInfo_Orbit_AtmoColor>
+  <PFView_PlanetInfo_Orbit_NoOrbit>This body has no orbit</PFView_PlanetInfo_Orbit_NoOrbit>
+  <PFView_TileInspect_Title>Tile inspection</PFView_TileInspect_Title>
+  <PFView_TileInspect_Body>Body</PFView_TileInspect_Body>
+  <PFView_TileInspect_Tile>Tile</PFView_TileInspect_Tile>
+  <PFView_TileInspect_TileFormat>#{0}</PFView_TileInspect_TileFormat>
+  <PFView_TileInspect_Biome>Biome</PFView_TileInspect_Biome>
+  <PFView_TileInspect_BiomeFormat>{0} ({1})</PFView_TileInspect_BiomeFormat>
+  <PFView_TileInspect_Elevation>Elevation</PFView_TileInspect_Elevation>
+  <PFView_TileInspect_Temperature>Temperature</PFView_TileInspect_Temperature>
+  <PFView_TileInspect_Rainfall>Rainfall</PFView_TileInspect_Rainfall>
+  <PFView_TileInspect_Hilliness>Hilliness</PFView_TileInspect_Hilliness>
+  <PFView_TileInspect_Water>Water</PFView_TileInspect_Water>
+  <PFView_TileInspect_Rivers>Rivers</PFView_TileInspect_Rivers>
+  <PFView_TileInspect_PotentialRivers>Potential rivers</PFView_TileInspect_PotentialRivers>
+  <PFView_TileInspect_PotentialRoads>Potential roads</PFView_TileInspect_PotentialRoads>
+  <PFView_TileInspect_Yes>Yes</PFView_TileInspect_Yes>
+  <PFView_TileInspect_No>No</PFView_TileInspect_No>
+  <PFView_TileInspect_Unknown>Unknown</PFView_TileInspect_Unknown>
+  <PFView_TileInspect_Value_Count>{0}</PFView_TileInspect_Value_Count>
+  <PFView_TileInspect_Value_Meters>{0} m</PFView_TileInspect_Value_Meters>
+  <PFView_TileInspect_Value_Celsius>{0} ℃</PFView_TileInspect_Value_Celsius>
+  <PFView_TileInspect_Value_Millimeters>{0} mm</PFView_TileInspect_Value_Millimeters>
+</LanguageData>

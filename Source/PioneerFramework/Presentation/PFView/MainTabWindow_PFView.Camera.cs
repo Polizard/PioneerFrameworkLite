@@ -289,6 +289,26 @@ namespace PioneerFramework
             BeginTransition(oldOrigin, oldPose);
         }
 
+        /// <summary>
+        /// 焦点切到某天体并**直接降到指定高度**（米）。调试面板用：默认 FocusBody 的机位是 4 倍半径，
+        /// 从那里看不出地表纹理/山脊（一格只有 2 px）。这里跳过过渡直接落到近景。
+        /// </summary>
+        internal void FocusBodyAtAltitude(int bodyId, double altitudeMeters)
+        {
+            FocusBody(bodyId);
+            var body = Current.Game?.GetComponent<CelestialBodyManager>()?.GetBodyById(bodyId);
+            if (body == null) return;
+            float distance = (float)((body.radius + System.Math.Max(altitudeMeters, 1000.0)) * MetersToView);
+            float radiusView = Mathf.Max((float)(body.radius * MetersToView), 1f);
+            float clamped = PFViewCameraCore.ClampDistance(PFViewFocusKind.Body, distance, MetersToView, radiusView);
+            Log.Message("[PFView·相机] 聚焦 " + body.defName + "：目标高度=" + (System.Math.Max(altitudeMeters, 1000.0) / 1000.0).ToString("F0") +
+                " km｜实际可用=" + ((clamped - radiusView) / MetersToView / 1000.0).ToString("F0") + " km（近距下限 = 1.2×半径）");
+            camDistance = distance;
+            camDisplayDistance = distance;
+            cameraTransitioning = false;
+            transitionStartDistance = distance;
+        }
+
         /// <summary>「行星视角」按钮/Home：焦点回到当前天体（保留选中与目标）。</summary>
         internal void FocusCurrentBody()
         {
@@ -318,7 +338,7 @@ namespace PioneerFramework
             if (groupId < 0)
             {
                 targetGroupId = -1;
-                QueueToast("已清除目标");
+                QueueToast("PFV_CockpitTargetCleared".Translate());
                 return;
             }
             if (!TryGetKnownContact(groupId, out var contact))
@@ -621,7 +641,7 @@ namespace PioneerFramework
                 {
                     if (GUI.GetNameOfFocusedControl() == "PFViewSearch") GUI.FocusControl(null);
                     else if (SteeringController.IsOpen) EndSteering();
-                    else if (WantsInspector) preferObjectList = true;
+                    else if (rInspector.width > 0 || uiLayout.Drawer.Width > 0) SetDrawer(PFViewDrawerTab.None);
                     else Close();
                     e.Use();
                     return;

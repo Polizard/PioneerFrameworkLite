@@ -20,6 +20,12 @@ CELESTIAL_DEFS = {
     "CelestialBodyDef", "CelestialSystemDef", "CelestialBiomeProfileDef", "CelestialMapProfileDef",
     "CelestialEnvironmentProfileDef", "CelestialVisualProfileDef",
 }
+# 2026-11-07 A-3：枚举字段的取值白名单。枚举文本拼错时原版解析只 Log.Error 并退回默认值，
+# 曾经导致「CommittedIllumination」拼错后天体静默退回 Authored；LatitudeBands 已退役同理。
+CELESTIAL_ENUMS = {
+    "CelestialClimateMode": {"Authored", "CommittedIllumination"},
+    "CelestialBiomeGenerationMode": {"VanillaSurface", "Parameterized"},
+}
 MOTION_NUMERIC_KEYS = {
     "orbitRadiusMeters", "orbitPeriodSeconds", "orbitPhaseRadians",
     "orbitNormalX", "orbitNormalY", "orbitNormalZ", "rotation.axisX", "rotation.axisY",
@@ -193,6 +199,10 @@ def validate_celestial_definition(node, version, index):
                             raise ValueError()
                 except ValueError:
                     errors.append(child_path + ": invalid " + scalar + " scalar")
+            if scalar in CELESTIAL_ENUMS:
+                value = (child.text or "").strip()
+                if len(child) or value not in CELESTIAL_ENUMS[scalar]:
+                    errors.append(child_path + ": invalid " + scalar + " value")
             if name == "CelestialMotionXml" and child.tag == "parameters":
                 keys = [item.findtext("key") for item in child]
                 if len(keys) != len(set(keys)) or any(key not in MOTION_NUMERIC_KEYS for key in keys):
@@ -209,6 +219,10 @@ def validate_celestial_definition(node, version, index):
             }:
                 # Def references use text, not inline configuration.
                 if len(child) or not _derives(_short(field_type), "Def", index):
+                    # 2026-11-07 A-1：空 `<climate />`/`<exposure />` 会被原版实例化成默认对象并静默启用 v2。
+                    if len(child) == 0 and _short(field_type) in index and not _derives(_short(field_type), "Def", index) \
+                            and not _short(field_type).endswith("ParameterXml"):
+                        errors.append(child_path + ": empty configuration element for " + _short(field_type))
                     errors.extend(visit(child, field_type, child_path))
         return errors
 

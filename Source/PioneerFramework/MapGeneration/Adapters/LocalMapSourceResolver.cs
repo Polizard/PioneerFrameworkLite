@@ -13,9 +13,8 @@ namespace PioneerFramework.MapGeneration
     {
         public MapSourceContext Source { get; }
         public LocalMapGenerationSpec Specification { get; }
-        public CelestialMapProfile? CompatibilityProfile { get; }
-        public FrozenLocalMapContext(MapSourceContext source, LocalMapGenerationSpec specification, CelestialMapProfile? compatibilityProfile = null)
-        { Source = source ?? throw new ArgumentNullException(nameof(source)); Specification = specification ?? throw new ArgumentNullException(nameof(specification)); CompatibilityProfile = compatibilityProfile; }
+        public FrozenLocalMapContext(MapSourceContext source, LocalMapGenerationSpec specification)
+        { Source = source ?? throw new ArgumentNullException(nameof(source)); Specification = specification ?? throw new ArgumentNullException(nameof(specification)); }
     }
     /// <summary>Special map generators require explicit opt-in; all decisions are read before content execution.</summary>
     public static class LocalMapSourceResolver
@@ -70,11 +69,8 @@ namespace PioneerFramework.MapGeneration
             var capability = effective[0];
             try
             {
-                LocalMapGenerationSpec spec;
-                CelestialMapProfile? compatibility = null;
-                if (capability is CelestialBodyComp component && component.ResolvedProperties is ICelestialLocalMapGenerationProperties properties)
-                { spec = properties.Specification; compatibility = properties.CompatibilityProfile; }
-                else spec = capability.GetSpecification();
+                LocalMapGenerationSpec spec = capability is CelestialBodyComp component && component.ResolvedProperties is ICelestialLocalMapGenerationProperties properties
+                    ? properties.Specification : capability.GetSpecification();
                 if (spec == null) return Reject("LocalMapSpecificationMissing");
                 bool optedOut = generatorPolicies.TryGetValue(generator.defName, out bool policy) && !policy;
                 if (optedOut || !IsTarget(tile, generator, isPocketMap) && spec.NativeGeneratorId != generator.defName) return Reject("LocalMapGeneratorOutOfScope");
@@ -84,7 +80,7 @@ namespace PioneerFramework.MapGeneration
                 if (capabilities is CelestialRuntime runtime && runtime.Catalog.TryGetInstance(layer.Header.OwnerId, out var body)) origin = body.GenerationOrigin;
                 var terrain = capabilities.GetCapabilities<CelestialBodyComp>(layer.Header.OwnerId).Select(comp => comp.ResolvedProperties)
                     .OfType<BiomeGenerationResolvedProperties>().SingleOrDefault()?.Profile.Terrain;
-                return CelestialResult.Ok(new FrozenLocalMapContext(CaptureSource(tile, sizeX, sizeZ, origin, terrain), spec, compatibility));
+                return CelestialResult.Ok(new FrozenLocalMapContext(CaptureSource(tile, sizeX, sizeZ, origin, terrain), spec));
             }
             catch (Exception exception) { return Reject("LocalMapSpecificationInvalid", exception.ToString()); }
         }

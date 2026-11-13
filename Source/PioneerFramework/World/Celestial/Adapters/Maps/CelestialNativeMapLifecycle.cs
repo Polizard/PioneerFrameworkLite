@@ -50,6 +50,9 @@ namespace PioneerFramework.Celestial
         internal static void MapRemoved(Game __instance, Retirement? __state)
         {
             if (!IsCurrent(__state) || !ReferenceEquals(__state!.Game, __instance) || __state.Map == null || __instance.Maps.Contains(__state.Map)) return;
+            // Ordering dependency (P1-1): NativeLocalMapSession.Finish removes a failed session's partially generated
+            // map before it records provenance, so RetireMap sees a site whose MapId is still null and early-returns.
+            // Failure/Generation/operation history therefore survives; do not bind the failed record before removal.
             var retired = __state.Runtime.Maps!.RetireNativeMap(__state.Address, __state.Map.uniqueID, __state.MovedFailedSite);
             if (!retired.Success) { Log.Error("Celestial map retirement failed: " + retired.Errors[0].Code); return; }
             RetireEmptyParent(__state);

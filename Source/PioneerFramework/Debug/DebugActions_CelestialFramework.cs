@@ -196,7 +196,8 @@ namespace PioneerFramework
             var definition = DefDatabase<MainButtonDef>.GetNamedSilentFail("PF_View");
             if (definition?.TabWindow is not MainTabWindow_PFView view) { status = "PF_Celestial_TargetUnavailable".Translate(); lastOperation = null; return; }
             Find.MainTabsRoot.SetCurrentTab(definition);
-            view.FocusBody(handle);
+            if (planetKindsOnly) view.FocusBodyAtAltitude(handle, 120000.0);
+            else view.FocusBody(handle);
             Close();
         }
         private void Create(CelestialBodyDef definition)
@@ -237,6 +238,9 @@ namespace PioneerFramework
                     Log.Message($"[PFL Celestial Surface] Applied instance={id.Value} PlanetLayer={layer.LayerID}");
                     if (planetKindsOnly) CameraJumper.TryShowWorld();
                     PlanetLayer.Selected = layer;
+                    // 2026-11-08：只选层不跳相机 ⇒ 玩家仍停在地球上方，看起来"什么都没发生"。
+                    // 跳到该层第 0 格（会顺带切世界视图与当前层）。
+                    CameraJumper.TryJump(new PlanetTile(0, layer), default);
                     if (planetKindsOnly) Close();
                 }
             }, "PF_Celestial_RequestSurface", false, exception => ReportFailure(new[] {

@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Xml;
 using HarmonyLib;
 using PioneerFramework.Celestial;
+using PioneerFramework.MapGeneration;
 using PioneerFramework.TestSupport.Celestial;
 using RimWorld;
 using RimWorld.Planet;
@@ -313,7 +314,7 @@ public class CelestialPlanetMapDiversityTests
         var surface = new CelestialBiomeProfileDef { defName = "PD_SavedSurface", mode = CelestialBiomeGenerationMode.Parameterized,
             terrain = new() { parameters = new() { new() { key = "continentScale", value = new() { min = .5, max = 3 } } },
                 biomeRules = new() { new() { key = "fallback", biome = new BiomeDef { defName = "PF_ProbePrimary" }, fallback = true } } } };
-        var maps = new CelestialMapProfileDef { defName = "PD_SavedMaps", diversity = new() { mineralAbundance = 2 } };
+        var maps = new CelestialMapProfileDef { defName = "PD_SavedMaps", localRecipe = new LocalMapRecipeDef { defName = "PD_SavedMapsLocal" }, diversity = new() { mineralAbundance = 2 } };
         using var f = new CelestialMapIdentityTests.Fixture(template => CelestialBodyTemplate.Create(template.DefinitionId, template.Label, template.Category, template.Tags,
             template.Components.Select(c => c.Descriptor.HandlerId == BiomeGenerationResolvedProperties.Handler ? new CompProperties_BiomeGeneration { key = c.Descriptor.Key, profile = surface }.ToDefinition() :
                 c.Descriptor.HandlerId == MapGenerationResolvedProperties.Handler ? new CompProperties_MapGeneration { key = c.Descriptor.Key, profile = maps }.ToDefinition() : c)).Value);
@@ -353,11 +354,13 @@ public class CelestialPlanetMapDiversityTests
         Assert.True(roundTrip.Success, string.Join(",", roundTrip.Errors.Select(error => error.Code)));
         Assert.Equal(2, roundTrip.Value.Profile.Terrain.BiomeRules[0].Hilliness);
         Assert.False(BiomeGenerationResolvedProperties.Deserialize("biomes", 1, parameterized.Serialize()).Success);
-        var map = new MapGenerationResolvedProperties("map", new("legacy-map", null, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), null, Array.Empty<CelestialMapBiomeProfile>()));
-        const string expectedMap = "{\"Id\":\"legacy-map\",\"MapGeneratorId\":null,\"SkipStepNames\":[],\"SkipStepPrefixes\":[],\"SkipStepTypes\":[],\"ReplaceTerrainIds\":[],\"ReplacementTerrainId\":null,\"BiomeRules\":[]}";
-        Assert.Equal(Encoding.UTF8.GetBytes(expectedMap), map.Serialize().ToArray()); Assert.Equal(1, map.Version);
-        Assert.True(MapGenerationResolvedProperties.Deserialize("map", 1, map.Serialize()).Success);
-        Assert.False(MapGenerationResolvedProperties.Deserialize("map", 2, map.Serialize()).Success);
+        var mapSpec = new LocalMapGenerationSpec(new LocalMapRecipe("legacy-map-recipe", Array.Empty<MapGenerationStepSpec>()));
+        var map = new MapGenerationResolvedProperties("map", new("legacy-map", null, mapSpec));
+        string mapJson = Encoding.UTF8.GetString(map.Serialize().Span);
+        Assert.StartsWith("{\"Id\":\"legacy-map\",", mapJson); Assert.Contains("\"LocalSpecification\":", mapJson);
+        Assert.Equal(MapGenerationResolvedProperties.CurrentVersion, map.Version);
+        Assert.True(MapGenerationResolvedProperties.Deserialize("map", MapGenerationResolvedProperties.CurrentVersion, map.Serialize()).Success);
+        Assert.False(MapGenerationResolvedProperties.Deserialize("map", 3, map.Serialize()).Success);
     }
     [Fact]
     public void NativeXmlLoadsTypedCandidatesRangesAndOverridesWithoutDlcReferences()
@@ -375,6 +378,7 @@ public class CelestialPlanetMapDiversityTests
         var plant = Thing("PD_XmlPlant"); plant.category = ThingCategory.Plant; plant.plant = new PlantProperties();
         f.Native.AddDefs(rock, mineral, plant);
         var soil = (TerrainDef)RuntimeHelpers.GetUninitializedObject(typeof(TerrainDef)); soil.defName = "PD_XmlSoil"; soil.tags = new(); f.Native.AddDefs(soil);
+        f.Native.AddDefs(new LocalMapRecipeDef { defName = "PD_XmlLocal" });
         var surfaceDocument = new XmlDocument();
         surfaceDocument.LoadXml("<PioneerFramework.Celestial.CelestialBiomeProfileDef><defName>PD_XmlSurface</defName><mode>Parameterized</mode><terrain>" +
             "<continentScale>2</continentScale><elevationAmplitudeMeters>4000</elevationAmplitudeMeters><elevationOffsetMeters>100</elevationOffsetMeters><roughness>0.4</roughness><mountainWeight>0.7</mountainWeight>" +
@@ -384,7 +388,7 @@ public class CelestialPlanetMapDiversityTests
             "<li><key>cold</key><biome>PD_Plain</biome><minimumTemperatureCelsius>-100</minimumTemperatureCelsius><maximumTemperatureCelsius>-10</maximumTemperatureCelsius><priority>4</priority><weight>2</weight><hilliness>SmallHills</hilliness></li></biomeRules>" +
             "</terrain></PioneerFramework.Celestial.CelestialBiomeProfileDef>");
         var mapDocument = new XmlDocument();
-        mapDocument.LoadXml("<PioneerFramework.Celestial.CelestialMapProfileDef><defName>PD_XmlMap</defName><diversity>" +
+        mapDocument.LoadXml("<PioneerFramework.Celestial.CelestialMapProfileDef><defName>PD_XmlMap</defName><localRecipe>PD_XmlLocal</localRecipe><diversity>" +
             "<rocks><li><def>PD_XmlRock</def><weight>3</weight></li></rocks><minerals><li><def>PD_XmlMineral</def></li></minerals><soils><li><def>PD_XmlSoil</def></li></soils>" +
             "<plants><li><def>PD_XmlPlant</def></li></plants><animals><li><def>PD_XmlAnimal</def></li></animals><weather><li><def>PD_XmlWeather</def></li></weather>" +
             "<conditions><li><def>PD_XmlCondition</def></li></conditions><incidents><li><def>PD_XmlIncident</def></li></incidents>" +
@@ -411,7 +415,7 @@ public class CelestialPlanetMapDiversityTests
     {
         var building = (ThingDef)RuntimeHelpers.GetUninitializedObject(typeof(ThingDef)); building.defName = "PD_BadPlant";
         building.category = ThingCategory.Building; building.plant = new PlantProperties();
-        var profile = new CelestialMapProfileDef { defName = "PD_InvalidKinds", diversity = new() { plants = new() { new() { def = building } } } };
+        var profile = new CelestialMapProfileDef { defName = "PD_InvalidKinds", localRecipe = new LocalMapRecipeDef { defName = "PD_InvalidKindsLocal" }, diversity = new() { plants = new() { new() { def = building } } } };
         Assert.False(profile.ToProfile().Success);
         profile.diversity.plants.Clear();
         profile.diversity.animals.Add(new() { def = new PawnKindDef { defName = "PD_MissingRace" } });
@@ -457,7 +461,7 @@ public class CelestialPlanetMapDiversityTests
         }
         public CelestialSurfaceLayer Layer(string id, int seed, CelestialPlanetMapDiversity diversity, CelestialPlanetTerrainConfiguration terrain = null)
         {
-            var profile = new CelestialMapProfile("PD_Map", null, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), null, Array.Empty<CelestialMapBiomeProfile>(), diversity);
+            var profile = new CelestialMapProfile("PD_Map", diversity, new LocalMapGenerationSpec(new LocalMapRecipe("PD_MapLocal", Array.Empty<MapGenerationStepSpec>())));
             var configuration = new MapGenerationResolvedProperties("map", profile);
             var record = new CelestialCompSaveRecord("map", configuration.HandlerId, configuration.Version, 1, configuration.Serialize().Span, ReadOnlySpan<byte>.Empty);
             var records = new List<CelestialCompSaveRecord> { record };

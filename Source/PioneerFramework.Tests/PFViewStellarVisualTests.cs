@@ -21,6 +21,9 @@ public class PFViewStellarVisualTests
     [Theory]
     [InlineData("PF_StellarSurface", "Opaque", "true", 2000)]
     [InlineData("PF_StellarHalo", "Custom", "false", 2900)]
+    // S3-a 可选加速路径：与 legacy 逐项同规格（同队列/混合/深度/剔除），否则两 pass 分区会变。
+    [InlineData("PF_StellarSurfaceS3A", "Opaque", "true", 2000)]
+    [InlineData("PF_StellarHaloS3A", "Custom", "false", 2900)]
     [InlineData("PF_StellarSurfaceFast", "Opaque", "true", 2000)]
     [InlineData("PF_StellarHaloFast", "Custom", "false", 2900)]
     public void StellarEffectsUseRealSphereDepthAndExplicitTransparency(string name, string blend, string writesDepth, int queue)
@@ -192,6 +195,26 @@ public class PFViewStellarVisualTests
         bool haloPass, double distance, double impact, bool inward, bool expectedDiscarded)
         => Assert.Equal(expectedDiscarded,
             AnyGuardDiscards("PF_StellarVolume.frag.glsl", haloPass, distance, impact, inward));
+
+    [Theory]
+    // S3-a: the optional accelerated path must keep the approved legacy culling verbatim, because the
+    // guards decide which pass owns a pixel (surface vs halo) before any integration happens.
+    [InlineData(true, 3.0, 0.0, true, true)]
+    [InlineData(true, 1.65, 0.9199, true, true)]
+    [InlineData(true, 1.6499, 0.9199, true, true)]
+    [InlineData(true, 1.5, 0.0, true, true)]
+    [InlineData(true, 1.2, 0.9199, true, true)]
+    [InlineData(true, 1.002, 0.9199, true, true)]
+    [InlineData(true, 1.2, 0.0, false, false)]
+    [InlineData(true, 1.2, 0.9199, false, false)]
+    [InlineData(true, 1.5, 0.92, true, false)]
+    [InlineData(true, 1.5, 1.1, true, false)]
+    [InlineData(false, 1.2, 0.0, true, false)]
+    [InlineData(false, 1.2, 0.9199, true, false)]
+    public void EarlyDiscardS3AKeepsTheApprovedLegacyHaloCulling(
+        bool haloPass, double distance, double impact, bool inward, bool expectedDiscarded)
+        => Assert.Equal(expectedDiscarded,
+            AnyGuardDiscards("PF_StellarVolumeS3A.frag.glsl", haloPass, distance, impact, inward));
 
     [Theory]
     // Optional fast renderer: both passes cull "rays leaving the shell away from the star";

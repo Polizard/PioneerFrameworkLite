@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using PioneerFramework.ShipSkin;
+using PioneerFramework.PFView.ShipBuildingVisuals;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Verse;
@@ -44,6 +45,7 @@ namespace PioneerFramework
         private class ReliefMeshSet
         {
             public int Version;
+            public VisualSurfaceBox[] Surfaces = [];
             public Mesh?[] Meshes = new Mesh?[MapReliefPlan.Armor + 1];   // 索引 = 分类（0 空位）
         }
 
@@ -56,13 +58,23 @@ namespace PioneerFramework
         /// <summary>
         /// 画本实体的地图浮雕。返回 true = 已画（调用方跳过 part 盒体）；false = 画不了（调用方回退）。
         /// </summary>
-        private bool TryDrawMapRelief(int entityId, in EntitySnapshot entity, Vector3 eVp, Quaternion gRot, float scale)
+        private bool TryDrawMapRelief(SpaceEntity entity, Vector3 eVp, Quaternion gRot, float scale)
         {
-            if (!debugMapRelief || entity.MapId < 0 || entity.IsMapArchived)
-                return false;
+            drawnReliefSurfaces.Clear();
+            reliefDrawnPartIds.Clear();
+            reliefWholeEntity = false;
+            CollectVisualMaps(entity, sceneMapContexts);
+            if (!debugMapRelief) return false;
+            bool drawn = false;
+            foreach (var context in sceneMapContexts)
+                drawn |= TryDrawOneMapRelief(entity, context, eVp, gRot, scale);
+            return drawn;
+        }
 
-            if (!PhysicsQueries.TryGetMapRelief(entity.MapId, out var map, out var classes, out int reliefVersion))
-                return false;
+        private bool TryDrawOneMapRelief(SpaceEntity entity, in MapVisualContext context, Vector3 eVp, Quaternion gRot, float scale)
+        {
+            if (!context.AllowsRelief) return false;
+            if (!PhysicsQueries.TryGetMapRelief(context.Map.uniqueID, out var map, out var classes, out int reliefVersion)) return false;
 
             ReliefMeshSet set = GetOrBuildReliefMeshes(map, classes, reliefVersion);
             if (set == null)
@@ -84,8 +96,14 @@ namespace PioneerFramework
             // 画（矩阵：网格以"格"为单位 ⇒ 缩放 = 米→视图、debugScaleParts 同倍；三档颜色；描边宽）
             // 全在 `ShipModelRenderer.DrawRelief`（D-1：与场景无关的绘制段）——本函数只管**取数据**
             // （地图/分类/网格缓存）与**回退判定**。
-            ShipModelRenderer.DrawRelief(set.Meshes, eVp, gRot, scale, mat, matBlock,
+            var mapPos = context.OwnerPart == null ? eVp
+                : eVp + gRot * ((Vector3)context.OwnerPart.positionShip * MetersToView * scale);
+            var mapRotation = context.OwnerPart == null ? gRot : gRot * context.OwnerPart.rotationShip.ToQuaternion();
+            ShipModelRenderer.DrawRelief(set.Meshes, mapPos, mapRotation, scale, mat, matBlock,
                 skin == null && ToonMat != null, MetersToView, SceneLayer, tint);
+            drawnReliefSurfaces[map.uniqueID] = set.Surfaces;
+            if (context.OwnerPart == null) reliefWholeEntity = true;
+            else reliefDrawnPartIds.Add(context.OwnerPart.partId);
             return true;
         }
 
@@ -118,7 +136,14 @@ namespace PioneerFramework
                 DestroyReliefMeshSet(cached);
             PruneReliefMeshes(map.uniqueID);
 
-            var set = new ReliefMeshSet { Version = version, Meshes = meshes };
+            var surfaces = new VisualSurfaceBox[boxes.Count];
+            for (int i = 0; i < boxes.Count; i++)
+            {
+                var box = boxes[i];
+                surfaces[i] = new(box.x0 - center.x - .5f, box.z0 - center.z - .5f,
+                    box.x1 - center.x + .5f, box.z1 - center.z + .5f, ReliefHalfHeights[box.cls]);
+            }
+            var set = new ReliefMeshSet { Version = version, Meshes = meshes, Surfaces = surfaces };
             reliefMeshes[map.uniqueID] = set;
 
             if (reliefLoggedMaps.Add(map.uniqueID))

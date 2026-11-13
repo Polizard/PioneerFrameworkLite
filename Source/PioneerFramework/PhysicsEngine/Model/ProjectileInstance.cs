@@ -70,6 +70,8 @@ namespace PioneerFramework.Combat
         // ── 弹头射弹（导弹撞击转化生成，《导弹系统设计》§10）──
         /// <summary>是否弹头射弹（导弹销毁瞬间生成、接管命中结算：命中后额外触发 3D AoE 爆炸）。</summary>
         public bool isWarhead;
+        internal MissileDef? impactMissileDef;
+        internal int impactSourceEntityId = -1;
         /// <summary>Map 范围爆炸半径（格，MissileDef.mapBlastRadiusCells；与 3D blastRadius 分口径）。</summary>
         public float mapBlastRadiusCells;
         /// <summary>弹头 3D AoE 半径（m）。</summary>

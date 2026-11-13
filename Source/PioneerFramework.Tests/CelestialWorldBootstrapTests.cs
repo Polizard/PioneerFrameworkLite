@@ -119,6 +119,13 @@ public class CelestialWorldBootstrapTests
         Assert.Equal(3, scope.Runtime.CaptureCatalog().Bodies.Count);
         Assert.Single(fixture.Native.Grid.PlanetLayers);
         Assert.Equal(CelestialSurfaceState.Ready, root.Header.State);
+        Assert.Equal(CelestialPlanetTerrain.AlgorithmVersion, root.Header.TerrainAlgorithmVersion);
+        var checkpoint = new CelestialSaveAdapter(scope.Runtime).CaptureCheckpoint();
+        Assert.True(checkpoint.Success, string.Join(";", checkpoint.Errors.Select(error => error.Code)));
+        Assert.Equal(CelestialPlanetTerrain.AlgorithmVersion, Assert.Single(checkpoint.Value.Surfaces).TerrainAlgorithmVersion);
+        var decoded = CelestialSaveCodec.Decode(CelestialSaveCodec.Encode(checkpoint.Value).Value);
+        Assert.True(decoded.Success);
+        Assert.Equal(CelestialPlanetTerrain.AlgorithmVersion, Assert.Single(decoded.Value.Surfaces).TerrainAlgorithmVersion);
     }
 
     [Fact]

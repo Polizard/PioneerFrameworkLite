@@ -12,7 +12,7 @@ namespace PioneerFramework.Celestial
     {
         public CelestialMapProfileDef profile = null!;
         public override string HandlerId => MapGenerationResolvedProperties.Handler;
-        public override int ConfigurationVersion => profile?.localRecipe != null || profile?.purposeRecipes.Count > 0 ? 3 : profile?.diversity == null ? 1 : 2;
+        public override int ConfigurationVersion => MapGenerationResolvedProperties.CurrentVersion;
         protected override IEnumerable<string> Provides => new[] { "map.generation" };
         protected override IEnumerable<string> IntrinsicRequires => new[] { "surface" };
         protected override string ExclusiveSlot => "map.generation";

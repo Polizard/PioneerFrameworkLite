@@ -17,42 +17,18 @@ namespace PioneerFramework.Tests
     public class LocalMapConfigurationTests
     {
         [Fact]
-        public void Configuration3PersistsFrozenRecipeAlongsideCompatibilityProjection()
+        public void CurrentConfigurationPersistsOnlyTheFrozenRecipe()
         {
-            var legacy = new MapGenerationResolvedProperties("map", new CelestialMapProfile("profile", "Generator", Array.Empty<string>(),
-                Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), null, Array.Empty<CelestialMapBiomeProfile>()));
             var specification = new LocalMapGenerationSpec(new LocalMapRecipe("natural", Array.Empty<MapGenerationStepSpec>()), nativeGeneratorId: "Generator");
-            string json = Encoding.UTF8.GetString(legacy.Serialize().Span);
-            json = json[..^1] + ",\"LocalSpecification\":" + Encoding.UTF8.GetString(LocalMapGenerationCodec.Encode(specification).Span) + "}";
-
-            var decoded = MapGenerationResolvedProperties.Deserialize("map", 3, Encoding.UTF8.GetBytes(json));
-
+            var profile = new CelestialMapProfile("profile", null, specification);
+            var properties = new MapGenerationResolvedProperties("map", profile);
+            Assert.Equal(MapGenerationResolvedProperties.CurrentVersion, properties.Version);
+            Assert.Same(specification, properties.Specification);
+            var decoded = MapGenerationResolvedProperties.Deserialize("map", MapGenerationResolvedProperties.CurrentVersion, properties.Serialize());
             Assert.True(decoded.Success, string.Join(",", decoded.Errors));
-            Assert.Equal(3, decoded.Value.Version);
-            Assert.Equal("Generator", decoded.Value.Profile.MapGeneratorId);
-            using var output = JsonDocument.Parse(decoded.Value.Serialize());
-            Assert.Equal("natural", output.RootElement.GetProperty("LocalSpecification").GetProperty("recipe").GetProperty("id").GetString());
-        }
-
-        [Theory]
-        [InlineData(false)]
-        [InlineData(true)]
-        public void LegacyProjectionKeepsOriginalBytesAndTranslatesOnlyOnce(bool diversity)
-        {
-            var profile = new CelestialMapProfile("old", null, new[] { "Snow" }, new[] { "Ancient" }, new[] { typeof(GenStep_RockChunks).FullName },
-                new[] { "Gravel" }, "Dirt", new[] { new CelestialMapBiomeProfile("Flat", Array.Empty<string>(), Array.Empty<string>(), true) },
-                diversity ? new(soilFertility: 2, allowCaves: false) : null);
-            var properties = new MapGenerationResolvedProperties("maps", profile);
-            var decoded = MapGenerationResolvedProperties.Deserialize("maps", diversity ? 2 : 1, properties.Serialize());
-            Assert.True(decoded.Success);
-            Assert.Equal(properties.Serialize().ToArray(), decoded.Value.Serialize().ToArray());
-            Assert.DoesNotContain("LocalSpecification", Encoding.UTF8.GetString(properties.Serialize().Span));
-            Assert.Same(profile, properties.CompatibilityProfile);
-            Assert.Same(properties.Specification, properties.Specification);
-            var rules = LocalMapBuiltinConfigurations.Decode<NativeRulesConfiguration>(properties.Specification.Recipe.Steps.Single(s => s.HandlerId == LocalMapBuiltinConfigurations.NativeRules).Configuration);
-            Assert.Contains("Snow", rules.Skip[0].Names);
-            Assert.Equal("Dirt", LocalMapBuiltinConfigurations.Decode<TerrainReplacementConfiguration>(properties.Specification.Recipe.Steps.Single(s => s.HandlerId == LocalMapBuiltinConfigurations.TerrainReplacement).Configuration).TargetTerrainId);
-            Assert.False(MapGenerationResolvedProperties.Deserialize("maps", 3, properties.Serialize()).Success);
+            Assert.Equal("natural", decoded.Value.Specification.Recipe.Id);
+            Assert.Equal("Generator", decoded.Value.Specification.NativeGeneratorId);
+            Assert.False(MapGenerationResolvedProperties.Deserialize("map", 3, properties.Serialize()).Success);
         }
 
         [Fact]
@@ -89,13 +65,40 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
+        public void UnproducedRecipeInputsAreRejectedBecauseTheNativeHostSuppliesNoExternalInputs()
+        {
+            var registry = LocalMapGenerationModules.CreateRegistry();
+            registry.Register(new("third.producer", 1, new[] { 1 }, _ => { }, _ => new Noop(),
+                outputs: new[] { new MapGenerationPortContract("out", "test.value", typeof(string)) }));
+            registry.Register(new("third.consumer", 1, new[] { 1 }, _ => { }, _ => new Noop(),
+                inputs: new[] { new MapGenerationPortContract("in", "test.value", typeof(string)) }));
+            var producer = new MapGenerationStepSpec("produce", "third.producer", 1, 1, MapGenerationStage.Fields, MapGenerationDomain.Natural,
+                outputs: new[] { new MapGenerationPort("out", "resource", "test.value") });
+            var consumer = new MapGenerationStepSpec("consume", "third.consumer", 1, 1, MapGenerationStage.Content, MapGenerationDomain.Natural,
+                inputs: new[] { new MapGenerationPort("in", "resource", "test.value") });
+            // A producer/consumer pair inside one recipe stays valid.
+            LocalMapGenerationModules.ValidateRecipe(new("resolved", new[] { producer, consumer }), registry);
+            // P2-1: without a producer the input cannot be deferred to a host-supplied external resource.
+            var failure = Assert.Throws<ArgumentException>(() => LocalMapGenerationModules.ValidateRecipe(new("unresolved", new[] { consumer }), registry));
+            Assert.Contains("Unresolved recipe input", failure.Message);
+            Assert.Contains("resource", failure.Message);
+            Assert.Contains("native host supplies no external inputs", failure.Message);
+            // A natural step may not consume a purpose output: ValidateSpecification validates the natural recipe alone.
+            var purpose = new MapGenerationStepSpec("purpose", "third.producer", 1, 1, MapGenerationStage.Content, MapGenerationDomain.Purpose,
+                outputs: new[] { new MapGenerationPort("out", "resource", "test.value") });
+            Assert.Contains("Unresolved recipe input", Assert.Throws<ArgumentException>(() =>
+                LocalMapGenerationModules.ValidateSpecification(new(new LocalMapRecipe("natural", new[] { consumer }),
+                    new Dictionary<MapGenerationPurpose, LocalMapRecipe> { [MapGenerationPurpose.Quest] = new("purpose", new[] { purpose }) }), registry)).Message);
+        }
+
+        [Fact]
         public void NativeWrapperReusesExactStepAndScopesRandForGenerateAndPost()
         {
             using var fixture = new CelestialPlanetMapDiversityTests.NativeFixture();
             var layer = ReadyLayer(fixture, "callbacks", 15, null); var map = fixture.Map(layer);
             var worker = new CountingStep();
             var native = new GenStepWithParams(new GenStepDef { defName = "Counter", genStep = worker }, default);
-            var services = new NativeMapGenerationServices(map, Source(), null, new[] { new NativeMapGenerationStep("native-token", native) });
+            var services = new NativeMapGenerationServices(map, Source(), new[] { new NativeMapGenerationStep("native-token", native) });
             var step = Step("wrapped", LocalMapBuiltinConfigurations.Native, MapGenerationStage.NaturalSurface,
                 new NativeGenStepConfiguration("native-token"));
             var executor = Executor(new[] { step }, services);
@@ -115,18 +118,17 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
-        public void InitialModuleUsesExactMapServiceAndDoesNotChangeCompatibilityProjection()
+        public void InitialModuleUsesExactMapServiceWithoutTouchingFrozenDiversity()
         {
             var mapA = (Map)RuntimeHelpers.GetUninitializedObject(typeof(Map)); var mapB = (Map)RuntimeHelpers.GetUninitializedObject(typeof(Map));
-            var projection = new CelestialMapProfile("legacy", null, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), null,
-                Array.Empty<CelestialMapBiomeProfile>(), new(soilFertility: 3));
-            var a = new NativeMapGenerationServices(mapA, Source(), projection, Array.Empty<NativeMapGenerationStep>());
-            var b = new NativeMapGenerationServices(mapB, Source(), projection, Array.Empty<NativeMapGenerationStep>());
+            var diversity = new CelestialPlanetMapDiversity(soilFertility: 3);
+            var a = new NativeMapGenerationServices(mapA, Source(), Array.Empty<NativeMapGenerationStep>());
+            var b = new NativeMapGenerationServices(mapB, Source(), Array.Empty<NativeMapGenerationStep>());
             var input = new InitialMapInputs(soilFertility: .25, allowCaves: false);
             var executor = Executor(new[] { Step("initial", LocalMapBuiltinConfigurations.InitialInputs, MapGenerationStage.Fields, input) }, a);
             Assert.Equal(MapGenerationState.Generated, executor.Execute().State);
             Assert.Equal(.25, a.InitialOverrides.SoilFertility); Assert.False(a.InitialOverrides.AllowCaves);
-            Assert.Null(b.InitialOverrides); Assert.Equal(3, projection.Diversity.SoilFertility);
+            Assert.Null(b.InitialOverrides); Assert.Equal(3, diversity.SoilFertility);
         }
 
         [Fact]
@@ -167,7 +169,7 @@ namespace PioneerFramework.Tests
             Assert.False(LocalMapSourceResolver.Resolve(map, generator, capabilities).Success);
             capabilities.Capabilities = new[] { new SpecOnlyCapability() };
             var result = LocalMapSourceResolver.Resolve(map, generator, capabilities);
-            Assert.True(result.Success, string.Join(",", result.Errors)); Assert.Null(result.Value.CompatibilityProfile);
+            Assert.True(result.Success, string.Join(",", result.Errors));
             Assert.Same(capabilities.Capabilities[0].GetSpecification(), result.Value.Specification);
             Assert.False(LocalMapSourceResolver.IsTarget(map, new MapGeneratorDef { defName = "UnknownSpecial" }));
             Assert.False(LocalMapSourceResolver.IsTarget(map, new MapGeneratorDef { defName = "Base_Player", isUnderground = true }));
@@ -204,7 +206,7 @@ namespace PioneerFramework.Tests
             {
                 // The real SetTerrain writes all terrain grids; renderer/pathing callbacks require a running game.
                 skipEffects.Patch(AccessTools.Method(typeof(TerrainGrid), "DoTerrainChangedEffects"), prefix: new(typeof(LocalMapConfigurationTests), nameof(SkipTerrainEffects)));
-                var services = new NativeMapGenerationServices(map, Source(), null, Array.Empty<NativeMapGenerationStep>());
+                var services = new NativeMapGenerationServices(map, Source(), Array.Empty<NativeMapGenerationStep>());
                 var executor = Executor(new[] { Step("replace", LocalMapBuiltinConfigurations.TerrainReplacement, MapGenerationStage.NaturalSurface,
                     new TerrainReplacementConfiguration(new[] { gravel.defName }, dirt.defName)) }, services);
                 Assert.Equal(MapGenerationState.Generated, executor.Execute().State);
@@ -224,6 +226,27 @@ namespace PioneerFramework.Tests
             var resolved = profile.ToProfile(context);
             Assert.True(resolved.Success, string.Join(",", resolved.Errors));
             Assert.Equal(7, LocalMapBuiltinConfigurations.Decode<InitialMapInputs>(resolved.Value.LocalSpecification.Recipe.Steps[0].Configuration).SoilFertility);
+        }
+
+        [Fact]
+        public void ExplicitInitialInputsMustMatchProfileDiversity()
+        {
+            var diversity = new CelestialPlanetMapDiversity(soilFertility: 2.5, allowCaves: false);
+            var projected = CelestialLocalMapCompatibility.FreezeInitialInputs("probe", diversity);
+            // Equal explicit inputs pass; the automatic projection keys are derived and skipped.
+            CelestialLocalMapCompatibility.RequireInitialInputsMatchDiversity(diversity, new LocalMapRecipe("equal", new[] { projected }));
+            var mismatch = new MapGenerationStepSpec("explicit", LocalMapBuiltinConfigurations.InitialInputs, 1, 1,
+                MapGenerationStage.Fields, MapGenerationDomain.Natural,
+                LocalMapBuiltinConfigurations.Encode(new InitialMapInputs(soilFertility: 3, allowCaves: false)));
+            var failure = Assert.Throws<ArgumentException>(() =>
+                CelestialLocalMapCompatibility.RequireInitialInputsMatchDiversity(diversity, new LocalMapRecipe("mismatch", new[] { mismatch })));
+            Assert.Contains("Initial inputs disagree with profile diversity", failure.Message);
+            // No profile diversity means there is no long-lived source to drift from.
+            CelestialLocalMapCompatibility.RequireInitialInputsMatchDiversity(null, new LocalMapRecipe("standalone", new[] { mismatch }));
+            var auto = new MapGenerationStepSpec("profile.initial-inputs", LocalMapBuiltinConfigurations.InitialInputs, 1, 1,
+                MapGenerationStage.Fields, MapGenerationDomain.Natural,
+                LocalMapBuiltinConfigurations.Encode(new InitialMapInputs(soilFertility: 3, allowCaves: false)));
+            CelestialLocalMapCompatibility.RequireInitialInputsMatchDiversity(diversity, new LocalMapRecipe("auto", new[] { auto }));
         }
 
         [Fact]
@@ -254,11 +277,10 @@ namespace PioneerFramework.Tests
         public void UnknownNestedRecipeFormatReturnsStructuredConfigurationRejection()
         {
             var spec = new LocalMapGenerationSpec(new LocalMapRecipe("empty", Array.Empty<MapGenerationStepSpec>()));
-            var profile = new CelestialMapProfile("new", null, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), null,
-                Array.Empty<CelestialMapBiomeProfile>(), localSpecification: spec);
+            var profile = new CelestialMapProfile("new", null, spec);
             string json = Encoding.UTF8.GetString(new MapGenerationResolvedProperties("map", profile).Serialize().Span)
                 .Replace("\"formatVersion\":1", "\"formatVersion\":123", StringComparison.Ordinal);
-            var result = MapGenerationResolvedProperties.Deserialize("map", 3, Encoding.UTF8.GetBytes(json));
+            var result = MapGenerationResolvedProperties.Deserialize("map", MapGenerationResolvedProperties.CurrentVersion, Encoding.UTF8.GetBytes(json));
             Assert.False(result.Success); Assert.Equal("InvalidConfigurationPayload", result.Errors[0].Code);
         }
 
@@ -267,13 +289,12 @@ namespace PioneerFramework.Tests
         {
             using var fixture = new CelestialPlanetMapDiversityTests.NativeFixture();
             var map = fixture.Map(ReadyLayer(fixture, "frozen-comp", 19, null));
-            var profile = new CelestialMapProfile("projection", null, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), null, Array.Empty<CelestialMapBiomeProfile>());
-            var properties = new CustomFrozenProperties(profile);
+            var properties = new CustomFrozenProperties();
             var component = new FrozenComponent(); component.Attach(new FrozenContext(map.Tile.Layer is CelestialSurfaceLayer layer ? layer.Header.OwnerId : default, properties));
             var resolver = new Resolver { Capabilities = new[] { component } };
             var result = LocalMapSourceResolver.Resolve(map, new MapGeneratorDef { defName = "Base_Player" }, resolver);
             Assert.True(result.Success, string.Join(",", result.Errors));
-            Assert.Same(properties.Specification, result.Value.Specification); Assert.Same(profile, result.Value.CompatibilityProfile);
+            Assert.Same(properties.Specification, result.Value.Specification);
             resolver.Capabilities = Array.Empty<ICelestialMapGenerationCapability>();
             Assert.False(LocalMapSourceResolver.Resolve(map, new MapGeneratorDef { defName = "Base_Player" }, resolver).Success);
         }
@@ -281,7 +302,7 @@ namespace PioneerFramework.Tests
         [Fact]
         public void BuiltinComponentReturnsTheSameFrozenSpecificationAndProjection()
         {
-            var xml = new CompProperties_MapGeneration { key = "map", profile = new() { defName = "snapshot", diversity = new() { soilFertility = 2 } } };
+            var xml = new CompProperties_MapGeneration { key = "map", profile = new() { defName = "snapshot", localRecipe = new LocalMapRecipeDef { defName = "snapshot-local" }, diversity = new() { soilFertility = 2 } } };
             var frozen = (MapGenerationResolvedProperties)xml.Resolve(new(7, "snapshot", "map")).Value;
             var component = (CompMapGeneration)xml.CreateComp(); component.Attach(new FrozenContext(CelestialInstanceId.Parse("snapshot"), frozen));
             xml.profile.diversity.soilFertility = 9;
@@ -312,7 +333,7 @@ namespace PioneerFramework.Tests
         {
             using var fixture = new CelestialPlanetMapDiversityTests.NativeFixture();
             var map = fixture.Map(ReadyLayer(fixture, "preload", 7, null));
-            var services = new NativeMapGenerationServices(map, Source(), null, Array.Empty<NativeMapGenerationStep>());
+            var services = new NativeMapGenerationServices(map, Source(), Array.Empty<NativeMapGenerationStep>());
             var contribution = new InitialInputsModule(new(soilFertility: 2, allowCaves: false)).Contribute(Source());
             var property = typeof(NativeMapPlanContribution).GetProperty("InitialInputs");
             Assert.NotNull(property);
@@ -408,11 +429,10 @@ namespace PioneerFramework.Tests
             Assert.Throws<ArgumentException>(() => new NativeMapStepSelector(names: new[] { "Repeated", "Repeated" }));
         }
 
-        private sealed class CustomFrozenProperties(CelestialMapProfile profile) : ICelestialLocalMapGenerationProperties
+        private sealed class CustomFrozenProperties : ICelestialLocalMapGenerationProperties
         {
             public string Key => "extension"; public string HandlerId => "third.frozen"; public int Version => 1;
             public LocalMapGenerationSpec Specification { get; } = new(new LocalMapRecipe("extension", Array.Empty<MapGenerationStepSpec>()));
-            public CelestialMapProfile CompatibilityProfile => profile;
             public ReadOnlyMemory<byte> Serialize() => ReadOnlyMemory<byte>.Empty;
         }
         private sealed class FrozenComponent() : CelestialBodyComp(new("extension", "third.frozen", 1)), ICelestialMapGenerationCapability

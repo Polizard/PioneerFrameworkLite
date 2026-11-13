@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Serialization;
 
 namespace PioneerFramework.MapGeneration
@@ -18,18 +20,41 @@ namespace PioneerFramework.MapGeneration
         [property: JsonPropertyName("error")] string? Error,
         [property: JsonPropertyName("steps")] IReadOnlyList<LocalMapStepRecord> Steps)
     {
+        /// <summary>
+        /// 记录 schema 版本。v2 起 RecipeHash 直接对冻结的 FrozenRecipe 字符串做 SHA-256，
+        /// 与 <see cref="LocalMapGenerationCodec"/> 的字段/序列化顺序解耦：codec 演进不再使旧 v4 档读档失败。
+        /// </summary>
+        public const int CurrentVersion = 2;
+        /// <summary>v1（本字段引入前的旧档）：RecipeHash 是 canonical 编码字节的 SnapshotHash，Validate 需重新 Decode 复算。</summary>
+        public const int LegacyVersion = 1;
+        /// <summary>与 codec 编码过程无关的 RecipeHash：对 FrozenRecipe 字符串的 UTF-8 字节取 SHA-256。</summary>
+        public static string ComputeRecipeHash(string frozenRecipe)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(frozenRecipe);
+            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(frozenRecipe)));
+        }
         public static LocalMapGenerationRecord Capture(FrozenLocalMapContextData data, MapGenerationState state, string stage, string? error, MapGenerationReport? report)
-            => new(1, LocalMapSourceRecord.Capture(data.Source), data.Purpose, Convert.ToBase64String(LocalMapGenerationCodec.Encode(data.Specification).Span),
-                LocalMapGenerationCodec.SnapshotHash(data.Specification), MapGenerationSeeds.Root(data.Source), state, stage, error,
+        {
+            var frozenRecipe = Convert.ToBase64String(LocalMapGenerationCodec.Encode(data.Specification).Span);
+            return new(CurrentVersion, LocalMapSourceRecord.Capture(data.Source), data.Purpose, frozenRecipe, ComputeRecipeHash(frozenRecipe),
+                MapGenerationSeeds.Root(data.Source), state, stage, error,
                 Array.AsReadOnly((report?.Steps ?? Array.Empty<MapGenerationStepReport>()).Select(s => new LocalMapStepRecord(s.Key, s.Stage, s.HandlerId,
                     s.ConfigurationVersion, s.AlgorithmVersion, s.Seed, s.IsOpaque, s.Completed, s.PostInitialized, s.Error)).ToArray()));
+        }
         public void Validate(string sourceId, int tileId, string? failure)
         {
+            if (Version is not (LegacyVersion or CurrentVersion)) throw new ArgumentException("Unsupported local generation provenance version.");
             var source = Source.Restore();
-            var spec = LocalMapGenerationCodec.Decode(Convert.FromBase64String(FrozenRecipe));
-            if (Version != 1 || source.SourceId != sourceId || source.TileId != tileId || !Enum.IsDefined(Purpose) ||
+            if (Version == LegacyVersion)
+            {
+                // v1 保持原校验：仍以 canonical 重新编码结果为准（旧档在 codec 未变更时可读；codec 变更属于 format 版本范畴）。
+                var spec = LocalMapGenerationCodec.Decode(Convert.FromBase64String(FrozenRecipe));
+                if (RecipeHash != LocalMapGenerationCodec.SnapshotHash(spec)) throw new ArgumentException("Invalid local generation provenance.");
+            }
+            else if (RecipeHash != ComputeRecipeHash(FrozenRecipe)) throw new ArgumentException("Invalid local generation provenance.");
+            if (source.SourceId != sourceId || source.TileId != tileId || !Enum.IsDefined(Purpose) ||
                 State is not (MapGenerationState.Ready or MapGenerationState.Failed) || string.IsNullOrWhiteSpace(Stage) ||
-                RootSeed != MapGenerationSeeds.Root(source) || RecipeHash != LocalMapGenerationCodec.SnapshotHash(spec) ||
+                RootSeed != MapGenerationSeeds.Root(source) ||
                 (State == MapGenerationState.Failed) != (failure != null) || State == MapGenerationState.Failed && string.IsNullOrWhiteSpace(Error) ||
                 Steps == null || Steps.Select(s => s.Key).Distinct(StringComparer.Ordinal).Count() != Steps.Count ||
                 Steps.Any(s => string.IsNullOrWhiteSpace(s.Key) || string.IsNullOrWhiteSpace(s.HandlerId) || !Enum.IsDefined(s.Stage) ||

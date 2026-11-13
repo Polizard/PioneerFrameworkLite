@@ -100,21 +100,21 @@ namespace PioneerFramework.MapGeneration
                     diversity.Plants, diversity.Animals, diversity.MineralAbundance, diversity.SoilFertility, diversity.PlantDensity,
                     diversity.AnimalDensity, diversity.GeologyVariation, diversity.AllowCaves)));
 
-        /// <summary>Translate once at configuration freeze, retaining the original world/runtime projection unchanged.</summary>
-        public static LocalMapGenerationSpec ToSpecification(CelestialMapProfile profile)
+        /// <summary>P2-4: an explicit InitialInputs module must not silently disagree with the profile diversity that
+        /// remains the long-lived ecology source. Automatic projection steps are derived and therefore skipped.</summary>
+        internal static void RequireInitialInputsMatchDiversity(CelestialPlanetMapDiversity? diversity, LocalMapRecipe recipe)
         {
-            ArgumentNullException.ThrowIfNull(profile);
-            if (profile.LocalSpecification != null) return profile.LocalSpecification;
-            var selectors = new List<NativeMapStepSelector> { new(profile.SkipStepNames, profile.SkipStepPrefixes, profile.SkipStepTypes) };
-            selectors.AddRange(profile.BiomeRules.Select(rule => new NativeMapStepSelector(rule.SkipStepNames, types: rule.SkipStepTypes, biomeId: rule.BiomeId)));
-            var steps = new List<MapGenerationStepSpec> {
-                new("legacy.native-rules", LocalMapBuiltinConfigurations.NativeRules, 1, 1, MapGenerationStage.Fields, MapGenerationDomain.Natural,
-                    LocalMapBuiltinConfigurations.Encode(new NativeRulesConfiguration(selectors))) };
-            if (profile.Diversity is { } d) steps.Add(FreezeInitialInputs("legacy.initial-inputs", d));
-            if (profile.ReplacementTerrainId != null) steps.Add(new("legacy.terrain-replacement", LocalMapBuiltinConfigurations.TerrainReplacement, 1, 1,
-                MapGenerationStage.NaturalSurface, MapGenerationDomain.Natural, LocalMapBuiltinConfigurations.Encode(new TerrainReplacementConfiguration(
-                    profile.ReplaceTerrainIds, profile.ReplacementTerrainId, profile.BiomeRules.Where(rule => rule.ReplaceRockTerrains).Select(rule => rule.BiomeId).ToArray()))));
-            return new(new LocalMapRecipe(profile.Id + ".local", steps), nativeGeneratorId: profile.MapGeneratorId);
+            ArgumentNullException.ThrowIfNull(recipe);
+            if (diversity == null) return;
+            var projected = FreezeInitialInputs("probe", diversity).Configuration;
+            foreach (var step in recipe.Steps)
+            {
+                if (step.HandlerId != LocalMapBuiltinConfigurations.InitialInputs) continue;
+                if (step.Key == "profile.initial-inputs") continue;
+                if (!step.Configuration.Span.SequenceEqual(projected.Span))
+                    throw new ArgumentException("Initial inputs disagree with profile diversity; use useDiversityAsInitialInputs or remove profile diversity.");
+            }
         }
+
     }
 }

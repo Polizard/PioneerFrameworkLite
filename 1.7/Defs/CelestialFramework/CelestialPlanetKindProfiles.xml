@@ -13,6 +13,11 @@
       <li>Features</li>
     </rootOnlySteps>
     <terrain>
+      <!-- B 方案（2026-11-08）：荒芜行星改用岩质场地貌（陨坑/山脊/干河谷）。
+           旧存档在实例创建时已冻结配置，读回仍是 Waves ⇒ 老世界外观不变。 -->
+      <fieldKind>Rock</fieldKind>
+      <!-- 把高程分布抬到 0 附近：Rock 场的 crater/channel 有系统性负偏（实测中位数约 -0.18 幅度）。 -->
+      <elevationOffsetMeters>400</elevationOffsetMeters>
       <oceanCoverage>
         <value>0</value>
       </oceanCoverage>
@@ -34,7 +39,27 @@
         <li>
           <key>rough</key>
           <biome>PF_BarrenRegolith</biome>
-          <minimumRoughness>0.2</minimumRoughness>
+          <minimumRoughness>0.34</minimumRoughness>
+        </li>
+        <li>
+          <key>highland</key>
+          <biome>PF_MoonBiomeBasalt</biome>
+          <priority>1</priority>
+          <minimumElevationMeters>900</minimumElevationMeters>
+        </li>
+        <!-- 干河床/古湖盆：B2 水系按**湿度**识别（河道湿度被抬到 >0.8），不再用海拔阈值
+             —— 用海拔会把整片低地都染成河床（实测 42%），看不出"河"。 -->
+        <li>
+          <key>riverbed</key>
+          <biome>PF_BarrenRiverbed</biome>
+          <priority>2</priority>
+          <minimumMoisture>0.8</minimumMoisture>
+        </li>
+        <li>
+          <key>polarIce</key>
+          <biome>PF_MoonBiomeWater</biome>
+          <priority>3</priority>
+          <minimumAbsoluteLatitude>75</minimumAbsoluteLatitude>
         </li>
       </biomeRules>
     </terrain>
@@ -45,9 +70,11 @@
     <dayLengthTicks>60000</dayLengthTicks>
     <primaryLightReference>primaryLight</primaryLightReference>
     <vacuumBiomes>
-      <li>PF_FrozenPlain</li>
       <li>PF_BarrenRock</li>
       <li>PF_BarrenRegolith</li>
+      <li>PF_MoonBiomeBasalt</li>
+      <li>PF_MoonBiomeWater</li>
+      <li>PF_BarrenRiverbed</li>
     </vacuumBiomes>
     <climate>
       <meanTemperatureCelsius>-30</meanTemperatureCelsius>

@@ -217,9 +217,13 @@ public class CelestialVisualDiversityTests
     {
         MemberInfo[] Members(string name) => PFViewUiIntegrationTests.ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod(name, Flags)).ToArray();
         var clouds = Members("DrawCloudLayer");
+        // 2026-11-08 A 方案：云层拆成"主层 + 低层"，DrawMesh 落在共用的 DrawCloudShell 里
+        // （DrawCloudLayer 只算参数/选材质）。判据仍是"编译后的绘制路径确实提交了这些绑定"。
+        var cloudShell = Members("DrawCloudShell");
         Assert.Contains(clouds, m => m.DeclaringType == typeof(PFViewVisualBindings) && m.Name == "Clouds");
         Assert.Contains(clouds, m => m.DeclaringType == typeof(Material) && m.Name == "SetVector");
-        Assert.Contains(clouds, m => m.DeclaringType == typeof(Graphics) && m.Name == "DrawMesh");
+        Assert.Contains(cloudShell, m => m.DeclaringType == typeof(Material) && m.Name == "SetVector");
+        Assert.Contains(cloudShell, m => m.DeclaringType == typeof(Graphics) && m.Name == "DrawMesh");
         var material = Members("GetBaseSphereMaterial");
         Assert.Contains(material, m => m.DeclaringType == typeof(PFViewVisualBindings) && m.Name == "Bands");
         Assert.Contains(material, m => m.DeclaringType == typeof(Material) && m.Name == "SetVector");
@@ -228,7 +232,7 @@ public class CelestialVisualDiversityTests
         Assert.Contains(Members("DrawCelestialSphere"), m => m.DeclaringType == typeof(Graphics) && m.Name == "DrawMesh");
         Assert.Contains(Members("TryGetSurfacePatch"), m => m.DeclaringType == typeof(PFViewSurfaceBake) && m.Name == "EnsureReady");
         Assert.Contains(Members("TryGetSurfacePatch"), m => m.DeclaringType == typeof(PFViewSurfaceBake) && m.Name == "TryGetPatch");
-        foreach (var list in new[] { clouds, material, draw, Members("GetCelestialRenderLayer"), Members("TryGetSurfacePatch") })
+        foreach (var list in new[] { clouds, cloudShell, material, draw, Members("GetCelestialRenderLayer"), Members("TryGetSurfacePatch") })
             Assert.DoesNotContain(list, m => m.Name is "RequestSurface" or "GenerateMap" or "CreateLayer");
         string Source(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Source", "PioneerFramework", "Presentation", "PFView", file));
         string cloudSource = Source("MainTabWindow_PFView.Clouds.cs");

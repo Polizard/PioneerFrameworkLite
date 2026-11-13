@@ -39,8 +39,7 @@
   <PFV_RadarTargetHint>Click this contact to set it as target.</PFV_RadarTargetHint>
   <PFV_StopSteering>Stop steering {0}</PFV_StopSteering>
   <PFV_StartSteering>Steer {0}</PFV_StartSteering>
-  <PFV_OpenWeapons>Open {0} weapons</PFV_OpenWeapons>
-  <PFV_ChangeOperator>Operate {0}</PFV_ChangeOperator>
+  <PFV_ChangeOperator>Use {0} for fire control</PFV_ChangeOperator>
   <PFV_Rooms>Rooms ({0})</PFV_Rooms>
   <PFV_Room>Room</PFV_Room>
   <PFV_EnterRoom>Enter {0}</PFV_EnterRoom>
@@ -53,8 +52,6 @@
   <PFV_Ready>Ready</PFV_Ready>
   <PFV_NotReady>Not ready</PFV_NotReady>
   <PFV_Fire>Fire</PFV_Fire>
-  <PFV_SelectGroup>Inspect group</PFV_SelectGroup>
-  <PFV_SelectGroupTip>Single click inspects. Double click a list row or use Focus to move the camera.</PFV_SelectGroupTip>
   <PFV_Navigate>Bodies</PFV_Navigate>
   <PFV_NavigateTip>Observe a body while keeping inspection, operator and target.</PFV_NavigateTip>
   <PFV_BodyView>Planet view</PFV_BodyView>
@@ -72,7 +69,7 @@
   <PFV_DebugTip>PFView debug settings and test actions.</PFV_DebugTip>
   <PFV_Navball>Attitude</PFV_Navball>
   <PFV_Radar>Radar</PFV_Radar>
-  <PFV_RadarSource>Radar · {0} · Display only</PFV_RadarSource>
+  <PFV_RadarSource>Radar · {0}</PFV_RadarSource>
   <PFV_RadarRange>Full range {0}</PFV_RadarRange>
   <PFV_NoSelection>No group selected</PFV_NoSelection>
   <PFV_NavballSource>Attitude · {0}</PFV_NavballSource>
@@ -90,8 +87,8 @@
   <PFV_HelpTitle>PFView controls</PFV_HelpTitle>
   <PFV_HelpCameraTitle>Inspection and camera</PFV_HelpCameraTitle>
   <PFV_HelpCamera>Click to inspect; double-click to focus. Right-drag to look around; middle-drag or Shift+right-drag to pan in free view. Keyboard shortcuts follow your custom bindings.</PFV_HelpCamera>
-  <PFV_HelpTasksTitle>Contextual instruments</PFV_HelpTasksTitle>
-  <PFV_HelpTasks>Steering opens attitude instruments; weapon operation opens radar. Display options can pin visibility for this session. Reopening restores automatic visibility. Radar is display-only. For player groups with loaded maps, choose Enter map in the details panel or right-click menu. Groups with multiple maps offer a choice.</PFV_HelpTasks>
+  <PFV_HelpTasksTitle>Piloting and fire control</PFV_HelpTasksTitle>
+  <PFV_HelpTasks>Click a fleet entry to inspect it or double-click to focus. Object actions contains Enter map, Set target, and Detailed status. The bottom flight controls handle manual control and maneuver queues. Opening the active ship's queue from manual control asks for confirmation. Enable fire control in Weapons, click a radar contact to target it, then check boxes or Ctrl-click to select weapons. Fire selected and Fire all skip weapons that cannot fire. In compact layouts, open Cockpit from the toolbar.</PFV_HelpTasks>
   <PFV_HelpSubjectsTitle>Inspection and operation</PFV_HelpSubjectsTitle>
   <PFV_HelpSubjects>The bottom bar shows inspection, follow, operator and target. Inspecting another object or hiding details keeps the operator. Shift+click sets a target; open the operating group's weapon panel before firing.</PFV_HelpSubjects>
   <PFV_HelpTimeTitle>Game time</PFV_HelpTimeTitle>
@@ -120,14 +117,19 @@
   <PFV_SettingsCamera>PFView group camera</PFV_SettingsCamera>
   <PFV_SettingsFocusMode>Default view on double-click / focus: {0}</PFV_SettingsFocusMode>
   <PFV_SettingsFocusModeTip>Applies to future double-clicks and Focus actions. The current camera stays in place. You can also switch modes in the PFView toolbar.</PFV_SettingsFocusModeTip>
-  <PFV_SettingsStellar>Stellar rendering (legacy visuals by default)</PFV_SettingsStellar>
+  <PFV_SettingsStellar>Stellar rendering (legacy volume renderer by default)</PFV_SettingsStellar>
   <PFV_SettingsStellarFast>Use the new stellar renderer (experimental; different look, performance-first)</PFV_SettingsStellarFast>
-  <PFV_SettingsStellarFastTip>Off by default = the legacy stellar visuals you approved, with no visual change. On switches to the analytic-photosphere + thin-corona renderer (faster, but limb/corona look differs). Reopen PFView after switching.</PFV_SettingsStellarFastTip>
+  <PFV_SettingsStellarFastTip>Off uses the legacy volume renderer. Toggle precomputed photosphere detail in PFView Debug. On uses an analytic photosphere and thin corona with a different limb and corona appearance. Reopen PFView after switching.</PFV_SettingsStellarFastTip>
   <PFV_SettingsStellarTier>New renderer tier: {0}</PFV_SettingsStellarTier>
   <PFV_SettingsStellarTip>The tier only applies when the new renderer is enabled: visual first = full quality; balanced / performance first lower only the corona sampling density. Legacy visuals are unaffected.</PFV_SettingsStellarTip>
   <PFV_StellarQuality_VisualFirst>New renderer · visual first (default tier)</PFV_StellarQuality_VisualFirst>
   <PFV_StellarQuality_Balanced>New renderer · balanced</PFV_StellarQuality_Balanced>
   <PFV_StellarQuality_PerformanceFirst>New renderer · performance first</PFV_StellarQuality_PerformanceFirst>
+  <PFV_StellarHeatCache>Use precomputed photosphere detail (experimental, on by default)</PFV_StellarHeatCache>
+  <PFV_StellarHeatCachePreparing>Waiting for stellar rendering and background preparation. Using the original photosphere.</PFV_StellarHeatCachePreparing>
+  <PFV_StellarHeatCacheReady>Photosphere cache ready. Clear the frame samples before measuring.</PFV_StellarHeatCacheReady>
+  <PFV_StellarHeatCacheFailed>Photosphere cache unavailable. See the log.</PFV_StellarHeatCacheFailed>
+  <PFV_StellarHeatCacheFast>This experiment uses the legacy renderer. Switch back and reopen PFView.</PFV_StellarHeatCacheFast>
   <PFV_HelpCameraModesTitle>Free and two third-person views</PFV_HelpCameraModesTitle>
   <PFV_HelpCameraModes>Free, hull-forward and velocity-forward views remember their own poses. Hull-forward follows the tail; velocity-forward uses system inertial velocity and falls back to the hull heading at zero speed. Camera roll is stabilized by default; hull-roll following is optional in Mod settings. Third-person look covers a full circle with pitch limited to -85..85 degrees, safe distances and no panning. Look angles remain after release unless automatic recentering is enabled. Camera defaults apply on the next explicit focus.</PFV_HelpCameraModes>
   <PFV_Pilot_Settings>PFView piloting and observation</PFV_Pilot_Settings>
@@ -254,7 +256,6 @@
   <PFV_FleetMembers>Expand / collapse members ({0})</PFV_FleetMembers>
   <PFV_FleetMemberParts>{0} parts · {1} destroyed</PFV_FleetMemberParts>
   <PFV_FleetManeuvers>Maneuver planner</PFV_FleetManeuvers>
-  <PFV_FleetQueue>Maneuver queue ({0})</PFV_FleetQueue>
   <PFV_FleetActivity_Idle>Idle</PFV_FleetActivity_Idle>
   <PFV_FleetActivity_Crippled>Critical parts disabled</PFV_FleetActivity_Crippled>
   <PFV_FleetActivity_Burning>Burning</PFV_FleetActivity_Burning>
@@ -270,4 +271,60 @@
   <PFV_FleetAlert_Overheated>! Weapon overheating</PFV_FleetAlert_Overheated>
   <PFV_FleetAlert_DisabledWeapons>! Weapons disabled</PFV_FleetAlert_DisabledWeapons>
   <PFV_FleetAlert_EmptyWeapons>! Weapons out of ammo</PFV_FleetAlert_EmptyWeapons>
+  <PFV_Cockpit>Cockpit</PFV_Cockpit>
+  <PFV_CockpitQueue>Fleet / contacts</PFV_CockpitQueue>
+  <PFV_CockpitTab_Status>Status</PFV_CockpitTab_Status>
+  <PFV_CockpitTab_Weapons>Weapons</PFV_CockpitTab_Weapons>
+  <PFV_CockpitTab_Radar>Radar</PFV_CockpitTab_Radar>
+  <PFV_CockpitViewing>Viewing</PFV_CockpitViewing>
+  <PFV_CockpitOperating>Operating</PFV_CockpitOperating>
+  <PFV_CockpitNodes>{0} queued</PFV_CockpitNodes>
+  <PFV_CockpitObjectActions>Object actions · {0}</PFV_CockpitObjectActions>
+  <PFV_CockpitActions>Actions</PFV_CockpitActions>
+  <PFV_CockpitSwitchManual>End manual control of {0} and take control of {1}?</PFV_CockpitSwitchManual>
+  <PFV_CockpitSwitchSource>Switch the operation source from {0} to {1} and begin manual control?</PFV_CockpitSwitchSource>
+  <PFV_CockpitAutomatic>Automatic</PFV_CockpitAutomatic>
+  <PFV_CockpitAutomaticConfirm>End manual control of {0} and open its maneuver queue?</PFV_CockpitAutomaticConfirm>
+  <PFV_CockpitManual>Pilot · {0}</PFV_CockpitManual>
+  <PFV_CockpitEndManual>End pilot · {0}</PFV_CockpitEndManual>
+  <PFV_CockpitDetails>Detailed status</PFV_CockpitDetails>
+  <PFV_CockpitFlightControls>Flight controls</PFV_CockpitFlightControls>
+  <PFV_CockpitShipStatus>Ship status · {0}</PFV_CockpitShipStatus>
+  <PFV_CockpitMembers>{0} ships</PFV_CockpitMembers>
+  <PFV_CockpitDestroyed>Destroyed parts {0}</PFV_CockpitDestroyed>
+  <PFV_CockpitReadyWeapons>Ready weapons {0}</PFV_CockpitReadyWeapons>
+  <PFV_CockpitFireControl>Fire control · {0} → {1}</PFV_CockpitFireControl>
+  <PFV_CockpitEnableFireControl>Enable</PFV_CockpitEnableFireControl>
+  <PFV_CockpitEndFireControl>End control</PFV_CockpitEndFireControl>
+  <PFV_CockpitSelectShot>Select ammo</PFV_CockpitSelectShot>
+  <PFV_CockpitClearShort>Clear target</PFV_CockpitClearShort>
+  <PFV_CockpitTargetCleared>Target cleared</PFV_CockpitTargetCleared>
+  <PFV_CockpitAmmo>Ammo {0}</PFV_CockpitAmmo>
+  <PFV_CockpitWeaponDisabled>Disabled</PFV_CockpitWeaponDisabled>
+  <PFV_CockpitWeaponCooling>Cooling</PFV_CockpitWeaponCooling>
+  <PFV_CockpitWeaponEmpty>Empty</PFV_CockpitWeaponEmpty>
+  <PFV_CockpitWeaponInvalidShot>Invalid ammo</PFV_CockpitWeaponInvalidShot>
+  <PFV_CockpitWeaponMount>Weapon mount unavailable</PFV_CockpitWeaponMount>
+  <PFV_CockpitWeaponRange>Out of range</PFV_CockpitWeaponRange>
+  <PFV_CockpitFireControlOff>Enable fire control first</PFV_CockpitFireControlOff>
+  <PFV_CockpitSelectWeapon>Select a weapon first</PFV_CockpitSelectWeapon>
+  <PFV_CockpitNoTarget>Select a valid target</PFV_CockpitNoTarget>
+  <PFV_CockpitNoWeapons>No weapons</PFV_CockpitNoWeapons>
+  <PFV_CockpitPrograde>Prograde</PFV_CockpitPrograde>
+  <PFV_CockpitRadial>Radial</PFV_CockpitRadial>
+  <PFV_CockpitFireSelected>Fire selected</PFV_CockpitFireSelected>
+  <PFV_CockpitFireAll>Fire all</PFV_CockpitFireAll>
+  <PFV_CockpitFireSelectedTip>Fire the ready weapons among the {0} selected at the current target.</PFV_CockpitFireSelectedTip>
+  <PFV_CockpitFireAllTip>Fire all ready weapons on the operating ship at the current target.</PFV_CockpitFireAllTip>
+  <PFV_CockpitNoReadyWeapons>No weapons can fire at the current target</PFV_CockpitNoReadyWeapons>
+  <PFV_CockpitSalvoResult>Weapons fired: {0} · skipped: {1}</PFV_CockpitSalvoResult>
+  <PFV_CockpitWeaponMultiSelect>Click the checkbox or Ctrl-click to add or remove this weapon.</PFV_CockpitWeaponMultiSelect>
+  <PFV_CockpitSingleShotTip>Select one weapon that supports changing ammo.</PFV_CockpitSingleShotTip>
+  <PFV_InspectGroup>Inspect {0}</PFV_InspectGroup>
+  <PFV_ClearInspection>Clear selection</PFV_ClearInspection>
+  <PFV_CockpitFireSource>Fire source</PFV_CockpitFireSource>
+  <PFV_CockpitTakeOverGroup>Take over {0}</PFV_CockpitTakeOverGroup>
+  <PFV_CockpitQueueFor>Maneuver queue for {0}</PFV_CockpitQueueFor>
+  <PFV_CockpitManualChoose>Pilot…</PFV_CockpitManualChoose>
+  <PFV_BuildingVisuals>Ship building models</PFV_BuildingVisuals>
 </LanguageData>

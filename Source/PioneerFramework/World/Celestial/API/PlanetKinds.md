@@ -20,7 +20,8 @@
 重新启动游戏加载本次 DLL，开启开发者模式，在调试菜单的 **PFL 测试 → 77 场景 · 行星种类** 中使用：
 
 - **行星种类测试面板**：单独选择一种模板创建，显示测试实例的地表、地图、大气能力和请求结果。
-- **创建六类测试天体**：打开面板并一次创建六类。测试实例围绕当前根天体布置在分离轨道上，重复创建会向外扩展；原模板和默认天体保持不变。
+- **创建六类测试天体**：打开面板并一次创建六类。测试实例绕**主光源恒星**（默认地月系 = 太阳）布置在分离的开普勒圆轨上，轨道带从根天体轨道外缘之外开始（默认在地球轨道之外），重复创建会继续向外扩展；原模板和默认天体保持不变。
+  - 2026-11-09 起的行为变更：旧版把测试实例挂到**根天体**（默认地月系 = 地球）下，六颗相对地球各有不同周期（246,389–3,884,436 s），但绝对状态 = Earth(t) + 局部轨道，Earth 绕日的 12,910.7 m/s 是公共项（局部速度仅 686–1,721 m/s）⇒ PFView 里六颗看起来都以地球角速度绕恒星转。现在父体改为恒星，六颗各自按恒星 GM（默认 2e16）公转，角速度互不相同。旧版创建的实例仍留在原父体下，可用 **清理测试天体** 后重新创建。
 - **天体实例**：原有通用检查窗口，可以查看整个世界的实例。
 
 创建后若游戏暂停，点击 **在当前时刻处理挂起请求**。此操作提交请求，物理时间保持不变。每个实例可使用 **在 PFView 中查看**、**生成地表**、**生成地面地图** 和 **移除天体**。生成地表后会切到世界视图；先选中该地表上的一个地块，再重新打开面板生成 250×250 地图。两种巨行星显示“无可登陆地表”，地表和地图按钮禁用。
@@ -49,13 +50,22 @@ public static CelestialOperation CreateBarrenPlanet(
     var query = services.Query;
     var scope = new CelestialOperationScope(operationId, query.WorldSessionId,
         query.CaptureCatalog().Revision, epoch);
+    // ⚠ 必须显式给轨道：模板默认运动是"地球日心轨道"（r=120,000,000 m / T=58,400 s / φ=0）。
+    //   不覆盖 motion 的 radius/period/phase ⇒ 多个实例轨道完全相同、角速度相同，甚至彼此重合。
+    //   下面的圆轨按父体 GM 自洽：T = 2π√(r³/GM)。真实系统里 r、T、φ 应由系统编排器决定。
+    const double orbitRadius = 150000000.0;
+    const double parentGm = 2e16;                       // 例：太阳 GM；绕行星时换成该行星的 GM
+    double orbitPeriod = 2 * Math.PI * Math.Sqrt(orbitRadius * orbitRadius * orbitRadius / parentGm);
     return services.Bodies.Create(new(scope, "PF_BarrenPlanet", "barren",
         ParentId: parent,
         InitializationReferences: new Dictionary<string, CelestialInstanceId> {
             ["frameOrigin"] = frameOrigin, ["primaryLight"] = primaryLight },
         ParameterOverrides: new[] {
             new CelestialParameterOverride("shape", "radiusMeters", Value: 2500000),
-            new CelestialParameterOverride("motion", "gravitationalParameter", Value: 4e12) }));
+            new CelestialParameterOverride("motion", "gravitationalParameter", Value: 4e12),
+            new CelestialParameterOverride("motion", "motion.orbitRadiusMeters", Value: orbitRadius),
+            new CelestialParameterOverride("motion", "motion.orbitPeriodSeconds", Value: orbitPeriod),
+            new CelestialParameterOverride("motion", "motion.orbitPhaseRadians", Value: 0.0) }));
 }
 ```
 
@@ -63,7 +73,7 @@ public static CelestialOperation CreateBarrenPlanet(
 
 ## 代表性参数与覆盖
 
-| 模板 | 半径 m | GM m³/s² | 自转周期 tick |
+| 模板 | 半径 m | GM m³/s² | 自转周期（motion `rotation.periodSeconds`） |
 | --- | ---: | ---: | ---: |
 | 荒芜 | 2,500,000 | 4e12 | 60,000 |
 | 温带 | 5,000,000 | 2e14 | 60,000 |
@@ -73,6 +83,8 @@ public static CelestialOperation CreateBarrenPlanet(
 | 冰巨行星 | 8,000,000 | 5e14 | 40,000 |
 
 这些是框架尺度下的代表预设。精确制作某个真实天体时需覆盖其物理参数与运动初始化。默认圆轨道半径为 120,000,000 m、周期 58,400 s、相位 0；没有按太阳系八颗行星的真实轨道排列，也没有自动加入默认世界。六个可选模板现使用同一提供者的 readable motion v2，并保留旧圆轨道提供者兼容。
+
+⚠ 这组默认运动是从**地球绕太阳的日心轨道**复制的（反推中心 GM≈2.00022e16≈太阳 2e16；若按地球 GM=2e14 算，同一半径的正确周期是 584,032 s）。因此**任何不覆盖 motion 的实例化入口**（通用窗口「从模板创建天体」、数据 API 只改 radius/GM、XML 系统条目只写 `<bodyDef>`）都会得到完全相同的轨道：作为根行星的子体会落在根行星外侧同一圆并与根天体径向锁定，作为恒星子体则与地球共轨；多个实例会彼此重合、角速度相同。**行星种类测试面板会按父体 GM 逐实例重算开普勒轨道，不在此列。** 用 API/XML 创建多个天体时必须显式覆盖 `motion.orbitRadiusMeters` / `motion.orbitPeriodSeconds` / `motion.orbitPhaseRadians`（见下方示例），否则请改用测试面板。
 
 表中的**自转周期以 motion 的 `rotation.periodSeconds` 为权威**（物理实例表、视觉缓存与投影共用同一解析）；`environment` profile 的 `dayLengthTicks` 只是没有物理绑定的天体才使用的兼容 fallback，不是第二真源。已发货模板同时声明两者时必须相等（有内容一致性回归测试）；制作新模板改自转请改 motion。大气同理拆成两个字段：**物理大气顶** `air.topAltitude`（阻力/天空 α/高度阈值/大气顶判定）与**视觉壳高度** `atmosphereVisual.shellHeightMeters`（壳半径 = R + 壳高度，壳厚度 = 高度 × 2），两者独立、可不等。逐字段域与覆盖路径见 [作者表](PlanetAuthoring.md)。
 
@@ -91,7 +103,7 @@ public static CelestialOperation CreateBarrenPlanet(
 ## 文件
 
 - `1.7/Defs/CelestialBodies/CelestialBodies_PlanetKinds.xml`：六种可创建、可继承的模板。
-- `1.7/Defs/CelestialFramework/CelestialPlanetKindProfiles.xml`：三个外星地表/地图/环境组合。
+- `1.7/Defs/CelestialFramework/CelestialPlanetKindProfiles.xml`：四个外星地表/地图/环境组合（荒芜、冰封、温室、温带）。
 - `1.7/Defs/CelestialFramework/CelestialPlanetKindVisuals.xml`：地表、大气和云层外观。
 - `1.7/Defs/BiomesDefs/Biome_PlanetKinds.xml`：专用群落与原生 XML 继承基类。
 - `1.7/Languages/{ChineseSimplified,English}/DefInjected/*/PlanetKinds.xml`：完整配套本地化。

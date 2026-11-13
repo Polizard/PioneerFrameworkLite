@@ -19,9 +19,17 @@ namespace PioneerFramework.Celestial
         public IReadOnlyList<CelestialRoomVolume> Rooms { get; private set; } = Array.Empty<CelestialRoomVolume>();
         public string OwnerId { get; }
         public CelestialRoomEnvironmentState(string ownerId) { ArgumentException.ThrowIfNullOrWhiteSpace(ownerId); OwnerId = ownerId; }
-        public void Advance(long gameTick, IReadOnlyList<CelestialRoomTopology> topology, CelestialRoomAir outdoor)
+        /// <summary>
+        /// 时钟回拨（调试回拨/工具改 tick）时把已提交 tick 夹到当前值并保留房间状态。
+        /// 2026-11-07 A-5：旧行为会永久 Block（太空暂停 + 拒绝保存且无自愈），改为可恢复诊断。
+        /// </summary>
+        public void Rebase(long gameTick)
         {
-            if (gameTick < 0 || gameTick < LastGameTick) throw new ArgumentOutOfRangeException(nameof(gameTick));
+            if (gameTick < 0) throw new ArgumentOutOfRangeException(nameof(gameTick));
+            if (LastGameTick > gameTick) LastGameTick = gameTick;
+        }
+        public void Advance(long gameTick, IReadOnlyList<CelestialRoomTopology> topology, CelestialRoomAir outdoor)
+        {            if (gameTick < 0 || gameTick < LastGameTick) throw new ArgumentOutOfRangeException(nameof(gameTick));
             if (gameTick == LastGameTick) return;
             double seconds = LastGameTick < 0 ? 0 : (gameTick - LastGameTick) / 60d;
             var oldCells = new Dictionary<int, CelestialRoomAir>();

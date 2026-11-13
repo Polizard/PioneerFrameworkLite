@@ -7,24 +7,11 @@ using RimWorld;
 namespace PioneerFramework
 {
     /// <summary>
-    /// PFView 布局与仪表（V-1，2026-10-02 用户裁定①）：
-    ///   顶部工具条 / 左侧文字堆（编队列表 + 接触列表 + 选中组读数）/ 下边中央姿态球（KSP 式）/
-    ///   右侧雷达（以选中编队为中心，点击观测接触可设为武器目标）。
-    ///
-    /// 视觉纪律（裁定③）：全套灰度走 <see cref="PFViewPalette"/>——层级靠明度与线宽、状态靠符号，
-    /// 不用色相。面板/角标装饰复用 <c>UiKit.SpacecraftUIDecor</c>（同一份程序化画笔）。
-    ///
-    /// 数据准入（红线）：列表与雷达**只读认知层**（`PlayerCanSee` / `SensorManager.AppendVisible`），
-    /// 我方可读取自身遥测；其他实体不得读取隐藏真值。dev 真值对照仍走 `DebugShowGroundTruth` 开关。
+    /// 驾驶舱几何与仪表。灰度沿用 PFViewPalette，雷达接触点只读玩家感知层。
     /// </summary>
     public partial class MainTabWindow_PFView : MainTabWindow
     {
         // ── V-1 布局常量 ──
-        private const float ToolbarH = 30f;
-        private const float LeftColW = 252f;
-        private const float RadarW = 260f;
-        private const float NavballD = 222f;        // 球直径（V-1.1：用户 2026-10-02 要求放大到 1.5×）
-        private const float NavballPanelW = 522f;   // 面板宽 = 左文字 150 + 球 222 + 右文字 150
         private const float PanelPad = 8f;
 
         // 本帧分区（ComputeLayout 算好，绘制与输入共用同一几何）
@@ -37,7 +24,8 @@ namespace PioneerFramework
         private Rect rSteeringStrip;
         private Rect rPilotPanel;
         private PFViewUiLayout uiLayout;
-        private (float width, float height, bool details, PFViewUiVisibility visibility, bool piloting) layoutKey;
+        private (float Width, float Height, bool Details, PFViewUiVisibility Visibility, bool Piloting,
+            PFViewDrawerTab Drawer, bool Alert) layoutKey;
         private bool layoutCached;
         private Rect viewportRect;
 
@@ -50,14 +38,16 @@ namespace PioneerFramework
         // 中键/Shift+右键平移拖拽中
         private bool isDraggingPan => dragState.Pan;
 
-        /// <summary>算出本帧五分区并登记占位矩形（挡 3D 输入）。</summary>
         private void ComputeLayout(Rect inRect)
         {
             viewportRect = inRect;
-            var key = (inRect.width, inRect.height, WantsInspector, instrumentVisibility, SteeringController.IsOpen);
+            var tab = drawerTab == PFViewDrawerTab.None && WantsInspector ? PFViewDrawerTab.Details : drawerTab;
+            var key = (inRect.width, inRect.height, WantsInspector, instrumentVisibility,
+                SteeringController.IsOpen, tab, cockpitAlerts.Count > 0);
             if (!layoutCached || key != layoutKey)
             {
-                uiLayout = PFViewUiLayoutCore.Compute(key.width, key.height, key.Item3, instrumentVisibility, key.Item5);
+                uiLayout = PFViewUiLayoutCore.Compute(key.width, key.height, key.WantsInspector,
+                    instrumentVisibility, SteeringController.IsOpen, tab, key.Item7);
                 layoutKey = key;
                 layoutCached = true;
             }
@@ -69,15 +59,8 @@ namespace PioneerFramework
             rStatus = FromUiRect(uiLayout.Status, inRect);
             rSteeringStrip = FromUiRect(uiLayout.SteeringStrip, inRect);
             rPilotPanel = FromUiRect(uiLayout.PilotPanel, inRect);
-            RegisterUiRect(rToolbar);
-            RegisterUiRect(rLeftCol);
-            RegisterUiRect(rInspector);
-            RegisterUiRect(rRadar);
-            RegisterUiRect(rNavball);
-            if (rNavball.width > 0) RegisterUiRect(new(rNavball.x, rNavball.y - 24f, rNavball.width, 24f));
-            RegisterUiRect(rStatus);
-            RegisterUiRect(rSteeringStrip);
-            RegisterUiRect(rPilotPanel);
+            for (int i = 0; i < PFViewUiLayout.OccupiedCount; i++)
+                RegisterUiRect(FromUiRect(uiLayout.Occupied(i), inRect));
         }
 
         private static Rect FromUiRect(PFViewUiRect rect, Rect origin)
@@ -101,8 +84,6 @@ namespace PioneerFramework
             Text.Font = GameFont.Small;
             float by = 4f;
             float x = 6f;
-            if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Group), "PFV_SelectGroup".Translate(), "PFV_SelectGroupTip".Translate()))
-                ShowGroupMenu();
             if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Navigate), "PFV_Navigate".Translate(), "PFV_NavigateTip".Translate()))
                 ShowSystemMenu();
             if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Body), "PFV_BodyView".Translate(), "PFV_BodyViewTip".Translate()))
@@ -127,21 +108,20 @@ namespace PioneerFramework
             }
             Rect time = NextToolbarRect(ref x, ref by, PFViewToolbarItem.Time);
             DrawPauseAndTimeStatus(time);
-            int sourceId = ResolveOperationGroupId();
-            if (sourceId >= 0 && ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Weapons),
-                    "PFV_Weapons".Translate("G" + sourceId), "PFV_OpenOperationsTip".Translate()))
-                TryOpenWeaponsFor(sourceId);
             if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Help), "?", "PFV_Help".Translate()))
                 Find.WindowStack.Add(new Window_PFViewHelp());
             if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Debug), "PFV_Debug".Translate(), "PFV_DebugTip".Translate()))
                 Window_PFViewDebug.Toggle(this);
-            if (uiLayout.RequiresInstrumentDrawer)
-            {
-                if (instrumentVisibility.ShowNavball && Widgets.ButtonText(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Navball), "PFV_Navball".Translate()))
-                    OpenInstrumentWindow(PFViewUiInstrument.Navball);
-                if (instrumentVisibility.ShowRadar && Widgets.ButtonText(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Radar), "PFV_Radar".Translate()))
-                    OpenInstrumentWindow(PFViewUiInstrument.Radar);
-            }
+            if (uiLayout.ShowsToolbarItem(PFViewToolbarItem.Navball)
+                && ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Navball),
+                    "PFV_Navball".Translate(), "PFV_NavballReadouts".Translate()))
+                OpenInstrumentWindow(PFViewUiInstrument.Navball);
+            if (uiLayout.ShowsToolbarItem(PFViewToolbarItem.Cockpit)
+                && Widgets.ButtonText(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Cockpit), "PFV_Cockpit".Translate()))
+                ToggleDrawer(PFViewDrawerTab.Status);
+            if (uiLayout.ShowsToolbarItem(PFViewToolbarItem.Objects)
+                && Widgets.ButtonText(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Objects), "PFV_CockpitQueue".Translate()))
+                ToggleDrawer(PFViewDrawerTab.Objects);
         }
 
         private Rect NextToolbarRect(ref float x, ref float y, PFViewToolbarItem item)
@@ -161,11 +141,14 @@ namespace PioneerFramework
             var opts = new List<FloatMenuOption>
             {
                 new((debugMapRelief ? "✓ " : "   ") + "地图浮雕", () => debugMapRelief = !debugMapRelief),
+                new((PFView.ShipBuildingVisuals.ShipBuildingVisualRenderer.Enabled ? "✓ " : "   ") + "PFV_BuildingVisuals".Translate(),
+                    () => PFView.ShipBuildingVisuals.ShipBuildingVisualRenderer.Enabled = !PFView.ShipBuildingVisuals.ShipBuildingVisualRenderer.Enabled),
                 new((debugSettlements ? "✓ " : "   ") + "定居点（含夜灯）", () => debugSettlements = !debugSettlements),
                 new("PFV_Navball".Translate() + " ▸", () => ShowInstrumentModeMenu(PFViewUiInstrument.Navball)),
                 new("PFV_Radar".Translate() + " ▸", () => ShowInstrumentModeMenu(PFViewUiInstrument.Radar)),
-                new("PFV_NavballReadouts".Translate(), () => OpenInstrumentWindow(PFViewUiInstrument.Navball)),
             };
+            if (!uiLayout.RequiresInstrumentDrawer)
+                opts.Add(new("PFV_NavballReadouts".Translate(), () => OpenInstrumentWindow(PFViewUiInstrument.Navball)));
             Find.WindowStack.Add(new FloatMenu(opts));
         }
 
@@ -186,7 +169,7 @@ namespace PioneerFramework
         }
 
         // ════════════════════════════════════════════════════
-        //  右侧雷达（只显示：以选中编队为中心，不做交互）
+        //  右侧雷达（以操作舰或所选己方编队为原点）
         // ════════════════════════════════════════════════════
 
         private void DrawRadarPanel(int groupId)
@@ -195,6 +178,7 @@ namespace PioneerFramework
             Widgets.DrawBoxSolid(r, PFViewPalette.PanelBg);
             UiKit.SpacecraftUIDecor.DrawCornerLBrackets(r, PFViewPalette.Border);
 
+            bool targeting = operationContext.WeaponsOpen && groupId >= 0 && ResolveOperationGroupId() == groupId;
             MiniLabel(new Rect(r.x + 8f, r.y + 4f, r.width - 16f, 20f),
                 "PFV_RadarSource".Translate(groupId >= 0 ? "G" + groupId : "—"), PFViewPalette.TextSecondary);
 
@@ -207,8 +191,8 @@ namespace PioneerFramework
                 DrawScreenCircle(c, radius * i / 3f, PFViewPalette.Grid);
             Widgets.DrawLine(new Vector2(c.x, c.y - radius), new Vector2(c.x, c.y + radius), PFViewPalette.Grid, 1f);
             Widgets.DrawLine(new Vector2(c.x - radius, c.y), new Vector2(c.x + radius, c.y), PFViewPalette.Grid, 1f);
-            MiniLabel(new Rect(c.x - 24f, c.y - radius - 14f, 48f, 12f), "顺行", PFViewPalette.TextMuted, TextAnchor.MiddleCenter);
-            MiniLabel(new Rect(c.x + radius + 2f, c.y - 8f, 40f, 12f), "径外向", PFViewPalette.TextMuted, TextAnchor.MiddleLeft);
+            MiniLabel(new Rect(c.x - 34f, c.y - radius - 14f, 68f, 12f), "PFV_CockpitPrograde".Translate(), PFViewPalette.TextMuted, TextAnchor.MiddleCenter);
+            MiniLabel(new Rect(r.xMax - 46f, c.y - 19f, 44f, 12f), "PFV_CockpitRadial".Translate(), PFViewPalette.TextMuted, TextAnchor.MiddleLeft);
 
             var sensor = Current.Game?.GetComponent<SensorManager>();
             if (groupId < 0 || sensor == null || !PhysicsApi.TryGetSpacecraft(groupId, out var snap))
@@ -247,7 +231,7 @@ namespace PioneerFramework
             // 扫描线 + 尾迹（2026-10-18）：真实波束联动；**先于接触点**绘制（余辉要读本帧扫过的区间）
             DrawRadarSweep(c, radius, groupId, snap, radial, pro);
 
-            bool pick = Event.current.type == EventType.MouseDown && Event.current.button == 0 && r.Contains(Event.current.mousePosition);
+            bool pick = targeting && Event.current.type == EventType.MouseDown && Event.current.button == 0 && r.Contains(Event.current.mousePosition);
             int picked = -1;
             float bestPickDistance = 12f * 12f;
             // 接触 blip（灰度：形状/明度表态，不靠色相）
@@ -271,11 +255,12 @@ namespace PioneerFramework
                 float half = 1.75f + flash * 1.1f;
                 Widgets.DrawBoxSolid(new Rect(p.x - half, p.y - half, half * 2f, half * 2f), col);
                 TooltipHandler.TipRegion(new Rect(p.x - 8, p.y - 8, 16, 16),
-                    ContactDisplayLabel(cc) + "\n" + "PFV_RadarTargetHint".Translate());
+                    targeting && !cc.isDecoy ? ContactDisplayLabel(cc) + "\n" + "PFV_RadarTargetHint".Translate() : ContactDisplayLabel(cc));
                 if (weaponTarget.IsSet && weaponTarget.GroupId == cc.targetGroupId && weaponTarget.DecoyId == cc.decoyId)
                 {
                     Widgets.DrawBox(new Rect(p.x - 6, p.y - 6, 12, 12));
-                    MiniLabel(new Rect(p.x + 9, p.y - 10, 110, 20), ContactDisplayLabel(cc), PFViewPalette.TextPrimary);
+                    float labelX = Mathf.Clamp(p.x + 9, r.x + 4, r.xMax - 94);
+                    MiniLabel(new Rect(labelX, p.y - 10, 90, 20), ContactDisplayLabel(cc), PFViewPalette.TextPrimary);
                 }
                 float pickDistance = (Event.current.mousePosition - p).sqrMagnitude;
                 if (pick && !cc.isDecoy && pickDistance < bestPickDistance)
@@ -315,14 +300,25 @@ namespace PioneerFramework
         private void DrawNavballPanel(int groupId)
         {
             var r = rNavball;
-            var title = new Rect(r.x, r.y - 24f, r.width, 24f);
-            Widgets.DrawBoxSolid(title, PFViewPalette.PanelBg);
-            Widgets.Label(title, "PFV_NavballSource".Translate(groupId >= 0 ? "G" + groupId : "—"));
+            bool docked = r.height <= PFViewUiLayoutCore.DockNavballHeight;
+            bool withReadouts = docked && r.width >= PFViewUiLayoutCore.DockNavballReadoutsWidth;
+            var title = docked
+                ? new Rect(withReadouts ? r.x + 88f : r.x + 5f, r.y + 4f, withReadouts ? r.width - 94f : r.width - 10f, 16f)
+                : new Rect(r.x, r.y - 24f, r.width, 24f);
             Widgets.DrawBoxSolid(r, PFViewPalette.BarBg);
             UiKit.SpacecraftUIDecor.DrawCornerLBrackets(r, PFViewPalette.Border);
+            string source = "PFV_NavballSource".Translate(groupId >= 0 ? "G" + groupId : "—");
+            if (docked) MiniLabel(title, source, PFViewPalette.TextPrimary,
+                withReadouts ? TextAnchor.MiddleLeft : TextAnchor.MiddleCenter);
+            else
+            {
+                Widgets.DrawBoxSolid(title, PFViewPalette.PanelBg);
+                Widgets.Label(title, source);
+            }
 
-            float radius = Mathf.Min(r.width, r.height) * 0.5f - 12f;
-            Vector2 c = r.center;
+            float radius = docked ? (withReadouts ? 34f : 30f) : Mathf.Min(r.width, r.height) * 0.5f - 12f;
+            Vector2 c = withReadouts ? new(r.x + 41f, r.center.y)
+                : docked ? r.center + new Vector2(0f, 9f) : r.center;
 
             EnsureDiscTexture();
             if (pfvDiscTex == null) return;   // 贴图生成失败：不画球（防御，正常不会发生）
@@ -332,7 +328,8 @@ namespace PioneerFramework
 
             if (groupId < 0 || !PhysicsApi.TryGetSpacecraft(groupId, out var snap))
             {
-                MiniLabel(new Rect(r.x, c.y - 8f, r.width, 16f), "PFV_NoSelection".Translate(), PFViewPalette.TextSecondary, TextAnchor.MiddleCenter);
+                MiniLabel(new Rect(c.x - radius, c.y - 8f, radius * 2, 16f), docked ? "—" : "PFV_NoSelection".Translate().ToString(),
+                    PFViewPalette.TextSecondary, TextAnchor.MiddleCenter);
                 return;
             }
 
@@ -359,7 +356,15 @@ namespace PioneerFramework
                 DrawNavballMarker(c, radius, qi, (Vector3)thrust.normalized, "T", PFViewPalette.Accent);
 
             // 左右文字区（左：姿态/主推轴；右：速度 + 记号图例）——球放大 1.5× 后放两侧
-            if (r.width >= 500f) DrawNavballFlanks(r, c, radius, groupId, snap, vel);
+            if (withReadouts)
+            {
+                Vector3 euler = snap.Rotation.ToQuaternion().eulerAngles;
+                float x = title.x, w = title.width, y = title.yMax + 5f;
+                MiniLabel(new(x, y, w, 16f), $"V {vel.magnitude:F0} m/s", PFViewPalette.TextPrimary);
+                MiniLabel(new(x, y + 17f, w, 16f), $"Y {euler.y:F0}° · P {euler.x:F0}°", PFViewPalette.TextSecondary);
+                MiniLabel(new(x, y + 34f, w, 16f), $"R {euler.z:F0}°", PFViewPalette.TextSecondary);
+            }
+            else if (!docked && r.width >= 500f) DrawNavballFlanks(r, c, radius, groupId, snap, vel);
         }
 
         /// <summary>姿态球两侧文字读数（V-1.1）：左 = 姿态/角速度/主推轴；右 = 速度 + 记号图例。</summary>
@@ -471,8 +476,10 @@ namespace PioneerFramework
             if (!front) off = -off;
 
             Vector2 p = c + off * radius;
-            Widgets.DrawBoxSolid(new Rect(p.x - 2.5f, p.y - 2.5f, 5f, 5f), col);
-            UiKit.SpacecraftUIDecor.DrawColoredLabel(new Rect(p.x + 4f, p.y - 8f, 22f, 14f), label,
+            float half = radius < 48f ? 1.5f : 2.5f;
+            float labelWidth = radius < 48f ? 10f : 22f;
+            Widgets.DrawBoxSolid(new Rect(p.x - half, p.y - half, 2 * half, 2 * half), col);
+            UiKit.SpacecraftUIDecor.DrawColoredLabel(new Rect(p.x + half + 1.5f, p.y - 8f, labelWidth, 14f), label,
                 front ? col : PFViewPalette.TextMuted, GameFont.Tiny, TextAnchor.MiddleLeft);
         }
 
@@ -512,7 +519,7 @@ namespace PioneerFramework
                 : focusKind == PFViewFocusKind.Frozen ? "PFV_Frozen".Translate().ToString() : mgr?.GetBodyName(focusBodyId) ?? "—";
             int sourceId = ResolveOperationGroupId();
             string source = sourceId >= 0 ? "G" + sourceId : "—";
-            string target = targetGroupId >= 0 ? "G" + targetGroupId : "—";
+            string target = WeaponTargetLabel;
             string distance = PFViewUiObjectListCore.FormatDistance(camDisplayDistance * ViewToMeters);
             string text = "PFV_Status".Translate(viewed, focus, source, target, distance);
             Widgets.DrawBoxSolid(rStatus, PFViewPalette.BarBg);

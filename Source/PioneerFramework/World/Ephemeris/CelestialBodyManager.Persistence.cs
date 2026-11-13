@@ -24,7 +24,7 @@ namespace PioneerFramework
             if (Scribe.mode == LoadSaveMode.Saving)
             {
                 if (CelestialRestorePending) throw new InvalidOperationException("RestorePending: complete celestial restoration before saving.");
-                if (celestialRuntime != null) celestialSaveData = new CelestialSaveAdapter(celestialRuntime);
+                if (celestialRuntime != null) EnsureSaveAdapter();
                 celestialSaveData?.ExposeData();
             }
             else if (Scribe.mode == LoadSaveMode.LoadingVars)
@@ -34,6 +34,22 @@ namespace PioneerFramework
                 celestialSaveData.ExposeData();
                 StartCelestialRestore(celestialSaveData.Document!);
             }
+        }
+        /// <summary>
+        /// 保存预检：恢复态直接拒绝；没有天体运行时保持与既有保存路径一致（不写天体段，也不阻止保存）；
+        /// 有运行时时复用同一个 adapter 完成一次 CaptureCheckpoint，结果由随后的 ExposeData 消费。
+        /// </summary>
+        internal CelestialResult<bool> PrepareCelestialSave()
+        {
+            if (CelestialRestorePending) return CelestialResult.Reject<bool>(new CelestialError("RestorePending"));
+            if (celestialRuntime == null) return CelestialResult.Ok(true);
+            return EnsureSaveAdapter().PrepareSave();
+        }
+        private CelestialSaveAdapter EnsureSaveAdapter()
+        {
+            if (celestialSaveData == null || !ReferenceEquals(celestialSaveData.Runtime, celestialRuntime))
+                celestialSaveData = new CelestialSaveAdapter(celestialRuntime);
+            return celestialSaveData;
         }
         private void StartCelestialRestore(CelestialSaveDocument document)
         {
@@ -143,9 +159,14 @@ namespace PioneerFramework
                         Messages.Message("PF_Celestial_RestoreStillBlocked".Translate(string.Join(", ", result.Errors.Select(error => error.Code))), RimWorld.MessageTypeDefOf.RejectInput, false);
                 }, "Close".Translate()));
         }
+        private int lastSaveRejectedNoticeTick = -600;
         internal void NotifyCelestialSaveRejected(string code)
         {
             if (CelestialRestorePending) restoreNoticePending = true;
+            // 2026-11-07 A-6：阻塞期每次自动存档都会调用；提示按 600 tick 节流，避免刷屏。
+            int tick = Find.TickManager?.TicksGame ?? 0;
+            if (tick - lastSaveRejectedNoticeTick < 600) return;
+            lastSaveRejectedNoticeTick = tick;
             if (Current.ProgramState == ProgramState.Playing)
                 Messages.Message("PF_Celestial_SaveBlocked".Translate(code), RimWorld.MessageTypeDefOf.RejectInput, false);
         }

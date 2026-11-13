@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Xml;
 using System.Xml.Linq;
 using PioneerFramework.Celestial;
+using PioneerFramework.MapGeneration;
 using RimWorld;
 using RimWorld.Planet;
 using Verse;
@@ -203,11 +204,7 @@ public class CelestialVacuumContractTests
             element => element.Element("defName")!.Value,
             element => {
                 var profile = Parse<CelestialMapProfileDef>(element);
-                profile.replaceTerrains = element.Element("replaceTerrains")?.Elements("li").Select(item => Terrain(item.Value)).ToList() ?? new();
-                profile.replacementTerrain = element.Element("replacementTerrain") is { } terrain ? Terrain(terrain.Value) : null;
-                if (element.Element("biomeRules") is { } rules)
-                    for (int index = 0; index < profile.biomeRules.Count; index++)
-                        profile.biomeRules[index].biome = Biome(rules.Elements("li").ElementAt(index).Element("biome")!.Value);
+                if (element.Element("localRecipe") is { } local) profile.localRecipe = new LocalMapRecipeDef { defName = local.Value };
                 return profile;
             });
         var bodies = new Dictionary<string, CelestialBodyDef>(StringComparer.Ordinal);

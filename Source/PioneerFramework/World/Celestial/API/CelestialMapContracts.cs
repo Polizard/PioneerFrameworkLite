@@ -20,75 +20,31 @@ namespace PioneerFramework.Celestial
     }
     public interface ICelestialMapGenerationCapability
     {
-        LocalMapGenerationSpec GetSpecification() => CelestialLocalMapCompatibility.ToSpecification(GetProfile());
-        CelestialMapProfile GetProfile() => throw new NotSupportedException("This capability has no compatibility profile.");
+        LocalMapGenerationSpec GetSpecification();
+        CelestialMapProfile GetProfile() => throw new NotSupportedException("This capability has no map profile.");
     }
     public interface ICelestialLocalMapGenerationProperties : ICelestialResolvedProperties
     {
         LocalMapGenerationSpec Specification { get; }
-        CelestialMapProfile? CompatibilityProfile { get; }
     }
 
-    public sealed class CelestialMapBiomeProfile
-    {
-        [System.Text.Json.Serialization.JsonPropertyName("BiomeId"), System.Text.Json.Serialization.JsonPropertyOrder(1)]
-        public string BiomeId { get; }
-        [System.Text.Json.Serialization.JsonPropertyName("SkipStepNames"), System.Text.Json.Serialization.JsonPropertyOrder(2)]
-        public IReadOnlyList<string> SkipStepNames { get; }
-        [System.Text.Json.Serialization.JsonPropertyName("SkipStepTypes"), System.Text.Json.Serialization.JsonPropertyOrder(3)]
-        public IReadOnlyList<string> SkipStepTypes { get; }
-        [System.Text.Json.Serialization.JsonPropertyName("ReplaceRockTerrains"), System.Text.Json.Serialization.JsonPropertyOrder(4)]
-        public bool ReplaceRockTerrains { get; }
-        public CelestialMapBiomeProfile(string biomeId, IReadOnlyList<string> skipStepNames, IReadOnlyList<string> skipStepTypes, bool replaceRockTerrains)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(biomeId);
-            BiomeId = biomeId;
-            SkipStepNames = CelestialMapProfile.CopyNames(skipStepNames);
-            SkipStepTypes = CelestialMapProfile.CopyNames(skipStepTypes);
-            ReplaceRockTerrains = replaceRockTerrains;
-        }
-    }
+    /// <summary>Frozen per-instance map configuration: identity, long-lived ecology diversity, and the natural/purpose recipe.</summary>
     public sealed class CelestialMapProfile
     {
-        [System.Text.Json.Serialization.JsonPropertyName("Id"), System.Text.Json.Serialization.JsonPropertyOrder(5)]
+        [System.Text.Json.Serialization.JsonPropertyName("Id"), System.Text.Json.Serialization.JsonPropertyOrder(1)]
         public string Id { get; }
-        [System.Text.Json.Serialization.JsonPropertyName("MapGeneratorId"), System.Text.Json.Serialization.JsonPropertyOrder(6)]
-        public string? MapGeneratorId { get; }
-        [System.Text.Json.Serialization.JsonPropertyName("SkipStepNames"), System.Text.Json.Serialization.JsonPropertyOrder(7)]
-        public IReadOnlyList<string> SkipStepNames { get; }
-        [System.Text.Json.Serialization.JsonPropertyName("SkipStepPrefixes"), System.Text.Json.Serialization.JsonPropertyOrder(8)]
-        public IReadOnlyList<string> SkipStepPrefixes { get; }
-        [System.Text.Json.Serialization.JsonPropertyName("SkipStepTypes"), System.Text.Json.Serialization.JsonPropertyOrder(9)]
-        public IReadOnlyList<string> SkipStepTypes { get; }
-        [System.Text.Json.Serialization.JsonPropertyName("ReplaceTerrainIds"), System.Text.Json.Serialization.JsonPropertyOrder(10)]
-        public IReadOnlyList<string> ReplaceTerrainIds { get; }
-        [System.Text.Json.Serialization.JsonPropertyName("ReplacementTerrainId"), System.Text.Json.Serialization.JsonPropertyOrder(11)]
-        public string? ReplacementTerrainId { get; }
-        [System.Text.Json.Serialization.JsonPropertyName("BiomeRules"), System.Text.Json.Serialization.JsonPropertyOrder(12)]
-        public IReadOnlyList<CelestialMapBiomeProfile> BiomeRules { get; }
-        [System.Text.Json.Serialization.JsonPropertyName("Diversity"), System.Text.Json.Serialization.JsonPropertyOrder(13),
+        [System.Text.Json.Serialization.JsonPropertyName("Diversity"), System.Text.Json.Serialization.JsonPropertyOrder(2),
             System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         public CelestialPlanetMapDiversity? Diversity { get; }
-        [System.Text.Json.Serialization.JsonPropertyOrder(14),
-            System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull),
+        [System.Text.Json.Serialization.JsonPropertyOrder(3),
             System.Text.Json.Serialization.JsonConverter(typeof(LocalMapGenerationJsonConverter))]
-        public LocalMapGenerationSpec? LocalSpecification { get; }
-        public CelestialMapProfile(string id, string? mapGeneratorId, IReadOnlyList<string> skipStepNames, IReadOnlyList<string> skipStepPrefixes,
-            IReadOnlyList<string> skipStepTypes, IReadOnlyList<string> replaceTerrainIds, string? replacementTerrainId, IReadOnlyList<CelestialMapBiomeProfile> biomeRules,
-            CelestialPlanetMapDiversity? diversity = null, LocalMapGenerationSpec? localSpecification = null)
+        public LocalMapGenerationSpec LocalSpecification { get; }
+        public CelestialMapProfile(string id, CelestialPlanetMapDiversity? diversity = null, LocalMapGenerationSpec? localSpecification = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(id);
-            Id = id; MapGeneratorId = mapGeneratorId;
-            SkipStepNames = CopyNames(skipStepNames); SkipStepPrefixes = CopyNames(skipStepPrefixes); SkipStepTypes = CopyNames(skipStepTypes);
-            ReplaceTerrainIds = CopyNames(replaceTerrainIds);
-            if (biomeRules == null || biomeRules.Any(rule => rule == null) || biomeRules.Select(rule => rule.BiomeId).Distinct(StringComparer.Ordinal).Count() != biomeRules.Count)
-                throw new ArgumentException("Invalid biome map rules.");
-            BiomeRules = Array.AsReadOnly(biomeRules.ToArray());
-            if ((ReplaceTerrainIds.Count > 0 || BiomeRules.Any(rule => rule.ReplaceRockTerrains)) && string.IsNullOrWhiteSpace(replacementTerrainId))
-                throw new ArgumentException("Terrain replacement requires a target.");
-            ReplacementTerrainId = replacementTerrainId;
+            Id = id;
             Diversity = diversity;
-            LocalSpecification = localSpecification;
+            LocalSpecification = localSpecification ?? throw new ArgumentNullException(nameof(localSpecification));
         }
         internal static IReadOnlyList<string> CopyNames(IReadOnlyList<string> names)
         {
@@ -100,27 +56,27 @@ namespace PioneerFramework.Celestial
     public sealed class MapGenerationResolvedProperties : ICelestialLocalMapGenerationProperties
     {
         public const string Handler = "PFL.MapGeneration";
+        /// <summary>Current frozen map configuration schema. Legacy XML/configuration versions are not decoded.</summary>
+        public const int CurrentVersion = 4;
         public string Key { get; }
         public string HandlerId => Handler;
-        public int Version => Profile.LocalSpecification != null ? 3 : Profile.Diversity == null ? 1 : 2;
+        public int Version => CurrentVersion;
         public CelestialMapProfile Profile { get; }
-        public CelestialMapProfile CompatibilityProfile => Profile;
-        public LocalMapGenerationSpec Specification { get; }
+        public LocalMapGenerationSpec Specification => Profile.LocalSpecification;
         public MapGenerationResolvedProperties(string key, CelestialMapProfile profile)
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(key); Key = key; Profile = profile ?? throw new ArgumentNullException(nameof(profile));
-            Specification = profile.LocalSpecification ?? CelestialLocalMapCompatibility.ToSpecification(profile);
+            ArgumentException.ThrowIfNullOrWhiteSpace(key);
+            Key = key;
+            Profile = profile ?? throw new ArgumentNullException(nameof(profile));
         }
         public ReadOnlyMemory<byte> Serialize() => JsonSerializer.SerializeToUtf8Bytes(Profile);
         public static CelestialResult<MapGenerationResolvedProperties> Deserialize(string key, int version, ReadOnlyMemory<byte> payload)
         {
-            if (version is not (1 or 2 or 3)) return CelestialResult.Reject<MapGenerationResolvedProperties>(new CelestialError("UnsupportedConfigurationVersion", CompKey: key));
+            if (version != CurrentVersion) return CelestialResult.Reject<MapGenerationResolvedProperties>(new CelestialError("UnsupportedConfigurationVersion", CompKey: key));
             try
             {
                 var profile = CelestialResolvedJson.Read<CelestialMapProfile>(payload);
-                var properties = new MapGenerationResolvedProperties(key, profile);
-                if (properties.Version != version) throw new ArgumentException("Map configuration version mismatch.");
-                return CelestialResult.Ok(properties);
+                return CelestialResult.Ok(new MapGenerationResolvedProperties(key, profile));
             }
             catch (Exception exception) when (exception is JsonException or ArgumentException)
             { return CelestialResult.Reject<MapGenerationResolvedProperties>(new CelestialError("InvalidConfigurationPayload", CompKey: key, Detail: exception.Message)); }

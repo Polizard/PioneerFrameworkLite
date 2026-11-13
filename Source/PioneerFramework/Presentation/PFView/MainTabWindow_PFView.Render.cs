@@ -230,8 +230,7 @@ namespace PioneerFramework
         }
 
         /// <summary>按当前屏幕尺寸（重）建渲染纹理。窗口尺寸变化后不重建的话，画面会被 StretchToFill 拉变形/发糊。</summary>
-        /// <remarks>P0 恒星性能探针（2026-10-28）：`PFViewStellarProbe.RenderScale` 默认 1.0 ⇒ 与历史逐字节一致；
-        /// 0.75/0.5 仅用于判"是否 GPU 填充率主导"，不是玩家可见功能。</remarks>
+        /// <remarks>默认 1.0 = 原分辨率。PFView 调试窗可临时切 0.75/0.5 判是否 GPU 填充率主导（整窗变软）。</remarks>
         private void RecreateRenderTexture()
         {
             float scale = Mathf.Clamp(PFViewStellarProbe.RenderScale, 0.25f, 1f);
@@ -249,12 +248,18 @@ namespace PioneerFramework
 
         private void CleanupResources()
         {
+            DestroyBuildingVisuals();
             DestroyAllReliefMeshes();   // 浮雕网格是运行时 Mesh：不显式销毁会跟着会话泄漏
             ShipSkinAssets.Destroy();   // 舰船蒙皮材质（2026-10-19；贴图由 ContentFinder 持有）
             DestroySurfaceResources();  // 基底球材质 + 补丁网格/材质同上
             DestroyAtmosphereShellMaterials();  // 大气壳材质同上（网格是静态资源，不销毁）
             DestroyCloudResources();
             DestroyStellarVisualResources();
+            ReleaseProjectileVisualResources();
+            ReleaseEnginePlumeResources();   // 2026-11-08：引擎喷焰批（mesh/材质/状态）
+            stellarHeatCache?.Dispose();
+            stellarHeatCache = null;
+            DebugUseStellarHeatCache = PFViewStellarProbe.DefaultHeatCacheEnabled;
             if (renderTexture != null) { renderTexture.Release(); UnityEngine.Object.Destroy(renderTexture); renderTexture = null; }
             if (sunLight != null) { UnityEngine.Object.Destroy(sunLight.gameObject); sunLight = null; }
             if (fillLight != null) { UnityEngine.Object.Destroy(fillLight.gameObject); fillLight = null; }

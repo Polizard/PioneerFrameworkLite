@@ -8,7 +8,7 @@ namespace PioneerFramework.Tests;
 /// <summary>
 /// P0 恒星性能探针（2026-10-28）的自动验收：
 /// · 帧时统计核的采样口径（非法值丢弃、nearest-rank 百分位、环形覆盖、Reset）；
-/// · 所有调试开关的**默认值 = 现状**（surface/halo 开、步数 64、RT 1.0、探针不记录）；
+/// · 光球和日冕开启，64 步、RT 1.0（原分辨率）、光球缓存默认开，探针不记录；
 /// · shader 步数下限放宽后，默认上传值 64 与循环上限 64 不变。
 /// 这里不测 GPU 帧率（本机无 GPU 计时 API，实测由用户按计划 §3.3 跑）。
 /// </summary>
@@ -65,15 +65,20 @@ public class PFViewStellarPerfProbeTests
     [Fact]
     public void StellarDebugSwitchesDefaultToCurrentBehaviour()
     {
-        // 默认值 = 现状：两个 pass 都开、步数 0（=64）、RT 1.0、探针不记录。
+        // 两个 pass 都开、步数 0（=64）、RT 1.0（原分辨率），光球缓存默认开。
         // 注意：只读 PFViewStellarProbe（纯静态类）——不碰 MainTabWindow_PFView 的静态构造器
         // （那里会建 Mesh，headless 测试需要 GPU/Vulkan 依赖）。
         Assert.True(PFViewStellarProbe.SurfacePass);
         Assert.True(PFViewStellarProbe.HaloPass);
         Assert.Equal(0, PFViewStellarProbe.StepBudget);
         Assert.Equal(1f, PFViewStellarProbe.RenderScale);
+        Assert.True(PFViewStellarProbe.DefaultHeatCacheEnabled);
         Assert.False(PFViewStellarProbe.Active);
         Assert.False(PFViewStellarProbe.FastRendererEnabled);   // 默认旧版视觉
+        // S3-a（区域解析积分）默认档：离线保真度验证 PASS ⇒ true，FAIL ⇒ false（Lead 冻结）。
+        // TODO(Lead): 先按"PASS=true"占位；结论出来若为 FAIL 改成 Assert.False。
+        Assert.True(PFViewStellarProbe.DefaultS3AEnabled);
+        Assert.Equal(PFViewStellarProbe.DefaultS3AEnabled, PFViewStellarProbe.S3AEnabled);
         Assert.Equal(64, PFViewStellarVisualCore.SurfaceSteps);
         Assert.Equal(64, PFViewStellarProbe.ResolveStepBudget());
     }
@@ -85,6 +90,7 @@ public class PFViewStellarPerfProbeTests
         PFViewStellarProbe.HaloPass = false;
         PFViewStellarProbe.StepBudget = 8;
         PFViewStellarProbe.RenderScale = 0.5f;
+        PFViewStellarProbe.S3AEnabled = !PFViewStellarProbe.DefaultS3AEnabled;
         try
         {
             PFViewStellarProbe.ResetDefaults();
@@ -92,6 +98,7 @@ public class PFViewStellarPerfProbeTests
             Assert.True(PFViewStellarProbe.HaloPass);
             Assert.Equal(0, PFViewStellarProbe.StepBudget);
             Assert.Equal(1f, PFViewStellarProbe.RenderScale);
+            Assert.Equal(PFViewStellarProbe.DefaultS3AEnabled, PFViewStellarProbe.S3AEnabled);
             Assert.Equal(64, PFViewStellarProbe.ResolveStepBudget());
         }
         finally
@@ -111,12 +118,12 @@ public class PFViewStellarPerfProbeTests
     }
 
     [Fact]
-    public void DefaultShaderKeepsTheApprovedLegacyVisual()
+    public void LegacyShaderKeepsTheOriginalVolumeMarch()
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Shaders", "PF_StellarVolume.frag.glsl");
         Assert.True(File.Exists(path));
         string source = File.ReadAllText(path);
-        // Default path must stay the old 64-step shared march (the visual users approved).
+        // Both cached and original photosphere detail use the shared 64-step volume march.
         // P0 only widened the lower clamp so the debug probe can A/B step budgets.
         Assert.Contains("clamp(uMaterial._StellarParams.x, 4.0, 64.0)", source);
         Assert.Contains("for (int i = 0; i < 64; ++i)", source);

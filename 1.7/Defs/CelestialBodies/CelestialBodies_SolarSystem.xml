@@ -161,6 +161,7 @@
       <li Class="PioneerFramework.Celestial.CompProperties_BiomeGeneration">
         <key>biomes</key>
         <profile>PF_MoonBiomes</profile>
+        <useEnvironmentClimate>true</useEnvironmentClimate>
       </li>
       <li Class="PioneerFramework.Celestial.CompProperties_MapGeneration">
         <key>maps</key>

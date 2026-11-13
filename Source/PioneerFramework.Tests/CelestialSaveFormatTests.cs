@@ -2,13 +2,19 @@ using System;
 using System.IO;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Reflection;
+using HarmonyLib;
 using PioneerFramework.Celestial;
+using PioneerFramework.MapGeneration;
 using PioneerFramework.TestSupport.Celestial;
+using RimWorld;
+using RimWorld.Planet;
+using Verse;
 using Xunit;
 
 namespace PioneerFramework.Tests;
@@ -264,6 +270,221 @@ public class CelestialSaveFormatTests
         envelope["chunks"]![0]!["data"] = Convert.ToBase64String(bytes); envelope["chunks"]![0]!["sha256"] = hash;
         envelope["compressedSha256"] = hash; envelope["decodedLength"] = fault == "expansion" ? 1 : Encoding.UTF8.GetByteCount(raw);
         Assert.False(CelestialSaveCodec.Decode(Encoding.UTF8.GetBytes(envelope.ToJsonString())).Success);
+    }
+
+    [Fact]
+    public void SavePrecheckCapturesOnceAndExposeDataConsumesThePreparedDocument()
+    {
+        using var native = new CelestialMapIdentityTests.Fixture();
+        var runtime = native.Scope.Runtime;
+        Assert.Equal(CelestialOperationStatus.Applied, native.Request("map", CelestialMapAction.Generate).Operation.Status);
+        Assert.True(CelestialSaveGuard.BeforeSave());
+        var manager = native.Native.Game.GetComponent<CelestialBodyManager>();
+        var adapter = (CelestialSaveAdapter)AccessTools.Field(typeof(CelestialBodyManager), "celestialSaveData").GetValue(manager);
+        var prepared = adapter.PreparedDocument;
+        Assert.NotNull(prepared);
+        // 预检之后原生身份被改坏：新的捕获必然失败，但保存必须复用预检文档，不能再次现场捕获。
+        native.Backend.LastMap.uniqueID++;
+        Assert.Equal("MapIdentityMismatch", Assert.Single(new CelestialSaveAdapter(runtime).PrepareSave().Errors).Code);
+        string path = Path.Combine(Path.GetTempPath(), "PFL-save-precheck-" + Guid.NewGuid().ToString("N") + ".xml");
+        try
+        {
+            Scribe.saver.InitSaving(path, "state");
+            manager.ExposeData();
+            Scribe.saver.FinalizeSaving();
+            Assert.Null(adapter.PreparedDocument);
+            var loaded = new CelestialSaveAdapter();
+            Scribe.loader.InitLoading(path);
+            loaded.ExposeData();
+            Scribe.loader.FinalizeLoading();
+            Assert.NotNull(loaded.Document);
+            Assert.Equal(prepared.Bodies.Select(body => body.Description.Id).ToArray(), loaded.Document!.Bodies.Select(body => body.Description.Id).ToArray());
+        }
+        finally { Scribe.ForceStop(); if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void SavePrecheckRejectsMapIdentityMismatchBeforeAnyScribeWrite()
+    {
+        using var native = new CelestialMapIdentityTests.Fixture();
+        Assert.Equal(CelestialOperationStatus.Applied, native.Request("map", CelestialMapAction.Generate).Operation.Status);
+        native.Backend.LastMap.uniqueID++;
+        Assert.False(CelestialSaveGuard.BeforeSave());
+        var manager = native.Native.Game.GetComponent<CelestialBodyManager>();
+        var adapter = (CelestialSaveAdapter)AccessTools.Field(typeof(CelestialBodyManager), "celestialSaveData").GetValue(manager);
+        Assert.Null(adapter.PreparedDocument);
+        var prepared = manager.PrepareCelestialSave();
+        Assert.False(prepared.Success);
+        Assert.Equal("MapIdentityMismatch", Assert.Single(prepared.Errors).Code);
+    }
+
+    [Fact]
+    public void SurfaceTerrainAlgorithmVersionRoundTripsThroughDocumentAndRestore()
+    {
+        using var native = new CelestialMapIdentityTests.Fixture();
+        var runtime = native.Scope.Runtime;
+        Assert.Equal(CelestialPlanetTerrain.AlgorithmVersion, Assert.Single(runtime.Surfaces.CaptureHeaders()).TerrainAlgorithmVersion);
+        var capture = new CelestialSaveAdapter(runtime).CaptureCheckpoint();
+        Assert.True(capture.Success, string.Join(";", capture.Errors.Select(error => error.Code)));
+        Assert.Equal(CelestialPlanetTerrain.AlgorithmVersion, Assert.Single(capture.Value.Surfaces).TerrainAlgorithmVersion);
+        var encoded = CelestialSaveCodec.Encode(capture.Value);
+        Assert.True(encoded.Success);
+        var decoded = CelestialSaveCodec.Decode(encoded.Value);
+        Assert.True(decoded.Success);
+        var saved = Assert.Single(decoded.Value.Surfaces);
+        Assert.Equal(CelestialPlanetTerrain.AlgorithmVersion, saved.TerrainAlgorithmVersion);
+        var provider = new DeterministicTestPhysicsBridge(Guid.NewGuid());
+        var restore = new CelestialRestoreCoordinator(provider.SessionId, provider, CelestialBuiltinCompRegistry.Create(), _ => throw new Exception("No XML"));
+        Assert.True(restore.RestoreIdentities(decoded.Value).Success);
+        Assert.True(restore.BindNativeObjects().Success);
+        Assert.True(restore.CompleteRestore().Success);
+        Assert.Equal(saved.LayerId, Assert.Single(restore.Runtime.Surfaces.CaptureHeaders()).LayerId);
+        Assert.Equal(saved.TerrainAlgorithmVersion, Assert.Single(restore.Runtime.Surfaces.CaptureHeaders()).TerrainAlgorithmVersion);
+    }
+
+    [Fact]
+    public void SurfaceHeaderRejectsForeignTerrainAlgorithmVersion()
+    {
+        using var native = new CelestialMapIdentityTests.Fixture();
+        var original = native.Root.Header;
+        var invalid = Assert.Throws<InvalidDataException>(() => new CelestialSurfaceHeader(original.OwnerId, original.LayerId,
+            original.PhysicalRadiusMeters, original.NativeRadius, original.Subdivisions, original.GenerationSeed,
+            original.GenerationConfiguration, CelestialPlanetTerrain.AlgorithmVersion + 1));
+        Assert.Contains("UnsupportedTerrainAlgorithmVersion", invalid.Message);
+    }
+
+    [Fact]
+    public void SurfaceHeaderWithoutTerrainAlgorithmVersionFieldStaysReadableForLegacyV4Saves()
+    {
+        using var native = new CelestialMapIdentityTests.Fixture();
+        var original = native.Root.Header;
+        var current = new CelestialSurfaceHeader(original.OwnerId, original.LayerId, original.PhysicalRadiusMeters, original.NativeRadius,
+            original.Subdivisions, original.GenerationSeed, original.GenerationConfiguration);
+        string path = Path.Combine(Path.GetTempPath(), "PFL-surface-header-" + Guid.NewGuid().ToString("N") + ".xml");
+        try
+        {
+            Scribe.saver.InitSaving(path, "surface-header");
+            Scribe_Deep.Look(ref current, "header");
+            Scribe.saver.FinalizeSaving();
+            // 模拟引入字段之前写出的 v4 档：缺失 terrainAlgorithmVersion 时按字段引入前的版本读取，仍然可读。
+            var legacy = Regex.Replace(File.ReadAllText(path), @"\s*<terrainAlgorithmVersion>[^<]*</terrainAlgorithmVersion>", "");
+            Assert.DoesNotContain("terrainAlgorithmVersion", legacy);
+            File.WriteAllText(path, legacy);
+            CelestialSurfaceHeader restored = null;
+            Scribe.loader.InitLoading(path);
+            Scribe_Deep.Look(ref restored, "header");
+            Scribe.loader.FinalizeLoading();
+            Assert.NotNull(restored);
+            Assert.Equal(CelestialPlanetTerrain.LegacyVersionWithoutHeaderField, restored.TerrainAlgorithmVersion);
+            Assert.Equal(CelestialPlanetTerrain.AlgorithmVersion, restored.TerrainAlgorithmVersion);
+        }
+        finally { Scribe.ForceStop(); if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void OldV4SurfaceJsonWithoutTerrainAlgorithmVersionDecodesWithTheLegacyDefault()
+    {
+        using var native = new CelestialMapIdentityTests.Fixture();
+        var capture = new CelestialSaveAdapter(native.Scope.Runtime).CaptureCheckpoint();
+        Assert.True(capture.Success, string.Join(";", capture.Errors.Select(error => error.Code)));
+        var envelope = JsonNode.Parse(CelestialSaveCodec.Encode(capture.Value).Value.Span)!;
+        var chunkList = Assert.Single(envelope["chunks"]!.AsArray());
+        string raw;
+        using (var input = new MemoryStream(Convert.FromBase64String(chunkList!["data"]!.GetValue<string>())))
+        using (var brotli = new BrotliStream(input, CompressionMode.Decompress))
+        using (var reader = new StreamReader(brotli)) raw = reader.ReadToEnd();
+        var legacy = Regex.Replace(raw, @",\s*""terrainAlgorithmVersion""\s*:\s*\d+", "");
+        if (legacy == raw) legacy = Regex.Replace(raw, @"""terrainAlgorithmVersion""\s*:\s*\d+\s*,", "");
+        Assert.NotEqual(raw, legacy);
+        Assert.DoesNotContain("terrainAlgorithmVersion", legacy);
+        using var output = new MemoryStream();
+        using (var compressor = new BrotliStream(output, CompressionLevel.Optimal, true)) compressor.Write(Encoding.UTF8.GetBytes(legacy));
+        var bytes = output.ToArray(); string hash = Convert.ToHexString(SHA256.HashData(bytes));
+        chunkList["data"] = Convert.ToBase64String(bytes); chunkList["sha256"] = hash;
+        envelope["compressedSha256"] = hash; envelope["decodedLength"] = Encoding.UTF8.GetByteCount(legacy);
+        var decoded = CelestialSaveCodec.Decode(Encoding.UTF8.GetBytes(envelope.ToJsonString()));
+        Assert.True(decoded.Success, string.Join(";", decoded.Errors.Select(error => error.Code)));
+        Assert.Equal(CelestialPlanetTerrain.LegacyVersionWithoutHeaderField, Assert.Single(decoded.Value.Surfaces).TerrainAlgorithmVersion);
+    }
+
+    [Fact]
+    public void CodecRejectsSurfaceDocumentWhoseTerrainAlgorithmVersionIsNotCurrent()
+    {
+        using var native = new CelestialMapIdentityTests.Fixture();
+        var capture = new CelestialSaveAdapter(native.Scope.Runtime).CaptureCheckpoint();
+        Assert.True(capture.Success, string.Join(";", capture.Errors.Select(error => error.Code)));
+        var surface = Assert.Single(capture.Value.Surfaces);
+        var tampered = capture.Value with { Surfaces = new[] { surface with { TerrainAlgorithmVersion = CelestialPlanetTerrain.AlgorithmVersion + 1 } } };
+        var valid = CelestialSaveCodec.Validate(tampered);
+        Assert.False(valid.Success);
+        Assert.Equal("InvalidSaveDocument", Assert.Single(valid.Errors).Code);
+    }
+
+    private static LocalMapGenerationRecord CapturedGenerationRecord(CelestialMapIdentityTests.Fixture fixture,
+        MapGenerationState state, string? failure = null)
+    {
+        var frozen = LocalMapSourceResolver.Resolve(new PlanetTile(0, fixture.Root), 50, 50,
+            new MapGeneratorDef { defName = "Encounter" }, false).Value;
+        return LocalMapGenerationRecord.Capture(new(frozen.Source, frozen.Specification, MapGenerationPurpose.Encounter),
+            state, state == MapGenerationState.Failed ? "probe" : "Done", failure, null);
+    }
+
+    [Fact]
+    public void GenerationRecordUsesTheDecoupledCurrentVersionRecipeHash()
+    {
+        using var native = new CelestialMapIdentityTests.Fixture();
+        var record = CapturedGenerationRecord(native, MapGenerationState.Ready);
+        Assert.Equal(LocalMapGenerationRecord.CurrentVersion, record.Version);
+        Assert.Equal(LocalMapGenerationRecord.ComputeRecipeHash(record.FrozenRecipe), record.RecipeHash);
+        var spec = LocalMapGenerationCodec.Decode(Convert.FromBase64String(record.FrozenRecipe));
+        // 新 hash 针对冻结字符串，不再等于 canonical 字节的 SnapshotHash（codec 演进不再影响新记录可读性）。
+        Assert.NotEqual(LocalMapGenerationCodec.SnapshotHash(spec), record.RecipeHash);
+        record.Validate(record.Source.SourceId, record.Source.TileId, null);
+    }
+
+    [Fact]
+    public void GenerationRecordHashValidationIsVersionedAndRejectsMismatchedCombinations()
+    {
+        using var native = new CelestialMapIdentityTests.Fixture();
+        var record = CapturedGenerationRecord(native, MapGenerationState.Ready);
+        var spec = LocalMapGenerationCodec.Decode(Convert.FromBase64String(record.FrozenRecipe));
+        var legacyHash = LocalMapGenerationCodec.SnapshotHash(spec);
+        var legacy = record with { Version = LocalMapGenerationRecord.LegacyVersion, RecipeHash = legacyHash };
+        legacy.Validate(legacy.Source.SourceId, legacy.Source.TileId, null);
+        var legacyWithCurrentHash = record with { Version = LocalMapGenerationRecord.LegacyVersion };
+        Assert.Throws<ArgumentException>(() => legacyWithCurrentHash.Validate(
+            legacyWithCurrentHash.Source.SourceId, legacyWithCurrentHash.Source.TileId, null));
+        var currentWithLegacyHash = record with { RecipeHash = legacyHash };
+        Assert.Throws<ArgumentException>(() => currentWithLegacyHash.Validate(
+            currentWithLegacyHash.Source.SourceId, currentWithLegacyHash.Source.TileId, null));
+        var tampered = record with { FrozenRecipe = record.FrozenRecipe + "AA" };
+        Assert.Throws<ArgumentException>(() => tampered.Validate(tampered.Source.SourceId, tampered.Source.TileId, null));
+        var unknownVersion = record with { Version = 99 };
+        Assert.Throws<ArgumentException>(() => unknownVersion.Validate(
+            unknownVersion.Source.SourceId, unknownVersion.Source.TileId, null));
+    }
+
+    [Fact]
+    public void CurrentGenerationRecordSurvivesTheSaveDocumentRoundTrip()
+    {
+        using var native = new CelestialMapIdentityTests.Fixture();
+        var parent = native.Backend.CreateParent(native.Address);
+        var frozen = LocalMapSourceResolver.Resolve(parent, new IntVec3(50, 1, 50),
+            new MapGeneratorDef { defName = "Encounter" }, false).Value;
+        var record = LocalMapGenerationRecord.Capture(new(frozen.Source, frozen.Specification, MapGenerationPurpose.Colony),
+            MapGenerationState.Failed, "probe", "failure", null);
+        native.Service.RecordNativeGeneration(native.Address with { MapParentId = parent.ID }, null, record);
+        var capture = new CelestialSaveAdapter(native.Scope.Runtime).CaptureCheckpoint();
+        Assert.True(capture.Success, string.Join(";", capture.Errors.Select(error => error.Code)));
+        var encoded = CelestialSaveCodec.Encode(capture.Value);
+        Assert.True(encoded.Success, string.Join(";", encoded.Errors.Select(error => error.Code)));
+        var decoded = CelestialSaveCodec.Decode(encoded.Value);
+        Assert.True(decoded.Success, string.Join(";", decoded.Errors.Select(error => error.Code)));
+        var saved = Assert.Single(decoded.Value.Maps).Generation;
+        Assert.NotNull(saved);
+        Assert.Equal(LocalMapGenerationRecord.CurrentVersion, saved!.Version);
+        Assert.Equal(record.RecipeHash, saved.RecipeHash);
+        saved.Validate(saved.Source.SourceId, saved.Source.TileId, "failure");
     }
 
     private sealed class FaultProperties : ICelestialResolvedProperties

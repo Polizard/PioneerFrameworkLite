@@ -74,6 +74,8 @@ namespace PioneerFramework
         // ════════════════════════════════════════════════════
 
         private int lastSceneRenderFrame = int.MinValue;
+        // 点击发生在下次重绘前，拾取使用当前画面实际提交的位置与缩放。
+        private readonly List<(int BodyId, Vector3 Center, float Radius)> presentedBodySpheres = new();
 
         private void RenderScene(CelestialBodyManager mgr)
         {
@@ -84,6 +86,9 @@ namespace PioneerFramework
             if (Event.current == null || Event.current.type != EventType.Repaint
                 || lastSceneRenderFrame == RealTime.frameCount) return;
             lastSceneRenderFrame = RealTime.frameCount;
+
+            // 实时逐格表面：与绘制同帧推进（4 ms 预算），构建期不阻塞输入。
+            PumpTileSurfaceBuilds();
 
             // ⚠ 2026-10-11（"别的航天器整体位置在抖"的治本）：这里用**帧级连续时钟**（不是阶梯的物理 tick）。
             //   物理 tick 由整数 `TicksGame` 推出 ⇒ 渲染帧率高于 tick 率时，位置一格一格跳；
@@ -115,11 +120,14 @@ namespace PioneerFramework
         private void DrawAllObjects(DVector3 origin, CelestialBodyManager mgr, double tick)
         {
             stellarHaloDraws.Clear();
+            BeginImpactVisibility();
+            BeginEnginePlumeFrame(mgr);   // 2026-11-08：本帧引擎喷焰采集（只收集，不提交）
             DrawCelestialBodies(mgr, tick, origin);
             DrawSystemGroups(mgr, tick, origin);
             DrawMegastructures(mgr, origin);
             DrawProjectiles(origin, tick);
             DrawStellarHalos();
+            DrawEnginePlumes(tick);       // 加性 / queue 3400：一次批提交，必须在 Render() 之前
         }
 
         /// <summary>旧消费者兼容分支的显示集合；实例框架直接使用当前呈现批次，不经过此缓存。</summary>
@@ -164,6 +172,7 @@ namespace PioneerFramework
 
         private void DrawCelestialBodiesCore(CelestialBodyManager mgr, double tick, DVector3 origin)
         {
+            presentedBodySpheres.Clear();
             var renderBodies = GetCelestialRenderBodies(mgr, tick);
             var relevantIds = celestialRenderRuntime == null ? GetLocalSystemBodyIds(mgr) : null;
             Vector3 camPos = GetCameraViewPos();
@@ -244,7 +253,14 @@ namespace PioneerFramework
                 //   · **补丁**只离地一点点（`PatchEpsilon`，地球 1 km）⇒ 低飞的相机永远不会钻到它下面；
                 //   · **基底球**在有补丁时**下沉** `BaseSinkFactor`（地球 40 km）⇒ 深度余量由下沉买（两层间距 ≫ δz），
                 //     而不是把补丁抬高（上一批抬到 30 km，低飞相机于是跑到了补丁底下、朝下只看到基底球 = 那次的病根）。
-                float baseRenderR = hasPatch ? renderR * (1f - PFViewSurfaceBake.BaseSinkFactor) : renderR;
+                // 没有烘焙补丁时，实时逐格表面顶上：基底球同样要下沉。
+                // 深度余量只能靠"基底球下沉"买（抬高表面会把低飞相机关到面下，2026-10-11 的事故）。
+                bool hasTileSurface = !hasPatch && HasPlanetTileSurface(body.bodyId, bodyLayer, bodyLayer?.TilesCount ?? 0);
+                // 几何起伏可下探到 0.97R ⇒ 基底球必须沉得比"补丁时代"的 0.8% 更深，否则低洼顶点会从基底球里穿出来。
+                float baseSink = hasTileSurface && TileSurfaceReliefActive(body.bodyId) ? 0.09f : PFViewSurfaceBake.BaseSinkFactor;
+                float baseRenderR = (hasPatch || hasTileSurface) ? renderR * (1f - baseSink) : renderR;
+                if (isStar ? PFViewStellarProbe.SurfacePass : drawSurface)
+                    presentedBodySpheres.Add((body.bodyId, renderPos, Mathf.Max(renderR, MinBodyVisRadius)));
                 if (drawSurface || isStar)
                 {
                 var baseMat = GetBaseSphereMaterial(body, bodyLayer);
@@ -266,6 +282,12 @@ namespace PioneerFramework
                 else
                     DrawCelestialSphere(renderPos, baseRenderR, c, selfRot, lodMesh, renderMat, true);
                 }
+
+                // 实时逐格表面：只在没有烘焙补丁时画（有补丁时补丁带河/路/山体细节，更细）。
+                if (hasTileSurface)
+                    DrawPlanetTileSurface(body.bodyId, bodyLayer, renderPos, renderR, selfRot, camPos, toSun, sunColor);
+                if (bodyLayer != null)
+                    DrawTilePickHighlight(body, bodyLayer, renderPos, renderR, selfRot);
 
                 if (hasPatch && patchMat != null)
                 {
@@ -397,6 +419,7 @@ namespace PioneerFramework
 
         private void DrawSystemGroups(CelestialBodyManager mgr, double tick, DVector3 origin)
         {
+            EnsureBuildingVisualSession();
             var sysIds = GetCurrentSystemBodyIds(mgr); // 第 12 条：记忆化复用（此前每帧新建 HashSet + 填卫星）
             var sensor = Current.Game?.GetComponent<SensorManager>();   // [V3] 列表准入（本方法低频，直接取组件）
 
@@ -411,6 +434,7 @@ namespace PioneerFramework
                 if (!sysIds.Contains(g.CelestialBodyId)) continue;
                 if (!CanInspectGroup(groupId)) continue;
                 if (sensor != null && !sensor.PlayerCanSee(groupId)) continue;   // [V3]/S4c：列表只列看得见的
+                impactVisibleGroups.Add(groupId);
 
                 DVector3 gPosAbs = GetGroupPosAbs(groupId, tick);
                 Vector3 vp = AbsToView(gPosAbs, origin);
@@ -489,29 +513,39 @@ namespace PioneerFramework
                 ? ShipSkinPalette.PartTint(group.FactionId)
                 : (Color?)null;
 
+            var space = Current.Game?.GetComponent<SpaceGameComp>();
+            var liveGroup = space?.GetGroupById(group.GroupId);
+            if (liveGroup == null) return;
+
             entityBuf.Clear();
             PhysicsApi.CopyEntities(group.GroupId, entityBuf);
             for (int ei = 0; ei < entityBuf.Count; ei++)
             {
                 var entity = entityBuf[ei];
+                var liveEntity = space!.GetEntityById(entity.EntityId);
+                if (liveEntity == null) continue;
                 DVector3 eAbs = groupPosAbs + entity.Position;
                 Vector3 eVp = AbsToView(eAbs, origin);
 
-                if (!SphereInFrustum(eVp, 10f * scale)) continue;
+                float visualRadius = Mathf.Max((float)entity.AabbHalfSize.magnitude, MeasureBuildingVisualRadius(liveEntity));
+                if (!SphereInFrustum(eVp, Mathf.Max(10f, visualRadius * MetersToView) * scale)) continue;
 
                 // 有 Map 的实体（空间站/舱内图火箭）：画"地图挤出来的浮雕"（2026-10-02）；
                 // 无图 / 图已封存 / 房间数据未追平 / 全图无建造痕迹 ⇒ 落回下面的 part 盒体。
-                if (entity.MapId >= 0 && TryDrawMapRelief(entity.EntityId, entity, eVp, gRot, scale))
-                    continue;
+                bool relief = TryDrawMapRelief(liveEntity, eVp, gRot, scale);
+                bool rocketHull = false;
+                HashSet<int>? hullCovered = null;
 
                 // 单 part 化：无设计数据分支，统一按运行时 Parts 绘制盒体（§5.4 C4）
                 // 2026-10-30：有壳的火箭先画壳，只把"露出来的喷管"作为零件盒补画（其余件被壳包住）。
-                if (entity.PartCount > 0)
+                if (!relief && entity.PartCount > 0)
                 {
                     partBuf.Clear();
                     PhysicsApi.TryCopyEntityParts(entity.EntityId, partBuf);
                     if (RocketHullMesh.TryGet(entity.EntityId, entity.PartSetVersion, partBuf, out var hull))
                     {
+                        rocketHull = true;
+                        hullCovered = hull.coveredPartIds;
                         DrawRuntimeHull(hull, eVp, gRot, scale, skinTint);
                         DrawRuntimeParts(partBuf, eVp, gRot, scale, skinTint, hull.coveredPartIds);
                     }
@@ -520,6 +554,23 @@ namespace PioneerFramework
                         DrawRuntimeParts(partBuf, eVp, gRot, scale, skinTint);
                     }
                 }
+                else if (relief && !reliefWholeEntity && entity.PartCount > 0)
+                {
+                    partBuf.Clear();
+                    PhysicsApi.TryCopyEntityParts(entity.EntityId, partBuf);
+                    DrawRuntimeParts(partBuf, eVp, gRot, scale, skinTint, reliefDrawnPartIds);
+                }
+
+                DrawBuildingVisuals(liveEntity, liveGroup, eVp, gRot, scale, rocketHull);
+
+                // 2026-11-08：引擎喷焰采集。零件引擎（外壳/零件船、舱盒级地图的引擎件）+ 地图推进器建筑
+                // （旧式/遭遇舰）都收；实体级浮雕船没有可见零件，只走地图推进器路径。
+                bool partsVisible = !relief || !reliefWholeEntity;
+                CollectEnginePlumes(liveEntity, liveGroup, eVp, gRot, scale, hullCovered, partsVisible);
+                if (!partsVisible) PFViewEnginePlumeProbe.LastWholeReliefEntities++;
+
+                sceneMapContexts.Clear();
+                drawnReliefSurfaces.Clear();
             }
 
             // 2026-10-30（用户令"直接删"）：这里原先给**无图编队**画"黄色主推方向棒"。
@@ -566,97 +617,12 @@ namespace PioneerFramework
                 skin == null && ToonMat != null, hullColor);
         }
 
-        private void DrawProjectiles(DVector3 origin, double tick)
+        private void DrawProjectileExplosions(CombatManager cm, DVector3 origin, double tick)
         {
-            var cm = Current.Game?.GetComponent<CombatManager>();
-            if (cm == null) return;
-
-            // 渲染插值必须用 physicsTick 基准（射弹 spawnPhysicsTick 同基准），
-            // 不能用 TicksGame：physicsTick 是受时间档缩放的游戏世界秒且可为负，
-            // 与 TicksGame 直接相减单位错位 → 外推恒为 0 → 渲染只显示离散物理位置 → 折线。
-            // 天体偏移同样用 double physicsTick：int 化在 1/60x 下每 60 real tick 才跳 1 秒，
-            // 天体位置离散跳变 → 射弹/场景"集体闪现"。全部用 double 后完全连续。
-            // 与相机/天体使用 RenderScene 捕获的同一连续时钟。
-            Vector3 camView = GetCameraViewPos();   // 逐弹重复求一次相机位（含三角函数）没有意义
-
-            foreach (var proj in cm.ActiveProjectiles)
-            {
-                if (!proj.IsVisibleAt(tick)) continue;
-                // 渲染位置解析化：无重力射弹位置 = spawnPos + velocity×(physicsTick - spawnPhysicsTick)，
-                // 是 physicsTick 的连续函数——任何渲染帧率下都平滑（不依赖每 2 tick 的离散步进点，
-                // 低帧率时渲染点与物理点重合会离散跳动呈折线）。重力射弹回退为物理点+外推插值。
-                DVector3 renderPos = proj.RenderedPosition(tick);
-
-                // 射弹位置是行星系相对坐标，渲染需转绝对（加所属行星世界偏移）
-                DVector3 bodyOff = GetBodyPosAbs(proj.systemBodyId, tick);
-                Vector3 vp = AbsToView(renderPos + bodyOff, origin);
-                float dist = Vector3.Distance(vp, camView);
-
-                // 按相机距离自适应放大：射弹在行星系尺度下极小，固定尺寸不可见
-                float headSize = Mathf.Max(4f, dist * 0.008f);
-                // 尾迹必须远细于弹头，否则立方体端面在视觉上像第二个球
-                float trailWidth = Mathf.Max(1f, headSize * 0.15f);
-                var shotVisual = proj.shot?.Profile;
-                if (shotVisual?.HasVisual == true)
-                    trailWidth = Mathf.Max(shotVisual.MinimumViewWidth, shotVisual.WidthMeters * (float)SpaceConstants.UnitsPerMeter);
-
-                // 弹头
-                Matrix4x4 mtx = Matrix4x4.TRS(vp, Quaternion.identity, Vector3.one * headSize);
-                matBlock.SetColor("_Color", proj.shot?.Profile.Color ?? new Color(1f, 0.9f, 0.2f));
-                Graphics.DrawMesh(sphereMeshLOD1, mtx, renderMat, SceneLayer, null, 0, matBlock);
-
-#if DEBUG
-                // 连续检测：相邻帧弹头渲染位置跳变超 1.5×物理步进 → 折线/闪现（限频提示）
-                if (debugLastProjRender.TryGetValue(proj.id, out var lastRender))
-                {
-                    double jump = (renderPos - lastRender).magnitude;
-                    double expectedStep = proj.velocity.magnitude * (2.0 / 60.0);
-                    if (jump > expectedStep * 1.5 + 1.0 && Find.TickManager.TicksGame - debugJumpLogTick >= 60)
-                    {
-                        debugJumpLogTick = Find.TickManager.TicksGame;
-                        Log.Message($"[射弹渲染检测] proj={proj.id} 帧间跳变 {jump:F0}m（预期步进 {expectedStep:F0}m）→ 疑似折线/闪现");
-                    }
-                }
-                debugLastProjRender[proj.id] = renderPos;
-                debugLiveProjectileIds.Add(proj.id);
-#endif
-
-                // 尾迹使用固定历史时长，XML 可覆写；端点随渲染位置连续变化。
-                // 原实现连接 proj.prevPosition（物理上一步，每 2 tick 跳 167m），尾迹长度
-                // 每物理步从满长缩到 0 再跳回 → 伸缩抖动，视觉上呈"折线"。弹头本就平滑。
-                double trailSeconds = shotVisual?.HasVisual == true ? shotVisual.VisualSeconds : 2.0 / 60.0;
-                DVector3 trailEndAbs = renderPos - proj.velocity.v * trailSeconds;
-                Vector3 tv = AbsToView(trailEndAbs + bodyOff, origin);
-                float len = Vector3.Distance(vp, tv);
-                if (len > 0.01f)
-                {
-                    Vector3 mid = (vp + tv) * 0.5f;
-                    Quaternion rot = Quaternion.LookRotation((vp - tv).normalized, Vector3.up);
-                    Matrix4x4 lmtx = Matrix4x4.TRS(mid, rot, new Vector3(trailWidth, trailWidth, len));
-                    Color trailColor = shotVisual?.HasVisual == true ? shotVisual.Color : new Color(1f, 0.8f, 0.2f, 0.55f);
-                    matBlock.SetColor("_Color", trailColor);
-                    Graphics.DrawMesh(cubeMesh, lmtx, renderMat, SceneLayer, null, 0, matBlock);
-                }
-            }
-
-            foreach (var beam in cm.ActiveLaserBeams)
-            {
-                DVector3 bodyOff = GetBodyPosAbs(beam.systemBodyId, tick);
-                Vector3 sv = AbsToView(beam.startPos + bodyOff, origin);
-                Vector3 ev = AbsToView(beam.endPos + bodyOff, origin);
-                Vector3 mid = (sv + ev) * 0.5f;
-                float len = Vector3.Distance(sv, ev);
-                if (len < 0.01f) continue;
-                Quaternion rot = Quaternion.LookRotation((ev - sv).normalized, Vector3.up);
-                float beamWidth = Mathf.Max(beam.minimumViewWidth, beam.widthMeters * (float)SpaceConstants.UnitsPerMeter);
-                Matrix4x4 mtx = Matrix4x4.TRS(mid, rot, new Vector3(beamWidth, beamWidth, len));
-                matBlock.SetColor("_Color", beam.color);
-                Graphics.DrawMesh(cubeMesh, mtx, renderMat, SceneLayer, null, 0, matBlock);
-            }
-
             // 爆炸视觉：扩散闪光球（半径随时间增长、透明度淡出）
             foreach (var exp in cm.ActiveExplosions)
             {
+                if (exp.HasImpactEvent) continue;
                 float t = 1f - (float)exp.remainingTicks / exp.totalTicks; // 0→1
                 DVector3 bodyOff = GetBodyPosAbs(exp.systemBodyId, tick);
                 Vector3 vp = AbsToView(exp.position + bodyOff, origin);
@@ -667,18 +633,6 @@ namespace PioneerFramework
                 matBlock.SetColor("_Color", new Color(1f, 0.45f, 0.1f, alpha));
                 Graphics.DrawMesh(sphereMeshLOD1, mtx, renderMat, SceneLayer, null, 0, matBlock);
             }
-
-#if DEBUG
-            // 清理已消失射弹的检测残留（否则一次会话内字典无界增长：每个弹 id 一条，永不回收）
-            if (debugLastProjRender.Count > debugLiveProjectileIds.Count)
-            {
-                debugDeadProjIds.Clear();
-                foreach (var kv in debugLastProjRender)
-                    if (!debugLiveProjectileIds.Contains(kv.Key)) debugDeadProjIds.Add(kv.Key);
-                for (int i = 0; i < debugDeadProjIds.Count; i++) debugLastProjRender.Remove(debugDeadProjIds[i]);
-            }
-            debugLiveProjectileIds.Clear();
-#endif
         }
 
         // 轨道线已删（2026-10-14，用户："轨道线本来就是不需要存在的东西吧？"——判过不接，见 1.7 计划台账 #14）。

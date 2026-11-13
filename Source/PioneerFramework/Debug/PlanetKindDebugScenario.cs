@@ -10,6 +10,10 @@ namespace PioneerFramework
 {
     /// <summary>
     /// 行星种类人工验收场景。只覆盖新实例的演示轨道，原始 Def 和默认地月系保持不变。
+    /// 2026-11-09（用户授权，后端变更）起，测试天体绕**主光源恒星**（默认地月系 = 太阳）布置在分离的
+    /// 开普勒圆轨上；旧版把它们挂到根天体（地球）下，绝对状态 = Earth(t) + 局部轨道，Earth 绕日的
+    /// 12,910.7 m/s 是公共项而局部速度只有 686–1,721 m/s ⇒ PFView 里六颗看起来全部以地球角速度绕恒星转。
+    /// 证据 / 判据 / 回退见 DesignNotes/后端变更授权-2026-11-09-行星种类测试天体绕恒星.md。
     /// 标记进入正常描述/存档；清理仍经框架引用检查，不能绕过地图、飞船或主地表保护。
     /// </summary>
     internal static class PlanetKindDebugScenario
@@ -225,21 +229,32 @@ namespace PioneerFramework
         {
             var context = Context();
             if (!context.Success) return Rejected(context.Errors);
-            var parent = runtime.Creation.RootSurfaceId;
-            if (!parent.HasValue || !runtime.Query(parent.Value).Success ||
-                !runtime.TryGetInitializationReference(parent.Value, "primaryLight", out var light) ||
+            var rootId = runtime.Creation.RootSurfaceId;
+            if (!rootId.HasValue || !runtime.Query(rootId.Value).Success ||
+                !runtime.TryGetInitializationReference(rootId.Value, "primaryLight", out var light) || !runtime.Query(light).Success ||
                 runtime.GetCapabilities<ICelestialLightSourceCapability>(light).Count != 1 ||
                 runtime.Physics is not ExistingCelestialEphemerisBridge bridge)
                 return Rejected(new[] { new CelestialError("PlanetKindTestContextUnavailable") }, context.Value.OperationId);
-            var root = runtime.Query(parent.Value).Value;
-            double edge = root.Description.RadiusMeters;
+            var root = runtime.Query(rootId.Value).Value;
+            // 2026-11-09（用户授权）：测试天体改绕主光源（默认地月系 = 太阳）公转。旧版 parent = 根天体（地球），
+            // 六颗变成地球卫星；绝对状态 = Earth(t) + 局部圆轨，Earth 绕日的 12,910.7 m/s 主导 ⇒ PFView 里
+            // 看起来全部以地球角速度绕恒星转。父链只沿 ParentInstanceId 累加，所以只改 frameOrigin 无效。
+            var parent = light;
+            var parentBody = runtime.Query(parent).Value;
+            double parentGm = parentBody.Description.GravitationalParameter ?? 0;
+            double edge;
+            if (parent == rootId.Value) edge = root.Description.RadiusMeters;   // 根天体就是恒星：沿用旧起点
+            else if (root.ParentId == parent && bridge.TryGetParameters(rootId.Value, out var rootOrbit) && rootOrbit.HasOrbit)
+                edge = rootOrbit.OrbitRadius + root.Description.RadiusMeters;   // 从根行星轨道外缘之外布带（默认：地球轨道之外）
+            else edge = Math.Max(parentBody.Description.RadiusMeters, root.Description.RadiusMeters);
+            // 同一父体下已有测试天体继续向外扩展；旧版挂在根天体下的实例不参与新带的起点计算。
             foreach (var body in runtime.CaptureCatalog().Bodies.Select(d => runtime.Query(d.Id).Value).Where(b => PlanetKindDebugScenario.IsTestBody(b.Description)))
                 if (body.ParentId == parent && bridge.TryGetParameters(body.Id, out var parameters))
                     edge = Math.Max(edge, parameters.OrbitRadius + body.Description.RadiusMeters);
-            var manifest = variant == "Default" ? PlanetKindDebugScenario.Build(definitions, runtime.WorldSeed, context.Value.OperationId, parent.Value,
-                light, root.Description.GravitationalParameter ?? 0, edge) : definitions.Count == 1 ?
-                PlanetKindDebugScenario.BuildVariant(definitions[0], variant, runtime.WorldSeed, context.Value.OperationId, parent.Value,
-                    light, root.Description.GravitationalParameter ?? 0, edge) : CelestialResult.Reject<CelestialSpawnManifest>(new CelestialError("InvalidVariantBatch"));
+            var manifest = variant == "Default" ? PlanetKindDebugScenario.Build(definitions, runtime.WorldSeed, context.Value.OperationId, parent,
+                light, parentGm, edge) : definitions.Count == 1 ?
+                PlanetKindDebugScenario.BuildVariant(definitions[0], variant, runtime.WorldSeed, context.Value.OperationId, parent,
+                    light, parentGm, edge) : CelestialResult.Reject<CelestialSpawnManifest>(new CelestialError("InvalidVariantBatch"));
             var operation = manifest.Success ? runtime.CreateBatch(new(context.Value, manifest.Value)) :
                 new CelestialOperation(context.Value.OperationId, CelestialOperationStatus.Rejected, errors: manifest.Errors);
             Track(operation);

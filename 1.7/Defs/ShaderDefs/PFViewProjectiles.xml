@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <ShaderDef>
+    <defName>PF_ProjectileGlow</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_ProjectileGlow.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_ProjectileGlow.frag.glsl</fragmentShaderFileName>
+      <blendMode>Additive</blendMode>
+      <depthTest>true</depthTest>
+      <depthWrite>false</depthWrite>
+      <cullMode>None</cullMode>
+      <renderQueue>3400</renderQueue>
+      <flipTextureST>false</flipTextureST>
+    </shaderProgram>
+  </ShaderDef>
+</Defs>

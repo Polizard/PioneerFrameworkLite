@@ -31,6 +31,140 @@ def fail(msg):
     sys.exit(1)
 
 
+# `Def` 基类的可枚举字段（§8 的 `SIMPLE_DEF_TYPES` 与 §8.5 的 map 配方共用；模块级以便工具测试导入）。
+DEF_BASE_FIELDS = {
+    "defName", "label", "labelShort", "description",
+    "ignoreConfigErrors", "modExtensions",
+}
+MAP_GENERATION_SOURCE_DIR = "Source/PioneerFramework/MapGeneration"
+
+
+def _map_short_type(name):
+    return name.split(".")[-1].split("<")[0].rstrip("?")
+
+
+def _map_fields(index, name, seen=None):
+    """class block 精确字段集 + 基类链（`Def` 用 DEF_BASE_FIELDS）；返回 {字段名: 类型}。"""
+    if name == "Def":
+        return {field: "string" for field in DEF_BASE_FIELDS}
+    seen = set() if seen is None else seen
+    if not name or name in seen or name not in index:
+        return {}
+    seen.add(name)
+    schema = index[name]
+    merged = _map_fields(index, schema.base, seen)
+    merged.update(schema.fields)
+    return merged
+
+
+def _map_item_type(field_type):
+    match = re.fullmatch(r'(?:List|IReadOnlyList)<(.+)>', field_type)
+    return _map_short_type(match.group(1) if match else field_type)
+
+
+def validate_map_generation_node(node, index):
+    """校验 map 配方 / 模块属性 / purposeRecipes 的元素名（P2-5，2026-11-06）。
+
+    WHY：`LocalMapRecipeDef` 及其嵌套 `properties Class="…ModuleProperties"`、以及
+    `CelestialMapProfileDef/purposeRecipes/li` 此前完全不在校验范围内 —— 元素名写错时 CI 全绿、
+    游戏里静默取默认值（与 §8 的事故同族）。这里用 `celestial_schema.build_schema_index` 的
+    **精确 class block** 字段集逐层判定（不是同文件宽松并集），只对能解析到本库 C# 类型的节点递归；
+    Def 引用与值类型不递归，保持"零误报优先"。
+    """
+    errors = []
+
+    def visit(element, type_name, path):
+        resolved = element.get("Class")
+        name = _map_short_type(resolved) if resolved else type_name
+        if name not in index:
+            errors.append(path + ": unknown map generation XML type " + name)
+            return
+        fields = _map_fields(index, name)
+        for child in element:
+            child_path = path + "/" + child.tag
+            if child.tag not in fields:
+                errors.append(child_path + ": not a public field of " + name)
+                continue
+            item = _map_item_type(fields[child.tag])
+            if child.get("Class"):
+                visit(child, item, child_path)
+            elif child.tag == "properties" and item == "LocalMapModuleProperties":
+                errors.append(child_path + ": requires a Class attribute naming the module properties type")
+            elif item in index:
+                for grandchild in child:
+                    visit(grandchild, item, child_path + "/" + grandchild.tag)
+
+    if node.tag.endswith(".LocalMapRecipeDef"):
+        visit(node, "LocalMapRecipeDef", node.tag)
+    elif node.tag.endswith(".CelestialMapProfileDef"):
+        for child in node:
+            if child.tag != "purposeRecipes":
+                continue
+            for item in child:
+                visit(item, "LocalMapPurposeRecipeXml", node.tag + "/purposeRecipes/" + item.tag)
+    return errors
+
+
+def validate_ship_building_visuals(roots, index):
+    namespace = "PioneerFramework.PFView.ShipBuildingVisuals."
+    profile_type = "ShipBuildingVisualDef"
+    extension_type = namespace + "ShipBuildingVisualExtension"
+    profiles = set()
+    extensions = []
+    errors = []
+
+    def check_fields(node, type_name, where):
+        fields = _map_fields(index, type_name)
+        seen = set()
+        for child in node:
+            if child.tag not in fields:
+                errors.append(f"{where}: unknown {type_name} field {child.tag}")
+            if child.tag in seen:
+                errors.append(f"{where}: duplicate field {child.tag}")
+            seen.add(child.tag)
+
+    def check_list(node, item_type, where):
+        if node is None or len(node) == 0:
+            errors.append(f"{where}: missing {item_type} entries")
+            return []
+        for item in node:
+            if item.tag != "li":
+                errors.append(f"{where}: expected li for {item_type}")
+            check_fields(item, item_type, where)
+        return node
+
+    for where, root in roots:
+        for node in root.iter():
+            if node.tag == namespace + profile_type:
+                name = (node.findtext("defName") or "").strip()
+                if not name or name in profiles:
+                    errors.append(f"{where}: missing or duplicate visual Def name {name!r}")
+                profiles.add(name)
+                check_fields(node, profile_type, where)
+                for item in check_list(node.find("nodes"), "VisualNodeXml", where):
+                    provider = item.findtext("meshProvider", "PFL.Primitives.v1").strip()
+                    mesh = item.findtext("mesh", "box").strip()
+                    if provider == "PFL.Primitives.v1" and mesh.lower() not in ("", "box", "cylinder", "dish"):
+                        errors.append(f"{where}: unknown primitive {mesh!r}")
+                    if provider == "PFL.AssetBundle.v1" and mesh and not re.fullmatch(
+                            r"[^\s:/\\]+\.[^\s:/\\]+::assets/[^:#\\]+(?:#[0-9]+)?", mesh, re.IGNORECASE):
+                        errors.append(f"{where}: malformed AssetBundle mesh reference {mesh!r}")
+            if node.get("Class") == extension_type:
+                extensions.append((where, node))
+    for where, extension in extensions:
+        check_fields(extension, "ShipBuildingVisualExtension", where)
+        mount_ids = set()
+        for mount in check_list(extension.find("mounts"), "BuildingVisualMount", where):
+            name = (mount.findtext("visual") or "").strip()
+            if not name or name not in profiles:
+                errors.append(f"{where}: unknown ship visual {name!r}")
+            mount_id = mount.findtext("id", "main").strip()
+            if not mount_id or mount_id in mount_ids:
+                errors.append(f"{where}: empty or duplicate visual mount ID {mount_id!r}")
+            mount_ids.add(mount_id)
+    return errors
+
+
 def main():
     # 1. XML well-formed + collect defNames (all existing version package folders)
     defs_dirs = [v / "Defs" for v in VERSION_DIRS if (v / "Defs").exists()]
@@ -57,13 +191,22 @@ def main():
                             "ends with a numerical digit, which is not allowed on ThingDefs."
                         )
 
+    patch_roots = []
     for patches_dir in (v / "Patches" for v in VERSION_DIRS):
         if patches_dir.exists():
             for xml_path in sorted(patches_dir.rglob("*.xml")):
                 try:
-                    ET.parse(xml_path)
+                    patch_roots.append((xml_path, ET.parse(xml_path).getroot()))
                 except ET.ParseError as e:
                     fail(f"{xml_path.relative_to(ROOT)}: XML parse error: {e}")
+
+    # Validate PFView fields against their declaring C# classes, including XML patch payloads.
+    visual_index = build_schema_index([ROOT / "Source/PioneerFramework/PFView/ShipBuildingVisuals/Definitions"])
+    visual_errors = validate_ship_building_visuals(
+        [(path.relative_to(ROOT), root) for path, root in xml_roots + patch_roots
+         if path.relative_to(ROOT).parts[0] == "1.7"], visual_index)
+    if visual_errors:
+        fail(visual_errors[0])
 
     # 2. PFDefs fields must exist in Defs
     defof_path = ROOT / "Source" / "PioneerFramework" / "Platform" / "Content" / "PFDefs.cs"
@@ -202,10 +345,7 @@ def main():
     #      · 简单 Def 派生（`SIMPLE_DEF_TYPES` 里逐个登记）：基类 `Def` 的字段见 `DEF_BASE_FIELDS`。
     #    ⚠ 不查 ThingDef 派生（`Combat.WeaponDef` 等）：基类字段是 RimWorld 的、这里枚举不全 ⇒ 会误报。
     #    ⚠ GenStep / WorldGenStep 同样跳过（今天它们没有子元素；要查得先把基类字段登记进来）。
-    DEF_BASE_FIELDS = {
-        "defName", "label", "labelShort", "description",
-        "ignoreConfigErrors", "modExtensions",
-    }
+    # DEF_BASE_FIELDS 见模块级定义（§8.5 的 map 配方校验与之共用，避免两份字典漂移）。
     COMP_PROPS_BASE_FIELDS = {"compClass"}
     # ⚠ 2026-10-15（反射清理 A-5）：本库自己的 `CompProperties` 子类若继承 **vanilla 基类**，
     #   其字段来自 vanilla——本检查只扫 `Source/`（看不到 vanilla）⇒ 按"子类名 → 已知继承字段"登记。
@@ -215,7 +355,7 @@ def main():
         # ⇒ 出处：`RimWorld/CompProperties_Launchable.cs:25/28`（2026-10-15 核对）
         "CompProperties_Launchable_PF": {"activeTransporterDef", "skyfallerLeaving"},
     }
-    SIMPLE_DEF_TYPES = {"CelestialBodyDef", "PropellantDef", "ShotDef", "WeaponDef"}
+    SIMPLE_DEF_TYPES = {"CelestialBodyDef", "PropellantDef", "ShotDef", "WeaponDef", "LocalMapRecipeDef"}
     # ⚠ 2026-10-14：尾部允许**行尾注释**（`public string x = null!;  // null!：…`）。
     #   原式要求 `;\s*$` ⇒ "字段行带行尾注释"这类合法声明会被漏收（N2 可空族批加了注释才暴露）。
     #   判据不放宽：仍是"以 `;` 收尾的字段声明行"，只是允许其后跟注释。
@@ -309,6 +449,17 @@ def main():
                         f"of {type_name} (RimWorld would ignore it and the value would silently stay "
                         "at its default)"
                     )
+
+    # 8.5 Map generation recipe / module-property / purposeRecipes 元素名（P2-5，2026-11-06）。
+    #     与 §8 同样的"零误报优先"：字段集来自 `Source/PioneerFramework/MapGeneration` 的精确 class block，
+    #     只对能解析到本库类型的节点递归（Def 引用/枚举/值类型不递归）。
+    map_index = build_schema_index([ROOT / MAP_GENERATION_SOURCE_DIR])
+    for xml_path, root in xml_roots:
+        rel = xml_path.relative_to(ROOT)
+        for node in root.iter():
+            map_errors = validate_map_generation_node(node, map_index)
+            if map_errors:
+                fail(f"{rel}: {map_errors[0]}")
 
     print(
         f"OK: {len(def_names)} defs, {len(fields)} DefOf fields, "

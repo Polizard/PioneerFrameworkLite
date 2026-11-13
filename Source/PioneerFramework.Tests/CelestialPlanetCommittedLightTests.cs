@@ -47,6 +47,44 @@ public class CelestialPlanetCommittedLightTests
         Assert.Equal(-100, morning.TemperatureCelsius!.Value, 10);
         Assert.Equal(-100 + 100 * Math.Sqrt(.5), afternoon.TemperatureCelsius!.Value, 10);
     }
+    [Fact]
+    public void AuthoredDiurnalTemperaturePeaksWhereThePhysicalSunIsHighest()
+    {
+        // 2026-11-07 P1-1：有物理绑定时 Authored 日相位必须跟物理太阳，而不是日历 tick。
+        var sun = CelestialInstanceId.Parse("authored:sun"); var planet = CelestialInstanceId.Parse("authored:planet");
+        CelestialSpawnItem Item(bool star)
+        {
+            var id = star ? sun : planet;
+            var definition = new CelestialBodyDef { defName = star ? "AuthoredStar" : "AuthoredPlanet", comps = new() {
+                new CompProperties_SphericalBody { key = "shape", radiusMeters = new() { value = 30 } },
+                new CompProperties_ExternalPhysicsBinding { key = "motion", providerId = ExistingCelestialEphemerisBridge.Id,
+                    motion = new() { orbitRadiusMeters = star ? 0 : 100, orbitPeriodSeconds = star ? 0 : 400,
+                        rotation = new() { periodSeconds = 40 } } } } };
+            if (star) definition.comps.Add(new CompProperties_LightSource { key = "light" });
+            else definition.comps.Add(new CompProperties_ExistingEnvironment { key = "env", profile = new() { defName = "authored", primaryLightReference = "sun",
+                climate = new() { mode = CelestialClimateMode.Authored, meanTemperatureCelsius = 0, diurnalAmplitudeCelsius = 100,
+                    thermalResponseSeconds = 0, latitudeCurve = new() { new() { latitudeDegrees = 0 }, new() { latitudeDegrees = 90 } } } } });
+            var template = definition.ToTemplate().Value;
+            return new(id, id.Value, 0, id.Value, template, template.Resolve(new(42, id.Value)).Value,
+                parentId: star ? null : sun, initializationReferences: star ? null : new Dictionary<string, CelestialInstanceId> { ["sun"] = sun });
+        }
+        var provider = new ExistingCelestialEphemerisBridge(Guid.NewGuid());
+        var runtime = new CelestialRuntime(provider, provider.CommittedStamp, new Resources(), 42, _ => throw new InvalidOperationException());
+        runtime.CreateBatch(new(new("authored", runtime.WorldSessionId, 0), new("authored", 42, null, new[] { Item(true), Item(false) })));
+        Assert.True(runtime.Advance(new(runtime.WorldSessionId, 0, 0, 0)).Success);
+        var capability = Assert.Single(runtime.GetCapabilities<ICelestialSurfaceEnvironmentCapability>(planet));
+        // 赤道一圈经度：热响应为 0 时，Authored 温度的最大值必须与物理太阳最高的经度重合。
+        var samples = Enumerable.Range(0, 180).Select(index => capability.SampleSurface(new(0, -180 + index * 2, 0))).ToArray();
+        int hottest = 0, highest = 0;
+        for (int index = 1; index < samples.Length; index++)
+        {
+            if (samples[index].TemperatureCelsius > samples[hottest].TemperatureCelsius) hottest = index;
+            if (samples[index].SunUp > samples[highest].SunUp) highest = index;
+        }
+        Assert.Equal(highest, hottest);
+        Assert.True(samples.Max(sample => sample.TemperatureCelsius!.Value) > 99);
+        Assert.True(samples.Min(sample => sample.TemperatureCelsius!.Value) < -99);
+    }
     [Theory]
     [InlineData(1, .5, CelestialClimateMode.CommittedIllumination)]
     [InlineData(4, 2, CelestialClimateMode.CommittedIllumination)]

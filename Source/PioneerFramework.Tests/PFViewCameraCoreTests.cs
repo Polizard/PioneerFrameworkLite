@@ -14,6 +14,42 @@ namespace PioneerFramework.Tests
         const float EarthRadiusView = 500_000f; // 地球 R=5000 km（= 5e6 m）× 0.1
 
         [Fact]
+        public void BodyPickingUsesFrontSurfaceDepthInsteadOfCenterDepth()
+        {
+            var spheres = new[]
+            {
+                (1, new Vector3(0f, 0f, 10f), 1f),
+                (2, new Vector3(0f, 0f, 12f), 5f),
+            };
+
+            Assert.Equal(2, PFViewCameraCore.PickCelestialBody(Vector3.zero, Vector3.forward, 1f, 100f, spheres));
+        }
+
+        [Theory]
+        [InlineData(0f, 0f, -10f, 1f, -1)] // 相机后方
+        [InlineData(0f, 0f, 1.5f, 1f, -1)] // 前表面被近裁面切掉
+        [InlineData(0f, 0f, 102f, 1f, -1)] // 超出远裁面
+        [InlineData(3f, 0f, 10f, 2f, -1)] // 点击空白
+        [InlineData(1.5f, 0f, 10f, 2f, 7)] // 点击圆盘边缘以内
+        public void BodyPickingRequiresAVisibleSphereHit(float x, float y, float z, float radius, int expected)
+        {
+            var spheres = new[] { (7, new Vector3(x, y, z), radius) };
+            Assert.Equal(expected, PFViewCameraCore.PickCelestialBody(Vector3.zero, Vector3.forward, 1f, 100f, spheres));
+        }
+
+        [Fact]
+        public void BodyPickingKeepsSmallDistantSpheresDistinctAtAnOffAxisClick()
+        {
+            var spheres = new[]
+            {
+                (1, new Vector3(20_000_000f, 10_000_004f, 40_000_000f), 1f),
+                (2, new Vector3(20_000_000f, 10_000_000f, 40_000_000f), 1f),
+            };
+
+            Assert.Equal(2, PFViewCameraCore.PickCelestialBody(Vector3.zero, new Vector3(.5f, .25f, 1f), 1f, 1e8f, spheres));
+        }
+
+        [Fact]
         public void GroupDistance_StaysInsideUserLimits()
         {
             // 2026-10-10 用户口径：300 m ~ 3 km（只许加强，不许软化）

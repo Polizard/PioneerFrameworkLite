@@ -170,10 +170,19 @@ namespace PioneerFramework.Celestial
 
         public CelestialResult<bool> RestoreHeader(CelestialSurfaceHeader header)
         {
+            // 恢复必须使用存档里的算法版本做核对，不能按当前常量假重建：原生 header 由 Scribe 载入保存值，
+            // 这里再与框架存档的 surface 记录交叉校验，版本不同即拒绝（不静默按新公式重算旧 tile）。
+            if (runtime.RestoreDocument is { } retained)
+            {
+                var saved = retained.Surfaces.SingleOrDefault(candidate => candidate.OwnerId == header.OwnerId);
+                if (saved == null || saved.LayerId != header.LayerId || saved.TerrainAlgorithmVersion != header.TerrainAlgorithmVersion)
+                    return Reject<bool>("SurfaceIdentityMismatch", header.OwnerId);
+            }
             if (!grid.PlanetLayers.TryGetValue(header.LayerId, out var layer) || layer is not CelestialSurfaceLayer surface ||
                 surface.Header.OwnerId != header.OwnerId || surface.Header.PhysicalRadiusMeters != header.PhysicalRadiusMeters ||
                 surface.Header.NativeRadius != header.NativeRadius || surface.Header.Subdivisions != header.Subdivisions ||
                 surface.Header.GenerationSeed != header.GenerationSeed || surface.Header.State != header.State ||
+                surface.Header.TerrainAlgorithmVersion != header.TerrainAlgorithmVersion ||
                 !surface.Header.GenerationConfiguration.Span.SequenceEqual(header.GenerationConfiguration.Span))
                 return Reject<bool>("SurfaceIdentityMismatch", header.OwnerId);
             if (associations.TryGetValue(header.OwnerId, out int existing) && existing != header.LayerId) return Reject<bool>("SurfaceIdentityMismatch", header.OwnerId);

@@ -7,10 +7,19 @@ namespace PioneerFramework
     /// headless 测试里需要 GPU/Vulkan 依赖）⇒ 测试/工具**只读开关**时不该触发那个 cctor。
     /// 探针状态放这里后，headless 单测可直接读写默认值/Reset，不碰窗口资源。
     ///
-    /// 所有默认值 = 现状（surface/halo 开、步数 0=64、RT 1.0、探针不记录）。
+    /// 默认绘制光球和日冕，采样预算 64 步，PFView RT 缩放 1.0（原分辨率；0.75/0.5 仅调试降采样）。
     /// </summary>
     internal static class PFViewStellarProbe
     {
+        internal const float DefaultRenderScale = 1f;
+        internal const bool DefaultHeatCacheEnabled = true;
+
+        /// <summary>
+        /// S3-a 区域跳过积分（2026-11-07）：默认使用 legacy 观感的加速版 shader。
+        /// 关闭时回退到 `PF_StellarVolume.frag.glsl`（逐字旧路径），供游戏内 A/B。
+        /// </summary>
+        internal const bool DefaultS3AEnabled = true;
+
         /// <summary>是否绘制恒星 surface pass（不透明光球/日冕体积）。默认开 = 现状。</summary>
         internal static bool SurfacePass = true;
 
@@ -20,19 +29,23 @@ namespace PioneerFramework
         /// <summary>步数预算覆盖；0 = 用 `PFViewStellarVisualCore.SurfaceSteps`（=64，现状）。</summary>
         internal static int StepBudget;
 
-        /// <summary>渲染纹理缩放；1.0 = 现状。0.5 时像素数约 1/4（判填充率用）。</summary>
-        internal static float RenderScale = 1f;
+        /// <summary>PFView 渲染纹理缩放。1.0 = 原分辨率（默认）；0.75/0.5 仅调试窗降采样 A/B（整窗会变软）。</summary>
+        internal static float RenderScale = DefaultRenderScale;
+
+        /// <summary>是否使用 S3-a 区域跳过积分 shader（默认 true；关闭 = 逐字 legacy shader）。</summary>
+        internal static bool S3AEnabled = DefaultS3AEnabled;
 
         /// <summary>探针是否在记录（由 PFView 调试窗 PostOpen/PreClose 置位）。</summary>
         internal static bool Active;
 
-        /// <summary>恢复全部默认（= 现状）；测量结束必须调用。</summary>
+        /// <summary>恢复默认绘制、步数、缩放和 S3-a 开关。</summary>
         internal static void ResetDefaults()
         {
             SurfacePass = true;
             HaloPass = true;
             StepBudget = 0;
-            RenderScale = 1f;
+            RenderScale = DefaultRenderScale;
+            S3AEnabled = DefaultS3AEnabled;
         }
 
         /// <summary>玩家是否启用了 P2 新版渲染（默认 false = 旧视觉/legacy shader）。</summary>

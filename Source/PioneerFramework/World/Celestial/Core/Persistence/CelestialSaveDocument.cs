@@ -20,7 +20,8 @@ namespace PioneerFramework.Celestial
     public sealed record CelestialSavedCreation(string OperationId, string SystemDefinitionId, ulong WorldSeed, CelestialInstanceId? RootSurfaceId,
         IReadOnlyList<CelestialInstanceId> InstanceIds, bool HasPhysics, string? CompensationId, IReadOnlyList<CelestialError> Failure);
     public sealed record CelestialSavedSurface(CelestialInstanceId OwnerId, int LayerId, double PhysicalRadiusMeters, float NativeRadius,
-        int Subdivisions, int GenerationSeed, ReadOnlyMemory<byte> GenerationConfiguration, CelestialSurfaceState State);
+        int Subdivisions, int GenerationSeed, ReadOnlyMemory<byte> GenerationConfiguration, CelestialSurfaceState State,
+        int TerrainAlgorithmVersion);
 
     /// <summary>共同发布边界上的独立快照。配置、状态、清单与物理成员关系均显式保存。</summary>
     public sealed record CelestialSaveDocument

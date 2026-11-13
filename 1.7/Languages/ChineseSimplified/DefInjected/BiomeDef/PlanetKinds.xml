@@ -12,4 +12,19 @@
   <PF_GreenhousePlain.label>灼热平原</PF_GreenhousePlain.label>
   <PF_GreenhousePlain.description>浓厚大气下的灼热、干燥地表，缺乏自然生态。高压与气体毒性需要额外环境能力。</PF_GreenhousePlain.description>
   <PF_GreenhousePlain.settleWarning>地表温度极高。普通殖民者和设备无法安全暴露在户外。</PF_GreenhousePlain.settleWarning>
+  <PF_MoonBiomeWater.label>水冰带</PF_MoonBiomeWater.label>
+  <PF_MoonBiomeWater.description>极区洼地与永久阴影区，水冰在低温下长期保存。昼间升温有限，夜间骤降至约 -170°C。</PF_MoonBiomeWater.description>
+  <PF_MoonBiomeWater.settleWarning>月球没有可呼吸大气，也没有磁场屏蔽。殖民者暴露在户外会遭遇真空、极端昼夜温差。
+
+你确定你的飞船、舱外服与供暖/散热系统足够可靠吗？</PF_MoonBiomeWater.settleWarning>
+  <PF_MoonBiomeBasalt.label>玄武岩平原</PF_MoonBiomeBasalt.label>
+  <PF_MoonBiomeBasalt.description>古老熔岩流冷却形成的玄武岩台地，起伏多碎石。无大气保温，日照处可升至约 +120°C，阴影处迅速跌至 -170°C。</PF_MoonBiomeBasalt.description>
+  <PF_MoonBiomeBasalt.settleWarning>月球没有可呼吸大气，也没有磁场屏蔽。殖民者暴露在户外会遭遇真空、极端昼夜温差。
+
+你确定你的飞船、舱外服与供暖/散热系统足够可靠吗？</PF_MoonBiomeBasalt.settleWarning>
+  <PF_MoonBiomeRegolith.label>月壤带</PF_MoonBiomeRegolith.label>
+  <PF_MoonBiomeRegolith.description>覆盖细碎月壤的开阔平原，松软且无植被。真空与极端昼夜温差使户外活动必须依赖舱外服或密封舱段。</PF_MoonBiomeRegolith.description>
+  <PF_MoonBiomeRegolith.settleWarning>月球没有可呼吸大气，也没有磁场屏蔽。殖民者暴露在户外会遭遇真空、极端昼夜温差。
+
+你确定你的飞船、舱外服与供暖/散热系统足够可靠吗？</PF_MoonBiomeRegolith.settleWarning>
 </LanguageData>

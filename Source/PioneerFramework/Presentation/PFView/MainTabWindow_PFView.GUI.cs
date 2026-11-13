@@ -24,12 +24,18 @@ namespace PioneerFramework
             // 点在 UI 或上层窗口上时不点选（画 UI 在前、控件已消费自己身上的左键；本判据是第二道保险）
             if (e.type == EventType.MouseDown && e.button == 0 && !isDraggingRight && MouseInViewport(inRect))
                 HandleViewportClick(e, inRect);
+            // F2 = 焦点天体信息面板开关（工具条太挤；双击天体也能打开）。
+            if (e.type == EventType.KeyDown && e.keyCode == KeyCode.F2)
+            {
+                TogglePlanetInfoForFocusedBody();
+                e.Use();
+            }
         }
 
         /// <summary>
         /// 3D 视口左键（2026-10-18 视图系统 v2）：
         /// · 单击 = 只改选中（不动相机）；
-        /// · 双击 = 选中 + 聚焦（唯一会动相机的鼠标单击动作）；
+        /// · 双击编队 = 选中 + 聚焦；天体视角下双击其他天体的球面 = 切换焦点；
         /// · Shift+左键 = 设为目标（不改选中、不动相机）；
         /// · 空白 = 取消选中（相机也**不动**）。
         /// </summary>
@@ -46,10 +52,40 @@ namespace PioneerFramework
 
             if (TrySelectMegastructure(mouseInView, inRect.size, float.MaxValue)) return;
 
+            // Ctrl+左键 = 检视行星地表格（A 方案：逐格拾取 + 高亮 + 检视面板）。
+            if (e.control && TryInspectPlanetTile(mouseInView, inRect.size)) { e.Use(); return; }
+
+            if (!e.shift && e.clickCount >= 2 && !dragState.IsActive && focusKind == PFViewFocusKind.Body)
+            {
+                int bodyId = PickViewportBody(mouseInView, inRect.size);
+                if (bodyId >= 0 && bodyId != focusBodyId)
+                {
+                    FocusBody(bodyId);
+                    OpenPlanetInfo(bodyId);   // 双击天体 = 聚焦 + 看信息（A 方案行星信息面板的自然入口）
+                    objectsDirty = true;
+                    e.Use();
+                    return;
+                }
+            }
+
             if (!e.shift)
             {
                 ClearInspection();
             }
+        }
+
+        private int PickViewportBody(Vector2 mouseInView, Vector2 viewSize)
+        {
+            if (renderCamera == null || presentedBodySpheres.Count == 0) return -1;
+
+            // RT 拉伸到整个视口。保留相机空间 Z = 1，让求交深度直接对应相机裁剪面。
+            float tanHalfFov = Mathf.Tan(renderCamera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            float x = (2f * mouseInView.x / viewSize.x - 1f) * tanHalfFov * renderCamera.aspect;
+            float y = (1f - 2f * mouseInView.y / viewSize.y) * tanHalfFov;
+            var cameraTransform = renderCamera.transform;
+            Vector3 direction = cameraTransform.rotation * new Vector3(x, y, 1f);
+            return PFViewCameraCore.PickCelestialBody(cameraTransform.position, direction,
+                renderCamera.nearClipPlane, renderCamera.farClipPlane, presentedBodySpheres);
         }
 
         /// <summary>屏幕拾取最近的可见编队。与渲染**同钟**（U19：连续渲染时钟，不是阶梯 physicsTick）。</summary>
@@ -99,21 +135,31 @@ namespace PioneerFramework
         {
             uiBlockRects.Clear();   // 每帧重新登记（画在输入处理之前，故同帧内几何一致）
 
-            ComputeLayout(inRect);   // V-1：五分区（工具条 / 左栏 / 雷达 / 姿态球 / 状态行）
+            RefreshObjectRows();
+            var cockpit = ResolveCockpitGroup();
+            RefreshCockpitAlerts(cockpit);
+            ComputeLayout(inRect);
 
             // 边缘天体指示 + 世界标记先画（面板后画 ⇒ 自然遮挡）
             DrawBodyDirectionIndicators(inRect);
             DrawWorldMarkers(inRect);
 
             DrawToolbar();
+            DrawCockpitDrawer(FromUiRect(uiLayout.Drawer, inRect));
             DrawObjectList(rLeftCol);
+            DrawObjectActions(FromUiRect(uiLayout.ObjectActions, inRect));
             DrawInspector(rInspector);
-            // 仪表基准 = 当前选中的编队（2026-10-18 用户裁定③；操作编队只决定命令来源）
-            if (rRadar.width > 0) DrawRadarPanel(ResolveInstrumentGroupId());
+            DrawShipStatus(FromUiRect(uiLayout.ShipStatus, inRect), cockpit);
+            DrawCockpitWeapons(FromUiRect(uiLayout.Weapons, inRect), cockpit);
+            if (rRadar.width > 0) DrawRadarPanel(ResolveInstrumentGroup());
             if (rNavball.width > 0) DrawNavballPanel(ResolveNavballGroupId());
             DrawSteeringStrip();
             DrawPilotPanel();
+            DrawFlightControls(FromUiRect(uiLayout.FlightControls, inRect), cockpit);
+            DrawCockpitAlert(FromUiRect(uiLayout.Alert, inRect), cockpit);
             DrawStatusLine();
+            DrawPlanetInfoPanel(inRect);
+            DrawSurfaceInspectPanel(inRect);
 
             // 视图内 toast 最后画（必须在所有面板之上）
             DrawToasts(inRect);
@@ -181,37 +227,6 @@ namespace PioneerFramework
             }
         }
 
-        private void ShowGroupMenu()
-        {
-            var mgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            if (mgr == null) return;
-
-            var sysIds = GetCurrentSystemBodyIds(mgr); // 第 12 条：记忆化复用（此前每帧新建 HashSet + 填卫星）
-            var sensor = Current.Game?.GetComponent<SensorManager>();   // [V3] 列表准入（本方法低频，直接取组件）
-
-            var opts = new List<FloatMenuOption>();
-            groupSnapshotBuf.Clear();
-            PhysicsApi.CopySpacecrafts(groupSnapshotBuf);
-            for (int i = 0; i < groupSnapshotBuf.Count; i++)
-            {
-                var g = groupSnapshotBuf[i];
-                if (!g.IsActive || !sysIds.Contains(g.CelestialBodyId)) continue;
-                int groupId = g.GroupId;
-                if (!CanInspectGroup(groupId)) continue;
-                if (sensor != null && !sensor.PlayerCanSee(groupId)) continue;   // [V3]/S4c：列表只列看得见的
-                string label = $"编队 {groupId}（{g.EntityCount} 个实体）";
-                opts.Add(new FloatMenuOption(label, () =>
-                {
-                    SelectGroupForInspection(groupId);
-                }));
-            }
-
-            if (opts.Count == 0)
-                opts.Add(new FloatMenuOption("（本星系无编队）", null));
-
-            Find.WindowStack.Add(new FloatMenu(opts));
-        }
-
         private void ShowSystemMenu()
         {
             var opts = new List<FloatMenuOption>();
@@ -227,22 +242,14 @@ namespace PioneerFramework
             Find.WindowStack.Add(new FloatMenu(opts));
         }
 
-        /// <summary>选中组读数面板（V-1：搬进左栏底部；宽度取左栏宽，高度按内容累加）。</summary>
         private void ShowContextMenu(Vector2 mouseInRect, Rect inRect)
         {
             Vector2 mouseInView = mouseInRect - inRect.position;
             TryPickGroup(mouseInView, inRect.size, out int hit);
             var opts = new List<FloatMenuOption>();
             if (hit >= 0)
-            {
-                opts.Add(new FloatMenuOption($"选中 G{hit}", () => SelectGroupForInspection(hit)));
-                opts.Add(new FloatMenuOption($"聚焦 G{hit}", () => { SelectGroupForInspection(hit); FocusGroup(hit); }));
-                if (RefreshNavigableGroupMaps(hit))
-                    opts.Add(new FloatMenuOption("PFV_EnterMap".Translate(), () => ShowGroupMapMenu(hit)));
-                opts.Add(new FloatMenuOption($"设为目标 G{hit}", () => SetTargetGroup(hit)));
-            }
-            opts.Add(new FloatMenuOption("取消选中", ClearInspection));
-            opts.Add(new FloatMenuOption("行星视角", FocusCurrentBody));
+                opts.Add(new FloatMenuOption("PFV_InspectGroup".Translate("G" + hit), () => SelectGroupForInspection(hit)));
+            opts.Add(new FloatMenuOption("PFV_ClearInspection".Translate(), ClearInspection));
             Find.WindowStack.Add(new FloatMenu(opts));
         }
 
@@ -299,6 +306,7 @@ namespace PioneerFramework
 
             if (SteeringController.IsOpen) Window_Steering.StopControl();
             SteeringController.Open(groupId, true);
+            SynchronizeCockpitSource();
         }
 
         private static Window_Steering? FindSteeringWindow()
