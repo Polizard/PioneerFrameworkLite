@@ -108,6 +108,74 @@ public class CelestialSaveFormatTests
     }
 
     [Fact]
+    public void V4CheckpointWritesRoundTripDecimalsInBothFrameworkAndProviderJson()
+    {
+        using var native = new CelestialMapIdentityTests.Fixture();
+        var runtime = CelestialBenchFactory.Create(1);
+        CelestialBenchFactory.Advance(runtime, 0.1);
+        var capture = new CelestialSaveAdapter(runtime).CaptureCheckpoint().Value;
+        var payload = CelestialSaveCodec.Encode(capture).Value;
+        var chunk = Assert.Single(JsonNode.Parse(payload.Span)!["chunks"]!.AsArray());
+        using var input = new MemoryStream(Convert.FromBase64String(chunk!["data"]!.GetValue<string>()));
+        using var brotli = new BrotliStream(input, CompressionMode.Decompress);
+        using var reader = new StreamReader(brotli);
+        Assert.Contains("\"physicalSeconds\":0.10000000000000001", reader.ReadToEnd());
+        Assert.Contains("\"seconds\":0.10000000000000001", Encoding.UTF8.GetString(capture.PhysicsCheckpoint!.Payload.Span));
+        Assert.Equal(0.1, CelestialSaveCodec.Decode(payload).Value.Stamp.PhysicalSeconds);
+    }
+
+    [Theory]
+    [InlineData(168644.355597984, false, true)]
+    [InlineData(168644.355597985, false, false)]
+    [InlineData(168644.355597984, true, false)]
+    public void V4RestoreRecoversOnlyTheKnownLegacyRadiusFromFrozenConfiguration(double savedRadius, bool changeOperationMetadata, bool shouldRestore)
+    {
+        const double exactRadius = 168644.35559798361;
+        using var native = new CelestialMapIdentityTests.Fixture();
+        var runtime = CelestialBenchFactory.Create(1, transform: _ => CelestialBenchFactory.Template(exactRadius, false));
+        var capture = new CelestialSaveAdapter(runtime).CaptureCheckpoint().Value;
+        var body = Assert.Single(capture.Bodies);
+        var description = body.Description;
+        var registration = body.Assembly!.Registration!;
+        var checkpoint = capture.PhysicsCheckpoint!;
+        var providerJson = JsonNode.Parse(checkpoint.Payload.Span)!;
+        var operation = Assert.Single(providerJson["operations"]!.AsArray());
+        var change = Assert.Single(operation!["changes"]!.AsArray());
+        change!["registration"]!["radius"] = savedRadius;
+        if (changeOperationMetadata) change["registration"]!["definitionId"] = "PF_Tampered";
+        var legacy = capture with
+        {
+            Bodies = new[] { body with {
+                Description = new(description.Id, description.DefinitionId, description.Handle, description.DescriptorRevision,
+                    description.Category, savedRadius, description.GravitationalParameter, description.Tags),
+                Assembly = body.Assembly with { Registration = new(registration.DefinitionId,
+                    new(registration.InstanceId, description.DescriptorRevision, savedRadius, description.GravitationalParameter),
+                    registration.Initialization, registration.ParentInstanceId, registration.InitializationReferences, registration.CompatibilityHandle) }
+            } },
+            PhysicsCheckpoint = new(checkpoint.ProviderId, checkpoint.ContractVersion, checkpoint.PayloadVersion,
+                checkpoint.CheckpointId, checkpoint.Stamp, Encoding.UTF8.GetBytes(providerJson.ToJsonString()))
+        };
+        var provider = new ExistingCelestialEphemerisBridge(Guid.NewGuid());
+        var restore = new CelestialRestoreCoordinator(provider.SessionId, provider, CelestialBuiltinCompRegistry.Create(), _ => throw new Exception("No XML"));
+        Assert.True(restore.RestoreIdentities(legacy).Success);
+        Assert.True(restore.BindNativeObjects().Success);
+        var restored = restore.CompleteRestore();
+        Assert.Equal(shouldRestore, restored.Success);
+        if (shouldRestore)
+        {
+            var snapshot = restore.Runtime.Query(description.Id).Value;
+            Assert.Equal(CelestialLifecycle.Ready, snapshot.Lifecycle);
+            Assert.Equal(exactRadius, snapshot.Description.RadiusMeters);
+        }
+        else
+        {
+            var error = Assert.Single(restored.Errors);
+            Assert.Equal("RestoreMismatch", error.Code);
+            if (changeOperationMetadata) Assert.Equal("Invalid operation content hash.", error.Detail);
+        }
+    }
+
+    [Fact]
     public void V3ProgrammaticPendingRoundTripPreservesUncommittedMembershipWithoutDecodingFrozenPayloads()
     {
         using var native = new CelestialMapIdentityTests.Fixture();
@@ -342,6 +410,34 @@ public class CelestialSaveFormatTests
         Assert.Equal(saved.TerrainAlgorithmVersion, Assert.Single(restore.Runtime.Surfaces.CaptureHeaders()).TerrainAlgorithmVersion);
     }
 
+    [Theory]
+    [InlineData(3.372887f, true)]
+    [InlineData(3.372886f, false)]
+    public void V4BindsNativeSurfaceWithOnlyTheKnownWaylithRadiusRounding(float savedRadius, bool shouldBind)
+    {
+        const float exactRadius = 3.37288713f;
+        using var native = new CelestialMapIdentityTests.Fixture(template =>
+            CelestialBodyTemplate.Create(template.DefinitionId, template.Label, template.Category, template.Tags,
+                template.Components.Select(component => component.Descriptor.Key != "surface" ? component :
+                    new CelestialCompDefinition(component.Descriptor, component.Factory, _ =>
+                        CelestialResult.Ok<ICelestialResolvedProperties>(new SurfaceResolvedProperties("surface",
+                            CelestialSurfaceGenerationMode.OnDemand, 1, 1500000d / exactRadius)),
+                        component.ConfigurationVersion))).Value);
+        var capture = new CelestialSaveAdapter(native.Scope.Runtime).CaptureCheckpoint().Value;
+        var surface = Assert.Single(capture.Surfaces);
+        Assert.Equal(exactRadius, surface.NativeRadius);
+        var document = capture with { Surfaces = new[] { surface with { NativeRadius = savedRadius } } };
+        var provider = new DeterministicTestPhysicsBridge(Guid.NewGuid());
+        var restore = new CelestialRestoreCoordinator(provider.SessionId, provider, CelestialBuiltinCompRegistry.Create(), _ => throw new Exception("No XML"));
+        Assert.True(restore.RestoreIdentities(document).Success);
+        var bound = restore.BindNativeObjects();
+        Assert.Equal(shouldBind, bound.Success);
+        if (shouldBind)
+            Assert.Equal(exactRadius, Assert.Single(restore.Runtime.Surfaces.CaptureHeaders()).NativeRadius);
+        else
+            Assert.Equal("SurfaceIdentityMismatch", Assert.Single(bound.Errors).Code);
+    }
+
     [Fact]
     public void SurfaceHeaderRejectsForeignTerrainAlgorithmVersion()
     {
@@ -358,7 +454,8 @@ public class CelestialSaveFormatTests
     {
         using var native = new CelestialMapIdentityTests.Fixture();
         var original = native.Root.Header;
-        var current = new CelestialSurfaceHeader(original.OwnerId, original.LayerId, original.PhysicalRadiusMeters, original.NativeRadius,
+        const double radius = 0.1;
+        var current = new CelestialSurfaceHeader(original.OwnerId, original.LayerId, radius, original.NativeRadius,
             original.Subdivisions, original.GenerationSeed, original.GenerationConfiguration);
         string path = Path.Combine(Path.GetTempPath(), "PFL-surface-header-" + Guid.NewGuid().ToString("N") + ".xml");
         try
@@ -367,7 +464,9 @@ public class CelestialSaveFormatTests
             Scribe_Deep.Look(ref current, "header");
             Scribe.saver.FinalizeSaving();
             // 模拟引入字段之前写出的 v4 档：缺失 terrainAlgorithmVersion 时按字段引入前的版本读取，仍然可读。
-            var legacy = Regex.Replace(File.ReadAllText(path), @"\s*<terrainAlgorithmVersion>[^<]*</terrainAlgorithmVersion>", "");
+            string exact = File.ReadAllText(path);
+            Assert.Contains("<physicalRadiusMeters>0.10000000000000001</physicalRadiusMeters>", exact);
+            var legacy = Regex.Replace(exact, @"\s*<terrainAlgorithmVersion>[^<]*</terrainAlgorithmVersion>", "");
             Assert.DoesNotContain("terrainAlgorithmVersion", legacy);
             File.WriteAllText(path, legacy);
             CelestialSurfaceHeader restored = null;
@@ -375,6 +474,7 @@ public class CelestialSaveFormatTests
             Scribe_Deep.Look(ref restored, "header");
             Scribe.loader.FinalizeLoading();
             Assert.NotNull(restored);
+            Assert.Equal(radius, restored.PhysicalRadiusMeters);
             Assert.Equal(CelestialPlanetTerrain.LegacyVersionWithoutHeaderField, restored.TerrainAlgorithmVersion);
             Assert.Equal(CelestialPlanetTerrain.AlgorithmVersion, restored.TerrainAlgorithmVersion);
         }

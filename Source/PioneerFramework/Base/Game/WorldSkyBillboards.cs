@@ -358,6 +358,7 @@ namespace PioneerFramework
     public class PF_GlobalDrawLayer_Sun : GlobalDrawLayer_Sun
     {
         public override bool Visible =>
+            !(WorldCelestialHost.Active && WorldCelestialHost.Navigation!.ShowsStar) &&
             VanillaSkySuppression.VanillaLayersVisible(VanillaSkySuppression.ReplaceEnabled) && base.Visible;
     }
 
@@ -387,7 +388,8 @@ namespace PioneerFramework
 
         public override void Render()
         {
-            WorldSunBillboard.Draw();
+            if (!(WorldCelestialHost.Active && WorldCelestialHost.Navigation!.ShowsStar))
+                WorldSunBillboard.Draw();
             WorldStarfield.Draw();
         }
     }

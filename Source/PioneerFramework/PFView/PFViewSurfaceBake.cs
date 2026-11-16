@@ -376,7 +376,8 @@ namespace PioneerFramework
         /// 球冠：**中心方向 + 半角**，从格心方向反推（不读 `PlanetCoverage` 那类配置 ⇒ 对每颗天体的层都成立，
         /// 月球那种"另一套 subdivisions/半径"的层一样适用）。
         /// 中心 = 全部格心方向的平均（等角 Voronoi 下 ≈ 球冠轴）；半角 = 最远格心与中心的夹角。
-        /// 退化（没有格 / 方向恰好对消）⇒ false，调用方据此报"烤不了"。
+        /// 整球网格没有唯一中心，选首个格心的反方向作为稳定的投影轴。
+        /// 缺少有效格心或不足以覆盖球面的对消输入仍返回 false。
         /// </summary>
         internal static bool ComputeCap(IList<Vector3> centers, out Vector3 center, out float halfAngleDeg)
         {
@@ -384,15 +385,24 @@ namespace PioneerFramework
             halfAngleDeg = 0f;
 
             Vector3 sum = Vector3.zero;
+            Vector3 first = Vector3.zero;
             int n = 0;
             for (int i = 0; i < centers.Count; i++)
             {
                 Vector3 c = centers[i];
                 if (c.sqrMagnitude < 1e-6f) continue;
-                sum += c.normalized;
+                Vector3 direction = c.normalized;
+                if (n == 0) first = direction;
+                sum += direction;
                 n++;
             }
-            if (n == 0 || sum.sqrMagnitude < 1e-6f) return false;
+            if (sum.sqrMagnitude < 1e-6f)
+            {
+                if (n < 4) return false;
+                center = -first;
+                halfAngleDeg = MaxHalfAngleDeg;
+                return true;
+            }
             center = sum.normalized;
 
             float maxDeg = 0f;
@@ -1147,6 +1157,8 @@ namespace PioneerFramework
             {
                 Vector3 center = centers[t];
                 if (center.sqrMagnitude < 1e-6f) continue;
+                // 对跖点映射到整圈盘缘。这里用基底色，避免这个格的多边形横跨圆盘。
+                if (thetaMaxRad >= Mathf.PI && (center.normalized + capCenter).sqrMagnitude < 1e-8f) continue;
                 int start = offsets[t];
                 int end = t + 1 < offsets.Length ? offsets[t + 1] : verts.Length;
                 int polyVerts = end - start;

@@ -9,6 +9,7 @@ namespace PioneerFramework.Celestial
     {
         public string rootSurfaceEntry = "";
         public int maxInstances = 10000;
+        public CelestialPopulationPolicyDef? populationPolicy;
         public List<CelestialSystemEntryXml> entries = new();
 
         public CelestialResult<CelestialSystemTemplate> ToTemplate()

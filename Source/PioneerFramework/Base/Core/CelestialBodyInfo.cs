@@ -31,6 +31,8 @@ namespace PioneerFramework
         public double dayLengthTicks { get; init; } = 60000;
         public string? planetLayerDefName { get; init; }
         public double orbitRadius { get; init; }
+        public double orbitEccentricity { get; init; }
+        public double OrbitPeriapsis => orbitRadius * (1 - orbitEccentricity);
         public double orbitPeriod { get; init; }
         public Vector3 orbitNormal { get; init; }
         public double initialPhase { get; init; }

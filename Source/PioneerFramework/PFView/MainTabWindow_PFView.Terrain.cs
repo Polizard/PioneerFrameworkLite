@@ -157,7 +157,7 @@ namespace PioneerFramework
         /// 半径外扩 ε = `PatchEpsilon`（**必须大于网格弦高**，否则环心会缩到基底球里面去）。
         /// 三角形**双面都发**：绕序不赌（同色 + 不混合 ⇒ 无副作用），这是"标准材质剔背面"那条老坑的正面用法。
         /// </summary>
-        private static Mesh BuildSurfacePatchMesh(Vector3 center, float thetaMaxRad)
+        internal static Mesh BuildSurfacePatchMesh(Vector3 center, float thetaMaxRad)
         {
             PFViewSurfaceBake.TileTangentFrame(center, out Vector3 t1, out Vector3 t2);
             float eps = 1f + PFViewSurfaceBake.PatchEpsilon(thetaMaxRad, PatchRings);

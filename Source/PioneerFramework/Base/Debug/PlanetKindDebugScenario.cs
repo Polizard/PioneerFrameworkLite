@@ -245,12 +245,12 @@ namespace PioneerFramework
             double edge;
             if (parent == rootId.Value) edge = root.Description.RadiusMeters;   // 根天体就是恒星：沿用旧起点
             else if (root.ParentId == parent && bridge.TryGetParameters(rootId.Value, out var rootOrbit) && rootOrbit.HasOrbit)
-                edge = rootOrbit.OrbitRadius + root.Description.RadiusMeters;   // 从根行星轨道外缘之外布带（默认：地球轨道之外）
+                edge = rootOrbit.ApoapsisRadius + root.Description.RadiusMeters;
             else edge = Math.Max(parentBody.Description.RadiusMeters, root.Description.RadiusMeters);
             // 同一父体下已有测试天体继续向外扩展；旧版挂在根天体下的实例不参与新带的起点计算。
             foreach (var body in runtime.CaptureCatalog().Bodies.Select(d => runtime.Query(d.Id).Value).Where(b => PlanetKindDebugScenario.IsTestBody(b.Description)))
                 if (body.ParentId == parent && bridge.TryGetParameters(body.Id, out var parameters))
-                    edge = Math.Max(edge, parameters.OrbitRadius + body.Description.RadiusMeters);
+                    edge = Math.Max(edge, parameters.ApoapsisRadius + body.Description.RadiusMeters);
             var manifest = variant == "Default" ? PlanetKindDebugScenario.Build(definitions, runtime.WorldSeed, context.Value.OperationId, parent,
                 light, parentGm, edge) : definitions.Count == 1 ?
                 PlanetKindDebugScenario.BuildVariant(definitions[0], variant, runtime.WorldSeed, context.Value.OperationId, parent,

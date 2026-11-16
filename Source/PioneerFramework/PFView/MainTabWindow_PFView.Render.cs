@@ -43,7 +43,7 @@ namespace PioneerFramework
             matBlock = new MaterialPropertyBlock();
         }
 
-        private static Mesh BuildSphereMesh(int lats, int longs)
+        internal static Mesh BuildSphereMesh(int lats, int longs)
         {
             var m = new Mesh();
             int verts = (lats + 1) * (longs + 1);

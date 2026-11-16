@@ -29,10 +29,15 @@ namespace PioneerFramework.Celestial
             refX = DVector3.Cross(normal, up).normalized;
             refY = DVector3.Cross(normal, refX).normalized;
         }
-        public void GetOrbitFrame(out DVector3 x, out DVector3 y) { x = refX; y = refY; }
+        public void GetOrbitFrame(out DVector3 x, out DVector3 y)
+        {
+            x = ellipse?.Periapsis ?? refX;
+            y = ellipse?.Transverse ?? refY;
+        }
         public (DVector3 Position, DVector3 Velocity) SampleParent(double seconds)
         {
             if (!HasOrbit) return (DVector3.zero, DVector3.zero);
+            if (ellipse is { } orbit) return SampleEllipse(orbit, seconds);
             // 原 CelestialBodyManager 的父系位置、速度核心；保持乘加顺序。
             double omega = 2.0 * Math.PI / OrbitPeriod;
             double phase = InitialPhase + omega * seconds;
@@ -41,6 +46,7 @@ namespace PioneerFramework.Celestial
         }
         public static CelestialResult<ExistingEphemerisParameters> Parse(PhysicsInitialization initialization)
         {
+            if (initialization.ModeId == EllipticalMode) return ParseEllipse(initialization);
             if (initialization.ModeId == "existing.circular.v2") return ParseV2(initialization);
             if (initialization.ProviderId != ExistingCelestialEphemerisBridge.Id || initialization.ModeId != "existing.circular.v1" || initialization.Version != 1)
                 return CelestialResult.Reject<ExistingEphemerisParameters>(new CelestialError("UnsupportedInitialization"));

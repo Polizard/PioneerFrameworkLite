@@ -46,6 +46,8 @@ namespace PioneerFramework.Celestial
         internal CelestialSurfaceHeader WithLayerId(int id) => new(OwnerId, id, physicalRadius, nativeRadius, subdivisions, generationSeed,
             configuration, terrainAlgorithmVersion) { State = state };
 
+        internal void RestorePhysicalRadius(double exactRadius) => physicalRadius = exactRadius;
+
         /// <summary>Shared header construction for both root bootstrap and on-demand surface creation.</summary>
         internal static CelestialSurfaceHeader Create(CelestialBodyInstance instance, SurfaceResolvedProperties properties)
         {
@@ -62,7 +64,9 @@ namespace PioneerFramework.Celestial
             Scribe_Values.Look(ref formatVersion, "formatVersion", 1);
             Scribe_Values.Look(ref owner, "owner");
             Scribe_Values.Look(ref layerId, "layerId", -1);
-            Scribe_Values.Look(ref physicalRadius, "physicalRadiusMeters", 0d);
+            string? serializedPhysicalRadius = Scribe.mode == LoadSaveMode.Saving
+                ? physicalRadius.ToString("G17", CultureInfo.InvariantCulture) : null;
+            Scribe_Values.Look(ref serializedPhysicalRadius, "physicalRadiusMeters");
             Scribe_Values.Look(ref nativeRadius, "nativeRadius", 0f);
             Scribe_Values.Look(ref subdivisions, "subdivisions", 0);
             Scribe_Values.Look(ref generationSeed, "generationSeed", 0);
@@ -72,6 +76,8 @@ namespace PioneerFramework.Celestial
             Scribe_Values.Look(ref state, "state", CelestialSurfaceState.Generating);
             if (Scribe.mode == LoadSaveMode.LoadingVars)
             {
+                physicalRadius = double.Parse(serializedPhysicalRadius ?? throw new InvalidDataException("Missing celestial surface radius."),
+                    CultureInfo.InvariantCulture);
                 configuration = Convert.FromBase64String(serializedConfiguration ?? throw new InvalidDataException("Missing celestial surface configuration."));
                 Validate();
             }

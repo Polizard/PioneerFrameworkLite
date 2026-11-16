@@ -111,7 +111,7 @@ namespace PioneerFramework
             return true;
         }
 
-        /// <summary>最近邻天体中心距（**只算父/子天体**，用定义里的 `orbitRadius`；不读绝对位置 ⇒ 不跨帧）。
+        /// <summary>父子天体的最近轨道中心距，使用各自近心距离。
         /// 同系统的兄弟天体不参与：它们属于别的 SOI，真正的"抢走"来自父/子。无 ⇒ +∞。</summary>
         // 合并（2026-10-31）：`GetBodyById` 现在返回 `CelestialBodyInfo`（远端把"运行时事实"从
         // `CelestialBodyDef`（纯 XML Def）里拆了出来）。字段名一致（bodyId/ParentBodyId/orbitRadius），
@@ -127,8 +127,8 @@ namespace PioneerFramework
                 var other = members[i];
                 if (other == null || other.bodyId == def.bodyId) continue;
                 double d = -1.0;
-                if (def.ParentBodyId == other.bodyId) d = def.orbitRadius;          // 父天体距离
-                else if (other.ParentBodyId == def.bodyId) d = other.orbitRadius;   // 子天体距离
+                if (def.ParentBodyId == other.bodyId) d = def.OrbitPeriapsis;
+                else if (other.ParentBodyId == def.bodyId) d = other.OrbitPeriapsis;
                 if (d > 0.0 && d < best) best = d;
             }
             return best;

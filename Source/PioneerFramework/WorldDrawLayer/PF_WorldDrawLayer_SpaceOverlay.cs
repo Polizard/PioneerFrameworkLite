@@ -27,7 +27,8 @@ namespace PioneerFramework
         }
 
         public override bool Visible =>
-            WorldRendererUtility.WorldSelected && SpaceGroupVisualManager.EnableVisualization;
+            WorldRendererUtility.WorldSelected && SpaceGroupVisualManager.EnableVisualization &&
+            (!WorldCelestialHost.Active || WorldCelestialHost.Navigation!.ShowsEntrySubsystem);
 
         public override void Render()
         {
