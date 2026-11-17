@@ -111,7 +111,7 @@ namespace PioneerFramework
             CelestialBodyInfo? parent = mgr.GetBodyById(def.ParentBodyId);
             if (parent == null || !(parent.gravitationalParameter > 0.0)) return double.NaN;
             double massRatio = def.gravitationalParameter / parent.gravitationalParameter;
-            return def.orbitRadius * Math.Pow(massRatio, 0.4);
+            return def.OrbitPeriapsis * Math.Pow(massRatio, 0.4);
         }
 
         // ── 群组状态 ────────────────────────────────────────────────────────────

@@ -68,7 +68,9 @@ namespace PioneerFramework
             }
 
             // ② 跟随选中编队（只写 sphereRotation ⇒ 下一帧消费）
-            SpaceGroupVisualManager.ApplyFollowCameraFrame();
+            WorldCelestialHost.Update();
+            if (!WorldCelestialHost.Active)
+                SpaceGroupVisualManager.ApplyFollowCameraFrame();
         }
     }
 }

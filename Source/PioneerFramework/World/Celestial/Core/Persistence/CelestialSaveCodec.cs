@@ -154,6 +154,7 @@ namespace PioneerFramework.Celestial
         private static JsonSerializerOptions CreateOptions()
         {
             var options = new JsonSerializerOptions { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, RespectRequiredConstructorParameters = true };
+            CelestialSaveNumbers.AddConverters(options);
             options.Converters.Add(new IdentityConverter());
             void Add<T, TData>(Func<T, TData> encode, Func<TData, T> decode) => options.Converters.Add(new Surrogate<T, TData>(encode, decode));
             Add<CelestialBodyDescription, DescriptionData>(v => new(v.Id, v.DefinitionId, v.Handle, v.DescriptorRevision, v.Category, v.RadiusMeters, v.GravitationalParameter, v.Tags),

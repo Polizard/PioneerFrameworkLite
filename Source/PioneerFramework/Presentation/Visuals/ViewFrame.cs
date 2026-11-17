@@ -4,6 +4,34 @@ using PioneerFramework.Launch;   // GetSurfaceState（layer↔天体、自转角
 using UnityEngine;
 using Verse;                     // Current.Game
 
+namespace PioneerFramework.Celestial
+{
+    internal readonly record struct WorldCelestialFrame(
+        DVector3 PhysicsAnchor, DVector3 ViewAnchor, DQuaternion Rotation, double Scale)
+    {
+        internal DVector3 ToView(DVector3 position) => ViewAnchor + DVector3.Rotate(position - PhysicsAnchor, Rotation) * Scale;
+
+        internal DVector3 ToPhysics(DVector3 position) =>
+            PhysicsAnchor + DVector3.Rotate((position - ViewAnchor) / Scale, DQuaternion.Inverse(Rotation));
+
+        internal static bool ShouldEnterSystem(double zoom, bool inhibited, double threshold = .010) =>
+            zoom < threshold && !inhibited;
+
+        internal static bool CanRearm(double zoom, double threshold = .010) => zoom >= threshold * 1.4;
+
+        internal static double RaySphere(DVector3 origin, DVector3 direction, DVector3 center, double radius)
+        {
+            DVector3 delta = center - origin;
+            double discriminant = radius * radius - DVector3.Cross(delta, direction).sqrMagnitude;
+            if (discriminant < 0) return double.PositiveInfinity;
+            double along = DVector3.Dot(delta, direction);
+            double offset = Math.Sqrt(discriminant);
+            if (along >= offset) return along - offset;
+            return along + offset >= 0 ? along + offset : double.PositiveInfinity;
+        }
+    }
+}
+
 namespace PioneerFramework
 {
     /// <summary>
@@ -100,6 +128,12 @@ namespace PioneerFramework
         /// <summary>系统系米制位置转为绝对系显示位置；只供渲染与拾取使用。</summary>
         public static DVector3 SystemToAbsoluteForDisplay(SystemVec3 position, int frameId, double tick, CelestialBodyManager manager)
             => position.v + manager.GetBodyPositionAbs(frameId, tick);
+
+        public static Vector3 CelestialCenterToViewUnity(int bodyId, double tick, CelestialBodyManager manager)
+        {
+            int frame = manager.GetReferenceFrameId(ViewedBodyId);
+            return ToViewUnity(manager.GetBodyPositionAbs(bodyId, tick) - manager.GetBodyPositionAbs(frame, tick), tick);
+        }
 
         /// <summary>被查看天体在视图里的半径（Unity 单位）—— 球体遮挡判定用（月亮 30 / 地球 100）。</summary>
         public static float ViewedBodyRadiusUnity

@@ -20,7 +20,6 @@ namespace PioneerFramework
         private static readonly GameComponentRef<SensorManager> sensorMgrRef = new();
 
         /// <summary>现有 RimWorld 世界对应的天体（地球）ID</summary>
-        private const int EARTH_BODY_ID = 1;
 
         private static int selectedGroupId = -1;
         private static bool isFollowing ;
@@ -232,12 +231,14 @@ namespace PioneerFramework
         public static void RenderSpaceOverlayFrame()
         {
             long frameClock = System.Diagnostics.Stopwatch.GetTimestamp();
+            overlayNavigation = WorldCelestialHost.Active ? WorldCelestialHost.Navigation : null;
             try
             {
                 DrawWorldLayersBody();
             }
             finally
             {
+                overlayNavigation = null;
                 long dt = System.Diagnostics.Stopwatch.GetTimestamp() - frameClock;
                 _frameClocks++;
                 _frameTicksTotal += dt;
@@ -313,17 +314,7 @@ namespace PioneerFramework
             // 的桶扩容）⇒ 每帧 GC。依据与 P32 的 `cachedAllBodies` **同一条**：天体 Def 静态
             // ⇒ 建一次即可。生命周期按"管理器换局"失效（不按帧）。
             var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
-            if (earthSystemBodyIds == null || !ReferenceEquals(earthSystemBodyIdsMgr, celestialMgr))
-            {
-                earthSystemBodyIdsMgr = celestialMgr;
-                earthSystemBodyIds = new HashSet<int> { EARTH_BODY_ID };
-                var earthDef = celestialMgr?.GetBodyById(EARTH_BODY_ID);
-                if (earthDef != null)
-                {
-                    foreach (var moon in earthDef.moonBodies)
-                        earthSystemBodyIds.Add(moon.bodyId);
-                }
-            }
+            int viewedFrame = celestialMgr?.GetReferenceFrameId(ViewFrame.ViewedBodyId) ?? -1;
 
             // [V3] 认知层过滤（S3，2026-10-02）：只画"玩家真的看得见"的棋子。
             // dev 真值开关（`SensorManager.DebugShowGroundTruth`）开启 ⇒ 绕过认知层，直接看真实棋子。
@@ -331,7 +322,7 @@ namespace PioneerFramework
             var sensor = sensorMgrRef.Get();
             int playerFid = Faction.OfPlayer?.loadID ?? -1;
             foreach (var group in groups)
-                if (group.IsActive && !group.IsSurfaceAnchor && earthSystemBodyIds.Contains(group.CelestialBodyId))
+                if (group.IsActive && !group.IsSurfaceAnchor && InViewedFrame(group, celestialMgr, viewedFrame))
                 {
                     if (sensor != null && !SensorManager.DebugShowGroundTruth && !sensor.PlayerCanSee(group)) continue;
 
@@ -342,7 +333,7 @@ namespace PioneerFramework
                         && sensor.ContactPhaseOf(playerFid, group.GroupId) == TrackPhase.Shadow
                         && sensor.TryGetContact(playerFid, group.GroupId, out Contact memContact))
                     {
-                        posOverride = ViewFrame.ToViewUnity(memContact.position, PhysicsTickNow());
+                        posOverride = ToOverlayView(memContact.position, PhysicsTickNow());
                     }
                     DrawGroupIcon(group, camera, posOverride);
                 }
@@ -354,15 +345,14 @@ namespace PioneerFramework
             // ── 天体渲染（2026-09-23：**除"被查看的那颗"以外**的全部，含地球与太阳）──
             //   被查看的那颗由 RimWorld 的 PlanetLayer 画（球心 = 视图系原点）；其余天体按**系统系位置**摆
             //   ⇒ 切到月球时，地球与绕地的船都在 −月球偏移 处（1,570 Unity 单位外，看得见但很远）。
-            if (celestialMgr != null)
+            if (celestialMgr != null && overlayNavigation == null)
             {
                 double bodyTick = PhysicsTickNow();
                 foreach (var body in celestialMgr.GetAllBodies())
                 {
                     if (body.bodyId == ViewFrame.ViewedBodyId) continue;   // 自己被 RW 画
                     if (!body.IsGravitySource) continue;                    // 无质量装饰天体不画
-                    Vector3 viewPos = ViewFrame.ToViewUnity(
-                        ViewFrame.BodySystemPosition(body.bodyId, bodyTick), bodyTick);
+                    Vector3 viewPos = ProjectOverlayPoint(ViewFrame.CelestialCenterToViewUnity(body.bodyId, bodyTick, celestialMgr));
                     if (!IsViewPosVisible(viewPos, 1f)) continue;
 
                     // 物理半径 → Unity 缩放（⚠ 球网格直径 1 ⇒ 见 ViewFrame.RadiusToSphereScale；原来按半径缩放
@@ -378,7 +368,7 @@ namespace PioneerFramework
             if (selectedGroupId != -1)
             {
                 var selected = spaceGame.GetGroupById(selectedGroupId);
-                if (selected != null && selected.IsActive)
+                if (selected != null && selected.IsActive && InViewedFrame(selected, celestialMgr, viewedFrame))
                 {
                     // 画 Pe/Ap/AN/DN 标记
                     DrawOrbitMarkersForGroup(selected, camera);
@@ -539,6 +529,7 @@ namespace PioneerFramework
 
         private static void WorldInterfaceOnGUIBody()
         {
+            if (WorldCelestialHost.Active) return;
             if (!EnableVisualization) return;
             if (!WorldRendererUtility.WorldSelected) return;
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
@@ -572,6 +563,8 @@ namespace PioneerFramework
                 return;
             }
 
+            var manager = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (!InViewedFrame(group, manager, manager?.GetReferenceFrameId(ViewFrame.ViewedBodyId) ?? -1)) return;
             Vector3 viewPos = GetGroupWorldPositionUnity(group);
             Vector3 origin = GetOrbitOrigin();
             Vector3 direction = (viewPos - origin).normalized;
@@ -646,13 +639,24 @@ namespace PioneerFramework
 
         /// <summary>系统系（Unity 单位）→ 视图系。**薄转发**，算式在 `ViewFrame` 里只有一份。</summary>
         private static Vector3 ToView(Vector3 systemFrameUnity)
-            => ViewFrame.ToViewUnityFromUnity(systemFrameUnity, PhysicsTickNow());
+            => ProjectOverlayPoint(ViewFrame.ToViewUnityFromUnity(systemFrameUnity, PhysicsTickNow()));
+
+        private static WorldCelestialNavigation? overlayNavigation;
+
+        private static Vector3 ToOverlayView(DVector3 systemFrameMeters, double tick)
+            => ProjectOverlayPoint(ViewFrame.ToViewUnity(systemFrameMeters, tick));
+
+        private static Vector3 ProjectOverlayPoint(Vector3 fixedPoint)
+            => overlayNavigation?.ProjectEntryPoint(fixedPoint) ?? GetOrbitOrigin() + fixedPoint;
+
+        private static bool InViewedFrame(SpaceEntityGroup group, CelestialBodyManager? manager, int viewedFrame)
+            => viewedFrame >= 0 && manager?.GetReferenceFrameId(group.CelestialBodyId) == viewedFrame;
 
         /// <summary>
-        /// 视图系的原点 = **被查看天体的球心**（`ViewFrame.ToViewUnity` 已减掉它的系统系偏移）
-        /// ⇒ 这里恒为零。⚠ 2026-09-23 前它被当作"根行星球心"用，而玩家切到月球时那就不成立了。
+        /// 当前视图中的原生宿主球心。
         /// </summary>
-        private static Vector3 GetOrbitOrigin() => Vector3.zero;
+        private static Vector3 GetOrbitOrigin()
+            => overlayNavigation?.EntryCenter ?? Find.WorldSelector?.SelectedLayer?.Origin ?? Vector3.zero;
 
         /// <summary>
         /// 获取 Group 在**视图系**中的 Unity 单位位置。
@@ -665,7 +669,7 @@ namespace PioneerFramework
             DVector3 posSystemFrame = group.IsCircularOrbit
                 ? group.GetCircularPositionAtTick(physicsTick)
                 : group.CurrentOrbit.positionSystem.v;
-            return ViewFrame.ToViewUnity(posSystemFrame, physicsTick);
+            return ToOverlayView(posSystemFrame, physicsTick);
         }
 
         private static bool IsViewPosVisible(Vector3 viewPosUnity, float occlusionMargin)
@@ -681,7 +685,7 @@ namespace PioneerFramework
             if (facing >= 0) return true;
 
             float perpDist = radius * Mathf.Sqrt(1 - facing * facing);
-            float planetRadius = ViewFrame.ViewedBodyRadiusUnity;   // 被查看天体的球半径（地球 100 / 月球 30）
+            float planetRadius = overlayNavigation?.EntryRadius ?? ViewFrame.ViewedBodyRadiusUnity;
             return perpDist > planetRadius + occlusionMargin;
         }
 
@@ -818,8 +822,9 @@ namespace PioneerFramework
             {
                 double lonRad = i == 0 ? 0.0 : Math.PI / 2.0;      // 固连系经度：0° / 90°E
                 (DVector3 pEci, _) = SurfaceFrame.SurfaceState(viewBody.radius, 0.0, lonRad, omega, tick);
-                Vector3 onSurface = ViewFrame.ToViewUnity(pEci, tick);
-                Vector3 radialView = onSurface.sqrMagnitude > 1e-6f ? onSurface.normalized : Vector3.up;
+                Vector3 onSurface = ToOverlayView(pEci, tick);
+                Vector3 offset = onSurface - GetOrbitOrigin();
+                Vector3 radialView = offset.sqrMagnitude > 1e-6f ? offset.normalized : Vector3.up;
                 Vector3 drawPos = onSurface + radialView * 4f;    // 贴表面略抬（同原来那档）
 
                 if (!IsViewPosVisible(drawPos, 0.5f)) continue;
@@ -835,8 +840,6 @@ namespace PioneerFramework
         // ── P52（2026-09-27）：渲染路径上的每帧分配，改成"建一次/复用" ──
         // ⚠ 两条都声明为**可空**：它们靠"管理器同一性"判有效性（`== null` 就是"还没建"）
         //   ⇒ 声明成非空会让 nullable 分析报 CS8618/CS8601（新增警告 = 0 是硬线）。
-        private static HashSet<int>? earthSystemBodyIds;              // 地球系天体 id 集（建一次）
-        private static CelestialBodyManager? earthSystemBodyIdsMgr;   // 建它时的管理器（换局 ⇒ 重建）
         private static readonly List<Vector3> previewPtsScratch = new();  // 预览轨道点（复用）
 
         /// <summary>`src` 逐点乘 `scale` 填进 `dst`（替代 `ConvertAll`：**不分配**，`dst` 复用）。
@@ -1037,12 +1040,12 @@ namespace PioneerFramework
                 if (c.IsForged)
                 {
                     // 假接触**没有真值对应物**：画在"我测到的"位置上；识破（isDecoy）⇒ 换标记
-                    Vector3 dvp = ViewFrame.ToViewUnity(c.position, now);
+                    Vector3 dvp = ToOverlayView(c.position, now);
                     DrawCognitionDot(dvp, cam, c.isDecoy ? DecoySpottedColor : DecoyColor, c.isDecoy ? 1.2f : 1.7f);
                     continue;
                 }
                 if (sensor.ContactPhaseOf(fid, c.targetGroupId) != TrackPhase.Shadow) continue;
-                Vector3 svp = ViewFrame.ToViewUnity(c.position, now);
+                Vector3 svp = ToOverlayView(c.position, now);
                 DrawCognitionDot(svp, cam, ShadowColor, 1.3f);
                 DrawSigmaRing(svp, c.positionSigma, cam);
             }
@@ -1124,7 +1127,7 @@ namespace PioneerFramework
 
             // ⚠ 真·视锥读数（2026-10-11 补）：`IsViewPosVisible` 只判**行星遮挡**，不是"在不在屏幕上" ——
             //   之前那行 `视可见 84` 会给人假安心（点全在屏外时它也报 84）。这里把锥顶的**视口坐标**打出来。
-            Vector3 apexView = ViewFrame.ToViewUnity(apex, now);
+            Vector3 apexView = ToOverlayView(apex, now);
             Vector3 vpApex = cam.WorldToViewportPoint(apexView);
             bool apexOnScreen = vpApex.z > 0f && vpApex.x >= 0f && vpApex.x <= 1f && vpApex.y >= 0f && vpApex.y <= 1f;
 
@@ -1147,7 +1150,7 @@ namespace PioneerFramework
             cognitionPointBuf.Clear();
             // 端面圆环
             for (int i = 0; i < ring; i++)
-                cognitionPointBuf.Add(ViewFrame.ToViewUnity(coneRimScratch[i], now));
+                cognitionPointBuf.Add(ToOverlayView(coneRimScratch[i], now));
             // 母线（8 条，各 8 点 ⇒ 点阵锥面）
             for (int k = 0; k < 8; k++)
             {
@@ -1155,7 +1158,7 @@ namespace PioneerFramework
                 for (int s = 1; s <= 8; s++)
                 {
                     double t = s / 8.0;
-                    cognitionPointBuf.Add(ViewFrame.ToViewUnity(apex + (rimPt - apex) * t, now));
+                    cognitionPointBuf.Add(ToOverlayView(apex + (rimPt - apex) * t, now));
                 }
             }
 
@@ -1244,9 +1247,11 @@ namespace PioneerFramework
             SpaceEntityGroup? clickedGroup = null;
             float minDist = 20f;
             var sensor = sensorMgrRef.Get();          // 点击与绘制**同一准入判据**（否则会点到看不见的棋子）
+            var manager = Current.Game?.GetComponent<CelestialBodyManager>();
+            int viewedFrame = manager?.GetReferenceFrameId(ViewFrame.ViewedBodyId) ?? -1;
             foreach (var group in spaceGame.GetAllGroups())
             {
-                if (!group.IsActive) continue;
+                if (!group.IsActive || group.IsSurfaceAnchor || !InViewedFrame(group, manager, viewedFrame)) continue;
                 if (sensor != null && !SensorManager.DebugShowGroundTruth && !sensor.PlayerCanSee(group)) continue;
                 Vector3 viewPos = GetGroupWorldPositionUnity(group);
                 if (!IsViewPosVisible(viewPos, 2f)) continue;

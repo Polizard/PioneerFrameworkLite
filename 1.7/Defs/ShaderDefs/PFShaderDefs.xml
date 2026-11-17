@@ -144,4 +144,16 @@
       <flipTextureST>false</flipTextureST>
     </shaderProgram>
   </ShaderDef>
+  <ShaderDef>
+    <defName>PF_WorldCelestialTrail</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_WorldCelestialTrail.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_WorldCelestialTrail.frag.glsl</fragmentShaderFileName>
+      <useTexture>false</useTexture>
+      <blendMode>Alpha</blendMode>
+      <depthTest>true</depthTest>
+      <depthWrite>false</depthWrite>
+      <renderQueue>Transparent</renderQueue>
+    </shaderProgram>
+  </ShaderDef>
 </Defs>

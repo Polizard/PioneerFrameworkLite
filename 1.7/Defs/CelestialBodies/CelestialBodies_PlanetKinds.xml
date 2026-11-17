@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Defs>
-  <!-- Reusable kind presets. They are not added to PF_DefaultCelestialSystem. Motion is a representative circular orbit; override motion and bind frameOrigin/primaryLight for each actual instance. See Source/PioneerFramework/Celestial/API/PlanetKinds.md. -->
+  <!-- Reusable kind presets. PF_DefaultCelestialPopulation resolves instance orbits and binds frameOrigin/primaryLight. See Source/PioneerFramework/Celestial/API/PlanetKinds.md. -->
   <PioneerFramework.CelestialBodyDef Name="PF_BarrenPlanetBase">
     <defName>PF_BarrenPlanet</defName>
     <label>荒芜行星</label>

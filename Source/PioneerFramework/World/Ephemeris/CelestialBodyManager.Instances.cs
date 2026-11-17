@@ -175,7 +175,8 @@ namespace PioneerFramework
                     ReferenceFrameBodyId = origin, atmosphereThickness = atmosphere.topAltitude,
                     atmosphereVisualThickness = visualAtmosphere == null ? 0 : visualAtmosphere.Profile.ShellHeightMeters * 2,
                     dayLengthTicks = CelestialDayLength.ResolveFrom(properties),
-                    orbitRadius = model?.OrbitRadius ?? 0, orbitPeriod = model?.OrbitPeriod ?? 0,
+                    orbitRadius = model?.OrbitRadius ?? 0, orbitEccentricity = model?.Eccentricity ?? 0,
+                    orbitPeriod = model?.OrbitPeriod ?? 0,
                     initialPhase = model?.InitialPhase ?? 0, orbitNormal = model == null ? Vector3.up : (Vector3)model.OrbitNormal });
             }
             foreach (int handle in hierarchyRoles)

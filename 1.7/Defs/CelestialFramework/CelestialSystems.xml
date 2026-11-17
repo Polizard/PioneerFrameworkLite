@@ -3,6 +3,7 @@
   <PioneerFramework.Celestial.CelestialSystemDef>
     <defName>PF_DefaultCelestialSystem</defName><label>燧阳系</label>
     <rootSurfaceEntry>root</rootSurfaceEntry>
+    <populationPolicy>PF_DefaultCelestialPopulation</populationPolicy>
     <entries>
       <li>
         <key>primary</key><bodyDef>Sun</bodyDef><count><value>1</value></count>

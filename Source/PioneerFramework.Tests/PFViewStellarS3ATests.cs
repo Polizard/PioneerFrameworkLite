@@ -146,7 +146,7 @@ public class PFViewStellarS3ATests
     [Fact]
     public void EnsureStellarShadersPrefersFastThenS3AThenLegacyWithFallbacks()
     {
-        var method = typeof(MainTabWindow_PFView).GetMethod("EnsureStellarShaders", Flags);
+        var method = typeof(MainTabWindow_PFView).GetMethod("SelectStellarShaders", BindingFlags.Static | BindingFlags.NonPublic);
         Assert.NotNull(method);
         var calls = PFViewUiIntegrationTests.ReferencedMembers(method).ToArray();
         // 选择链必须读两个开关：显式 Fast 视觉 > S3-a（默认）> legacy。

@@ -17,6 +17,8 @@ namespace PioneerFramework.Celestial
         private readonly ICelestialMapBackend? mapBackend;
         private readonly ICelestialRemovalResources resources;
         private CelestialSaveDocument? document;
+        private readonly Dictionary<CelestialInstanceId, double> legacySurfaceRadii = new();
+        private readonly List<(CelestialSurfaceHeader Header, double Radius)> correctedHeaders = new();
         private bool bound;
         private bool completed;
         public CelestialRuntime Runtime { get; private set; } = null!;
@@ -36,6 +38,7 @@ namespace PioneerFramework.Celestial
             if (saved.Stamp.WorldSessionId == session) return Reject("RestoreSessionMustChange");
             try
             {
+                saved = RestoreLegacyDescriptorNumbers(saved);
                 Runtime = CelestialRuntime.Restore(saved, registry, physics ?? new UnavailableBridge(saved.PhysicsCheckpoint), session, resources, resolveTemplate);
                 document = saved;
                 if (physics == null)
@@ -53,6 +56,7 @@ namespace PioneerFramework.Celestial
             if (definition == null || Find.World?.grid == null) return Reject("NativeWorldUnavailable");
             try
             {
+                correctedHeaders.Clear();
                 var surfaces = Runtime.Surfaces ?? new CelestialSurfaceService(Runtime, definition);
                 var maps = Runtime.Maps ?? new CelestialMapService(Runtime, surfaces, mapBackend);
                 foreach (var site in document.Maps)
@@ -62,12 +66,22 @@ namespace PioneerFramework.Celestial
                 }
                 foreach (var saved in document.Surfaces)
                 {
-                    if (!Find.WorldGrid.PlanetLayers.TryGetValue(saved.LayerId, out var layer) || layer is not CelestialSurfaceLayer surface ||
-                        surface.Header.OwnerId != saved.OwnerId || surface.Header.PhysicalRadiusMeters != saved.PhysicalRadiusMeters || surface.Header.NativeRadius != saved.NativeRadius ||
-                        surface.Header.Subdivisions != saved.Subdivisions || surface.Header.GenerationSeed != saved.GenerationSeed || surface.Header.State != saved.State ||
-                        !surface.Header.GenerationConfiguration.Span.SequenceEqual(saved.GenerationConfiguration.Span)) return Reject("SurfaceIdentityMismatch", saved.OwnerId.Value);
-                    var restored = surfaces.RestoreHeader(surface.Header);
+                    if (!Find.WorldGrid.PlanetLayers.TryGetValue(saved.LayerId, out var layer) || layer is not CelestialSurfaceLayer surface)
+                        return Reject("SurfaceIdentityMismatch", FormattableString.Invariant($"{saved.OwnerId.Value}: layer {saved.LayerId} is missing"));
+                    var header = surface.Header;
+                    if (header.OwnerId != saved.OwnerId || header.Subdivisions != saved.Subdivisions ||
+                        header.GenerationSeed != saved.GenerationSeed || header.State != saved.State ||
+                        !header.GenerationConfiguration.Span.SequenceEqual(saved.GenerationConfiguration.Span))
+                        return Reject("SurfaceIdentityMismatch", saved.OwnerId.Value + ": native header differs from the checkpoint");
+                    bool physicalRadiusMatches = header.PhysicalRadiusMeters == saved.PhysicalRadiusMeters ||
+                        legacySurfaceRadii.TryGetValue(saved.OwnerId, out double legacyRadius) && header.PhysicalRadiusMeters == legacyRadius;
+                    if (!physicalRadiusMatches || !MatchesNativeRadius(header, saved))
+                        return Reject("SurfaceIdentityMismatch", FormattableString.Invariant(
+                            $"{saved.OwnerId.Value}: physical radius {header.PhysicalRadiusMeters:G17}/{saved.PhysicalRadiusMeters:G17}, native radius {header.NativeRadius:G9}/{saved.NativeRadius:G9}"));
+                    var restored = surfaces.RestoreHeader(header);
                     if (!restored.Success) return restored;
+                    if (header.PhysicalRadiusMeters != saved.PhysicalRadiusMeters)
+                        correctedHeaders.Add((header, saved.PhysicalRadiusMeters));
                 }
                 foreach (var site in document.Maps.Where(site => !site.ParentRetired))
                 {
@@ -89,6 +103,60 @@ namespace PioneerFramework.Celestial
             }
             catch (Exception exception) { return Reject("NativeBindingFailed", exception.Message); }
         }
+
+        private bool MatchesNativeRadius(CelestialSurfaceHeader header, CelestialSavedSurface saved)
+        {
+            if (header.NativeRadius == saved.NativeRadius) return true;
+
+            // Older Waylith saves wrote the JSON single with seven significant digits.
+            // Verify the exact native radius against the frozen surface scale before accepting that representation.
+            var scale = Runtime.Creation.GetProperties(saved.OwnerId).OfType<SurfaceResolvedProperties>().SingleOrDefault();
+            return scale != null && header.NativeRadius == (float)(saved.PhysicalRadiusMeters / scale.MetersPerLayerUnit) &&
+                CelestialSaveNumbers.MatchesLegacySingle(saved.NativeRadius, header.NativeRadius);
+        }
+
+        private CelestialSaveDocument RestoreLegacyDescriptorNumbers(CelestialSaveDocument saved)
+        {
+            if (saved.PhysicsCheckpoint is not { ProviderId: ExistingCelestialEphemerisBridge.Id, PayloadVersion: 2 }) return saved;
+
+            // The builtin bridge checks the reconstructed descriptors against the original
+            // registration hash before it publishes any physics state.
+            var bodies = saved.Bodies.Select(RestoreLegacyBody).ToArray();
+            var physicalRadii = bodies.ToDictionary(body => body.Description.Id, body => body.Description.RadiusMeters);
+            var surfaces = saved.Surfaces.Select(surface =>
+            {
+                double exact = physicalRadii[surface.OwnerId];
+                if (surface.PhysicalRadiusMeters == exact) return surface;
+                legacySurfaceRadii[surface.OwnerId] = surface.PhysicalRadiusMeters;
+                return surface with { PhysicalRadiusMeters = exact };
+            }).ToArray();
+            return saved with { Bodies = bodies, Surfaces = surfaces };
+        }
+
+        private static CelestialSavedBody RestoreLegacyBody(CelestialSavedBody body)
+        {
+            if (!body.CommittedMembership || body.Assembly?.Registration is not { } registration) return body;
+            var shape = body.Components.SingleOrDefault(record => record.HandlerId == SphericalBodyResolvedProperties.Handler);
+            var motion = body.Components.SingleOrDefault(record => record.HandlerId == ExternalPhysicsResolvedProperties.Handler);
+            if (shape == null || motion == null) return body;
+            var geometry = SphericalBodyResolvedProperties.Deserialize(shape.Key, shape.ConfigurationVersion, shape.ConfigurationPayload);
+            var physics = ExternalPhysicsResolvedProperties.Deserialize(motion.Key, motion.ConfigurationVersion, motion.ConfigurationPayload);
+            if (!geometry.Success || !physics.Success) return body;
+
+            var saved = body.Description;
+            double radius = geometry.Value.RadiusMeters;
+            double? gm = physics.Value.GravitationalParameter;
+            if (saved.RadiusMeters == radius && saved.GravitationalParameter == gm ||
+                !CelestialSaveNumbers.MatchesLegacyDouble(saved.RadiusMeters, radius) ||
+                !CelestialSaveNumbers.MatchesLegacyDouble(saved.GravitationalParameter, gm)) return body;
+
+            var description = new CelestialBodyDescription(saved.Id, saved.DefinitionId, saved.Handle, saved.DescriptorRevision,
+                saved.Category, radius, gm, saved.Tags);
+            var corrected = new CelestialBodyRegistration(registration.DefinitionId, new(saved.Id, saved.DescriptorRevision, radius, gm),
+                registration.Initialization, registration.ParentInstanceId, registration.InitializationReferences, registration.CompatibilityHandle);
+            return body with { Description = description, Assembly = body.Assembly with { Registration = corrected } };
+        }
+
         public CelestialResult<bool> CompleteRestore()
         {
             if (completed) return CelestialResult.Ok(true);
@@ -114,6 +182,8 @@ namespace PioneerFramework.Celestial
                 if (!creation.Success) return creation;
                 var removal = Runtime.Removal.ResumeRestoredRemovals();
                 if (!removal.Success) return removal;
+                foreach (var (header, radius) in correctedHeaders) header.RestorePhysicalRadius(radius);
+                correctedHeaders.Clear();
                 Runtime.EndRestore(); completed = true;
                 Runtime.Creation.NotifyRestoredComponents();
                 return CelestialResult.Ok(true);

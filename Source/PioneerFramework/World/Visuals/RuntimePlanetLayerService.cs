@@ -134,7 +134,8 @@ namespace PioneerFramework
         internal static CelestialSurfaceLayer RegisterCelestialInstance(WorldGrid grid, PlanetLayerDef definition, CelestialSurfaceHeader header)
         {
             using var scope = new CelestialSurfaceCreationScope(header, grid);
-            return (CelestialSurfaceLayer)grid.RegisterPlanetLayer(definition, radius: header.NativeRadius, subdivisions: header.Subdivisions);
+            return (CelestialSurfaceLayer)grid.RegisterPlanetLayer(definition, radius: header.NativeRadius,
+                extraCameraAltitude: header.NativeRadius - 100f, subdivisions: header.Subdivisions);
         }
 
         internal static CelestialResult<bool> GenerateCelestialPreservingRand(int seed, Func<CelestialResult<bool>> generate)

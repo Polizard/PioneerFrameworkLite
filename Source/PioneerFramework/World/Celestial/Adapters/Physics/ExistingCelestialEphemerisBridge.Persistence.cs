@@ -64,7 +64,15 @@ namespace PioneerFramework.Celestial
                         if (changes.Length == 0 || changes.Where((c, i) => c.InstanceId.Value != operation.Changes[i].Id).Any() || !Enum.IsDefined(operation.Status))
                             throw new ArgumentException("Invalid operation.");
                         var request = new PhysicsChangeSet(operation.Id, SessionId, stamp.TopologyRevision, changes);
-                        if (request.ContentHash() != operation.Hash) throw new ArgumentException("Invalid operation content hash.");
+                        if (request.ContentHash() != operation.Hash)
+                        {
+                            // An old writer could round a saved descriptor. Try the committed numbers
+                            // while retaining every other operation field and requiring its original hash.
+                            var corrected = changes.Select(change => restored.TryGetValue(change.InstanceId, out var body)
+                                ? RestoreOperationNumbers(change, body.Registration.Descriptor) : change);
+                            request = new PhysicsChangeSet(operation.Id, SessionId, stamp.TopologyRevision, corrected);
+                            if (request.ContentHash() != operation.Hash) throw new ArgumentException("Invalid operation content hash.");
+                        }
                         if (operation.Status == PhysicsOperationStatus.Applied && (!operation.AppliedSeconds.HasValue ||
                             !double.IsFinite(operation.AppliedSeconds.Value) || operation.AppliedSeconds.Value > stamp.PhysicalSeconds ||
                             operation.TopologyRevision is not { } revision || revision < 0 || revision > stamp.TopologyRevision))
@@ -99,7 +107,24 @@ namespace PioneerFramework.Celestial
         private static CelestialBodyRegistration FromData(RegistrationData r) => new(r.DefinitionId,
             new(CelestialInstanceId.Parse(r.Id), r.Revision, r.Radius, r.Gm), new(r.Provider, r.Mode, r.Version, r.Payload),
             r.Parent == null ? null : CelestialInstanceId.Parse(r.Parent), r.References.ToDictionary(p => p.Key, p => CelestialInstanceId.Parse(p.Value), StringComparer.Ordinal), r.Handle);
-        private static readonly JsonSerializerOptions SaveOptions = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, RespectRequiredConstructorParameters = true };
+        private static PhysicsBodyChange RestoreOperationNumbers(PhysicsBodyChange change, CelestialPhysicsDescriptor exact)
+        {
+            if (change.Registration is not { } registration || registration.Descriptor.DescriptorRevision != exact.DescriptorRevision ||
+                !CelestialSaveNumbers.MatchesLegacyDouble(registration.Descriptor.RadiusMeters, exact.RadiusMeters) ||
+                !CelestialSaveNumbers.MatchesLegacyDouble(registration.Descriptor.GravitationalParameter, exact.GravitationalParameter))
+                return change;
+            var corrected = new CelestialBodyRegistration(registration.DefinitionId, exact, registration.Initialization,
+                registration.ParentInstanceId, registration.InitializationReferences, registration.CompatibilityHandle);
+            return change.Kind == PhysicsBodyChangeKind.Register ? PhysicsBodyChange.Register(corrected) : PhysicsBodyChange.Update(corrected);
+        }
+
+        private static readonly JsonSerializerOptions SaveOptions = CreateSaveOptions();
+        private static JsonSerializerOptions CreateSaveOptions()
+        {
+            var options = new JsonSerializerOptions { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, RespectRequiredConstructorParameters = true };
+            CelestialSaveNumbers.AddConverters(options);
+            return options;
+        }
         private sealed record StampData([property: JsonPropertyName("session")] Guid Session, [property: JsonPropertyName("clock")] long Clock, [property: JsonPropertyName("state")] long State, [property: JsonPropertyName("topology")] long Topology, [property: JsonPropertyName("seconds")] double Seconds, [property: JsonPropertyName("frame")] string Frame, [property: JsonPropertyName("kind")] PhysicsSampleKind Kind)
         {
             internal static StampData From(PhysicsSampleStamp v) => new(v.WorldSessionId, v.ClockRevision, v.StateRevision, v.TopologyRevision, v.PhysicalSeconds, v.ReferenceFrameId, v.SampleKind);

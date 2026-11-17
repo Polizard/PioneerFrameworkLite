@@ -40,7 +40,8 @@ namespace PioneerFramework
                 && !ReferenceEquals(this, selected);
         }
 
-        public override bool Visible => !HiddenByCelestialSelection() && base.Visible;
+        public override bool Visible => base.Visible && (!HiddenByCelestialSelection() ||
+            (WorldCelestialHost.Active && WorldCelestialHost.Navigation!.ShowFocusedLayer(this)));
 
         public override bool Raycastable => !HiddenByCelestialSelection() && base.Raycastable;
     }

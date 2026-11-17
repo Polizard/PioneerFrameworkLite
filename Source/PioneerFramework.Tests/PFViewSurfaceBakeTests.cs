@@ -102,6 +102,25 @@ namespace PioneerFramework.Tests
                 new List<Vector3> { Vector3.zero, Vector3.zero }, out _, out _));
         }
 
+        [Fact]
+        public void Cap_FullGlobeUsesDeterministicAxisAndFitsInDisk()
+        {
+            var directions = new List<Vector3>
+            {
+                Vector3.right, Vector3.left, Vector3.up, Vector3.down, Vector3.forward, Vector3.back
+            };
+            Assert.True(PFViewSurfaceBake.ComputeCap(directions, out var center, out float halfAngle));
+            Assert.Equal(Vector3.left, center);
+            Assert.Equal(178f, halfAngle);
+            PFViewSurfaceBake.TileTangentFrame(center, out var tangent, out var bitangent);
+            foreach (var direction in directions)
+            {
+                var uv = PFViewSurfaceBake.PatchUv(direction, center, tangent, bitangent,
+                    (halfAngle + PFViewSurfaceBake.PatchMarginDeg) * Mathf.Deg2Rad);
+                Assert.InRange((uv - Vector2.one * .5f).sqrMagnitude, 0f, .25001f);
+            }
+        }
+
         // ════════════════════════════════════════════════════
         //  补丁映射（PatchUv ↔ PatchDir）
         // ════════════════════════════════════════════════════

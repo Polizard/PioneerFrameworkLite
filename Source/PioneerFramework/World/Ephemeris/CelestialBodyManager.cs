@@ -925,13 +925,18 @@ namespace PioneerFramework
 
             var points = new List<Vector3>(segments);
             double toUnity = SpaceConstants.UnitsPerMeter;
+            ExistingEphemerisParameters? ellipse = null;
+            if (celestialRuntime?.Physics is ExistingCelestialEphemerisBridge bridge &&
+                bridge.TryGetParameters(body.InstanceId, out var parameters) && parameters.HasEllipticalElements)
+                ellipse = parameters;
 
             for (int i = 0; i < segments; i++)
             {
                 double angle = 2.0 * System.Math.PI * i / segments;
                 double cos = System.Math.Cos(angle);
                 double sin = System.Math.Sin(angle);
-                DVector3 pSystem = centerAbs + body.orbitRadius * (cos * refX + sin * refY);
+                DVector3 pSystem = centerAbs + (ellipse?.OffsetAtEccentricAnomaly(angle) ??
+                    body.orbitRadius * (cos * refX + sin * refY));
                 points.Add((Vector3)(pSystem * toUnity));
             }
 

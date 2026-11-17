@@ -13,12 +13,14 @@ namespace PioneerFramework.Celestial
         public bool Retrograde { get; private set; }
         public string SynchronousTargetReference { get; private set; } = "";
         internal static PhysicsInitialization CreateInitialization(CelestialMotionXml motion)
+            => new(ExistingCelestialEphemerisBridge.Id, "existing.circular.v2", 2, JsonSerializer.SerializeToUtf8Bytes(ToMotionData(motion)));
+
+        private static MotionData ToMotionData(CelestialMotionXml motion)
         {
             var rotation = motion.rotation;
-            return new(ExistingCelestialEphemerisBridge.Id, "existing.circular.v2", 2,
-                JsonSerializer.SerializeToUtf8Bytes(new MotionData(motion.orbitRadiusMeters, motion.orbitPeriodSeconds, motion.orbitPhaseRadians,
-                    new[] { motion.orbitNormalX, motion.orbitNormalY, motion.orbitNormalZ }, motion.bodyType, motion.frameOriginReference,
-                    new[] { rotation.axisX, rotation.axisY, rotation.axisZ }, rotation.periodSeconds, rotation.phaseRadians, rotation.retrograde, rotation.synchronousTargetReference)));
+            return new MotionData(motion.orbitRadiusMeters, motion.orbitPeriodSeconds, motion.orbitPhaseRadians,
+                new[] { motion.orbitNormalX, motion.orbitNormalY, motion.orbitNormalZ }, motion.bodyType, motion.frameOriginReference,
+                new[] { rotation.axisX, rotation.axisY, rotation.axisZ }, rotation.periodSeconds, rotation.phaseRadians, rotation.retrograde, rotation.synchronousTargetReference);
         }
         private static CelestialResult<ExistingEphemerisParameters> ParseV2(PhysicsInitialization initialization)
         {
@@ -28,23 +30,28 @@ namespace PioneerFramework.Celestial
             {
                 CelestialJsonFields.RejectDuplicates(initialization.Payload.Span);
                 var data = JsonSerializer.Deserialize<MotionData>(initialization.Payload.Span, MotionOptions) ?? throw new ArgumentException("Missing motion.");
-                if (data.OrbitNormal == null || data.OrbitNormal.Length != 3 || data.RotationAxis == null || data.RotationAxis.Length != 3)
-                    throw new ArgumentException("Invalid axis.");
-                var readable = new CelestialMotionXml {
-                    orbitRadiusMeters = data.OrbitRadiusMeters, orbitPeriodSeconds = data.OrbitPeriodSeconds, orbitPhaseRadians = data.OrbitPhaseRadians,
-                    orbitNormalX = data.OrbitNormal[0], orbitNormalY = data.OrbitNormal[1], orbitNormalZ = data.OrbitNormal[2], bodyType = data.BodyType,
-                    frameOriginReference = data.FrameOriginReference, rotation = new() { axisX = data.RotationAxis[0], axisY = data.RotationAxis[1], axisZ = data.RotationAxis[2],
-                        periodSeconds = data.RotationPeriodSeconds, phaseRadians = data.RotationPhaseRadians, retrograde = data.Retrograde, synchronousTargetReference = data.SynchronousTargetReference } };
-                var errors = readable.ConfigErrors().ToArray(); if (errors.Length > 0) throw new ArgumentException(string.Join(",", errors));
-                return CelestialResult.Ok(new ExistingEphemerisParameters(new Data {
-                    orbitRadius = data.OrbitRadiusMeters, orbitPeriod = data.OrbitPeriodSeconds, initialPhase = data.OrbitPhaseRadians, orbitNormal = data.OrbitNormal,
-                    dayLengthTicks = data.RotationPeriodSeconds ?? (data.OrbitPeriodSeconds > 0 ? data.OrbitPeriodSeconds : 60000), bodyType = data.BodyType, frameOriginReference = data.FrameOriginReference }) {
-                        UsesAuthoritativeRotation = true, RotationAxis = new DVector3(data.RotationAxis[0], data.RotationAxis[1], data.RotationAxis[2]).normalized,
-                        RotationPhaseRadians = data.RotationPhaseRadians, Retrograde = data.Retrograde, SynchronousTargetReference = data.SynchronousTargetReference });
+                return CelestialResult.Ok(FromMotionData(data));
             }
             catch (Exception exception) when (exception is ArgumentException or JsonException)
             { return CelestialResult.Reject<ExistingEphemerisParameters>(new CelestialError("InvalidInitialization", Detail: exception.Message)); }
         }
+        private static ExistingEphemerisParameters FromMotionData(MotionData data)
+        {
+            if (data.OrbitNormal == null || data.OrbitNormal.Length != 3 || data.RotationAxis == null || data.RotationAxis.Length != 3)
+                throw new ArgumentException("Invalid axis.");
+            var readable = new CelestialMotionXml {
+                orbitRadiusMeters = data.OrbitRadiusMeters, orbitPeriodSeconds = data.OrbitPeriodSeconds, orbitPhaseRadians = data.OrbitPhaseRadians,
+                orbitNormalX = data.OrbitNormal[0], orbitNormalY = data.OrbitNormal[1], orbitNormalZ = data.OrbitNormal[2], bodyType = data.BodyType,
+                frameOriginReference = data.FrameOriginReference, rotation = new() { axisX = data.RotationAxis[0], axisY = data.RotationAxis[1], axisZ = data.RotationAxis[2],
+                    periodSeconds = data.RotationPeriodSeconds, phaseRadians = data.RotationPhaseRadians, retrograde = data.Retrograde, synchronousTargetReference = data.SynchronousTargetReference } };
+            var errors = readable.ConfigErrors().ToArray(); if (errors.Length > 0) throw new ArgumentException(string.Join(",", errors));
+            return new ExistingEphemerisParameters(new Data {
+                orbitRadius = data.OrbitRadiusMeters, orbitPeriod = data.OrbitPeriodSeconds, initialPhase = data.OrbitPhaseRadians, orbitNormal = data.OrbitNormal,
+                dayLengthTicks = data.RotationPeriodSeconds ?? (data.OrbitPeriodSeconds > 0 ? data.OrbitPeriodSeconds : 60000), bodyType = data.BodyType, frameOriginReference = data.FrameOriginReference }) {
+                    UsesAuthoritativeRotation = true, RotationAxis = new DVector3(data.RotationAxis[0], data.RotationAxis[1], data.RotationAxis[2]).normalized,
+                    RotationPhaseRadians = data.RotationPhaseRadians, Retrograde = data.Retrograde, SynchronousTargetReference = data.SynchronousTargetReference };
+        }
+
         internal (DQuaternion Orientation, DVector3 AngularVelocity) Rotation(double seconds, DVector3 targetOffset, DVector3 targetVelocity)
         {
             if (SynchronousTargetReference.Length == 0)

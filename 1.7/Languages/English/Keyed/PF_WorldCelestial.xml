@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_WorldCelestial_System>Star system</PF_WorldCelestial_System>
+  <PF_WorldCelestial_FullSystem>Fit star system</PF_WorldCelestial_FullSystem>
+  <PF_WorldCelestial_Back>Return to home view</PF_WorldCelestial_Back>
+  <PF_WorldCelestial_FocusClose>Follow {0} up close</PF_WorldCelestial_FocusClose>
+  <PF_WorldCelestial_FocusSystem>Open local view for {0}</PF_WorldCelestial_FocusSystem>
+  <PF_WorldCelestial_ChooseBody>Choose celestial body</PF_WorldCelestial_ChooseBody>
+  <PF_WorldCelestial_OpenSurface>Open world surface</PF_WorldCelestial_OpenSurface>
+  <PF_WorldCelestial_RetrySurface>Retry surface generation</PF_WorldCelestial_RetrySurface>
+  <PF_WorldCelestial_Zoom>Zoom {0}×</PF_WorldCelestial_Zoom>
+  <PF_WorldCelestial_Radius>Radius {0} km</PF_WorldCelestial_Radius>
+  <PF_WorldCelestial_Mass>Mass {0} kg</PF_WorldCelestial_Mass>
+  <PF_WorldCelestial_Distance>Distance to {0} {1} km</PF_WorldCelestial_Distance>
+  <PF_WorldCelestial_Orbit>Semimajor axis {0} km · Eccentricity {1}</PF_WorldCelestial_Orbit>
+  <PF_WorldCelestial_OrbitPeriod>Orbital period {0} seconds</PF_WorldCelestial_OrbitPeriod>
+  <PF_WorldCelestial_Atmosphere>Atmosphere height {0} km</PF_WorldCelestial_Atmosphere>
+  <PF_WorldCelestial_Rotation>Rotation period {0} ticks</PF_WorldCelestial_Rotation>
+  <PF_WorldCelestial_Satellites>Direct satellites {0}</PF_WorldCelestial_Satellites>
+  <PF_WorldCelestial_Region>Tile {0} · {1}</PF_WorldCelestial_Region>
+  <PF_WorldCelestial_Climate>Temperature {0} °C · Rainfall {1} mm</PF_WorldCelestial_Climate>
+  <PF_WorldCelestial_Elevation>Elevation {0} m · {1}</PF_WorldCelestial_Elevation>
+</LanguageData>

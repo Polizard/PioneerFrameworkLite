@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_WorldCelestial_System>恒星系</PF_WorldCelestial_System>
+  <PF_WorldCelestial_FullSystem>恒星系全图</PF_WorldCelestial_FullSystem>
+  <PF_WorldCelestial_Back>返回母星视图</PF_WorldCelestial_Back>
+  <PF_WorldCelestial_FocusClose>近景跟随 {0}</PF_WorldCelestial_FocusClose>
+  <PF_WorldCelestial_FocusSystem>进入 {0} 的局部视图</PF_WorldCelestial_FocusSystem>
+  <PF_WorldCelestial_ChooseBody>选择天体</PF_WorldCelestial_ChooseBody>
+  <PF_WorldCelestial_OpenSurface>打开原生地表</PF_WorldCelestial_OpenSurface>
+  <PF_WorldCelestial_RetrySurface>重试地表生成</PF_WorldCelestial_RetrySurface>
+  <PF_WorldCelestial_Zoom>缩放 {0}×</PF_WorldCelestial_Zoom>
+  <PF_WorldCelestial_Radius>半径 {0} km</PF_WorldCelestial_Radius>
+  <PF_WorldCelestial_Mass>质量 {0} kg</PF_WorldCelestial_Mass>
+  <PF_WorldCelestial_Distance>距 {0} {1} km</PF_WorldCelestial_Distance>
+  <PF_WorldCelestial_Orbit>半长轴 {0} km · 偏心率 {1}</PF_WorldCelestial_Orbit>
+  <PF_WorldCelestial_OrbitPeriod>公转周期 {0} 秒</PF_WorldCelestial_OrbitPeriod>
+  <PF_WorldCelestial_Atmosphere>大气高度 {0} km</PF_WorldCelestial_Atmosphere>
+  <PF_WorldCelestial_Rotation>自转周期 {0} tick</PF_WorldCelestial_Rotation>
+  <PF_WorldCelestial_Satellites>直属卫星 {0}</PF_WorldCelestial_Satellites>
+  <PF_WorldCelestial_Region>地块 {0} · {1}</PF_WorldCelestial_Region>
+  <PF_WorldCelestial_Climate>气温 {0} °C · 降雨 {1} mm</PF_WorldCelestial_Climate>
+  <PF_WorldCelestial_Elevation>海拔 {0} m · {1}</PF_WorldCelestial_Elevation>
+</LanguageData>

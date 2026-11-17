@@ -22,10 +22,11 @@ namespace PioneerFramework.Celestial
                     .OfType<ICelestialPhysicsBindingProperties>().Select(properties => properties.Initialization.ProviderId).Distinct(StringComparer.Ordinal).ToArray();
                 return ids.Length == 1 ? CelestialPhysicsProviderRegistry.Global.Connect(ids[0], request) :
                     CelestialResult.Reject<CelestialPhysicsConnection>(new CelestialError(ids.Length == 0 ? "PhysicsProviderMissing" : "MultiplePhysicsProviders"));
-            });
+            }, populationPolicy: definition.populationPolicy);
         }
         internal static CelestialResult<CelestialWorldBootstrapScope> Begin(CelestialSystemTemplate system, ulong seed,
-            Func<CelestialPhysicsWorldRequest, CelestialResult<CelestialPhysicsConnection>> connect, ICelestialMapBackend? mapBackend = null)
+            Func<CelestialPhysicsWorldRequest, CelestialResult<CelestialPhysicsConnection>> connect, ICelestialMapBackend? mapBackend = null,
+            CelestialPopulationPolicyDef? populationPolicy = null)
         {
             var game = Verse.Current.Game; var world = Verse.Current.CreatingWorld ?? game?.World;
             if (game == null || world?.grid == null) return Reject("NativeWorldUnavailable");
@@ -35,15 +36,16 @@ namespace PioneerFramework.Celestial
             CelestialWorldBootstrapHooks.InstallConstruction();
             CelestialNativeCompatibility.RequireInstalledHooks("WorldGrid.RegisterPlanetLayer.prefix.BeginConstruction", "WorldGrid.RegisterPlanetLayer.finalizer.EndConstruction",
                 "WorldGrid.RegisterPlanetLayer.Settings.prefix.BeginRootConstruction", "WorldGrid.RegisterPlanetLayer.Settings.finalizer.EndConstruction");
-            var expanded = CelestialSystemGenerator.Expand(system, seed);
+            var expanded = ExpandNewWorld(system, seed, populationPolicy);
             if (!expanded.Success) return CelestialResult.Reject<CelestialWorldBootstrapScope>(expanded.Errors.ToArray());
+            var manifest = expanded.Value.Manifest;
             var selectedRoot = CelestialNativeCompatibility.ResolveRootDefinition(Find.Scenario);
             if (!selectedRoot.Success) return CelestialResult.Reject<CelestialWorldBootstrapScope>(selectedRoot.Errors.ToArray());
             var rootDefinition = selectedRoot.Value;
             if (rootDefinition == null || !typeof(CelestialSurfaceLayer).IsAssignableFrom(rootDefinition.layerType)) return Reject("RootLayerAdapterMissing");
             var genericDefinition = DefDatabase<PlanetLayerDef>.GetNamedSilentFail("PF_CelestialSurface");
             if (genericDefinition == null) return Reject("GenericSurfaceDefinitionMissing");
-            var worldRequest = new CelestialPhysicsWorldRequest(Guid.NewGuid(), seed, expanded.Value);
+            var worldRequest = new CelestialPhysicsWorldRequest(Guid.NewGuid(), seed, manifest);
             CelestialResult<CelestialPhysicsConnection> connection;
             try { connection = connect(worldRequest); }
             catch (Exception exception) { return Reject("ProviderInitializationFailed", exception.Message); }
@@ -59,7 +61,7 @@ namespace PioneerFramework.Celestial
                     return definition?.ToTemplate() ?? CelestialResult.Reject<CelestialBodyTemplate>(new CelestialError("DefinitionMissing", Detail: name)); });
                 var surfaces = new CelestialSurfaceService(runtime, genericDefinition);
                 _ = new CelestialMapService(runtime, surfaces, mapBackend);
-                var operation = runtime.CreateBatch(new CreateBatchRequest(new("bootstrap/" + system.DefinitionId, runtime.WorldSessionId, 0), expanded.Value));
+                var operation = runtime.CreateBatch(new CreateBatchRequest(new("bootstrap/" + system.DefinitionId, runtime.WorldSessionId, 0), manifest));
                 if (operation.Status == CelestialOperationStatus.Rejected) return CelestialResult.Reject<CelestialWorldBootstrapScope>(operation.Errors.ToArray());
                 manager = Verse.Current.Game?.GetComponent<CelestialBodyManager>();
                 if (manager == null) throw new InvalidOperationException("CelestialBodyManager missing.");
@@ -71,8 +73,9 @@ namespace PioneerFramework.Celestial
                     var anchored = clock.InitializeCelestialWorldClock(runtime.CurrentStamp.PhysicalSeconds);
                     if (!anchored.Success) throw new InvalidOperationException(anchored.Errors[0].Code);
                 }
-                var scope = new CelestialWorldBootstrapScope(expanded.Value, runtime, surfaces, rootDefinition, manager, operation.OperationId, game, world);
+                var scope = new CelestialWorldBootstrapScope(manifest, runtime, surfaces, rootDefinition, manager, operation.OperationId, game, world);
                 CelestialWorldGenSessionRegistry.Register(scope);
+                if (populationPolicy != null) Log.Message("[PFL] Celestial population " + populationPolicy.defName + " · " + expanded.Value.Diagnostics);
                 return CelestialResult.Ok(scope);
             }
             catch (Exception exception)
@@ -81,6 +84,15 @@ namespace PioneerFramework.Celestial
                 runtime?.AbandonBootstrap();
                 return Reject("BootstrapInitializationFailed", exception.Message);
             }
+        }
+        internal static CelestialResult<CelestialPopulationExpansion> ExpandNewWorld(CelestialSystemTemplate system, ulong seed,
+            CelestialPopulationPolicyDef? populationPolicy)
+        {
+            var expanded = CelestialSystemGenerator.Expand(system, seed);
+            if (!expanded.Success) return CelestialResult.Reject<CelestialPopulationExpansion>(expanded.Errors.ToArray());
+            return populationPolicy == null
+                ? CelestialResult.Ok(new CelestialPopulationExpansion(expanded.Value, new CelestialPopulationDiagnostics()))
+                : CelestialPopulationGenerator.Append(expanded.Value, system.MaxInstances, populationPolicy);
         }
         internal static void End(CelestialWorldBootstrapScope scope)
         {

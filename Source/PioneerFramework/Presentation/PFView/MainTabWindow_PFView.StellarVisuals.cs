@@ -52,6 +52,13 @@ namespace PioneerFramework
         {
             if (stellarShadersChecked) return;
             stellarShadersChecked = true;
+            SelectStellarShaders(out stellarSurfaceShader, out stellarHaloShader, out stellarShadersAreFast, out stellarShadersAreS3A);
+        }
+
+        internal static void SelectStellarShaders(out Shader? stellarSurfaceShader, out Shader? stellarHaloShader,
+            out bool stellarShadersAreFast, out bool stellarShadersAreS3A)
+        {
+            stellarSurfaceShader = stellarHaloShader = null;
             stellarShadersAreFast = PFViewStellarProbe.FastRendererEnabled;
             stellarShadersAreS3A = false;
             if (stellarShadersAreFast)
@@ -109,40 +116,44 @@ namespace PioneerFramework
             if (stellarSurfaceShader == null || stellarHaloShader == null || surface.shader != stellarSurfaceShader)
                 return radius;
 
-            int steps = PFViewStellarProbe.ResolveStepBudget();
-            Vector3 eye = PFViewStellarVisualCore.Eye(GetCameraViewPos(), center, rotation, radius);
-            var frame = PFViewStellarVisualCore.Frame(tick);
-            Texture2D? heat = DebugUseStellarHeatCache && !stellarShadersAreFast
-                ? (stellarHeatCache ??= new PFViewStellarHeatCache()).GetTexture()
-                : null;
-            Vector4 eyeValue = new(eye.x, eye.y, eye.z, heat != null ? 1f : 0f);
-            float framePosition = heat != null ? PFViewStellarHeatCacheCore.FramePosition(frame.Phase) : PFViewStellarVisualCore.FlowSpeed;
-            surface.SetVector("_StellarEye", eyeValue);
-            ApplyStellarFrame(surface, in frame, heat, framePosition);
-            surface.SetVector("_StellarParams", new Vector4(steps, 0f, .19f, PFViewStellarVisualCore.Extent));
-
-            float proxyRadius = radius * PFViewStellarVisualCore.Extent;
             // P0 探针：halo pass 可单独关掉做 A/B（surface pass 的绘制在 Scene.cs 侧由
             // `PFViewStellarProbe.SurfacePass` 控制，两者独立）。默认开 = 现状。
-            if (!PFViewStellarProbe.HaloPass) return proxyRadius;
-
-            if (!stellarHaloMaterials.TryGetValue(body.bodyId, out var halo))
+            Material? halo = null;
+            if (PFViewStellarProbe.HaloPass && !stellarHaloMaterials.TryGetValue(body.bodyId, out halo))
             {
                 halo = new Material(stellarHaloShader) { name = "PF_StellarHalo_" + body.bodyId,
                     renderQueue = PFViewLayers.StellarHalo };
                 stellarHaloMaterials.Add(body.bodyId, halo);
             }
-            halo.SetVector("_StellarEye", eyeValue);
-            ApplyStellarFrame(halo, in frame, heat, framePosition);
-            halo.SetVector("_StellarParams", new Vector4(steps, 1f, .19f, PFViewStellarVisualCore.Extent));
-            stellarHaloDraws.Add((body.bodyId, mesh, Matrix4x4.TRS(center, rotation, Vector3.one * proxyRadius * 2f), halo));
+            float proxyRadius = ApplyStellarVisual(surface, halo, GetCameraViewPos(), center, radius, rotation, tick,
+                stellarShadersAreFast, DebugUseStellarHeatCache, ref stellarHeatCache);
+            if (halo != null)
+                stellarHaloDraws.Add((body.bodyId, mesh, Matrix4x4.TRS(center, rotation, Vector3.one * proxyRadius * 2f), halo));
             return proxyRadius;
         }
 
-        private static void ApplyStellarFrame(Material material, in PFViewStellarFrame frame, Texture2D? heat, float framePosition)
+        internal static float ApplyStellarVisual(Material surface, Material? halo, Vector3 cameraPosition,
+            Vector3 center, float radius, Quaternion rotation, double tick, bool fast, bool useHeatCache,
+            ref PFViewStellarHeatCache? heatCache)
+        {
+            int steps = PFViewStellarProbe.ResolveStepBudget();
+            Vector3 eye = PFViewStellarVisualCore.Eye(cameraPosition, center, rotation, radius);
+            var frame = PFViewStellarVisualCore.Frame(tick);
+            Texture2D? heat = useHeatCache && !fast ? (heatCache ??= new PFViewStellarHeatCache()).GetTexture() : null;
+            Vector4 eyeValue = new(eye.x, eye.y, eye.z, heat != null ? 1f : 0f);
+            float framePosition = heat != null ? PFViewStellarHeatCacheCore.FramePosition(frame.Phase) : PFViewStellarVisualCore.FlowSpeed;
+            ApplyStellarFrame(surface, in frame, heat, framePosition, eyeValue, steps, 0f);
+            if (halo != null) ApplyStellarFrame(halo, in frame, heat, framePosition, eyeValue, steps, 1f);
+            return radius * PFViewStellarVisualCore.Extent;
+        }
+
+        private static void ApplyStellarFrame(Material material, in PFViewStellarFrame frame, Texture2D? heat,
+            float framePosition, Vector4 eye, int steps, float halo)
         {
             if (heat != null && material.GetTexture("_StellarHeatCache") != heat)
                 material.SetTexture("_StellarHeatCache", heat);
+            material.SetVector("_StellarEye", eye);
+            material.SetVector("_StellarParams", new Vector4(steps, halo, .19f, PFViewStellarVisualCore.Extent));
             material.SetVector("_StellarTime", new Vector4(frame.Phase, framePosition, 2f, 2f));
             material.SetVector("_StellarDrift", frame.Drift);
             material.SetVector("_StellarArchHeight0", frame.ArchHeight0);
