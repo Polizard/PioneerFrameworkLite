@@ -15,6 +15,8 @@ namespace PioneerFramework.RingWorld
     /// - 新 shader 缺失时回退 `WorldOverlayTransparent`（旧观感），只告警一次。
     /// - 每个材质创建后都登记到 `RingWorldVisualState`，由各绘制层每帧刷新 uniform。
     /// </summary>
+    // 2026-11-17：有静态 Shader/Texture2D 字段 ⇒ 标记静态构造（主线程）。材质仍是首次使用时创建。
+    [Verse.StaticConstructorOnStartup]
     internal static class RingWorldMaterials
     {
         private const string TextureRoot = "World/RingWorld/";

@@ -87,6 +87,8 @@ namespace PioneerFramework
     /// 原版那 1500 颗星：数量/分布/尺寸/淡化/锚定全照原版，**只换掉"星点长什么样"**（详见内层注释与
     /// `GetSoftDotTexture` 的说明）。
     /// </summary>
+    // 2026-11-17：有静态 Material/Texture2D 字段 ⇒ 标记静态构造（主线程）。材质仍是首次使用时创建。
+    [Verse.StaticConstructorOnStartup]
     internal static class WorldStarfield
     {
         /// <summary>星星数量 = `GlobalDrawLayer_Stars` 同款（1500）。</summary>

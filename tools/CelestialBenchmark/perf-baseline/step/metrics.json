@@ -1,0 +1,41 @@
+{
+  "createdUtc": "2026-11-17T16:42:33.6410015Z",
+  "runtime": ".NET 10.0.13",
+  "cpu": "AMD64 Family 25 Model 117 Stepping 2, AuthenticAMD",
+  "processors": 16,
+  "gitCommit": "4529564505b20136a16d81767813a7d0d629bf92",
+  "scenario": "step",
+  "note": "SpaceGameComp.AdvancePhysics, runtime==null branch (ship step only)",
+  "results": [
+    {
+      "name": "advance-physics",
+      "groups": 0,
+      "samples": 1000,
+      "p50ms": 0.0028,
+      "p95ms": 0.0063,
+      "p99ms": 0.0153,
+      "maxMs": 238.6631,
+      "allocatedBytes": 1254912
+    },
+    {
+      "name": "advance-physics",
+      "groups": 32,
+      "samples": 1000,
+      "p50ms": 0.0662,
+      "p95ms": 0.0944,
+      "p99ms": 0.157,
+      "maxMs": 0.3982,
+      "allocatedBytes": 20373304
+    },
+    {
+      "name": "advance-physics",
+      "groups": 128,
+      "samples": 1000,
+      "p50ms": 0.1957,
+      "p95ms": 0.2475,
+      "p99ms": 0.3636,
+      "maxMs": 1.0135,
+      "allocatedBytes": 69140488
+    }
+  ]
+}

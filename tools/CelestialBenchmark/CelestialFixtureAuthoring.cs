@@ -18,7 +18,8 @@ internal static class CelestialFixtureAuthoring
             Components = body.Components.Append(new CelestialCompSaveRecord("unknown", "fixture.missing", 1, 1,
                 new byte[] { 0, 255, 7 }, new byte[] { 31, 0, 0, 72 })).ToArray() };
         var surface = new CelestialSavedSurface(body.Description.Id, 3, body.Description.RadiusMeters, 100, 0, 123,
-            CelestialGenerationConfiguration.Encode(body.Components), CelestialSurfaceState.Ready);
+            CelestialGenerationConfiguration.Encode(body.Components), CelestialSurfaceState.Ready,
+            CelestialPlanetTerrain.AlgorithmVersion);
         var retired = ready with { Surfaces = new[] { surface },
             Operations = ready.Operations.Append(new CelestialOperationRecord("fixture/map", new CelestialOperation("fixture/native-map",
                 CelestialOperationStatus.Applied, new[] { body.Description.Id }, appliedRevision: ready.CatalogRevision))).ToArray(),

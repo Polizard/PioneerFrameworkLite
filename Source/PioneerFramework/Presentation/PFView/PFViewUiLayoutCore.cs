@@ -4,7 +4,7 @@ namespace PioneerFramework
 {
     internal enum PFViewToolbarItem
     {
-        Navigate, Body, Previous, Display, Camera, Frame, Time, Help, Debug, Navball, Cockpit, Objects
+        Navigate, Body, Previous, Display, Camera, Frame, Time, Transfer, Help, Debug, Navball, Cockpit, Objects
     }
 
     internal enum PFViewDrawerTab { None, Status, Weapons, Radar, Details, Objects }
@@ -68,7 +68,8 @@ namespace PioneerFramework
                 PFViewToolbarItem.Display => 76f,
                 PFViewToolbarItem.Camera => 144f,
                 PFViewToolbarItem.Frame => 132f,
-                PFViewToolbarItem.Time => 200f,
+                PFViewToolbarItem.Time => 320f,
+                PFViewToolbarItem.Transfer => 170f,
                 PFViewToolbarItem.Cockpit or PFViewToolbarItem.Objects => 94f,
                 PFViewToolbarItem.Help => 30f,
                 _ => 60f

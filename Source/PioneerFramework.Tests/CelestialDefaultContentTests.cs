@@ -33,12 +33,18 @@ public class CelestialDefaultContentTests
     }
 
     // Exercise the actual runtime package, including inherited XML and the external sample patch.
+    // 2026-11-17：天体内容 Def（系统/天体/档案/视觉/地图配方）已迁到附属包 NFexp，仍在本仓内，
+    // 所以先找 PFL 的 1.7/Defs，找不到再找 NFexp/1.7/Defs（`../Patches/...` 这类相对路径仍命中 PFL）。
     internal static string DataPath(string relative)
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root != null && !File.Exists(Path.Combine(root.FullName, "global.json"))) root = root.Parent;
         Assert.NotNull(root);
-        return Path.Combine(root.FullName, "1.7", "Defs", relative);
+        var pfl = Path.Combine(root.FullName, "1.7", "Defs", relative);
+        if (File.Exists(pfl) || Directory.Exists(pfl)) return pfl;
+        var nfexp = Path.Combine(root.FullName, "NFexp", "1.7", "Defs", relative);
+        if (File.Exists(nfexp) || Directory.Exists(nfexp)) return nfexp;
+        return pfl;
     }
     private static T Parse<T>(XElement element) where T : new()
     {

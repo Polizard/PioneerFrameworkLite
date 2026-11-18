@@ -168,6 +168,11 @@ def validate_ship_building_visuals(roots, index):
 def main():
     # 1. XML well-formed + collect defNames (all existing version package folders)
     defs_dirs = [v / "Defs" for v in VERSION_DIRS if (v / "Defs").exists()]
+    # 2026-11-17：天体内容 Def（系统/天体/档案/视觉/地图配方）已迁到同仓附属包 NFexp。
+    # 它的 Defs 照样过本体校验；About/Assemblies/Languages 这类包级项仍只对 VERSION_DIRS 生效。
+    content_defs = ROOT / "NFexp" / "1.7" / "Defs"
+    if content_defs.exists():
+        defs_dirs.append(content_defs)
     if not defs_dirs:
         fail("no <version>/Defs directory found (expected 1.6/Defs and/or 1.7/Defs)")
     def_names = set()

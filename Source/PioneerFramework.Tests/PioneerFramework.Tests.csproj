@@ -49,6 +49,9 @@
     <None Include="..\PioneerFramework\Presentation\PFView\PFViewQuadGeometry.cs" Link="Source\PioneerFramework\Presentation\PFView\PFViewQuadGeometry.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\Presentation\PFView\PFViewCelestialLighting.cs" Link="Source\PioneerFramework\Presentation\PFView\PFViewCelestialLighting.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Defs\**\*.xml" Link="Defs\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- 2026-11-17：天体内容 Def 迁到附属包 NFexp（同仓），测试仍按 Defs\<相对路径> 读取，
+         所以两棵树的 XML 都拷到输出目录的 Defs\ 下（两边文件名不重叠）。 -->
+    <None Include="..\..\NFexp\1.7\Defs\**\*.xml" Link="Defs\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\NFexp\1.7\Defs')" />
     <None Include="..\..\1.7\Patches\**\*.xml" Link="Patches\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\GameReferences.props" Link="Source\GameReferences.props" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\PioneerFramework.csproj" Link="Source\PioneerFramework\PioneerFramework.csproj" CopyToOutputDirectory="PreserveNewest" />

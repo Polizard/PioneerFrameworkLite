@@ -1,0 +1,13 @@
+STDERR [23:30:03] ModelContextProtocol.Server.StdioServerTransport [Information] Server (stream) (DecompilerServer) transport reading messages.
+STDERR [23:30:03] ModelContextProtocol.Server.StdioServerTransport [Information] Server (stream) (DecompilerServer) transport completed reading messages.
+STDERR [23:30:03] DecompilerServer.WorkspaceBootstrapService [Information] No registered workspace aliases found.
+STDERR [23:30:03] Microsoft.Hosting.Lifetime [Information] Application started. Press Ctrl+C to shut down.
+STDERR [23:30:03] Microsoft.Hosting.Lifetime [Information] Hosting environment: Production
+STDERR [23:30:03] Microsoft.Hosting.Lifetime [Information] Content root path: D:\PioneerFrameworkLite
+STDERR [23:30:03] ModelContextProtocol.Server.McpServer [Information] Server (DecompilerServer 1.4.0.0) method 'initialize' request handler called.
+STDERR [23:30:03] ModelContextProtocol.Server.McpServer [Information] Server (DecompilerServer 1.4.0.0) method 'tools/list' request handler called.
+STDERR [23:30:03] ModelContextProtocol.Server.McpServer [Information] Server (DecompilerServer 1.4.0.0), Client (probe 1.0) method 'tools/list' request handler completed in 8.6271ms.
+STDERR [23:30:03] ModelContextProtocol.Server.McpServer [Information] Server (DecompilerServer 1.4.0.0), Client (probe 1.0) method 'initialize' request handler completed in 8.811ms.
+STDERR [23:30:03] Microsoft.Hosting.Lifetime [Information] Application is shutting down...
+STDERR [23:30:03] ModelContextProtocol.Server.StdioServerTransport [Information] Server (stream) (DecompilerServer) shutting down.
+STDERR [23:30:03] ModelContextProtocol.Server.StdioServerTransport [Information] Server (stream) (DecompilerServer) shut down.

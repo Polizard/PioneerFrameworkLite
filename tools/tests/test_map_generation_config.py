@@ -20,6 +20,16 @@ from validate_config import validate_map_generation_node
 
 ROOT = Path(__file__).resolve().parents[2]
 INDEX = build_schema_index([ROOT / "Source/PioneerFramework/MapGeneration"])
+
+
+def shipped_path(rel: str) -> Path:
+    """2026-11-17：天体/地图配方等内容 Def 已迁到同仓附属包 NFexp；先找 PFL，再找 NFexp。"""
+    for base in (ROOT / "1.7" / "Defs", ROOT / "NFexp" / "1.7" / "Defs"):
+        candidate = base / rel
+        if candidate.is_file():
+            return candidate
+    return ROOT / "1.7" / "Defs" / rel
+
 MAP_NS = "PioneerFramework.MapGeneration."
 PROPERTIES = 'Class="PioneerFramework.MapGeneration.NativeRulesModuleProperties"'
 
@@ -38,9 +48,9 @@ def profile(body):
 class MapGenerationConfigTests(unittest.TestCase):
     def test_shipped_recipes_and_map_profiles_have_no_schema_errors(self):
         shipped = [
-            ROOT / "1.7" / "Defs" / "CelestialFramework" / "LocalMapRecipes.xml",
-            ROOT / "1.7" / "Defs" / "CelestialFramework" / "CelestialProfiles.xml",
-            ROOT / "1.7" / "Defs" / "CelestialFramework" / "CelestialPlanetKindProfiles.xml",
+            shipped_path("CelestialFramework/LocalMapRecipes.xml"),
+            shipped_path("CelestialFramework/CelestialProfiles.xml"),
+            shipped_path("CelestialFramework/CelestialPlanetKindProfiles.xml"),
         ]
         checked = 0
         for path in shipped:

@@ -1,0 +1,261 @@
+{
+  "createdUtc": "2026-11-17T16:23:55.768228Z",
+  "runtime": ".NET 10.0.13",
+  "os": "Microsoft Windows 10.0.26200",
+  "cpu": "AMD64 Family 25 Model 117 Stepping 2, AuthenticAMD",
+  "processors": 16,
+  "samples": 1000,
+  "configuration": "Release; production CPU paths; no rendering or GPU",
+  "results": [
+    {
+      "name": "ship-prepare-publish",
+      "bodies": 3,
+      "ships": 0,
+      "maps": 0,
+      "count": 1000,
+      "p50ms": 0.0331,
+      "p95ms": 0.0469,
+      "p99ms": 0.0706,
+      "maxMs": 3.5346,
+      "totalMs": 39.8839,
+      "allocatedBytes": 22188304,
+      "collections": [
+        2,
+        0,
+        0
+      ],
+      "counters": {
+        "ConfigurationSerializations": 0,
+        "StateCaptures": 0,
+        "VisualProfileSerializations": 0,
+        "VisualHashes": 0,
+        "Advances": 1000,
+        "ShipGraphs": 0,
+        "CatalogSorts": 0
+      },
+      "heapBytes": 7071232,
+      "peakWorkingSet": 78823424,
+      "retention": null,
+      "saveBytes": 4128
+    },
+    {
+      "name": "ship-prepare-publish",
+      "bodies": 3,
+      "ships": 0,
+      "maps": 4,
+      "count": 1000,
+      "p50ms": 0.0322,
+      "p95ms": 0.0472,
+      "p99ms": 0.0978,
+      "maxMs": 0.7099,
+      "totalMs": 36.032,
+      "allocatedBytes": 22186784,
+      "collections": [
+        2,
+        0,
+        0
+      ],
+      "counters": {
+        "ConfigurationSerializations": 0,
+        "StateCaptures": 0,
+        "VisualProfileSerializations": 0,
+        "VisualHashes": 0,
+        "Advances": 1000,
+        "ShipGraphs": 0,
+        "CatalogSorts": 0
+      },
+      "heapBytes": 8351344,
+      "peakWorkingSet": 83193856,
+      "retention": null,
+      "saveBytes": 4124
+    },
+    {
+      "name": "ship-prepare-publish",
+      "bodies": 3,
+      "ships": 1,
+      "maps": 0,
+      "count": 1000,
+      "p50ms": 0.0829,
+      "p95ms": 0.1176,
+      "p99ms": 0.1835,
+      "maxMs": 0.8867,
+      "totalMs": 91.2214,
+      "allocatedBytes": 40737136,
+      "collections": [
+        4,
+        0,
+        0
+      ],
+      "counters": {
+        "ConfigurationSerializations": 0,
+        "StateCaptures": 0,
+        "VisualProfileSerializations": 0,
+        "VisualHashes": 0,
+        "Advances": 1000,
+        "ShipGraphs": 0,
+        "CatalogSorts": 0
+      },
+      "heapBytes": 10378456,
+      "peakWorkingSet": 84201472,
+      "retention": null,
+      "saveBytes": 4128
+    },
+    {
+      "name": "ship-prepare-publish",
+      "bodies": 3,
+      "ships": 1,
+      "maps": 4,
+      "count": 1000,
+      "p50ms": 0.0836,
+      "p95ms": 0.127,
+      "p99ms": 0.2049,
+      "maxMs": 0.7977,
+      "totalMs": 91.2639,
+      "allocatedBytes": 40680576,
+      "collections": [
+        4,
+        0,
+        0
+      ],
+      "counters": {
+        "ConfigurationSerializations": 0,
+        "StateCaptures": 0,
+        "VisualProfileSerializations": 0,
+        "VisualHashes": 0,
+        "Advances": 1000,
+        "ShipGraphs": 0,
+        "CatalogSorts": 0
+      },
+      "heapBytes": 10317248,
+      "peakWorkingSet": 84213760,
+      "retention": null,
+      "saveBytes": 4128
+    },
+    {
+      "name": "ship-prepare-publish",
+      "bodies": 3,
+      "ships": 32,
+      "maps": 0,
+      "count": 1000,
+      "p50ms": 1.1523,
+      "p95ms": 1.7346,
+      "p99ms": 2.1439,
+      "maxMs": 7.1643,
+      "totalMs": 1206.2792,
+      "allocatedBytes": 448138792,
+      "collections": [
+        54,
+        0,
+        0
+      ],
+      "counters": {
+        "ConfigurationSerializations": 0,
+        "StateCaptures": 0,
+        "VisualProfileSerializations": 0,
+        "VisualHashes": 0,
+        "Advances": 1000,
+        "ShipGraphs": 0,
+        "CatalogSorts": 0
+      },
+      "heapBytes": 7391408,
+      "peakWorkingSet": 89939968,
+      "retention": null,
+      "saveBytes": 4124
+    },
+    {
+      "name": "ship-prepare-publish",
+      "bodies": 3,
+      "ships": 32,
+      "maps": 4,
+      "count": 1000,
+      "p50ms": 0.8315,
+      "p95ms": 1.2886,
+      "p99ms": 1.6711,
+      "maxMs": 2.4398,
+      "totalMs": 880.2415,
+      "allocatedBytes": 438323952,
+      "collections": [
+        53,
+        0,
+        0
+      ],
+      "counters": {
+        "ConfigurationSerializations": 0,
+        "StateCaptures": 0,
+        "VisualProfileSerializations": 0,
+        "VisualHashes": 0,
+        "Advances": 1000,
+        "ShipGraphs": 0,
+        "CatalogSorts": 0
+      },
+      "heapBytes": 5670744,
+      "peakWorkingSet": 91394048,
+      "retention": null,
+      "saveBytes": 4128
+    },
+    {
+      "name": "ship-prepare-publish",
+      "bodies": 3,
+      "ships": 128,
+      "maps": 0,
+      "count": 1000,
+      "p50ms": 1.2056,
+      "p95ms": 2.3158,
+      "p99ms": 3.1334,
+      "maxMs": 15.4074,
+      "totalMs": 1402.9421,
+      "allocatedBytes": 1633763368,
+      "collections": [
+        198,
+        0,
+        0
+      ],
+      "counters": {
+        "ConfigurationSerializations": 0,
+        "StateCaptures": 0,
+        "VisualProfileSerializations": 0,
+        "VisualHashes": 0,
+        "Advances": 1000,
+        "ShipGraphs": 0,
+        "CatalogSorts": 0
+      },
+      "heapBytes": 10755392,
+      "peakWorkingSet": 105345024,
+      "retention": null,
+      "saveBytes": 4128
+    },
+    {
+      "name": "ship-prepare-publish",
+      "bodies": 3,
+      "ships": 128,
+      "maps": 4,
+      "count": 1000,
+      "p50ms": 0.9894,
+      "p95ms": 1.6509,
+      "p99ms": 1.9256,
+      "maxMs": 3.191,
+      "totalMs": 1088.0082,
+      "allocatedBytes": 1629023408,
+      "collections": [
+        198,
+        0,
+        0
+      ],
+      "counters": {
+        "ConfigurationSerializations": 0,
+        "StateCaptures": 0,
+        "VisualProfileSerializations": 0,
+        "VisualHashes": 0,
+        "Advances": 1000,
+        "ShipGraphs": 0,
+        "CatalogSorts": 0
+      },
+      "heapBytes": 7374712,
+      "peakWorkingSet": 108703744,
+      "retention": null,
+      "saveBytes": 4128
+    }
+  ],
+  "assemblyMvid": "f005d2e8-17f9-4ff3-8b38-7982c02ad0b5",
+  "assemblySha256": "D10B0B48C50FF6E2DD197C306F25E8499B4AB5405EA19089812C9F46240509E1"
+}

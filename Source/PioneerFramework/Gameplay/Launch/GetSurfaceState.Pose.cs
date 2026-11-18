@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using PioneerFramework.Celestial;
 
 namespace PioneerFramework.Launch
@@ -35,9 +35,27 @@ namespace PioneerFramework.Launch
                 var surface = SurfaceFrame.SurfaceState(radius, latitude, longitude, 0, 0).pos;
                 double r = surface.magnitude;
                 var fixedPoint = r > 1e-3 ? surface + surface * (altitude / r) : surface;
-                local = FixedSurfaceState(manager, bodyId, fixedPoint, seconds);
+                return AttachPoint(manager, bodyId, fixedPoint, seconds);
             }
             else local = HoverCore.TargetState(radius, latitude, longitude, altitude, RotationOmega(manager, bodyId), seconds);
+            if (!manager.TryGetCelestialRuntime(out _)) return local;
+            var offset = manager.BodyFrameOffset(bodyId, seconds);
+            return (offset.Position + local.pos, offset.Velocity + local.vel);
+        }
+
+        /// <summary>
+        /// **体心固连点 → 系统系 (pos, vel)**（B0a，2026-11-14）：附着族的**唯一运动学**。
+        ///
+        /// = `FixedSurfaceState`（provider / legacy 双分支）+ **有运行时才加** `BodyFrameOffset`。
+        /// 这两个调用原本手写在 `HoverState` 的 provider 分支里，抽出来是**逐字同调用** ⇒ 不改变任何数值。
+        ///
+        /// ⚠ 无运行时时**不加偏移**——与 `HoverState` 原本那条早退一致（legacy 结果已是系统系）。
+        /// ⚠ 本函数是 `landed` / `hoverAnalytic` / 水面三者的共用入口；**计费、可移动、出口都不在这里**（属模式层）。
+        /// </summary>
+        internal static (DVector3 pos, DVector3 vel) AttachPoint(CelestialBodyManager manager, int bodyId,
+            DVector3 fixedPoint, double seconds)
+        {
+            var local = FixedSurfaceState(manager, bodyId, fixedPoint, seconds);
             if (!manager.TryGetCelestialRuntime(out _)) return local;
             var offset = manager.BodyFrameOffset(bodyId, seconds);
             return (offset.Position + local.pos, offset.Velocity + local.vel);

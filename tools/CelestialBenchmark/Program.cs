@@ -1,4 +1,4 @@
-using PioneerFramework.Celestial;
+﻿using PioneerFramework.Celestial;
 using PioneerFramework.TestSupport.Celestial;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
@@ -34,6 +34,32 @@ if (scenario == "schema")
 if (scenario == "fixtures")
 {
     CelestialFixtureAuthoring.Export(Path.GetFullPath(Value("--output", ".zcode/celestial-remediation/fixture-export")));
+    return;
+}
+if (scenario == "ephemeris")
+{
+    // 2026-11-18：circular vs elliptical 的星历采样成本（合并后生成天体全走椭圆）。
+    EphemerisBenchScenarios.Run(Path.GetFullPath(Value("--output", ".zcode/celestial-remediation/benchmark-ephemeris")), scenario);
+    return;
+}
+if (scenario == "frames")
+{
+    // 2026-11-18：换系/跨帧搬运的纯算术成本（FrameTransitionCore.Offset）。
+    FrameBenchScenarios.Run(Path.GetFullPath(Value("--output", ".zcode/celestial-remediation/benchmark-frames")));
+    return;
+}
+if (scenario == "step")
+{
+    // 2026-11-18：SpaceGameComp.AdvancePhysics 单步成本（headless，runtime==null 分支）。
+    PhysicsStepBenchScenarios.Run(Path.GetFullPath(Value("--output", ".zcode/celestial-remediation/benchmark-step")));
+    return;
+}
+if (scenario == "compare")
+{
+    // 2026-11-18：基线对比闸门。--a/--b 可以是 metrics.json 或目录；超过容差退出码 1。
+    double tolerance = double.TryParse(Value("--tolerance", "0"), System.Globalization.NumberStyles.Float,
+        System.Globalization.CultureInfo.InvariantCulture, out double parsed) ? parsed : 0;
+    Environment.ExitCode = PerfCompare.Run(Value("--a", ""), Value("--b", ""), tolerance);
     return;
 }
 CelestialBenchScenarios.Run(scenario, Path.GetFullPath(Value("--output", ".zcode/celestial-remediation/benchmark")));

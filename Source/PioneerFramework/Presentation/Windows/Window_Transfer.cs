@@ -600,6 +600,8 @@ namespace PioneerFramework
     /// ⚠ **图标必须是真的**：这里用本 mod 自己的贴图，并留 `TexCommand` 兜底；
     /// 写一个不存在的路径 ⇒ 每次画按钮吐一行红字（实测 871 行，用户"看红字"那次）。
     /// </summary>
+    // 2026-11-17：有静态 Texture2D 字段 ⇒ 标记静态构造（主线程）。图标仍是首次使用时加载。
+    [Verse.StaticConstructorOnStartup]
     public static class PropulsionGizmo
     {
         private static Texture2D? icon;

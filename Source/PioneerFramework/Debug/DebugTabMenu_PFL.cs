@@ -389,6 +389,30 @@ namespace PioneerFramework
             AddAction("SOI 入射演示：赭砂（1.1R 外，10 km/s 向内，秒级进 SOI 换系）", "45 放置 · 无Map编队", 105,
                 InterplanetaryRouteDemo.SpawnZheShaSoiEntry,
                 () => "铺在赭砂 SOI 外 0.1R，相对速度 10 km/s 向内；开加速几秒后看 [换系] 日志。");
+            // 2026-11-18：调试用——跳过等待与巡航，直接测"进 SOI → 捕获"。
+            AddAction("火炬调试：瞬移到赭砂 SOI 外 5%（秒看捕获）", "45 放置 · 无Map编队", 103,
+                InterplanetaryRouteDemo.JumpToTargetSoi, null);
+            // 2026-11-18：**火炬转移**（聚变 ve=1000 km/s，自动翻转，控制量 = 加速度）。
+            // 2026-11-18：**指定到达时长**（跳过扫描，Δv 够就飞）。
+            AddAction("火炬：1g / 5 天到赭砂（复刻台已验）", "45 放置 · 无Map编队", 112,
+                InterplanetaryRouteDemo.TorchTwoDayArrival, null);
+            AddAction("火炬：1g / 3 天到赭砂（复刻台已验）", "45 放置 · 无Map编队", 111,
+                InterplanetaryRouteDemo.TorchOneDayArrival, null);
+            AddAction("火炬：6 小时到达赭砂（更激进 · Δv 需够）", "45 放置 · 无Map编队", 110,
+                InterplanetaryRouteDemo.TorchSixHourArrival, null);
+            AddAction("火炬转移 0.3 g → 赭砂（铺聚变船 · 自动翻转 · 约 3.3 天）", "45 放置 · 无Map编队", 107,
+                InterplanetaryRouteDemo.TorchProbe03, null);
+            AddAction("火炬转移 1 g → 赭砂（铺聚变船 · 自动翻转 · 约 1.05 天）", "45 放置 · 无Map编队", 106,
+                InterplanetaryRouteDemo.TorchProbe1, null);
+            AddAction("火炬转移 3 g → 赭砂（铺聚变船 · 自动翻转 · 约 0.6 天）", "45 放置 · 无Map编队", 104,
+                InterplanetaryRouteDemo.TorchProbe3, null);
+            // 2026-11-18：**一键**——铺一艘恒星帧的真船并立刻规划粗转移（不用先自己造船/开出去）。
+            AddAction("一键：铺船 + 行星际粗转移 → 赭砂（自动规划）", "45 放置 · 无Map编队", 109,
+                InterplanetaryRouteDemo.SpawnTransferProbeAndPlan, null);
+            // 2026-11-18：**真船**的粗转移（不铺新船）。
+            // ⚠ 第 5 参是 labelGetter（会**覆盖显示文字**），不是 tooltip ⇒ 固定文案必须传 null。
+            AddAction("行星际粗转移：恒星帧中的现有船 → 赭砂（窗口扫描 + 到达减速捕获）", "45 放置 · 无Map编队", 108,
+                InterplanetaryRouteDemo.TransferExistingShipToZheSha, null);
             AddAction("放置：近地轨道圆轨（地表 500km，顺行）", "45 放置 · 无Map编队", 100, DebugShipSpawner.PlaceLeoNoMapGroup, null);
             AddAction("放置：同步轨道圆轨（周期 = 天体自转周期）", "45 放置 · 无Map编队", 90, DebugShipSpawner.PlaceGeoSyncNoMapGroup, null);
             AddAction("放置：绕月轨道圆轨（月面 1800km）", "45 放置 · 无Map编队", 80, DebugShipSpawner.PlaceMoonOrbitNoMapGroup, null);

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Reflection;
 using UnityEngine;
@@ -20,6 +20,9 @@ namespace PioneerFramework
     /// 包由 `tools/PFViewShaderBundle/Build-PFViewToonBundles.ps1` 产出（需 Unity 2022.3.35f1）：
     /// 文件名 `pfview_toon_{win,linux,mac}`，内含 shader `PioneerFramework/Toon`。
     /// </summary>
+    // 2026-11-17：类里有静态 Shader 字段 ⇒ 按 RimWorld 资产线程契约标记为静态构造（启动时主线程执行）。
+    // 取包仍是首次使用时懒加载（见 TryGet，失败缓存一次），属性只保证入口在主线程。
+    [Verse.StaticConstructorOnStartup]
     internal static class PFViewToonShader
     {
         internal const string ToonShaderName = "PioneerFramework/Toon";

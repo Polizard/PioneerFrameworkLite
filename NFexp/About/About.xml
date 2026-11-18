@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+  <name>NFexp</name>
+  <packageId>NewFrontierTeam.NFexp</packageId>
+  <author>新边疆团队</author>
+  <url>https://github.com/Polizard/PioneerFrameworkLite</url>
+
+  <supportedVersions>
+    <li>1.7</li>
+  </supportedVersions>
+
+  <modDependencies>
+    <li>
+      <packageId>NewFrontierTeam.PioneerFrameworkLite</packageId>
+      <displayName>先驱框架Lite</displayName>
+      <downloadUrl>https://github.com/Polizard/PioneerFrameworkLite</downloadUrl>
+    </li>
+  </modDependencies>
+
+  <loadAfter>
+    <li>NewFrontierTeam.PioneerFrameworkLite</li>
+  </loadAfter>
+
+  <description>先驱框架 Lite（PFL）的内容附属包。
+
+PFL 只提供机制与骨架，不进具体内容。NFexp 就是那些被判定「不该塞进框架」的填料：可玩的载荷、部件、建筑、研究与配方，以及需要内容侧口径的细节（燃料加注换算、检修口等）。
+
+定位：
+· 当前阶段 = 独立小 mod，只依赖 PFL，不依赖 DMS:NF；
+· 未来阶段 = 与 DMS:NF 融合，成为完整版 DMS:NF 的内容层。
+
+边界：
+· 绝不修改 PFL 的机制与后端，只用它公开的 API 与 Def；
+· 需要 PFL 侧新钩子时，先在 PFL 走授权，不在这里绕。
+
+独立 packageId，请勿与 PioneerFrameworkLite / PioneerFramework 的存档混用。</description>
+</ModMetaData>

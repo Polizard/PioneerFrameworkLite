@@ -10,6 +10,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL = ROOT / "tools" / "celestial_payload.py"
+
+
+def shipped_def(rel: str) -> Path:
+    """2026-11-17：天体内容 Def 已迁到同仓附属包 NFexp；先找 PFL，再找 NFexp。"""
+    for base in (ROOT / "1.7" / "Defs", ROOT / "NFexp" / "1.7" / "Defs"):
+        candidate = base / rel
+        if candidate.is_file():
+            return candidate
+    return ROOT / "1.7" / "Defs" / rel
 VALID = (b'{\r\n  "orbitRadius": 12.5, "orbitPeriod": 8, "initialPhase": 0.25,\r\n'
          b'  "orbitNormal": [0, 1, 0], "dayLengthTicks": 10,\r\n'
          b'  "bodyType": "ExtensionCategory", "frameOriginReference": "parent"\r\n}\r\n')
@@ -39,7 +48,7 @@ class CelestialPayloadTests(unittest.TestCase):
         # 2026-11-11：四个太阳系天体从 v1 烘焙载荷改为可读 <motion>（existing.circular.v2）。
         # 这条用例原来只对 "xml 里还有几个 payload" 做往返；改成钉住新授权形态与逐值数值，
         # 避免"零 payload ⇒ 零循环 ⇒ 假绿"。
-        document = ET.parse(ROOT / "1.7/Defs/CelestialBodies/CelestialBodies_SolarSystem.xml")
+        document = ET.parse(shipped_def("CelestialBodies/CelestialBodies_SolarSystem.xml"))
         bodies = document.getroot().findall("PioneerFramework.CelestialBodyDef")
         self.assertEqual({"Sun", "Earth", "Moon", "ZheSha"}, {body.findtext("defName") for body in bodies})
         self.assertEqual([], list(document.iter("initializationPayload")))
