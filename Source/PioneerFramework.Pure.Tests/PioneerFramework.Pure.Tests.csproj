@@ -64,6 +64,12 @@
     <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\SoiCheck.cs" Link="Pure\SoiCheck.cs" />
     <!-- 2026-11-04：换系纯核（父链 LCA 偏移 + 状态搬运）——链进来钉住父/子/兄弟/根往返。 -->
     <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\FrameTransitionCore.cs" Link="Pure\FrameTransitionCore.cs" />
+    <!-- 2026-11-18：行星际粗转移纯核（Lambert 出发解 + 捕获 Δv + 有界判定）——链进来钉住
+         "解出的出发速度传播后命中目标点""捕获 Δv 施加后有界""已界不点火"。 -->
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\InterplanetaryTransferCore.cs" Link="Pure\InterplanetaryTransferCore.cs" />
+    <!-- 2026-11-18：火炬弹道纯核（翻转式恒加速）——链进来钉住闭式、Δv∝√a、质量比可行性。 -->
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\TorchTransferCore.cs" Link="Pure\TorchTransferCore.cs" />
+    <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\TorchExecutionCore.cs" Link="Pure\TorchExecutionCore.cs" />
     <Compile Include="..\PioneerFramework\PhysicsEngine\Trajectory\AutoStageCore.cs" Link="Pure\AutoStageCore.cs" />
     <!-- 2026-10-30：抛级分离刚体解算（质心重定 + 刚体速度场 + 中心冲量）——纯算术，无 Verse 依赖。 -->
     <Compile Include="..\PioneerFramework\PhysicsEngine\Propulsion\StageSeparationCore.cs" Link="Pure\StageSeparationCore.cs" />

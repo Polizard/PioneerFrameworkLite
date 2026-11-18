@@ -90,6 +90,23 @@ namespace PioneerFramework
             }
 
             int id = selected?.GroupId ?? -1;
+
+            // 火炬转移状态（2026-11-19）：阶段 + 距目标距离（由物理步探测刷新）
+            if (selected != null && selected.torchPhase > 0 && selected.torchTargetDistance > 0.0)
+            {
+                string phase = selected.torchPhase switch
+                {
+                    1 => "出航段",
+                    2 => "捕获段",
+                    3 => "等待圆化",
+                    4 => "已圆化",
+                    _ => "—",
+                };
+                double ratio = selected.torchSoi > 0.0 ? selected.torchTargetDistance / selected.torchSoi : 0.0;
+                MiniLabel(new(rect.x + 8, rect.y + 26, rect.width - 16, 20),
+                    $"火炬 {phase}｜距目标 {selected.torchTargetDistance / 1e9:F2}e9 m（{ratio:F2}×SOI）",
+                    PFViewPalette.TextSecondary);
+            }
             bool hasMap = groupKnown && RefreshNavigableGroupMaps(id);
             bool canTarget = contactKnown ? !contact.isDecoy : id != ResolveOperationGroup()?.GroupId;
             bool canOpenDetails = !WantsInspector;

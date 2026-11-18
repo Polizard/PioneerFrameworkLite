@@ -641,6 +641,30 @@ namespace PioneerFramework
         // ── 归属天体 ──
         /// <summary>归属天体的 bodyId，-1 表示未归属（深空自由飞行）</summary>
         public int CelestialBodyId = -1;
+
+        // ── 行星际粗转移（2026-11-18，授权件 `后端变更授权-20261118-行星际粗转移`）──
+        /// <summary>粗转移的目标天体 id；-1 = 没有转移。</summary>
+        public int interplanetaryTargetBodyId = -1;
+        /// <summary>粗转移阶段：0=无 / 1=已排出发（等待窗口）/ 2=捕获燃烧中 / 3=已捕获 / 4=飞掠。</summary>
+        public int interplanetaryPhase;
+
+        /// <summary>火炬转移执行计划（B 方案，2026-11-19）。</summary>
+        public TorchExecutionPlan torchPlan;
+        /// <summary>火炬阶段：0=无，1=待出航，2=待捕获，3=完成。</summary>
+        public int torchPhase;
+
+        /// <summary>火炬目标天体 id（用于捕获后自动圆化）。</summary>
+        public int torchTargetBodyId;
+
+        /// <summary>火炬目标 SOI 半径（用于圆化时机判定）。</summary>
+        public double torchSoi;
+
+        /// <summary>火炬转移期间与目标天体的距离（m，探测时刷新，仅用于显示）。</summary>
+        public double torchTargetDistance;
+        /// <summary>火炬计划起点（physicsTick 秒轴）。</summary>
+        public double torchStartTick;
+        /// <summary>捕获燃烧失败后是否已补烧过一次（最多一次，防自激）。</summary>
+        public bool interplanetaryCaptureRetried;
         /// <summary>
         /// 豁免行星碰撞检查（火箭爬升段出生在大气层内 R+10km &lt; 安全半径 R+100km、
         /// 初速 ~524 m/s &gt; 安全着陆阈值 10 m/s，会被 CheckPlanetCollision 首步误毁）。
@@ -2519,6 +2543,51 @@ namespace PioneerFramework
         {
             Scribe_Values.Look(ref LandingTaskId, "landingTaskId", string.Empty);
             Scribe_Values.Look(ref GroupId, "groupId");
+            // 行星际粗转移状态（默认 -1/0/false ⇒ 旧档读进来就是"没有转移"，无需迁移）
+            Scribe_Values.Look(ref interplanetaryTargetBodyId, "iplTargetBody", -1);
+            Scribe_Values.Look(ref interplanetaryPhase, "iplPhase", 0);
+
+            // ── 火炬计划（2026-11-19）：13 个 double 拆成 float 存，读档后可继续执行两段燃烧 ──
+            Scribe_Values.Look(ref torchPhase, "torchPhase", 0);
+            Scribe_Values.Look(ref torchTargetBodyId, "torchBody", 0);
+            float torchSoiF = (float)torchSoi;
+            float torchStartF = (float)torchStartTick;
+            float depX = (float)torchPlan.DepartureDv.x, depY = (float)torchPlan.DepartureDv.y, depZ = (float)torchPlan.DepartureDv.z;
+            float depSec = (float)torchPlan.DepartureSeconds, depStart = (float)torchPlan.DepartureStartSeconds;
+            float capX = (float)torchPlan.CaptureDv.x, capY = (float)torchPlan.CaptureDv.y, capZ = (float)torchPlan.CaptureDv.z;
+            float capSec = (float)torchPlan.CaptureSeconds, capStart = (float)torchPlan.CaptureStartSeconds;
+            float entrySec = (float)torchPlan.EntrySeconds, entryRadius = (float)torchPlan.EntryRadius, relSpeed = (float)torchPlan.RelativeSpeed;
+            Scribe_Values.Look(ref torchSoiF, "torchSoi", 0f);
+            Scribe_Values.Look(ref torchStartF, "torchStart", 0f);
+            Scribe_Values.Look(ref depX, "torchDepX", 0f);
+            Scribe_Values.Look(ref depY, "torchDepY", 0f);
+            Scribe_Values.Look(ref depZ, "torchDepZ", 0f);
+            Scribe_Values.Look(ref depSec, "torchDepSec", 0f);
+            Scribe_Values.Look(ref depStart, "torchDepStart", 0f);
+            Scribe_Values.Look(ref capX, "torchCapX", 0f);
+            Scribe_Values.Look(ref capY, "torchCapY", 0f);
+            Scribe_Values.Look(ref capZ, "torchCapZ", 0f);
+            Scribe_Values.Look(ref capSec, "torchCapSec", 0f);
+            Scribe_Values.Look(ref capStart, "torchCapStart", 0f);
+            Scribe_Values.Look(ref entrySec, "torchEntrySec", 0f);
+            Scribe_Values.Look(ref entryRadius, "torchEntryR", 0f);
+            Scribe_Values.Look(ref relSpeed, "torchRelSpeed", 0f);
+
+            if (Scribe.mode == LoadSaveMode.LoadingVars)
+            {
+                torchSoi = torchSoiF;
+                torchStartTick = torchStartF;
+                torchPlan.DepartureDv = new DVector3(depX, depY, depZ);
+                torchPlan.DepartureSeconds = depSec;
+                torchPlan.DepartureStartSeconds = depStart;
+                torchPlan.CaptureDv = new DVector3(capX, capY, capZ);
+                torchPlan.CaptureSeconds = capSec;
+                torchPlan.CaptureStartSeconds = capStart;
+                torchPlan.EntrySeconds = entrySec;
+                torchPlan.EntryRadius = entryRadius;
+                torchPlan.RelativeSpeed = relSpeed;
+            }
+            Scribe_Values.Look(ref interplanetaryCaptureRetried, "iplRetried", false);
             Scribe_Values.Look(ref physicsBirthTick, "physicsBirthTick", -1.0);
             Scribe_Values.Look(ref physicsBirthSourceId, "physicsBirthSourceId", -1);
             DVector3.Scribe("physicsBirthOffsetShip", ref physicsBirthOffsetShip);
