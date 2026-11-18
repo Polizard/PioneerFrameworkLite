@@ -1,0 +1,681 @@
+using System.Collections.Generic;
+using UnityEngine;
+using Verse;
+using RimWorld;
+
+namespace PioneerFramework
+{
+    /// <summary>
+    /// 轨道状态（位置+速度+朝向），用于缓存和计算。
+    /// 位置/速度使用 DVector3（双精度）以避免累积误差。
+    /// </summary>
+    public struct OrbitState : IExposable
+    {
+        public DVector3 position;
+        public DVector3 velocity;
+        public Quaternion rotation;
+
+        public void ExposeData()
+        {
+            DVector3.Scribe("position", ref position);
+            DVector3.Scribe("velocity", ref velocity);
+            Scribe_Values.Look(ref rotation, "rotation");
+        }
+    }
+
+    public class SpaceEntityGroup : ISpatialEntity, IExposable
+    {
+        public int GroupId;
+        public int FactionId;
+
+        public bool IsActive = true;
+        public bool IsMovable = true;
+        public bool IsCollidable = true;
+        public bool HasGravityWell = false;
+
+        public OrbitState CurrentOrbit;
+        public bool OrbitDirty = true;
+
+        private HashSet<int> entityIds = new HashSet<int>();
+
+        // ── 圆轨模式 ──
+        public bool IsCircularOrbit = false;
+        public double circularRadius = 0.0;          // 轨道半径 (m)
+        public double circularAngularVelocity = 0.0; // 角速度 (rad/s)
+        public double circularStartAngle = 0.0;      // 角度偏移 (进入时 = 0，兼容旧存档保留)
+        public double circularStartTick = 0;           // 进入圆轨时的物理 Tick (physicsTick)
+        public DVector3 circularOrbitNormal = DVector3.up;  // 轨道平面法线 (序列化)
+        public DVector3 circularRadialRef = DVector3.right; // 进入圆轨时的径向参考方向 (角度0)
+        /// <summary>圆轨的中心天体 ID。-1 表示沿用 CelestialBodyId（旧存档兼容）。</summary>
+        public int circularCentralBodyId = -1;
+
+        // ── ISpatialEntity（粗网格索引） ──
+        int ISpatialEntity.EntityId => GroupId;
+        int ISpatialEntity.GroupId => GroupId;
+        int ISpatialEntity.FactionId => FactionId;
+        public DVector3 Position
+        {
+            get => CurrentOrbit.position;
+            set => CurrentOrbit.position = value;
+        }
+        public (int cx, int cy, int cz) LastCellCoord { get; set; }
+        public bool IsSpatialDirty { get; set; }
+
+        // ── 归属天体 ──
+        /// <summary>归属天体的 bodyId，-1 表示未归属（深空自由飞行）</summary>
+        public int CelestialBodyId = -1;
+
+        /// <summary>中心天体相对位置（中心天体参考系），用于 R/T/N 基向量计算。</summary>
+        public DVector3 localPosition;
+        /// <summary>中心天体相对速度（中心天体参考系），用于 R/T/N 基向量计算。</summary>
+        public DVector3 localVelocity;
+
+        // ── 轨道保持 (OrbitKeeping) ──
+        /// <summary>是否启用轨道保持模式（选择性抵消非白名单天体的引力，消耗 dV）。</summary>
+        public bool HasOrbitKeeping = false;
+        /// <summary>不抵消的天体 ID 白名单。null 或空 = 未启用过滤。</summary>
+        public HashSet<int> orbitKeepingWhitelist;
+
+        // ── 主动燃烧（缓释 dV） ──
+        /// <summary>是否有正在执行的主动燃烧。</summary>
+        public bool HasActiveBurn = false;
+        /// <summary>燃烧方向单位向量。</summary>
+        public DVector3 burnDirection;
+        /// <summary>本次燃烧剩余 dV (m/s)。</summary>
+        public double remainingBurnDV;
+        /// <summary>最大燃烧加速度 (m/s²)，测试用写死大值。未来替换为真实推重比。</summary>
+        public const double MAX_BURN_ACCEL = 500.0;
+
+        // 机动规划队列（顺序执行）
+        public List<PlannedManeuver> plannedManeuvers = new List<PlannedManeuver>();
+
+        // 战斗模式缓存（用于插值）
+        public PhysicsStateCache CombatCache;
+
+        // ── Combat 插值渲染位置（仅渲染层读取；物理检测一律用 CurrentOrbit.position）──
+        private DVector3 renderedPosition;
+        private bool hasRenderedPosition;
+
+        /// <summary>
+        /// 渲染用位置：Combat 模式返回插值平滑位置；圆轨非战斗返回解析精确位置；其余返回物理位置。
+        /// ⚠️ 物理/碰撞/射弹检测严禁使用此属性——物理状态统一在 CurrentOrbit（physicsTick 时间轴），
+        /// 插值仅用于显示层平滑，二者分离保证"万物统一物理时间步长"。
+        /// </summary>
+        public DVector3 RenderPosition
+        {
+            get
+            {
+                var tsm = Current.Game?.GetComponent<TimeScaleManager>();
+                if (tsm != null && tsm.IsCombatMode && hasRenderedPosition)
+                    return renderedPosition;
+                if (IsCircularOrbit)
+                    return GetCircularPositionAtTick(TimeScaleManager.GetPhysicsTickSafe());
+                return CurrentOrbit.position;
+            }
+        }
+
+        /// <summary>写入 Combat 插值渲染位置（仅由 UpdateCombatInterpolation 调用）。</summary>
+        internal void SetRenderedPosition(DVector3 pos)
+        {
+            renderedPosition = pos;
+            hasRenderedPosition = true;
+        }
+
+        // ── 圆轨解析结果懒缓存（per-physicsTick，不序列化）──
+        // 圆轨位置/速度是 physicsTick 的纯解析函数（同一 tick 内无人修改轨道参数），
+        // 战斗循环同一 tick 内会被查询 4~6 次，用 tick 值做键缓存，其余调用自动命中。
+        private double cachedPosTick = double.NaN;
+        private DVector3 cachedPos;
+        private double cachedVelTick = double.NaN;
+        private DVector3 cachedVel;
+
+#if DEBUG
+        // 缓存命中/未命中统计（调试验证：每 tick 每组应只 miss 1 次）
+        internal long debugPosCacheHits;
+        internal long debugPosCacheMisses;
+        internal long debugVelCacheHits;
+        internal long debugVelCacheMisses;
+#endif
+
+        private void InvalidateOrbitCache()
+        {
+            cachedPosTick = double.NaN;
+            cachedVelTick = double.NaN;
+        }
+
+        public class PhysicsStateCache
+        {
+            public int baseTick;
+            public DVector3 startPos;
+            public DVector3 startVel;
+            public DVector3 acc;
+            public DVector3 jerk;
+            public double dt;
+            public double offset;
+
+            public DVector3 InterpolatePosition(double t)
+            {
+                return startPos + t * startVel + 0.5 * t * t * acc + (t * t * t) / 6.0 * jerk;
+            }
+
+            public DVector3 InterpolateVelocity(double t)
+            {
+                return startVel + t * acc + 0.5 * t * t * jerk;
+            }
+        }
+
+        /// <summary>
+        /// 机动规划结构体。序列化 + 预览缓存。
+        /// </summary>
+        public struct PlannedManeuver : IExposable
+        {
+            public float radialDV;
+            public float tangentialDV;
+            public float normalDV;
+            public int executeTick;   // 绝对 Tick 数
+            public bool active;
+
+            // 预览缓存 (不序列化，确认机动时由 Planner 填充)
+            public List<Vector3> previewCurrentOrbit;
+            public DVector3 previewNodePosition;
+            public List<Vector3> previewPostOrbit;
+
+            public void ExposeData()
+            {
+                Scribe_Values.Look(ref radialDV, "radialDV", 0f);
+                Scribe_Values.Look(ref tangentialDV, "tangentialDV", 0f);
+                Scribe_Values.Look(ref normalDV, "normalDV", 0f);
+                Scribe_Values.Look(ref executeTick, "executeTick", 0);
+                Scribe_Values.Look(ref active, "active", false);
+                // 预览缓存不序列化
+            }
+
+            /// <summary>
+            /// 判断此机动是否已到期执行。
+            /// </summary>
+            public bool IsDue(int currentTick)
+            {
+                return active && currentTick >= executeTick;
+            }
+        }
+
+        public SpaceEntityGroup() { }
+        public SpaceEntityGroup(int groupId, int factionId = 0)
+        {
+            GroupId = groupId;
+            FactionId = factionId;
+        }
+
+        public void AddEntity(int entityId) => entityIds.Add(entityId);
+        public void RemoveEntity(int entityId) => entityIds.Remove(entityId);
+        public bool ContainsEntity(int entityId) => entityIds.Contains(entityId);
+        public IReadOnlyCollection<int> GetEntityIds() => entityIds;
+
+        #region 机动队列管理
+
+        /// <summary>
+        /// 向队列末尾添加一个机动规划。
+        /// </summary>
+        public void QueueManeuver(PlannedManeuver maneuver)
+        {
+            plannedManeuvers.Add(maneuver);
+        }
+
+        /// <summary>
+        /// 添加一个机动规划（指定 dV 和相对时间）。
+        /// </summary>
+        public void QueueManeuver(float radDV, float tanDV, float normDV, int deltaTicks)
+        {
+            int execTick = Find.TickManager.TicksGame + deltaTicks;
+            plannedManeuvers.Add(new PlannedManeuver
+            {
+                radialDV = radDV,
+                tangentialDV = tanDV,
+                normalDV = normDV,
+                executeTick = execTick,
+                active = true
+            });
+        }
+
+        /// <summary>
+        /// 清除所有机动规划。
+        /// </summary>
+        public void ClearManeuvers()
+        {
+            plannedManeuvers.Clear();
+        }
+
+        /// <summary>
+        /// 获取第一个已到期的机动，无则返回 null。
+        /// </summary>
+        public PlannedManeuver? PeekNextManeuver(int currentTick)
+        {
+            if (plannedManeuvers.Count == 0) return null;
+            var next = plannedManeuvers[0];
+            if (!next.active) return null;
+            if (!next.IsDue(currentTick)) return null;
+            return next;
+        }
+
+        /// <summary>
+        /// 弹出（移除）第一个已执行的机动。
+        /// </summary>
+        public void PopExecutedManeuver()
+        {
+            if (plannedManeuvers.Count > 0)
+                plannedManeuvers.RemoveAt(0);
+        }
+
+        #endregion
+
+        #region 主动燃烧 (Active Burn)
+
+        /// <summary>
+        /// 开始一次缓释燃烧。
+        /// </summary>
+        /// <param name="dV">本次燃烧的总 dV 向量 (m/s)</param>
+        public void StartBurn(DVector3 dV)
+        {
+            HasActiveBurn = true;
+            burnDirection = dV.normalized;
+            remainingBurnDV = dV.magnitude;
+        }
+
+        /// <summary>
+        /// 立即结束燃烧（剩余 dV 丢弃）。
+        /// </summary>
+        public void EndBurn()
+        {
+            HasActiveBurn = false;
+            remainingBurnDV = 0.0;
+        }
+
+        #endregion
+
+        #region 轨道保持 (OrbitKeeping)
+
+        /// <summary>
+        /// 进入轨道保持模式。
+        /// </summary>
+        /// <param name="whitelistBodyIds">不抵消的天体 ID 白名单。白名单内的天体的引力正常参与轨迹积分，
+        /// 白名单外的引力被抵消并消耗 dV。</param>
+        public void EnterOrbitKeeping(HashSet<int> whitelistBodyIds)
+        {
+            HasOrbitKeeping = true;
+            orbitKeepingWhitelist = whitelistBodyIds ?? new HashSet<int>();
+        }
+
+        /// <summary>
+        /// 退出轨道保持模式。清空白名单。
+        /// </summary>
+        public void ExitOrbitKeeping()
+        {
+            HasOrbitKeeping = false;
+            if (orbitKeepingWhitelist != null)
+            {
+                orbitKeepingWhitelist.Clear();
+                orbitKeepingWhitelist = null;
+            }
+        }
+
+        #endregion
+
+        /// <summary>
+        /// 获取中心天体在行星参考系中的位置偏移。
+        /// 如果中心天体是行星（地球自身），返回零向量。
+        /// </summary>
+        public DVector3 GetCentralBodyOffset(int currentTick)
+        {
+            return GetCentralBodyOffset((double)currentTick);
+        }
+
+        public DVector3 GetCentralBodyOffset(double currentTick)
+        {
+            if (CelestialBodyId < 0) return DVector3.zero;
+            var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (celestialMgr == null) return DVector3.zero;
+            var centralDef = celestialMgr.GetBodyById(CelestialBodyId);
+            if (centralDef == null || centralDef.bodyType == CelestialBodyType.Planet)
+                return DVector3.zero;
+            return celestialMgr.GetBodyLocalPosition(CelestialBodyId, (int)System.Math.Round(currentTick));
+        }
+
+        /// <summary>
+        /// 获取中心天体在行星参考系中的速度。
+        /// 如果中心天体是行星（地球自身），返回零向量。
+        /// </summary>
+        public DVector3 GetCentralBodyVelocity(int currentTick)
+        {
+            if (CelestialBodyId < 0) return DVector3.zero;
+            var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (celestialMgr == null) return DVector3.zero;
+            var centralDef = celestialMgr.GetBodyById(CelestialBodyId);
+            if (centralDef == null || centralDef.bodyType == CelestialBodyType.Planet)
+                return DVector3.zero;
+            return celestialMgr.GetBodyLocalVelocity(CelestialBodyId, currentTick);
+        }
+
+        /// <summary>
+        /// 进入圆轨模式（自动获取 physicsTick）。
+        /// 兼容旧调用，内部会从 TimeScaleManager 获取 physicsTick。
+        /// </summary>
+        public void EnterCircularOrbit(int realTick, int centralBodyId)
+        {
+            var tsm = Current.Game?.GetComponent<TimeScaleManager>();
+            double physicsTick = tsm != null ? tsm.GetPhysicsTick() : (double)Find.TickManager.TicksGame;
+            EnterCircularOrbit(realTick, physicsTick, centralBodyId);
+        }
+
+        /// <summary>
+        /// 进入圆轨模式。
+        /// 自动开启轨道保持（白名单 = {centralBodyId}），仅保留中心天体的引力。
+        /// </summary>
+        /// <param name="realTick">当前真实游戏 tick（用于天体位置查询）</param>
+        /// <param name="physicsTick">当前物理 tick（用于圆轨起始时间，受时间挡位影响）</param>
+        /// <param name="centralBodyId">环绕的中心天体 ID</param>
+        public void EnterCircularOrbit(int realTick, double physicsTick, int centralBodyId)
+        {
+            DVector3 pos = CurrentOrbit.position;
+            DVector3 vel = CurrentOrbit.velocity;
+
+            // 如果中心天体不是行星（如月球），将 pos/vel 转为相对中心天体
+            var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
+            if (celestialMgr != null)
+            {
+                var centralDef = celestialMgr.GetBodyById(centralBodyId);
+                if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
+                {
+                    pos -= celestialMgr.GetBodyLocalPosition(centralBodyId, realTick);
+                    vel -= celestialMgr.GetBodyLocalVelocity(centralBodyId, realTick);
+                }
+            }
+
+            double r = pos.magnitude;
+            if (r < 0.01)
+            {
+                Log.Warning(string.Format("SpaceEntityGroup {0}: Cannot enter circular orbit at near-zero radius.", GroupId));
+                return;
+            }
+
+            DVector3 radialDir = pos.normalized;
+            DVector3 tangentVel = vel - radialDir * DVector3.Dot(vel, radialDir);
+            double v_tan = tangentVel.magnitude;
+            if (v_tan < 0.001)
+            {
+                Log.Warning(string.Format("SpaceEntityGroup {0}: Tangential velocity too small for circular orbit.", GroupId));
+                return;
+            }
+
+            // 用中心天体的 GM 重新计算正确的环轨速度，避免入轨速度用了错误 GM
+            double mu = SpaceConstants.PrimaryGravitationalParameter;
+            if (celestialMgr != null)
+            {
+                var centralDef = celestialMgr.GetBodyById(centralBodyId);
+                if (centralDef != null && centralDef.gravitationalParameter > 0.0)
+                    mu = centralDef.gravitationalParameter;
+            }
+            v_tan = System.Math.Sqrt(mu / r);
+            double omega = v_tan / r;
+
+            // 轨道平面法线 = pos × vel 的方向
+            DVector3 normal = DVector3.Cross(pos, vel).normalized;
+            if (normal.sqrMagnitude < 0.01)
+                normal = DVector3.up; // 退化情况（纯径向速度）
+
+            IsCircularOrbit = true;
+            circularCentralBodyId = centralBodyId;
+            circularRadius = r;
+            circularAngularVelocity = omega;
+            circularStartAngle = 0.0;
+            circularStartTick = physicsTick;
+            circularOrbitNormal = normal;
+            circularRadialRef = radialDir;
+            InvalidateOrbitCache();
+
+            // 将 CurrentOrbit.velocity 同步为圆轨切向速度
+            DVector3 tangentDir = DVector3.Cross(normal, radialDir).normalized;
+            DVector3 circularVel = tangentDir * v_tan;
+
+            // 更新中心天体相对坐标（用于 R/T/N 基向量）
+            localPosition = pos;        // 进入圆轨时已转为相对坐标
+            localVelocity = circularVel; // 纯切向速度，不含中心天体轨道速度
+            Log.Message(string.Format("[Orbit] Group {0} EnterCircularOrbit: body={1} r={2:F0}km |localPos|={3:F0}km |localVel|={4:F1} m/s",
+                GroupId, centralBodyId, r / 1000.0, localPosition.magnitude / 1000.0, localVelocity.magnitude));
+
+            // 如果中心天体不是行星，加回其轨道速度（转回地球参考系）
+            if (celestialMgr != null)
+            {
+                var centralDefInner = celestialMgr.GetBodyById(centralBodyId);
+                if (centralDefInner != null && centralDefInner.bodyType != CelestialBodyType.Planet)
+                {
+                    circularVel += celestialMgr.GetBodyLocalVelocity(centralBodyId, realTick);
+                }
+            }
+            CurrentOrbit.velocity = circularVel;
+            CelestialBodyId = centralBodyId;
+
+            // 自动开启轨道保持：白名单只保留中心天体，抵消其他摄动
+            EnterOrbitKeeping(new HashSet<int> { centralBodyId });
+        }
+
+        /// <summary>
+        /// 退出圆轨模式，根据当前角度计算切向速度和位置，更新 CurrentOrbit。
+        /// 使用记录的轨道平面法线和径向参考方向，支持倾斜轨道。
+        /// </summary>
+        public void ExitCircularOrbit()
+        {
+            if (!IsCircularOrbit) return;
+
+            int realTick = Find.TickManager.TicksGame;
+            var timeScaleManager = Current.Game?.GetComponent<TimeScaleManager>();
+            double physicsTick = timeScaleManager != null ? timeScaleManager.GetPhysicsTick() : (double)Find.TickManager.TicksGame;
+
+            DVector3 pos = GetCircularPositionAtTick(physicsTick);
+            DVector3 radialDir = (pos - GetCentralBodyOffset(realTick)).normalized;
+
+            // 切向方向：在轨道平面内垂直于径向
+            DVector3 tangentDir;
+            if (circularOrbitNormal.sqrMagnitude > 0.001)
+            {
+                tangentDir = DVector3.Cross(circularOrbitNormal, radialDir).normalized;
+            }
+            else
+            {
+                // 旧存档兼容：XZ 平面
+                tangentDir = new DVector3(-radialDir.z, 0, radialDir.x).normalized;
+            }
+
+            DVector3 newVel = tangentDir * (circularAngularVelocity * circularRadius);
+
+            // 更新中心天体相对坐标（用于 R/T/N 基向量）
+            localPosition = pos - GetCentralBodyOffset(realTick);
+            localVelocity = newVel;
+
+            CurrentOrbit.velocity = newVel;
+
+            // 如果中心天体不是行星，速度要加回中心天体的轨道速度
+            if (circularCentralBodyId >= 0)
+            {
+                var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
+                if (celestialMgr != null)
+                {
+                    var centralDef = celestialMgr.GetBodyById(circularCentralBodyId);
+                    if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
+                    {
+                        CurrentOrbit.velocity += celestialMgr.GetBodyLocalVelocity(circularCentralBodyId, realTick);
+                    }
+                }
+            }
+
+            CurrentOrbit.position = pos;
+
+            IsCircularOrbit = false;
+            circularCentralBodyId = -1;
+            circularRadius = 0.0;
+            circularAngularVelocity = 0.0;
+            circularStartAngle = 0.0;
+            circularStartTick = 0;
+            circularOrbitNormal = DVector3.up;
+            circularRadialRef = DVector3.right;
+            InvalidateOrbitCache();
+
+            // 退出轨道保持
+            ExitOrbitKeeping();
+        }
+
+        /// <summary>
+        /// 获取圆轨模式下当前时刻的 3D 位置（使用轨道平面法线）。
+        /// 支持倾斜轨道。旧存档（无法线数据）回退到 XZ 平面。
+        /// 注意：currentTick 应为 physicsTick（受时间挡位影响的虚拟tick）。
+        /// </summary>
+        public DVector3 GetCircularPositionAtTick(int currentTick)
+        {
+            return GetCircularPositionAtTick((double)currentTick);
+        }
+
+        /// <summary>
+        /// 获取圆轨模式下当前时刻的 3D 位置（支持子tick，用于战斗模式）。
+        /// currentTick 应为 physicsTick（受时间挡位影响的虚拟tick）。
+        /// </summary>
+        public DVector3 GetCircularPositionAtTick(double currentTick)
+        {
+            if (!IsCircularOrbit) return DVector3.zero;
+
+            // 同一 physicsTick 下圆轨位置是纯解析函数 → 懒缓存，其余调用直接命中
+            if (currentTick == cachedPosTick)
+            {
+#if DEBUG
+                debugPosCacheHits++;
+#endif
+                return cachedPos;
+            }
+#if DEBUG
+            debugPosCacheMisses++;
+#endif
+
+            // circularAngularVelocity 是 rad/秒；physicsTick 是游戏世界秒（1 tick = 1 秒），
+            // 与 N 体积分 / 天体公转 / 机动规划使用同一时间基准，无需额外换算。
+            double deltaAngle = circularAngularVelocity * (currentTick - circularStartTick);
+            double angle = circularStartAngle + deltaAngle;
+            double cosA = System.Math.Cos(angle);
+            double sinA = System.Math.Sin(angle);
+
+            DVector3 localPos;
+            if (circularOrbitNormal.sqrMagnitude > 0.001 && circularRadialRef.sqrMagnitude > 0.001)
+            {
+                // 使用轨道平面：pos = r * (radialRef * cos(θ) + yDir * sin(θ))
+                DVector3 yDir = DVector3.Cross(circularOrbitNormal, circularRadialRef).normalized;
+                localPos = circularRadius * (circularRadialRef * cosA + yDir * sinA);
+            }
+            else
+            {
+                // 旧存档兼容：XZ 平面
+                localPos = new DVector3(System.Math.Cos(angle) * circularRadius, 0, System.Math.Sin(angle) * circularRadius);
+            }
+
+            // 如果中心天体不是行星，将局部坐标转回行星参考系
+            // 注意：使用 currentTick（physicsTick），与发动机积分器保持一致
+            if (circularCentralBodyId >= 0)
+            {
+                localPos += GetCentralBodyOffset(currentTick);
+            }
+
+            cachedPosTick = currentTick;
+            cachedPos = localPos;
+            return localPos;
+        }
+
+        /// <summary>
+        /// 获取圆轨模式下当前时刻的解析速度（世界系，含中心天体公转速度），支持子 tick。
+        /// 与 <see cref="GetCircularPositionAtTick"/> 相同采用 per-physicsTick 懒缓存。
+        /// 非圆轨模式返回零向量（调用方应先判断 IsCircularOrbit）。
+        /// </summary>
+        public DVector3 GetCircularVelocityAtTick(double currentTick)
+        {
+            if (!IsCircularOrbit) return DVector3.zero;
+
+            if (currentTick == cachedVelTick)
+            {
+#if DEBUG
+                debugVelCacheHits++;
+#endif
+                return cachedVel;
+            }
+#if DEBUG
+            debugVelCacheMisses++;
+#endif
+
+            DVector3 pos = GetCircularPositionAtTick(currentTick); // 命中位置缓存，不重复解析
+            DVector3 radialDir = (pos - GetCentralBodyOffset(currentTick)).normalized;
+            DVector3 tangentDir;
+            if (circularOrbitNormal.sqrMagnitude > 0.001)
+                tangentDir = DVector3.Cross(circularOrbitNormal, radialDir).normalized;
+            else
+                tangentDir = new DVector3(-radialDir.z, 0, radialDir.x).normalized;
+            DVector3 vel = tangentDir * (circularAngularVelocity * circularRadius);
+            // 绕卫星（月球）时：世界速度 = 圆轨切向 + 中心天体公转速度（行星中心体为世界原点，速度为零）
+            if (circularCentralBodyId >= 0)
+            {
+                var celestialMgr = Current.Game?.GetComponent<CelestialBodyManager>();
+                if (celestialMgr != null)
+                {
+                    var centralDef = celestialMgr.GetBodyById(circularCentralBodyId);
+                    if (centralDef != null && centralDef.bodyType != CelestialBodyType.Planet)
+                        vel += celestialMgr.GetBodyLocalVelocity(circularCentralBodyId, (int)System.Math.Round(currentTick));
+                }
+            }
+
+            cachedVelTick = currentTick;
+            cachedVel = vel;
+            return vel;
+        }
+
+        public void ExposeData()
+        {
+            Scribe_Values.Look(ref GroupId, "groupId");
+            Scribe_Values.Look(ref FactionId, "factionId");
+            Scribe_Values.Look(ref IsActive, "isActive", true);
+            Scribe_Values.Look(ref IsMovable, "isMovable", true);
+            Scribe_Values.Look(ref IsCollidable, "isCollidable", true);
+            Scribe_Values.Look(ref HasGravityWell, "hasGravityWell", false);
+            Scribe_Deep.Look(ref CurrentOrbit, "currentOrbit");
+            Scribe_Values.Look(ref OrbitDirty, "orbitDirty", true);
+            Scribe_Collections.Look(ref entityIds, "entityIds", LookMode.Value);
+            Scribe_Values.Look(ref CelestialBodyId, "celestialBodyId", -1);
+            // 圆轨模式数据序列化
+            Scribe_Values.Look(ref IsCircularOrbit, "isCircularOrbit", false);
+            Scribe_Values.Look(ref circularRadius, "circularRadius", 0.0);
+            Scribe_Values.Look(ref circularAngularVelocity, "circularAngularVelocity", 0.0);
+            Scribe_Values.Look(ref circularStartAngle, "circularStartAngle", 0.0);
+            Scribe_Values.Look(ref circularStartTick, "circularStartTick", 0.0);
+            Scribe_Values.Look(ref circularCentralBodyId, "circularCentralBodyId", -1);
+            DVector3.Scribe("circularOrbitNormal", ref circularOrbitNormal);
+            DVector3.Scribe("circularRadialRef", ref circularRadialRef);
+
+            // 机动规划队列序列化
+            Scribe_Collections.Look(ref plannedManeuvers, "plannedManeuvers", LookMode.Deep);
+            if (Scribe.mode == LoadSaveMode.PostLoadInit && plannedManeuvers == null)
+                plannedManeuvers = new List<PlannedManeuver>();
+
+            // 轨道保持序列化
+            Scribe_Values.Look(ref HasOrbitKeeping, "hasOrbitKeeping", false);
+            if (Scribe.mode == LoadSaveMode.LoadingVars && HasOrbitKeeping && orbitKeepingWhitelist == null)
+                orbitKeepingWhitelist = new HashSet<int>();
+            // Scribe 不支持直接序列化 HashSet<int>，转 List<int>
+            List<int> whitelistList = null;
+            if (Scribe.mode == LoadSaveMode.Saving)
+                whitelistList = orbitKeepingWhitelist != null ? new List<int>(orbitKeepingWhitelist) : new List<int>();
+            Scribe_Collections.Look(ref whitelistList, "orbitKeepingWhitelist", LookMode.Value);
+            if (Scribe.mode == LoadSaveMode.LoadingVars && whitelistList != null)
+            {
+                if (orbitKeepingWhitelist == null)
+                    orbitKeepingWhitelist = new HashSet<int>(whitelistList);
+                else
+                {
+                    orbitKeepingWhitelist.Clear();
+                    orbitKeepingWhitelist.UnionWith(whitelistList);
+                }
+            }
+        }
+    }
+}

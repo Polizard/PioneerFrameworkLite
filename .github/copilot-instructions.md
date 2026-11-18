@@ -3,8 +3,8 @@
 ## ⛔【NOSTEPANYMORE】后端锁（最高优先）
 
 **后端** = 物理步 / 时间基 / 状态提交所在的代码：
-`Source/PioneerFramework/Base/**`、`Components/**`、`Combat/**`、`Launch/**`、
-`GroundAssembly/**`、`Landing/**`、`Celestial/Adapters/Physics/**`、`1.7/Assemblies/**`。
+`Source/PioneerFramework/PhysicsEngine/**`、`Gameplay/Combat/**`、`Gameplay/Launch/**`、
+`Gameplay/Landing/**`、`Gameplay/GroundAssembly/**`、`World/Celestial/Adapters/Physics/**`、`1.7/Assemblies/**`。
 
 **你要动后端 ⇒ 立刻停机，不许写任何文件：**
 

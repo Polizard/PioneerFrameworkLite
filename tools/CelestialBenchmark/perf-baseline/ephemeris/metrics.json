@@ -1,0 +1,39 @@
+{
+  "createdUtc": "2026-11-17T16:42:44.1672859Z",
+  "runtime": ".NET 10.0.13",
+  "cpu": "AMD64 Family 25 Model 117 Stepping 2, AuthenticAMD",
+  "processors": 16,
+  "gitCommit": "4529564505b20136a16d81767813a7d0d629bf92",
+  "scenario": "ephemeris",
+  "samples": 3000000,
+  "results": [
+    {
+      "name": "circular",
+      "samples": 3000000,
+      "nsPerOp": 5.335233333333333,
+      "totalMs": 16.0057,
+      "acc": 3.433095604290357E+17
+    },
+    {
+      "name": "elliptical-e0.01",
+      "samples": 3000000,
+      "nsPerOp": 70.60396666666666,
+      "totalMs": 211.8119,
+      "acc": 3.3690701881035757E+17
+    },
+    {
+      "name": "elliptical-e0.05",
+      "samples": 3000000,
+      "nsPerOp": 80.63266666666667,
+      "totalMs": 241.898,
+      "acc": 3.1084614315296064E+17
+    },
+    {
+      "name": "elliptical-e0.20",
+      "samples": 3000000,
+      "nsPerOp": 164.74283333333332,
+      "totalMs": 494.2285,
+      "acc": 2.0572519930149094E+17
+    }
+  ]
+}

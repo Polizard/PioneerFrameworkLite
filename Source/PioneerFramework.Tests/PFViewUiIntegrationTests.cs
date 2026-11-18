@@ -300,10 +300,12 @@ namespace PioneerFramework.Tests
             Assert.True(load >= 0 && refresh > load);
         }
 
+        // 2026-11-18（用户令）：PFView 工具栏的**时间档按钮已恢复**（含 Fast/Ultrafast），
+        // 所以 MainTabWindow_PFView 现在**允许**调 SetGameSpeed；这条守卫只保留给驾驶台窗口，
+        // 它仍然不该自行改时间档（时间控制只从 PFView 工具栏/原版数字键走）。
         [Theory]
-        [InlineData(typeof(MainTabWindow_PFView))]
         [InlineData(typeof(Window_Steering))]
-        public void ViewAndSteeringCannotSelectAGameSpeed(Type window)
+        public void SteeringCannotSelectAGameSpeed(Type window)
         {
             foreach (var method in window.GetMethods(Flags | BindingFlags.DeclaredOnly))
             {

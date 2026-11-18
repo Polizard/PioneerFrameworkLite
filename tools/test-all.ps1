@@ -1,4 +1,4 @@
-﻿# One-click verification for PioneerFrameworkLite (mirrors .github/workflows/ci.yml locally).
+# One-click verification for PioneerFrameworkLite (mirrors .github/workflows/ci.yml locally).
 #
 # Steps, in this order:
 #   1. Build (Debug, full rebuild)                  -> 0 errors, unique warning count reported
@@ -39,7 +39,8 @@ param(
     [switch]$SkipConfig,
     [switch]$SkipDeterminism,
     [switch]$NoDllRebuild,
-    [switch]$WarningDiff
+    [switch]$WarningDiff,
+    [switch]$Perf
 )
 
 $ErrorActionPreference = "Stop"
@@ -341,6 +342,23 @@ if ($WarningDiff) {
             $ErrorActionPreference = $prev
         }
     }
+}
+
+# -- 10. Optional: performance bench vs recorded baseline ---------------------
+# Opt-in (-Perf): the suite takes ~3 minutes and is machine-sensitive. The gated
+# metrics are step p50 + allocations only; see tools/Run-PerfBench.ps1 for the policy
+# and tools/CelestialBenchmark/perf-baseline/ for the recorded baseline.
+if ($Perf) {
+Step "Performance bench vs baseline (tools/Run-PerfBench.ps1)" {
+    $r = Invoke-Native "powershell" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "Run-PerfBench.ps1"))
+    if ($r.ExitCode -ne 0) {
+        throw "perf bench failed or regressed (exit $($r.ExitCode))`n$(($r.Output | Select-Object -Last 12) -join "`n")"
+    }
+    return "within tolerance"
+}
+}
+else {
+    Warn "Performance bench vs baseline" "UNCHECKED: -Perf not set (runs the 5-scenario perf suite, ~3 min)"
 }
 
 # -- Summary ------------------------------------------------------------------

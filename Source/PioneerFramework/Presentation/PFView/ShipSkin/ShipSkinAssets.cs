@@ -18,6 +18,8 @@ namespace PioneerFramework.ShipSkin
     ///   `_SkinTex` ⇒ 首版贴图**从未被绑上**，采到引擎默认值（白）⇒ 无论怎么改 PNG 画面都不变。
     ///   必须用 `SetTexture("_SkinTex", …)` 显式绑定；并在调试窗显示"贴图是否加载"现场读数。
     /// </summary>
+    // 2026-11-17：有静态 Material 字段 ⇒ 标记静态构造（主线程）。材质仍是首次使用时创建。
+    [Verse.StaticConstructorOnStartup]
     internal static class ShipSkinAssets
     {
         /// <summary>一张贴图覆盖的物理尺寸（米）：16 m ⇒ 8 m 大板 / 4 m 次级板（300 m 机位可读）。</summary>

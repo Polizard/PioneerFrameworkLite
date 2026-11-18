@@ -1,0 +1,38 @@
+{
+  "createdUtc": "2026-11-17T16:41:43.9625566Z",
+  "runtime": ".NET 10.0.13",
+  "cpu": "AMD64 Family 25 Model 117 Stepping 2, AuthenticAMD",
+  "processors": 16,
+  "gitCommit": "4529564505b20136a16d81767813a7d0d629bf92",
+  "scenario": "frames",
+  "results": [
+    {
+      "name": "offset-depth2",
+      "samples": 2000000,
+      "nsPerOp": 15.6101,
+      "totalMs": 31.2202,
+      "acc": -2000000000
+    },
+    {
+      "name": "offset-depth4",
+      "samples": 2000000,
+      "nsPerOp": 39.09585,
+      "totalMs": 78.1917,
+      "acc": -6000000000
+    },
+    {
+      "name": "offset-depth8",
+      "samples": 2000000,
+      "nsPerOp": 102.6336,
+      "totalMs": 205.2672,
+      "acc": -14000000000
+    },
+    {
+      "name": "lca-depth8",
+      "samples": 2000000,
+      "nsPerOp": 26.02715,
+      "totalMs": 52.0543,
+      "acc": 0
+    }
+  ]
+}

@@ -3,7 +3,12 @@
   <PioneerFramework.Celestial.CelestialSystemDef>
     <defName>PF_DefaultCelestialSystem</defName><label>燧阳系</label>
     <rootSurfaceEntry>root</rootSurfaceEntry>
+    <!-- 2026-11-17（用户令，为测试方便）：**暂时停用程序化星系生成**。
+         地月系（Earth/Moon）与赭砂（ZheSha）是上面 entries 里的手写天体，不受影响；
+         删掉本行后 `CelestialWorldBootstrap.ExpandNewWorld` 拿不到 policy，不会 Append 任何行星/矮星/卫星。
+         恢复 = 把下面这行取消注释即可（Def `PF_DefaultCelestialPopulation` 原样保留，未删）。
     <populationPolicy>PF_DefaultCelestialPopulation</populationPolicy>
+    -->
     <entries>
       <li>
         <key>primary</key><bodyDef>Sun</bodyDef><count><value>1</value></count>

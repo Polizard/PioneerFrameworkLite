@@ -7,6 +7,9 @@ namespace PioneerFramework.Combat
     /// 精确炮击标记（测试用）：在被精确瞄准的敌舰格子上绘制一个半透明红色方块。
     /// 生命周期由 CompMapDesignator 管理：设置精确炮击点后生成，清除/目标失效/定位机拆除时销毁。
     /// </summary>
+    // 2026-11-17（用户授权）：有静态 Material 字段（MarkerMat 内联初始化）⇒ 标记静态构造，
+    // 让材质在启动时的主线程创建，消掉 "needs a StaticConstructorOnStartup attribute" 警告。
+    [Verse.StaticConstructorOnStartup]
     public class Mote_PreciseStrikeMarker : Mote
     {
         /// <summary>标记边长（格）。</summary>

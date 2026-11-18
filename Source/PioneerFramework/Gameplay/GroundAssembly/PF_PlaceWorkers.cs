@@ -15,6 +15,9 @@ namespace PioneerFramework.GroundAssembly
     /// （另一处 `PlaceWorker_NotUnderRoof` 的基类补丁经核实为**死补丁**：其守卫要求
     /// "带该 worker 且是 returned booster"的 def，而全部 returned booster 都没有 placeWorkers ⇒ 已整删归档。）
     /// </summary>
+    // 2026-11-17（用户授权）：有静态 Material 字段（FuelingPortCellMaterial 内联初始化）⇒ 标记静态构造，
+    // 让材质在启动时的主线程创建，消掉 "needs a StaticConstructorOnStartup attribute" 警告。
+    [Verse.StaticConstructorOnStartup]
     public class PF_PlaceWorker_NeedsFuelingPort : PlaceWorker_NeedsFuelingPort
     {
         private static readonly Color ValidColor = new(0.2f, 1f, 0.2f, 0.5f);
@@ -144,6 +147,7 @@ namespace PioneerFramework.GroundAssembly
     }
 
     /// <summary>总装发射台的燃料口幽灵：画在台中心（同旧补丁语义）。</summary>
+    [Verse.StaticConstructorOnStartup]
     public class PF_PlaceWorker_FuelingPort : PlaceWorker_FuelingPort
     {
         private static readonly Material FuelingPortCellMaterial =

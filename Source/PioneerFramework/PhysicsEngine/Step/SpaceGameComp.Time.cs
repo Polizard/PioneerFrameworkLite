@@ -161,6 +161,8 @@ namespace PioneerFramework
                         LastPhysicsStepTick = timeScaleManager.GetPhysicsTick();
                         ResolveGroupBirths(LastPhysicsStepTick);
                         RetireDueDebris(LastPhysicsStepTick);   // 2026-11-03：到期碎片退役（按 groupId 升序）
+                        // 行星际粗转移：捕获烧结束后的有界复核（只扫处于 Capture 且已停烧的组，通常 0～1 个）。
+                        VerifyInterplanetaryTransfers(LastPhysicsStepTick);
                         PerfProbe.StepClockEnd(stepClock);
                         PerfProbe.StepClockMaybeAutoLog();      // 开发者模式下自动出一行（不依赖用户按按钮）
 

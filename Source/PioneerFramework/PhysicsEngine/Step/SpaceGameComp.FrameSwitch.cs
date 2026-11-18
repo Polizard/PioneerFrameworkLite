@@ -61,6 +61,8 @@ namespace PioneerFramework
                 if (SoiCheck.IsInside(rel.x, rel.y, rel.z, memberSoi * SoiInScale))
                 {
                     SwitchGroupFrame(group, member.bodyId, mgr, physicsTick);
+                    // 行星际粗转移：进 SOI 的捕获点火（换系之后，状态已在新中心天体帧里）。
+                    TryArmInterplanetaryCapture(group, member.bodyId, mgr, physicsTick);
                     return;
                 }
             }

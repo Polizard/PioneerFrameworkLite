@@ -17,6 +17,8 @@ namespace PioneerFramework.RingWorld
     /// - renderQueue 固定 3550（在受光主体 3500 之后、深度测试开、深度写关，引擎按 ShaderDef 的 additive 配置绘制）。
     /// - 三个材质只在首次使用时创建，之后复用；每个都 `RingWorldVisualState.Register`。
     /// </summary>
+    // 2026-11-17：有静态 Shader/Texture2D/Material 字段 ⇒ 标记静态构造（主线程）。材质仍是首次使用时创建。
+    [Verse.StaticConstructorOnStartup]
     internal static class RingGlowMaterials
     {
         private const int GlowQueue = 3550;

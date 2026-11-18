@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NFexp 载入文件夹声明（2026-11-17 建壳）。
+  只声明 1.7：1.6 是 PFL 的冻结线，NFexp 不出 1.6。
+  目录暂时是空的（只有 .gitkeep），内容批次另开。
+-->
+<LoadFolders>
+  <v1.7>
+    <li>1.7</li>
+  </v1.7>
+</LoadFolders>

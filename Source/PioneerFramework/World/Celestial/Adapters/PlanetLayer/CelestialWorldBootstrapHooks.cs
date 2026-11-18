@@ -111,7 +111,19 @@ namespace PioneerFramework.Celestial
             CelestialCapabilityRegistry.Global.Seal();
             ulong seed = unchecked((uint)GenText.StableStringHash(world.info.seedString));
             var started = CelestialWorldBootstrap.Begin(CelestialWorldBootstrap.DefaultSystem, seed);
-            if (!started.Success) throw Failure(started.Errors);
+            if (!started.Success)
+            {
+                // 2026-11-17：天体内容 Def（系统/天体/档案/视觉）已迁到附属包 NFexp。PFL 单独启用时
+                // 「系统定义不存在」是合法配置（无天体框架），不应把原版建世界整个打断；
+                // 其余任何失败仍按原样抛。
+                if (started.Errors.Count == 1 && started.Errors[0].Code == "SystemDefinitionMissing")
+                {
+                    Log.Warning("[PFL] 未找到天体系统定义 " + CelestialWorldBootstrap.DefaultSystem
+                        + "（内容包 NFexp 未启用？）—— 本世界不启用天体框架。");
+                    return;
+                }
+                throw Failure(started.Errors);
+            }
             var scope = started.Value; scope.ManagedByNativeHooks = true;
             if (invocation != null && ReferenceEquals(invocation.Game, game)) invocation.Owned.Add(scope);
         }

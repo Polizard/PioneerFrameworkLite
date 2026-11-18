@@ -34,7 +34,7 @@ if ($Version -eq "1.6") {
         exit 1
     }
     Write-Host "Gate green: frozen 1.6 package intact." -ForegroundColor Green
-    $subDirs = @("1.6\Defs", "1.6\Textures", "1.6\Patches", "1.6\AssetBundles")
+    $subDirs = @("1.6\Defs", "1.6\Textures", "1.6\Patches", "1.6\AssetBundles", "1.6\Languages")
     $dllSrc = "1.6\Assemblies\PioneerFrameworkLite.dll"
     $modSubfolder = "1.6"
     $rootDirs = @("About", "Shaders")
@@ -54,7 +54,7 @@ else {
         }
     }
     Write-Host "Gate green: Release built, 1.7 package present." -ForegroundColor Green
-    $subDirs = @("1.7\Defs", "1.7\Textures", "1.7\Patches", "1.7\Shaders", "1.7\AssetBundles")
+    $subDirs = @("1.7\Defs", "1.7\Textures", "1.7\Patches", "1.7\Shaders", "1.7\AssetBundles", "1.7\Languages")
     $dllSrc = "1.7\Assemblies\PioneerFrameworkLite.dll"
     $modSubfolder = "1.7"
     $rootDirs = @("About")

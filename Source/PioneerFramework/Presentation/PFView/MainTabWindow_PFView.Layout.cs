@@ -107,7 +107,8 @@ namespace PioneerFramework
                 lastFrameLogTick = double.MinValue;
             }
             Rect time = NextToolbarRect(ref x, ref by, PFViewToolbarItem.Time);
-            DrawPauseAndTimeStatus(time);
+            DrawTimeControls(time);
+            DrawTransferBias(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Transfer));
             if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Help), "?", "PFV_Help".Translate()))
                 Find.WindowStack.Add(new Window_PFViewHelp());
             if (ToolbarButton(NextToolbarRect(ref x, ref by, PFViewToolbarItem.Debug), "PFV_Debug".Translate(), "PFV_DebugTip".Translate()))
@@ -153,19 +154,118 @@ namespace PioneerFramework
         }
 
 
-        private static void DrawPauseAndTimeStatus(Rect rect)
+        /// <summary>
+        /// PFView 内的时间速度控制（2026-11-18 用户令**恢复**；`bee087b` 曾把它换成"只留暂停"）。
+        ///
+        /// 为什么要恢复：视图是全屏的，宿主 HUD 的时间档按钮被 HUD 隔离补丁挡住/盖住 ⇒ 视图内
+        /// 没有任何办法加速。行星际转移动辄几天模拟时间，没有 Fast/Ultrafast 根本跑不完。
+        ///
+        /// 宽度约束：`PFViewToolbarItem.Time` 是 200 px —— 5 个按钮 ×30 + 4×2 = 158 px，
+        /// 剩下的 42 px 再放状态标签会挤成一团 ⇒ 状态只进 tooltip，不再画文字。
+        /// </summary>
+        private static void DrawTimeControls(Rect rect)
         {
-            var ticks = Find.TickManager;
-            var pause = new Rect(rect.x, rect.y, 30f, rect.height);
-            string label = ticks.CurTimeSpeed == TimeSpeed.Paused ? "▸" : "II";
-            if (ToolbarButton(pause, label, "PFV_TogglePause".Translate()))
-                ticks.TogglePaused();
+            const float width = 30f;
+            const float gap = 2f;
+            float x = rect.x;
+            // 第一组：**游戏速度**（原版 1/2/3/4 档，和原版 HUD 同义）。
+            DrawTimeSpeedButton(new Rect(x, rect.y, width, rect.height), "II", TimeSpeed.Paused, "暂停");
+            x += width + gap;
+            DrawTimeSpeedButton(new Rect(x, rect.y, width, rect.height), "1×", TimeSpeed.Normal, "正常速度（1×）");
+            x += width + gap;
+            DrawTimeSpeedButton(new Rect(x, rect.y, width, rect.height), "3×", TimeSpeed.Fast, "快速（3×）");
+            x += width + gap;
+            DrawTimeSpeedButton(new Rect(x, rect.y, width, rect.height), "6×", TimeSpeed.Superfast, "超快（6×）");
+            x += width + gap;
+            DrawTimeSpeedButton(new Rect(x, rect.y, width, rect.height), "15×", TimeSpeed.Ultrafast, "极速（15×）");
+            x += width + gap + 4f;
 
+            // 第二组：**PFL 物理速率**（与游戏速度正交）—— Combat 1/60× / Normal 1× / Fast 8×。
+            // 2026-11-18 用户：「和游戏那个 123 正交的那组」。它决定每个游戏 tick 推进多少物理秒，
+            // 与上面那组是乘法关系。
             var clock = Current.Game?.GetComponent<TimeScaleManager>();
-            if (clock == null) return;
-            var status = new Rect(pause.xMax + 6f, rect.y, rect.width - 36f, rect.height);
-            TooltipHandler.TipRegion(status, clock.StatusTip);
-            Widgets.Label(status, clock.StatusLabel);
+            DrawPhysicsRateButton(new Rect(x, rect.y, 36f, rect.height), "1/60×", TimeScaleLevel.Combat,
+                clock, "物理速率 1/60×（战斗档：慢放，每 tick 1/60 物理秒）");
+            x += 36f + gap;
+            DrawPhysicsRateButton(new Rect(x, rect.y, 36f, rect.height), "1×", TimeScaleLevel.Normal,
+                clock, "物理速率 1×（正常：每 tick 1 物理秒）");
+            x += 36f + gap;
+            DrawPhysicsRateButton(new Rect(x, rect.y, 36f, rect.height), "8×", TimeScaleLevel.Fast,
+                clock, "物理速率 8×（快速：每 tick 8 物理秒；跨行星转移通常用这档）");
+            x += 36f + gap;
+
+            var status = new Rect(x, rect.y, Math.Max(0f, rect.xMax - x), rect.height);
+            if (clock != null && status.width > 0f) TooltipHandler.TipRegion(status, clock.StatusTip);
+        }
+
+        /// <summary>PFL 物理速率按钮（1/60× / 1× / 8×），点击调 `TimeScaleManager` 的对应档。</summary>
+        private static void DrawPhysicsRateButton(Rect rect, string label, TimeScaleLevel level,
+            TimeScaleManager? clock, string tip)
+        {
+            TooltipHandler.TipRegion(rect, tip);
+            bool active = clock != null && clock.CurrentLevel == level;
+            Color previous = GUI.color;
+            GUI.color = active ? Color.white : new Color(0.62f, 0.62f, 0.62f);
+            if (Widgets.ButtonText(rect, label))
+            {
+                if (clock != null)
+                {
+                    switch (level)
+                    {
+                        case TimeScaleLevel.Combat: clock.SetCombatMode(); break;
+                        case TimeScaleLevel.Fast: clock.SetFastMode(); break;
+                        default: clock.SetNormalMode(); break;
+                    }
+                }
+            }
+            GUI.color = previous;
+        }
+
+        /// <summary>
+        /// **行星际转移偏好滑条**（2026-11-18，用户选型）：0 = 最省 Δv、1 = 最快。
+        /// 取值写进静态字段，规划时由 `TryBeginTorchTransfer(..., timeBias)` 读取。
+        /// </summary>
+        internal static float transferTimeBias = 0.5f;
+
+        private static void DrawTransferBias(Rect rect)
+        {
+            Widgets.Label(new Rect(rect.x, rect.y, 58f, rect.height), "用时/省油");
+            var slider = new Rect(rect.x + 60f, rect.y + 2f, Math.Max(20f, rect.width - 64f), rect.height - 4f);
+            float bias = GUI.HorizontalSlider(slider, transferTimeBias, 0f, 1f);
+            if (Math.Abs(bias - transferTimeBias) > 0.001f)
+            {
+                transferTimeBias = bias;
+                Log.Message($"[火炬·偏好] 转移到用时偏好 = {transferTimeBias:F2}（0=最省 Δv，1=最快）");
+            }
+            TooltipHandler.TipRegion(rect, $"行星际转移偏好 {transferTimeBias:F2}：0=最省 Δv，1=最快（选择仍受 Δv 预算约束）");
+        }
+        private static void DrawTimeSpeedButton(Rect rect, string label, TimeSpeed speed, string tip)
+        {
+            TooltipHandler.TipRegion(rect, tip);
+            bool active = Find.TickManager != null && Find.TickManager.CurTimeSpeed == speed;
+            Color previous = GUI.color;
+            GUI.color = active ? Color.white : new Color(0.62f, 0.62f, 0.62f);
+            if (Widgets.ButtonText(rect, label)) SetGameSpeed(speed);
+            GUI.color = previous;
+        }
+
+        /// <summary>设置游戏时间档（暂停走原版 TogglePaused，保留 prePause 语义）。</summary>
+        internal static void SetGameSpeed(TimeSpeed speed)
+        {
+            var clock = Current.Game?.GetComponent<TimeScaleManager>();
+            if (clock != null)
+            {
+                clock.SetGameSpeed(speed);
+                return;
+            }
+            var ticks = Find.TickManager;
+            if (ticks == null) return;
+            if (speed == TimeSpeed.Paused)
+            {
+                if (ticks.CurTimeSpeed != TimeSpeed.Paused) ticks.TogglePaused();
+                return;
+            }
+            ticks.CurTimeSpeed = speed;
         }
 
         // ════════════════════════════════════════════════════
