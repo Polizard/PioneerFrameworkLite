@@ -320,7 +320,6 @@ namespace PioneerFramework
             // dev 真值开关（`SensorManager.DebugShowGroundTruth`）开启 ⇒ 绕过认知层，直接看真实棋子。
             // 认知层缺位（组件没加载）⇒ 放行（= 旧行为，别让缺组件变成"世界空了"）。
             var sensor = sensorMgrRef.Get();
-            int playerFid = Faction.OfPlayer?.loadID ?? -1;
             foreach (var group in groups)
                 if (group.IsActive && !group.IsSurfaceAnchor && InViewedFrame(group, celestialMgr, viewedFrame))
                 {
@@ -328,14 +327,7 @@ namespace PioneerFramework
 
                     // [V-2] 影子接触：判据已断、记忆未过期 ⇒ **画在最后已知位置**（不是真值位置），
                     // 配 σ 圈表达不确定度（口径见 ContactCore.CoastedPosition 注释：画面不外推）。
-                    Vector3? posOverride = null;
-                    if (sensor != null && !SensorManager.DebugShowGroundTruth && playerFid >= 0
-                        && sensor.ContactPhaseOf(playerFid, group.GroupId) == TrackPhase.Shadow
-                        && sensor.TryGetContact(playerFid, group.GroupId, out Contact memContact))
-                    {
-                        posOverride = ToOverlayView(memContact.position, PhysicsTickNow());
-                    }
-                    DrawGroupIcon(group, camera, posOverride);
+                    DrawGroupIcon(group, camera, GetDisplayedGroupPosition(group, sensor));
                 }
             IconBatchFlush();   // 图标批收口（2026-10-16 合批；空批无操作）
 
@@ -527,16 +519,32 @@ namespace PioneerFramework
 
         private static long _guiClocks, _guiTicksTotal, _guiTicksMax;
 
-        private static void WorldInterfaceOnGUIBody()
+        internal static void WorldInterfaceOnGUIBody(WorldCelestialNavigation? navigation = null)
         {
-            if (WorldCelestialHost.Active) return;
+            if (WorldCelestialHost.Active && navigation == null) return;
+            if (navigation != null && !navigation.ShowsEntrySubsystem) return;
             if (!EnableVisualization) return;
             if (!WorldRendererUtility.WorldSelected) return;
             var spaceGame = Current.Game?.GetComponent<SpaceGameComp>();
             if (spaceGame == null) return;
 
-            HandleInput(spaceGame);
-            DrawInfoPanel(spaceGame);
+            overlayNavigation = navigation;
+            try
+            {
+                if (!WorldCelestialHost.OverMainButtonBar() && !Find.WindowStack.WindowsPreventCameraMotion &&
+                    Find.WindowStack.GetWindowAt(UI.MousePositionOnUIInverted) == null)
+                    HandleInput(spaceGame);
+                DrawInfoPanel(spaceGame);
+                Rect? labelPanel = TryGetPanelRect(out var groupPanel) ? groupPanel : null;
+                WorldGroupLabels.Draw(spaceGame, selectedGroupId, navigation, labelPanel);
+                if (navigation != null && MouseIsOverPanel() && Event.current.type is
+                    EventType.MouseDown or EventType.MouseUp or EventType.MouseDrag or EventType.ScrollWheel)
+                    Event.current.Use();
+            }
+            finally
+            {
+                overlayNavigation = null;
+            }
         }
 
         /// <summary>
@@ -631,7 +639,7 @@ namespace PioneerFramework
         /// `TimeScaleManager.GetRenderTick()` —— 位置/轨道/波束全是"任意实数 tick 的解析函数"，
         /// 喂连续值 ⇒ 图标/轨道/波束**不再一格一格跳**（"别的航天器位置在抖"的另一半）。
         /// </summary>
-        private static double PhysicsTickNow()
+        internal static double PhysicsTickNow()
         {
             var tsm = Current.Game?.GetComponent<TimeScaleManager>();
             return tsm != null ? tsm.GetRenderTick() : TimeScaleManager.GetPhysicsTickSafe();
@@ -643,7 +651,7 @@ namespace PioneerFramework
 
         private static WorldCelestialNavigation? overlayNavigation;
 
-        private static Vector3 ToOverlayView(DVector3 systemFrameMeters, double tick)
+        internal static Vector3 ToOverlayView(DVector3 systemFrameMeters, double tick)
             => ProjectOverlayPoint(ViewFrame.ToViewUnity(systemFrameMeters, tick));
 
         private static Vector3 ProjectOverlayPoint(Vector3 fixedPoint)
@@ -672,7 +680,16 @@ namespace PioneerFramework
             return ToOverlayView(posSystemFrame, physicsTick);
         }
 
-        private static bool IsViewPosVisible(Vector3 viewPosUnity, float occlusionMargin)
+        internal static Vector3 GetDisplayedGroupPosition(SpaceEntityGroup group, SensorManager? sensor)
+        {
+            if (sensor != null && !SensorManager.DebugShowGroundTruth && Faction.OfPlayer is { } player &&
+                sensor.ContactPhaseOf(player.loadID, group.GroupId) == TrackPhase.Shadow &&
+                sensor.TryGetContact(player.loadID, group.GroupId, out Contact contact))
+                return ToOverlayView(contact.position, PhysicsTickNow());
+            return GetGroupWorldPositionUnity(group);
+        }
+
+        internal static bool IsViewPosVisible(Vector3 viewPosUnity, float occlusionMargin)
         {
             Vector3 origin = GetOrbitOrigin();
             Vector3 offset = viewPosUnity - origin;
@@ -1242,6 +1259,11 @@ namespace PioneerFramework
             if (Event.current.type != EventType.MouseDown || Event.current.button != 0) return;
             if (!WorldRendererUtility.WorldSelected) return;
             if (MouseIsOverPanel()) return;
+            if (Event.current.shift && WorldGroupLabels.ToggleAt(Event.current.mousePosition))
+            {
+                Event.current.Use();
+                return;
+            }
 
             Vector2 mousePos = Event.current.mousePosition;
             SpaceEntityGroup? clickedGroup = null;
@@ -1253,7 +1275,10 @@ namespace PioneerFramework
             {
                 if (!group.IsActive || group.IsSurfaceAnchor || !InViewedFrame(group, manager, viewedFrame)) continue;
                 if (sensor != null && !SensorManager.DebugShowGroundTruth && !sensor.PlayerCanSee(group)) continue;
-                Vector3 viewPos = GetGroupWorldPositionUnity(group);
+                Vector3 viewPos = GetDisplayedGroupPosition(group, sensor);
+                var camera = Find.WorldCamera;
+                float depth = camera.WorldToViewportPoint(viewPos).z;
+                if (depth <= camera.nearClipPlane || depth >= camera.farClipPlane) continue;
                 if (!IsViewPosVisible(viewPos, 2f)) continue;
                 Vector2 screenPos = GenWorldUI.WorldToUIPosition(viewPos);
                 float dist = Vector2.Distance(mousePos, screenPos);
@@ -1266,10 +1291,11 @@ namespace PioneerFramework
 
             if (clickedGroup != null)
             {
-                selectedGroupId = clickedGroup.GroupId;
+                if (Event.current.shift) WorldGroupLabels.TogglePinned(clickedGroup.GroupId);
+                else selectedGroupId = clickedGroup.GroupId;
                 Event.current.Use();
             }
-            else
+            else if (!Event.current.shift)
             {
                 selectedGroupId = -1;
                 isFollowing = false;
@@ -1300,7 +1326,7 @@ namespace PioneerFramework
         {
             anchor = default;
             occluded = false;
-            Vector3 viewPos = GetGroupWorldPositionUnity(group);
+            Vector3 viewPos = GetDisplayedGroupPosition(group, sensorMgrRef.Get());
             if (IsViewPosVisible(viewPos, 2f))
             {
                 anchor = GenWorldUI.WorldToUIPosition(viewPos);
@@ -1329,7 +1355,7 @@ namespace PioneerFramework
             if (grp != null && grp.HasApproachGuidance) h += ApproachSectionHeight;
             if (grp != null && grp.HasRendezvousGuidance && !grp.rendezvousIsApproach)
                 h += SpaceGameComp.UseNewRendezvousLaw ? RendezvousSectionHeightNewLaw : RendezvousSectionHeight;
-            return new Rect(24f, 80f, PanelWidth, h);
+            return new Rect(24f, overlayNavigation != null ? 185f : 80f, PanelWidth, h);
         }
 
         private static void DrawInfoPanel(SpaceGameComp spaceGame)

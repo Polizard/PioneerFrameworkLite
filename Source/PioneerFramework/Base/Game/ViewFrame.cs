@@ -14,10 +14,21 @@ namespace PioneerFramework.Celestial
         internal DVector3 ToPhysics(DVector3 position) =>
             PhysicsAnchor + DVector3.Rotate((position - ViewAnchor) / Scale, DQuaternion.Inverse(Rotation));
 
-        internal static bool ShouldEnterSystem(double zoom, bool inhibited, double threshold = .010) =>
-            zoom < threshold && !inhibited;
+        internal static bool ShouldEnterSystem(double zoom, double desiredZoom, bool inhibited, bool planetViewLocked,
+            double threshold) => !planetViewLocked && !inhibited && zoom < threshold && desiredZoom < threshold;
 
         internal static bool CanRearm(double zoom, double threshold = .010) => zoom >= threshold * 1.4;
+
+        internal static double LockedDistanceLimit(double radius, double periapsis, double? gm, double? parentGm)
+        {
+            double limit = gm is > 0 && parentGm is > 0 && periapsis > 0
+                ? 2 * CelestialPopulationOrbits.HillRadius(periapsis, gm.Value, parentGm.Value)
+                : radius * 200;
+            return Math.Max(radius / .88, limit);
+        }
+
+        internal static Vector2 OrbitDragDegrees(Vector2 position, Vector2 previous, float uiHeight, float sensitivity) =>
+            (position - previous) * (.45f * 720f / Mathf.Max(1, uiHeight) * sensitivity);
 
         internal static double RaySphere(DVector3 origin, DVector3 direction, DVector3 center, double radius)
         {

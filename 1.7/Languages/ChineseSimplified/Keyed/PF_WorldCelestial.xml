@@ -3,6 +3,9 @@
   <PF_WorldCelestial_System>恒星系</PF_WorldCelestial_System>
   <PF_WorldCelestial_FullSystem>恒星系全图</PF_WorldCelestial_FullSystem>
   <PF_WorldCelestial_Back>返回母星视图</PF_WorldCelestial_Back>
+  <PF_WorldCelestial_LockPlanet>锁定行星视角</PF_WorldCelestial_LockPlanet>
+  <PF_WorldCelestial_UnlockPlanet>解锁行星视角</PF_WorldCelestial_UnlockPlanet>
+  <PF_WorldCelestial_LockPlanetTip>固定当前原生 layer 的中心天体，最远拉至两倍希尔球半径。中键或右键拖动旋转，滚轮缩放。解锁后可用 Shift + 中键平移，或切换关注的天体。</PF_WorldCelestial_LockPlanetTip>
   <PF_WorldCelestial_FocusClose>近景跟随 {0}</PF_WorldCelestial_FocusClose>
   <PF_WorldCelestial_FocusSystem>进入 {0} 的局部视图</PF_WorldCelestial_FocusSystem>
   <PF_WorldCelestial_ChooseBody>选择天体</PF_WorldCelestial_ChooseBody>
@@ -20,4 +23,15 @@
   <PF_WorldCelestial_Region>地块 {0} · {1}</PF_WorldCelestial_Region>
   <PF_WorldCelestial_Climate>气温 {0} °C · 降雨 {1} mm</PF_WorldCelestial_Climate>
   <PF_WorldCelestial_Elevation>海拔 {0} m · {1}</PF_WorldCelestial_Elevation>
+  <PF_WorldGroup_Height>高度 {0}</PF_WorldGroup_Height>
+  <PF_WorldGroup_Speed>相对速度 {0}</PF_WorldGroup_Speed>
+  <PF_WorldGroup_Stale>最后观测</PF_WorldGroup_Stale>
+  <PF_WorldGroup_Friendly>友方</PF_WorldGroup_Friendly>
+  <PF_WorldGroup_Hostile>敌方</PF_WorldGroup_Hostile>
+  <PF_WorldGroup_Neutral>中立</PF_WorldGroup_Neutral>
+  <PF_WorldGroup_Group>编队</PF_WorldGroup_Group>
+  <PF_WorldGroup_Ship>飞船</PF_WorldGroup_Ship>
+  <PF_WorldGroup_Station>空间站</PF_WorldGroup_Station>
+  <PF_WorldGroup_Wreck>残骸</PF_WorldGroup_Wreck>
+  <PF_WorldGroup_Missile>导弹</PF_WorldGroup_Missile>
 </LanguageData>

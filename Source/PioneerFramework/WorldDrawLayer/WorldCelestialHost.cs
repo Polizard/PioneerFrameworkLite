@@ -17,6 +17,7 @@ internal static class WorldCelestialHost
 {
     internal static WorldCelestialNavigation? Navigation { get; private set; }
     internal static bool Active => Navigation != null && CanUseWorld();
+    internal static bool PlanetViewLocked => PioneerFrameworkLiteMod.Settings?.lockWorldPlanetView == true;
     private static bool installed;
     private static int capturedButtons;
 
@@ -178,10 +179,28 @@ internal static class WorldCelestialHost
         if (Navigation is { } view)
         {
             view.DrawGui();
+            SpaceGroupVisualManager.WorldInterfaceOnGUIBody(view);
             view.HandleInput(Event.current);
         }
-        else if (Widgets.ButtonText(new Rect(12, 112, 126, 28), "PF_WorldCelestial_System".Translate()))
-            Start(true);
+        else
+        {
+            if (Widgets.ButtonText(new Rect(12, 112, 126, 28), "PF_WorldCelestial_System".Translate()))
+                Start(true);
+            DrawPlanetViewLock(new Rect(146, 112, 180, 28));
+        }
+    }
+
+    internal static void DrawPlanetViewLock(Rect rect)
+    {
+        if (PioneerFrameworkLiteMod.Settings is not { } settings) return;
+        var label = settings.lockWorldPlanetView ? "PF_WorldCelestial_UnlockPlanet" : "PF_WorldCelestial_LockPlanet";
+        if (Widgets.ButtonText(rect, label.Translate()))
+        {
+            settings.lockWorldPlanetView = !settings.lockWorldPlanetView;
+            if (settings.lockWorldPlanetView) Navigation?.LockToLayer();
+            settings.Write();
+        }
+        TooltipHandler.TipRegion(rect, "PF_WorldCelestial_LockPlanetTip".Translate());
     }
 
     private static bool SelectorInput()

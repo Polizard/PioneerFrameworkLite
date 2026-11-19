@@ -1,4 +1,8 @@
 using PioneerFramework.Celestial;
+using System;
+using System.Linq;
+using System.Reflection;
+using UnityEngine;
 using Xunit;
 
 namespace PioneerFramework.Tests;
@@ -25,11 +29,56 @@ public sealed class WorldCelestialFrameTests
     [Fact]
     public void ScaleThresholdUsesHysteresisAndPointerDirection()
     {
-        Assert.False(WorldCelestialFrame.ShouldEnterSystem(.010, false));
-        Assert.True(WorldCelestialFrame.ShouldEnterSystem(.009, false));
-        Assert.False(WorldCelestialFrame.ShouldEnterSystem(.009, true));
+        Assert.False(WorldCelestialFrame.ShouldEnterSystem(.010, .009, false, false, .010));
+        Assert.False(WorldCelestialFrame.ShouldEnterSystem(.009, .010, false, false, .010));
+        Assert.True(WorldCelestialFrame.ShouldEnterSystem(.009, .009, false, false, .010));
+        Assert.False(WorldCelestialFrame.ShouldEnterSystem(.009, .009, true, false, .010));
         Assert.False(WorldCelestialFrame.CanRearm(.013));
         Assert.True(WorldCelestialFrame.CanRearm(.015));
+    }
+
+    [Fact]
+    public void PlanetViewLockPreventsAutomaticSystemEntryBelowBothZoomThresholds()
+    {
+        Assert.False(WorldCelestialFrame.ShouldEnterSystem(.004, .003, false, true, .005));
+        Assert.True(WorldCelestialFrame.ShouldEnterSystem(.004, .003, false, false, .005));
+    }
+
+    [Fact]
+    public void LockedViewStopsAtTwiceTheHillRadiusAndKeepsAValidMinimumDistance()
+    {
+        Assert.Equal(2e8, WorldCelestialFrame.LockedDistanceLimit(5e6, 1e9, 3e9, 1e12), 5);
+        Assert.Equal(1e9, WorldCelestialFrame.LockedDistanceLimit(5e6, 1e9, null, 1e12));
+        Assert.True(WorldCelestialFrame.LockedDistanceLimit(5e6, 1, 1, 1e12) >= 5e6 / .88);
+    }
+
+    [Fact]
+    public void OrbitDragFollowsPointerMovementAcrossEventRatesAndUiSizes()
+    {
+        var start = new Vector2(200, 100);
+        var middle = new Vector2(230, 115);
+        var end = new Vector2(300, 150);
+        var full = WorldCelestialFrame.OrbitDragDegrees(end, start, 720, 1);
+        var split = WorldCelestialFrame.OrbitDragDegrees(middle, start, 720, 1) +
+            WorldCelestialFrame.OrbitDragDegrees(end, middle, 720, 1);
+        Assert.True((full - split).sqrMagnitude < 1e-8f);
+        Assert.Equal(45f, full.x);
+        Assert.Equal(22.5f, full.y);
+        Assert.Equal(full, WorldCelestialFrame.OrbitDragDegrees(end * 2, start * 2, 1440, 1));
+        Assert.Equal(full * 2, WorldCelestialFrame.OrbitDragDegrees(end, start, 720, 2));
+    }
+
+    [Fact]
+    public void LocalWorldGuiOffersGroupSelectionBeforeConsumingCelestialMouseInput()
+    {
+        const BindingFlags flags = BindingFlags.Static | BindingFlags.NonPublic;
+        var method = typeof(WorldCelestialHost).GetMethod("AfterWorldGui", flags)!;
+        var calls = PFViewUiIntegrationTests.ReferencedMembers(method).OfType<MethodBase>().ToArray();
+        int groups = Array.FindIndex(calls, call => call.DeclaringType == typeof(SpaceGroupVisualManager));
+        int celestialInput = Array.FindIndex(calls, call =>
+            call.DeclaringType == typeof(WorldCelestialNavigation) && call.Name == "HandleInput");
+        Assert.True(groups >= 0 && groups < celestialInput,
+            "Group picking and panel input must run before the celestial camera consumes the event.");
     }
 
     [Fact]
