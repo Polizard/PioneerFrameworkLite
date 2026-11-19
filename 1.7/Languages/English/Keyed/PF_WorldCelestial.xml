@@ -3,6 +3,9 @@
   <PF_WorldCelestial_System>Star system</PF_WorldCelestial_System>
   <PF_WorldCelestial_FullSystem>Fit star system</PF_WorldCelestial_FullSystem>
   <PF_WorldCelestial_Back>Return to home view</PF_WorldCelestial_Back>
+  <PF_WorldCelestial_LockPlanet>Lock planet view</PF_WorldCelestial_LockPlanet>
+  <PF_WorldCelestial_UnlockPlanet>Unlock planet view</PF_WorldCelestial_UnlockPlanet>
+  <PF_WorldCelestial_LockPlanetTip>Keep the current native layer's body centered, up to twice its Hill radius. Drag with the middle or right mouse button to rotate and scroll to zoom. Unlock to pan with Shift + middle drag or focus another body.</PF_WorldCelestial_LockPlanetTip>
   <PF_WorldCelestial_FocusClose>Follow {0} up close</PF_WorldCelestial_FocusClose>
   <PF_WorldCelestial_FocusSystem>Open local view for {0}</PF_WorldCelestial_FocusSystem>
   <PF_WorldCelestial_ChooseBody>Choose celestial body</PF_WorldCelestial_ChooseBody>
@@ -20,4 +23,15 @@
   <PF_WorldCelestial_Region>Tile {0} · {1}</PF_WorldCelestial_Region>
   <PF_WorldCelestial_Climate>Temperature {0} °C · Rainfall {1} mm</PF_WorldCelestial_Climate>
   <PF_WorldCelestial_Elevation>Elevation {0} m · {1}</PF_WorldCelestial_Elevation>
+  <PF_WorldGroup_Height>Altitude {0}</PF_WorldGroup_Height>
+  <PF_WorldGroup_Speed>Relative speed {0}</PF_WorldGroup_Speed>
+  <PF_WorldGroup_Stale>Last observed</PF_WorldGroup_Stale>
+  <PF_WorldGroup_Friendly>Friendly</PF_WorldGroup_Friendly>
+  <PF_WorldGroup_Hostile>Hostile</PF_WorldGroup_Hostile>
+  <PF_WorldGroup_Neutral>Neutral</PF_WorldGroup_Neutral>
+  <PF_WorldGroup_Group>group</PF_WorldGroup_Group>
+  <PF_WorldGroup_Ship>ship</PF_WorldGroup_Ship>
+  <PF_WorldGroup_Station>station</PF_WorldGroup_Station>
+  <PF_WorldGroup_Wreck>wreck</PF_WorldGroup_Wreck>
+  <PF_WorldGroup_Missile>missile</PF_WorldGroup_Missile>
 </LanguageData>

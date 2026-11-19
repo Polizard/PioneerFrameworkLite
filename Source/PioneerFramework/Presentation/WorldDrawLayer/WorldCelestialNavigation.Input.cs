@@ -16,6 +16,7 @@ internal sealed partial class WorldCelestialNavigation
     private float lastClickAt;
     private Vector2 lastClickPosition;
     private Vector2 down;
+    private Vector2 lastDragPosition;
     private bool dragged;
     private PlanetTile selectedRegion = PlanetTile.Invalid;
     private CelestialInstanceId? surfaceQueued;
@@ -52,9 +53,8 @@ internal sealed partial class WorldCelestialNavigation
         if (e.type == EventType.ScrollWheel)
         {
             returnLayer = null;
-            double maximum = SystemExtent() * 18;
-            desiredDistance = Math.Clamp(desiredDistance * Math.Exp(Math.Clamp(e.delta.y * .18, -1.5, 1.5)),
-                Target.Radius / .88, maximum);
+            desiredDistance = Math.Clamp(desiredDistance * Math.Exp(Math.Clamp(e.delta.y * .10, -1.5, 1.5)),
+                Target.Radius / .88, MaximumDistance);
             e.Use();
             return;
         }
@@ -64,6 +64,7 @@ internal sealed partial class WorldCelestialNavigation
             {
                 dragButton = e.button;
                 down = e.mousePosition;
+                lastDragPosition = down;
                 dragged = false;
                 clickCount = e.clickCount;
             }
@@ -76,19 +77,23 @@ internal sealed partial class WorldCelestialNavigation
             if (dragged)
             {
                 returnLayer = null;
-                if (dragButton == 1)
-                {
-                    desiredRotation = Quaternion.AngleAxis(e.delta.x * .27f, desiredRotation * Vector3.up) *
-                        Quaternion.AngleAxis(e.delta.y * .27f, desiredRotation * Vector3.right) * desiredRotation;
-                }
-                else
+                Vector2 movement = e.mousePosition - lastDragPosition;
+                if (dragButton == 2 && e.shift && !LayerLocked)
                 {
                     fixedAim = Aim;
                     following = false;
                     double metersPerPixel = distance * 2 * Math.Tan(camera.fieldOfView * Math.PI / 360) / UI.screenHeight;
-                    fixedAim += DVector3.Rotate((DVector3)(rotation * new Vector3(-e.delta.x, e.delta.y, 0)),
+                    fixedAim += DVector3.Rotate((DVector3)(rotation * new Vector3(-movement.x, movement.y, 0)),
                         DQuaternion.Inverse(FrameRotation)) * metersPerPixel;
                 }
+                else
+                {
+                    Vector2 angles = WorldCelestialFrame.OrbitDragDegrees(e.mousePosition, lastDragPosition,
+                        UI.screenHeight, Prefs.MapDragSensitivity);
+                    desiredRotation = Quaternion.AngleAxis(angles.x, desiredRotation * Vector3.up) *
+                        Quaternion.AngleAxis(angles.y, desiredRotation * Vector3.right) * desiredRotation;
+                }
+                lastDragPosition = e.mousePosition;
             }
             e.Use();
             return;
@@ -160,7 +165,7 @@ internal sealed partial class WorldCelestialNavigation
     private void OpenMenu(WorldCelestialBody? body)
     {
         var options = new List<FloatMenuOption>();
-        if (body != null)
+        if (body != null && (!WorldCelestialHost.PlanetViewLocked || body.Id == entryBody || body.Id == snapshot.StarId))
         {
             options.Add(new("PF_WorldCelestial_FocusClose".Translate(body.Member.Label), () => OpenBody(body, .88)));
             if (body.Id != snapshot.StarId)
@@ -168,7 +173,8 @@ internal sealed partial class WorldCelestialNavigation
             if (NativeLayer(body) is { } layer)
                 options.Add(new("PF_WorldCelestial_OpenSurface".Translate(), () => OpenNativeSurface(body, layer)));
         }
-        options.Add(new("PF_WorldCelestial_ChooseBody".Translate(), OpenBodyList));
+        if (!LayerLocked)
+            options.Add(new("PF_WorldCelestial_ChooseBody".Translate(), OpenBodyList));
         options.Add(new("PF_WorldCelestial_FullSystem".Translate(), ShowSystem));
         options.Add(new("PF_WorldCelestial_Back".Translate(), ShowEntryLocal));
         Find.WindowStack.Add(new FloatMenu(options));
@@ -176,7 +182,8 @@ internal sealed partial class WorldCelestialNavigation
 
     private void OpenBodyList()
     {
-        Find.WindowStack.Add(new FloatMenu(VisibleBodies().OrderBy(body => body.Member.Label, StringComparer.Ordinal)
+        Find.WindowStack.Add(new FloatMenu(VisibleBodies().Where(body => !WorldCelestialHost.PlanetViewLocked ||
+                body.Id == entryBody || body.Id == snapshot.StarId).OrderBy(body => body.Member.Label, StringComparer.Ordinal)
             .Select(body => new FloatMenuOption(body.Member.Label, () => OpenBody(body, LocalFocusZoom))).ToList()));
     }
 
