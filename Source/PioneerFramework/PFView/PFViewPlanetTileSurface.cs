@@ -50,8 +50,8 @@ namespace PioneerFramework
         {
             public Mesh? mesh;
             public Material?[] materials = Array.Empty<Material?>();
-            public Vector3 centerDir;       // 网格系（天体固连系）的块中心方向
-            public float angularRadius;     // 块在球面上的角半径（弧度）
+            public Vector3 boundsCenter;    // 固连系中的网格包围球，包含起伏后的顶点
+            public float boundsRadius;
             public int tiles;
             public int verts;
         }
@@ -216,13 +216,15 @@ namespace PioneerFramework
         private static void PlanTileSurfaceCoverage(TileSurfaceBuild build, PlanetLayer layer)
         {
             float cosMax = Mathf.Cos(build.thetaMaxRad);
+            bool wholeSphere = build.thetaMaxRad >= Mathf.PI;
             int end = Mathf.Min(build.tilesCount, build.cursor + TileSurfaceCenterSlice);
             for (int t = build.cursor; t < end; t++)
             {
                 Vector3 c = build.centers![t];
                 if (c.sqrMagnitude < 1e-6f) continue;
                 Vector3 dir = c.normalized;
-                if (Vector3.Dot(dir, build.capCenter) < cosMax) continue;
+                // 全球直接纳入有效格心，避免浮点误差把对跖格的点积算成小于 -1。
+                if (!wholeSphere && Vector3.Dot(dir, build.capCenter) < cosMax) continue;
                 int res = TileSurfaceBinResolution;
                 int bx = Mathf.Clamp((int)((dir.x * 0.5f + 0.5f) * res), 0, res - 1);
                 int by = Mathf.Clamp((int)((dir.y * 0.5f + 0.5f) * res), 0, res - 1);
@@ -287,7 +289,6 @@ namespace PioneerFramework
             var bNormals = new List<List<Vector3>>();
             var bUvs = new List<List<Vector2>>();
             var bTris = new List<List<int>>();
-            Vector3 sumDir = Vector3.zero;
             int built = 0;
 
             foreach (int t in tileIds)
@@ -299,7 +300,6 @@ namespace PioneerFramework
                 Vector3 centerRaw = build.centers![t];
                 if (centerRaw.sqrMagnitude < 1e-6f) continue;
                 Vector3 centerDir = centerRaw.normalized;
-                sumDir += centerDir;
 
                 // 层格 biome 缺失（未生成/半成品层）⇒ 跳过该格；Dictionary 不接受 null 键，别让它抛。
                 BiomeDef? biome = layer[t].PrimaryBiome;
@@ -401,22 +401,15 @@ namespace PioneerFramework
             for (int b = 0; b < bucketBiomes.Count; b++)
                 materials[b] = GetTileSurfaceMaterial(build, bucketBiomes[b].Biome, bucketBiomes[b].Grade, bucketBiomes[b].Wet);
 
-            float angularRadius = 0f;
-            Vector3 chunkDir = sumDir.sqrMagnitude > 1e-9f ? sumDir.normalized : Vector3.up;
-            for (int i = 0; i < tileIds.Length; i++)
-            {
-                Vector3 c = build.centers![tileIds[i]];
-                if (c.sqrMagnitude < 1e-6f) continue;
-                angularRadius = Mathf.Max(angularRadius, Vector3.Angle(chunkDir, c.normalized) * Mathf.Deg2Rad);
-            }
+            Bounds bounds = mesh.bounds;
             build.builtTiles += built;
             build.builtVerts += totalVerts;
             return new TileSurfaceChunk
             {
                 mesh = mesh,
                 materials = materials,
-                centerDir = chunkDir,
-                angularRadius = Mathf.Max(angularRadius, 0.01f),
+                boundsCenter = bounds.center,
+                boundsRadius = bounds.extents.magnitude,
                 tiles = built,
                 verts = totalVerts,
             };
@@ -470,23 +463,16 @@ namespace PioneerFramework
                 renderCamera.pixelHeight, renderCamera.fieldOfView);
             if (pixels < TileSurfaceMinPixels) return false;
 
-            Matrix4x4 mtx = Matrix4x4.TRS(renderPos, selfRot, Vector3.one * renderR * 2f);
-            float camDist = Mathf.Max(distToCenter, 1e-3f);
-            Vector3 camDirLocal = Quaternion.Inverse(selfRot) * (camPos - renderPos) / camDist;
-            bool outside = camDist > renderR * 1.001f;
+            float meshScale = renderR * 2f;
+            Matrix4x4 mtx = Matrix4x4.TRS(renderPos, selfRot, Vector3.one * meshScale);
             int drawnChunks = 0;
             for (int i = 0; i < build.chunks.Count; i++)
             {
                 var chunk = build.chunks[i];
                 if (chunk.mesh == null) continue;
-                if (outside)
-                {
-                    float dot = Vector3.Dot(chunk.centerDir, camDirLocal);
-                    if (dot < -Mathf.Sin(chunk.angularRadius) - 0.02f) continue;
-                }
-                Vector3 chunkCenterView = renderPos + (selfRot * chunk.centerDir) * renderR;
-                float chunkRadiusView = renderR * chunk.angularRadius * 1.05f + 1e-3f;
-                if (!SphereInFrustum(chunkCenterView, chunkRadiusView)) continue;
+                // 分块可能跨过半球，起伏也可能越过名义地平线。遮挡交给深度测试，CPU 只剔除视锥外的分块。
+                Vector3 chunkCenterView = mtx.MultiplyPoint3x4(chunk.boundsCenter);
+                if (!SphereInFrustum(chunkCenterView, chunk.boundsRadius * meshScale)) continue;
                 for (int m = 0; m < chunk.materials.Length; m++)
                 {
                     var mat = chunk.materials[m];

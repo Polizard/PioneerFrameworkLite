@@ -17,6 +17,37 @@ namespace PioneerFramework.Tests
         private static string SourcePath(string relative) =>
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Source", "PioneerFramework", relative);
 
+        private static IEnumerable<(int Offset, MethodBase Method)> GetCalledMethodsWithOffsets(MethodBase method)
+        {
+            var body = method.GetMethodBody();
+            if (body == null) yield break;
+
+            var bytes = body.GetILAsByteArray();
+            var module = method.Module;
+            var typeArguments = method.DeclaringType?.GetGenericArguments() ?? Type.EmptyTypes;
+            var methodArguments = method.IsGenericMethod ? method.GetGenericArguments() : Type.EmptyTypes;
+
+            for (int i = 0; i <= bytes.Length - 5; i++)
+            {
+                if (bytes[i] != 0x28 && bytes[i] != 0x6f && bytes[i] != 0x73)
+                {
+                    continue;
+                }
+
+                int token = BitConverter.ToInt32(bytes, i + 1);
+                MethodBase resolved = null;
+                try
+                {
+                    resolved = module.ResolveMethod(token, typeArguments, methodArguments);
+                }
+                catch
+                {
+                    // Ignore opcode bytes embedded in another operand.
+                }
+                if (resolved != null) yield return (i, resolved);
+            }
+        }
+
         private static IEnumerable<MethodBase> GetCalledMethods(MethodBase method)
         {
             var body = method.GetMethodBody();
@@ -147,19 +178,53 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
-        public void RenderScene_KeepsExactlyOneDirectCameraRenderCall()
+        public void RenderScene_RendersTheStarOffscreenOnceThenTheMainCameraOnce()
         {
             var renderScene = typeof(MainTabWindow_PFView).GetMethod(
                 "RenderScene", BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.NotNull(renderScene);
 
-            var cameraRenderCalls = GetCalledMethods(renderScene)
-                .Where(call =>
-                    call.DeclaringType == typeof(Camera) &&
-                    call.Name == "Render")
+            // 用户已批准（S3-b）：每帧全窗口 Camera.Render == 2 —— RenderScene 直接调用主相机一次，
+            // RenderStellarOffscreen 内部调用星体相机一次。旧"恰好一次"契约**显式改写**为"主相机一次 +
+            // 星体离屏一次"，不是放宽成不检查。
+            var calls = GetCalledMethodsWithOffsets(renderScene).ToList();
+            var directRenders = calls
+                .Where(call => call.Method.DeclaringType == typeof(Camera) && call.Method.Name == "Render")
                 .ToList();
+            Assert.Single(directRenders);
 
-            Assert.Single(cameraRenderCalls);
+            var offscreenCalls = calls.Where(call => call.Method.Name == "RenderStellarOffscreen").ToList();
+            Assert.Single(offscreenCalls);
+
+            var offscreen = typeof(MainTabWindow_PFView).GetMethod(
+                "RenderStellarOffscreen", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.NotNull(offscreen);
+            var offscreenBody = GetCalledMethods(offscreen).ToList();
+            Assert.Single(offscreenBody, call => call.DeclaringType == typeof(Camera) && call.Name == "Render");
+
+            // 顺序：DrawAllObjects → RenderStellarOffscreen → 主相机 Render。
+            int draw = calls.FindIndex(call => call.Method.Name == "DrawAllObjects");
+            int star = calls.FindIndex(call => call.Method.Name == "RenderStellarOffscreen");
+            Assert.True(draw >= 0 && star > draw, "RenderStellarOffscreen must run after DrawAllObjects");
+            Assert.True(directRenders[0].Offset > offscreenCalls[0].Offset,
+                "the main camera must render after the offscreen star pass");
+        }
+
+        [Fact]
+        public void WindowHasNoCameraRenderOutsideTheTwoSanctionedCalls()
+        {
+            // 任何新增的 Camera.Render 都必须显式过这条契约：只允许 RenderScene 一次（主相机）与
+            // RenderStellarOffscreen 一次（星体离屏）；其余方法出现 Camera.Render 直接失败。
+            var allowed = new Dictionary<string, int> { ["RenderScene"] = 1, ["RenderStellarOffscreen"] = 1 };
+            foreach (var method in typeof(MainTabWindow_PFView).GetMethods(AllFlags))
+            {
+                if (method.GetMethodBody() == null) continue;
+                int renders = GetCalledMethods(method)
+                    .Count(call => call.DeclaringType == typeof(Camera) && call.Name == "Render");
+                if (renders == 0) continue;
+                Assert.True(allowed.TryGetValue(method.Name, out int expected) && renders == expected,
+                    $"unexpected Camera.Render ({renders}) in {method.Name}; only RenderScene/RenderStellarOffscreen may render");
+            }
         }
 
         [Fact]

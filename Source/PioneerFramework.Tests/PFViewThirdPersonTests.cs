@@ -208,7 +208,9 @@ public class PFViewThirdPersonTests
         Assert.Contains(update, m => m.Name == "get_IsThirdPersonView");
         Assert.Contains(update, m => m.Name == "ThirdPersonDistances");
         Assert.Contains(update, m => m.Name == "LookYaw");
-        Assert.Contains(update, m => m.Name == "LookPitch");
+        // 2026-11-20：第三种人俯仰不再夹在 ±85°，与自由视角共用整圈归一化。
+        Assert.Contains(update, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "ResolvePitch");
+        Assert.DoesNotContain(update, m => m.Name == "LookPitch" || m.Name == "ClampPitch");
     }
 
     [Fact]

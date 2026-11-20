@@ -1,2 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LanguageData><PF_Megastructures.label>Megastructures</PF_Megastructures.label><PF_Megastructures.description>Manage facilities, nodes and capabilities.</PF_Megastructures.description></LanguageData>
+<LanguageData>
+  <!-- 2026-11-20：按钮已撤下，翻译条目随之停用；恢复按钮时取消注释。
+  <PF_Megastructures.label>Megastructures</PF_Megastructures.label>
+  <PF_Megastructures.description>Manage facilities, nodes and capabilities.</PF_Megastructures.description>
+  -->
+</LanguageData>

@@ -84,4 +84,33 @@
       <renderQueue>2900</renderQueue>
     </shaderProgram>
   </ShaderDef>
+  <!-- 2026-11-20 S3-b experimental star-only half-resolution offscreen (PFViewStellarProbe.S3BEnabled,
+       default false). These composite the half-res star RT back into the main 1.0x RT; depth is the
+       analytic approximation described in PF_StellarComposite.frag.glsl. -->
+  <ShaderDef>
+    <defName>PF_StellarSurfaceComposite</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_StellarVolume.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_StellarComposite.frag.glsl</fragmentShaderFileName>
+      <blendMode>Opaque</blendMode>
+      <depthTest>true</depthTest>
+      <depthWrite>true</depthWrite>
+      <cullMode>Front</cullMode>
+      <renderQueue>2000</renderQueue>
+    </shaderProgram>
+  </ShaderDef>
+  <ShaderDef>
+    <defName>PF_StellarHaloComposite</defName>
+    <shaderProgram>
+      <vertexShaderFileName>PF_StellarVolume.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>PF_StellarComposite.frag.glsl</fragmentShaderFileName>
+      <blendMode>Custom</blendMode>
+      <blendSrcFactor>One</blendSrcFactor>
+      <blendDstFactor>OneMinusSrcAlpha</blendDstFactor>
+      <depthTest>true</depthTest>
+      <depthWrite>false</depthWrite>
+      <cullMode>Front</cullMode>
+      <renderQueue>2900</renderQueue>
+    </shaderProgram>
+  </ShaderDef>
 </Defs>

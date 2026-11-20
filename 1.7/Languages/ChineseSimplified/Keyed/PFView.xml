@@ -131,7 +131,7 @@
   <PFV_StellarHeatCacheFailed>光球缓存不可用，请查看日志。</PFV_StellarHeatCacheFailed>
   <PFV_StellarHeatCacheFast>此实验适用于旧版恒星渲染。切回旧版后重开 PFView。</PFV_StellarHeatCacheFast>
   <PFV_HelpCameraModesTitle>自由与两种第三人称</PFV_HelpCameraModesTitle>
-  <PFV_HelpCameraModes>自由环绕、船体正向、速度正向分别保存机位。船体正向从船尾跟随；速度正向沿系统惯性速度方向跟随，零速时退回船体方向。默认抑制船体滚转带动整屏旋转，可在 Mod 设置中开启随船滚转。第三人称支持全周环视，俯仰限制在 −85°～85°，保持安全距离并禁用平移。环视默认松手保留，可设置松手回正。修改镜头默认项在下一次聚焦时应用。</PFV_HelpCameraModes>
+  <PFV_HelpCameraModes>自由环绕、船体正向、速度正向分别保存机位。船体正向从船尾跟随；速度正向沿系统惯性速度方向跟随，零速时退回船体方向。默认抑制船体滚转带动整屏旋转，可在 Mod 设置中开启随船滚转。第三人称与行星视角都可全周环视，俯仰可连续越过正上、正下方（无角度终点），保持安全距离并禁用平移。环视默认松手保留，可设置松手回正。修改镜头默认项在下一次聚焦时应用。</PFV_HelpCameraModes>
   <PFV_Pilot_Settings>PFView 驾驶与观察</PFV_Pilot_Settings>
   <PFV_Pilot_Assist>松开转向键后辅助止转（关闭则保留惯性旋转）</PFV_Pilot_Assist>
   <PFV_Pilot_InvertPitch>反转键盘俯仰方向</PFV_Pilot_InvertPitch>

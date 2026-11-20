@@ -16,6 +16,19 @@ namespace PioneerFramework
         private readonly Dictionary<int, Material> stellarHaloMaterials = new();
         private readonly List<(int Handle, Mesh Mesh, Matrix4x4 Matrix, Material Material)> stellarHaloDraws = new();
 
+        // S3-b（2026-11-20）：星体半分辨率离屏。composite 材质把星体 RT 合成回主 RT；
+        // 星体自身 draw 排 StarLayer（stellarCamera 收），composite draw 排 SceneLayer（主相机收）。
+        private Shader? stellarCompositeSurfaceShader;
+        private Shader? stellarCompositeHaloShader;
+        private bool stellarOffscreenActive;
+        private readonly Dictionary<int, Material> stellarCompositeSurfaceMaterials = new();
+        private readonly Dictionary<int, Material> stellarCompositeHaloMaterials = new();
+        private readonly List<(int Handle, Mesh Mesh, Matrix4x4 Matrix, Material Material)> stellarStarHaloDraws = new();
+        private readonly List<(int Handle, Mesh Mesh, Matrix4x4 Matrix, Material Material)> stellarCompositeHaloDraws = new();
+
+        /// <summary>S3-b 是否真正启用（开关 + composite shader + 星体 RT 都就绪）；绘制/渲染两侧共用。</summary>
+        internal bool StellarOffscreenActive => stellarOffscreenActive && stellarRenderTexture != null;
+
         internal bool DebugUseStellarHeatCache
         {
             get => debugUseStellarHeatCache;
@@ -53,6 +66,21 @@ namespace PioneerFramework
             if (stellarShadersChecked) return;
             stellarShadersChecked = true;
             SelectStellarShaders(out stellarSurfaceShader, out stellarHaloShader, out stellarShadersAreFast, out stellarShadersAreS3A);
+            stellarOffscreenActive = false;
+            if (PFViewStellarProbe.S3BEnabled)
+            {
+                stellarCompositeSurfaceShader = Shader.Find("PF_StellarSurfaceComposite");
+                stellarCompositeHaloShader = Shader.Find("PF_StellarHaloComposite");
+                if (stellarCompositeSurfaceShader == null || stellarCompositeHaloShader == null)
+                    Log.Warning("[PFView·恒星材质] S3-b composite shader 未加载，回退普通恒星路径。");
+                else if (stellarRenderTexture == null)
+                    Log.Warning("[PFView·恒星材质] S3-b 已开但星体 RT 未就绪，回退普通恒星路径。");
+                else
+                    stellarOffscreenActive = true;
+            }
+            if (stellarSurfaceShader == null || stellarHaloShader == null)
+                return;
+            Log.Message($"[PFView·恒星材质] 使用{(stellarShadersAreFast ? "新版（性能优先）" : stellarShadersAreS3A ? "S3-a（区域跳过积分）" : "旧版体积")}恒星渲染{(stellarOffscreenActive ? "；S3-b 半分辨率离屏" : "")}。");
         }
 
         internal static void SelectStellarShaders(out Shader? stellarSurfaceShader, out Shader? stellarHaloShader,
@@ -127,8 +155,38 @@ namespace PioneerFramework
             }
             float proxyRadius = ApplyStellarVisual(surface, halo, GetCameraViewPos(), center, radius, rotation, tick,
                 stellarShadersAreFast, DebugUseStellarHeatCache, ref stellarHeatCache);
+            Matrix4x4 matrix = Matrix4x4.TRS(center, rotation, Vector3.one * proxyRadius * 2f);
+
+            if (stellarOffscreenActive && stellarRenderTexture != null
+                && stellarCompositeSurfaceShader != null && stellarCompositeHaloShader != null)
+            {
+                // 星体自身进 StarLayer（stellarCamera 渲染到半分辨率 RT）；composite 进 SceneLayer。
+                var frame = PFViewStellarVisualCore.Frame(tick);
+                Vector3 eye = PFViewStellarVisualCore.Eye(GetCameraViewPos(), center, rotation, radius);
+                var eyeValue = new Vector4(eye.x, eye.y, eye.z, 0f);
+                int steps = PFViewStellarProbe.ResolveStepBudget();
+                // P0 probe: SurfacePass=false 时连星体离屏 surface 也不提交（halo 独立）。
+                if (PFViewStellarProbe.SurfacePass)
+                {
+                    Graphics.DrawMesh(mesh, matrix, surface, StarLayer, null, 0);
+
+                    Material compSurface = GetOrCreateCompositeSurfaceMaterial(body.bodyId);
+                    ApplyStellarFrame(compSurface, in frame, null, PFViewStellarVisualCore.FlowSpeed, eyeValue, steps, 0f);
+                    Graphics.DrawMesh(mesh, matrix, compSurface, SceneLayer, null, 0);
+                }
+
+                if (halo != null)
+                {
+                    stellarStarHaloDraws.Add((body.bodyId, mesh, matrix, halo));
+                    Material compHalo = GetOrCreateCompositeHaloMaterial(body.bodyId);
+                    ApplyStellarFrame(compHalo, in frame, null, PFViewStellarVisualCore.FlowSpeed, eyeValue, steps, 1f);
+                    stellarCompositeHaloDraws.Add((body.bodyId, mesh, matrix, compHalo));
+                }
+                return proxyRadius;
+            }
+
             if (halo != null)
-                stellarHaloDraws.Add((body.bodyId, mesh, Matrix4x4.TRS(center, rotation, Vector3.one * proxyRadius * 2f), halo));
+                stellarHaloDraws.Add((body.bodyId, mesh, matrix, halo));
             return proxyRadius;
         }
 
@@ -164,23 +222,76 @@ namespace PioneerFramework
         {
             foreach (var draw in stellarHaloDraws)
                 Graphics.DrawMesh(draw.Mesh, draw.Matrix, draw.Material, SceneLayer, renderCamera);
+            // S3-b：星体 halo 进 StarLayer（stellarCamera 半分辨率 RT）……
+            foreach (var draw in stellarStarHaloDraws)
+                Graphics.DrawMesh(draw.Mesh, draw.Matrix, draw.Material, StarLayer, null, 0);
+            // ……再把星体 RT 的 halo 以 composite 混合回主 RT（主相机，queue 2900）。
+            foreach (var draw in stellarCompositeHaloDraws)
+                Graphics.DrawMesh(draw.Mesh, draw.Matrix, draw.Material, SceneLayer, null, 0);
             stellarHaloDraws.Clear();
+            stellarStarHaloDraws.Clear();
+            stellarCompositeHaloDraws.Clear();
+        }
+
+        private Material GetOrCreateCompositeSurfaceMaterial(int bodyId)
+        {
+            if (stellarCompositeSurfaceMaterials.TryGetValue(bodyId, out var existing)) return existing;
+            var material = new Material(stellarCompositeSurfaceShader) { name = "PF_StellarCompositeSurface_" + bodyId,
+                renderQueue = PFViewLayers.PlanetAndShips };
+            if (stellarRenderTexture != null) material.SetTexture("_StellarStarTex", stellarRenderTexture);
+            stellarCompositeSurfaceMaterials.Add(bodyId, material);
+            return material;
+        }
+
+        private Material GetOrCreateCompositeHaloMaterial(int bodyId)
+        {
+            if (stellarCompositeHaloMaterials.TryGetValue(bodyId, out var existing)) return existing;
+            var material = new Material(stellarCompositeHaloShader) { name = "PF_StellarCompositeHalo_" + bodyId,
+                renderQueue = PFViewLayers.StellarHalo };
+            if (stellarRenderTexture != null) material.SetTexture("_StellarStarTex", stellarRenderTexture);
+            stellarCompositeHaloMaterials.Add(bodyId, material);
+            return material;
+        }
+
+        /// <summary>星体 RT 重建后把新纹理绑到已缓存的 composite 材质（窗口尺寸变化时）。</summary>
+        private void UpdateStellarCompositeTextures()
+        {
+            if (stellarRenderTexture == null) return;
+            foreach (var material in stellarCompositeSurfaceMaterials.Values)
+                if (material != null) material.SetTexture("_StellarStarTex", stellarRenderTexture);
+            foreach (var material in stellarCompositeHaloMaterials.Values)
+                if (material != null) material.SetTexture("_StellarStarTex", stellarRenderTexture);
         }
 
         private void DestroyStellarVisualResourcesForBody(int handle)
         {
             stellarHaloDraws.RemoveAll(draw => draw.Handle == handle);
+            stellarStarHaloDraws.RemoveAll(draw => draw.Handle == handle);
+            stellarCompositeHaloDraws.RemoveAll(draw => draw.Handle == handle);
             DestroyOwnedResource(stellarHaloMaterials, handle);
+            DestroyOwnedResource(stellarCompositeSurfaceMaterials, handle);
+            DestroyOwnedResource(stellarCompositeHaloMaterials, handle);
         }
 
         private void DestroyStellarVisualResources()
         {
             stellarHaloDraws.Clear();
+            stellarStarHaloDraws.Clear();
+            stellarCompositeHaloDraws.Clear();
             foreach (var material in stellarHaloMaterials.Values)
                 if (material != null) UnityEngine.Object.Destroy(material);
             stellarHaloMaterials.Clear();
+            foreach (var material in stellarCompositeSurfaceMaterials.Values)
+                if (material != null) UnityEngine.Object.Destroy(material);
+            stellarCompositeSurfaceMaterials.Clear();
+            foreach (var material in stellarCompositeHaloMaterials.Values)
+                if (material != null) UnityEngine.Object.Destroy(material);
+            stellarCompositeHaloMaterials.Clear();
             stellarSurfaceShader = null;
             stellarHaloShader = null;
+            stellarCompositeSurfaceShader = null;
+            stellarCompositeHaloShader = null;
+            stellarOffscreenActive = false;
             stellarShadersChecked = false;
             stellarShadersAreFast = false;
             stellarShadersAreS3A = false;

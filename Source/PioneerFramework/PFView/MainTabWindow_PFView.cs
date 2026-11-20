@@ -31,9 +31,9 @@ namespace PioneerFramework
         private const float FarClip = 100_000_000f;        // 1,000,000 km
         private const float NearClip = 0.01f;
         private const int SceneLayer = 30;
+        /// <summary>S3-b 星体专用层：主相机不收，仅 stellarCamera 收（29 避开 SceneLayer=30）。</summary>
+        private const int StarLayer = 29;
 
-        private const float MinPitch = 5f;
-        private const float MaxPitch = 85f;
         private const float WheelSensitivity = 0.1f;      // 滚轮每格缩放比例
         private const float MinDistance = 0.5f;
         private const float MaxDistance = 500_000_000f;
@@ -123,6 +123,10 @@ namespace PioneerFramework
         private Light? fillLight;         // 必须留引用：DontDestroyOnLoad 的补光 GameObject 不销毁就每次开窗漏一盏
         private RenderTexture renderTexture = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
         private GameObject cameraObject = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）
+        // S3-b 星体离屏（2026-11-20）：独立相机 + 半分辨率 RT；默认关闭时保持 null。
+        private Camera? stellarCamera;
+        private GameObject? stellarCameraObject;
+        private RenderTexture? stellarRenderTexture;
         private bool resourcesCreated;
 
         private static Mesh sphereMeshLOD0 = null!;   // null!：引擎/Def/存档绑定（N2 可空族家规）;   // 高精：48×36

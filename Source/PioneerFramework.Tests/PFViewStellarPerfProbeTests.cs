@@ -79,6 +79,9 @@ public class PFViewStellarPerfProbeTests
         // TODO(Lead): 先按"PASS=true"占位；结论出来若为 FAIL 改成 Assert.False。
         Assert.True(PFViewStellarProbe.DefaultS3AEnabled);
         Assert.Equal(PFViewStellarProbe.DefaultS3AEnabled, PFViewStellarProbe.S3AEnabled);
+        // S3-b 是玩家显式选择的性能档，默认必须关闭（默认观感仍是全分辨率 S3-a/legacy）。
+        Assert.False(PFViewStellarProbe.DefaultS3BEnabled);
+        Assert.Equal(PFViewStellarProbe.DefaultS3BEnabled, PFViewStellarProbe.S3BEnabled);
         Assert.Equal(64, PFViewStellarVisualCore.SurfaceSteps);
         Assert.Equal(64, PFViewStellarProbe.ResolveStepBudget());
     }
@@ -91,6 +94,7 @@ public class PFViewStellarPerfProbeTests
         PFViewStellarProbe.StepBudget = 8;
         PFViewStellarProbe.RenderScale = 0.5f;
         PFViewStellarProbe.S3AEnabled = !PFViewStellarProbe.DefaultS3AEnabled;
+        PFViewStellarProbe.S3BEnabled = !PFViewStellarProbe.DefaultS3BEnabled;
         try
         {
             PFViewStellarProbe.ResetDefaults();
@@ -99,6 +103,7 @@ public class PFViewStellarPerfProbeTests
             Assert.Equal(0, PFViewStellarProbe.StepBudget);
             Assert.Equal(1f, PFViewStellarProbe.RenderScale);
             Assert.Equal(PFViewStellarProbe.DefaultS3AEnabled, PFViewStellarProbe.S3AEnabled);
+            Assert.Equal(PFViewStellarProbe.DefaultS3BEnabled, PFViewStellarProbe.S3BEnabled);
             Assert.Equal(64, PFViewStellarProbe.ResolveStepBudget());
         }
         finally

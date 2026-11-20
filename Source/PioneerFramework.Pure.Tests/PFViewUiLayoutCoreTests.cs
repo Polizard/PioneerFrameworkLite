@@ -187,6 +187,77 @@ public class PFViewUiLayoutCoreTests
     }
 
     [Fact]
+    public void NoSelectedShipCollapsesRightCockpitPanelsAndReclaimsTheirColumn()
+    {
+        var visibility = new PFViewUiVisibility(true, true, false);
+        var selected = PFViewUiLayoutCore.Compute(1280, 720, false, visibility);
+        var empty = PFViewUiLayoutCore.Compute(1280, 720, false, visibility, shipSelected: false);
+
+        Assert.Equal(132, selected.ShipStatus.Height);
+        Assert.True(selected.Weapons.Height >= 124);
+        Assert.True(selected.Radar.Width > 0);
+
+        Assert.Equal(0, empty.ShipStatus.Width);
+        Assert.Equal(0, empty.Weapons.Width);
+        Assert.Equal(0, empty.Radar.Width);
+        Assert.Equal(selected.ObjectList, empty.ObjectList);
+        Assert.True(empty.FlightControls.Width > selected.FlightControls.Width);
+        Assert.True(empty.FlightControls.X + empty.FlightControls.Width <= 1280);
+        Assert.False(empty.FlightControls.Overlaps(empty.ObjectList));
+    }
+
+    [Fact]
+    public void NoSelectedShipKeepsDetailsPanelAndHandsItTheRadarSpace()
+    {
+        var visibility = new PFViewUiVisibility(true, true, false);
+        var withShip = PFViewUiLayoutCore.Compute(1280, 720, true, visibility);
+        var noShip = PFViewUiLayoutCore.Compute(1280, 720, true, visibility, shipSelected: false);
+
+        Assert.True(noShip.Details.Width > 0);
+        Assert.Equal(withShip.Details.Width, noShip.Details.Width);
+        Assert.Equal(withShip.Details.X, noShip.Details.X);
+        Assert.True(noShip.Details.Height > withShip.Details.Height);
+        Assert.Equal(0, noShip.Radar.Width);
+        Assert.Equal(0, noShip.ShipStatus.Width);
+        Assert.Equal(0, noShip.Weapons.Width);
+        Assert.Equal(720 - 24 - 8, noShip.Details.Y + noShip.Details.Height);
+    }
+
+    [Theory]
+    [InlineData(1280, 720)]
+    [InlineData(1920, 1080)]
+    [InlineData(1120, 640)]
+    public void SelectedShipKeepsRightPanelsBesideDetailsOrAlone(float width, float height)
+    {
+        var visibility = new PFViewUiVisibility(true, true, false);
+        var status = PFViewUiLayoutCore.Compute(width, height, false, visibility, shipSelected: true);
+        Assert.True(status.ShipStatus.Height > 0 && status.ShipStatus.Width > 0);
+        Assert.True(status.Weapons.Height > 0 && status.Weapons.Width > 0);
+        Assert.True(status.Radar.Width > 0);
+        Assert.False(status.ShipStatus.Overlaps(status.Weapons));
+        Assert.False(status.Weapons.Overlaps(status.Radar));
+
+        var details = PFViewUiLayoutCore.Compute(width, height, true, visibility, shipSelected: true);
+        Assert.True(details.Details.Height > 0 && details.Details.Width > 0);
+        Assert.False(details.Details.Overlaps(details.Radar));
+        Assert.Equal(status.Weapons.Y + status.Weapons.Height, details.Details.Y + details.Details.Height);
+    }
+
+    [Fact]
+    public void CompactDrawerStillNeedsAnExplicitOpenWithoutASelectedShip()
+    {
+        var visibility = new PFViewUiVisibility(true, true, false);
+        var closed = PFViewUiLayoutCore.Compute(853, 480, false, visibility, shipSelected: false);
+        var opened = PFViewUiLayoutCore.Compute(853, 480, false, visibility,
+            drawerTab: PFViewDrawerTab.Status, shipSelected: false);
+        Assert.True(closed.Compact);
+        Assert.Equal(0, closed.Drawer.Width);
+        Assert.Equal(0, closed.ShipStatus.Width);
+        Assert.True(opened.Drawer.Width > 0);
+        Assert.True(opened.ShipStatus.Width > 0);
+    }
+
+    [Fact]
     public void LabelsAvoidDetailsAndInstrumentsWithoutMovingWorldPoints()
     {
         var layout = PFViewUiLayoutCore.Compute(1280, 720, true, new(true, true, false));

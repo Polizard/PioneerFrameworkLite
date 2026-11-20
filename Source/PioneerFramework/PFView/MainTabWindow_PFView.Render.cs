@@ -184,7 +184,11 @@ namespace PioneerFramework
             if (resourcesCreated) return;
 
             if (Find.Camera != null)
+            {
                 Find.Camera.cullingMask &= ~(1 << SceneLayer);
+                // S3-b：星体层只许 stellarCamera 收，宿主相机也不许收（否则会把星体画到主屏）。
+                Find.Camera.cullingMask &= ~(1 << StarLayer);
+            }
 
             cameraObject = new GameObject("PFViewCamera");
             UnityEngine.Object.DontDestroyOnLoad(cameraObject);
@@ -198,6 +202,20 @@ namespace PioneerFramework
             renderCamera.fieldOfView = 45f;
             renderCamera.nearClipPlane = NearClip;
             renderCamera.farClipPlane = FarClip;
+
+            // S3-b：星体专用相机（半分辨率 RT；只收 StarLayer）。默认关闭时仅建对象/相机，
+            // targetTexture 由 RecreateRenderTexture 按开关赋/清；不启用相机自动捕获（enabled=false）。
+            stellarCameraObject = new GameObject("PFViewStellarCamera");
+            UnityEngine.Object.DontDestroyOnLoad(stellarCameraObject);
+            stellarCamera = stellarCameraObject.AddComponent<Camera>();
+            stellarCamera.enabled = false;
+            stellarCamera.clearFlags = CameraClearFlags.SolidColor;
+            stellarCamera.backgroundColor = new Color(0f, 0f, 0f, 0f);   // 星体 RT 必须 alpha=0 清屏
+            stellarCamera.cullingMask = 1 << StarLayer;
+            stellarCamera.orthographic = false;
+            stellarCamera.fieldOfView = 45f;
+            stellarCamera.nearClipPlane = NearClip;
+            stellarCamera.farClipPlane = FarClip;
 
             RecreateRenderTexture();
             renderCamera.targetTexture = renderTexture;
@@ -238,12 +256,77 @@ namespace PioneerFramework
             int rh = Mathf.Max(1, Mathf.RoundToInt(UI.screenHeight * scale));
             if (renderTexture != null)
             {
-                if (renderTexture.width == rw && renderTexture.height == rh) return;
+                if (renderTexture.width == rw && renderTexture.height == rh)
+                {
+                    RecreateStellarRenderTexture(rw, rh);
+                    return;
+                }
                 renderTexture.Release();
                 UnityEngine.Object.Destroy(renderTexture);
             }
             renderTexture = new RenderTexture(rw, rh, 24);
             if (renderCamera != null) renderCamera.targetTexture = renderTexture;
+            RecreateStellarRenderTexture(rw, rh);
+        }
+
+        /// <summary>
+        /// S3-b：星体 RT = 主 RT 的 0.5×（宽取半、高按主 RT 宽高比取整，避免奇数高度导致拉伸）。
+        /// 开关关闭时销毁并置空；开启时按需重建；composite 材质缓存的纹理同步更新。
+        /// </summary>
+        private void RecreateStellarRenderTexture(int mainWidth, int mainHeight)
+        {
+            if (!PFViewStellarProbe.S3BEnabled)
+            {
+                ReleaseStellarRenderTexture();
+                return;
+            }
+            int sw = Mathf.Max(1, mainWidth / 2);
+            int sh = Mathf.Max(1, Mathf.RoundToInt((float)mainHeight * sw / Mathf.Max(1, mainWidth)));
+            if (stellarRenderTexture != null && stellarRenderTexture.width == sw && stellarRenderTexture.height == sh)
+            {
+                if (stellarCamera != null) stellarCamera.targetTexture = stellarRenderTexture;
+                return;
+            }
+            ReleaseStellarRenderTexture();
+            stellarRenderTexture = new RenderTexture(sw, sh, 24)
+            {
+                name = "PFViewStellarRT",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+            };
+            if (stellarCamera != null) stellarCamera.targetTexture = stellarRenderTexture;
+            UpdateStellarCompositeTextures();
+        }
+
+        private void ReleaseStellarRenderTexture()
+        {
+            if (stellarCamera != null) stellarCamera.targetTexture = null;
+            if (stellarRenderTexture != null)
+            {
+                stellarRenderTexture.Release();
+                UnityEngine.Object.Destroy(stellarRenderTexture);
+                stellarRenderTexture = null;
+            }
+        }
+
+        /// <summary>
+        /// S3-b：星体离屏渲染（在 DrawAllObjects 之后、主 Camera.Render 之前调用）。
+        /// 相机机位/投影逐帧同步主相机；星体 draw 已按 StarLayer 排队，星体 RT 的 alpha 清屏为 0。
+        /// 未启用（或 composite shader 缺失）时直接返回，零额外提交。
+        /// </summary>
+        private void RenderStellarOffscreen()
+        {
+            if (!stellarOffscreenActive || stellarCamera == null || stellarRenderTexture == null || renderCamera == null)
+                return;
+            Transform main = renderCamera.transform;
+            Transform star = stellarCamera.transform;
+            star.position = main.position;
+            star.rotation = main.rotation;
+            stellarCamera.fieldOfView = renderCamera.fieldOfView;
+            stellarCamera.nearClipPlane = renderCamera.nearClipPlane;
+            stellarCamera.farClipPlane = renderCamera.farClipPlane;
+            stellarCamera.aspect = (float)stellarRenderTexture.width / Mathf.Max(1, stellarRenderTexture.height);
+            stellarCamera.Render();
         }
 
         private void CleanupResources()
@@ -261,6 +344,9 @@ namespace PioneerFramework
             stellarHeatCache = null;
             DebugUseStellarHeatCache = PFViewStellarProbe.DefaultHeatCacheEnabled;
             if (renderTexture != null) { renderTexture.Release(); UnityEngine.Object.Destroy(renderTexture); renderTexture = null; }
+            ReleaseStellarRenderTexture();
+            if (stellarCameraObject != null) { UnityEngine.Object.Destroy(stellarCameraObject); stellarCameraObject = null; }
+            stellarCamera = null;
             if (sunLight != null) { UnityEngine.Object.Destroy(sunLight.gameObject); sunLight = null; }
             if (fillLight != null) { UnityEngine.Object.Destroy(fillLight.gameObject); fillLight = null; }
             if (cameraObject != null) { UnityEngine.Object.Destroy(cameraObject); cameraObject = null; }
@@ -400,29 +486,9 @@ namespace PioneerFramework
         {
             if (renderCamera == null) return true;
 
-            // 转相机空间（相机朝向 +Z）
-            Vector3 cs = renderCamera.transform.InverseTransformPoint(viewPos);
-            float r = Mathf.Max(radius, 0.01f);
-
-            // 远近裁剪面
-            if (cs.z + r < renderCamera.nearClipPlane || cs.z - r > renderCamera.farClipPlane)
-                return false;
-
-            // 水平/垂直 FOV 裁剪。注意 Unity 的 fieldOfView 是**垂直** FOV，水平半角 = atan(tanV·aspect)；
-            // 曾把两者写反（水平用 tanV、垂直用 tanV/aspect）⇒ 屏幕上半高之外的可视区域被误剔：
-            // 16:9 下水平方向只有真实视野的 ~56%，靠屏幕左右/上下边缘的船与天体标记会凭空消失。
-            float halfFov = renderCamera.fieldOfView * 0.5f * Mathf.Deg2Rad;
-            float tanV = Mathf.Tan(halfFov);
-            float tanH = tanV * renderCamera.aspect;
-            float margin = r / Mathf.Max(Mathf.Cos(halfFov), 0.001f);
-
-            float hLimit = cs.z * tanH + margin;
-            float vLimit = cs.z * tanV + margin;
-
-            if (Mathf.Abs(cs.x) > hLimit || Mathf.Abs(cs.y) > vLimit)
-                return false;
-
-            return true;
+            // 相机空间朝 +Z，fieldOfView 是垂直视角。
+            return PFViewCameraCore.SphereIntersectsFrustum(renderCamera.transform.InverseTransformPoint(viewPos),
+                radius, renderCamera.nearClipPlane, renderCamera.farClipPlane, renderCamera.fieldOfView, renderCamera.aspect);
         }
 
     }

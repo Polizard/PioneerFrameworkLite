@@ -135,7 +135,8 @@ namespace PioneerFramework
             RefreshObjectRows();
             var cockpit = ResolveCockpitGroup();
             RefreshCockpitAlerts(cockpit);
-            ComputeLayout(inRect);
+            // 舰况/火控/雷达都以本舰为原点：没选中（也不在操舵/火控中）时整列收起，选回来再展开。
+            ComputeLayout(inRect, cockpit != null);
 
             // 边缘天体指示 + 世界标记先画（面板后画 ⇒ 自然遮挡）
             DrawBodyDirectionIndicators(inRect);

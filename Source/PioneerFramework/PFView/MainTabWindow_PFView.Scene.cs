@@ -101,6 +101,9 @@ namespace PioneerFramework
             UpdateAtmosphereSky(mgr, tick, origin);   // 大气视觉：天空盒按相机高度变蓝（并给雾层/壳准备读数）
             DrawStarfield();                          // 倒数第一层：星空盒（复用世界视图同一份星表；大气里 1−天空α 淡出）
             DrawAllObjects(origin, mgr, tick);
+            // S3-b：先渲染星体半分辨率离屏（StarLayer），再渲染主 RT（composite 采样星体 RT）。
+            // 两次 Camera.Render 的契约由 PFViewOutlineIntegrationTests 显式看守（用户 2026-11-20 批准）。
+            RenderStellarOffscreen();
 
             renderCamera.Render();
             RecordStellarPerfFrame();   // P0 探针：仅调试窗打开时记录（关窗零开销）
@@ -272,7 +275,9 @@ namespace PioneerFramework
                     //   原来传 `Color.white` ⇒ 材料上的 `SurfaceReflectance`(0.20) 被抹掉 ⇒ 基底球一直**比补丁亮 5 倍**
                     //   （"反射率不一致"从第一天起就是这个原因；没有贴图时更直接变成"纯白"）。
                     //   ⇒ 传**与材料同值**的灰色，覆盖就等于没覆盖 ✓（补丁那条路没有 PropertyBlock，材料值直接生效）。
-                    if (!isStar || PFViewStellarProbe.SurfacePass)
+                    // S3-b：星体 surface 已由 PrepareStellarVisual 提交到 StarLayer + composite 到主 RT，
+                    // 这里不能再画一遍（会重复叠加/覆盖离屏结果）。
+                    if (!isStar || (!StellarOffscreenActive && PFViewStellarProbe.SurfacePass))
                         DrawCelestialSphere(renderPos, visualRadius, isStar ? Color.black : SurfaceTint, selfRot, lodMesh, baseMat, false, allowToon: false);
                 }
                 else

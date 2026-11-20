@@ -19,7 +19,7 @@ namespace PioneerFramework
     {
         private readonly MainTabWindow_PFView win;
         private Vector2 scroll;
-        private const float ContentHeight = 1266f;
+        private const float ContentHeight = 1292f;
 
         public override Vector2 InitialSize => new Vector2(620f, 760f);
 
@@ -216,6 +216,16 @@ namespace PioneerFramework
             if (v != before)
             {
                 PFViewStellarProbe.S3AEnabled = v;
+                win.DebugStellarResetStats();
+            }
+            y += Row;
+
+            v = PFViewStellarProbe.S3BEnabled;
+            before = v;
+            Widgets.CheckboxLabeled(new Rect(0f, y, w, Row), "星体半分辨率离屏（S3B 实验；重开 PFView 生效）", ref v);
+            if (v != before)
+            {
+                PFViewStellarProbe.S3BEnabled = v;
                 win.DebugStellarResetStats();
             }
             y += Row + 2f;

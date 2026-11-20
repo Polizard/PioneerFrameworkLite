@@ -135,9 +135,11 @@ namespace PioneerFramework
             return best;
         }
 
+        /// <param name="shipSelected">是否选中了一艘可操作的舰船（含操舵/火控来源）。false ⇒ 右侧
+        /// 舰况/火控/雷达整体收起并把那列宽度还给中央区；详细状态（detailsVisible）不看这个开关。</param>
         public static PFViewUiLayout Compute(float width, float height, bool detailsVisible,
             PFViewUiVisibility visibility, bool piloting = false, PFViewDrawerTab drawerTab = PFViewDrawerTab.None,
-            bool alertVisible = false)
+            bool alertVisible = false, bool shipSelected = true)
         {
             if (!float.IsFinite(width) || !float.IsFinite(height) || width <= 0 || height <= 0) return default;
 
@@ -149,7 +151,9 @@ namespace PioneerFramework
             float centerLeft = objectsDrawer ? Pad : leftWidth + 2 * Pad;
             float maxDrawerWidth = Math.Max(0, width - centerLeft - 2 * Pad - DockControlMinWidth);
             float drawerWidth = drawerTab == PFViewDrawerTab.None ? 0 : Math.Min(rightWidth, maxDrawerWidth);
-            float centerRight = width - (compact ? drawerWidth : rightWidth) - Pad;
+            // 右列只在真有东西要画时才占宽：详细状态始终要占；舰况/火控/雷达要选中舰船才展开。
+            bool rightColumn = !compact && (detailsVisible || shipSelected);
+            float centerRight = width - (compact ? drawerWidth : rightColumn ? rightWidth : 0f) - Pad;
             if (!compact || drawerWidth > 0) centerRight -= Pad;
             float centerW = Math.Max(0, centerRight - centerLeft);
 
@@ -175,11 +179,12 @@ namespace PioneerFramework
                 actions = new(Pad, bottom - actionH, leftWidth, actionH);
             }
 
-            if (!compact)
+            if (rightColumn)
             {
                 float x = width - Pad - rightWidth;
                 float radarSide = Math.Clamp(bodyH * .32f, 168f, 248f);
-                if (visibility.ShowRadar)
+                // 雷达盘面以本舰为原点 ⇒ 没选中舰船时它没有意义，跟舰况/火控一起收起。
+                if (visibility.ShowRadar && shipSelected)
                     radar = new(x + (rightWidth - radarSide) * .5f, bottom - radarSide, radarSide, radarSide);
                 float upperBottom = radar.Height > 0 ? radar.Y - Pad : bottom;
                 if (detailsVisible)
