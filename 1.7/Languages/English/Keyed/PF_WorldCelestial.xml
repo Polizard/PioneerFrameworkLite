@@ -3,9 +3,9 @@
   <PF_WorldCelestial_System>Star system</PF_WorldCelestial_System>
   <PF_WorldCelestial_FullSystem>Fit star system</PF_WorldCelestial_FullSystem>
   <PF_WorldCelestial_Back>Return to home view</PF_WorldCelestial_Back>
-  <PF_WorldCelestial_LockPlanet>Lock planet view</PF_WorldCelestial_LockPlanet>
-  <PF_WorldCelestial_UnlockPlanet>Unlock planet view</PF_WorldCelestial_UnlockPlanet>
-  <PF_WorldCelestial_LockPlanetTip>Keep the current native layer's body centered, up to twice its Hill radius. Drag with the middle or right mouse button to rotate and scroll to zoom. Unlock to pan with Shift + middle drag or focus another body.</PF_WorldCelestial_LockPlanetTip>
+  <PF_WorldCelestial_LockPlanet>Lock native surface</PF_WorldCelestial_LockPlanet>
+  <PF_WorldCelestial_UnlockPlanet>Unlock native surface</PF_WorldCelestial_UnlockPlanet>
+  <PF_WorldCelestial_LockPlanetTip>Keep the current body's native surface view. Middle drag rotates, direction keys move, and scrolling zooms. Zooming out stays on the current layer, up to twice its Hill radius. Unlock to enter celestial navigation by zooming out. The star system button can still open the system explicitly.</PF_WorldCelestial_LockPlanetTip>
   <PF_WorldCelestial_FocusClose>Follow {0} up close</PF_WorldCelestial_FocusClose>
   <PF_WorldCelestial_FocusSystem>Open local view for {0}</PF_WorldCelestial_FocusSystem>
   <PF_WorldCelestial_ChooseBody>Choose celestial body</PF_WorldCelestial_ChooseBody>

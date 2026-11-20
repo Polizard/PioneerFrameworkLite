@@ -524,13 +524,13 @@ namespace PioneerFramework
             {
                 AdvancePilotLook();
                 camYaw = PFViewPilotCameraCore.LookYaw(camYaw);
-                camPitch = PFViewPilotCameraCore.LookPitch(camPitch);
+                camPitch = PFViewCameraCore.ResolvePitch(camPitch);
                 camDistance = ThirdPersonDistances().ClampMeters(camDistance * ViewToMeters) * MetersToView;
                 camFocusOffset = Vector3.zero;
             }
             else if (frozenCameraPose == null)
             {
-                camPitch = PFViewCameraCore.ResolvePitch(focusKind, camPitch);
+                camPitch = PFViewCameraCore.ResolvePitch(camPitch);
                 camDistance = PFViewCameraCore.ClampDistance(focusKind, camDistance, MetersToView, bodyRadiusView);
                 if (focusKind == PFViewFocusKind.Group)
                     camFocusOffset = PFViewCameraLimits.ClampPanOffset(camFocusOffset, MetersToView, true);
@@ -567,7 +567,9 @@ namespace PioneerFramework
             {
                 pos = targetPos;
                 look = targetLook;
-                up = focusKind == PFViewFocusKind.Body ? Vector3.up : orbitFrame * PFViewCameraCore.OrbitUp(camYaw, camPitch);
+                // 天体也走上方向的连续轨道解：pitch 越过 ±90° 时不再用固定 world-up（会翻转），
+                // 因而可以连续绕到行星/舰船下方观察（2026-11-20）。
+                up = orbitFrame * PFViewCameraCore.OrbitUp(camYaw, camPitch);
             }
 
             // 相机不许钻进**任何**天体（2026-10-18 用户：缩放/转视角会进入星体内部、行星局部透明）。
@@ -705,7 +707,7 @@ namespace PioneerFramework
                 Vector2 d = e.mousePosition - lastMousePos;
                 var delta = PFViewPilotCameraCore.LookDrag(0, 0, d.x, d.y,
                     OrbitSensitivity * pilotCameraOptions.Sensitivity, pilotCameraOptions.InvertMouseY);
-                orbitDrag.AddDrag(camYaw, camPitch, delta.Yaw, delta.Pitch, focusKind, IsThirdPersonView);
+                orbitDrag.AddDrag(camYaw, camPitch, delta.Yaw, delta.Pitch);
                 lastMousePos = e.mousePosition;
                 if (e.type != EventType.Used) e.Use();
                 return true;

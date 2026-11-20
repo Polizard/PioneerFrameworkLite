@@ -100,7 +100,16 @@ internal static class WorldCelestialHost
         previous?.Restore(complete);
     }
 
-    private static bool CameraUpdate() => !Active;
+    private static bool CameraUpdate(WorldCameraDriver __instance)
+    {
+        if (Active)
+        {
+            WorldNativeCamera.Reset();
+            return false;
+        }
+        WorldNativeCamera.BeginUpdate(__instance);
+        return true;
+    }
     private static bool NativeOverlays() => !Active;
 
     // Feature names are persistent text objects. Keep the native update running so it can hide and restore them.
@@ -128,7 +137,7 @@ internal static class WorldCelestialHost
     {
         if (Active) return false;
         var e = Event.current;
-        if (e.type != EventType.ScrollWheel || e.delta.y <= 0 ||
+        if (PlanetViewLocked || e.type != EventType.ScrollWheel || e.delta.y <= 0 ||
             Find.WindowStack.WindowsPreventCameraMotion ||
             Find.WindowStack.GetWindowAt(UI.MousePositionOnUIInverted) != null ||
             !TryHost(out _, out _, out var layer, out var camera, out _) ||
@@ -179,6 +188,7 @@ internal static class WorldCelestialHost
         if (Navigation is { } view)
         {
             view.DrawGui();
+            if (!ReferenceEquals(Navigation, view)) return;
             SpaceGroupVisualManager.WorldInterfaceOnGUIBody(view);
             view.HandleInput(Event.current);
         }
@@ -193,11 +203,16 @@ internal static class WorldCelestialHost
     internal static void DrawPlanetViewLock(Rect rect)
     {
         if (PioneerFrameworkLiteMod.Settings is not { } settings) return;
-        var label = settings.lockWorldPlanetView ? "PF_WorldCelestial_UnlockPlanet" : "PF_WorldCelestial_LockPlanet";
+        bool locked = settings.lockWorldPlanetView && Navigation == null;
+        var label = locked ? "PF_WorldCelestial_UnlockPlanet" : "PF_WorldCelestial_LockPlanet";
         if (Widgets.ButtonText(rect, label.Translate()))
         {
-            settings.lockWorldPlanetView = !settings.lockWorldPlanetView;
-            if (settings.lockWorldPlanetView) Navigation?.LockToLayer();
+            settings.lockWorldPlanetView = !locked;
+            if (settings.lockWorldPlanetView && Navigation is { } view)
+            {
+                view.PrepareNativeLock();
+                Close(true);
+            }
             settings.Write();
         }
         TooltipHandler.TipRegion(rect, "PF_WorldCelestial_LockPlanetTip".Translate());
@@ -241,7 +256,8 @@ internal static class WorldCelestialHost
         if (PlanetLayer.Selected != layer) Find.WorldSelector.ClearSelection();
         PlanetLayer.Selected = layer;
         driver.sphereRotation = Quaternion.Inverse(orientation);
-        driver.altitude = Mathf.Max(WorldCameraDriver.MinAltitude, altitude);
+        driver.altitude = Mathf.Clamp(altitude, WorldCameraDriver.MinAltitude,
+            PlanetViewLocked ? WorldNativeCamera.MaximumAltitude(layer) : 50000f);
         DesiredAltitude(driver) = driver.altitude;
         LayerAltitude(driver) = layer.ExtraCameraAltitude;
         LayerOrigin(driver) = layer.Origin;
@@ -256,6 +272,7 @@ internal static class WorldCelestialHost
         var camera = Find.WorldCamera;
         camera.transform.rotation = orientation;
         camera.transform.position = layer.Origin - camera.transform.forward * driver.TrueAltitude;
+        WorldNativeCamera.Reset();
     }
 
     private static bool BeforeLayerDraw(WorldDrawLayerBase __instance) => !Active ||

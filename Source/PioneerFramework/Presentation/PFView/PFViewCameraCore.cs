@@ -24,10 +24,6 @@ namespace PioneerFramework
     /// </summary>
     internal static class PFViewCameraCore
     {
-        /// <summary>天体视角的俯仰夹取；编队及冻结视角允许完整旋转。</summary>
-        public const float MinPitch = 5f;
-        public const float MaxPitch = 85f;
-
         /// <summary>默认俯仰（旧行为 45°）。</summary>
         public const float DefaultPitch = 45f;
 
@@ -131,15 +127,32 @@ namespace PioneerFramework
             return Mathf.Clamp(near, nearMin, nearMax);
         }
 
-        /// <summary>俯仰夹取。</summary>
-        public static float ClampPitch(float pitchDeg)
-            => Mathf.Clamp(pitchDeg, MinPitch, MaxPitch);
+        internal static bool SphereIntersectsFrustum(Vector3 center, float radius, float nearClip, float farClip,
+            float verticalFovDegrees, float aspect)
+        {
+            float r = Mathf.Max(radius, 0.01f);
+            if (center.z + r < nearClip || center.z - r > farClip) return false;
 
-        /// <summary>编队俯仰只按整圈归一化，不设角度终点；天体视角保留原限位。</summary>
-        public static float ResolvePitch(PFViewFocusKind kind, float pitchDeg)
-            => kind == PFViewFocusKind.Body ? ClampPitch(pitchDeg) : WrapAngle(pitchDeg);
+            float halfFov = verticalFovDegrees * 0.5f * Mathf.Deg2Rad;
+            float tanV = Mathf.Tan(halfFov);
+            float tanH = tanV * aspect;
+            // 侧面方程未归一化，需用各自的法线长度换算球半径。
+            float horizontalMargin = r * Mathf.Sqrt(1f + tanH * tanH);
+            float verticalMargin = r * Mathf.Sqrt(1f + tanV * tanV);
+            return Mathf.Abs(center.x) <= center.z * tanH + horizontalMargin &&
+                Mathf.Abs(center.y) <= center.z * tanV + verticalMargin;
+        }
 
-        private static float WrapAngle(float angleDeg)
+        /// <summary>
+        /// 俯仰按整圈归一化：**所有焦点**（天体 / 编队 / 冻结）都可越过正上、正下方连续环绕。
+        /// 2026-11-20 用户：旧的「天体 5°–85°」限位导致永远看不到行星与舰船的下半部分，取消；
+        /// 上方向由 <see cref="OrbitUp" /> 连续给出，越过极点不会翻转。
+        /// </summary>
+        public static float ResolvePitch(float pitchDeg)
+            => float.IsFinite(pitchDeg) ? WrapAngle(pitchDeg) : DefaultPitch;
+
+        /// <summary>角度整圈归一化到 (-180, 180]。</summary>
+        internal static float WrapAngle(float angleDeg)
         {
             float wrapped = angleDeg % 360f;
             return wrapped > 180f ? wrapped - 360f : wrapped < -180f ? wrapped + 360f : wrapped;

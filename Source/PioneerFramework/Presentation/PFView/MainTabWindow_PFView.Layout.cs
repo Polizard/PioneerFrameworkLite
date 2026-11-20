@@ -25,7 +25,7 @@ namespace PioneerFramework
         private Rect rPilotPanel;
         private PFViewUiLayout uiLayout;
         private (float Width, float Height, bool Details, PFViewUiVisibility Visibility, bool Piloting,
-            PFViewDrawerTab Drawer, bool Alert) layoutKey;
+            PFViewDrawerTab Drawer, bool Alert, bool ShipSelected) layoutKey;
         private bool layoutCached;
         private Rect viewportRect;
 
@@ -38,16 +38,17 @@ namespace PioneerFramework
         // 中键/Shift+右键平移拖拽中
         private bool isDraggingPan => dragState.Pan;
 
-        private void ComputeLayout(Rect inRect)
+        private void ComputeLayout(Rect inRect, bool shipSelected)
         {
             viewportRect = inRect;
             var tab = drawerTab == PFViewDrawerTab.None && WantsInspector ? PFViewDrawerTab.Details : drawerTab;
-            var key = (inRect.width, inRect.height, WantsInspector, instrumentVisibility,
-                SteeringController.IsOpen, tab, cockpitAlerts.Count > 0);
+            var key = (Width: inRect.width, Height: inRect.height, Details: WantsInspector,
+                Visibility: instrumentVisibility, Piloting: SteeringController.IsOpen, Drawer: tab,
+                Alert: cockpitAlerts.Count > 0, ShipSelected: shipSelected);
             if (!layoutCached || key != layoutKey)
             {
-                uiLayout = PFViewUiLayoutCore.Compute(key.width, key.height, key.WantsInspector,
-                    instrumentVisibility, SteeringController.IsOpen, tab, key.Item7);
+                uiLayout = PFViewUiLayoutCore.Compute(key.Width, key.Height, key.Details,
+                    key.Visibility, key.Piloting, key.Drawer, key.Alert, key.ShipSelected);
                 layoutKey = key;
                 layoutCached = true;
             }

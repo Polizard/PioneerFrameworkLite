@@ -349,21 +349,25 @@ namespace PioneerFramework.Tests
         }
 
         [Fact]
-        public void CameraInputAndRenderingApplyFocusAwarePitchAndContinuousOrbitUp()
+        public void CameraInputAndRenderingKeepOrbitPitchContinuousWithoutFocusSpecificStops()
         {
             var input = ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("HandleInput", Flags)).ToArray();
             Assert.Contains(input, m => m.Name == "HandleCameraDrag");
             var drag = ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("HandleCameraDrag", Flags)).ToArray();
             Assert.Contains(drag, m => m.DeclaringType == typeof(PFViewOrbitDragState) && m.Name == "AddDrag");
-            var bounds = ReferencedMembers(typeof(PFViewOrbitDragState).GetMethod("AddDrag", Flags)).ToArray();
-            Assert.Contains(bounds, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "ResolvePitch");
-            Assert.Contains(bounds, m => m.DeclaringType == typeof(PFViewPilotCameraCore) && m.Name == "LookPitch");
-            foreach (var stage in new[] { input, drag, bounds })
-                Assert.DoesNotContain(stage, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "ClampPitch");
+            // 2026-11-20：拖拽只积累输入，不得再按焦点夹俯仰（天体 5°–85° / 第三人称 ±85° 均已取消）。
+            var accumulated = ReferencedMembers(typeof(PFViewOrbitDragState).GetMethod("AddDrag", Flags)).ToArray();
+            Assert.DoesNotContain(accumulated, m => m.DeclaringType == typeof(PFViewCameraCore));
+            Assert.DoesNotContain(accumulated, m => m.DeclaringType == typeof(PFViewPilotCameraCore));
             var render = ReferencedMembers(typeof(MainTabWindow_PFView).GetMethod("UpdateCamera", Flags)).ToArray();
             Assert.Contains(render, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "ResolvePitch");
             Assert.Contains(render, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "OrbitUp");
             Assert.Contains(render, m => m.DeclaringType == typeof(PFViewCameraCore) && m.Name == "InterpolateOrbit");
+            foreach (var stage in new[] { input, drag, accumulated, render })
+            {
+                Assert.DoesNotContain(stage, m => m.Name == "ClampPitch");
+                Assert.DoesNotContain(stage, m => m.Name == "LookPitch");
+            }
         }
 
         private static bool WritesWeaponTarget(MemberInfo member)

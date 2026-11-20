@@ -20,6 +20,13 @@ namespace PioneerFramework
         /// </summary>
         internal const bool DefaultS3AEnabled = true;
 
+        /// <summary>
+        /// S3-b 星体专用半分辨率离屏（2026-11-20）：默认关闭的实验档。
+        /// 开启后星体 surface/halo 渲染到半分辨率 RT，再以 composite 代理球合成回主 RT；
+        /// 观感/遮挡未被游戏内验收，只作 A/B 用。
+        /// </summary>
+        internal const bool DefaultS3BEnabled = false;
+
         /// <summary>是否绘制恒星 surface pass（不透明光球/日冕体积）。默认开 = 现状。</summary>
         internal static bool SurfacePass = true;
 
@@ -35,6 +42,9 @@ namespace PioneerFramework
         /// <summary>是否使用 S3-a 区域跳过积分 shader（默认 true；关闭 = 逐字 legacy shader）。</summary>
         internal static bool S3AEnabled = DefaultS3AEnabled;
 
+        /// <summary>是否使用 S3-b 星体半分辨率离屏（默认 false；实验档，重开 PFView 生效）。</summary>
+        internal static bool S3BEnabled = DefaultS3BEnabled;
+
         /// <summary>探针是否在记录（由 PFView 调试窗 PostOpen/PreClose 置位）。</summary>
         internal static bool Active;
 
@@ -46,6 +56,7 @@ namespace PioneerFramework
             StepBudget = 0;
             RenderScale = DefaultRenderScale;
             S3AEnabled = DefaultS3AEnabled;
+            S3BEnabled = DefaultS3BEnabled;
         }
 
         /// <summary>玩家是否启用了 P2 新版渲染（默认 false = 旧视觉/legacy shader）。</summary>

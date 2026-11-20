@@ -78,7 +78,7 @@ internal sealed partial class WorldCelestialNavigation
             {
                 returnLayer = null;
                 Vector2 movement = e.mousePosition - lastDragPosition;
-                if (dragButton == 2 && e.shift && !LayerLocked)
+                if (dragButton == 2 && e.shift)
                 {
                     fixedAim = Aim;
                     following = false;
@@ -165,7 +165,7 @@ internal sealed partial class WorldCelestialNavigation
     private void OpenMenu(WorldCelestialBody? body)
     {
         var options = new List<FloatMenuOption>();
-        if (body != null && (!WorldCelestialHost.PlanetViewLocked || body.Id == entryBody || body.Id == snapshot.StarId))
+        if (body != null)
         {
             options.Add(new("PF_WorldCelestial_FocusClose".Translate(body.Member.Label), () => OpenBody(body, .88)));
             if (body.Id != snapshot.StarId)
@@ -173,8 +173,7 @@ internal sealed partial class WorldCelestialNavigation
             if (NativeLayer(body) is { } layer)
                 options.Add(new("PF_WorldCelestial_OpenSurface".Translate(), () => OpenNativeSurface(body, layer)));
         }
-        if (!LayerLocked)
-            options.Add(new("PF_WorldCelestial_ChooseBody".Translate(), OpenBodyList));
+        options.Add(new("PF_WorldCelestial_ChooseBody".Translate(), OpenBodyList));
         options.Add(new("PF_WorldCelestial_FullSystem".Translate(), ShowSystem));
         options.Add(new("PF_WorldCelestial_Back".Translate(), ShowEntryLocal));
         Find.WindowStack.Add(new FloatMenu(options));
@@ -182,8 +181,7 @@ internal sealed partial class WorldCelestialNavigation
 
     private void OpenBodyList()
     {
-        Find.WindowStack.Add(new FloatMenu(VisibleBodies().Where(body => !WorldCelestialHost.PlanetViewLocked ||
-                body.Id == entryBody || body.Id == snapshot.StarId).OrderBy(body => body.Member.Label, StringComparer.Ordinal)
+        Find.WindowStack.Add(new FloatMenu(VisibleBodies().OrderBy(body => body.Member.Label, StringComparer.Ordinal)
             .Select(body => new FloatMenuOption(body.Member.Label, () => OpenBody(body, LocalFocusZoom))).ToList()));
     }
 

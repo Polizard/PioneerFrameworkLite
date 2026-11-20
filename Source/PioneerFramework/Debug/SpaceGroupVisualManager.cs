@@ -585,46 +585,19 @@ namespace PioneerFramework
 
         // ──────────── 摄像机拉远距离补丁 ────────────
 
-        private const float NEW_MAX_ALTITUDE = 50000f;
+        /// <summary>
+        /// 原生世界相机 GUI 的守卫补丁：原生地表锁定时禁止滚轮换层，
+        /// 使用两倍希尔半径作为缩放上界；拖拽灵敏度按当前 layer 和 UI 尺寸换算。
+        /// </summary>
+        public static IEnumerable<CodeInstruction> Transpiler_MaxAltitude_OnGUI(IEnumerable<CodeInstruction> instructions) =>
+            WorldNativeCameraPatches.OnGui(instructions);
 
         /// <summary>
-        /// Transpiler: 把 WorldCameraDriverOnGUI 中的 1100f（MaxAltitude）替换为 NEW_MAX_ALTITUDE。
-        /// **只**替换 `Mathf.Clamp(num2, MinAltitude, 1100f)` 里的上界（放开拉远）；
-        /// 同行前的行星层切换判断（`num2 &gt; 1100f`）**保持原版**——层系统照旧，
-        /// 与 1.6 的既有行为一致（1.6 时代该字面量同样未替换，观感已被验收）。
-        /// 带上下文保护：仅替换后接 Mathf.Clamp 调用的 1100f，避免误改同名字面量。
+        /// 原生旋转目标继续累计完整输入，显示朝向单独做短时平滑。
+        /// 方向键速度按球心距离 / layer 半径计算并封顶，避免 50000 上界压低地表速度。
         /// </summary>
-        public static IEnumerable<CodeInstruction> Transpiler_MaxAltitude_OnGUI(IEnumerable<CodeInstruction> instructions)
-        {
-            var list = instructions.ToList();
-            for (int i = 0; i < list.Count; i++)
-            {
-                var next = i + 1 < list.Count ? list[i + 1] : null;
-                if (PatchIlGuards.IsClampUpperBound(list[i], next))
-                    list[i].operand = NEW_MAX_ALTITUDE;
-            }
-            return list;
-        }
-
-        /// <summary>
-        /// Transpiler: 把 WorldCameraDriver.Update 中的 1100f（MaxAltitude）替换为 NEW_MAX_ALTITUDE。
-        /// 影响旋转速度归一化因子 (altitude - MinAltitude) / (1100 - MinAltitude)。
-        /// ⚠ 2026-10-15（补丁核对发现的真缺陷）：旧守卫要求 `ldc.r4 1100` 后接 `ldc.r4 5f`
-        /// （1.6 的 `MinAltitude` 是常量 5f）；**1.7 的 `MinAltitude` 改成了静态属性**
-        /// （`get_MinAltitude`，桌面 = 125f）⇒ 守卫永不匹配、替换静默失效（症状：拉远到高高度时
-        /// 世界拖拽转速被放大到 ~43×）。现在两种形态都认（旧形态只为鲁棒性保留）。
-        /// </summary>
-        public static IEnumerable<CodeInstruction> Transpiler_MaxAltitude_Update(IEnumerable<CodeInstruction> instructions)
-        {
-            var list = instructions.ToList();
-            for (int i = 0; i < list.Count; i++)
-            {
-                var next = i + 1 < list.Count ? list[i + 1] : null;
-                if (PatchIlGuards.IsMaxAltitudeDenominator(list[i], next))
-                    list[i].operand = NEW_MAX_ALTITUDE;
-            }
-            return list;
-        }
+        public static IEnumerable<CodeInstruction> Transpiler_MaxAltitude_Update(IEnumerable<CodeInstruction> instructions) =>
+            WorldNativeCameraPatches.Update(instructions);
 
         // ──（原 `WorldCameraDriver.Awake` 的 farClip Postfix 已随 A-13 搬进
         //   `PF_CameraFollowDriver.Update`——见该类头注。）──

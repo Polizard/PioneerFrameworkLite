@@ -72,7 +72,6 @@ internal sealed partial class WorldCelestialNavigation
         aimOffset = DVector3.Rotate((DVector3)relative + (DVector3)camera.transform.forward * (distance * nativeScale),
             DQuaternion.Inverse(FrameRotation)) / nativeScale;
         foreach (var body in VisibleBodies()) visibility.Add(body.Id, 1);
-        if (LayerLocked) LockToLayer();
         ApplyCamera();
     }
 
@@ -98,20 +97,7 @@ internal sealed partial class WorldCelestialNavigation
     private double DesiredZoom => Target.Radius / desiredDistance;
     internal bool ShowsStar => system;
     internal bool ShowsEntrySubsystem => !system && localRoot == SubsystemOf(snapshot.Bodies[entryBody]);
-    private bool LayerLocked => !system && WorldCelestialHost.PlanetViewLocked;
-    private double MaximumDistance
-    {
-        get
-        {
-            if (!LayerLocked) return SystemExtent() * 18;
-            var body = snapshot.Bodies[entryBody];
-            var parent = body.ParentId is { } id ? snapshot.Bodies.GetValueOrDefault(id) : null;
-            double periapsis = body.Member.Orbit is { HasOrbit: true } orbit ? orbit.PeriapsisRadius :
-                parent != null ? (body.Position - parent.Position).magnitude : 0;
-            return WorldCelestialFrame.LockedDistanceLimit(body.Radius, periapsis,
-                body.Member.Description.GravitationalParameter, parent?.Member.Description.GravitationalParameter);
-        }
-    }
+    private double MaximumDistance => SystemExtent() * 18;
     private DQuaternion FrameRotation
     {
         get
@@ -147,12 +133,10 @@ internal sealed partial class WorldCelestialNavigation
         if (!sample.Success || !sample.Value.Bodies.ContainsKey(entryBody)) return false;
         snapshot = sample.Value;
         if (!snapshot.Bodies.ContainsKey(target) || !snapshot.Bodies.ContainsKey(localRoot)) return false;
-        if (LayerLocked) desiredDistance = Math.Min(desiredDistance, MaximumDistance);
-
         float t = 1f - Mathf.Exp(-12f * Mathf.Min(.1f, Time.unscaledDeltaTime));
         distance = Math.Exp(Math.Log(distance) + (Math.Log(desiredDistance) - Math.Log(distance)) * t);
         aimOffset *= 1 - t;
-        rotation = dragged && dragButton is 1 or 2 ? desiredRotation : Quaternion.Slerp(rotation, desiredRotation, t);
+        rotation = Quaternion.Slerp(rotation, desiredRotation, WorldCameraTuning.RotationBlend(Time.unscaledDeltaTime));
         double blendTarget = system || localRoot != SubsystemOf(snapshot.Bodies[entryBody]) ? 1 : 0;
         inertialBlend += (blendTarget - inertialBlend) * t;
         if (Math.Abs(blendTarget - inertialBlend) < 1e-5) inertialBlend = blendTarget;
@@ -165,7 +149,7 @@ internal sealed partial class WorldCelestialNavigation
         {
             if (WorldCelestialFrame.CanRearm(Zoom, autoSystemZoom)) inhibitSystem = false;
             if (WorldCelestialFrame.ShouldEnterSystem(Zoom, DesiredZoom, inhibitSystem,
-                    WorldCelestialHost.PlanetViewLocked, autoSystemZoom))
+                    false, autoSystemZoom))
                 ShowSystem();
             else if (following && Zoom >= NativeReturnZoom && DesiredZoom >= NativeReturnZoom)
             {
@@ -283,17 +267,20 @@ internal sealed partial class WorldCelestialNavigation
         FitLocalOrbitExtent(body);
         inhibitSystem = true;
         desiredRotation = Quaternion.Inverse(originalSphereRotation);
-        if (LayerLocked) LockToLayer();
     }
 
-    internal void LockToLayer()
+    internal void PrepareNativeLock()
     {
-        system = false;
-        var body = snapshot.Bodies[entryBody];
-        localRoot = SubsystemOf(body);
-        Focus(body, body.Radius / Math.Clamp(desiredDistance, body.Radius / .88, MaximumDistance));
+        // 显式退出导航，把当前天体的真实 layer 交回原生世界相机；不经过近景代理视图。
+        var body = !system && NativeLayer(Target) != null ? Target : snapshot.Bodies[entryBody];
+        var layer = NativeLayer(body) ?? entryLayer;
+        target = body.Id;
+        desiredRotation = rotation;
+        AimAtAvailableTerrain(body, layer);
+        rotation = desiredRotation;
         aimOffset = DVector3.zero;
-        inhibitSystem = true;
+        returnLayer = layer;
+        returnTile = null;
     }
 
     private bool OpenBody(WorldCelestialBody body, double zoom)
@@ -301,7 +288,6 @@ internal sealed partial class WorldCelestialNavigation
         if (!ReferenceEquals(WorldCelestialHost.Navigation, this) || !WorldCelestialHost.Active ||
             !snapshot.Bodies.TryGetValue(body.Id, out var current)) return false;
         body = current;
-        if (WorldCelestialHost.PlanetViewLocked && body.Id != entryBody && body.Id != snapshot.StarId) return false;
         if (body.Id == snapshot.StarId)
             system = true;
         else
@@ -354,12 +340,8 @@ internal sealed partial class WorldCelestialNavigation
     private void AimAtAvailableTerrain(WorldCelestialBody body, PlanetLayer layer)
     {
         if (layer.ViewAngle >= 180f || layer.ViewCenter.sqrMagnitude < .001f) return;
-        var center = layer.ViewCenter.normalized;
-        DQuaternion targetFrame = ShowsEntrySubsystem
-            ? DQuaternion.Inverse(snapshot.Bodies[entryBody].Motion.Orientation)
-            : DQuaternion.identity;
-        var orientation = targetFrame * body.Motion.Orientation;
-        var direction = (Vector3)DVector3.Rotate((DVector3)center, orientation);
+        var direction = (Vector3)(-WorldCameraTuning.SurfaceCameraForward(FrameRotation,
+            body.Motion.Orientation, (DVector3)layer.ViewCenter.normalized));
         if (Vector3.Angle(direction, desiredRotation * Vector3.back) > layer.ViewAngle)
             AimAlong(-direction);
     }

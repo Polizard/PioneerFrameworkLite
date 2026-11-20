@@ -72,12 +72,23 @@ public class PFViewPilotCameraTests
     }
 
     [Fact]
-    public void LookAroundPassesTheOldSideLimitAndWrapsAWholeRevolution()
+    public void LookYawPassesTheOldSideLimitAndWrapsAWholeRevolution()
     {
         Assert.Equal(120, PFViewPilotCameraCore.LookYaw(120));
         Assert.Equal(20, PFViewPilotCameraCore.LookYaw(380));
-        Assert.Equal(-85, PFViewPilotCameraCore.LookPitch(-180));
-        Assert.Equal(85, PFViewPilotCameraCore.LookPitch(180));
+        Assert.Equal(-180, PFViewPilotCameraCore.LookYaw(180));
+        Assert.Equal(-160, PFViewPilotCameraCore.LookYaw(200));
+    }
+
+    [Fact]
+    public void RecenterFromBeyondThePoleTakesTheShortArcInsteadOfClamping()
+    {
+        // 2026-11-20：俯仰不再夹在 ±85°。从 -170°（刚过正下方）回正应走 +175° 短弧，
+        // 不能先夹到 -85°（那会在拖拽越过极点后产生跳变）。
+        (float Yaw, float Pitch) look = PFViewPilotCameraCore.RecenterLook(0f, -170f, .18f);
+        Assert.Equal(0, look.Yaw, 3);
+        Assert.InRange(look.Pitch, 15f, 90f);
+        Assert.Equal(15, PFViewPilotCameraCore.RecenterLook(0f, 15.001f, .18f).Pitch, 3);
     }
 
     [Fact]

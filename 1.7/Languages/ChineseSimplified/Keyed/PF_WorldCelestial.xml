@@ -3,9 +3,9 @@
   <PF_WorldCelestial_System>恒星系</PF_WorldCelestial_System>
   <PF_WorldCelestial_FullSystem>恒星系全图</PF_WorldCelestial_FullSystem>
   <PF_WorldCelestial_Back>返回母星视图</PF_WorldCelestial_Back>
-  <PF_WorldCelestial_LockPlanet>锁定行星视角</PF_WorldCelestial_LockPlanet>
-  <PF_WorldCelestial_UnlockPlanet>解锁行星视角</PF_WorldCelestial_UnlockPlanet>
-  <PF_WorldCelestial_LockPlanetTip>固定当前原生 layer 的中心天体，最远拉至两倍希尔球半径。中键或右键拖动旋转，滚轮缩放。解锁后可用 Shift + 中键平移，或切换关注的天体。</PF_WorldCelestial_LockPlanetTip>
+  <PF_WorldCelestial_LockPlanet>锁定原生地表</PF_WorldCelestial_LockPlanet>
+  <PF_WorldCelestial_UnlockPlanet>解锁原生地表</PF_WorldCelestial_UnlockPlanet>
+  <PF_WorldCelestial_LockPlanetTip>锁定当前天体的原生地表视图。中键拖动旋转，方向键移动，滚轮缩放；拉远保持当前 layer，最远至两倍希尔球半径。解锁后拉远可进入天体导航；恒星系按钮可主动打开恒星系视图。</PF_WorldCelestial_LockPlanetTip>
   <PF_WorldCelestial_FocusClose>近景跟随 {0}</PF_WorldCelestial_FocusClose>
   <PF_WorldCelestial_FocusSystem>进入 {0} 的局部视图</PF_WorldCelestial_FocusSystem>
   <PF_WorldCelestial_ChooseBody>选择天体</PF_WorldCelestial_ChooseBody>

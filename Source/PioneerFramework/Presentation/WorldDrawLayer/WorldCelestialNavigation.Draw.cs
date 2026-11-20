@@ -222,6 +222,7 @@ internal sealed partial class WorldCelestialNavigation
         if (Widgets.ButtonText(new Rect(146, 112, 126, 28), "PF_WorldCelestial_FullSystem".Translate()))
             ShowSystem();
         WorldCelestialHost.DrawPlanetViewLock(new Rect(280, 112, 180, 28));
+        if (!ReferenceEquals(WorldCelestialHost.Navigation, this)) return;
         Widgets.Label(new Rect(12, 145, 260, 26), "PF_WorldCelestial_Zoom".Translate(Zoom.ToString("0.0000")));
 
         if (Event.current.type == EventType.Repaint)

@@ -131,7 +131,7 @@
   <PFV_StellarHeatCacheFailed>Photosphere cache unavailable. See the log.</PFV_StellarHeatCacheFailed>
   <PFV_StellarHeatCacheFast>This experiment uses the legacy renderer. Switch back and reopen PFView.</PFV_StellarHeatCacheFast>
   <PFV_HelpCameraModesTitle>Free and two third-person views</PFV_HelpCameraModesTitle>
-  <PFV_HelpCameraModes>Free, hull-forward and velocity-forward views remember their own poses. Hull-forward follows the tail; velocity-forward uses system inertial velocity and falls back to the hull heading at zero speed. Camera roll is stabilized by default; hull-roll following is optional in Mod settings. Third-person look covers a full circle with pitch limited to -85..85 degrees, safe distances and no panning. Look angles remain after release unless automatic recentering is enabled. Camera defaults apply on the next explicit focus.</PFV_HelpCameraModes>
+  <PFV_HelpCameraModes>Free, hull-forward and velocity-forward views remember their own poses. Hull-forward follows the tail; velocity-forward uses system inertial velocity and falls back to the hull heading at zero speed. Camera roll is stabilized by default; hull-roll following is optional in Mod settings. Third-person and planet views both cover a full circle; pitch passes either pole continuously with no angle stop, using safe distances and no panning. Look angles remain after release unless automatic recentering is enabled. Camera defaults apply on the next explicit focus.</PFV_HelpCameraModes>
   <PFV_Pilot_Settings>PFView piloting and observation</PFV_Pilot_Settings>
   <PFV_Pilot_Assist>Stop rotation after releasing steering keys (off: retain angular inertia)</PFV_Pilot_Assist>
   <PFV_Pilot_InvertPitch>Invert keyboard pitch</PFV_Pilot_InvertPitch>

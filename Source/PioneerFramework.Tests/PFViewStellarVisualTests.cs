@@ -24,6 +24,9 @@ public class PFViewStellarVisualTests
     // S3-a 可选加速路径：与 legacy 逐项同规格（同队列/混合/深度/剔除），否则两 pass 分区会变。
     [InlineData("PF_StellarSurfaceS3A", "Opaque", "true", 2000)]
     [InlineData("PF_StellarHaloS3A", "Custom", "false", 2900)]
+    // S3-b 合成档（默认关闭）：离屏星体按代理球合成回主 RT，管线状态必须与 legacy 对一致。
+    [InlineData("PF_StellarSurfaceComposite", "Opaque", "true", 2000)]
+    [InlineData("PF_StellarHaloComposite", "Custom", "false", 2900)]
     [InlineData("PF_StellarSurfaceFast", "Opaque", "true", 2000)]
     [InlineData("PF_StellarHaloFast", "Custom", "false", 2900)]
     public void StellarEffectsUseRealSphereDepthAndExplicitTransparency(string name, string blend, string writesDepth, int queue)

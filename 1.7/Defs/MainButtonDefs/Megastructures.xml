@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Defs>
+  <!-- 2026-11-20：巨构系统暂时不用，已从游戏底部主按钮条撤下（玩家游玩时不再出现"巨构"按钮）。
+       巨构代码、MegastructureDefs 与 MainTabWindow_Megastructures 全部保留，只停用这个入口。
+       恢复方式：取消下面整段注释，并同步恢复 Languages\ChineseSimplified 与 Languages\English
+       下 DefInjected\MainButtonDef\Megastructures.xml 的条目。
   <MainButtonDef>
     <defName>PF_Megastructures</defName>
     <label>巨构</label>
@@ -7,4 +11,5 @@
     <tabWindowClass>PioneerFramework.Megastructures.MainTabWindow_Megastructures</tabWindowClass>
     <order>51</order><validWithoutMap>true</validWithoutMap><defaultHotKey>None</defaultHotKey>
   </MainButtonDef>
+  -->
 </Defs>

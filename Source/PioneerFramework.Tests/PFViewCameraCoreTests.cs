@@ -13,6 +13,21 @@ namespace PioneerFramework.Tests
         const float M2V = 0.1f;                 // 1 m = 0.1 view 单位
         const float EarthRadiusView = 500_000f; // 地球 R=5000 km（= 5e6 m）× 0.1
 
+        [Theory]
+        [InlineData(19.8f, 0f, 10f, true)]  // 宽屏侧面穿过包围球
+        [InlineData(20.2f, 0f, 10f, false)] // 整个包围球在宽屏侧面外
+        [InlineData(0f, 11.3f, 10f, true)]  // 垂直侧面穿过包围球
+        [InlineData(0f, 11.5f, 10f, false)]
+        [InlineData(0f, 0f, 1.1f, true)]    // 近裁面穿过包围球
+        [InlineData(0f, 0f, 0.9f, false)]
+        [InlineData(0f, 0f, 50.9f, true)]   // 远裁面穿过包围球
+        [InlineData(0f, 0f, 51.1f, false)]
+        public void FrustumTestsTheEntireBoundingSphere(float x, float y, float z, bool intersects)
+        {
+            Assert.Equal(intersects, PFViewCameraCore.SphereIntersectsFrustum(
+                new Vector3(x, y, z), 1f, 2f, 50f, 90f, 16f / 9f));
+        }
+
         [Fact]
         public void BodyPickingUsesFrontSurfaceDepthInsteadOfCenterDepth()
         {
@@ -125,14 +140,6 @@ namespace PioneerFramework.Tests
             Assert.Equal(100f * 1.371742f, PFViewCameraCore.WheelDistance(100f, 100f), 2);
         }
 
-        [Fact]
-        public void Pitch_ClampKeepsLegacyFiveToEightyFive()
-        {
-            Assert.Equal(5f, PFViewCameraCore.ClampPitch(-20f));
-            Assert.Equal(85f, PFViewCameraCore.ClampPitch(120f));
-            Assert.Equal(45f, PFViewCameraCore.ClampPitch(45f));
-        }
-
         [Theory]
         [InlineData(0f, 0f, 100f)]
         [InlineData(90f, 100f, 0f)]
@@ -141,26 +148,47 @@ namespace PioneerFramework.Tests
         [InlineData(270f, -100f, 0f)]
         [InlineData(450f, 100f, 0f)]
         [InlineData(-450f, -100f, 0f)]
-        public void GroupOrbitCanReachBothPolesAndContinueAroundFocus(float requestedPitch, float expectedY, float expectedZ)
+        public void OrbitCanReachBothPolesAndContinueAroundFocus(float requestedPitch, float expectedY, float expectedZ)
         {
-            float pitch = PFViewCameraCore.ResolvePitch(PFViewFocusKind.Group, requestedPitch);
+            // 2026-11-20：天体不再保留 5°–85° 旧限位；所有焦点共用同一整圈归一化。
+            float pitch = PFViewCameraCore.ResolvePitch(requestedPitch);
             Vector3 position = PFViewCameraCore.CameraViewPos(Vector3.zero, 0f, pitch, 100f);
             Assert.Equal(expectedY, position.y, 3);
             Assert.Equal(expectedZ, position.z, 3);
             Assert.Equal(100f, position.magnitude, 3);
+            Assert.Equal(pitch, PFViewCameraCore.ResolvePitch(pitch + 720f), 3);
         }
 
         [Theory]
-        [InlineData(-120f, 5f)]
-        [InlineData(120f, 85f)]
+        [InlineData(-120f, -120f)]
+        [InlineData(-90f, -90f)]
+        [InlineData(-45f, -45f)]
         [InlineData(45f, 45f)]
-        public void BodyOrbitKeepsItsExistingPitchBounds(float requestedPitch, float expectedPitch)
-            => Assert.Equal(expectedPitch, PFViewCameraCore.ResolvePitch(PFViewFocusKind.Body, requestedPitch));
+        [InlineData(120f, 120f)]
+        [InlineData(235f, -125f)]
+        public void BodyOrbitNoLongerStopsAtTheOldFiveToEightyFiveWindow(float requestedPitch, float expectedPitch)
+            => Assert.Equal(expectedPitch, PFViewCameraCore.ResolvePitch(requestedPitch), 3);
+
+        [Theory]
+        [InlineData(float.NaN)]
+        [InlineData(float.PositiveInfinity)]
+        [InlineData(float.NegativeInfinity)]
+        public void ResolvePitchFallsBackToTheDefaultForNonFiniteInput(float value)
+            => Assert.Equal(PFViewCameraCore.DefaultPitch, PFViewCameraCore.ResolvePitch(value));
+
+        [Fact]
+        public void BodyCameraCanGoBelowTheFocalPlaneToSeeTheLowerHalf()
+        {
+            float pitch = PFViewCameraCore.ResolvePitch(-70f);
+            Vector3 position = PFViewCameraCore.CameraViewPos(Vector3.zero, 0f, pitch, 100f);
+            Assert.True(position.y < 0f, "The body camera must be allowed under the focal plane.");
+            Assert.Equal(1f, PFViewCameraCore.OrbitUp(0f, pitch).magnitude, 4);
+        }
 
         [Fact]
         public void FrozenGroupViewKeepsItsUnrestrictedViewingDirection()
         {
-            float pitch = PFViewCameraCore.ResolvePitch(PFViewFocusKind.Frozen, -120f);
+            float pitch = PFViewCameraCore.ResolvePitch(-120f);
             Vector3 direction = PFViewCameraCore.OrbitDir(0f, pitch);
             Assert.True(direction.y < 0f);
             Assert.True(direction.z < 0f);
@@ -185,8 +213,8 @@ namespace PioneerFramework.Tests
         [Fact]
         public void FullRevolutionWrapKeepsPositionAndOrientationContinuous()
         {
-            float beforePitch = PFViewCameraCore.ResolvePitch(PFViewFocusKind.Group, 179.9f);
-            float afterPitch = PFViewCameraCore.ResolvePitch(PFViewFocusKind.Group, 180.1f);
+            float beforePitch = PFViewCameraCore.ResolvePitch(179.9f);
+            float afterPitch = PFViewCameraCore.ResolvePitch(180.1f);
             Assert.True(Vector3.Dot(PFViewCameraCore.OrbitDir(30f, beforePitch), PFViewCameraCore.OrbitDir(30f, afterPitch)) > .9999f);
             Assert.True(Vector3.Dot(PFViewCameraCore.OrbitUp(30f, beforePitch), PFViewCameraCore.OrbitUp(30f, afterPitch)) > .9999f);
         }
