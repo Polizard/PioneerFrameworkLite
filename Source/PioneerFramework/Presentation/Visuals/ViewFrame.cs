@@ -1,4 +1,5 @@
 using System;                    // Math（ToViewRotation 的相位/半角三角函数）
+using System.Collections.Generic;
 using System.Linq;
 using PioneerFramework.Launch;   // GetSurfaceState（layer↔天体、自转角速度的唯一出处）
 using UnityEngine;
@@ -124,6 +125,13 @@ namespace PioneerFramework
         /// <summary>
         /// 天体在**系统系**中的中心位置（米）= 绝对 − 绝对（两者同系 ⇒ 差是相对位置，纪律允许）。
         /// 根行星恒为零向量。
+        ///
+        /// ⚠ 2026-11-20（红字事故）：`GetBodyPositionAbs` 自 `9c78adbd`（2026-10-29，远端合并）起，
+        /// 在星历运行时下**只服务"已提交/预置区间"的时刻**，未来时刻一律
+        /// `CelestialMotionUnavailable: TimeUnavailable`；而规划窗的卫星预测标记要的是
+        /// `physicsTick + 600 s` ⇒ 每个绘制回调抛一条红字（实测 12 秒 1671 条）。
+        /// 这里只在 **tick 明确是未来** 时改走 `ForecastBody` 的父系解析位置（未来唯一可用口径）；
+        /// 已提交时刻仍走原路径 ⇒ 落地/发射等既有调用方**逐值不变**。
         /// </summary>
         public static DVector3 BodySystemPosition(int bodyId, double tick)
         {
@@ -133,7 +141,56 @@ namespace PioneerFramework
             //   当前天体集（地球/月球）下与旧的"第一个行星"逐值相同；但对恒星/多行星系统旧写法是错的。
             int root = mgr.GetReferenceFrameId(bodyId);
             if (bodyId == root) return DVector3.zero;
+
+            if (tick > TimeScaleManager.GetPhysicsTickSafe() + 1e-6)
+            {
+                // 未来时刻**绝不**回落到 `GetBodyPositionAbs`（它必抛）。拿不到预报就给零
+                // （= 帧根中心，标记退化成"贴在父天体上"），宁可少画一个标记，也不刷红字。
+                return TryForecastBodySystemPosition(mgr, bodyId, root, tick, out DVector3 future)
+                    ? future
+                    : DVector3.zero;
+            }
+
             return mgr.GetBodyPositionAbs(bodyId, tick) - mgr.GetBodyPositionAbs(root, tick);
+        }
+
+        // ── 未来位置缓存（0.25 s 一档）────────────────────────────────────────────
+        // 只在"规划窗预览"里用到。每帧重算 `ForecastBody` 会每帧构造一次快照（分配），
+        // 而标记的肉眼精度远低于 0.25 s ⇒ 按时间片缓存，条目上限 16。
+        private static readonly Dictionary<long, DVector3> futureBodyPosCache = new();
+        private const double FuturePosBucketSeconds = 0.25;
+
+        /// <summary>
+        /// 未来位置（唯一安全口径）：沿父链累加 `ForecastBody` 的**父系解析位置**。
+        /// 不走 `GetBodyPositionAbs` —— 它在星历运行时下拒收未来时刻。
+        /// </summary>
+        private static bool TryForecastBodySystemPosition(CelestialBodyManager mgr, int bodyId, int root, double tick,
+            out DVector3 position)
+        {
+            long bucket = (long)Math.Round(tick / FuturePosBucketSeconds);
+            long key = ((long)bodyId << 40) ^ bucket;
+            if (futureBodyPosCache.TryGetValue(key, out position)) return true;
+
+            position = DVector3.zero;
+            int current = bodyId;
+            int guard = 0;
+            while (current >= 0 && current != root && guard++ < 64)
+            {
+                var body = mgr.GetBodyById(current);
+                if (body == null) return false;
+                if (body.HasOrbit)
+                {
+                    var forecast = mgr.ForecastBody(current, tick);
+                    if (!forecast.Success) return false;
+                    position += forecast.Value.PositionRelativeToParent;
+                }
+                current = body.ParentBodyId;
+            }
+            if (current != root) return false;
+
+            if (futureBodyPosCache.Count > 16) futureBodyPosCache.Clear();
+            futureBodyPosCache[key] = position;
+            return true;
         }
 
         /// <summary>系统系米制位置转为绝对系显示位置；只供渲染与拾取使用。</summary>

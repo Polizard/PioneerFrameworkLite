@@ -46,7 +46,7 @@ namespace PioneerFramework
             RefreshInspectorRooms(selectedGroupId);
             bool own = CanOperateGroup(selectedGroupId, false, out _);
             fleetSnapshots.TryGetValue(selectedGroupId, out var fleet);
-            float height = inspectedContactKey != null ? 328f : hasSelected ? 90f : 0f;
+            float height = inspectedContactKey != null ? 328f : hasSelected ? 119f : 0f;
             if (own) height += 132f + (showInspectorRooms ? inspectorRooms.Count * 33f : 0);
             if (own && fleet != null) height += FleetInspectorHeight(fleet) + 33f;
             height += 16f;
@@ -67,6 +67,9 @@ namespace PioneerFramework
                 string body = Current.Game?.GetComponent<CelestialBodyManager>()?.GetBodyName(selectedSnap.CelestialBodyId) ?? "—";
                 InspectorLine(content, ref y, "PFV_Region".Translate(), body);
                 InspectorLine(content, ref y, "PFV_Speed".Translate(), PFViewUiObjectListCore.FormatSpeed(known.velocity.magnitude));
+                // 2026-11-20（用户令）：把「当前受控的自动导航律 + 目标」摆到面板上 ——
+                // 玩家不用看高频日志；一行读数说清楚"谁在开、去哪"。
+                InspectorLine(content, ref y, "导航", NavigationText(selectedSnap));
                 if (own && fleet != null) DrawFleetInspector(content, ref y, fleet);
                 if (own)
                 {
@@ -107,6 +110,28 @@ namespace PioneerFramework
             Widgets.Label(new(0, y, content.width * .43f, 25), label);
             Widgets.Label(new(content.width * .43f, y, content.width * .57f, 25), value);
             y += 29;
+        }
+
+        /// <summary>
+        /// **当前导航律 + 目标**（2026-11-20，用户令）：只读快照字段，不新增状态、不读日志。
+        /// 优先级按"谁在真正控制这艘船"排：交会/接近 → 跨体转移 → 圆轨 → 点火 → 排队 → 空闲。
+        /// </summary>
+        private static string NavigationText(in SpacecraftSnapshot s)
+        {
+            string law = null!;
+            if (s.HasApproachGuidance) law = "接近 → G" + s.ApproachTargetId;
+            else if (s.HasRendezvousGuidance) law = "交会 → G" + s.RendezvousTargetId;
+            else if (s.TransferActive) law = "跨体转移";
+            else if (s.IsCircularOrbit) law = "圆轨保持";
+            else if (s.PlannedManeuverCount > 0) law = "排队 " + s.PlannedManeuverCount.ToString(CultureInfo.InvariantCulture) + " 条";
+
+            if (s.HasActiveBurn)
+            {
+                string burn = "点火中（剩余 " + s.RemainingBurnDv.ToString("F0", CultureInfo.InvariantCulture) + " m/s）";
+                law = law == null ? burn : law + "｜" + burn;
+            }
+
+            return law ?? "空闲";
         }
 
         private static void DrawContactDetails(Rect content, ref float y, in Contact contact)

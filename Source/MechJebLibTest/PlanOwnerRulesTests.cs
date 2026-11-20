@@ -56,5 +56,19 @@ namespace PioneerFramework.Tests
             Assert.True(PlanOwnerRules.GuidanceMustYieldTo(PlanOwner.Manual));
             Assert.False(PlanOwnerRules.GuidanceMustYieldTo(PlanOwner.Guidance));
         }
+
+        /// <summary>
+        /// 2026-11-20：**导航状态机排的节点**（`PlanOwner.Navigation`）既不是玩家手动、也不是引导 ——
+        /// 两条归属规则都**不**触发；只有导航节点时，引导不该被挤走。
+        /// </summary>
+        [Fact]
+        public void NavigationNodes_DoNotTakeOverGuidance()
+        {
+            Assert.False(PlanOwnerRules.TakesOverGuidance(PlanOwner.Navigation));
+            Assert.False(PlanOwnerRules.GuidanceMustYieldTo(PlanOwner.Navigation));
+
+            var onlyNavigation = new List<PlanOwner> { PlanOwner.Guidance, PlanOwner.Navigation };
+            Assert.False(PlanOwnerRules.AnyManual(onlyNavigation), "只有导航节点时，引导不该让位");
+        }
     }
 }

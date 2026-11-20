@@ -14,6 +14,11 @@ namespace PioneerFramework
         private SpaceEntityGroup group;
         private SpaceGameComp spaceGame;
 
+        /// <summary>页签：0 = 规划机动（新控制律 / Operation），1 = 手动滑条（原窗口内容）。2026-11-20。</summary>
+        private int tab;
+        /// <summary>规划页签的视图（懒建；预览仍由本窗口统一持有，见 `orbitSegments`）。</summary>
+        private PlanEditorView? planView;
+
         // 滑块值
         private float maneuverTimeDeltaSeconds = 60f;
         private float radialDV ;
@@ -58,8 +63,13 @@ namespace PioneerFramework
         private const float BigPresetStepDV = 100f;
         private const float LabelHeight = 22f;
 
+        // 窗口尺寸：两个页签各一套（2026-11-20 用户「机动规划窗口太拥挤」）。
+        // 规划页签按 `PlanEditorView` 的设计宽度给（左列表 200 + 右参数面板 ≈ 620 ⇒ 860）；
+        // 滑条页签沿用旧尺寸（它本来就是按 400 排的）。
         private const float WindowWidth = 400f;
         private const float WindowHeight = 590f;
+        private const float PlanWindowWidth = 860f;
+        private const float PlanWindowHeight = 620f;
 
         // ── 真实预览模式 ──
         public enum PreviewMode { Kepler, Perturbed }
@@ -164,7 +174,23 @@ namespace PioneerFramework
             RebuildOrbitPreview();
         }
 
-        public override Vector2 InitialSize => new(WindowWidth, WindowHeight);
+        public override Vector2 InitialSize => tab == 0
+            ? new Vector2(PlanWindowWidth, PlanWindowHeight)
+            : new Vector2(WindowWidth, WindowHeight);
+
+        /// <summary>
+        /// 切页签时同步窗口尺寸（2026-11-20）：规划页签要宽、滑条页签维持旧尺寸。
+        /// RimWorld 没有公开的 `SetInitialSize()`，直接改 `windowRect` 并夹回屏幕内。
+        /// </summary>
+        private void SwitchTab(int next)
+        {
+            if (tab == next) return;
+            tab = next;
+            Vector2 size = InitialSize;
+            windowRect.size = size;
+            windowRect.x = Mathf.Clamp(windowRect.x, 0f, Mathf.Max(0f, UI.screenWidth - size.x));
+            windowRect.y = Mathf.Clamp(windowRect.y, 0f, Mathf.Max(0f, UI.screenHeight - size.y));
+        }
 
         public override void DoWindowContents(Rect inRect)
         {
@@ -173,7 +199,35 @@ namespace PioneerFramework
                 $"机动规划 - Group {group.GroupId}");
             Text.Font = GameFont.Small;
 
-            float y = 35f;
+            // ── 页签（2026-11-20）：规划器从队列窗拿出来，滑条与预览原样保留 ──
+            const float tabW = 150f;
+            var tab0 = new Rect(0f, 32f, tabW, 28f);
+            var tab1 = new Rect(tabW + 6f, 32f, tabW, 28f);
+            var selBg = new Color(0.18f, 0.42f, 0.55f, 0.85f);
+            if (tab == 0) Widgets.DrawBoxSolid(tab0, selBg);
+            else Widgets.DrawBoxSolid(tab1, selBg);
+            if (Widgets.ButtonText(tab0, "规划机动（操作）")) SwitchTab(0);
+            if (Widgets.ButtonText(tab1, "手动滑条")) SwitchTab(1);
+
+            var body = new Rect(0f, 64f, inRect.width, inRect.height - 64f);
+            if (tab == 0)
+            {
+                planView ??= new PlanEditorView(group.GroupId) { OnPlanPreview = PreviewPlan };
+                planView.Draw(body);
+            }
+            else
+            {
+                DrawSliderTab(body);
+            }
+        }
+
+        /// <summary>
+        /// **手动滑条页签**：原「机动规划」窗口的全部内容，2026-11-20 原样搬进来
+        /// （用户令：控制律用新的，但滑条不能没有、预览不能没有）。
+        /// </summary>
+        private void DrawSliderTab(Rect inRect)
+        {
+            float y = 0f;
 
             // 时间滑块
             Widgets.Label(new Rect(0f, y, LabelWidth, SliderHeight),
@@ -649,6 +703,60 @@ namespace PioneerFramework
         /// <summary>
         /// 确认机动并加入队列，关闭规划器。
         /// </summary>
+        /// <summary>
+        /// **规划页签的预览**（2026-11-20）：用一组计划节点重建 `orbitSegments`
+        /// （当前轨道 + 每一发之后的轨道）。只写预览数据，不动滑条、不入队；
+        /// 渲染侧读的仍是原来那组静态出口 ⇒ 两个页签共用同一份预览。
+        /// </summary>
+        public void PreviewPlan(OrbitView from, IReadOnlyList<PlanNode> nodes)
+        {
+            if (group == null || nodes == null || nodes.Count == 0) return;
+
+            double gm = spaceGame.GetBodyGM(group.CelestialBodyId);
+            DVector3 offset = plannedCentralOffset;
+            double toUnity = SpaceConstants.UnitsPerMeter;
+            var segs = new List<OrbitSegment>();
+
+            List<DVector3> cur = OrbitMath.GetOrbitPoints(group.positionBody, group.velocityBody, 60, gm);
+            if (cur.Count > 0)
+            {
+                var pts = cur.ConvertAll(p => p + offset);
+                segs.Add(new OrbitSegment
+                {
+                    pointsMeters = pts,
+                    pointsUnity = pts.ConvertAll(p => (Vector3)(p * toUnity)),
+                    isPostManeuver = false,
+                    color = new Color(0.3f, 0.8f, 1f, 0.8f),
+                    label = "Current",
+                });
+            }
+
+            OrbitView prev = from;
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                PlanNode n = nodes[i];
+                OrbitView post = OrbitAdapter.ApplyForPreview(prev, n);
+                (DVector3 r, DVector3 v) = post.RightHandedStateVectorsAtUT(n.ut);
+                List<DVector3> pts0 = OrbitMath.GetOrbitPoints(r, v, 60, gm);
+                if (pts0.Count > 0)
+                {
+                    var pts = pts0.ConvertAll(p => p + offset);
+                    segs.Add(new OrbitSegment
+                    {
+                        pointsMeters = pts,
+                        pointsUnity = pts.ConvertAll(p => (Vector3)(p * toUnity)),
+                        isPostManeuver = true,
+                        color = new Color(1f, 0.75f, 0.3f, 0.8f),
+                        label = "Plan#" + (i + 1),
+                    });
+                }
+                prev = post;
+            }
+
+            orbitSegments = segs;
+            previewComputed = true;
+        }
+
         private void ConfirmManeuver()
         {
             // 圆轨位置/速度用 physicsTick 基准 + 解析速度（与物理一致）

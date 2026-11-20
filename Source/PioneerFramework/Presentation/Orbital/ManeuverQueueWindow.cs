@@ -409,14 +409,11 @@ namespace PioneerFramework
 
         private void DrawFooter(Rect inRect, ref float y)
         {
-            float btnW = (inRect.width - 20f) * 0.5f;
+            float btnW = inRect.width - 8f;
             GUI.color = GrayButton;
-            // P1-8：从这里开规划器（队列与规划器共用同一个 group ✓ 新计划的归属与队列语义一致）
-            if (Widgets.ButtonText(new Rect(4f, y, btnW, ButtonHeight), "规划机动…"))
-            {
-                Find.WindowStack.Add(new Window_PlanEditor(groupId));
-            }
-            if (Widgets.ButtonText(new Rect(4f + btnW + 12f, y, btnW, ButtonHeight), "清除所有机动"))
+            // 2026-11-20（用户令）：规划器已从队列窗移出 —— 入口在 PFView 检视面板 / 太空视图的「机动规划」。
+            // 队列窗只负责：队列列表、执行进度、取消、清除。
+            if (Widgets.ButtonText(new Rect(4f, y, btnW, ButtonHeight), "清除所有机动"))
             {
                 PhysicsCommands.ClearManeuvers(groupId);
             }

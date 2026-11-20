@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using PioneerFramework.Celestial;
+using RimWorld;
 using Verse;
 
 namespace PioneerFramework
@@ -20,6 +21,13 @@ namespace PioneerFramework
         public const int InterplanetaryPhaseCapture = 2;
         public const int InterplanetaryPhaseCaptured = 3;
         public const int InterplanetaryPhaseFlyby = 4;
+
+        // 导航结束结果（2026-11-20）：写在组上给 UI 显示"上一次导航为什么停了"。
+        // 只有"结束"这个动作会写；进行中保持 None。
+        public const int InterplanetaryOutcomeNone = 0;
+        public const int InterplanetaryOutcomeCompleted = 1;
+        public const int InterplanetaryOutcomeCompletedWithWarning = 2;
+        public const int InterplanetaryOutcomeCancelled = 3;
 
         /// <summary>飞行追踪探针的瞬时状态（**不序列化**）：groupId → (下次打点 tick, 历史最近距离)。</summary>
         private readonly Dictionary<int, (double NextTick, double MinDistance)> transferProbes = new();
@@ -91,7 +99,7 @@ namespace PioneerFramework
             int executeTick = (int)Math.Round(now + Math.Max(0.0, delaySeconds) + burnSeconds / 2.0);
             group.plannedManeuvers.Add(new SpaceEntityGroup.PlannedManeuver
             {
-                active = true, executeTick = executeTick, owner = PlanOwner.Manual, ladderEpoch = 0,
+                active = true, executeTick = executeTick, owner = PlanOwner.Navigation, ladderEpoch = 0,
                 radialDV = (float)radial, tangentialDV = (float)tangential, normalDV = (float)normal,
                 plannedDvBody = dv, burnSecondsPlanned = burnSeconds,
             });
@@ -103,264 +111,18 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// **火炬转移**（2026-11-18 重构：圆锥 + 长烧 + 到达减速）。
+        /// **火炬转移**入口（B 方案，2026-11-19 授权）：`TorchExecutionCore.TryPlan` 一次规划，
+        /// 由 `AdvanceTorchPlan` 事件驱动点两次火（出航 τ / 捕获 τ），**不排队列节点**。
         ///
-        /// 出航：Lambert 解出的 Δv 摊成长烧（燃时 = |Δv|/a，方向 = Δv）。
-        /// 到达：按 Lambert 的**到达状态**算出需要的 Δv（相对目标），在到达前 burnSeconds 排一次反推。
-        /// 为什么不能只靠 SOI 捕获：260 km/s 穿 SOI 只要 500 s，而 1 g 消掉它要 7.4 h。
+        /// A 方案（2026-11-18 的队列版：Lambert 长烧 + 两个节点）已于 2026-11-20 弃置，
+        /// 原文留档在 `Source/已弃置/TorchQueueTransfer-A方案-20261120.txt`（留盘不编译）。
         /// </summary>
+        /// <param name="timeBias">A 方案的等待滑条参数；B 方案不用，保留签名兼容 UI。</param>
         public bool TryBeginTorchTransfer(SpaceEntityGroup group, int targetBodyId, double accelerationInG,
             out string reason, double timeBias = 0.0, double forcedTimeOfFlightSeconds = 0.0)
         {
             // ── B 方案（2026-11-19，授权件追加段）：纯核规划 + 两个 BeginBurn 事件 ──
-            if (TryBeginTorchTransferEventDriven(group, targetBodyId, accelerationInG, forcedTimeOfFlightSeconds, out reason))
-                return true;
-            return false;
-
-            // 以下为旧队列实现（不可达，保留作回退参照）
-            reason = string.Empty;
-            if (group == null) { reason = "群组不存在"; return false; }
-            if (group.interplanetaryPhase != InterplanetaryPhaseNone) { reason = "已有进行中的转移"; return false; }
-            if (group.landed) { reason = "已着陆"; return false; }
-            if (group.IsCircularOrbit) { reason = "圆轨模式下不能直接转移（需先离开圆轨）"; return false; }
-            if (group.HasActiveBurn) { reason = "正在执行机动"; return false; }
-
-            var manager = celestialRef.Get();
-            if (manager == null || !manager.TryGetCelestialRuntime(out _)) { reason = "天体框架未就绪"; return false; }
-            var target = manager.GetBodyById(targetBodyId);
-            if (target == null || !target.HasOrbit || !(target.orbitPeriod > 0.0)) { reason = "目标天体不存在或没有可解析轨道"; return false; }
-            var star = manager.GetStar();
-            if (star == null) { reason = "找不到主恒星"; return false; }
-            if (targetBodyId == star.bodyId) { reason = "目标是恒星本身"; return false; }
-            if (group.CelestialBodyId != star.bodyId) { reason = "需要先离开当前天体的影响范围（当前不在恒星帧）"; return false; }
-
-            var source = GetGroupPropulsionSource(group);
-            if (source == null || !(source.EffectiveVe > 0.0)) { reason = "没有可用推进"; return false; }
-
-            double acceleration = accelerationInG * TorchTransferCore.StandardGravity;
-            if (!(acceleration > 0.0)) { reason = "加速度无效"; return false; }
-
-            double mu = star.gravitationalParameter;
-            double now = TimeScaleManager.GetPhysicsTickSafe();
-            DVector3 r1 = group.CurrentOrbit.positionSystem.v;
-            DVector3 v1 = group.CurrentOrbit.velocitySystem.v;
-            if (!(r1.magnitude > 0.0) || !r1.IsFinite() || !v1.IsFinite()) { reason = "当前状态无效"; return false; }
-
-            var probe = manager.ForecastBody(targetBodyId, now);
-            if (!probe.Success) { reason = "目标位置不可用"; return false; }
-            double hohmann = InterplanetaryTransferCore.TransferTimeOfFlight(r1.magnitude, probe.Value.PositionRelativeToParent.magnitude, mu);
-            if (!(hohmann > 0.0)) { reason = "转移时长无效"; return false; }
-            double window = target.orbitPeriod > 0.0 ? target.orbitPeriod : hohmann * 2.0;
-
-            double dryMass = GetGroupMass(group, null);
-            double propellantMass = source.TotalPropellantMass;
-            double massFlow = 0.0;
-            foreach (var network in source.Networks) massFlow += network.MassFlow;
-            double deltaVBudget = dryMass > 0.0 && propellantMass > 0.0
-                ? source.EffectiveVe * Math.Log((dryMass + propellantMass) / dryMass) * 0.9
-                : double.PositiveInfinity;
-
-            DVector3 dv;
-            double delaySeconds, timeOfFlight;
-            if (forcedTimeOfFlightSeconds > 0.0)
-            {
-                timeOfFlight = forcedTimeOfFlightSeconds;
-                delaySeconds = 0.0;
-                var forcedTarget = manager.ForecastBody(targetBodyId, now + timeOfFlight);
-                if (!forcedTarget.Success) { reason = "目标位置预报不可用"; return false; }
-                if (!InterplanetaryTransferCore.TryPlanDeparture(mu, r1, v1,
-                        forcedTarget.Value.PositionRelativeToParent, timeOfFlight, out dv, out string forcedReason))
-                { reason = "指定时长无解：" + forcedReason; return false; }
-            }
-            else
-            {
-                if (!InterplanetaryTransferCore.TryPlanDepartureWithScan(mu, r1, v1, hohmann, window,
-                        offset =>
-                        {
-                            var forecast = manager.ForecastBody(targetBodyId, now + offset);
-                            if (!forecast.Success) throw new InvalidOperationException("ForecastUnavailable");
-                            return forecast.Value.PositionRelativeToParent;
-                        },
-                        out dv, out delaySeconds, out timeOfFlight, out string planReason,
-                        timeBias: timeBias, maxDeltaV: deltaVBudget))
-                { reason = "火炬转移无解：" + planReason; return false; }
-            }
-            if (!(dv.magnitude > 0.0) || !dv.IsFinite()) { reason = "转移 Δv 无效"; return false; }
-
-            // ★ **有限燃烧的中点修正**（2026-11-18 实测：实交 Δv 与命令一分不差，但落点晚 ~1.9 h）：
-            //   Lambert 把 Δv 当冲量，真实却烧了 τ=|Δv|/a 秒，等效冲量在 τ/2 处。
-            //   所以从"燃烧中点状态"重解 Lambert，迭代到 Δv 稳定。规划期一次，飞行期零决策。
-            for (int correction = 0; correction < 3; correction++)
-            {
-                double tauGuess = dv.magnitude / acceleration;
-                if (!(tauGuess > 0.0) || tauGuess * 0.5 >= timeOfFlight) break;
-                DVector3 midPosition, midVelocity;
-                try
-                {
-                    midPosition = OrbitMath.GetPositionAtTimeDelta(r1, v1, tauGuess * 0.5, mu);
-                    midVelocity = OrbitMath.GetVelocityAtTimeDelta(r1, v1, tauGuess * 0.5, mu);
-                }
-                catch { break; }
-                var arrivalTargetProbe = manager.ForecastBody(targetBodyId, now + timeOfFlight);
-                if (!arrivalTargetProbe.Success) break;
-                if (!InterplanetaryTransferCore.TryPlanDeparture(mu, midPosition, midVelocity,
-                        arrivalTargetProbe.Value.PositionRelativeToParent, timeOfFlight - tauGuess * 0.5,
-                        out DVector3 corrected, out _)) break;
-                if (!(corrected.magnitude > 0.0) || !corrected.IsFinite()) break;
-                double change = (corrected - dv).magnitude;
-                dv = corrected;
-                if (change < 1.0) break;
-            }
-            var departureEstimate = BurnCalculator.Estimate((float)dv.magnitude,
-                (float)GetGroupMass(group, null), source, source.Networks, null);
-            double burnSeconds = departureEstimate.Feasible && departureEstimate.BurnSeconds > 0.0
-                ? departureEstimate.BurnSeconds
-                : dv.magnitude / acceleration;
-            double propellantNeeded = massFlow * burnSeconds;
-            if (!(burnSeconds > 0.0) || !double.IsFinite(burnSeconds)) { reason = "燃时无效"; return false; }
-            if (propellantNeeded > propellantMass)
-            {
-                reason = $"工质不足：Δv={dv.magnitude:F0} m/s 在 {accelerationInG:F2} g 下需 {propellantNeeded:F0} kg，只有 {propellantMass:F0} kg";
-                return false;
-            }
-
-            DVector3 arrivalDv = DVector3.zero;
-            double arrivalBurnSeconds = 0.0;
-            double arrivalPropellant = 0.0;
-            double arrivalEntrySeconds = timeOfFlight;
-            try
-            {
-                // ★ **主动进 SOI**（2026-11-18 修正）：Lambert 的到达时刻把船放在**目标点上**
-                //   （冲量模型），所以"从 tof 向前找 SOI 边界"永远找不到（已经在里面，r≈0）。
-                //   正确做法：用**渐近线**定入口 —— 入口相对位置 = −v̂_rel × 0.98×SOI，
-                //   入口时刻 = tof − 0.98×SOI / |v_rel|。
-                double tauNow = dv.magnitude / acceleration;
-                DVector3 midPos = OrbitMath.GetPositionAtTimeDelta(r1, v1, tauNow * 0.5, mu);
-                DVector3 midVel = OrbitMath.GetVelocityAtTimeDelta(r1, v1, tauNow * 0.5, mu);
-                double coast = Math.Max(1.0, timeOfFlight - tauNow * 0.5);
-                DVector3 arrivalPosition = OrbitMath.GetPositionAtTimeDelta(midPos, midVel + dv, coast, mu);
-                DVector3 arrivalVelocity = OrbitMath.GetVelocityAtTimeDelta(midPos, midVel + dv, coast, mu);
-                var arrivalForecast = manager.ForecastBody(targetBodyId, now + timeOfFlight);
-                if (arrivalForecast.Success && arrivalVelocity.IsFinite() && arrivalPosition.IsFinite())
-                {
-                    double soi = OrbitAdapter.SoiRadiusApprox(target, manager);
-                    if (!(soi > 0.0)) soi = 1.0e8;
-                    double muTarget = target.gravitationalParameter;
-                    DVector3 relVelocity = arrivalVelocity - arrivalForecast.Value.VelocityRelativeToParent;
-                    double relSpeed = relVelocity.magnitude;
-                    if (muTarget > 0.0 && relSpeed > 1.0 && soi > 1.0)
-                    {
-                        double entryRadius = soi * 0.98;
-                        DVector3 incoming = relVelocity * (1.0 / relSpeed);
-                        DVector3 entryPosition = incoming * (-entryRadius);
-                        double entrySeconds = timeOfFlight - entryRadius / relSpeed;
-                        double periapsisGoal = 0.5 * soi;
-                        if (TorchTransferCore.TryPlanCapture(muTarget, entryPosition, relVelocity, periapsisGoal,
-                                out double captureDeltaV, out string captureReason) && captureDeltaV > 1.0)
-                        {
-                            arrivalDv = (incoming * -1.0) * captureDeltaV;
-                            // ★ 与执行器估值对齐（2026-11-18）：队列自己用 BurnCalculator.Estimate 定燃时，
-                            //   我们若按 1 g 写 3.2 h 而它算 16 h，点火时刻就会错。这里直接用它的估值。
-                            var captureEstimate = BurnCalculator.Estimate((float)captureDeltaV,
-                                (float)GetGroupMass(group, null), source, source.Networks, null);
-                            arrivalBurnSeconds = captureEstimate.Feasible && captureEstimate.BurnSeconds > 0.0
-                                ? captureEstimate.BurnSeconds
-                                : captureDeltaV / acceleration;
-                            arrivalPropellant = massFlow * arrivalBurnSeconds;
-                            arrivalEntrySeconds = Math.Max(1.0, entrySeconds);
-                            Log.Message($"[火炬·到达] 相对速度 {relSpeed / 1000.0:F1} km/s｜SOI {soi / 1e9:F4}e9 m"
-                                + $"｜入口 {entryRadius / 1e9:F4}e9 m｜捕获 Δv={captureDeltaV:F0} m/s"
-                                + $"（{arrivalBurnSeconds / 3600.0:F2} h）");
-                        }
-                        else
-                        {
-                            Log.Warning($"[火炬·到达] 捕获解算失败：{captureReason}"
-                                + $"（SOI {soi / 1e9:F4}e9，相对速度 {relSpeed / 1000.0:F1} km/s）");
-                        }
-                    }
-                }
-            }
-            catch (Exception error)
-            {
-                Log.Warning("[火炬] 到达状态解算失败：" + error.Message);
-            }
-            // ★ **到达段的中点修正**（2026-11-18 实测：刹车提前 1.29e9 m 停住）：
-            //   冲量模型把减速放在到达瞬间，真实燃烧等效于中点 ⇒ 会停短 v_rel·τ/2。
-            //   等价改法：把瞄准点往前挪同样的量，让"刹车中点"落在目标上。迭代 2 次。
-            if (false && arrivalDv.magnitude > 1.0 && timeOfFlight > 0.0)   // 被"主动进 SOI"取代
-            {
-                for (int pass = 0; pass < 2; pass++)
-                {
-                    double tauArr = arrivalDv.magnitude / acceleration;
-                    if (!(tauArr > 0.0)) break;
-                    var targetProbe = manager.ForecastBody(targetBodyId, now + timeOfFlight);
-                    if (!targetProbe.Success) break;
-                    DVector3 relativeDirection = arrivalDv * (-1.0 / arrivalDv.magnitude);   // 船相对目标的来向
-                    DVector3 shiftedAim = targetProbe.Value.PositionRelativeToParent
-                        + relativeDirection * (arrivalDv.magnitude * tauArr * 0.5);
-
-                    double tauDep = dv.magnitude / acceleration;
-                    DVector3 depMidPosition = OrbitMath.GetPositionAtTimeDelta(r1, v1, tauDep * 0.5, mu);
-                    DVector3 depMidVelocity = OrbitMath.GetVelocityAtTimeDelta(r1, v1, tauDep * 0.5, mu);
-                    if (!InterplanetaryTransferCore.TryPlanDeparture(mu, depMidPosition, depMidVelocity, shiftedAim,
-                            Math.Max(1.0, timeOfFlight - tauDep * 0.5), out DVector3 shiftedDv, out _)) break;
-                    if (!(shiftedDv.magnitude > 0.0) || !shiftedDv.IsFinite()) break;
-                    dv = shiftedDv;
-
-                    double tau2 = dv.magnitude / acceleration;
-                    DVector3 mid2Position = OrbitMath.GetPositionAtTimeDelta(r1, v1, tau2 * 0.5, mu);
-                    DVector3 mid2Velocity = OrbitMath.GetVelocityAtTimeDelta(r1, v1, tau2 * 0.5, mu);
-                    double remaining = Math.Max(1.0, timeOfFlight - tau2 * 0.5);
-                    DVector3 arrivalVel = OrbitMath.GetVelocityAtTimeDelta(mid2Position, mid2Velocity + dv, remaining, mu);
-                    arrivalDv = targetProbe.Value.VelocityRelativeToParent - arrivalVel;
-                    arrivalBurnSeconds = arrivalDv.magnitude / acceleration;
-                    arrivalPropellant = massFlow * arrivalBurnSeconds;
-                    burnSeconds = dv.magnitude / acceleration;
-                    propellantNeeded = massFlow * burnSeconds;
-                }
-            }
-            if (arrivalDv.magnitude > 1.0 && propellantNeeded + arrivalPropellant > propellantMass)
-            {
-                reason = $"工质不足：出航 {propellantNeeded:F0} kg + 到达 {arrivalPropellant:F0} kg > 罐容 {propellantMass:F0} kg";
-                return false;
-            }
-
-            group.abFreezeDirection = true;
-            OrbitMath.DeltaVSystemToComponents(r1, v1, dv, out double radial, out double tangential, out double normal);
-            int departureTick = (int)Math.Round(now + Math.Max(0.0, delaySeconds)
-                + Math.Min(burnSeconds * 0.5, ManeuverPreBurnLookaheadTicks));
-            group.plannedManeuvers.Add(new SpaceEntityGroup.PlannedManeuver
-            {
-                active = true, executeTick = departureTick, owner = PlanOwner.Manual, ladderEpoch = 0,
-                radialDV = (float)radial, tangentialDV = (float)tangential, normalDV = (float)normal,
-                plannedDvBody = dv, burnSecondsPlanned = burnSeconds,
-            });
-
-            if (arrivalDv.magnitude > 1.0 && arrivalPropellant <= propellantMass)
-            {
-                OrbitMath.DeltaVSystemToComponents(r1, v1, arrivalDv, out double rA, out double tA, out double nA);
-                double ignitionAt = Math.Max(now, now + arrivalEntrySeconds - arrivalBurnSeconds);
-                int arrivalTick = (int)Math.Round(ignitionAt + Math.Min(arrivalBurnSeconds * 0.5, ManeuverPreBurnLookaheadTicks));
-                group.plannedManeuvers.Add(new SpaceEntityGroup.PlannedManeuver
-                {
-                    active = true, executeTick = arrivalTick, owner = PlanOwner.Manual, ladderEpoch = 0,
-                    radialDV = (float)rA, tangentialDV = (float)tA, normalDV = (float)nA,
-                    plannedDvBody = arrivalDv, burnSecondsPlanned = arrivalBurnSeconds,
-                });
-            }
-
-            group.interplanetaryTargetBodyId = targetBodyId;
-            group.interplanetaryPhase = InterplanetaryPhaseOutbound;
-            group.interplanetaryCaptureRetried = false;
-
-            Log.Message($"[火炬] G{group.GroupId} → {target.label}：{accelerationInG:F2} g｜出航 Δv={dv.magnitude:F0} m/s"
-                + $"（{(forcedTimeOfFlightSeconds > 0.0 ? "指定" : "滑条 " + timeBias.ToString("F2"))}）"
-                + $"｜燃时 {burnSeconds / 3600.0:F2} h｜等待 {delaySeconds / 86400.0:F2} d｜转移 {timeOfFlight / 86400.0:F3} d"
-                + (arrivalDv.magnitude > 1.0
-                    ? $"｜到达减速 Δv={arrivalDv.magnitude:F0} m/s（{arrivalBurnSeconds / 3600.0:F2} h，到达前 {arrivalBurnSeconds / 3600.0:F2} h 点火）"
-                    : "｜无需到达减速")
-                + $"｜预算 Δv≤{deltaVBudget / 1000.0:F0} km/s");
-            return true;
+            return TryBeginTorchTransferEventDriven(group, targetBodyId, accelerationInG, forcedTimeOfFlightSeconds, out reason);
         }
 
         /// <summary>
@@ -512,6 +274,83 @@ namespace PioneerFramework
         }
 
         /// <summary>
+        /// **行星际导航结束**（2026-11-20）：记结果 → 释放阶段锁。
+        ///
+        /// 释放后 `ProbeInterplanetaryFlight` / `VerifyInterplanetaryTransfers` / `AdvanceTorchPlan`
+        /// 都不再处理该组（它们以 `interplanetaryPhase != None` 为门）。
+        /// 这一条同时修掉"转移一次后永远不能再发起弹道转移"的泄漏：在此之前
+        /// `interplanetaryPhase` 只有写 1/2/3/4 的地方，**没有任何一处写回 `None`**。
+        ///
+        /// 不改任何判定：只在既有终态之外补一个收尾动作。
+        /// </summary>
+        private void CompleteInterplanetaryTransfer(SpaceEntityGroup group, int outcome, string reason, bool clearTorch)
+        {
+            group.interplanetaryEndOutcome = outcome;
+            group.interplanetaryEndReason = reason;
+            group.interplanetaryPhase = InterplanetaryPhaseNone;
+            group.interplanetaryTargetBodyId = -1;
+            group.interplanetaryCaptureRetried = false;
+
+            if (clearTorch)
+            {
+                group.torchPlan = default;
+                group.torchPhase = 0;
+                group.torchStartTick = 0.0;
+                group.torchSoi = 0.0;
+                group.torchTargetBodyId = 0;
+                group.torchTargetDistance = 0.0;
+            }
+
+            group.abFreezeDirection = false;
+            burnWatch.Remove(group.GroupId);
+            transferProbes.Remove(group.GroupId);
+            trackedManeuvers.Remove(group.GroupId);
+        }
+
+        /// <summary>
+        /// **取消进行中的行星际导航**（2026-11-20，用户授权）：适用于阶段 1（出航段）/ 2（捕获段）。
+        ///
+        /// 语义：
+        /// · 燃烧中 ⇒ 走 `EmergencyStopBurn`（已施加 Δv 保留、剩余丢弃 —— 既有语义，不新造）；
+        /// · 只删**本导航自己的**队列节点（`PlanOwner.Navigation`），玩家手排节点不动；
+        /// · 清火炬计划、清圆化挂起、清探测器/遥测条目、复位冻结方向；
+        /// · 最后把 `interplanetaryPhase` 归零并记「取消」结果。
+        /// 阶段 3/4 属于既成终态（捕获已成功），返回 false + 理由。
+        /// </summary>
+        public bool TryCancelInterplanetaryTransfer(SpaceEntityGroup group, out string reason)
+        {
+            reason = "";
+            if (group == null) { reason = "群组不存在"; return false; }
+
+            int phase = group.interplanetaryPhase;
+            if (phase == InterplanetaryPhaseNone) { reason = "没有进行中的行星际导航"; return false; }
+            if (phase == InterplanetaryPhaseCaptured || phase == InterplanetaryPhaseFlyby)
+            {
+                reason = "导航已结束（" + (phase == InterplanetaryPhaseCaptured ? "已捕获" : "飞掠") + "），无需取消";
+                return false;
+            }
+
+            string phaseText = phase == InterplanetaryPhaseOutbound ? "出航段" : "捕获段";
+            bool wasBurning = group.HasActiveBurn;
+            if (wasBurning) EmergencyStopBurn(group);
+
+            int removed = group.RemoveNavigationManeuvers();
+
+            if (group.HasPendingCircularize)
+            {
+                group.HasPendingCircularize = false;
+                group.pendingCircularizeBodyId = -1;
+            }
+
+            CompleteInterplanetaryTransfer(group, InterplanetaryOutcomeCancelled,
+                "玩家取消（" + phaseText + (wasBurning ? "，燃烧中" : "") + "）", clearTorch: true);
+
+            PhysicsLogMessage($"[粗转移] G{group.GroupId} 导航已取消（{phaseText}）｜清除队列节点 {removed} 条｜燃烧中={wasBurning}");
+            Messages.Message($"Group {group.GroupId} 行星际导航已取消（{phaseText}）。", MessageTypeDefOf.NeutralEvent, false);
+            return true;
+        }
+
+        /// <summary>
         /// **烧后复核**（每个物理步末调用，只扫处于 `Capture` 且已停烧的组）：
         /// 仍有界 ⇒ Captured；未界且没补过 ⇒ 用当时状态补烧一次；否则 ⇒ Flyby + 红字。
         /// </summary>
@@ -522,6 +361,20 @@ namespace PioneerFramework
 
             foreach (var group in groups.Values)
             {
+                // 2026-11-20：终态收口 —— Captured/Flyby 记结果并释放阶段锁。
+                // 释放后 Probe/Verify 不再处理该组；"转移一次后永远不能再转移"的泄漏随之消失。
+                if (group.interplanetaryPhase == InterplanetaryPhaseCaptured
+                    || group.interplanetaryPhase == InterplanetaryPhaseFlyby)
+                {
+                    bool captured = group.interplanetaryPhase == InterplanetaryPhaseCaptured;
+                    CompleteInterplanetaryTransfer(group, captured
+                            ? InterplanetaryOutcomeCompleted
+                            : InterplanetaryOutcomeCompletedWithWarning,
+                        captured ? "已捕获（束缚轨道）" : "飞掠（未捕获，见日志）",
+                        clearTorch: false);
+                    continue;
+                }
+
                 if (group.interplanetaryPhase != InterplanetaryPhaseNone)
                 {
                     ProbeInterplanetaryFlight(group, manager, physicsTick);
@@ -605,6 +458,8 @@ namespace PioneerFramework
             double forcedTimeOfFlightSeconds, out string reason)
         {
             reason = "";
+            // 2026-11-20：补上"已有进行中的转移"前置（此前只查燃烧 ⇒ 飞行中再点一次会静默覆盖 torchPlan）
+            if (group.interplanetaryPhase != InterplanetaryPhaseNone) { reason = "已有进行中的行星际转移"; return false; }
             if (group.HasActiveBurn) { reason = "正在执行机动"; return false; }
             var manager = celestialRef.Get();
             if (manager == null || !manager.TryGetCelestialRuntime(out _)) { reason = "天体框架未就绪"; return false; }
@@ -672,9 +527,29 @@ namespace PioneerFramework
                 double elapsed2 = physicsTick - group.torchStartTick;
                 if (elapsed2 >= group.torchPlan.CaptureStartSeconds + group.torchPlan.CaptureSeconds)
                 {
-                    group.torchPhase = 3;
-                    Log.Message($"[火炬·圆化] 捕获段完成（阶段3：等待降至 0.70×SOI 再圆化）"
+                    // 2026-11-20：捕获段结束 = 本导航**真实可观测的终点**。
+                    // ⚠ 阶段 3/4 的"自动圆化"分支当前不可达（守卫 `torchPhase >= 3` 先返回，见登记）；
+                    //    等那个缺陷修好后，完成点要挪到阶段 4（开始圆化），而不是这里。
+                    bool bound = false;
+                    var mgr2 = celestialRef.Get();
+                    if (mgr2 != null && group.torchTargetBodyId != 0 && group.CelestialBodyId == group.torchTargetBodyId)
+                    {
+                        var tb = mgr2.GetBodyById(group.torchTargetBodyId);
+                        if (tb != null && tb.gravitationalParameter > 0.0)
+                        {
+                            DVector3 rp = group.GetBodyPosition(physicsTick).v;
+                            DVector3 rv = group.GetBodyVelocity(physicsTick).v;
+                            bound = InterplanetaryTransferCore.IsBound(tb.gravitationalParameter, rp.magnitude, rv.magnitude);
+                        }
+                    }
+
+                    Log.Message($"[火炬·完成] 捕获段结束：{(bound ? "束缚" : "未束缚（将飞掠）")}"
                         + $"｜当前帧 {group.CelestialBodyId}｜目标体 {group.torchTargetBodyId}｜SOI {group.torchSoi / 1e9:F4}e9 m");
+                    CompleteInterplanetaryTransfer(group, bound
+                            ? InterplanetaryOutcomeCompleted
+                            : InterplanetaryOutcomeCompletedWithWarning,
+                        bound ? "火炬：已捕获（束缚轨道）" : "火炬：捕获段结束但轨道未束缚",
+                        clearTorch: true);
                     return;
                 }
             }

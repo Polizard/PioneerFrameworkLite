@@ -665,6 +665,11 @@ namespace PioneerFramework
         public double torchStartTick;
         /// <summary>捕获燃烧失败后是否已补烧过一次（最多一次，防自激）。</summary>
         public bool interplanetaryCaptureRetried;
+
+        /// <summary>行星际导航结束结果（2026-11-20）：0=进行中/未结束，1=完成，2=完成但有警告，3=被取消。</summary>
+        public int interplanetaryEndOutcome;
+        /// <summary>行星际导航结束理由（一行，给 UI 显示"上一次导航为什么停了"）。</summary>
+        public string interplanetaryEndReason = string.Empty;
         /// <summary>
         /// 豁免行星碰撞检查（火箭爬升段出生在大气层内 R+10km &lt; 安全半径 R+100km、
         /// 初速 ~524 m/s &gt; 安全着陆阈值 10 m/s，会被 CheckPlanetCollision 首步误毁）。
@@ -1415,6 +1420,22 @@ namespace PioneerFramework
         }
 
         /// <summary>
+        /// 删除**导航状态机自己排的**队列节点（`PlanOwner.Navigation`），玩家手动节点不动。
+        /// 返回删除条数。2026-11-20：供行星际导航取消使用（"只删自己那条"）。
+        /// </summary>
+        public int RemoveNavigationManeuvers()
+        {
+            int removed = 0;
+            for (int i = plannedManeuvers.Count - 1; i >= 0; i--)
+            {
+                if (plannedManeuvers[i].owner != PlanOwner.Navigation) continue;
+                plannedManeuvers.RemoveAt(i);
+                removed++;
+            }
+            return removed;
+        }
+
+        /// <summary>
         /// 获取队列中第一个启用的机动（不判断是否到期；点火时机由执行循环按"燃烧居中"计算）。
         /// </summary>
         public PlannedManeuver? PeekNextManeuver()
@@ -1461,6 +1482,7 @@ namespace PioneerFramework
             {
                 var m = plannedManeuvers[i];
                 if (m.owner == PlanOwner.Manual) continue;      // 玩家的，不动
+                if (m.owner == PlanOwner.Navigation) continue;  // 导航状态机的，不动（2026-11-20：它不归阶梯管）
                 if (m.ladderEpoch >= ladderPlanEpoch) continue; // 本代或更新 ⇒ 保留
                 plannedManeuvers.RemoveAt(i);
                 removed++;
@@ -2588,6 +2610,9 @@ namespace PioneerFramework
                 torchPlan.RelativeSpeed = relSpeed;
             }
             Scribe_Values.Look(ref interplanetaryCaptureRetried, "iplRetried", false);
+            // 导航结束结果（2026-11-20，授权件 `后端变更授权-20261120-导航取消`）：0 = 没有结果 ⇒ 旧档无需迁移
+            Scribe_Values.Look(ref interplanetaryEndOutcome, "iplEndOutcome", 0);
+            Scribe_Values.Look(ref interplanetaryEndReason, "iplEndReason", string.Empty);
             Scribe_Values.Look(ref physicsBirthTick, "physicsBirthTick", -1.0);
             Scribe_Values.Look(ref physicsBirthSourceId, "physicsBirthSourceId", -1);
             DVector3.Scribe("physicsBirthOffsetShip", ref physicsBirthOffsetShip);
