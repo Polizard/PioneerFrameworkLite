@@ -274,7 +274,7 @@ namespace PioneerFramework.Launch
             DestroyGroundRocket(groundMap, center, rocketDef);
             TrySpawnLeavingSkyfaller(groundMap, center, rocketDef);
             TryTriggerLaunchFx(groundMap, center);
-            TryTriggerBoosterRecovery(groundMap, center, spec.rocketDefName);
+            // 2026-11-21：旧链退役，一级助推器回收线一并删除（用户裁定「回收线删掉」）。
 
             Log.Message($"[PioneerFramework] Launch initiated: entity={entityId}, group={groupId}, map={entity.MapId}, rocket={spec.rocketDefName}, body={site.BodyId}, TWR={thrustN / Math.Max(weightN, 1e-3):0.00}");
             Messages.Message("火箭已起飞，爬升段制导已开始。", MessageTypeDefOf.TaskCompletion, false);
@@ -351,32 +351,26 @@ namespace PioneerFramework.Launch
             if (map == null)
                 return;
 
-            Building? launchpad = map.thingGrid.ThingsListAt(center)
+            // 2026-11-21：旧链发射台（CompAssemblyPad）退役 ⇒ 工位判定改为「带火箭组装器 Comp 的建筑」。
+            Building? workstation = map.thingGrid.ThingsListAt(center)
                 .OfType<Building>()
-                .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
-            if (launchpad == null)
+                .FirstOrDefault(b => b.TryGetComp<CompRocketAssembler>() != null);
+            if (workstation == null)
                 return;
 
-            map.GetComponent<MapComponent_LaunchBlastFX>()?.ScheduleBlast(launchpad);
+            map.GetComponent<MapComponent_LaunchBlastFX>()?.ScheduleBlast(workstation);
         }
 
-        /// <summary>如果发射的是可回收火箭，则触发第一级助推器回收。</summary>
-        private static void TryTriggerBoosterRecovery(Map map, IntVec3 center, string rocketDefName)
+        /// <summary>2026-11-21：`LaunchPadUtility` 退役后内联的最小判定（带施工/发射 Comp 的 def 即视为火箭）。</summary>
+        private static bool LooksLikeRocket(ThingDef def)
         {
-            if (map == null || rocketDefName.NullOrEmpty())
-                return;
-
-            ThingDef rocketDef = DefDatabase<ThingDef>.GetNamedSilentFail(rocketDefName);
-            if (rocketDef == null || LaunchPadUtility.RocketRecoveryDefFor(rocketDef) == null)
-                return;
-
-            Building? launchpad = map.thingGrid.ThingsListAt(center)
-                .OfType<Building>()
-                .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
-            if (launchpad == null)
-                return;
-
-            RocketBoosterReturnUtility.TrySpawnReturnedBooster(launchpad, rocketDef);
+            if (def == null)
+                return false;
+            if (def.defName == "PF_Building_RocketFrame_Basic")
+                return true;
+            return def.comps != null && def.comps.Any(c =>
+                c is CompProperties_UnfinishedRocket || c is CompProperties_RocketBlueprint ||
+                c is CompProperties_Launchable_TransportPod);
         }
 
         /// <summary>移除地面上的火箭/调试火箭框架（发射后地面火箭消失，发射台保留）。</summary>
@@ -392,9 +386,7 @@ namespace PioneerFramework.Launch
                 if (t == null || t.Destroyed)
                     continue;
 
-                bool isTargetRocket = t.def == rocketDef
-                    || t.def.defName == "PF_Building_RocketFrame_Basic"
-                    || LaunchPadUtility.IsRocket(t.def);
+                bool isTargetRocket = t.def == rocketDef || LooksLikeRocket(t.def);
                 if (isTargetRocket)
                 {
                     t.Destroy(DestroyMode.Vanish);

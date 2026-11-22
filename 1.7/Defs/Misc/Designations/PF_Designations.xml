@@ -1,11 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  ⚠ 2026-11-21：回收后重建链已删除（PF_DesignateRebuildRocket），本文件内容已清空。
+  文件本身保留。原文备份：Source/已弃置/ChainA-20261121/defs/PF_Designations.xml
+-->
 <Defs>
-
-  <DesignationDef>
-    <defName>PF_DesignateRebuildRocket</defName>
-    <texturePath>UI/Commands/LaunchReport</texturePath>
-    <targetType>Thing</targetType>
-    <designateCancelable>false</designateCancelable>
-  </DesignationDef>
-
 </Defs>

@@ -286,15 +286,18 @@ namespace PioneerFramework.GroundAssembly
             if (parent.Faction != Faction.OfPlayer)
                 yield break;
 
-            // 航天器管理界面是发射台唯一管理入口；设计/施工/舱内/发射/取消等操作全部由窗口承接。
+            // 2026-11-21：旧链退役，`Window_SpacecraftManagement` 已删除。
+            // 本 comp 只作为**类型**保留（`CompRocketCompletionNotify` 等仍引用它），
+            // 不再提供任何玩家入口；发射统一走链 B（`PF_Building_RocketAssembler`）。
             yield return new Command_Action
             {
-                defaultLabel = "航天器管理",
-                defaultDesc = "打开统一航天器管理界面。",
+                defaultLabel = "航天器管理（已退役）",
+                defaultDesc = "旧发射台链路已退役，请使用火箭组装器。",
                 icon = TexCommand.DesirePower,
                 action = delegate
                 {
-                    Find.WindowStack.Add(new Window_SpacecraftManagement((Building)parent));
+                    Messages.Message("旧发射台链路已退役，请使用「火箭组装器」。",
+                        MessageTypeDefOf.RejectInput, false);
                 }
             };
         }

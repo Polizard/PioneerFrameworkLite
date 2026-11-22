@@ -66,22 +66,7 @@ namespace PioneerFramework.GroundAssembly
                 frame.CompleteConstruction(worker);
                 isCompleted = true;
                 Log.Message($"[PioneerFramework] Rocket frame completed: {Spec.rocketDefName}");
-
-                // 通知总装发射台：框架已变为已完工火箭。
-                ThingDef rocketDef = DefDatabase<ThingDef>.GetNamedSilentFail(Spec.rocketDefName);
-                Thing? built = null;
-                if (rocketDef != null && map != null)
-                {
-                    built = map.thingGrid.ThingsListAt(pos)
-                        .FirstOrDefault(t => !t.Destroyed && t.def == rocketDef);
-                }
-                if (built != null)
-                {
-                    Building? pad = built.Map?.thingGrid.ThingsListAt(pos)
-                        .OfType<Building>()
-                        .FirstOrDefault(b => LaunchPadUtility.IsAssemblyPad(b.def));
-                    pad?.TryGetComp<CompAssemblyPad>()?.NotifyRocketCompleted(built);
-                }
+                // 2026-11-21：旧链（发射台 CompAssemblyPad）退役，不再回写发射台状态。
                 return;
             }
 

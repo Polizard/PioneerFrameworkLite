@@ -42,8 +42,7 @@ namespace PioneerFramework
         [
             "PF_Building_Rocket_Basic",
             "PF_Building_Rocket_Recoverable_Basic",
-            "PF_Building_Rocket_CVOne",
-            "PF_Building_Rocket_CVThree",
+            // 2026-11-21：CVOne / CVThree 已随旧发射链退役（def 清空），不再断言。
         ];
 
         public static void Run()
@@ -145,8 +144,9 @@ namespace PioneerFramework
             foreach (Map m in Find.Maps)
             {
                 maps++;
-                if (m.GetComponent<MapComponent_LaunchBlastFX>() == null
-                    || m.GetComponent<MapComponent_RocketBoosterReturnScheduler>() == null)
+                // 2026-11-21：旧链退役，MapComponent_RocketBoosterReturnScheduler 已删除，
+                // A-1 只剩爆炸特效一个组件。
+                if (m.GetComponent<MapComponent_LaunchBlastFX>() == null)
                 {
                     missInject++;
                 }
@@ -161,7 +161,7 @@ namespace PioneerFramework
                 return;
             }
 
-            Check(missInject == 0, $"A-1：{maps} 张已载入地图都有爆炸特效 / 回收调度两个组件",
+            Check(missInject == 0, $"A-1：{maps} 张已载入地图都有爆炸特效组件",
                 missInject == 0 ? "全部在册（自动实例化生效）" : $"{missInject} 张缺失");
             Check(missWatcher == 0, $"A-8：{maps} 张已载入地图都有浮雕置脏 watcher",
                 missWatcher == 0 ? "全部在册（MapEvents 订阅生效）" : $"{missWatcher} 张缺失");
@@ -202,11 +202,7 @@ namespace PioneerFramework
                         : (hasOurWorker ? "多出我们的 worker（与 def 表不符）" : "无 placeWorkers（与 1.6/改造前一致）"));
             }
 
-            var pad = DefDatabase<ThingDef>.GetNamedSilentFail("PF_Building_Launchpad_Small");
-            bool padWorker = pad?.placeWorkers != null
-                && pad.placeWorkers.Any(t => t == typeof(PF_PlaceWorker_FuelingPort));
-            Check(pad != null && padWorker, "发射台｜A-6 燃料口 worker",
-                pad == null ? "def 缺失" : padWorker ? "PF_PlaceWorker_FuelingPort" : "缺失");
+            // 2026-11-21：旧发射台（PF_Building_Launchpad_Small）随旧链退役，A-6 燃料口 worker 断言删除。
 
             CheckSkyfaller("PF_Skyfaller_Incoming_Basic", typeof(PF_Skyfaller_Incoming));
             CheckSkyfaller("PF_Skyfaller_Leaving_Basic", typeof(PF_Skyfaller_Leaving));
