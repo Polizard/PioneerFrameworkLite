@@ -214,9 +214,9 @@ internal sealed partial class WorldCelestialNavigation
     private void PickRegion(WorldCelestialBody body, Vector3 point)
     {
         var layer = NativeLayer(body);
-        if (body.Id != target || Zoom < NativeReturnZoom || layer == null || !TryTerrainMatrix(layer, out var transform))
+        if (body.Id != target || Zoom < NativeReturnZoom || layer == null || !UsesNativeTerrain(layer))
             return;
-        Vector3 direction = (transform.inverse.MultiplyPoint3x4(point) - layer.Origin).normalized;
+        Vector3 direction = (point - layer.Origin).normalized;
         float best = float.NegativeInfinity;
         for (int tile = 0; tile < layer.TilesCount; tile++)
         {

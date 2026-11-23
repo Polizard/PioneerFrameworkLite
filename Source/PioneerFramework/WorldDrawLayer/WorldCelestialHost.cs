@@ -30,7 +30,10 @@ internal static class WorldCelestialHost
             Patch(typeof(WorldCameraDriver), nameof(WorldCameraDriver.WorldCameraDriverOnGUI), nameof(CameraGui));
             Patch(typeof(WorldInterface), nameof(WorldInterface.WorldInterfaceOnGUI), nameof(BeforeWorldGui), nameof(AfterWorldGui));
             Patch(typeof(WorldSelector), nameof(WorldSelector.WorldSelectorOnGUI), nameof(SelectorInput));
-            Patch(typeof(WorldDrawLayerBase), nameof(WorldDrawLayerBase.Render), nameof(BeforeLayerDraw), transpiler: nameof(ReplaceTerrainDraw));
+            Patch(typeof(WorldDrawLayerBase), nameof(WorldDrawLayerBase.Render), nameof(BeforeLayerDraw));
+            foreach (var type in new[] { typeof(WorldDrawLayer_Rivers), typeof(WorldDrawLayer_Roads) })
+                harmony.Patch(AccessTools.PropertyGetter(type, nameof(WorldDrawLayer.VisibleWhenLayerNotSelected)),
+                    postfix: Hook(nameof(ShowFocusedTerrainDetail)));
             Patch(typeof(WorldDynamicDrawManager), nameof(WorldDynamicDrawManager.DrawDynamicWorldObjects), nameof(NativeOverlays));
             Patch(typeof(WorldFeatures), nameof(WorldFeatures.UpdateFeatures), transpiler: nameof(FilterWorldFeatureLabels));
             Patch(typeof(WorldSelectionDrawer), nameof(WorldSelectionDrawer.DrawSelectionOverlays), nameof(NativeOverlays));
@@ -102,6 +105,29 @@ internal static class WorldCelestialHost
 
     private static bool CameraUpdate(WorldCameraDriver __instance)
     {
+        // 2026-11-23 事故（回主菜单刷屏 5955 条 / 67 s，实测日志）：原版 Update 在
+        // `Find.World == null` 分支里会执行 `MyCamera.gameObject.SetActive(false)`，而本构建
+        // （Waylith 托管引擎）换局后该相机组件已取不到 ⇒ 每帧 NullReferenceException。
+        // 原版这一分支的唯一作用就是关掉世界相机；这里直接替它做掉并跳过原方法
+        // （世界相机是 DontDestroyOnLoad，不关掉的话它会一直留在菜单里被泵 Update）。
+        // 恢复由原版 World.WorldUpdate → WorldRenderer.CheckActivateWorldCamera 负责，
+        // 所以新局/切回世界视图时会自动重新激活，不需要我们记忆状态。
+        var world = Find.World;
+        if (world == null)
+        {
+            WorldNativeCamera.Reset();
+            DeactivateWorldCamera(__instance);
+            return false;
+        }
+        // 换局不是原子操作：`MemoryUtility.ClearAllMapsAndWorld` 会把 World 的字段（含 UI）
+        // 逐个置空，而 `Current.Game` 要稍后才清掉。那几帧里 `Find.World` 还在、
+        // `Find.WorldInterface` 已是 null，原版紧接着的 `Find.WorldInterface.everReset`
+        // 同样会 NRE（旧日志里 67 s 不停刷的就是这一种窗口）。等两者重新一致再放行。
+        if (world.renderer == null || Find.WorldInterface == null)
+        {
+            WorldNativeCamera.Reset();
+            return false;
+        }
         if (Active)
         {
             WorldNativeCamera.Reset();
@@ -109,6 +135,25 @@ internal static class WorldCelestialHost
         }
         WorldNativeCamera.BeginUpdate(__instance);
         return true;
+    }
+
+    /// <summary>按原版菜单分支的语义把世界相机关掉；失败只记一次，绝不让补丁自己抛异常。</summary>
+    private static void DeactivateWorldCamera(WorldCameraDriver driver)
+    {
+        try
+        {
+            // 只有"相机组件真的没了"才报一次（正常无局状态不刷日志）：这条是上面 NRE 的
+            // 直接判据，下次复现时日志里能一眼看出是哪种形态。
+            if (driver.GetComponent<Camera>() == null)
+                Log.WarningOnce("[PFL World Celestial] 无局时世界相机的 Camera 组件已不存在（原版 Update 会在此 NRE）；"
+                    + "已按原版菜单语义关闭其 GameObject，进入新局/世界视图后由 WorldRenderer.CheckActivateWorldCamera 重新激活。",
+                    0x5E11D1);
+            if (driver.gameObject.activeSelf) driver.gameObject.SetActive(false);
+        }
+        catch (Exception ex)
+        {
+            Log.WarningOnce("[PFL World Celestial] 无局时关闭世界相机失败：" + ex, 0x5E11D0);
+        }
     }
     private static bool NativeOverlays() => !Active;
 
@@ -278,46 +323,8 @@ internal static class WorldCelestialHost
     private static bool BeforeLayerDraw(WorldDrawLayerBase __instance) => !Active ||
         (__instance is not WorldDrawLayer || Navigation!.DrawNativeLayer(__instance));
 
-    private static readonly MethodInfo PlainDraw = AccessTools.Method(typeof(Graphics), nameof(Graphics.DrawMesh),
-        new[] { typeof(Mesh), typeof(Vector3), typeof(Quaternion), typeof(Material), typeof(int) });
-    private static readonly MethodInfo BlockDraw = AccessTools.Method(typeof(Graphics), nameof(Graphics.DrawMesh),
-        new[] { typeof(Mesh), typeof(Vector3), typeof(Quaternion), typeof(Material), typeof(int),
-            typeof(Camera), typeof(int), typeof(MaterialPropertyBlock) });
-
-    private static IEnumerable<CodeInstruction> ReplaceTerrainDraw(IEnumerable<CodeInstruction> instructions)
+    private static void ShowFocusedTerrainDetail(WorldDrawLayer __instance, ref bool __result)
     {
-        int replaced = 0;
-        foreach (var instruction in instructions)
-        {
-            string? method = instruction.Calls(PlainDraw) ? nameof(DrawPlain) :
-                instruction.Calls(BlockDraw) ? nameof(DrawWithBlock) : null;
-            if (method == null)
-            {
-                yield return instruction;
-                continue;
-            }
-            yield return new CodeInstruction(OpCodes.Ldarg_0).MoveLabelsFrom(instruction).MoveBlocksFrom(instruction);
-            yield return new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(WorldCelestialHost), method));
-            replaced++;
-        }
-        if (replaced != 2) throw new InvalidOperationException("WorldDrawLayerBase.Render mesh calls changed.");
-    }
-
-    private static void DrawPlain(Mesh mesh, Vector3 pos, Quaternion rotation, Material material, int layer,
-        WorldDrawLayerBase source)
-    {
-        if (Active && source is WorldDrawLayer terrain && Navigation!.TryTerrainMatrix(terrain.planetLayer, out var matrix))
-            Graphics.DrawMesh(mesh, matrix * Matrix4x4.TRS(pos, rotation, Vector3.one), material, layer);
-        else
-            Graphics.DrawMesh(mesh, pos, rotation, material, layer);
-    }
-
-    private static void DrawWithBlock(Mesh mesh, Vector3 pos, Quaternion rotation, Material material, int layer,
-        Camera camera, int submesh, MaterialPropertyBlock block, WorldDrawLayerBase source)
-    {
-        if (Active && source is WorldDrawLayer terrain && Navigation!.TryTerrainMatrix(terrain.planetLayer, out var matrix))
-            Graphics.DrawMesh(mesh, matrix * Matrix4x4.TRS(pos, rotation, Vector3.one), material, layer, camera, submesh, block);
-        else
-            Graphics.DrawMesh(mesh, pos, rotation, material, layer, camera, submesh, block);
+        if (Active && Navigation!.ShowFocusedLayer(__instance.planetLayer)) __result = true;
     }
 }

@@ -254,7 +254,8 @@ namespace PioneerFramework
                 //     而不是把补丁抬高（上一批抬到 30 km，低飞相机于是跑到了补丁底下、朝下只看到基底球 = 那次的病根）。
                 // 没有烘焙补丁时，实时逐格表面顶上：基底球同样要下沉。
                 // 深度余量只能靠"基底球下沉"买（抬高表面会把低飞相机关到面下，2026-10-11 的事故）。
-                bool hasTileSurface = !hasPatch && HasPlanetTileSurface(body.bodyId, bodyLayer, bodyLayer?.TilesCount ?? 0);
+                bool hasTileSurface = !hasPatch && HasPlanetTileSurface(body.bodyId, bodyLayer,
+                    renderPos, renderR, camDistToRender);
                 // 几何起伏可下探到 0.97R ⇒ 基底球必须沉得比"补丁时代"的 0.8% 更深，否则低洼顶点会从基底球里穿出来。
                 float baseSink = hasTileSurface && TileSurfaceReliefActive(body.bodyId) ? 0.09f : PFViewSurfaceBake.BaseSinkFactor;
                 float baseRenderR = (hasPatch || hasTileSurface) ? renderR * (1f - baseSink) : renderR;
@@ -286,7 +287,7 @@ namespace PioneerFramework
 
                 // 实时逐格表面：只在没有烘焙补丁时画（有补丁时补丁带河/路/山体细节，更细）。
                 if (hasTileSurface)
-                    DrawPlanetTileSurface(body.bodyId, bodyLayer, renderPos, renderR, selfRot, camPos, toSun, sunColor);
+                    DrawPlanetTileSurface(body.bodyId, renderPos, renderR, selfRot, toSun, sunColor);
                 if (bodyLayer != null)
                     DrawTilePickHighlight(body, bodyLayer, renderPos, renderR, selfRot);
 

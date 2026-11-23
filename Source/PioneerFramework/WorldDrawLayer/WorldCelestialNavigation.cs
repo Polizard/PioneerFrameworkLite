@@ -30,6 +30,7 @@ internal sealed partial class WorldCelestialNavigation
     private readonly Quaternion originalSphereRotation;
     private WorldCelestialSnapshot snapshot;
     private WorldCelestialFrame frame;
+    private (CelestialInstanceId Body, PlanetLayer Layer, double Zoom)? nativeSurface;
     private CelestialInstanceId target;
     private CelestialInstanceId localRoot;
     private CelestialInstanceId? selection;
@@ -160,7 +161,7 @@ internal sealed partial class WorldCelestialNavigation
 
         UpdateVisibility(t);
         ApplyCamera();
-        BakeVisibleSurface();
+        PrepareVisibleSurfacePreview();
         return true;
     }
 
@@ -169,12 +170,24 @@ internal sealed partial class WorldCelestialNavigation
         double nativeScale = entryLayer.Radius / snapshot.Bodies[entryBody].Radius;
         double scale = Math.Min(nativeScale, MaxViewDistance / distance);
         frame = new(Aim, (DVector3)entryLayer.Origin, FrameRotation, scale);
-        camera.transform.rotation = rotation;
-        camera.transform.position = entryLayer.Origin - camera.transform.forward * (float)(distance * scale);
+        var cameraPosition = frame.ToPhysics(frame.ViewAnchor + (DVector3)(rotation * Vector3.back) * (distance * scale));
+        nativeSurface = SelectNativeSurface(cameraPosition);
+        Quaternion viewRotation = rotation;
+        if (nativeSurface is { } native)
+        {
+            // Keep native world shaders in their original coordinate system, including their world-space UVs.
+            var navigationRotation = frame.Rotation;
+            var body = snapshot.Bodies[native.Body];
+            frame = frame.ForNativeSurface(body.Position, body.Motion.Orientation, (DVector3)native.Layer.Origin,
+                native.Layer.Radius / body.Radius);
+            viewRotation = (Quaternion)(frame.Rotation * DQuaternion.Inverse(navigationRotation)) * rotation;
+        }
+        camera.transform.rotation = viewRotation;
+        camera.transform.position = (Vector3)frame.ToView(cameraPosition);
         double far = 0;
         foreach (var body in RenderedBodies())
-            far = Math.Max(far, (frame.ToView(body.Position) - (DVector3)camera.transform.position).magnitude + body.Radius * scale);
-        camera.nearClipPlane = Mathf.Clamp((float)(distance * scale * .001), .01f, originalNear);
+            far = Math.Max(far, (frame.ToView(body.Position) - (DVector3)camera.transform.position).magnitude + body.Radius * frame.Scale);
+        camera.nearClipPlane = Mathf.Clamp((float)(distance * frame.Scale * .001), .01f, originalNear);
         camera.farClipPlane = Mathf.Max(originalFar, (float)Math.Min(1e8, far * 1.15 + 50));
     }
 
@@ -221,6 +234,7 @@ internal sealed partial class WorldCelestialNavigation
         foreach (var body in snapshot.Bodies.Values)
         {
             float targetVisibility = wanted.Contains(body.Id) ? 1 : 0;
+            if (targetVisibility == 0 && nativeSurface?.Body == body.Id) continue;
             float value = Mathf.Lerp(visibility.GetValueOrDefault(body.Id), targetVisibility, amount);
             if (value < .015f && targetVisibility == 0) visibility.Remove(body.Id);
             else visibility[body.Id] = value > .999f ? 1 : value;

@@ -8155,6 +8155,7 @@ namespace PioneerFramework
             base.LoadedGame();
             SpacecraftMapRegistry.Reconcile();
             RestorePhysicsClockAnchor();
+            LongEventHandler.ExecuteWhenFinished(MainTabWindow_PFView.PrewarmStellarPipelines);
         }
 
         public override void StartedNewGame()
@@ -8162,6 +8163,7 @@ namespace PioneerFramework
             base.StartedNewGame();
             SpacecraftMapRegistry.Reconcile();
             RestorePhysicsClockAnchor();
+            LongEventHandler.ExecuteWhenFinished(MainTabWindow_PFView.PrewarmStellarPipelines);
         }
 
         /// <summary>

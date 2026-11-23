@@ -10,6 +10,37 @@ namespace PioneerFramework.Tests;
 public sealed class WorldCelestialFrameTests
 {
     [Fact]
+    public void PreviewFadesOnlyWhenNativeTerrainCanCoverIt()
+    {
+        Assert.Equal(1f, WorldCelestialNavigation.SurfacePreviewOpacity(.07, true));
+        Assert.InRange(WorldCelestialNavigation.SurfacePreviewOpacity(.115, true), .49f, .51f);
+        Assert.Equal(0f, WorldCelestialNavigation.SurfacePreviewOpacity(.16, true));
+        Assert.Equal(1f, WorldCelestialNavigation.SurfacePreviewOpacity(.20, false));
+    }
+
+    [Fact]
+    public void NativeSurfaceFramePreservesCameraRelativePositionAndAlignsTheNativeMesh()
+    {
+        var body = new DVector3(5010, -3020, 1030);
+        var layerOrigin = new DVector3(8, 600, 12);
+        var bodyOrientation = DQuaternion.AngleAxis(.8, new DVector3(1, 2, 3));
+        var cameraOrientation = DQuaternion.AngleAxis(.3, DVector3.right);
+        var navigation = new WorldCelestialFrame(body + DVector3.right * 80, DVector3.one,
+            DQuaternion.AngleAxis(.4, DVector3.up), .25);
+        var native = navigation.ForNativeSurface(body, bodyOrientation, layerOrigin, .5);
+        var point = body + DVector3.Rotate(DVector3.forward * 100, bodyOrientation);
+        Assert.True((native.ToView(point) - (layerOrigin + DVector3.forward * 50)).magnitude < 1e-9);
+
+        var cameraFromAim = DVector3.Rotate(DVector3.back * 400, cameraOrientation);
+        var nativeRotation = native.Rotation * DQuaternion.Inverse(navigation.Rotation) * cameraOrientation;
+        var nativeCamera = native.ToView(navigation.PhysicsAnchor) + DVector3.Rotate(DVector3.back * 800, nativeRotation);
+        var oldView = DVector3.Rotate(navigation.ToView(point) - navigation.ViewAnchor - cameraFromAim,
+            DQuaternion.Inverse(cameraOrientation));
+        var newView = DVector3.Rotate(native.ToView(point) - nativeCamera, DQuaternion.Inverse(nativeRotation));
+        Assert.True((newView / native.Scale - oldView / navigation.Scale).magnitude < 1e-9);
+    }
+
+    [Fact]
     public void NonzeroStarAndTranslatedSystemGiveIdenticalDrawAndPickCoordinates()
     {
         var shift = new DVector3(1e12, -2e12, 3e12);

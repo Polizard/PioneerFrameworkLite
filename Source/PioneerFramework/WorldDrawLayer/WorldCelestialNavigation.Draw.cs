@@ -35,29 +35,47 @@ internal sealed partial class WorldCelestialNavigation
         return Math.Max(body.Radius * frame.Scale, floor);
     }
 
-    internal bool DrawNativeLayer(WorldDrawLayerBase layer) =>
-        layer is WorldDrawLayer_Terrain terrain && TryTerrainMatrix(terrain.planetLayer, out _);
+    private const double NativeTerrainStart = .07;
+    private const double NativeTerrainFull = .16;
 
-    internal bool ShowFocusedLayer(PlanetLayer layer) =>
-        !system && target != entryBody && (Zoom >= .12 || returnLayer == layer) && NativeLayer(Target) == layer;
-
-    internal bool TryTerrainMatrix(PlanetLayer layer, out Matrix4x4 transform)
+    private (CelestialInstanceId Body, PlanetLayer Layer, double Zoom)? SelectNativeSurface(DVector3 cameraPosition)
     {
-        transform = Matrix4x4.identity;
-        if (layer == null) return false;
-        var body = layer == entryLayer ? snapshot.Bodies[entryBody] : Target;
-        if ((body.Id != entryBody && (system || Zoom < .12) && returnLayer != layer) ||
-            NativeLayer(body) != layer || !layer.Visible || layer.TilesCount == 0 ||
-            visibility.GetValueOrDefault(body.Id) < .26 ||
-            (returnLayer != layer && body.Radius / (frame.ToView(body.Position) -
-                (DVector3)camera.transform.position).magnitude * frame.Scale < .025))
-            return false;
-        float scale = (float)(body.Radius * frame.Scale / layer.Radius);
-        transform = Matrix4x4.TRS((Vector3)frame.ToView(body.Position),
-            (Quaternion)(frame.Rotation * body.Motion.Orientation), Vector3.one * scale) *
-            Matrix4x4.Translate(-layer.Origin);
-        return true;
+        if (returnLayer is { } returning)
+            return (target, returning, Target.Radius / (Target.Position - cameraPosition).magnitude);
+
+        // Hold the outgoing planet or moon while its apparent size finishes the reverse fade.
+        if (!system && NativeSurfaceAt(target, cameraPosition) is { } incoming) return incoming;
+        return nativeSurface is { } previous && (system || previous.Body != target)
+            ? NativeSurfaceAt(previous.Body, cameraPosition) : null;
     }
+
+    private (CelestialInstanceId Body, PlanetLayer Layer, double Zoom)? NativeSurfaceAt(CelestialInstanceId id,
+        DVector3 cameraPosition)
+    {
+        if (!snapshot.Bodies.TryGetValue(id, out var body) || visibility.GetValueOrDefault(id) < .99f)
+            return null;
+        double zoom = body.Radius / (body.Position - cameraPosition).magnitude;
+        if (zoom < NativeTerrainStart || NativeLayer(body) is not { } layer || layer.TilesCount == 0 ||
+            !layer.Def.worldDrawLayers.Any(typeof(WorldDrawLayer_Terrain).IsAssignableFrom))
+            return null;
+        return (id, layer, zoom);
+    }
+
+    internal static float SurfacePreviewOpacity(double zoom, bool nativeTerrain)
+    {
+        if (!nativeTerrain) return 1f;
+        double blend = Math.Clamp((zoom - NativeTerrainStart) / (NativeTerrainFull - NativeTerrainStart), 0, 1);
+        return (float)(1 - blend * blend * (3 - 2 * blend));
+    }
+
+    internal bool DrawNativeLayer(WorldDrawLayerBase layer) => layer is WorldDrawLayer worldLayer &&
+        layer is (WorldDrawLayer_Terrain or WorldDrawLayer_UngeneratedPlanetParts or WorldDrawLayer_MoonUngeneratedPlanetParts
+            or WorldDrawLayer_Hills or WorldDrawLayer_Rivers or WorldDrawLayer_Roads) &&
+        UsesNativeTerrain(worldLayer.planetLayer);
+
+    internal bool ShowFocusedLayer(PlanetLayer layer) => ReferenceEquals(nativeSurface?.Layer, layer);
+
+    private bool UsesNativeTerrain(PlanetLayer layer) => ShowFocusedLayer(layer) && layer.Visible && layer.TilesCount > 0;
 
     internal void Draw()
     {
@@ -76,19 +94,31 @@ internal sealed partial class WorldCelestialNavigation
             if (body.Id == star.Id && DrawStellarVisual(center, radius, orientation)) continue;
 
             var layer = NativeLayer(body);
-            bool nativeTerrain = layer != null && TryTerrainMatrix(layer, out _);
-            var sun = (Vector3)DVector3.Rotate((star.Position - body.Position).normalized, frame.Rotation);
+            bool nativeTerrain = body.Id == nativeSurface?.Body && layer != null && UsesNativeTerrain(layer);
+            bool dayNight = layer == null || !layer.IsRootSurface || Find.PlaySettings.usePlanetDayNightSystem;
+            var toSun = (star.Position - body.Position).normalized;
+            var fixedSun = dayNight ? DVector3.Rotate(toSun, DQuaternion.Inverse(body.Motion.Orientation)) : DVector3.zero;
+            if (nativeTerrain)
+            {
+                // The original terrain samples the global propagation direction in the native render frame.
+                Shader.SetGlobalVector(ShaderPropertyIDs.PlanetSunLightDirection, (Vector3)(-fixedSun));
+                Shader.SetGlobalFloat(ShaderPropertyIDs.PlanetSunLightEnabled, dayNight ? 1f : 0f);
+                radius = (float)(body.Radius * frame.Scale);
+            }
+            if (layer != null && layer.TilesCount > 0 &&
+                DrawSurfacePreview(sphere, body, layer, center, radius, orientation, (Vector3)fixedSun, nativeTerrain)) continue;
+
+            var sun = body.Member.Profile?.Appearance?.Style == CelestialSurfaceStyle.GasBands
+                ? (Vector3)DVector3.Rotate(toSun, frame.Rotation) : (Vector3)fixedSun;
             var light = new Vector4(sun.x, sun.y, sun.z, 0);
             var material = SphereMaterial(body.Member);
             material.SetVector("_SunDir", light);
             var transform = Matrix4x4.TRS(center, orientation, Vector3.one * (2 * radius));
-            bool bakedTerrain = !nativeTerrain && TryDrawBakedSurface(body, layer, transform, center, radius, light);
-            float sink = bakedTerrain ? PFViewSurfaceBake.BaseSinkFactor : nativeTerrain ? .005f : 0f;
+            float sink = nativeTerrain ? .005f : 0f;
             Graphics.DrawMesh(sphere, transform * Matrix4x4.Scale(Vector3.one * (1 - sink)),
                 material, WorldCameraManager.WorldLayer);
         }
-        if (selectedRegion.Valid && TryTerrainMatrix(selectedRegion.Layer, out var matrix))
-            DrawRegion(matrix);
+        if (selectedRegion.Valid && UsesNativeTerrain(selectedRegion.Layer)) DrawRegion();
         if (triangles.Count == 0) return;
         lines ??= new Mesh { name = "PF_WorldCelestialTrails" };
         lines.Clear();
@@ -159,13 +189,13 @@ internal sealed partial class WorldCelestialNavigation
         }
     }
 
-    private void DrawRegion(Matrix4x4 matrix)
+    private void DrawRegion()
     {
         var polygon = new List<Vector3>(6);
         var layer = selectedRegion.Layer;
         layer.GetTileVertices(selectedRegion, polygon);
         if (polygon.Count == 0) return;
-        Vector3 Point(Vector3 vertex) => matrix.MultiplyPoint3x4(layer.Origin + vertex * 1.008f);
+        Vector3 Point(Vector3 vertex) => layer.Origin + vertex * 1.008f;
         Vector3 previous = Point(polygon[^1]);
         foreach (var vertex in polygon)
         {

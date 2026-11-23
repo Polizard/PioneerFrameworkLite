@@ -99,8 +99,8 @@ public class CelestialViewAdapterTests
             Assert.Same(layer, Launch.GetSurfaceState.GetLayerForBody(manager, handle));
             Assert.Equal(handle, Launch.GetSurfaceState.GetBodyForLayer(manager, layer));
             int otherHandle = runtime.Query(owners[1 - i]).Value.Description.Handle;
-            Assert.False(PFViewSurfaceBake.TryLoadSaved(1, otherHandle, layer, out string message));
-            Assert.Equal("SurfaceIdentityMismatch", message);
+            Assert.False(PFViewSurfaceBake.EnsureReady(otherHandle, layer));
+            Assert.False(PFViewSurfaceBake.IsSidecarPending(otherHandle));
         }
     }
     internal sealed class Fixture

@@ -129,6 +129,7 @@ namespace PioneerFramework
             if (patchMeshes.TryGetValue(body.bodyId, out var cachedMesh) && cachedMesh != null
                 && patchMaterials.TryGetValue(body.bodyId, out var cachedMat) && cachedMat != null)
             {
+                PFViewSurfaceBake.MarkInUse(body.bodyId);
                 mesh = cachedMesh;
                 mat = cachedMat;
                 return true;
@@ -306,9 +307,7 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 销毁表面层的运行时资源（基底球材质 + 补丁材质/网格），并**把补丁图从显存里放掉**
-        /// （能重新读回来的才放：`PFViewSurfaceBake.UnloadReloadable` —— 收起 PFView 就不该扣着 12 MiB/天体）。
-        /// 缓存下次取用时按所属天体的烘焙修订自动重建；补丁图按需从旁挂 PNG 重新加载。
+        /// 释放窗口的基底球、补丁和地块绘制资源。补丁贴图由两个视图共用，交由地表缓存回收。
         /// </summary>
         private void DestroySurfaceResources()
         {
@@ -324,7 +323,6 @@ namespace PioneerFramework
             DestroySurfacePatch();
             DestroyAllTileSurfaces();
             DestroyTilePickVisual();
-            PFViewSurfaceBake.UnloadReloadable();
         }
 
         private void DestroySurfacePatch()
