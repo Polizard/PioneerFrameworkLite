@@ -256,7 +256,7 @@ public class PFViewInstanceCacheTests
         Assert.False(Cache(window, "patchMaterials").Contains(a));
         Assert.True(Cache(window, "patchMaterials").Contains(b));
         Assert.Contains(a, BakeSet("loadTried"));
-        PFViewSurfaceBake.UnloadReloadable();
+        PFViewSurfaceBake.TrimUnused(System.Diagnostics.Stopwatch.GetTimestamp() + 31L * System.Diagnostics.Stopwatch.Frequency);
         Assert.False(BakeCache("baked").Contains(a));
         Assert.DoesNotContain(a, BakeSet("loadTried"));
         Assert.True(BakeCache("baked").Contains(b));
@@ -286,6 +286,119 @@ public class PFViewInstanceCacheTests
         Refresh(window, fallback);
         foreach (string cache in BodyCaches) Assert.Empty(Cache(window, cache));
         Assert.Empty(Cache(window, "celestialCloudMaterials"));
+    }
+
+    [Fact]
+    public void ClosingPfViewReleasesItsMaterialsAndRetainsTheSharedSurfaceTexture()
+    {
+        using var native = new CelestialNativeWorldTestScope();
+        PFViewSurfaceBake.Clear();
+        const int handle = 19;
+        string path = System.IO.Path.GetTempFileName();
+        try
+        {
+            PublishPatch(handle, path);
+            int revision = PFViewSurfaceBake.GetRevision(handle);
+            var window = Window();
+            Cache(window, "patchMaterials")[handle] = null;
+            Invoke(window, "CleanupResources");
+            Assert.Empty(Cache(window, "patchMaterials"));
+            Assert.True(BakeCache("baked").Contains(handle));
+            Assert.Equal(revision, PFViewSurfaceBake.GetRevision(handle));
+        }
+        finally
+        {
+            PFViewSurfaceBake.Clear();
+            System.IO.File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void MissingSurfaceSidecarIsResolvedByTheBackgroundQueueOnlyOnce()
+    {
+        using var native = new CelestialNativeWorldTestScope();
+        const int handle = 34129;
+        PFViewSurfaceBake.Clear();
+        try
+        {
+            Assert.False(PFViewSurfaceBake.EnsureReady(handle, null));
+            Assert.True(PFViewSurfaceBake.IsSidecarPending(handle));
+            Assert.True(System.Threading.SpinWait.SpinUntil(() =>
+            {
+                PFViewSurfaceBake.Update();
+                return !PFViewSurfaceBake.IsSidecarPending(handle);
+            }, TimeSpan.FromSeconds(5)));
+            Assert.False(PFViewSurfaceBake.EnsureReady(handle, null));
+            Assert.False(PFViewSurfaceBake.IsSidecarPending(handle));
+        }
+        finally
+        {
+            PFViewSurfaceBake.Clear();
+        }
+    }
+
+    [Fact]
+    public void SidecarDecodeRetainsTopDownRgbaAndBuildsTheMipChain()
+    {
+        // Red, green on the top row, blue, yellow on the bottom row.
+        const string png = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAHUlEQVR4AQESAO3/AP8AAP8A/wD/AAAA/////wD/R8oI+COQcloAAAAASUVORK5CYII=";
+        string path = System.IO.Path.GetTempFileName();
+        try
+        {
+            System.IO.File.WriteAllBytes(path, Convert.FromBase64String(png));
+            var decoded = typeof(PFViewSurfaceBake).GetMethod("DecodeSidecar", Flags)!.Invoke(null, new object[] { path });
+            Assert.NotNull(decoded);
+            var levels = (byte[][])decoded.GetType().GetProperty("Levels")!.GetValue(decoded)!;
+            Assert.Equal(2, levels.Length);
+            Assert.Equal(new byte[] { 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255 }, levels[0]);
+            Assert.Equal(4, levels[1].Length);
+        }
+        finally
+        {
+            System.IO.File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void PlanetTileSurfaceYieldsToTheFrameSchedulerAfterEachChunk()
+    {
+        using var fixture = new CelestialMapIdentityTests.Fixture();
+        _ = Window();
+        var type = typeof(MainTabWindow_PFView).GetNestedType("TileSurfaceBuild", Flags)!;
+        var build = Activator.CreateInstance(type)!;
+        type.GetField("phase", Flags)!.SetValue(build, 4);
+        type.GetField("chunkPlans", Flags)!.SetValue(build, new List<int[]> { Array.Empty<int>(), Array.Empty<int>() });
+        var buildChunk = typeof(MainTabWindow_PFView).GetMethod("BuildTileSurfaceChunks", Flags)!;
+        var cursor = type.GetField("chunkCursor", Flags)!;
+
+        buildChunk.Invoke(null, new[] { build, fixture.Root });
+        Assert.Equal(1, cursor.GetValue(build));
+        Assert.Equal(4, type.GetField("phase", Flags)!.GetValue(build));
+
+        buildChunk.Invoke(null, new[] { build, fixture.Root });
+        Assert.Equal(2, cursor.GetValue(build));
+        Assert.Equal(5, type.GetField("phase", Flags)!.GetValue(build));
+    }
+
+    [Fact]
+    public void WorldPreviewRequestReturnsBeforeRenderingAndCancelsOnSurfaceInvalidation()
+    {
+        using var fixture = new CelestialMapIdentityTests.Fixture();
+        var root = fixture.Root;
+        int handle = fixture.Scope.Runtime.Query(root.Header.OwnerId).Value.Description.Handle;
+        PFViewSurfaceBake.Clear();
+        try
+        {
+            PFViewSurfaceBake.PrepareWorldPreview(handle, root);
+            Assert.True(PFViewSurfaceBake.IsWorldPreviewPending(handle, root));
+            Assert.False(PFViewSurfaceBake.TryGetWorldPreview(handle, root, out _));
+            PFViewSurfaceBake.ForgetMemory(handle, root.LayerID);
+            Assert.False(PFViewSurfaceBake.IsWorldPreviewPending(handle, root));
+        }
+        finally
+        {
+            PFViewSurfaceBake.Clear();
+        }
     }
 
     [Fact]
@@ -367,8 +480,8 @@ public class PFViewInstanceCacheTests
         AssertCall(typeof(MainTabWindow_PFView), "TryGetSurfacePatch", "RefreshSurfacePatch");
         AssertCall(typeof(MainTabWindow_PFView), "RefreshSurfacePatch", "GetRevision");
         AssertCall(typeof(PFViewSurfaceBake), "TryBake", "StorePatch");
-        AssertCall(typeof(PFViewSurfaceBake), "TryLoadSaved", "StorePatch");
-        AssertCall(typeof(PFViewSurfaceBake), "EnsureReady", "TryLoadSaved");
+        AssertCall(typeof(PFViewSurfaceBake), "CompleteSidecar", "StorePatch");
+        AssertCall(typeof(PFViewSurfaceBake), "Update", "CompleteSidecar");
         AssertCall(typeof(PFViewSurfaceBake), "StorePatch", "Touch");
         AssertCall(typeof(MainTabWindow_PFView), "DrawCloudLayer", "GetCelestialCloudMaterial");
         AssertCall(typeof(MainTabWindow_PFView), "GetBaseSphereMaterial", "get_baseSphereColor");

@@ -105,9 +105,18 @@ namespace PioneerFramework
         private readonly Celestial.FrameBudgetScheduler tileSurfaceScheduler = new(TileSurfaceBudgetMs);
 
         /// <summary>该天体是否有可铺的实时表面（会顺手创建构建状态；不保证已建好）。</summary>
-        private bool HasPlanetTileSurface(int bodyId, PlanetLayer? layer, int tilesCount)
+        private bool HasPlanetTileSurface(int bodyId, PlanetLayer? layer, Vector3 position, float radius, float distance)
         {
-            if (layer == null || tilesCount <= 0 || tilesCount > TileSurfaceMaxTiles) return false;
+            if (layer == null || renderCamera == null) return false;
+            int tilesCount = layer.TilesCount;
+            if (tilesCount <= 0 || tilesCount > TileSurfaceMaxTiles) return false;
+            if (PFViewSurfaceBake.IsSidecarPending(bodyId)) return false;
+            // Apply the draw-distance cutoff before enqueuing any mesh work.
+            float tileSizeView = layer.AverageTileSize * (float)(SpaceConstants.MetersPerUnit * MetersToView);
+            float pixels = Celestial.SurfaceLodCore.TileScreenPixels(tileSizeView, Mathf.Max(distance - radius, 1f),
+                renderCamera.pixelHeight, renderCamera.fieldOfView);
+            if (pixels < TileSurfaceMinPixels || !SphereInFrustum(position, radius * (1f + (float)ReliefClamp))) return false;
+
             bool hasVerts;
             try { hasVerts = layer.UnsafeVerts != null && layer.UnsafeVerts.Length > 0; }
             catch (Exception ex)
@@ -269,13 +278,14 @@ namespace PioneerFramework
 
         private static void BuildTileSurfaceChunks(TileSurfaceBuild build, PlanetLayer layer)
         {
-            while (build.chunkCursor < build.chunkPlans!.Count)
+            var plans = build.chunkPlans!;
+            if (build.chunkCursor < plans.Count)
             {
-                var chunk = BuildTileSurfaceChunk(build, layer, build.chunkPlans[build.chunkCursor]);
+                var chunk = BuildTileSurfaceChunk(build, layer, plans[build.chunkCursor]);
                 if (chunk != null) build.chunks.Add(chunk);
                 build.chunkCursor++;
             }
-            build.phase = 5;
+            if (build.chunkCursor == plans.Count) build.phase = 5;
         }
 
         /// <summary>建一块：逐格多边形 + 一格一张 biome 贴图（UV = 格内切平面归一化，与世界地图同口径）。</summary>
@@ -449,19 +459,10 @@ namespace PioneerFramework
         /// 画该天体的实时逐格表面。返回 false = 本帧没有可画内容（调用方照旧画基底球/补丁）。
         /// 与绘制同帧推进构建：没建好就返回 false（此时基底球已下沉，台阶不可见）。
         /// </summary>
-        private bool DrawPlanetTileSurface(int bodyId, PlanetLayer? layer, Vector3 renderPos, float renderR, Quaternion selfRot, Vector3 camPos,
+        private bool DrawPlanetTileSurface(int bodyId, Vector3 renderPos, float renderR, Quaternion selfRot,
             Vector3 toSun, Color sunColor)
         {
-            if (layer == null) return false;
-            var build = EnsureTileSurfaceBuild(bodyId, layer, layer.TilesCount);
-            if (build == null || build.Failed || !build.Ready) return false;
-            if (renderCamera == null) return false;
-
-            float distToCenter = Vector3.Distance(camPos, renderPos);
-            float tileSizeView = layer.AverageTileSize * (float)(SpaceConstants.MetersPerUnit * MetersToView);
-            float pixels = Celestial.SurfaceLodCore.TileScreenPixels(tileSizeView, Mathf.Max(distToCenter - renderR, 1f),
-                renderCamera.pixelHeight, renderCamera.fieldOfView);
-            if (pixels < TileSurfaceMinPixels) return false;
+            if (!tileSurfaceBuilds.TryGetValue(bodyId, out var build) || !build.Ready) return false;
 
             float meshScale = renderR * 2f;
             Matrix4x4 mtx = Matrix4x4.TRS(renderPos, selfRot, Vector3.one * meshScale);

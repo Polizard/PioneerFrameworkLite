@@ -14,6 +14,15 @@ namespace PioneerFramework.Celestial
         internal DVector3 ToPhysics(DVector3 position) =>
             PhysicsAnchor + DVector3.Rotate((position - ViewAnchor) / Scale, DQuaternion.Inverse(Rotation));
 
+        internal WorldCelestialFrame ForNativeSurface(DVector3 center, DQuaternion orientation,
+            DVector3 layerOrigin, double layerScale) => this with
+        {
+            PhysicsAnchor = center,
+            ViewAnchor = layerOrigin,
+            Rotation = DQuaternion.Inverse(orientation),
+            Scale = layerScale
+        };
+
         internal static bool ShouldEnterSystem(double zoom, double desiredZoom, bool inhibited, bool planetViewLocked,
             double threshold) => !planetViewLocked && !inhibited && zoom < threshold && desiredZoom < threshold;
 

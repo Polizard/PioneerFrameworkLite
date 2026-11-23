@@ -48,7 +48,7 @@ namespace PioneerFramework
     /// ⇒ 换世界不串档）。⚠ 文件名带 `_patch` 是**故意的**：上一版（整球等距圆柱）的旧图仍叫 `<seed>_<bodyId>.png`，
     /// 两者像素布局完全不同 —— 改了名就天然互不干扰（另有"必须正方形"的兜底闸，见 `TryLoadSaved`）。
     /// </summary>
-    internal static class PFViewSurfaceBake
+    internal static partial class PFViewSurfaceBake
     {
         /// <summary>补丁图边长（正方形；圆盘内切其中）。</summary>
         public const int PatchSize = 3072;
@@ -93,6 +93,8 @@ namespace PioneerFramework
             public string path;
             public Vector3 center;          // 球冠中心方向（天体局部系、单位向量）
             public float thetaMaxRad;       // 补丁盘覆盖的半角（含余量）
+            public long bytes;
+            public long lastUse;
         }
 
         private static readonly Dictionary<int, Patch> baked = new();
@@ -126,7 +128,10 @@ namespace PioneerFramework
         {
             EnsureContext();
             if (baked.TryGetValue(handle, out var old) && old.tex != null) UnityEngine.Object.Destroy(old.tex);
+            patch.bytes = TextureBytes(patch.tex);
+            patch.lastUse = System.Diagnostics.Stopwatch.GetTimestamp();
             baked[handle] = patch;
+            pendingSidecars.Remove(handle);
             failed.Remove(handle);
             loadTried.Add(handle);
             Touch(handle);
@@ -138,6 +143,7 @@ namespace PioneerFramework
             EnsureContext();
             if (TryGetCurrentPatch(bodyId, out var p) && p.tex != null)
             {
+                MarkInUse(bodyId);
                 tex = p.tex; center = p.center; thetaMaxRad = p.thetaMaxRad;
                 return true;
             }
@@ -148,31 +154,6 @@ namespace PioneerFramework
         public static bool HasFailed(int bodyId) { EnsureContext(); return failed.Contains(bodyId); }
 
         /// <summary>
-        /// 把**能从旁挂文件重新读回来**的补丁图从显存里放掉（2026-10-10 用户："这个显存占用是不是太巨大了"）。
-        /// PFView 收起时调一次（`CleanupResources`）：不看的时候不该扣着 12 MiB/天体。
-        /// ⚠ 只放**有旁挂文件**的：落盘失败过的那种（只有内存副本、盘上没有）留着 —— 否则就真丢了。
-        /// ⚠ 这不是"清理口吞持久数据"（那条教训是"卸了却读不回来"）：`loadTried` 一并清掉 ⇒ 下次 `EnsureReady` 会重新加载
-        ///   （代价 = 下次开 PFView 时一次 PNG 解码，几十~几百 ms）。
-        /// </summary>
-        public static void UnloadReloadable()
-        {
-            EnsureContext();
-            var world = Find.World;
-            if (world == null || baked.Count == 0) return;
-
-            var ids = new List<int>(baked.Keys);
-            for (int i = 0; i < ids.Count; i++)
-            {
-                int id = ids[i];
-                if (!File.Exists(baked[id].path)) continue;
-                if (baked[id].tex != null) UnityEngine.Object.Destroy(baked[id].tex);
-                baked.Remove(id);
-                loadTried.Remove(id);
-                Touch(id);
-            }
-        }
-
-        /// <summary>
         /// 上下文检查（**每次取用前调**）：换世界种子 ⇒ 全部作废（地形是种子的函数）；
         /// 回主菜单（无局）⇒ 立即释放（每体 3072² ≈ 38 MB，不能扣着）。
         /// ⚠ 这里**不**由 PFView 的 `CleanupResources` 触发 —— 补丁图是"持久数据"（另有旁挂文件），
@@ -180,9 +161,13 @@ namespace PioneerFramework
         /// </summary>
         private static void EnsureContext()
         {
-            if (Current.Game == null || Find.World == null)
+            var game = Current.Game;
+            var worldInfo = Find.World?.info;
+            if (game == null || worldInfo == null)
             {
-                if (baked.Count > 0 || failed.Count > 0 || loadTried.Count > 0 || ownerRevisions.Count > 0 || baseTexCache.Count > 0)
+                ClearWorldPreviewWork();
+                if (baked.Count > 0 || failed.Count > 0 || loadTried.Count > 0 || ownerRevisions.Count > 0 ||
+                    baseTexCache.Count > 0 || worldPreviews.Count > 0)
                 {
                     Clear();
                     cachedSeed = int.MinValue;
@@ -192,24 +177,28 @@ namespace PioneerFramework
                 return;
             }
 
-            int seed = Find.World.info.Seed;
-            System.Guid session = Current.Game.GetComponent<CelestialBodyManager>()?.TryGetCelestialRuntime(out var runtime) == true ? runtime.WorldSessionId : System.Guid.Empty;
-            if (seed != cachedSeed || !ReferenceEquals(cachedGame, Current.Game) || cachedCelestialSession != session)
+            int seed = worldInfo.Seed;
+            System.Guid session = game.GetComponent<CelestialBodyManager>()?.TryGetCelestialRuntime(out var runtime) == true ? runtime.WorldSessionId : System.Guid.Empty;
+            if (seed != cachedSeed || !ReferenceEquals(cachedGame, game) || cachedCelestialSession != session)
             {
                 Clear();
                 cachedSeed = seed;
-                cachedGame = Current.Game;
+                cachedGame = game;
                 cachedCelestialSession = session;
             }
         }
 
         public static void Clear()
         {
+            ClearWorldPreviewWork();
+            foreach (var preview in worldPreviews.Values) UnityEngine.Object.Destroy(preview.Texture);
+            worldPreviews.Clear();
             foreach (var kv in baked)
                 if (kv.Value.tex != null) UnityEngine.Object.Destroy(kv.Value.tex);
             baked.Clear();
             failed.Clear();
             loadTried.Clear();
+            pendingSidecars.Clear();
             baseTexCache.Clear();     // 底色解析结果也跟"世界/存档上下文"走（层 id 复用别串档）
             baseTexLabel.Clear();
             baseTexLayers.Clear();
@@ -231,8 +220,11 @@ namespace PioneerFramework
         internal static void ForgetMemory(int handle, int? layerId)
         {
             EnsureContext();
+            CancelWorldPreviewWork(handle);
+            if (worldPreviews.Remove(handle, out var preview)) UnityEngine.Object.Destroy(preview.Texture);
             if (baked.TryGetValue(handle, out var patch) && patch.tex != null) UnityEngine.Object.Destroy(patch.tex);
             baked.Remove(handle); failed.Remove(handle); loadTried.Remove(handle);
+            pendingSidecars.Remove(handle);
             if (layerId.HasValue)
             {
                 baseTexCache.Remove(layerId.Value); baseTexLabel.Remove(layerId.Value); baseTexLayers.Remove(layerId.Value);
@@ -257,29 +249,20 @@ namespace PioneerFramework
         }
 
         /// <summary>
-        /// 取用前调一次：保证（1）上下文正确（换种子/回主菜单即作废）、（2）旁挂文件被尝试加载过
-        /// （每体只 stat 一次盘）。返回该体当前有没有补丁图。
-        /// ⚠ `layer` 必需：旁挂 PNG 里没有球冠信息，**球冠是从 layer 的格心反推的**（同一份数据 ⇒ 与烘焙时逐位一致）。
+        /// 只读内存并登记旁挂文件加载请求。等待期间调用方可继续绘制基础地表。
         /// </summary>
         public static bool EnsureReady(int bodyId, PlanetLayer? layer)
         {
             EnsureContext();
             if (!MatchesCelestialOwner(bodyId, layer)) return false;
-            if (TryGetCurrentPatch(bodyId, out _)) return true;
-            if (loadTried.Contains(bodyId)) return false;
-            loadTried.Add(bodyId);
-
-            var world = Find.World;
-            if (world != null)
+            if (TryGetCurrentPatch(bodyId, out _))
             {
-                // ⚠ 这行原来把 `message` 丢了（`out _`）⇒ "从旁挂文件加载" / "不是正方形被忽略" 这些结果外面看不见，
-                //   于是"改了没生效"和"没烤过"分不清（2026-10-11 就为这个困惑过一轮）。现在打出来。
-                if (TryLoadSaved(world.info.Seed, bodyId, layer, out string? loaded) && loaded != null)
-                    Log.Message("[PFView·烘焙] body=" + bodyId + " " + loaded);
-                else if (loaded != null)
-                    Log.Warning("[PFView·烘焙] body=" + bodyId + " 旁挂图未采用：" + loaded);
+                MarkInUse(bodyId);
+                return true;
             }
-            return baked.ContainsKey(bodyId);
+            if (Find.World != null && loadTried.Add(bodyId))
+                pendingSidecars.Add(bodyId, new SidecarRequest(bodyId, layer, PathFor(cachedSeed, bodyId)));
+            return false;
         }
 
         /// <summary>
@@ -307,65 +290,6 @@ namespace PioneerFramework
                 !Find.WorldGrid.PlanetLayers.TryGetValue(layer.LayerID, out var registered) || !ReferenceEquals(registered, layer)) return false;
             var body = runtime.Query(id);
             return body.Success && body.Value.Lifecycle != Celestial.CelestialLifecycle.Removed && body.Value.Description.RadiusMeters == surface.Header.PhysicalRadiusMeters;
-        }
-
-        /// <summary>先看旁挂文件在不在；在就读进来（转场/读档后由 `EnsureReady` 调一次）。</summary>
-        public static bool TryLoadSaved(int seed, int bodyId, PlanetLayer? layer, out string? message)
-        {
-            EnsureContext();
-            message = null;
-            if (!MatchesCelestialOwner(bodyId, layer)) { message = "SurfaceIdentityMismatch"; return false; }
-            if (TryGetCurrentPatch(bodyId, out _)) return true;
-
-            string path = PathFor(seed, bodyId);
-            if (!File.Exists(path)) return false;
-
-            try
-            {
-                var bytes = File.ReadAllBytes(path);
-                var tex = new Texture2D(2, 2, TextureFormat.RGBA32, true);   // mipmap：与烘焙路径同口径（细线远景不闪）
-                if (!tex.LoadImage(bytes))
-                {
-                    UnityEngine.Object.Destroy(tex);
-                    message = "旁挂文件读不出图";
-                    return false;
-                }
-                // ⚠ 兜底闸：补丁图**必须正方形**。旧版（整球等距圆柱）是 2:1，像素布局与补丁完全不同，
-                //   拿它当补丁画出来是"整球图被塞进圆盘"（看着像地形错位，实际是拿错了图）⇒ 直接从盘上拒绝。
-                if (tex.width != tex.height)
-                {
-                    UnityEngine.Object.Destroy(tex);
-                    message = $"旁挂文件不是正方形（{tex.width}×{tex.height}）⇒ 那是旧版整球图，忽略（重烤一次即得补丁）";
-                    return false;
-                }
-                if (layer == null || !ComputeCapFromLayer(layer, out Vector3 center, out float halfAngleDeg))
-                {
-                    UnityEngine.Object.Destroy(tex);
-                    message = "缺 layer / 格心退化 ⇒ 反推不出球冠，无法把旁挂图摆到球上";
-                    return false;
-                }
-
-                tex.wrapMode = TextureWrapMode.Clamp;
-                tex.filterMode = FilterMode.Trilinear;
-                tex.Apply(true);                     // LoadImage 之后重建 mip 链（否则三线性过滤只有基级）
-                tex.name = "PF_Patch_" + bodyId;
-                try { tex.Compress(true); }          // 与烘焙路径同口径：压成平台格式（48 → 12 MiB）
-                catch (Exception ex) { Log.Warning("[PFView·烘焙] 旁挂图压缩失败（只是显存偏大）：" + ex.Message); }
-                StorePatch(bodyId, new Patch
-                {
-                    tex = tex,
-                    path = path,
-                    center = center,
-                    thetaMaxRad = (Mathf.Min(halfAngleDeg, MaxHalfAngleDeg) + PatchMarginDeg) * Mathf.Deg2Rad,
-                });
-                message = $"已从旁挂文件加载（{bytes.Length / 1024f:F0} KB）";
-                return true;
-            }
-            catch (Exception ex)
-            {
-                message = "旁挂文件加载失败：" + ex.Message;
-                return false;
-            }
         }
 
         // ════════════════════════════════════════════════════
@@ -1141,19 +1065,22 @@ namespace PioneerFramework
         /// 圆盘没有经度缝 ⇒ 旧版"跨缝格发两份拷贝"那套特例**整块删除**。
         /// </summary>
         private static Mesh BuildBakeMesh(PlanetLayer layer, Vector3[] centers,
-            Vector3 capCenter, Vector3 patchT1, Vector3 patchT2, float thetaMaxRad, out Material[] biomeMats)
+            Vector3 capCenter, Vector3 patchT1, Vector3 patchT2, float thetaMaxRad, out Material[] biomeMats,
+            bool worldPreview = false, int firstTile = 0, int endTile = int.MaxValue)
         {
             var verts = layer.UnsafeVerts;
             var offsets = layer.UnsafeTileIDToVerts_offsets;
-            int tiles = layer.TilesCount;
+            int tiles = Math.Min(layer.TilesCount, endTile);
 
             var bucketOf = new Dictionary<BiomeDef, int>();
             var bucketBiomes = new List<BiomeDef>();
             var bVerts = new List<List<Vector3>>();
             var bUvs = new List<List<Vector2>>();
             var bTris = new List<List<int>>();
+            var polygonPositions = new Vector3[8];
+            var polygonUvs = new Vector2[8];
 
-            for (int t = 0; t < tiles; t++)
+            for (int t = firstTile; t < tiles; t++)
             {
                 Vector3 center = centers[t];
                 if (center.sqrMagnitude < 1e-6f) continue;
@@ -1187,8 +1114,13 @@ namespace PioneerFramework
                     maxAbs = Mathf.Max(maxAbs, Mathf.Abs(Vector3.Dot(rel, t2)));
                 }
 
-                var uv = new Vector2[polyVerts];
-                var pos = new Vector3[polyVerts];
+                if (polyVerts > polygonPositions.Length)
+                {
+                    Array.Resize(ref polygonPositions, polyVerts);
+                    Array.Resize(ref polygonUvs, polyVerts);
+                }
+                var uv = polygonUvs.AsSpan(0, polyVerts);
+                var pos = polygonPositions.AsSpan(0, polyVerts);
                 for (int k = 0; k < polyVerts; k++)
                 {
                     Vector3 v = verts[k + start];
@@ -1227,11 +1159,11 @@ namespace PioneerFramework
             biomeMats = new Material[bucketBiomes.Count];
             for (int b = 0; b < bucketBiomes.Count; b++)
             {
-                var tex = bucketBiomes[b]?.DrawMaterial != null
-                    ? bucketBiomes[b].DrawMaterial.mainTexture as Texture2D
-                    : null;
+                var biomeMaterial = bucketBiomes[b]?.DrawMaterial;
+                bool ocean = worldPreview && biomeMaterial?.shader == ShaderDatabase.WorldOcean;
+                var tex = ocean ? BaseContent.WhiteTex : biomeMaterial?.mainTexture as Texture2D;
                 biomeMats[b] = MaterialPool.MatFrom(tex != null ? tex : BaseContent.WhiteTex,
-                    ShaderDatabase.WorldOverlayCutout, Color.white);
+                    ShaderDatabase.WorldOverlayCutout, ocean ? WorldOceanColor : Color.white);
             }
             return mesh;
         }
@@ -1258,7 +1190,7 @@ namespace PioneerFramework
         }
 
         private static void AddPolygon(List<Vector3> bv, List<Vector2> bu, List<int> bt,
-            Vector3[] pos, Vector2[] uv)
+            ReadOnlySpan<Vector3> pos, ReadOnlySpan<Vector2> uv)
         {
             int baseIndex = bv.Count;
             for (int k = 0; k < pos.Length; k++)

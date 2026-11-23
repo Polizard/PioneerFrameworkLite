@@ -83,6 +83,8 @@ namespace PioneerFramework
             Log.Message($"[PFView·恒星材质] 使用{(stellarShadersAreFast ? "新版（性能优先）" : stellarShadersAreS3A ? "S3-a（区域跳过积分）" : "旧版体积")}恒星渲染{(stellarOffscreenActive ? "；S3-b 半分辨率离屏" : "")}。");
         }
 
+        internal static void PrewarmStellarPipelines() => PFViewStellarPipelineWarmup.Run(sphereMeshLOD0, SceneLayer, StarLayer);
+
         internal static void SelectStellarShaders(out Shader? stellarSurfaceShader, out Shader? stellarHaloShader,
             out bool stellarShadersAreFast, out bool stellarShadersAreS3A)
         {
