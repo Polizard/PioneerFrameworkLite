@@ -12,7 +12,7 @@ namespace PioneerFramework.Tests;
 
 /// <summary>
 /// P2 数据源单一化的回归面（2026-11-03）：
-/// 1) 已发货 body def 里“同时有物理 motion 与 environment”时，两处 dayLengthTicks 必须相等；
+/// 1) 已发货**模板** body def 里“同时有物理 motion 与 environment”时，两处 dayLengthTicks 保持一致（模板卫生；运行期/生成实例以 physics 为准）；
 /// 2) 视觉/投影的**物理大气顶**与**视觉壳厚度**是两个不同字段，不能混用；
 /// 3) 自转周期解析优先级固定为 motion → environment → 0。
 /// </summary>
@@ -39,7 +39,8 @@ public class CelestialDataSourceConsistencyTests
                 if (environmentProfile == null) continue;
                 Assert.True(environments.TryGetValue(environmentProfile, out double environmentDayLength),
                     id + ": missing shipped environment profile " + environmentProfile);
-                // 没有物理的天体允许 environment 作兼容 fallback；两者都有时必须一致（渲染/物理不能各取一侧）。
+                // 没有物理的天体允许 environment 作兼容 fallback；模板两者都有时保持一致（渲染/物理不能各取一侧）。
+                // 程序化生成会按规则改写 motion spin，生成实例不要求与模板 environment 值相等（物理优先，见 CelestialEnvironmentRegressionTests）。
                 if (!motionDayLength.HasValue) continue;
                 Assert.Equal(environmentDayLength, motionDayLength.Value, 6);
                 compared.Add(id);

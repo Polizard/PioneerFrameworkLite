@@ -12,7 +12,15 @@ namespace PioneerFramework.Celestial
             var climate = ((ExistingEnvironmentResolvedProperties)Context.Properties).Profile.Climate;
             if (climate == null) return legacy;
             var actual = SampleSurface(new(query.DisplayTicksAbs, query.LongitudeDegrees, query.LatitudeDegrees, 0, query.BiomeId));
-            return legacy with { SunGlow = (float)Math.Clamp(actual.SunGlow, 0, 1) };
+            return legacy with
+            {
+                SunGlow = (float)Math.Clamp(actual.SunGlow, 0, 1),
+                // 2026-11-23：物理光照下 DayPercent 也必须跟物理太阳，不能继续用日历相位；
+                // 否则天空 shader 的 DayPercent 与太阳方向/亮度是两套时钟。
+                DayPercent = actual.UsesCommittedLight
+                    ? (float)actual.DayPercentAt(query.LongitudeDegrees, query.LatitudeDegrees)
+                    : legacy.DayPercent
+            };
         }
 
         public CelestialSurfaceEnvironmentSample SampleSurface(CelestialSurfaceEnvironmentQuery query)

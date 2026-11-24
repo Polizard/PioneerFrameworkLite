@@ -71,7 +71,7 @@ var composed = CelestialBodyTemplate.Create(template.DefinitionId, template.Labe
 
 `CelestialEnvironmentProfileDef` 的 `dayLengthTicks=60000`、`primaryLightReference="primaryLight"`、`vacuumBiomes=[]` 保留原字段；dayLength 必须能表示为正有限 float。添加 climate 或 exposure 显式启用 environment 配置 v2，省略两者保留 v1 字节和原生日历。下列数字通过 `climate.FIELD` / `exposure.FIELD` 参数路径覆盖；曲线、模式和布尔保持 typed。
 
-**自转周期只有一个优先级**（2026-11-03 P2 数据源单一化，2026-11-07 B-2 补齐环境采样）：**物理 motion 的 `rotation.periodSeconds`（权威）→ environment 的 `dayLengthTicks`（无物理绑定的兼容 fallback）→ 0**。物理实例表、视觉描述缓存、视图投影**以及环境采样**（`CompExistingEnvironment.DayLength` 经可选能力 `ICelestialDayLengthSource` 读取物理绑定解析出的权威日长）走同一优先级；物理绑定解析失败或外部 provider 时退回 `environment.dayLengthTicks`。两者同时存在时**必须相等**（已发货内容有回归测试锁死）；修改自转周期应改 motion，`environment.dayLengthTicks` 只用于没有物理绑定的天体，不要把它当第二真源。
+**自转周期只有一个优先级**（2026-11-03 P2 数据源单一化，2026-11-07 B-2 补齐环境采样）：**物理 motion 的 `rotation.periodSeconds`（权威）→ environment 的 `dayLengthTicks`（无物理绑定的兼容 fallback）→ 0**。物理实例表、视觉描述缓存、视图投影**以及环境采样**（`CompExistingEnvironment.DayLength` 经可选能力 `ICelestialDayLengthSource` 读取物理绑定解析出的权威日长）走同一优先级；物理绑定解析失败或外部 provider 时退回 `environment.dayLengthTicks`。模板同时声明两者时**建议相等**（内容一致性测试只锁模板 XML）；运行期以 motion 为准，`environment.dayLengthTicks` 只在没有物理绑定时生效。程序化生成会按规则改写 spin，因此生成实例不要求与模板环境值相等；修改自转周期应改 motion，不要把它当第二真源。
 
 | climate 字段 | 默认；支持域/单位 | 消费者 |
 | --- | --- | --- |

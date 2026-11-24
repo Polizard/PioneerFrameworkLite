@@ -30,5 +30,25 @@ namespace PioneerFramework.Celestial
                 if (environment.Profile.DayLengthTicks > 0.0) return environment.Profile.DayLengthTicks;
             return 0.0;
         }
+
+        internal static double ResolveFrom(IEnumerable<CelestialCompSaveRecord> records)
+        {
+            if (records == null) return 0.0;
+            foreach (var record in records)
+            {
+                if (record.HandlerId != ExternalPhysicsResolvedProperties.Handler) continue;
+                var binding = ExternalPhysicsResolvedProperties.Deserialize(record.Key, record.ConfigurationVersion, record.ConfigurationPayload);
+                if (!binding.Success) continue;
+                var parsed = ExistingEphemerisParameters.Parse(binding.Value.Initialization);
+                if (parsed.Success && parsed.Value.DayLengthTicks > 0.0) return parsed.Value.DayLengthTicks;
+            }
+            foreach (var record in records)
+            {
+                if (record.HandlerId != ExistingEnvironmentResolvedProperties.Handler) continue;
+                var environment = ExistingEnvironmentResolvedProperties.Deserialize(record.Key, record.ConfigurationVersion, record.ConfigurationPayload);
+                if (environment.Success && environment.Value.Profile.DayLengthTicks > 0.0) return environment.Value.Profile.DayLengthTicks;
+            }
+            return 0.0;
+        }
     }
 }

@@ -36,6 +36,29 @@ public class CelestialNativeCompatibilityTests
         }
         finally { assets.UnpatchAll(assets.Id); }
     }
+    [Fact]
+    public void LayerDayLengthPrefersPhysicsBindingOverEnvironmentFallback()
+    {
+        var assets = new Harmony("PFL.Celestial.PhysicsLayerDayLengthProbe");
+        assets.Patch(AccessTools.Method(typeof(Verse.ContentFinder<UnityEngine.Texture2D>), "Get"),
+            prefix: new HarmonyMethod(typeof(CelestialNativeCompatibilityTests), nameof(SkipTextureLookup)));
+        try
+        {
+            using var fixture = new CelestialWorldBootstrapTests.Fixture();
+            var environment = new ExistingEnvironmentResolvedProperties("environment", new("profile", 60000, "light", Array.Empty<string>()));
+            var physics = new ExternalPhysicsResolvedProperties("motion", null,
+                new CelestialMotionXml { rotation = new CelestialRotationXml { periodSeconds = 40 } }.Compile());
+            var configuration = CelestialGenerationConfiguration.Encode(new[]
+            {
+                new CelestialCompSaveRecord("environment", environment.HandlerId, 1, 1, environment.Serialize().Span, ReadOnlySpan<byte>.Empty),
+                new CelestialCompSaveRecord("motion", physics.HandlerId, 1, 1, physics.Serialize().Span, ReadOnlySpan<byte>.Empty)
+            });
+            var layer = RuntimePlanetLayerService.RegisterCelestialInstance(fixture.Native.Grid, fixture.RootDefinition,
+                new(CelestialInstanceId.Parse("physics-day"), -1, 1000, 1, 0, 1, configuration));
+            Assert.Equal(40, CelestialBodyLayerManager.GetDayLength(layer));
+        }
+        finally { assets.UnpatchAll(assets.Id); }
+    }
     private static bool SkipTextureLookup() => false;
     [Fact]
     public void NativeSignaturesAndEveryInstalledHandlerCanBeVerifiedWithoutGeneratingAWorld()

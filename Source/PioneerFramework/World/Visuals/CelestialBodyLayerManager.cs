@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using HarmonyLib;
 using RimWorld;
 using RimWorld.Planet;
@@ -149,13 +148,11 @@ namespace PioneerFramework
             if (celestialBodyLayers.TryGetValue(layer, out _)) return;
             var configuration = CelestialLayerConfiguration.For(surface.Header);
             if (!configuration.Success) return;
-            float day = 60000f;
-            var saved = configuration.Value.SingleOrDefault(record => record.HandlerId == ExistingEnvironmentResolvedProperties.Handler);
-            if (saved != null)
-            {
-                var profile = ExistingEnvironmentResolvedProperties.Deserialize(saved.Key, saved.ConfigurationVersion, saved.ConfigurationPayload);
-                if (profile.Success) day = (float)profile.Value.Profile.DayLengthTicks;
-            }
+            // 2026-11-23：和 CelestialDayLength 同口径（物理 motion → environment → 60000）。
+            // 原先只读 environment；程序化行星的 motion spin 被规则改写、environment 仍是模板值，
+            // 这里会拿到错误的日长，而 CalendarAndSunPatch 的回退路径正是用它。
+            double resolved = CelestialDayLength.ResolveFrom(configuration.Value);
+            float day = double.IsFinite(resolved) && resolved > 0.0 ? (float)resolved : 60000f;
             var entry = new DayLength(day);
             if (ReferenceEquals(celestialBodyLayers.GetValue(surface, _ => entry), entry)) System.Threading.Interlocked.Increment(ref layerRegistrationRevision);
         }
