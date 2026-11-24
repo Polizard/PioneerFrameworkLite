@@ -124,6 +124,9 @@ public class CelestialPlanetCommittedLightTests
         Assert.Equal(intensity, day.SunGlow, 10); Assert.Equal(0, night.SunGlow, 10); Assert.Equal(9.80665 * gravityMultiplier, day.GravityMetersPerSecondSquared.Value, 10);
         Assert.Equal(mode == CelestialClimateMode.CommittedIllumination ? -100 + 50 * intensity : -100, day.TemperatureCelsius.Value, 10);
         Assert.True(day.UsesCommittedLight);
+        // 2026-11-23：物理光照下 Evaluate 的 DayPercent 也必须来自物理太阳，而不是日历相位。
+        var evaluated = runtime.GetCapabilities<ICelestialEnvironmentCapability>(planet).Single().Evaluate(new(0, 0, 0));
+        Assert.Equal((float)day.DayPercentAt(0, 0), evaluated.DayPercent, 6);
         Assert.Equal(day, capability.SampleSurface(new(900000, 0, 0)));
         Assert.Equal(capability.SampleSurface(new(0, 0, 45)), capability.SampleSurface(new(900000, 0, 45)));
         Assert.True(native.Game.GetComponent<CelestialBodyManager>().AttachCelestialRuntime(runtime).Success);

@@ -86,7 +86,7 @@ public static CelestialOperation CreateBarrenPlanet(
 
 ⚠ 这组默认运动是从**地球绕太阳的日心轨道**复制的（反推中心 GM≈2.00022e16≈太阳 2e16；若按地球 GM=2e14 算，同一半径的正确周期是 584,032 s）。因此**任何不覆盖 motion 的实例化入口**（通用窗口「从模板创建天体」、数据 API 只改 radius/GM、XML 系统条目只写 `<bodyDef>`）都会得到完全相同的轨道：作为根行星的子体会落在根行星外侧同一圆并与根天体径向锁定，作为恒星子体则与地球共轨；多个实例会彼此重合、角速度相同。**行星种类测试面板会按父体 GM 逐实例重算开普勒轨道，不在此列。** 用 API/XML 创建多个天体时必须显式覆盖 `motion.orbitRadiusMeters` / `motion.orbitPeriodSeconds` / `motion.orbitPhaseRadians`（见下方示例），否则请改用测试面板。
 
-表中的**自转周期以 motion 的 `rotation.periodSeconds` 为权威**（物理实例表、视觉缓存与投影共用同一解析）；`environment` profile 的 `dayLengthTicks` 只是没有物理绑定的天体才使用的兼容 fallback，不是第二真源。已发货模板同时声明两者时必须相等（有内容一致性回归测试）；制作新模板改自转请改 motion。大气同理拆成两个字段：**物理大气顶** `air.topAltitude`（阻力/天空 α/高度阈值/大气顶判定）与**视觉壳高度** `atmosphereVisual.shellHeightMeters`（壳半径 = R + 壳高度，壳厚度 = 高度 × 2），两者独立、可不等。逐字段域与覆盖路径见 [作者表](PlanetAuthoring.md)。
+表中的**自转周期以 motion 的 `rotation.periodSeconds` 为权威**（物理实例表、视觉缓存与投影共用同一解析）；`environment` profile 的 `dayLengthTicks` 只是没有物理绑定的天体才使用的兼容 fallback，不是第二真源。已发货模板同时声明两者时保持一致（内容一致性测试只锁模板 XML）；运行期以 motion 为准，程序化生成会按规则改写 spin，生成实例不要求与模板环境值相等。制作新模板改自转请改 motion。大气同理拆成两个字段：**物理大气顶** `air.topAltitude`（阻力/天空 α/高度阈值/大气顶判定）与**视觉壳高度** `atmosphereVisual.shellHeightMeters`（壳半径 = R + 壳高度，壳厚度 = 高度 × 2），两者独立、可不等。逐字段域与覆盖路径见 [作者表](PlanetAuthoring.md)。
 
 组件 key：`shape`、`motion`、`surface`、`biomes`、`maps`、`environment`、`air`、`visual`、`atmosphereVisual`、`clouds`。只有实际具备的能力才提供对应组件。`ParameterOverrides` 可修改组件显式支持的数值参数；readable motion 数字支持 `motion.FIELD` / `motion.rotation.FIELD` 参数范围与覆盖；字符串/布尔/引用通过完整 typed motion 组件替换。精确字段、单位、有效区间与codec版本见 [作者表](PlanetAuthoring.md)。
 

@@ -122,6 +122,13 @@ namespace PioneerFramework
                 return false;
             }
 
+            // 2026-11-23：物理光照（v2）直接用已缓存的地表样本；与 GetLightSourceInfo / GenLocalDate 共用同一份。
+            if (Celestial.CelestialPlanetEnvironmentHooks.TrySample(map.Tile, out var physical) && physical.UsesCommittedLight)
+            {
+                __result = (float)Math.Clamp(physical.SunGlow, 0, 1);
+                return false;
+            }
+
             Vector2 naturalLongLat = Find.WorldGrid.LongLatOf(map.Tile);
             if (Celestial.CelestialEnvironmentBridge.TryEvaluate(map.Tile.Layer,
                 new(GetCelestialDisplayTicksAbs(), naturalLongLat.x, naturalLongLat.y, map.Biome.defName), out var natural))
@@ -169,6 +176,13 @@ namespace PioneerFramework
             }
 
             Vector2 naturalLongLat = Find.WorldGrid.LongLatOf(map.Tile);
+            // 2026-11-23：v2（物理光照）的地图太阳方向必须跟物理姿态，而不是日历相位。
+            // TrySample 自带按 (world, layer, tile, 显示时刻) 的缓存，和 GetLightSourceInfo 复用同一份样本。
+            if (Celestial.CelestialPlanetEnvironmentHooks.TrySample(map.Tile, out var physical) && physical.UsesCommittedLight)
+            {
+                __result = (float)physical.DayPercentAt(naturalLongLat.x, naturalLongLat.y);
+                return false;
+            }
             if (Celestial.CelestialEnvironmentBridge.TryEvaluate(map.Tile.Layer,
                 new(GetCelestialDisplayTicksAbs(), naturalLongLat.x, naturalLongLat.y, map.Biome.defName), out var natural))
             {
@@ -179,14 +193,10 @@ namespace PioneerFramework
             float dayLength = CelestialBodyLayerManager.GetDayLengthForMap(map);
             if (Math.Abs(dayLength - 60000f) <= 10f) return true; // Earth，走原版
 
-            // 获取 physicsTick 并缩放到天体自转周期
-            long displayTicksAbs = GetCelestialScaledTicksAbs(dayLength);
-
-            long celestialTicks = (long)(displayTicksAbs * (60000.0 / dayLength));
-            Vector2 longLat = Find.WorldGrid.LongLatOf(map.Tile);
-            double adjustedTicks = (double)celestialTicks + (double)(longLat.x / 360f * 60000f);
-
-            __result = (float)(((adjustedTicks / 60000.0 % 1.0) + 1.0) % 1.0);
+            // 2026-11-23：这里曾经在 GetCelestialScaledTicksAbs(dayLength) 之后又乘一次
+            // 60000/dayLength（二次缩放 ⇒ 太阳方向周期 = dayLength²/60000，与亮度的 dayLength 不同步）。
+            // 现在与 CurCelestialSunGlow 共用 PF_SunMath.EvaluateCycle，缩放只发生一次。
+            __result = PF_SunMath.EvaluateCycle(GetCelestialDisplayTicksAbs(), dayLength, naturalLongLat.x).DayPercent;
             return false;
         }
 

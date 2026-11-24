@@ -517,9 +517,10 @@ namespace PioneerFramework
                 if (!instance.Success || instance.Value.Lifecycle != Celestial.CelestialLifecycle.Ready) { message = "BodyNotReady"; return false; }
                 var visuals = runtime.GetCapabilities<Celestial.ICelestialVisualCapability>(owner).Select(capability => capability.GetVisualDescription()).ToArray();
                 var atmospheres = runtime.GetCapabilities<Celestial.ICelestialAtmosphereCapability>(owner);
-                var environment = runtime.Creation.GetProperties(owner).OfType<Celestial.ExistingEnvironmentResolvedProperties>().SingleOrDefault();
+                // 2026-11-23：与实例表/视觉缓存同一日长优先级（物理 motion → environment），不再只读 environment。
                 body = Celestial.CelestialRenderProjection.Create(instance.Value.Description, visuals, true,
-                    atmospheres.Count == 1 ? atmospheres[0].GetProfile() : default, environment?.Profile.DayLengthTicks ?? 0);
+                    atmospheres.Count == 1 ? atmospheres[0].GetProfile() : default,
+                    Celestial.CelestialDayLength.ResolveFrom(runtime.Creation.GetProperties(owner)));
             }
 
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();

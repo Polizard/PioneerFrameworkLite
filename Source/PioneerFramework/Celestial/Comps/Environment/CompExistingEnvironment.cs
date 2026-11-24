@@ -38,6 +38,7 @@ namespace PioneerFramework.Celestial
             if (!double.IsFinite(query.DisplayTicksAbs) || !float.IsFinite(query.LongitudeDegrees) || !float.IsFinite(query.LatitudeDegrees) || Math.Abs(query.LatitudeDegrees) > 90)
                 throw new ArgumentOutOfRangeException(nameof(query));
             var profile = ((ExistingEnvironmentResolvedProperties)Context.Properties).Profile;
+            // v1 保持日历相位（与原版/旧存档兼容）；有物理光照的 v2 在 CompPlanetEnvironment.Evaluate 里改回物理 DayPercent。
             var cycle = PF_SunMath.EvaluateCycle(query.DisplayTicksAbs, (float)DayLength(profile), query.LongitudeDegrees);
             return new(cycle.DayPercent, PF_SunMath.SunGlowPercent(query.LatitudeDegrees, cycle.DayOfYear, cycle.DayPercent), PrimaryLight(),
                 query.BiomeId != null && profile.VacuumBiomeIds.Contains(query.BiomeId, StringComparer.Ordinal) ? query.BiomeId : null, cycle.DayOfYearFraction);

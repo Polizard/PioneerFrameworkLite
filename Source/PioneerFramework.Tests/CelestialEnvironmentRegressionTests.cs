@@ -95,6 +95,15 @@ public class CelestialEnvironmentRegressionTests
     }
 
     [Fact]
+    public void PhysicalDayPercentTreatsSubsolarLongitudeAsNoon()
+    {
+        var noon = new CelestialSurfaceEnvironmentSample(null, 0, 0, 0, 0, null, null, 0, 0, null, 0, 0, 1, 0, false, null, true);
+        Assert.Equal(.5, noon.DayPercentAt(0, 0), 9);
+        Assert.Equal(.25, (noon with { SunUp = 0, SunEast = 1 }).DayPercentAt(0, 0), 9);
+        Assert.Equal(.75, (noon with { SunUp = 0, SunEast = -1 }).DayPercentAt(0, 0), 9);
+    }
+
+    [Fact]
     public void SurfacePressureFallsWithAltitudeAndStopsAtTopWhileCarbonDioxideRaisesToxicity()
     {
         var sun = CelestialInstanceId.Parse("air:sun"); var planet = CelestialInstanceId.Parse("air:planet");

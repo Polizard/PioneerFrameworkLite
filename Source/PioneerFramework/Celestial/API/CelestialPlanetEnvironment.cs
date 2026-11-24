@@ -75,7 +75,30 @@ namespace PioneerFramework.Celestial
         double? OxygenPartialPressurePascals, double ToxicityPerDay, double RadiationPerDay,
         double? GravityMetersPerSecondSquared, double SunEast, double SunNorth, double SunUp,
         double PhysicalSeconds, bool NativeVacuum, CelestialExposureConfiguration? Exposure, bool UsesCommittedLight = false,
-        bool UsesClimateWind = false, bool HasAtmosphere = false, double? SeasonalTemperatureCelsius = null);
+        bool UsesClimateWind = false, bool HasAtmosphere = false, double? SeasonalTemperatureCelsius = null)
+    {
+        /// <summary>
+        /// 由**物理太阳**在本地 ENU 的分量反算本地太阳时（0..1，0.5 = 本地正午）。
+        /// 只在 <see cref="UsesCommittedLight"/> 的物理样本上有意义；日历回退请继续用 <see cref="PF_SunMath.EvaluateCycle"/>。
+        /// 2026-11-23：v2 的 DayPercent 不能再拿日历相位（否则天空 shader 与太阳方向/亮度是两套时钟）。
+        /// </summary>
+        public double DayPercentAt(double longitudeDegrees, double latitudeDegrees)
+        {
+            if (!double.IsFinite(longitudeDegrees) || !double.IsFinite(latitudeDegrees) || Math.Abs(latitudeDegrees) > 90)
+                throw new ArgumentOutOfRangeException(nameof(longitudeDegrees));
+            if (!double.IsFinite(SunEast) || !double.IsFinite(SunNorth) || !double.IsFinite(SunUp))
+                throw new ArgumentOutOfRangeException(nameof(longitudeDegrees));
+            double lon = longitudeDegrees * Math.PI / 180, lat = latitudeDegrees * Math.PI / 180;
+            double sinLon = Math.Sin(lon), cosLon = Math.Cos(lon), sinLat = Math.Sin(lat), cosLat = Math.Cos(lat);
+            // 本地 ENU 基（与 CompPlanetEnvironment.SampleSurface 同一套）还原体固系太阳方向。
+            double x = SunEast * cosLon - SunNorth * sinLon * sinLat + SunUp * sinLon * cosLat;
+            double z = SunEast * sinLon + SunNorth * cosLon * sinLat - SunUp * cosLon * cosLat;
+            // RW 经度约定：0 = 世界 -z，东 = +x ⇒ λ = atan2(x, -z)。
+            double subsolar = Math.Atan2(x, -z);
+            double value = .5 + (lon - subsolar) / (2 * Math.PI);
+            return value - Math.Floor(value);
+        }
+    }
     public interface ICelestialSurfaceEnvironmentCapability
     {
         CelestialSurfaceEnvironmentSample SampleSurface(CelestialSurfaceEnvironmentQuery query);
