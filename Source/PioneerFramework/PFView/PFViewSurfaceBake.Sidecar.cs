@@ -28,6 +28,7 @@ internal static partial class PFViewSurfaceBake
     internal static void Update(bool renderWorldPreview = false)
     {
         EnsureContext();
+        PumpDiskSweep();   // 只消费“已完成的清理结果”并打一行日志；不会在这里发起扫描（测试/每帧都不碰盘）
         if (decoding is { } active && active.Work.IsCompleted)
         {
             decoding = null;
@@ -68,63 +69,100 @@ internal static partial class PFViewSurfaceBake
 
     private static void CompleteSidecar(SidecarRequest request, Task<SidecarPixels?> work)
     {
-        int handle = request.Handle;
-        if (!pendingSidecars.TryGetValue(handle, out var current) || !ReferenceEquals(current, request))
-        {
-            _ = work.Exception;
-            return;
-        }
-        pendingSidecars.Remove(handle);
-        var layer = request.Layer;
-        if (!MatchesCelestialOwner(handle, layer) ||
-            !string.Equals(request.Path, PathFor(cachedSeed, handle), StringComparison.Ordinal))
-        {
-            _ = work.Exception;
-            loadTried.Remove(handle);
-            return;
-        }
-
-        Texture2D? texture = null;
+        // 读回成功会由 StorePatch 刷新文件时间戳（=“刚刚用过”）；失败/被拒绝也要注销 in-flight，
+        // 否则一次坏文件会让清理任务永远跳过它。注销必须放在 touch 之后（finally 覆盖全部 return）。
+        bool ownsInFlight = false;
         try
         {
-            var pixels = work.GetAwaiter().GetResult();
-            if (pixels == null) return;
-            if (layer == null || !ComputeCapFromLayer(layer, out var center, out float halfAngleDegrees))
-                throw new InvalidDataException("缺 layer 或格心退化，无法定位旁挂图");
+            int handle = request.Handle;
+            if (!pendingSidecars.TryGetValue(handle, out var current))
+            {
+                // 请求已被 Clear/ForgetMemory/StorePatch 取消：移除方负责注销 in-flight；
+                // 这里必须直接返回，否则会把调用方明确“忘掉”的旧图重新 StorePatch 回内存。
+                _ = work.Exception;
+                return;
+            }
+            if (!ReferenceEquals(current, request))
+            {
+                // 同 handle 已被新请求替换：旧注册由替换方注销，旧结果不得发布。
+                _ = work.Exception;
+                return;
+            }
+            ownsInFlight = true;
+            pendingSidecars.Remove(handle);
+            var layer = request.Layer;
+            bool sameOwner = MatchesCelestialOwner(handle, layer);
+            bool samePath = false;
+            if (sameOwner)
+            {
+                // PathFor 会读天体生成配置；配置异常不能让 Update 每帧抛出去（缓存校验失败就当没这张图）。
+                try { samePath = string.Equals(request.Path, PathFor(cachedSeed, handle), StringComparison.Ordinal); }
+                catch (Exception ex)
+                {
+                    Log.Warning($"[PFView·烘焙] body={handle} 校验旁挂路径失败（按未采用处理）：{ex.Message}");
+                }
+            }
+            if (!sameOwner || !samePath)
+            {
+                _ = work.Exception;
+                loadTried.Remove(handle);
+                return;
+            }
 
-            texture = new Texture2D(pixels.Size, pixels.Size, TextureFormat.RGBA32, pixels.Levels.Length,
-                linear: false, createUninitialized: true)
+            Texture2D? texture = null;
+            try
             {
-                name = "PF_Patch_" + handle,
-                wrapMode = TextureWrapMode.Clamp,
-                filterMode = FilterMode.Trilinear
-            };
-            SidecarTextureUpload.Upload(texture, pixels);
-            if (!texture.EnsureGpuResident())
-                throw new InvalidOperationException("旁挂贴图上传失败");
-            StorePatch(handle, new Patch
+                var pixels = work.GetAwaiter().GetResult();
+                if (pixels == null) return;
+                if (layer == null || !ComputeCapFromLayer(layer, out var center, out float halfAngleDegrees))
+                    throw new InvalidDataException("缺 layer 或格心退化，无法定位旁挂图");
+
+                texture = new Texture2D(pixels.Size, pixels.Size, TextureFormat.RGBA32, pixels.Levels.Length,
+                    linear: false, createUninitialized: true)
+                {
+                    name = "PF_Patch_" + handle,
+                    wrapMode = TextureWrapMode.Clamp,
+                    filterMode = FilterMode.Trilinear
+                };
+                SidecarTextureUpload.Upload(texture, pixels);
+                if (!texture.EnsureGpuResident())
+                    throw new InvalidOperationException("旁挂贴图上传失败");
+                StorePatch(handle, new Patch
+                {
+                    tex = texture,
+                    path = request.Path,
+                    center = center,
+                    thetaMaxRad = (Mathf.Min(halfAngleDegrees, MaxHalfAngleDeg) + PatchMarginDeg) * Mathf.Deg2Rad
+                });
+                texture = null;
+            }
+            catch (Exception ex)
             {
-                tex = texture,
-                path = request.Path,
-                center = center,
-                thetaMaxRad = (Mathf.Min(halfAngleDegrees, MaxHalfAngleDeg) + PatchMarginDeg) * Mathf.Deg2Rad
-            });
-            texture = null;
-        }
-        catch (Exception ex)
-        {
-            Log.Warning($"[PFView·烘焙] body={handle} 旁挂图未采用：{ex.Message}");
+                Log.Warning($"[PFView·烘焙] body={handle} 旁挂图未采用：{ex.Message}");
+            }
+            finally
+            {
+                if (texture != null) UnityEngine.Object.Destroy(texture);
+            }
         }
         finally
         {
-            if (texture != null) UnityEngine.Object.Destroy(texture);
+            if (ownsInFlight) UntrackCacheFileInFlight(request.Path);
         }
     }
 
     internal static void MarkInUse(int handle)
     {
         if (!baked.TryGetValue(handle, out var patch)) return;
-        patch.lastUse = Stopwatch.GetTimestamp();
+        long now = Stopwatch.GetTimestamp();
+        patch.lastUse = now;
+        // 内存命中也要算“用过”：否则一张一直在看、但从未重新读盘的图会在 7 天后被清掉。
+        // 这是每帧路径，按 6 小时节流，避免每帧写文件时间戳。
+        if (now - patch.lastDiskTouch >= CacheTouchIntervalTicks)
+        {
+            patch.lastDiskTouch = now;
+            TouchCacheFile(patch.path);
+        }
         baked[handle] = patch;
     }
 

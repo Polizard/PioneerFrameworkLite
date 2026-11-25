@@ -220,6 +220,9 @@ namespace PioneerFramework
             ResetUiSession();
             SteeringInputHost.Rearm();
             EnsureResources();
+            // 2026-11-24 用户裁定：地表烘焙补丁缓存超过 7 天未用自动淘汰。
+            // 打开 PFView 时请求一次（后台任务，不阻塞；每次烘焙成功后还会再请求一次）。
+            PFViewSurfaceBake.RequestDiskSweep();
             // 2026-10-13（P2-b）：原挂 RenderPipelineManager.endCameraRendering 画轨道线；
             // 1.7 无该类型（且 GL 已退化为 2D）⇒ 轨道线改在 RenderScene 里以 mesh 提交，钩子整个删除。
         }

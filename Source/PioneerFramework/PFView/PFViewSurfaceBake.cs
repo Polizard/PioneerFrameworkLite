@@ -95,6 +95,7 @@ namespace PioneerFramework
             public float thetaMaxRad;       // 补丁盘覆盖的半角（含余量）
             public long bytes;
             public long lastUse;
+            public long lastDiskTouch;   // 上次刷新磁盘“最后使用时间”的 Stopwatch 刻度（热路径节流用）
         }
 
         private static readonly Dictionary<int, Patch> baked = new();
@@ -130,11 +131,13 @@ namespace PioneerFramework
             if (baked.TryGetValue(handle, out var old) && old.tex != null) UnityEngine.Object.Destroy(old.tex);
             patch.bytes = TextureBytes(patch.tex);
             patch.lastUse = System.Diagnostics.Stopwatch.GetTimestamp();
+            patch.lastDiskTouch = patch.lastUse;
             baked[handle] = patch;
-            pendingSidecars.Remove(handle);
+            if (pendingSidecars.Remove(handle, out var superseded)) UntrackCacheFileInFlight(superseded.Path);
             failed.Remove(handle);
             loadTried.Add(handle);
             Touch(handle);
+            TouchCacheFile(patch.path);
         }
 
         /// <summary>取补丁图 + 它的球冠。没有（没烤过、也没旁挂文件）⇒ false。</summary>
@@ -198,6 +201,7 @@ namespace PioneerFramework
             baked.Clear();
             failed.Clear();
             loadTried.Clear();
+            foreach (var request in pendingSidecars.Values) UntrackCacheFileInFlight(request.Path);
             pendingSidecars.Clear();
             baseTexCache.Clear();     // 底色解析结果也跟"世界/存档上下文"走（层 id 复用别串档）
             baseTexLabel.Clear();
@@ -224,7 +228,7 @@ namespace PioneerFramework
             if (worldPreviews.Remove(handle, out var preview)) UnityEngine.Object.Destroy(preview.Texture);
             if (baked.TryGetValue(handle, out var patch) && patch.tex != null) UnityEngine.Object.Destroy(patch.tex);
             baked.Remove(handle); failed.Remove(handle); loadTried.Remove(handle);
-            pendingSidecars.Remove(handle);
+            if (pendingSidecars.Remove(handle, out var pendingRequest)) UntrackCacheFileInFlight(pendingRequest.Path);
             if (layerId.HasValue)
             {
                 baseTexCache.Remove(layerId.Value); baseTexLabel.Remove(layerId.Value); baseTexLayers.Remove(layerId.Value);
@@ -261,7 +265,11 @@ namespace PioneerFramework
                 return true;
             }
             if (Find.World != null && loadTried.Add(bodyId))
-                pendingSidecars.Add(bodyId, new SidecarRequest(bodyId, layer, PathFor(cachedSeed, bodyId)));
+            {
+                var request = new SidecarRequest(bodyId, layer, PathFor(cachedSeed, bodyId));
+                pendingSidecars.Add(bodyId, request);
+                TrackCacheFileInFlight(request.Path);
+            }
             return false;
         }
 
@@ -697,17 +705,24 @@ namespace PioneerFramework
                 string waterCheck = OceanColorCheck(px, layer, centers, capCenter, patchT1, patchT2, thetaMaxRad);
 
                 // 4) 落盘（旁挂文件）
+                //    路径只算一次：清理任务按文件名保护“正在写”的文件，避免后台清理与落盘撞在同一张开旧图上。
                 int pngBytes = 0;
+                string patchPath = PathFor(seed, body.bodyId);
+                TrackCacheFileInFlight(patchPath);
                 try
                 {
-                    Directory.CreateDirectory(Path.GetDirectoryName(PathFor(seed, body.bodyId)));
+                    Directory.CreateDirectory(Path.GetDirectoryName(patchPath)!);
                     var png = tex.EncodeToPNG();
                     pngBytes = png != null ? png.Length : 0;
-                    if (png != null) File.WriteAllBytes(PathFor(seed, body.bodyId), png);
+                    if (png != null) File.WriteAllBytes(patchPath, png);
                 }
                 catch (Exception ex)
                 {
                     Log.Warning("[PFView·烘焙] 落盘失败（不影响本次使用）：" + ex.Message);
+                }
+                finally
+                {
+                    UntrackCacheFileInFlight(patchPath);
                 }
 
                 // 4b) **压成平台压缩格式**（2026-10-10 用户："这个显存占用是不是太巨大了"）：
@@ -725,7 +740,8 @@ namespace PioneerFramework
                     Log.Warning("[PFView·烘焙] 贴图压缩失败（不影响使用，只是显存偏大）：" + ex.Message);
                 }
 
-                StorePatch(body.bodyId, new Patch { tex = tex, center = capCenter, thetaMaxRad = thetaMaxRad, path = PathFor(seed, body.bodyId) });
+                StorePatch(body.bodyId, new Patch { tex = tex, center = capCenter, thetaMaxRad = thetaMaxRad, path = patchPath });
+                RequestDiskSweep();
 
                 double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * (1000.0 / System.Diagnostics.Stopwatch.Frequency);
                 float diameterKm = (float)(body.radius * 2.0 * thetaMaxRad / 1000.0);
