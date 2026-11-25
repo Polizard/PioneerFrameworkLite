@@ -373,6 +373,108 @@ namespace PioneerFramework.Tests
             Assert.Equal(AssemblerState.Building, comp.State);
         }
 
+        // ── 完工 → 编辑设计（2026-11-24，C+ UI 转生产） ──────────
+
+        /// <summary>
+        /// 造一台**已经完工**的组装器：罐 → 控制 → 引擎（引擎在级末，顺序合法）。
+        /// `ForceComplete()` 是不建 Thing 就能进 `Complete` 的唯一入口（`BeginLaunch` 要求 `Complete`，
+        /// `CancelLaunch` 要求 `Launching`，两者互为前提，绕不过去）。
+        ///
+        /// **宿主限制**：测试没加载 Core 的 `MessageTypeDef` ⇒ `MessageTypeDefOf.TaskCompletion` 为 null，
+        /// `Messages.Message` 在 `msg.def.sound` 处 NRE。`FinishBuild` 是**先提交状态再弹消息**
+        /// （state / workDone / fuelAmount 都在消息之前），所以只吞"来自 Verse.Messages 的那一个 NRE"，
+        /// 其余异常照抛 —— 不掩盖产品缺陷，也不必为测试给后端开洞。
+        /// </summary>
+        private static CompRocketAssembler CompletedRocket()
+        {
+            var comp = new CompRocketAssembler();
+            comp.AddPart(Tank(), 1);
+            comp.AddPart(Control(), 1);
+            comp.AddPart(Engine(), 1);
+            Assert.True(comp.StartBuild(out string why), why);
+            try
+            {
+                comp.ForceComplete();
+            }
+            catch (System.NullReferenceException ex) when (ex.StackTrace != null
+                && ex.StackTrace.Contains("Verse.Messages.Message"))
+            {
+                // 见上：只有宿主缺 MessageTypeDef 时才会到这里，状态已提交。
+            }
+            Assert.Equal(AssemblerState.Complete, comp.State);
+            return comp;
+        }
+
+        [Fact]
+        public void ReopenDesign_FromComplete_KeepsDesignAndClearsWork()
+        {
+            var comp = CompletedRocket();
+            string[] before = comp.Design.parts.Select(p => p.defName).ToArray();
+            Assert.Equal(3, comp.Design.parts.Count);
+            Assert.True(comp.WorkDone > 0f);                   // 完工时 workDone = workRequired
+            Assert.False(comp.CanEditDesign);
+
+            // 宿主里查不到 ShipPartDef("E"/"T") ⇒ FinishBuild 加的是 0 t 油，
+            // 这里手工放一个非零值，"回设计态清油"这条才算真的有判据（否则 0→0 是空断言）。
+            comp.Design.fuelAmount = 5000f;
+
+            Assert.True(comp.ReopenDesign());
+
+            Assert.Equal(AssemblerState.Designing, comp.State);
+            Assert.True(comp.CanEditDesign);
+            Assert.Equal(0f, comp.WorkDone, 3);
+            Assert.Equal(0f, comp.WorkRequired, 3);
+            Assert.Equal(0, comp.LaunchTicksLeft);
+            Assert.Equal(0f, comp.Design.fuelAmount, 3);        // 完工时加过油，回设计态要清
+
+            // 设计原样保留：行数与 defName 顺序都不变（这是"不用快照"的判据）
+            Assert.Equal(3, comp.Design.parts.Count);
+            Assert.Equal(before, comp.Design.parts.Select(p => p.defName).ToArray());
+
+            // 回到设计态后必须重新建造：Designing 不是可发射态
+            Assert.True(comp.StartBuild(out string why2), why2);
+            Assert.Equal(AssemblerState.Building, comp.State);
+            Assert.True(comp.WorkRequired > 0f);                // 工时在 StartBuild 里重算
+        }
+
+        [Fact]
+        public void ReopenDesign_RejectsNonCompleteStates()
+        {
+            // Idle：空设计
+            var idle = new CompRocketAssembler();
+            Assert.False(idle.ReopenDesign());
+            Assert.Equal(AssemblerState.Idle, idle.State);
+
+            // Designing：只加了件、还没开工
+            var designing = new CompRocketAssembler();
+            designing.AddPart(Tank(), 1);
+            Assert.Equal(AssemblerState.Designing, designing.State);
+            Assert.False(designing.ReopenDesign());
+            Assert.Equal(AssemblerState.Designing, designing.State);
+
+            // Building：建造中不许跳回设计（必须先 CancelBuild）
+            var building = new CompRocketAssembler();
+            building.AddPart(Tank(), 1);
+            building.AddPart(Control(), 1);
+            building.AddPart(Engine(), 1);
+            Assert.True(building.StartBuild(out string why), why);
+            Assert.False(building.ReopenDesign());
+            Assert.Equal(AssemblerState.Building, building.State);
+            Assert.True(building.WorkRequired > 0f);            // 被拒时不能顺手清工时
+        }
+
+        [Fact]
+        public void ReopenDesign_ThenBeginLaunchIsRejected()
+        {
+            var comp = CompletedRocket();
+            Assert.True(comp.ReopenDesign());
+
+            Assert.False(comp.BeginLaunch(out string why));
+            Assert.Contains("完成", why);
+            Assert.Equal(AssemblerState.Designing, comp.State);
+            Assert.Equal(0, comp.LaunchTicksLeft);              // 没被误开倒计时
+        }
+
         [Fact]
         public void BuildParts_StacksAlongMinusZ_WithLengthOnZ()
         {

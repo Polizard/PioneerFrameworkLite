@@ -649,6 +649,25 @@ namespace PioneerFramework.GroundAssembly
             return true;
         }
 
+        /// <summary>
+        /// **完工后回去改设计**（2026-11-24，C+ UI 转生产）：`Complete` 原本没有出口 ——
+        /// `CanEditDesign` 不认它、`StartBuild` 拒绝它，唯一能走的 `StartNewRocket` 会把设计一起清空，
+        /// 于是 UI 只能"存快照 → StartNewRocket → 灌回去"，漏一个字段就静默丢设计。
+        /// 这里只把状态拨回 `Designing`，**保留设计本身**（零件 / 级标签 / 载荷 / 机舱 / 尺寸），
+        /// 清掉工时、倒计时与完工时加的油；之后必须重新 `StartBuild`（`Designing` 不是可发射态）。
+        /// 不碰 `parent` / `Map` / 时间基 / 物理步 / 存档字段。
+        /// </summary>
+        public bool ReopenDesign()
+        {
+            if (state != AssemblerState.Complete) return false;
+            state = AssemblerState.Designing;
+            workDone = 0f;
+            workRequired = 0f;          // StartBuild 会重算工时，置 0 只表示"还没开工"
+            launchTicksLeft = 0;
+            Design.fuelAmount = 0f;     // FinishBuild 完工时加过油，回设计态必须清掉
+            return true;
+        }
+
         private void ResetToIdle()
         {
             design = new RocketDesignSpec { CabinType = RocketCabinType.None };
@@ -1110,7 +1129,7 @@ namespace PioneerFramework.GroundAssembly
                 defaultLabel = "火箭组装器",
                 defaultDesc = "打开组装窗口：左侧预览火箭外形，右侧选件、建造。",
                 icon = TexCommand.DesirePower,
-                action = () => Find.WindowStack.Add(new Window_RocketAssembler(this)),
+                action = () => Find.WindowStack.Add(new Window_RocketAssemblerC(this)),
             };
         }
 
