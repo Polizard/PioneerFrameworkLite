@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="940" viewBox="0 0 1200 940" font-family="Microsoft YaHei, 'Noto Sans SC', 'Segoe UI Symbol', sans-serif">
+<rect x="0" y="0" width="1200" height="940" fill="#15191D" stroke="#616C7A" stroke-width="1"/>
+<text x="24" y="44" font-size="20" fill="#FFFFFF" text-anchor="start" font-weight="600">PFL 火箭组装器 · 视觉基准</text>
+<text x="24" y="66" font-size="10" fill="#A5A9AD" text-anchor="start">只使用 RimWorld 原版 UI 配色；不引入 DMSNF / PFL 旧色板的军绿、冷青、暖铜。</text>
+<line x1="24" y1="82" x2="1176" y2="82" stroke="#2E363F" stroke-width="1"/>
+<text x="24" y="108" font-size="12" fill="#FFFFFF" text-anchor="start">01 / 调色（全部来自原版）</text>
+<rect x="24" y="122" width="130" height="64" fill="#15191D" stroke="#2E363F" stroke-width="1"/>
+<text x="24" y="202" font-size="10" fill="#FFFFFF" text-anchor="start">#15191D</text>
+<text x="24" y="216" font-size="9" fill="#A5A9AD" text-anchor="start">窗口底</text>
+<text x="24" y="229" font-size="8" fill="#6E747B" text-anchor="start">Widgets.WindowBGFillColor</text>
+<rect x="166" y="122" width="130" height="64" fill="#616C7A" stroke="#2E363F" stroke-width="1"/>
+<text x="166" y="202" font-size="10" fill="#FFFFFF" text-anchor="start">#616C7A</text>
+<text x="166" y="216" font-size="9" fill="#A5A9AD" text-anchor="start">窗口边</text>
+<text x="166" y="229" font-size="8" fill="#6E747B" text-anchor="start">Widgets.WindowBGBorderColor</text>
+<rect x="308" y="122" width="130" height="64" fill="#1E2226" stroke="#2E363F" stroke-width="1"/>
+<text x="308" y="202" font-size="10" fill="#FFFFFF" text-anchor="start">#1E2226</text>
+<text x="308" y="216" font-size="9" fill="#A5A9AD" text-anchor="start">面板</text>
+<text x="308" y="229" font-size="8" fill="#6E747B" text-anchor="start">窗口底 + 白 4%</text>
+<rect x="450" y="122" width="130" height="64" fill="#23282E" stroke="#2E363F" stroke-width="1"/>
+<text x="450" y="202" font-size="10" fill="#FFFFFF" text-anchor="start">#23282E</text>
+<text x="450" y="216" font-size="9" fill="#A5A9AD" text-anchor="start">面板高亮</text>
+<text x="450" y="229" font-size="8" fill="#6E747B" text-anchor="start">窗口底 + 白 7%</text>
+<rect x="592" y="122" width="130" height="64" fill="#2E363F" stroke="#2E363F" stroke-width="1"/>
+<text x="592" y="202" font-size="10" fill="#FFFFFF" text-anchor="start">#2E363F</text>
+<text x="592" y="216" font-size="9" fill="#A5A9AD" text-anchor="start">分割线</text>
+<text x="592" y="229" font-size="8" fill="#6E747B" text-anchor="start">白 10% 叠底</text>
+<rect x="734" y="122" width="130" height="64" fill="#DBB40C" stroke="#2E363F" stroke-width="1"/>
+<text x="734" y="202" font-size="10" fill="#FFFFFF" text-anchor="start">#DBB40C</text>
+<text x="734" y="216" font-size="9" fill="#A5A9AD" text-anchor="start">选中 / 状态</text>
+<text x="734" y="229" font-size="8" fill="#6E747B" text-anchor="start">ColorLibrary.Gold</text>
+<rect x="876" y="122" width="130" height="64" fill="#FF3333" stroke="#2E363F" stroke-width="1"/>
+<text x="876" y="202" font-size="10" fill="#FFFFFF" text-anchor="start">#FF3333</text>
+<text x="876" y="216" font-size="9" fill="#A5A9AD" text-anchor="start">阻断 / 错误</text>
+<text x="876" y="229" font-size="8" fill="#6E747B" text-anchor="start">ColorLibrary.RedReadable</text>
+<rect x="1018" y="122" width="130" height="64" fill="#FFFFFF" stroke="#2E363F" stroke-width="1"/>
+<text x="1018" y="202" font-size="10" fill="#FFFFFF" text-anchor="start">#FFFFFF</text>
+<text x="1018" y="216" font-size="9" fill="#A5A9AD" text-anchor="start">正文 / 读数</text>
+<text x="1018" y="229" font-size="8" fill="#6E747B" text-anchor="start">ColorLibrary.White</text>
+<text x="24" y="262" font-size="12" fill="#FFFFFF" text-anchor="start">02 / 字体层级（GameFont）</text>
+<text x="24" y="304" font-size="18" fill="#FFFFFF" text-anchor="start">火箭组装器</text>
+<text x="360" y="304" font-size="9" fill="#A5A9AD" text-anchor="start">Medium 18 / 600</text>
+<text x="640" y="304" font-size="9" fill="#6E747B" text-anchor="start">窗口标题</text>
+<line x1="24" y1="316" x2="1176" y2="316" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="24" y="338" font-size="16" fill="#FFFFFF" text-anchor="start">装配清单</text>
+<text x="360" y="338" font-size="9" fill="#A5A9AD" text-anchor="start">Medium 16 / 600</text>
+<text x="640" y="338" font-size="9" fill="#6E747B" text-anchor="start">分栏标题</text>
+<line x1="24" y1="350" x2="1176" y2="350" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="24" y="372" font-size="13" fill="#FFFFFF" text-anchor="start">二级液氧煤油罐</text>
+<text x="360" y="372" font-size="9" fill="#A5A9AD" text-anchor="start">Small 13 / 400</text>
+<text x="640" y="372" font-size="9" fill="#6E747B" text-anchor="start">正文、行名</text>
+<line x1="24" y1="384" x2="1176" y2="384" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="24" y="406" font-size="11" fill="#FFFFFF" text-anchor="start">ve 3000 · 600 kN · 0.50 t</text>
+<text x="360" y="406" font-size="9" fill="#A5A9AD" text-anchor="start">Tiny 11 / 400</text>
+<text x="640" y="406" font-size="9" fill="#6E747B" text-anchor="start">规格、标签</text>
+<line x1="24" y1="418" x2="1176" y2="418" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="24" y="440" font-size="11" fill="#FFFFFF" text-anchor="start">TWR 0.21   1700.0 t</text>
+<text x="360" y="440" font-size="9" fill="#A5A9AD" text-anchor="start">Tiny 11 / 400 · 等宽</text>
+<text x="640" y="440" font-size="9" fill="#6E747B" text-anchor="start">数字读数（右对齐）</text>
+<line x1="24" y1="452" x2="1176" y2="452" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="24" y="466" font-size="12" fill="#FFFFFF" text-anchor="start">03 / 栅格：1200 窗口 = 16 边距 + 12 × 90 列 + 11 × 8 槽</text>
+<rect x="24" y="480" width="90" height="54" fill="#FFFFFF" fill-opacity="0.025" stroke="#2E363F" stroke-width="1"/>
+<text x="69" y="512" font-size="9" fill="#6E747B" text-anchor="middle">01</text>
+<rect x="122" y="480" width="90" height="54" fill="#FFFFFF" fill-opacity="0.025" stroke="#2E363F" stroke-width="1"/>
+<text x="167" y="512" font-size="9" fill="#6E747B" text-anchor="middle">02</text>
+<rect x="220" y="480" width="90" height="54" fill="#FFFFFF" fill-opacity="0.025" stroke="#2E363F" stroke-width="1"/>
+<text x="265" y="512" font-size="9" fill="#6E747B" text-anchor="middle">03</text>
+<rect x="318" y="480" width="90" height="54" fill="#FFFFFF" fill-opacity="0.025" stroke="#2E363F" stroke-width="1"/>
+<text x="363" y="512" font-size="9" fill="#6E747B" text-anchor="middle">04</text>
+<rect x="416" y="480" width="90" height="54" fill="#FFFFFF" fill-opacity="0.025" stroke="#2E363F" stroke-width="1"/>
+<text x="461" y="512" font-size="9" fill="#6E747B" text-anchor="middle">05</text>
+<rect x="514" y="480" width="90" height="54" fill="#FFFFFF" fill-opacity="0.025" stroke="#2E363F" stroke-width="1"/>
+<text x="559" y="512" font-size="9" fill="#6E747B" text-anchor="middle">06</text>
+<rect x="612" y="480" width="90" height="54" fill="#FFFFFF" fill-opacity="0.025" stroke="#2E363F" stroke-width="1"/>
+<text x="657" y="512" font-size="9" fill="#6E747B" text-anchor="middle">07</text>
+<rect x="710" y="480" width="90" height="54" fill="#FFFFFF" fill-opacity="0.025" stroke="#2E363F" stroke-width="1"/>
+<text x="755" y="512" font-size="9" fill="#6E747B" text-anchor="middle">08</text>
+<rect x="808" y="480" width="90" height="54" fill="#FFFFFF" fill-opacity="0.025" stroke="#2E363F" stroke-width="1"/>
+<text x="853" y="512" font-size="9" fill="#6E747B" text-anchor="middle">09</text>
+<rect x="906" y="480" width="90" height="54" fill="#FFFFFF" fill-opacity="0.025" stroke="#2E363F" stroke-width="1"/>
+<text x="951" y="512" font-size="9" fill="#6E747B" text-anchor="middle">10</text>
+<rect x="1004" y="480" width="90" height="54" fill="#FFFFFF" fill-opacity="0.025" stroke="#2E363F" stroke-width="1"/>
+<text x="1049" y="512" font-size="9" fill="#6E747B" text-anchor="middle">11</text>
+<rect x="1102" y="480" width="90" height="54" fill="#FFFFFF" fill-opacity="0.025" stroke="#2E363F" stroke-width="1"/>
+<text x="1147" y="512" font-size="9" fill="#6E747B" text-anchor="middle">12</text>
+<text x="24" y="552" font-size="9" fill="#A5A9AD" text-anchor="start">所有 y 对齐 8 px；面板间距 8；行高 26 / 32；按钮高 28 / 32 / 44；卡片内边距 12。</text>
+<text x="24" y="590" font-size="12" fill="#FFFFFF" text-anchor="start">04 / 控件（磁带盒语法：1px 线、方角、状态灯、编号槽）</text>
+<rect x="24" y="604" width="112" height="32" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="25" y="605" width="110" height="5" fill="#7D6133"/><rect x="25" y="629" width="110" height="6" fill="#4F3D21"/><line x1="25" y1="605" x2="135" y2="605" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="25" y1="635" x2="135" y2="635" stroke="#281F11" stroke-width="1"/><text x="81" y="625" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">开始建造</text><text x="80" y="624" font-size="11" fill="#FFFFFF" text-anchor="middle">开始建造</text>
+<rect x="144" y="604" width="100" height="32" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="145" y="605" width="98" height="5" fill="#7D6133"/><rect x="145" y="629" width="98" height="6" fill="#4F3D21"/><line x1="145" y1="605" x2="243" y2="605" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="145" y1="635" x2="243" y2="635" stroke="#281F11" stroke-width="1"/><text x="195" y="625" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">取消建造</text><text x="194" y="624" font-size="11" fill="#FFFFFF" text-anchor="middle">取消建造</text>
+<rect x="252" y="604" width="100" height="32" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="253" y="605" width="98" height="5" fill="#7D6133"/><rect x="253" y="629" width="98" height="6" fill="#4F3D21"/><line x1="253" y1="605" x2="351" y2="605" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="253" y1="635" x2="351" y2="635" stroke="#281F11" stroke-width="1"/><text x="303" y="625" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">强制发射</text><text x="302" y="624" font-size="11" fill="#FF4D4D" text-anchor="middle">强制发射</text>
+<rect x="360" y="604" width="100" height="32" fill="#3E382F" stroke="#2A251E" stroke-width="1"/><rect x="361" y="605" width="98" height="5" fill="#4A4238"/><rect x="361" y="629" width="98" height="6" fill="#2E2922"/><line x1="361" y1="605" x2="459" y2="605" stroke="#5A5045" stroke-width="1" stroke-opacity="0.8"/><line x1="361" y1="635" x2="459" y2="635" stroke="#281F11" stroke-width="1"/><text x="410" y="624" font-size="11" fill="#8E887E" text-anchor="middle">不可用</text>
+<text x="24" y="660" font-size="8" fill="#6E747B" text-anchor="start">动作按钮：原版棕色 9-slice（Widgets.ButtonText）；主/次靠尺寸与位置，不靠颜色。</text>
+<rect x="24" y="676" width="44" height="20" fill="#DBB40C" fill-opacity="0.14" stroke="#DBB40C" stroke-width="1"/><text x="46" y="689.5" font-size="10" fill="#DBB40C" text-anchor="middle">全部</text>
+<rect x="72" y="676" width="44" height="20" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/><text x="94" y="689.5" font-size="10" fill="#A5A9AD" text-anchor="middle">引擎</text>
+<rect x="120" y="676" width="56" height="20" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/><text x="148" y="689.5" font-size="10" fill="#A5A9AD" text-anchor="middle">工质箱</text>
+<text x="190" y="691" font-size="8" fill="#6E747B" text-anchor="start">分段选择器：选中 = 金 14% 底 + 金框；不套底板。</text>
+<text x="24" y="726" font-size="9" fill="#6E747B" text-anchor="start">状态灯</text>
+<rect x="80" y="719" width="6" height="6" fill="#DBB40C"/>
+<text x="91" y="726" font-size="8" fill="#A5A9AD" text-anchor="start">进行中</text>
+<rect x="142" y="719" width="6" height="6" fill="#DBB40C"/>
+<text x="153" y="726" font-size="8" fill="#A5A9AD" text-anchor="start">可发射</text>
+<rect x="204" y="719" width="6" height="6" fill="#FF3333"/>
+<text x="215" y="726" font-size="8" fill="#A5A9AD" text-anchor="start">阻断</text>
+<rect x="266" y="719" width="6" height="6" fill="#6E747B"/>
+<text x="277" y="726" font-size="8" fill="#A5A9AD" text-anchor="start">空闲</text>
+<rect x="24" y="742" width="150" height="52" fill="#FFFFFF" fill-opacity="0.02" stroke="#2E363F" stroke-width="1"/>
+<line x1="30" y1="748" x2="42" y2="748" stroke="#616C7A" stroke-width="1"/>
+<line x1="30" y1="748" x2="30" y2="760" stroke="#616C7A" stroke-width="1"/>
+<line x1="168" y1="748" x2="156" y2="748" stroke="#616C7A" stroke-width="1"/>
+<line x1="168" y1="748" x2="168" y2="760" stroke="#616C7A" stroke-width="1"/>
+<text x="40" y="778" font-size="8" fill="#A5A9AD" text-anchor="start">L 形角标 1px / 12px 臂</text>
+<rect x="190" y="742" width="160" height="22" fill="#1E2226" stroke="#2E363F" stroke-width="1"/>
+<rect x="190" y="742" width="3" height="22" fill="#DBB40C"/>
+<text x="202" y="757" font-size="8" fill="#A5A9AD" text-anchor="start">SpecBar 3px 语义色</text>
+<text x="24" y="820" font-size="9" fill="#6E747B" text-anchor="start">行状态</text>
+<rect x="80" y="808" width="200" height="26" fill="#FFFFFF" fill-opacity="0"/>
+<text x="88" y="825" font-size="9" fill="#A5A9AD" text-anchor="start">常态</text>
+<rect x="80" y="838" width="200" height="26" fill="#FFFFFF" fill-opacity="0.05"/>
+<text x="88" y="855" font-size="9" fill="#A5A9AD" text-anchor="start">悬停 白 5%</text>
+<rect x="80" y="868" width="200" height="26" fill="#FFFFFF" fill-opacity="0.07"/>
+<rect x="80" y="868" width="3" height="26" fill="#DBB40C"/>
+<text x="88" y="885" font-size="9" fill="#A5A9AD" text-anchor="start">选中 白 7% + 金 3px</text>
+<text x="360" y="726" font-size="12" fill="#FFFFFF" text-anchor="start">05 / 纪律</text>
+<text x="360" y="746" font-size="9" fill="#A5A9AD" text-anchor="start">1. 金色只用于：当前选中、进行中/可发射；不画金色按钮。</text>
+<text x="360" y="766" font-size="9" fill="#A5A9AD" text-anchor="start">2. 红色只用于：阻断、错误、必被拒。不得当装饰。</text>
+<text x="360" y="786" font-size="9" fill="#A5A9AD" text-anchor="start">3. 按钮直接用原版 9-slice；不自绘渐变、发光、圆角卡片。</text>
+<text x="360" y="806" font-size="9" fill="#A5A9AD" text-anchor="start">4. 数字右对齐并用等宽字形；行号 01 两位。</text>
+<text x="360" y="826" font-size="9" fill="#A5A9AD" text-anchor="start">5. 不画字面磁带、CRT 扫描线、霓虹；设备感靠线与槽。</text>
+<text x="360" y="846" font-size="9" fill="#A5A9AD" text-anchor="start">6. 每个面板只有一个标题；标题下 1px 线，不再加卡片。</text>
+<text x="360" y="866" font-size="9" fill="#A5A9AD" text-anchor="start">7. 空状态写「当前状态 + 原因 + 下一步」，不放 — / …。</text>
+<text x="360" y="886" font-size="9" fill="#A5A9AD" text-anchor="start">8. 调试入口只在 DevMode 出现，且与主操作分栏。</text>
+<text x="360" y="906" font-size="9" fill="#A5A9AD" text-anchor="start">9. 微图标 ↑↓× 无底板，热区 16–20px；动作按钮才用原版贴图。</text>
+</svg>

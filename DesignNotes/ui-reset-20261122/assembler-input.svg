@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" font-family="Microsoft YaHei, 'Noto Sans SC', 'Segoe UI Symbol', sans-serif">
+<rect x="0" y="0" width="1200" height="600" fill="#15191D" stroke="#616C7A" stroke-width="1"/>
+<text x="24" y="44" font-size="20" fill="#FFFFFF" text-anchor="start" font-weight="600">输入方式：只用原版，不新增按键</text>
+<text x="24" y="68" font-size="10" fill="#A5A9AD" text-anchor="start">所有操作都有可见按钮；Esc 是 Window 自带行为，不在界面上教。</text>
+<line x1="24" y1="84" x2="1176" y2="84" stroke="#2E363F" stroke-width="1"/>
+<rect x="1000" y="24" width="176" height="30" fill="#FFFFFF" fill-opacity="0.06" stroke="#DBB40C" stroke-width="1"/>
+<text x="1016" y="44" font-size="10" fill="#A5A9AD" text-anchor="start">自定义按键</text>
+<text x="1156" y="46" font-size="14" fill="#DBB40C" text-anchor="end" font-weight="600">0</text>
+<rect x="24" y="100" width="1152" height="36" fill="#23282E"/>
+<text x="40" y="123" font-size="10" fill="#6E747B" text-anchor="start">操作</text>
+<text x="256" y="123" font-size="10" fill="#6E747B" text-anchor="start">用什么</text>
+<text x="576" y="123" font-size="10" fill="#6E747B" text-anchor="start">来源</text>
+<rect x="24" y="136" width="1152" height="46" fill="#FFFFFF" fill-opacity="0.02"/>
+<text x="40" y="164" font-size="11" fill="#FFFFFF" text-anchor="start">关闭窗口 / 弹层</text>
+<text x="256" y="164" font-size="10" fill="#A5A9AD" text-anchor="start">Esc 或点 ×</text>
+<text x="576" y="164" font-size="9" fill="#6E747B" text-anchor="start">Window.closeOnCancel（原版默认 true）</text>
+<line x1="24" y1="182" x2="1176" y2="182" stroke="#2E363F" stroke-width="1" stroke-opacity="0.7"/>
+<text x="40" y="210" font-size="11" fill="#FFFFFF" text-anchor="start">列表滚动</text>
+<text x="256" y="210" font-size="10" fill="#A5A9AD" text-anchor="start">鼠标滚轮</text>
+<text x="576" y="210" font-size="9" fill="#6E747B" text-anchor="start">Widgets.BeginScrollView（原版）</text>
+<line x1="24" y1="228" x2="1176" y2="228" stroke="#2E363F" stroke-width="1" stroke-opacity="0.7"/>
+<rect x="24" y="228" width="1152" height="46" fill="#FFFFFF" fill-opacity="0.02"/>
+<text x="40" y="256" font-size="11" fill="#FFFFFF" text-anchor="start">看零件规格</text>
+<text x="256" y="256" font-size="10" fill="#A5A9AD" text-anchor="start">鼠标悬停</text>
+<text x="576" y="256" font-size="9" fill="#6E747B" text-anchor="start">TooltipHandler.TipRegion（原版）</text>
+<line x1="24" y1="274" x2="1176" y2="274" stroke="#2E363F" stroke-width="1" stroke-opacity="0.7"/>
+<text x="40" y="302" font-size="11" fill="#FFFFFF" text-anchor="start">选中零件</text>
+<text x="256" y="302" font-size="10" fill="#A5A9AD" text-anchor="start">左键点零件</text>
+<text x="576" y="302" font-size="9" fill="#6E747B" text-anchor="start">现有 pieceHits</text>
+<line x1="24" y1="320" x2="1176" y2="320" stroke="#2E363F" stroke-width="1" stroke-opacity="0.7"/>
+<rect x="24" y="320" width="1152" height="46" fill="#FFFFFF" fill-opacity="0.02"/>
+<text x="40" y="348" font-size="11" fill="#FFFFFF" text-anchor="start">放置零件</text>
+<text x="256" y="348" font-size="10" fill="#A5A9AD" text-anchor="start">左键点火箭</text>
+<text x="576" y="348" font-size="9" fill="#6E747B" text-anchor="start">现有 HandlePlacementClick</text>
+<line x1="24" y1="366" x2="1176" y2="366" stroke="#2E363F" stroke-width="1" stroke-opacity="0.7"/>
+<text x="40" y="394" font-size="11" fill="#FFFFFF" text-anchor="start">取消放置</text>
+<text x="256" y="394" font-size="10" fill="#A5A9AD" text-anchor="start">再点一次已选件</text>
+<text x="576" y="394" font-size="9" fill="#6E747B" text-anchor="start">可见按钮，无右键</text>
+<line x1="24" y1="412" x2="1176" y2="412" stroke="#2E363F" stroke-width="1" stroke-opacity="0.7"/>
+<rect x="24" y="412" width="1152" height="46" fill="#FFFFFF" fill-opacity="0.02"/>
+<text x="40" y="440" font-size="11" fill="#FFFFFF" text-anchor="start">删除</text>
+<text x="256" y="440" font-size="10" fill="#A5A9AD" text-anchor="start">检视栏 / 清单底部「删除」</text>
+<text x="576" y="440" font-size="9" fill="#6E747B" text-anchor="start">可见按钮，无 Delete 键</text>
+<line x1="24" y1="458" x2="1176" y2="458" stroke="#2E363F" stroke-width="1" stroke-opacity="0.7"/>
+<text x="40" y="486" font-size="11" fill="#FFFFFF" text-anchor="start">调序</text>
+<text x="256" y="486" font-size="10" fill="#A5A9AD" text-anchor="start">拖 ≡ 或点 ↑↓ 按钮</text>
+<text x="576" y="486" font-size="9" fill="#6E747B" text-anchor="start">可见按钮，无键盘</text>
+<line x1="24" y1="504" x2="1176" y2="504" stroke="#2E363F" stroke-width="1" stroke-opacity="0.7"/>
+<line x1="24" y1="520" x2="1176" y2="520" stroke="#2E363F" stroke-width="1"/>
+<text x="24" y="552" font-size="11" fill="#FF3333" text-anchor="start">不采用：Delete 键 / ↑↓ 键 / 右键取消 / 自定义热键。</text>
+<text x="24" y="576" font-size="10" fill="#A5A9AD" text-anchor="start">Esc 只走 Window.closeOnCancel，不写任何 Event.current.keyCode 分支。</text>
+</svg>

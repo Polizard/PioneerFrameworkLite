@@ -1,0 +1,433 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="2534" viewBox="0 0 1200 2534" font-family="Microsoft YaHei, 'Noto Sans SC', 'Segoe UI Symbol', sans-serif">
+<rect x="0" y="0" width="1200" height="2534" fill="#15191D" stroke="#616C7A" stroke-width="1"/>
+<text x="24" y="46" font-size="20" fill="#FFFFFF" text-anchor="start" font-weight="600">PFL 火箭组装器 · C 方案预览</text>
+<text x="24" y="70" font-size="10" fill="#A5A9AD" text-anchor="start">L0 看态 / L1 编辑态 / L2 清单弹层 · 2026-11-23 已拍 D1–D4</text>
+<line x1="24" y1="84" x2="1176" y2="84" stroke="#2E363F" stroke-width="1"/>
+<text x="24" y="116" font-size="12" fill="#FFFFFF" text-anchor="start" font-weight="600">L0 · 看态（受阻示例）</text>
+<text x="24" y="130" font-size="9" fill="#6E747B" text-anchor="start">一个主按钮 + 查看全部检查 + 一行 meta</text>
+<g transform="translate(0,136)">
+<rect x="0" y="0" width="1200" height="720" fill="#15191D" stroke="#616C7A" stroke-width="1"/>
+<rect x="0" y="0" width="1200" height="44" fill="#101418"/>
+<line x1="0" y1="44" x2="1200" y2="44" stroke="#2E363F" stroke-width="1"/>
+<text x="20" y="29" font-size="18" fill="#FFFFFF" text-anchor="start" font-weight="600">火箭组装器</text>
+<text x="160" y="29" font-size="9" fill="#6E747B" text-anchor="start" letter-spacing="2">装配台 01</text>
+<text x="1166" y="29" font-size="16" fill="#A5A9AD" text-anchor="start">×</text>
+<line x1="824" y1="44" x2="824" y2="720" stroke="#2E363F" stroke-width="1"/>
+<line x1="0" y1="44" x2="0" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="64" y1="44" x2="64" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="128" y1="44" x2="128" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="192" y1="44" x2="192" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="256" y1="44" x2="256" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="320" y1="44" x2="320" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="384" y1="44" x2="384" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="448" y1="44" x2="448" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="512" y1="44" x2="512" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="576" y1="44" x2="576" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="640" y1="44" x2="640" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="704" y1="44" x2="704" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="768" y1="44" x2="768" y2="720" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="0" y1="44" x2="824" y2="44" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="0" y1="108" x2="824" y2="108" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="0" y1="172" x2="824" y2="172" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="0" y1="236" x2="824" y2="236" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="0" y1="300" x2="824" y2="300" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="0" y1="364" x2="824" y2="364" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="0" y1="428" x2="824" y2="428" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="0" y1="492" x2="824" y2="492" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="0" y1="556" x2="824" y2="556" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="0" y1="620" x2="824" y2="620" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="0" y1="684" x2="824" y2="684" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<rect x="386" y="96" width="28" height="24" fill="#22272D" stroke="#39424C" stroke-width="1"/>
+<rect x="334" y="120" width="32" height="500" fill="#262C33" stroke="#46515C" stroke-width="1"/>
+<line x1="334" y1="166" x2="366" y2="166" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="334" y1="212" x2="366" y2="212" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="334" y1="258" x2="366" y2="258" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="334" y1="304" x2="366" y2="304" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="334" y1="350" x2="366" y2="350" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="334" y1="396" x2="366" y2="396" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="334" y1="442" x2="366" y2="442" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="334" y1="488" x2="366" y2="488" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="334" y1="534" x2="366" y2="534" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="334" y1="580" x2="366" y2="580" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<polygon points="337,620 363,620 366,636 334,636" fill="#2E2718" stroke="#9C8018" stroke-width="1"/>
+<line x1="336" y1="636" x2="365" y2="636" stroke="#DBB40C" stroke-width="1" stroke-opacity="0.55"/>
+<rect x="380" y="120" width="40" height="500" fill="#262C33" stroke="#46515C" stroke-width="1"/>
+<line x1="380" y1="166" x2="420" y2="166" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="380" y1="212" x2="420" y2="212" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="380" y1="258" x2="420" y2="258" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="380" y1="304" x2="420" y2="304" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="380" y1="350" x2="420" y2="350" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="380" y1="396" x2="420" y2="396" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="380" y1="442" x2="420" y2="442" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="380" y1="488" x2="420" y2="488" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="380" y1="534" x2="420" y2="534" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="380" y1="580" x2="420" y2="580" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<polygon points="383,620 417,620 420,636 380,636" fill="#2E2718" stroke="#9C8018" stroke-width="1"/>
+<line x1="382" y1="636" x2="419" y2="636" stroke="#DBB40C" stroke-width="1" stroke-opacity="0.55"/>
+<rect x="434" y="120" width="32" height="500" fill="#262C33" stroke="#46515C" stroke-width="1"/>
+<line x1="434" y1="166" x2="466" y2="166" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="434" y1="212" x2="466" y2="212" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="434" y1="258" x2="466" y2="258" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="434" y1="304" x2="466" y2="304" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="434" y1="350" x2="466" y2="350" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="434" y1="396" x2="466" y2="396" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="434" y1="442" x2="466" y2="442" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="434" y1="488" x2="466" y2="488" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="434" y1="534" x2="466" y2="534" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="434" y1="580" x2="466" y2="580" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<polygon points="437,620 463,620 466,636 434,636" fill="#2E2718" stroke="#9C8018" stroke-width="1"/>
+<line x1="436" y1="636" x2="465" y2="636" stroke="#DBB40C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="250" y1="636" x2="550" y2="636" stroke="#2E363F" stroke-width="1"/>
+<line x1="72" y1="120" x2="72" y2="620" stroke="#616C7A" stroke-width="1" stroke-opacity="0.7"/>
+<line x1="64" y1="120" x2="80" y2="120" stroke="#616C7A" stroke-width="1" stroke-opacity="0.7"/>
+<line x1="64" y1="620" x2="80" y2="620" stroke="#616C7A" stroke-width="1" stroke-opacity="0.7"/>
+<text x="58" y="370" font-size="9" fill="#6E747B" text-anchor="middle" letter-spacing="1" transform="rotate(-90 58 370)">43.0 m</text>
+<rect x="856" y="126" width="8" height="8" fill="#FF3333"/>
+<text x="874" y="140" font-size="24" fill="#FFFFFF" text-anchor="start" font-weight="600">受阻</text>
+<text x="856" y="196" font-size="13" fill="#FFFFFF" text-anchor="start">活动级 0 推重比 0.21，</text>
+<text x="856" y="220" font-size="13" fill="#FF3333" text-anchor="start">起飞会被拒。</text>
+<text x="856" y="272" font-size="12" fill="#FF3333" text-anchor="start">✗ 推重比 &lt; 1</text>
+<text x="856" y="298" font-size="11" fill="#6E747B" text-anchor="start">其余 3 项检查通过</text>
+<rect x="856" y="340" width="168" height="44" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="857" y="341" width="166" height="7" fill="#7D6133"/><rect x="857" y="374" width="166" height="9" fill="#4F3D21"/><line x1="857" y1="341" x2="1023" y2="341" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="857" y1="383" x2="1023" y2="383" stroke="#281F11" stroke-width="1"/><text x="941" y="367" font-size="13" fill="#000000" text-anchor="middle" opacity="0.5">编辑设计</text><text x="940" y="366" font-size="13" fill="#FFFFFF" text-anchor="middle">编辑设计</text>
+<text x="856" y="424" font-size="11" fill="#A5A9AD" text-anchor="start">查看全部检查</text>
+<line x1="856" y1="432" x2="944" y2="432" stroke="#2E363F" stroke-width="1"/>
+<text x="856" y="676" font-size="10" fill="#6E747B" text-anchor="start">43.0 m · 87.8 t · 2 级</text>
+</g>
+<text x="24" y="900" font-size="12" fill="#FFFFFF" text-anchor="start" font-weight="600">L1 · 编辑态（右栏底部：开始建造）</text>
+<text x="24" y="914" font-size="9" fill="#6E747B" text-anchor="start">级轨 + 画布选中 + 检视栏 + 零件带 + 建造条</text>
+<g transform="translate(0,920)">
+<rect x="0" y="0" width="1200" height="720" fill="#15191D" stroke="#616C7A" stroke-width="1"/>
+<rect x="0" y="0" width="1200" height="44" fill="#101418"/>
+<line x1="0" y1="44" x2="1200" y2="44" stroke="#2E363F" stroke-width="1"/>
+<text x="20" y="29" font-size="18" fill="#FFFFFF" text-anchor="start" font-weight="600">火箭组装器 · 设计</text>
+<rect x="1024" y="8" width="64" height="28" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="1025" y="9" width="62" height="4" fill="#7D6133"/><rect x="1025" y="29" width="62" height="6" fill="#4F3D21"/><line x1="1025" y1="9" x2="1087" y2="9" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="1025" y1="35" x2="1087" y2="35" stroke="#281F11" stroke-width="1"/><text x="1057" y="27" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">清单</text><text x="1056" y="26" font-size="11" fill="#FFFFFF" text-anchor="middle">清单</text>
+<rect x="1096" y="8" width="80" height="28" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="1097" y="9" width="78" height="4" fill="#7D6133"/><rect x="1097" y="29" width="78" height="6" fill="#4F3D21"/><line x1="1097" y1="9" x2="1175" y2="9" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="1097" y1="35" x2="1175" y2="35" stroke="#281F11" stroke-width="1"/><text x="1137" y="27" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">完成</text><text x="1136" y="26" font-size="11" fill="#FFFFFF" text-anchor="middle">完成</text>
+<line x1="88" y1="44" x2="88" y2="616" stroke="#2E363F" stroke-width="1"/>
+<text x="16" y="80" font-size="9" fill="#6E747B" text-anchor="start" letter-spacing="2">级</text>
+<rect x="12" y="92" width="64" height="34" fill="#DBB40C" fill-opacity="0.14" stroke="#DBB40C" stroke-width="1"/><text x="44" y="112.5" font-size="11" fill="#DBB40C" text-anchor="middle">级 0</text>
+<rect x="12" y="132" width="64" height="34" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/><text x="44" y="152.5" font-size="11" fill="#A5A9AD" text-anchor="middle">级 1</text>
+<rect x="12" y="172" width="64" height="34" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/><text x="44" y="192.5" font-size="14" fill="#A5A9AD" text-anchor="middle">+</text>
+<line x1="88" y1="44" x2="88" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="152" y1="44" x2="152" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="216" y1="44" x2="216" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="280" y1="44" x2="280" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="344" y1="44" x2="344" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="408" y1="44" x2="408" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="472" y1="44" x2="472" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="536" y1="44" x2="536" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="600" y1="44" x2="600" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="664" y1="44" x2="664" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="728" y1="44" x2="728" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="792" y1="44" x2="792" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="856" y1="44" x2="856" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="44" x2="864" y2="44" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="108" x2="864" y2="108" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="172" x2="864" y2="172" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="236" x2="864" y2="236" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="300" x2="864" y2="300" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="364" x2="864" y2="364" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="428" x2="864" y2="428" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="492" x2="864" y2="492" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="556" x2="864" y2="556" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<rect x="456" y="86" width="28" height="24" fill="#22272D" stroke="#39424C" stroke-width="1"/>
+<rect x="404" y="110" width="32" height="470" fill="#262C33" stroke="#46515C" stroke-width="1"/>
+<line x1="404" y1="156" x2="436" y2="156" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="202" x2="436" y2="202" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="248" x2="436" y2="248" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="294" x2="436" y2="294" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="340" x2="436" y2="340" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="386" x2="436" y2="386" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="432" x2="436" y2="432" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="478" x2="436" y2="478" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="524" x2="436" y2="524" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="570" x2="436" y2="570" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<polygon points="407,580 433,580 436,596 404,596" fill="#2E2718" stroke="#9C8018" stroke-width="1"/>
+<line x1="406" y1="596" x2="435" y2="596" stroke="#DBB40C" stroke-width="1" stroke-opacity="0.55"/>
+<rect x="450" y="110" width="40" height="470" fill="#262C33" stroke="#46515C" stroke-width="1"/>
+<line x1="450" y1="156" x2="490" y2="156" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="202" x2="490" y2="202" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="248" x2="490" y2="248" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="294" x2="490" y2="294" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="340" x2="490" y2="340" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="386" x2="490" y2="386" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="432" x2="490" y2="432" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="478" x2="490" y2="478" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="524" x2="490" y2="524" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="570" x2="490" y2="570" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<polygon points="453,580 487,580 490,596 450,596" fill="#2E2718" stroke="#9C8018" stroke-width="1"/>
+<line x1="452" y1="596" x2="489" y2="596" stroke="#DBB40C" stroke-width="1" stroke-opacity="0.55"/>
+<rect x="504" y="110" width="32" height="470" fill="#262C33" stroke="#46515C" stroke-width="1"/>
+<line x1="504" y1="156" x2="536" y2="156" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="202" x2="536" y2="202" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="248" x2="536" y2="248" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="294" x2="536" y2="294" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="340" x2="536" y2="340" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="386" x2="536" y2="386" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="432" x2="536" y2="432" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="478" x2="536" y2="478" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="524" x2="536" y2="524" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="570" x2="536" y2="570" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<polygon points="507,580 533,580 536,596 504,596" fill="#2E2718" stroke="#9C8018" stroke-width="1"/>
+<line x1="506" y1="596" x2="535" y2="596" stroke="#DBB40C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="300" y1="600" x2="640" y2="600" stroke="#2E363F" stroke-width="1"/>
+<text x="104" y="610" font-size="9" fill="#6E747B" text-anchor="start">43.0 m · 87.8 t · TWR 1.18 · 2 级</text>
+<rect x="446" y="198" width="48" height="104" fill="none" stroke="#DBB40C" stroke-width="2"/>
+<line x1="864" y1="44" x2="864" y2="616" stroke="#2E363F" stroke-width="1"/>
+<rect x="872" y="108" width="3" height="44" fill="#DBB40C"/>
+<text x="888" y="128" font-size="15" fill="#FFFFFF" text-anchor="start" font-weight="600">二级液氧煤油罐</text>
+<text x="888" y="150" font-size="10" fill="#A5A9AD" text-anchor="start">级 0 · 1 件</text>
+<line x1="888" y1="168" x2="1176" y2="168" stroke="#2E363F" stroke-width="1"/>
+<text x="888" y="196" font-size="9" fill="#6E747B" text-anchor="start">容量</text>
+<text x="1176" y="196" font-size="12" fill="#FFFFFF" text-anchor="end">100 t</text>
+<line x1="888" y1="206" x2="1176" y2="206" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="888" y="226" font-size="9" fill="#6E747B" text-anchor="start">件重</text>
+<text x="1176" y="226" font-size="12" fill="#FFFFFF" text-anchor="end">5.00 t</text>
+<line x1="888" y1="236" x2="1176" y2="236" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="888" y="256" font-size="9" fill="#6E747B" text-anchor="start">高度</text>
+<text x="1176" y="256" font-size="12" fill="#FFFFFF" text-anchor="end">3.2 m</text>
+<line x1="888" y1="266" x2="1176" y2="266" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<line x1="888" y1="290" x2="1176" y2="290" stroke="#2E363F" stroke-width="1"/>
+<rect x="888" y="304" width="136" height="34" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="889" y="305" width="134" height="5" fill="#7D6133"/><rect x="889" y="330" width="134" height="7" fill="#4F3D21"/><line x1="889" y1="305" x2="1023" y2="305" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="889" y1="337" x2="1023" y2="337" stroke="#281F11" stroke-width="1"/><text x="957" y="326" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">上移</text><text x="956" y="325" font-size="11" fill="#FFFFFF" text-anchor="middle">上移</text>
+<rect x="1032" y="304" width="136" height="34" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="1033" y="305" width="134" height="5" fill="#7D6133"/><rect x="1033" y="330" width="134" height="7" fill="#4F3D21"/><line x1="1033" y1="305" x2="1167" y2="305" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="1033" y1="337" x2="1167" y2="337" stroke="#281F11" stroke-width="1"/><text x="1101" y="326" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">下移</text><text x="1100" y="325" font-size="11" fill="#FFFFFF" text-anchor="middle">下移</text>
+<rect x="888" y="346" width="136" height="34" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="889" y="347" width="134" height="5" fill="#7D6133"/><rect x="889" y="372" width="134" height="7" fill="#4F3D21"/><line x1="889" y1="347" x2="1023" y2="347" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="889" y1="379" x2="1023" y2="379" stroke="#281F11" stroke-width="1"/><text x="957" y="368" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">换级</text><text x="956" y="367" font-size="11" fill="#FFFFFF" text-anchor="middle">换级</text>
+<rect x="1032" y="346" width="136" height="34" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="1033" y="347" width="134" height="5" fill="#7D6133"/><rect x="1033" y="372" width="134" height="7" fill="#4F3D21"/><line x1="1033" y1="347" x2="1167" y2="347" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="1033" y1="379" x2="1167" y2="379" stroke="#281F11" stroke-width="1"/><text x="1101" y="368" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">删除</text><text x="1100" y="367" font-size="11" fill="#FF4D4D" text-anchor="middle">删除</text>
+<line x1="888" y1="492" x2="1176" y2="492" stroke="#2E363F" stroke-width="1"/>
+<rect x="888" y="510" width="6" height="6" fill="#DBB40C"/>
+<text x="902" y="518" font-size="10" fill="#DBB40C" text-anchor="start">✓ 设计有效 · 可建造</text>
+<rect x="888" y="536" width="304" height="44" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="889" y="537" width="302" height="7" fill="#7D6133"/><rect x="889" y="570" width="302" height="9" fill="#4F3D21"/><line x1="889" y1="537" x2="1191" y2="537" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="889" y1="579" x2="1191" y2="579" stroke="#281F11" stroke-width="1"/><text x="1041" y="563" font-size="12" fill="#000000" text-anchor="middle" opacity="0.5">开始建造</text><text x="1040" y="562" font-size="12" fill="#FFFFFF" text-anchor="middle">开始建造</text>
+<text x="888" y="602" font-size="9" fill="#A5A9AD" text-anchor="start">查看全部检查</text>
+<line x1="888" y1="606" x2="944" y2="606" stroke="#2E363F" stroke-width="1"/>
+<line x1="0" y1="616" x2="1200" y2="616" stroke="#2E363F" stroke-width="1"/>
+<text x="16" y="640" font-size="9" fill="#6E747B" text-anchor="start" letter-spacing="2">零件</text>
+<rect x="56" y="624" width="64" height="28" fill="#DBB40C" fill-opacity="0.14" stroke="#DBB40C" stroke-width="1"/><text x="88" y="641.5" font-size="11" fill="#DBB40C" text-anchor="middle">引擎</text>
+<rect x="128" y="624" width="72" height="28" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/><text x="164" y="641.5" font-size="11" fill="#A5A9AD" text-anchor="middle">工质箱</text>
+<rect x="208" y="624" width="64" height="28" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/><text x="240" y="641.5" font-size="11" fill="#A5A9AD" text-anchor="middle">结构</text>
+<rect x="280" y="624" width="64" height="28" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/><text x="312" y="641.5" font-size="11" fill="#A5A9AD" text-anchor="middle">控制</text>
+<line x1="0" y1="668" x2="1200" y2="668" stroke="#2E363F" stroke-width="1"/>
+<rect x="16" y="680" width="170" height="32" fill="#FFFFFF" fill-opacity="0.04" stroke="#DBB40C" stroke-width="1" stroke-opacity="1"/>
+<text x="101" y="700" font-size="11" fill="#DBB40C" text-anchor="middle">小推力机</text>
+<rect x="194" y="680" width="170" height="32" fill="#FFFFFF" fill-opacity="0.02" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.14"/>
+<text x="279" y="700" font-size="11" fill="#FFFFFF" text-anchor="middle">中推力机</text>
+<rect x="372" y="680" width="170" height="32" fill="#FFFFFF" fill-opacity="0.02" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.14"/>
+<text x="457" y="700" font-size="11" fill="#FFFFFF" text-anchor="middle">大推力机</text>
+<rect x="550" y="680" width="170" height="32" fill="#FFFFFF" fill-opacity="0.02" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.14"/>
+<text x="635" y="700" font-size="11" fill="#FFFFFF" text-anchor="middle">真空版</text>
+<rect x="728" y="680" width="170" height="32" fill="#FFFFFF" fill-opacity="0.02" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.14"/>
+<text x="813" y="700" font-size="11" fill="#FFFFFF" text-anchor="middle">固体助推</text>
+<rect x="906" y="680" width="170" height="32" fill="#FFFFFF" fill-opacity="0.02" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.14"/>
+<text x="991" y="700" font-size="11" fill="#FFFFFF" text-anchor="middle">RCS</text>
+<text x="1160" y="700" font-size="10" fill="#6E747B" text-anchor="end">更多 ›</text>
+</g>
+<text x="24" y="1684" font-size="12" fill="#FFFFFF" text-anchor="start" font-weight="600">L2 · 清单弹层（≡ 一期可拖）</text>
+<text x="24" y="1698" font-size="9" fill="#6E747B" text-anchor="start">68% 暗幕 + 11 行 + ↑↓ / 换级 / 删除</text>
+<g transform="translate(0,1704)">
+<rect x="0" y="0" width="1200" height="720" fill="#15191D" stroke="#616C7A" stroke-width="1"/>
+<rect x="0" y="0" width="1200" height="44" fill="#101418"/>
+<line x1="0" y1="44" x2="1200" y2="44" stroke="#2E363F" stroke-width="1"/>
+<text x="20" y="29" font-size="18" fill="#FFFFFF" text-anchor="start" font-weight="600">火箭组装器 · 设计</text>
+<rect x="1024" y="8" width="64" height="28" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="1025" y="9" width="62" height="4" fill="#7D6133"/><rect x="1025" y="29" width="62" height="6" fill="#4F3D21"/><line x1="1025" y1="9" x2="1087" y2="9" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="1025" y1="35" x2="1087" y2="35" stroke="#281F11" stroke-width="1"/><text x="1057" y="27" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">清单</text><text x="1056" y="26" font-size="11" fill="#FFFFFF" text-anchor="middle">清单</text>
+<rect x="1096" y="8" width="80" height="28" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="1097" y="9" width="78" height="4" fill="#7D6133"/><rect x="1097" y="29" width="78" height="6" fill="#4F3D21"/><line x1="1097" y1="9" x2="1175" y2="9" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="1097" y1="35" x2="1175" y2="35" stroke="#281F11" stroke-width="1"/><text x="1137" y="27" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">完成</text><text x="1136" y="26" font-size="11" fill="#FFFFFF" text-anchor="middle">完成</text>
+<line x1="88" y1="44" x2="88" y2="616" stroke="#2E363F" stroke-width="1"/>
+<text x="16" y="80" font-size="9" fill="#6E747B" text-anchor="start" letter-spacing="2">级</text>
+<rect x="12" y="92" width="64" height="34" fill="#DBB40C" fill-opacity="0.14" stroke="#DBB40C" stroke-width="1"/><text x="44" y="112.5" font-size="11" fill="#DBB40C" text-anchor="middle">级 0</text>
+<rect x="12" y="132" width="64" height="34" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/><text x="44" y="152.5" font-size="11" fill="#A5A9AD" text-anchor="middle">级 1</text>
+<rect x="12" y="172" width="64" height="34" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/><text x="44" y="192.5" font-size="14" fill="#A5A9AD" text-anchor="middle">+</text>
+<line x1="88" y1="44" x2="88" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="152" y1="44" x2="152" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="216" y1="44" x2="216" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="280" y1="44" x2="280" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="344" y1="44" x2="344" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="408" y1="44" x2="408" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="472" y1="44" x2="472" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="536" y1="44" x2="536" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="600" y1="44" x2="600" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="664" y1="44" x2="664" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="728" y1="44" x2="728" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="792" y1="44" x2="792" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="856" y1="44" x2="856" y2="616" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="44" x2="864" y2="44" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="108" x2="864" y2="108" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="172" x2="864" y2="172" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="236" x2="864" y2="236" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="300" x2="864" y2="300" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="364" x2="864" y2="364" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="428" x2="864" y2="428" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="492" x2="864" y2="492" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<line x1="88" y1="556" x2="864" y2="556" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.022"/>
+<rect x="456" y="86" width="28" height="24" fill="#22272D" stroke="#39424C" stroke-width="1"/>
+<rect x="404" y="110" width="32" height="470" fill="#262C33" stroke="#46515C" stroke-width="1"/>
+<line x1="404" y1="156" x2="436" y2="156" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="202" x2="436" y2="202" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="248" x2="436" y2="248" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="294" x2="436" y2="294" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="340" x2="436" y2="340" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="386" x2="436" y2="386" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="432" x2="436" y2="432" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="478" x2="436" y2="478" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="524" x2="436" y2="524" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="404" y1="570" x2="436" y2="570" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<polygon points="407,580 433,580 436,596 404,596" fill="#2E2718" stroke="#9C8018" stroke-width="1"/>
+<line x1="406" y1="596" x2="435" y2="596" stroke="#DBB40C" stroke-width="1" stroke-opacity="0.55"/>
+<rect x="450" y="110" width="40" height="470" fill="#262C33" stroke="#46515C" stroke-width="1"/>
+<line x1="450" y1="156" x2="490" y2="156" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="202" x2="490" y2="202" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="248" x2="490" y2="248" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="294" x2="490" y2="294" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="340" x2="490" y2="340" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="386" x2="490" y2="386" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="432" x2="490" y2="432" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="478" x2="490" y2="478" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="524" x2="490" y2="524" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="450" y1="570" x2="490" y2="570" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<polygon points="453,580 487,580 490,596 450,596" fill="#2E2718" stroke="#9C8018" stroke-width="1"/>
+<line x1="452" y1="596" x2="489" y2="596" stroke="#DBB40C" stroke-width="1" stroke-opacity="0.55"/>
+<rect x="504" y="110" width="32" height="470" fill="#262C33" stroke="#46515C" stroke-width="1"/>
+<line x1="504" y1="156" x2="536" y2="156" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="202" x2="536" y2="202" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="248" x2="536" y2="248" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="294" x2="536" y2="294" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="340" x2="536" y2="340" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="386" x2="536" y2="386" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="432" x2="536" y2="432" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="478" x2="536" y2="478" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="524" x2="536" y2="524" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="504" y1="570" x2="536" y2="570" stroke="#46515C" stroke-width="1" stroke-opacity="0.55"/>
+<polygon points="507,580 533,580 536,596 504,596" fill="#2E2718" stroke="#9C8018" stroke-width="1"/>
+<line x1="506" y1="596" x2="535" y2="596" stroke="#DBB40C" stroke-width="1" stroke-opacity="0.55"/>
+<line x1="300" y1="600" x2="640" y2="600" stroke="#2E363F" stroke-width="1"/>
+<text x="104" y="610" font-size="9" fill="#6E747B" text-anchor="start">43.0 m · 87.8 t · TWR 1.18 · 2 级</text>
+<rect x="446" y="198" width="48" height="104" fill="none" stroke="#DBB40C" stroke-width="2"/>
+<line x1="864" y1="44" x2="864" y2="616" stroke="#2E363F" stroke-width="1"/>
+<rect x="872" y="108" width="3" height="44" fill="#DBB40C"/>
+<text x="888" y="128" font-size="15" fill="#FFFFFF" text-anchor="start" font-weight="600">二级液氧煤油罐</text>
+<text x="888" y="150" font-size="10" fill="#A5A9AD" text-anchor="start">级 0 · 1 件</text>
+<line x1="888" y1="168" x2="1176" y2="168" stroke="#2E363F" stroke-width="1"/>
+<text x="888" y="196" font-size="9" fill="#6E747B" text-anchor="start">容量</text>
+<text x="1176" y="196" font-size="12" fill="#FFFFFF" text-anchor="end">100 t</text>
+<line x1="888" y1="206" x2="1176" y2="206" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="888" y="226" font-size="9" fill="#6E747B" text-anchor="start">件重</text>
+<text x="1176" y="226" font-size="12" fill="#FFFFFF" text-anchor="end">5.00 t</text>
+<line x1="888" y1="236" x2="1176" y2="236" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="888" y="256" font-size="9" fill="#6E747B" text-anchor="start">高度</text>
+<text x="1176" y="256" font-size="12" fill="#FFFFFF" text-anchor="end">3.2 m</text>
+<line x1="888" y1="266" x2="1176" y2="266" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<line x1="888" y1="290" x2="1176" y2="290" stroke="#2E363F" stroke-width="1"/>
+<rect x="888" y="304" width="136" height="34" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="889" y="305" width="134" height="5" fill="#7D6133"/><rect x="889" y="330" width="134" height="7" fill="#4F3D21"/><line x1="889" y1="305" x2="1023" y2="305" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="889" y1="337" x2="1023" y2="337" stroke="#281F11" stroke-width="1"/><text x="957" y="326" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">上移</text><text x="956" y="325" font-size="11" fill="#FFFFFF" text-anchor="middle">上移</text>
+<rect x="1032" y="304" width="136" height="34" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="1033" y="305" width="134" height="5" fill="#7D6133"/><rect x="1033" y="330" width="134" height="7" fill="#4F3D21"/><line x1="1033" y1="305" x2="1167" y2="305" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="1033" y1="337" x2="1167" y2="337" stroke="#281F11" stroke-width="1"/><text x="1101" y="326" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">下移</text><text x="1100" y="325" font-size="11" fill="#FFFFFF" text-anchor="middle">下移</text>
+<rect x="888" y="346" width="136" height="34" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="889" y="347" width="134" height="5" fill="#7D6133"/><rect x="889" y="372" width="134" height="7" fill="#4F3D21"/><line x1="889" y1="347" x2="1023" y2="347" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="889" y1="379" x2="1023" y2="379" stroke="#281F11" stroke-width="1"/><text x="957" y="368" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">换级</text><text x="956" y="367" font-size="11" fill="#FFFFFF" text-anchor="middle">换级</text>
+<rect x="1032" y="346" width="136" height="34" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="1033" y="347" width="134" height="5" fill="#7D6133"/><rect x="1033" y="372" width="134" height="7" fill="#4F3D21"/><line x1="1033" y1="347" x2="1167" y2="347" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="1033" y1="379" x2="1167" y2="379" stroke="#281F11" stroke-width="1"/><text x="1101" y="368" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">删除</text><text x="1100" y="367" font-size="11" fill="#FF4D4D" text-anchor="middle">删除</text>
+<line x1="888" y1="492" x2="1176" y2="492" stroke="#2E363F" stroke-width="1"/>
+<rect x="888" y="510" width="6" height="6" fill="#DBB40C"/>
+<text x="902" y="518" font-size="10" fill="#DBB40C" text-anchor="start">✓ 设计有效 · 可建造</text>
+<rect x="888" y="536" width="304" height="44" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="889" y="537" width="302" height="7" fill="#7D6133"/><rect x="889" y="570" width="302" height="9" fill="#4F3D21"/><line x1="889" y1="537" x2="1191" y2="537" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="889" y1="579" x2="1191" y2="579" stroke="#281F11" stroke-width="1"/><text x="1041" y="563" font-size="12" fill="#000000" text-anchor="middle" opacity="0.5">开始建造</text><text x="1040" y="562" font-size="12" fill="#FFFFFF" text-anchor="middle">开始建造</text>
+<text x="888" y="602" font-size="9" fill="#A5A9AD" text-anchor="start">查看全部检查</text>
+<line x1="888" y1="606" x2="944" y2="606" stroke="#2E363F" stroke-width="1"/>
+<line x1="0" y1="616" x2="1200" y2="616" stroke="#2E363F" stroke-width="1"/>
+<text x="16" y="640" font-size="9" fill="#6E747B" text-anchor="start" letter-spacing="2">零件</text>
+<rect x="56" y="624" width="64" height="28" fill="#DBB40C" fill-opacity="0.14" stroke="#DBB40C" stroke-width="1"/><text x="88" y="641.5" font-size="11" fill="#DBB40C" text-anchor="middle">引擎</text>
+<rect x="128" y="624" width="72" height="28" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/><text x="164" y="641.5" font-size="11" fill="#A5A9AD" text-anchor="middle">工质箱</text>
+<rect x="208" y="624" width="64" height="28" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/><text x="240" y="641.5" font-size="11" fill="#A5A9AD" text-anchor="middle">结构</text>
+<rect x="280" y="624" width="64" height="28" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/><text x="312" y="641.5" font-size="11" fill="#A5A9AD" text-anchor="middle">控制</text>
+<line x1="0" y1="668" x2="1200" y2="668" stroke="#2E363F" stroke-width="1"/>
+<rect x="16" y="680" width="170" height="32" fill="#FFFFFF" fill-opacity="0.04" stroke="#DBB40C" stroke-width="1" stroke-opacity="1"/>
+<text x="101" y="700" font-size="11" fill="#DBB40C" text-anchor="middle">小推力机</text>
+<rect x="194" y="680" width="170" height="32" fill="#FFFFFF" fill-opacity="0.02" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.14"/>
+<text x="279" y="700" font-size="11" fill="#FFFFFF" text-anchor="middle">中推力机</text>
+<rect x="372" y="680" width="170" height="32" fill="#FFFFFF" fill-opacity="0.02" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.14"/>
+<text x="457" y="700" font-size="11" fill="#FFFFFF" text-anchor="middle">大推力机</text>
+<rect x="550" y="680" width="170" height="32" fill="#FFFFFF" fill-opacity="0.02" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.14"/>
+<text x="635" y="700" font-size="11" fill="#FFFFFF" text-anchor="middle">真空版</text>
+<rect x="728" y="680" width="170" height="32" fill="#FFFFFF" fill-opacity="0.02" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.14"/>
+<text x="813" y="700" font-size="11" fill="#FFFFFF" text-anchor="middle">固体助推</text>
+<rect x="906" y="680" width="170" height="32" fill="#FFFFFF" fill-opacity="0.02" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.14"/>
+<text x="991" y="700" font-size="11" fill="#FFFFFF" text-anchor="middle">RCS</text>
+<text x="1160" y="700" font-size="10" fill="#6E747B" text-anchor="end">更多 ›</text>
+<rect x="0" y="0" width="1200" height="720" fill="#000000" fill-opacity="0.68"/>
+<rect x="280" y="80" width="640" height="560" fill="#1E2226" stroke="#616C7A" stroke-width="1"/>
+<text x="304" y="116" font-size="16" fill="#FFFFFF" text-anchor="start" font-weight="600">装配清单</text>
+<text x="860" y="116" font-size="10" fill="#6E747B" text-anchor="end">11 行 / 11 件</text>
+<text x="892" y="116" font-size="16" fill="#A5A9AD" text-anchor="start">×</text>
+<line x1="280" y1="130" x2="920" y2="130" stroke="#2E363F" stroke-width="1"/>
+<text x="304" y="150" font-size="8" fill="#6E747B" text-anchor="start">#</text>
+<text x="336" y="150" font-size="8" fill="#6E747B" text-anchor="start">级</text>
+<text x="372" y="150" font-size="8" fill="#6E747B" text-anchor="start">零件</text>
+<text x="828" y="150" font-size="8" fill="#6E747B" text-anchor="end">件数</text>
+<text x="872" y="150" font-size="8" fill="#6E747B" text-anchor="end">序</text>
+<text x="304" y="187" font-size="9" fill="#6E747B" text-anchor="start">01</text>
+<rect x="328" y="174" width="18" height="16" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/>
+<text x="337" y="185" font-size="9" fill="#A5A9AD" text-anchor="middle">0</text>
+<text x="366" y="187" font-size="11" fill="#FFFFFF" text-anchor="start">调试控制核心</text>
+<text x="828" y="187" font-size="10" fill="#A5A9AD" text-anchor="end">1</text>
+<text x="872" y="187" font-size="12" fill="#A5A9AD" text-anchor="end">≡</text>
+<line x1="280" y1="202" x2="920" y2="202" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<rect x="281" y="202" width="638" height="40" fill="#FFFFFF" fill-opacity="0.07"/>
+<rect x="281" y="202" width="3" height="40" fill="#DBB40C"/>
+<text x="304" y="227" font-size="9" fill="#6E747B" text-anchor="start">02</text>
+<rect x="328" y="214" width="18" height="16" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/>
+<text x="337" y="225" font-size="9" fill="#A5A9AD" text-anchor="middle">0</text>
+<text x="366" y="227" font-size="11" fill="#FFFFFF" text-anchor="start">二级液氧煤油罐</text>
+<text x="828" y="227" font-size="10" fill="#A5A9AD" text-anchor="end">1</text>
+<text x="872" y="227" font-size="12" fill="#A5A9AD" text-anchor="end">≡</text>
+<line x1="280" y1="242" x2="920" y2="242" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="304" y="267" font-size="9" fill="#6E747B" text-anchor="start">03</text>
+<rect x="328" y="254" width="18" height="16" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/>
+<text x="337" y="265" font-size="9" fill="#A5A9AD" text-anchor="middle">0</text>
+<text x="366" y="267" font-size="11" fill="#FFFFFF" text-anchor="start">小推力液氧煤油机</text>
+<text x="828" y="267" font-size="10" fill="#A5A9AD" text-anchor="end">1</text>
+<text x="872" y="267" font-size="12" fill="#A5A9AD" text-anchor="end">≡</text>
+<line x1="280" y1="282" x2="920" y2="282" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="304" y="307" font-size="9" fill="#6E747B" text-anchor="start">04</text>
+<rect x="328" y="294" width="18" height="16" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/>
+<text x="337" y="305" font-size="9" fill="#A5A9AD" text-anchor="middle">1</text>
+<text x="366" y="307" font-size="11" fill="#FFFFFF" text-anchor="start">一级液氧煤油大罐</text>
+<text x="828" y="307" font-size="10" fill="#A5A9AD" text-anchor="end">1</text>
+<text x="872" y="307" font-size="12" fill="#A5A9AD" text-anchor="end">≡</text>
+<line x1="280" y1="322" x2="920" y2="322" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="304" y="347" font-size="9" fill="#6E747B" text-anchor="start">05</text>
+<rect x="328" y="334" width="18" height="16" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/>
+<text x="337" y="345" font-size="9" fill="#A5A9AD" text-anchor="middle">1</text>
+<text x="366" y="347" font-size="11" fill="#FFFFFF" text-anchor="start">小推力液氧煤油机</text>
+<text x="828" y="347" font-size="10" fill="#A5A9AD" text-anchor="end">1</text>
+<text x="872" y="347" font-size="12" fill="#A5A9AD" text-anchor="end">≡</text>
+<line x1="280" y1="362" x2="920" y2="362" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="304" y="387" font-size="9" fill="#6E747B" text-anchor="start">06</text>
+<rect x="328" y="374" width="18" height="16" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/>
+<text x="337" y="385" font-size="9" fill="#A5A9AD" text-anchor="middle">1</text>
+<text x="366" y="387" font-size="11" fill="#FFFFFF" text-anchor="start">一级液氧煤油大罐【块1】</text>
+<text x="828" y="387" font-size="10" fill="#A5A9AD" text-anchor="end">1</text>
+<text x="872" y="387" font-size="12" fill="#A5A9AD" text-anchor="end">≡</text>
+<line x1="280" y1="402" x2="920" y2="402" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="304" y="427" font-size="9" fill="#6E747B" text-anchor="start">07</text>
+<rect x="328" y="414" width="18" height="16" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/>
+<text x="337" y="425" font-size="9" fill="#A5A9AD" text-anchor="middle">1</text>
+<text x="366" y="427" font-size="11" fill="#FFFFFF" text-anchor="start">小推力液氧煤油机【块1】</text>
+<text x="828" y="427" font-size="10" fill="#A5A9AD" text-anchor="end">1</text>
+<text x="872" y="427" font-size="12" fill="#A5A9AD" text-anchor="end">≡</text>
+<line x1="280" y1="442" x2="920" y2="442" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="304" y="467" font-size="9" fill="#6E747B" text-anchor="start">08</text>
+<rect x="328" y="454" width="18" height="16" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/>
+<text x="337" y="465" font-size="9" fill="#A5A9AD" text-anchor="middle">1</text>
+<text x="366" y="467" font-size="11" fill="#FFFFFF" text-anchor="start">一级液氧煤油大罐【块2】</text>
+<text x="828" y="467" font-size="10" fill="#A5A9AD" text-anchor="end">1</text>
+<text x="872" y="467" font-size="12" fill="#A5A9AD" text-anchor="end">≡</text>
+<line x1="280" y1="482" x2="920" y2="482" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<text x="304" y="507" font-size="9" fill="#6E747B" text-anchor="start">09</text>
+<rect x="328" y="494" width="18" height="16" fill="#FFFFFF" fill-opacity="0.03" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.12"/>
+<text x="337" y="505" font-size="9" fill="#A5A9AD" text-anchor="middle">1</text>
+<text x="366" y="507" font-size="11" fill="#FFFFFF" text-anchor="start">小推力液氧煤油机【块2】</text>
+<text x="828" y="507" font-size="10" fill="#A5A9AD" text-anchor="end">1</text>
+<text x="872" y="507" font-size="12" fill="#A5A9AD" text-anchor="end">≡</text>
+<line x1="280" y1="522" x2="920" y2="522" stroke="#2E363F" stroke-width="1" stroke-opacity="0.6"/>
+<rect x="908" y="162" width="2" height="360" fill="#FFFFFF" fill-opacity="0.05"/>
+<rect x="908" y="162" width="2" height="150" fill="#FFFFFF" fill-opacity="0.22"/>
+<line x1="280" y1="540" x2="920" y2="540" stroke="#2E363F" stroke-width="1"/>
+<rect x="304" y="552" width="96" height="30" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="305" y="553" width="94" height="5" fill="#7D6133"/><rect x="305" y="575" width="94" height="6" fill="#4F3D21"/><line x1="305" y1="553" x2="399" y2="553" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="305" y1="581" x2="399" y2="581" stroke="#281F11" stroke-width="1"/><text x="353" y="572" font-size="10" fill="#000000" text-anchor="middle" opacity="0.5">↑ 上移</text><text x="352" y="571" font-size="10" fill="#FFFFFF" text-anchor="middle">↑ 上移</text>
+<rect x="408" y="552" width="96" height="30" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="409" y="553" width="94" height="5" fill="#7D6133"/><rect x="409" y="575" width="94" height="6" fill="#4F3D21"/><line x1="409" y1="553" x2="503" y2="553" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="409" y1="581" x2="503" y2="581" stroke="#281F11" stroke-width="1"/><text x="457" y="572" font-size="10" fill="#000000" text-anchor="middle" opacity="0.5">↓ 下移</text><text x="456" y="571" font-size="10" fill="#FFFFFF" text-anchor="middle">↓ 下移</text>
+<rect x="512" y="552" width="96" height="30" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="513" y="553" width="94" height="5" fill="#7D6133"/><rect x="513" y="575" width="94" height="6" fill="#4F3D21"/><line x1="513" y1="553" x2="607" y2="553" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="513" y1="581" x2="607" y2="581" stroke="#281F11" stroke-width="1"/><text x="561" y="572" font-size="10" fill="#000000" text-anchor="middle" opacity="0.5">换级</text><text x="560" y="571" font-size="10" fill="#FFFFFF" text-anchor="middle">换级</text>
+<rect x="616" y="552" width="96" height="30" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="617" y="553" width="94" height="5" fill="#7D6133"/><rect x="617" y="575" width="94" height="6" fill="#4F3D21"/><line x1="617" y1="553" x2="711" y2="553" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="617" y1="581" x2="711" y2="581" stroke="#281F11" stroke-width="1"/><text x="665" y="572" font-size="10" fill="#000000" text-anchor="middle" opacity="0.5">删除</text><text x="664" y="571" font-size="10" fill="#FF4D4D" text-anchor="middle">删除</text>
+<text x="304" y="610" font-size="9" fill="#6E747B" text-anchor="start">点行 = 左图高亮 · 拖 ≡ = 调序 · 点 × 关闭</text>
+</g>
+<line x1="24" y1="2432" x2="1176" y2="2432" stroke="#2E363F" stroke-width="1"/>
+<text x="24" y="2458" font-size="9" fill="#DBB40C" text-anchor="start">已拍：D1 三分法 · D2 ≡ 一期 · D3 建造条 · D4 ReopenDesign（改设计需重建）</text>
+<text x="24" y="2478" font-size="9" fill="#6E747B" text-anchor="start">待定：D5 并联/对称合并 · D7 清空/示范/反转/级标签 · D9 窗口框 · D10 独立 Window · D12 L2 遮挡</text>
+</svg>

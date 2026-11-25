@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" font-family="Microsoft YaHei, 'Noto Sans SC', 'Segoe UI Symbol', sans-serif">
+<rect x="0" y="0" width="1200" height="720" fill="#15191D" stroke="#616C7A" stroke-width="1"/>
+<text x="24" y="40" font-size="20" fill="#FFFFFF" text-anchor="start" font-weight="600">操作路径：看态 → 编辑态 → 弹层</text>
+<text x="24" y="64" font-size="10" fill="#A5A9AD" text-anchor="start">每个状态只有一个主按钮；按钮文案就是当前唯一该做的事。</text>
+<line x1="24" y1="82" x2="1176" y2="82" stroke="#2E363F" stroke-width="1"/>
+<rect x="40" y="100" width="300" height="100" fill="#1E2226" stroke="#2E363F" stroke-width="1"/>
+<rect x="40" y="100" width="3" height="100" fill="#DBB40C"/>
+<text x="56" y="130" font-size="14" fill="#FFFFFF" text-anchor="start" font-weight="600">L0 看态</text>
+<text x="56" y="156" font-size="10" fill="#A5A9AD" text-anchor="start">火箭 + 一句话 + 一个按钮</text>
+<text x="56" y="176" font-size="9" fill="#6E747B" text-anchor="start">12 个文本块</text>
+<rect x="450" y="100" width="300" height="100" fill="#1E2226" stroke="#2E363F" stroke-width="1"/>
+<rect x="450" y="100" width="3" height="100" fill="#DBB40C"/>
+<text x="466" y="130" font-size="14" fill="#FFFFFF" text-anchor="start" font-weight="600">L1 编辑态</text>
+<text x="466" y="156" font-size="10" fill="#A5A9AD" text-anchor="start">级轨 + 零件带 + 选中检视</text>
+<text x="466" y="176" font-size="9" fill="#6E747B" text-anchor="start">同一窗口，不是新窗口</text>
+<rect x="860" y="100" width="300" height="100" fill="#1E2226" stroke="#2E363F" stroke-width="1"/>
+<rect x="860" y="100" width="3" height="100" fill="#DBB40C"/>
+<text x="876" y="130" font-size="14" fill="#FFFFFF" text-anchor="start" font-weight="600">L2 清单弹层</text>
+<text x="876" y="156" font-size="10" fill="#A5A9AD" text-anchor="start">11 行 · 调序 / 换级 / 删除</text>
+<text x="876" y="176" font-size="9" fill="#6E747B" text-anchor="start">覆盖在 L1 上</text>
+<line x1="340" y1="150" x2="440" y2="150" stroke="#616C7A" stroke-width="1"/>
+<polygon points="440,145 450,150 440,155" fill="#616C7A"/>
+<text x="395" y="140" font-size="9" fill="#A5A9AD" text-anchor="middle">点「编辑设计」</text>
+<line x1="750" y1="150" x2="850" y2="150" stroke="#616C7A" stroke-width="1"/>
+<polygon points="850,145 860,150 850,155" fill="#616C7A"/>
+<text x="805" y="140" font-size="9" fill="#A5A9AD" text-anchor="middle">点「清单」</text>
+<line x1="600" y1="218" x2="200" y2="218" stroke="#616C7A" stroke-width="1"/>
+<polygon points="200,213 190,218 200,223" fill="#616C7A"/>
+<text x="395" y="236" font-size="9" fill="#6E747B" text-anchor="middle">点「完成」</text>
+<line x1="1010" y1="258" x2="760" y2="258" stroke="#616C7A" stroke-width="1"/>
+<polygon points="760,253 750,258 760,263" fill="#616C7A"/>
+<text x="880" y="276" font-size="9" fill="#6E747B" text-anchor="middle">点空白 / Esc</text>
+<rect x="24" y="300" width="360" height="170" fill="#1E2226" stroke="#2E363F" stroke-width="1"/>
+<text x="42" y="332" font-size="15" fill="#FFFFFF" text-anchor="start" font-weight="600">空闲</text>
+<text x="42" y="358" font-size="10" fill="#A5A9AD" text-anchor="start">还没有火箭</text>
+<rect x="42" y="376" width="120" height="32" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="43" y="377" width="118" height="5" fill="#7D6133"/><rect x="43" y="401" width="118" height="6" fill="#4F3D21"/><line x1="43" y1="377" x2="161" y2="377" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="43" y1="407" x2="161" y2="407" stroke="#281F11" stroke-width="1"/><text x="103" y="397" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">开始设计</text><text x="102" y="396" font-size="11" fill="#FFFFFF" text-anchor="middle">开始设计</text>
+<text x="42" y="434" font-size="9" fill="#6E747B" text-anchor="start">→ L1，空设计</text>
+<rect x="397" y="300" width="360" height="170" fill="#1E2226" stroke="#2E363F" stroke-width="1"/>
+<text x="415" y="332" font-size="15" fill="#FFFFFF" text-anchor="start" font-weight="600">设计中</text>
+<text x="415" y="358" font-size="10" fill="#A5A9AD" text-anchor="start">设计没完成</text>
+<rect x="415" y="376" width="120" height="32" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="416" y="377" width="118" height="5" fill="#7D6133"/><rect x="416" y="401" width="118" height="6" fill="#4F3D21"/><line x1="416" y1="377" x2="534" y2="377" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="416" y1="407" x2="534" y2="407" stroke="#281F11" stroke-width="1"/><text x="476" y="397" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">继续设计</text><text x="475" y="396" font-size="11" fill="#FFFFFF" text-anchor="middle">继续设计</text>
+<text x="415" y="434" font-size="9" fill="#6E747B" text-anchor="start">→ L1，保留进度</text>
+<rect x="770" y="300" width="360" height="170" fill="#1E2226" stroke="#2E363F" stroke-width="1"/>
+<text x="788" y="332" font-size="15" fill="#FFFFFF" text-anchor="start" font-weight="600">建造中</text>
+<text x="788" y="358" font-size="10" fill="#A5A9AD" text-anchor="start">建造中 42%</text>
+<rect x="788" y="376" width="120" height="32" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="789" y="377" width="118" height="5" fill="#7D6133"/><rect x="789" y="401" width="118" height="6" fill="#4F3D21"/><line x1="789" y1="377" x2="907" y2="377" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="789" y1="407" x2="907" y2="407" stroke="#281F11" stroke-width="1"/><text x="849" y="397" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">取消建造</text><text x="848" y="396" font-size="11" fill="#FFFFFF" text-anchor="middle">取消建造</text>
+<text x="788" y="434" font-size="9" fill="#6E747B" text-anchor="start">工人施工中 · 可中止</text>
+<rect x="24" y="490" width="360" height="170" fill="#1E2226" stroke="#2E363F" stroke-width="1"/>
+<text x="42" y="522" font-size="15" fill="#FFFFFF" text-anchor="start" font-weight="600">可发射</text>
+<text x="42" y="548" font-size="10" fill="#A5A9AD" text-anchor="start">可以发射</text>
+<rect x="42" y="566" width="120" height="32" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="43" y="567" width="118" height="5" fill="#7D6133"/><rect x="43" y="591" width="118" height="6" fill="#4F3D21"/><line x1="43" y1="567" x2="161" y2="567" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="43" y1="597" x2="161" y2="597" stroke="#281F11" stroke-width="1"/><text x="103" y="587" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">发射</text><text x="102" y="586" font-size="11" fill="#FFFFFF" text-anchor="middle">发射</text>
+<text x="42" y="624" font-size="9" fill="#6E747B" text-anchor="start">10 秒倒计时</text>
+<rect x="397" y="490" width="360" height="170" fill="#1E2226" stroke="#2E363F" stroke-width="1"/>
+<text x="415" y="522" font-size="15" fill="#FFFFFF" text-anchor="start" font-weight="600">受阻</text>
+<text x="415" y="548" font-size="10" fill="#A5A9AD" text-anchor="start">还差 1 项：TWR 0.21</text>
+<rect x="415" y="566" width="120" height="32" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="416" y="567" width="118" height="5" fill="#7D6133"/><rect x="416" y="591" width="118" height="6" fill="#4F3D21"/><line x1="416" y1="567" x2="534" y2="567" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="416" y1="597" x2="534" y2="597" stroke="#281F11" stroke-width="1"/><text x="476" y="587" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">编辑设计</text><text x="475" y="586" font-size="11" fill="#FFFFFF" text-anchor="middle">编辑设计</text>
+<text x="415" y="624" font-size="9" fill="#6E747B" text-anchor="start">改设计 → 重新建造</text>
+<rect x="770" y="490" width="360" height="170" fill="#1E2226" stroke="#2E363F" stroke-width="1"/>
+<text x="788" y="522" font-size="15" fill="#FFFFFF" text-anchor="start" font-weight="600">倒计时</text>
+<text x="788" y="548" font-size="10" fill="#A5A9AD" text-anchor="start">8.4 秒后发射</text>
+<rect x="788" y="566" width="120" height="32" fill="#6A5130" stroke="#010101" stroke-width="1"/><rect x="789" y="567" width="118" height="5" fill="#7D6133"/><rect x="789" y="591" width="118" height="6" fill="#4F3D21"/><line x1="789" y1="567" x2="907" y2="567" stroke="#8A6E40" stroke-width="1" stroke-opacity="0.8"/><line x1="789" y1="597" x2="907" y2="597" stroke="#281F11" stroke-width="1"/><text x="849" y="587" font-size="11" fill="#000000" text-anchor="middle" opacity="0.5">取消发射</text><text x="848" y="586" font-size="11" fill="#FFFFFF" text-anchor="middle">取消发射</text>
+<text x="788" y="624" font-size="9" fill="#6E747B" text-anchor="start">回到已完工</text>
+<text x="24" y="690" font-size="9" fill="#6E747B" text-anchor="start">L0 的按钮随状态变；L1 / L2 的入口固定在标题栏。</text>
+<text x="24" y="708" font-size="9" fill="#6E747B" text-anchor="start">D4：已完工受阻 → 编辑设计 = 改设计并重新建造（B1）</text>
+</svg>

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="460" viewBox="0 0 1200 460" font-family="Microsoft YaHei, 'Noto Sans SC', 'Segoe UI Symbol', sans-serif">
+<rect x="0" y="0" width="1200" height="460" fill="#15191D" stroke="#616C7A" stroke-width="1"/>
+<text x="24" y="44" font-size="20" fill="#FFFFFF" text-anchor="start" font-weight="600">信息分层：同一窗口，三层披露</text>
+<text x="24" y="66" font-size="10" fill="#A5A9AD" text-anchor="start">答案先出现，细节后出现；不是把 100 个字段排得更好看。</text>
+<line x1="24" y1="82" x2="1176" y2="82" stroke="#2E363F" stroke-width="1"/>
+<rect x="24" y="104" width="360" height="236" fill="#1E2226" stroke="#2E363F" stroke-width="1"/>
+<text x="44" y="134" font-size="12" fill="#DBB40C" text-anchor="start">L0 常驻 · 看态</text>
+<line x1="44" y1="146" x2="364" y2="146" stroke="#2E363F" stroke-width="1"/>
+<rect x="44" y="174" width="4" height="4" fill="#DBB40C"/>
+<text x="58" y="182" font-size="11" fill="#FFFFFF" text-anchor="start">画布</text>
+<rect x="44" y="208" width="4" height="4" fill="#DBB40C"/>
+<text x="58" y="216" font-size="11" fill="#FFFFFF" text-anchor="start">一句话状态</text>
+<rect x="44" y="242" width="4" height="4" fill="#DBB40C"/>
+<text x="58" y="250" font-size="11" fill="#FFFFFF" text-anchor="start">一个主按钮</text>
+<text x="44" y="322" font-size="9" fill="#6E747B" text-anchor="start">12 个文本块</text>
+<rect x="420" y="104" width="360" height="236" fill="#1E2226" stroke="#2E363F" stroke-width="1"/>
+<text x="440" y="134" font-size="12" fill="#DBB40C" text-anchor="start">L1 编辑态 · 点「编辑设计」</text>
+<line x1="440" y1="146" x2="760" y2="146" stroke="#2E363F" stroke-width="1"/>
+<rect x="440" y="174" width="4" height="4" fill="#DBB40C"/>
+<text x="454" y="182" font-size="11" fill="#FFFFFF" text-anchor="start">级轨</text>
+<rect x="440" y="208" width="4" height="4" fill="#DBB40C"/>
+<text x="454" y="216" font-size="11" fill="#FFFFFF" text-anchor="start">零件带</text>
+<rect x="440" y="242" width="4" height="4" fill="#DBB40C"/>
+<text x="454" y="250" font-size="11" fill="#FFFFFF" text-anchor="start">选中检视</text>
+<text x="440" y="322" font-size="9" fill="#6E747B" text-anchor="start">≈30 个文本块</text>
+<rect x="816" y="104" width="360" height="236" fill="#1E2226" stroke="#2E363F" stroke-width="1"/>
+<text x="836" y="134" font-size="12" fill="#DBB40C" text-anchor="start">L2 弹层 · 点「清单」</text>
+<line x1="836" y1="146" x2="1156" y2="146" stroke="#2E363F" stroke-width="1"/>
+<rect x="836" y="174" width="4" height="4" fill="#DBB40C"/>
+<text x="850" y="182" font-size="11" fill="#FFFFFF" text-anchor="start">装配清单</text>
+<rect x="836" y="208" width="4" height="4" fill="#DBB40C"/>
+<text x="850" y="216" font-size="11" fill="#FFFFFF" text-anchor="start">全部检查</text>
+<rect x="836" y="242" width="4" height="4" fill="#DBB40C"/>
+<text x="850" y="250" font-size="11" fill="#FFFFFF" text-anchor="start">规格 tooltip</text>
+<text x="836" y="322" font-size="9" fill="#6E747B" text-anchor="start">按需出现</text>
+<line x1="384" y1="222" x2="412" y2="222" stroke="#616C7A" stroke-width="1"/>
+<polygon points="412,218 420,222 412,226" fill="#616C7A"/>
+<line x1="780" y1="222" x2="808" y2="222" stroke="#616C7A" stroke-width="1"/>
+<polygon points="808,218 816,222 808,226" fill="#616C7A"/>
+<text x="24" y="386" font-size="11" fill="#A5A9AD" text-anchor="start">旧窗口 ≈ 100+ 个文本块 → 看态 12 → 编辑 30 → 其余按需。</text>
+<text x="24" y="412" font-size="11" fill="#FFFFFF" text-anchor="start">一屏一决策 · 数字按需 · 列表进弹层 · 最小字号 11px · 每块 ≤ 12 字。</text>
+</svg>
