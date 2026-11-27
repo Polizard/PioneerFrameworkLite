@@ -52,6 +52,8 @@ namespace PioneerFramework.GroundAssembly
     /// </summary>
     public class CompRocketAssembler : ThingComp
     {
+        private const int MaxStationsPerRow = 64;
+
         // 第一步刻意无舱内地图（CabinType.None）：舱室需要脐带塔/登船流程，那是另一条线。
         private RocketDesignSpec design = new() { CabinType = RocketCabinType.None };
         private AssemblerState state = AssemblerState.Idle;
@@ -149,11 +151,24 @@ namespace PioneerFramework.GroundAssembly
             int? stageId = null, float radiusM = 0f, Func<string, ShipPartDef?>? lookup = null)
         {
             if (def == null || !CanEditDesign) return false;
-            count = Mathf.Clamp(count, 1, 8);
             var parts = Design.parts;
-            if (parentIndex < 0 || parentIndex >= parts.Count) return false;
-            var parent = parts[parentIndex];
-            if (parent == null) return false;
+            var additions = BuildRadialParts(parts, def, count, parentIndex, ClampStage(stageId ?? currentStage),
+                radiusM, lookup);
+            if (additions.Count == 0) return false;
+            parts.AddRange(additions);
+            if (state == AssemblerState.Idle) state = AssemblerState.Designing;
+            return true;
+        }
+
+        internal List<DesignPartSpec> PreviewRadialParts(ShipPartDef def, int count, int parentIndex)
+            => BuildRadialParts(design.parts, def, count, parentIndex, ClampStage(currentStage), 0f, null);
+
+        private static List<DesignPartSpec> BuildRadialParts(List<DesignPartSpec> parts, ShipPartDef def, int count,
+            int parentIndex, int stage, float radiusM, Func<string, ShipPartDef?>? lookup)
+        {
+            if (parentIndex < 0 || parentIndex >= parts.Count || parts[parentIndex] is not { } parent)
+                return new List<DesignPartSpec>();
+            count = Mathf.Clamp(count, 1, 8);
             lookup ??= name => DefDatabase<ShipPartDef>.GetNamedSilentFail(name);
 
             var parentDef = lookup(parent.defName);
@@ -185,11 +200,11 @@ namespace PioneerFramework.GroundAssembly
                 pz = RowTopZ(parts, parentIndex, lookup) - ph * 0.5f;
             }
 
-            int stage = ClampStage(stageId ?? currentStage);
+            var additions = new List<DesignPartSpec>(count);
             for (int i = 0; i < count; i++)
             {
                 float a = Mathf.PI * 2f * i / count;
-                parts.Add(new DesignPartSpec
+                additions.Add(new DesignPartSpec
                 {
                     defName = def.defName,
                     category = def.category,
@@ -203,8 +218,7 @@ namespace PioneerFramework.GroundAssembly
                     localPosition = new DVector3(px + radius * Mathf.Cos(a), py + radius * Mathf.Sin(a), pz),
                 });
             }
-            if (state == AssemblerState.Idle) state = AssemblerState.Designing;
-            return true;
+            return additions;
         }
 
         /// <summary>
@@ -216,9 +230,21 @@ namespace PioneerFramework.GroundAssembly
         {
             if (def == null || !CanEditDesign) return false;
             var parts = Design.parts;
-            if (parentIndex < 0 || parentIndex >= parts.Count) return false;
-            var parent = parts[parentIndex];
-            if (parent == null) return false;
+            var addition = BuildAxialPart(parts, def, parentIndex, below, lookup);
+            if (addition == null) return false;
+            parts.Add(addition);
+            if (state == AssemblerState.Idle) state = AssemblerState.Designing;
+            return true;
+        }
+
+        internal DesignPartSpec? PreviewAxialPart(ShipPartDef def, int parentIndex, bool below)
+            => BuildAxialPart(design.parts, def, parentIndex, below, null);
+
+        private static DesignPartSpec? BuildAxialPart(List<DesignPartSpec> parts, ShipPartDef def, int parentIndex,
+            bool below, Func<string, ShipPartDef?>? lookup)
+        {
+            if (parentIndex < 0 || parentIndex >= parts.Count || parts[parentIndex] is not { } parent)
+                return null;
             lookup ??= name => DefDatabase<ShipPartDef>.GetNamedSilentFail(name);
 
             var parentDef = lookup(parent.defName);
@@ -231,7 +257,7 @@ namespace PioneerFramework.GroundAssembly
                 : RowTopZ(parts, parentIndex, lookup) - ph * 0.5f;
             float z = below ? pz - (ph + ch) * 0.5f : pz + (ph + ch) * 0.5f;
 
-            parts.Add(new DesignPartSpec
+            return new DesignPartSpec
             {
                 defName = def.defName,
                 category = def.category,
@@ -243,9 +269,7 @@ namespace PioneerFramework.GroundAssembly
                 useExplicitPose = true,
                 parentIndex = parentIndex,
                 localPosition = new DVector3(px, py, z),
-            });
-            if (state == AssemblerState.Idle) state = AssemblerState.Designing;
-            return true;
+            };
         }
 
         /// <summary>
@@ -310,6 +334,22 @@ namespace PioneerFramework.GroundAssembly
             return true;
         }
 
+        internal bool CopyRadialFromDesignWindow(int index)
+        {
+            var parts = Design.parts;
+            int oldCount = parts.Count;
+            if (!RadialCopy(index)) return false;
+            int shift = parts.Count - oldCount;
+            // Existing children still point to the first resulting row at index.
+            // Rows whose parents were originally farther down the list must move with them.
+            foreach (var part in parts)
+            {
+                if (part != null && part.parentIndex > index && part.parentIndex < oldCount)
+                    part.parentIndex += shift;
+            }
+            return true;
+        }
+
         /// <summary>某行在堆叠里的**顶面 z**（与 DesignPartAssembler/Schematic 同口径；显式行不推进游标）。</summary>
         private static float RowTopZ(List<DesignPartSpec> parts, int index, Func<string, ShipPartDef?> lookup)
         {
@@ -370,7 +410,7 @@ namespace PioneerFramework.GroundAssembly
         public bool AddPart(ShipPartDef? def, int qty = 1, int? stageId = null, int? parallelCount = null)
         {
             if (def == null || qty <= 0 || !CanEditDesign) return false;
-            qty = Math.Min(qty, 64);
+            qty = Math.Min(qty, MaxStationsPerRow);
             int stage = ClampStage(stageId ?? currentStage);
             int parallel = ParallelLayout.Clamp(parallelCount ?? currentParallel);
 
@@ -381,27 +421,79 @@ namespace PioneerFramework.GroundAssembly
                 // 2026-10-28：**同级号才合并**——否则"上面级 1 台 + 一级 9 台"会被并成一行 10 台，
                 // 抛级时整行一起走，用户看到的"切分全扎堆"就是这么来的。
                 // 2026-10-29：并联台数也是合并键的一部分（4 台的十字与 6 台的六方几何不同，不能并成一行）。
-                if (e != null && e.defName == def.defName && e.category == def.category
-                    && e.stageId == stage && RocketDesignRules.ParallelOf(e) == parallel)
+                if (e != null && MatchesStackRow(e, def, stage, parallel))
                 {
-                    e.quantity = Math.Min(64, e.quantity + qty);
+                    e.quantity = Math.Min(MaxStationsPerRow, e.quantity + qty);
                     if (state == AssemblerState.Idle) state = AssemblerState.Designing;
                     return true;
                 }
             }
 
-            d.parts.Add(new DesignPartSpec
-            {
-                defName = def.defName,
-                category = def.category,
-                quantity = qty,
-                parallelCount = parallel,
-                installPosition = def.category,
-                stageId = stage,
-            });
+            d.parts.Add(CreateStackRow(def, qty, stage, parallel));
             if (state == AssemblerState.Idle) state = AssemblerState.Designing;
             return true;
         }
+
+        internal bool TryInsertPartAt(ShipPartDef def, int index, DesignPartSpec? sameNode,
+            out int addedRow, out string reason)
+        {
+            addedRow = -1;
+            reason = "";
+            if (!CanEditDesign)
+            {
+                reason = "当前状态无法编辑设计。";
+                return false;
+            }
+
+            var parts = design.parts;
+            if (def == null || index < 0 || index > parts.Count)
+            {
+                reason = "插入位置或目录件已失效。";
+                return false;
+            }
+
+            int stage = ClampStage(currentStage);
+            int parallel = CurrentParallel;
+            if (sameNode != null && index < parts.Count && ReferenceEquals(parts[index], sameNode)
+                && !sameNode.useExplicitPose && MatchesStackRow(sameNode, def, stage, parallel))
+            {
+                if (sameNode.quantity >= MaxStationsPerRow)
+                {
+                    reason = $"这一行已达到 {MaxStationsPerRow} 个轴向站。";
+                    return false;
+                }
+                sameNode.quantity++;
+            }
+            else
+            {
+                parts.Insert(index, CreateStackRow(def, 1, stage, parallel));
+                for (int i = 0; i < parts.Count; i++)
+                {
+                    var row = parts[i];
+                    if (row != null && row.parentIndex >= index && row.parentIndex < int.MaxValue)
+                        row.parentIndex++;
+                }
+            }
+
+            addedRow = index;
+            if (state == AssemblerState.Idle) state = AssemblerState.Designing;
+            return true;
+        }
+
+        private static bool MatchesStackRow(DesignPartSpec row, ShipPartDef def, int stage, int parallel)
+            => row.defName == def.defName && row.category == def.category && row.stageId == stage
+                && RocketDesignRules.ParallelOf(row) == parallel;
+
+        private static DesignPartSpec CreateStackRow(ShipPartDef def, int quantity, int stage, int parallel)
+            => new DesignPartSpec
+            {
+                defName = def.defName,
+                category = def.category,
+                quantity = quantity,
+                parallelCount = parallel,
+                installPosition = def.category,
+                stageId = stage,
+            };
 
         /// <summary>
         /// **在堆叠顺序里前后移动一行**（2026-10-29 用户令："让选中部件的顺序可以前后移动"）。
@@ -630,6 +722,74 @@ namespace PioneerFramework.GroundAssembly
             if (e.quantity <= 0) d.parts.RemoveAt(index);
             if (d.parts.Count == 0 && state == AssemblerState.Designing) state = AssemblerState.Idle;
             return true;
+        }
+
+        internal List<DesignPartSpec> GetDeletionGroup(DesignPartSpec part)
+        {
+            var parts = design.parts;
+            var indices = FindDeletionGroupIndices(parts, part);
+            var group = new List<DesignPartSpec>(indices.Count);
+            for (int i = 0; i < parts.Count; i++)
+                if (indices.Contains(i)) group.Add(parts[i]);
+            return group;
+        }
+
+        internal bool TryDeleteGroup(DesignPartSpec part, IReadOnlyList<DesignPartSpec> expected)
+        {
+            if (!CanEditDesign) return false;
+            var parts = design.parts;
+            var indices = FindDeletionGroupIndices(parts, part);
+            if (indices.Count == 0 || indices.Count != expected.Count) return false;
+
+            var expectedRows = new HashSet<DesignPartSpec>(expected, ReferenceEqualityComparer.Instance);
+            foreach (int index in indices)
+                if (!expectedRows.Remove(parts[index])) return false;
+
+            var newIndices = new int[parts.Count];
+            int survivingCount = 0;
+            for (int i = 0; i < parts.Count; i++)
+                newIndices[i] = indices.Contains(i) ? -1 : survivingCount++;
+
+            for (int i = 0; i < parts.Count; i++)
+            {
+                if (newIndices[i] < 0) continue;
+                var row = parts[i];
+                if (row != null && row.parentIndex >= 0 && row.parentIndex < newIndices.Length)
+                    row.parentIndex = newIndices[row.parentIndex];
+                parts[newIndices[i]] = row!;
+            }
+            parts.RemoveRange(survivingCount, parts.Count - survivingCount);
+            if (parts.Count == 0 && state == AssemblerState.Designing) state = AssemblerState.Idle;
+            return true;
+        }
+
+        private static HashSet<int> FindDeletionGroupIndices(List<DesignPartSpec> parts, DesignPartSpec part)
+        {
+            var group = new HashSet<int>();
+            if (part == null) return group;
+            int root = parts.FindIndex(row => ReferenceEquals(row, part));
+            if (root < 0) return group;
+
+            // 先按父索引建立子行表，允许子行经移动后出现在父行之前。
+            var childrenByParent = new List<int>?[parts.Count];
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var row = parts[i];
+                if (row == null || row.parentIndex < 0 || row.parentIndex >= parts.Count) continue;
+                (childrenByParent[row.parentIndex] ??= new List<int>()).Add(i);
+            }
+
+            var pending = new Queue<int>();
+            group.Add(root);
+            pending.Enqueue(root);
+            while (pending.TryDequeue(out int current))
+            {
+                var children = childrenByParent[current];
+                if (children == null) continue;
+                foreach (int child in children)
+                    if (group.Add(child)) pending.Enqueue(child);
+            }
+            return group;
         }
 
         public void ClearDesign()
@@ -874,10 +1034,15 @@ namespace PioneerFramework.GroundAssembly
         /// **一键装填并完工一发 R-7 形态测试火箭**（2026-11-03 替换旧两级示范）。
         ///
         /// 形态（目录件，全在 `ShipParts_Realistic.xml`）：
-        /// · 级 0（芯级）：控制核心 ×1 + 100 t 煤油罐 ×1 + 小机 ×1（引擎在本级末端）；
+        /// · 级 0（芯级）：控制核心 ×1 + 400 t 煤油罐 ×1 + 大推力机 ×1（引擎在本级末端）；
         ///   标**并联点火** ⇒ 与级 1 助推器同时烧（C-full）。
-        /// · 级 1（助推器）：4 台重罐 + 小机，径向对称（自动半径 = 芯级半宽 + 本体半宽 + 级间缝），
+        /// · 级 1（助推器）：4 组 100 t 煤油罐 + 大推力机，沿芯级下段径向对称，喷口齐平。
         ///   各占 `blockId 0–3` ⇒ 一次抛级出 4 个碎片组（科罗廖夫十字）。
+        ///
+        /// **发动机选型（2026-11-26 修）**：保留五台 `Lifter_Heavy`（3,795 kN）。
+        /// 现有目录下总推力 18,975 kN、满罐质量 867.8 t，g=8 时推重比约 2.73。
+        /// 注意**不能**用 `parallelCount` 堆引擎：显式位姿行的并联件共用同一 pose
+        /// （`DesignPartAssembler` "不再叠环偏移"）⇒ 只涨读数、不涨几何。
         ///
         /// 显式位姿行 → 两道堆叠设计门自动豁免；一步到位：装填 → 开工 → 立即完工（含满罐加注）。
         /// </summary>
@@ -905,27 +1070,44 @@ namespace PioneerFramework.GroundAssembly
             return true;
         }
 
+        internal bool TryLoadEditableR7(out string reason)
+        {
+            if (!CanEditDesign)
+            {
+                reason = "当前状态无法编辑设计。";
+                return false;
+            }
+
+            var spec = BuildR7TestDesign(name => DefDatabase<ShipPartDef>.GetNamedSilentFail(name), out reason);
+            if (spec == null) return false;
+
+            ResetToIdle();
+            design = spec;
+            state = AssemblerState.Designing;
+            return true;
+        }
+
         /// <summary>
-        /// **纯构造 R-7 测试设计**（2026-11-03）：芯级（控制核心 + 中罐 + 小机，级 0，标并联点火）
-        /// + 4 台助推器（重罐 + 小机，级 1，块 0–3，显式位姿径向对称）。
+        /// **纯构造 R-7 测试设计**：芯级（控制核心 + 重罐 + 大推力机，级 0，标并联点火）
+        /// + 4 台助推器（中罐 + 大推力机，级 1，块 0–3，显式位姿径向对称）。
         /// 不碰 state/建造流程 ⇒ 可在 headless 测试里用注入目录直接验形状与两道设计门。
         /// </summary>
         internal static RocketDesignSpec? BuildR7TestDesign(Func<string, ShipPartDef?> lookup, out string reason)
         {
             reason = "";
             ShipPartDef? control = lookup("PF_ShipPart_ControlCore_Debug");
-            ShipPartDef? engine = lookup("PF_ShipPart_Engine_Lifter_Small");
+            ShipPartDef? engine = lookup("PF_ShipPart_Engine_Lifter_Heavy");
             ShipPartDef? tankBig = lookup("PF_ShipPart_Tank_Kerolox_Heavy");
             ShipPartDef? tankMid = lookup("PF_ShipPart_Tank_Kerolox_Medium");
             if (control == null || engine == null || tankBig == null || tankMid == null)
             {
-                reason = "测试火箭缺少目录件（ControlCore_Debug / Lifter_Small / Kerolox_Heavy / Kerolox_Medium）。";
+                reason = "测试火箭缺少目录件（ControlCore_Debug / Lifter_Heavy / Kerolox_Heavy / Kerolox_Medium）。";
                 return null;
             }
 
             var spec = new RocketDesignSpec { CabinType = RocketCabinType.None };
 
-            // ── 级 0：芯级（控制核心 → 中罐 → 引擎；引擎在级末）──
+            // ── 级 0：芯级（控制核心 → 重罐 → 引擎；引擎在级末）──
             spec.parts.Add(new DesignPartSpec
             {
                 defName = control.defName, category = "control", quantity = 1, parallelCount = 1,
@@ -933,7 +1115,7 @@ namespace PioneerFramework.GroundAssembly
             });
             spec.parts.Add(new DesignPartSpec
             {
-                defName = tankMid.defName, category = "tank", quantity = 1, parallelCount = 1,
+                defName = tankBig.defName, category = "tank", quantity = 1, parallelCount = 1,
                 installPosition = "body", stageId = 0,
             });
             spec.parts.Add(new DesignPartSpec
@@ -947,25 +1129,26 @@ namespace PioneerFramework.GroundAssembly
             float hTankMid = RocketSchematicBuilder.StackHeightOf(tankMid);
             float hEngine = RocketSchematicBuilder.StackHeightOf(engine);
             float hTankBig = RocketSchematicBuilder.StackHeightOf(tankBig);
-            float coreTankZ = -(hControl + hTankMid * 0.5f);
-            float boosterEngineZ = coreTankZ - hTankBig * 0.5f - hEngine * 0.5f;
+            float coreTankBottomZ = -(hControl + hTankBig);
+            float boosterTankZ = coreTankBottomZ + hTankMid * 0.5f;
+            float boosterEngineZ = coreTankBottomZ - hEngine * 0.5f;
 
-            float coreHalf = Mathf.Max(control.boundsX, Mathf.Max(tankMid.boundsX, engine.boundsX)) * 0.5f;
-            float radius = coreHalf + Mathf.Max(tankBig.boundsX, engine.boundsX) * 0.5f
+            float coreHalf = Mathf.Max(control.boundsX, Mathf.Max(tankBig.boundsX, engine.boundsX)) * 0.5f;
+            float radius = coreHalf + Mathf.Max(tankMid.boundsX, engine.boundsX) * 0.5f
                            + RocketDesignRules.StageGapMeters;
 
-            // ── 级 1：4 台助推器（重罐 + 小机，径向对称；每台一个 blockId）──
+            // ── 级 1：4 台助推器（中罐 + 大推力机；每台一个 blockId）──
             const int coreTankRow = 1;
-            const int coreEngineRow = 2;
             for (int b = 0; b < 4; b++)
             {
                 float a = Mathf.PI * 0.5f * b;   // 0°/90°/180°/270°
                 float x = radius * Mathf.Cos(a);
                 float y = radius * Mathf.Sin(a);
 
+                int boosterTankRow = spec.parts.Count;
                 spec.parts.Add(new DesignPartSpec
                 {
-                    defName = tankBig.defName,
+                    defName = tankMid.defName,
                     category = "tank",
                     quantity = 1,
                     parallelCount = 1,
@@ -974,7 +1157,7 @@ namespace PioneerFramework.GroundAssembly
                     blockId = b,
                     useExplicitPose = true,
                     parentIndex = coreTankRow,
-                    localPosition = new DVector3(x, y, coreTankZ),
+                    localPosition = new DVector3(x, y, boosterTankZ),
                 });
                 spec.parts.Add(new DesignPartSpec
                 {
@@ -986,7 +1169,7 @@ namespace PioneerFramework.GroundAssembly
                     stageId = 1,
                     blockId = b,
                     useExplicitPose = true,
-                    parentIndex = coreEngineRow,
+                    parentIndex = boosterTankRow,
                     localPosition = new DVector3(x, y, boosterEngineZ),
                 });
             }

@@ -20,6 +20,8 @@ XML 定义天然天体参数及显式 comp 能力。一个 Def 可以产生固�
 
 延迟回调重新验证会话、实例身份和相应修订。读取 Catalog、回执或 Sample 不推进模拟。Blocked 实例可查询诊断，但不暴露有效业务能力。
 
+世界生成时先尝试 `PF_DefaultCelestialSystem`（正式地月系内容在附属包 NFexp）；该 Def 不在时改用 PFL 自带的 `PF_BuiltinCelestialSystem`（`1.7/Defs/CelestialBuiltin/CelestialBuiltinSystem.xml`：一颗恒星 + 一颗可居住行星），保证只启用 PFL 也能建世界。两者都缺失才跳过天体框架，此时原版地表层不会拿到构造会话。
+
 ## XML 与参数
 
 可复用的荒芜、温带、温室、冰封、气态巨行星和冰巨行星模板见 [通用行星种类](PlanetKinds.md)。这些模板不改变默认地月系。

@@ -111,19 +111,32 @@ namespace PioneerFramework.Celestial
             CelestialCapabilityRegistry.Global.Seal();
             ulong seed = unchecked((uint)GenText.StableStringHash(world.info.seedString));
             var started = CelestialWorldBootstrap.Begin(CelestialWorldBootstrap.DefaultSystem, seed);
+            bool builtinFallback = false;
+            if (!started.Success && MissingSystem(started))
+            {
+                // 2026-11-25：内容包 NFexp 未启用（Def 已迁到 NFexp）时改走 PFL 自带的最小星系，
+                // 而不是直接放弃天体框架 —— 原版 Surface 的 layerType 已被 patch 成
+                // CelestialSurfaceLayer，没有构造会话照样会把建世界打断。
+                started = CelestialWorldBootstrap.Begin(CelestialWorldBootstrap.BuiltinSystem, seed);
+                builtinFallback = started.Success;
+            }
             if (!started.Success)
             {
                 // 2026-11-17：天体内容 Def（系统/天体/档案/视觉）已迁到附属包 NFexp。PFL 单独启用时
                 // 「系统定义不存在」是合法配置（无天体框架），不应把原版建世界整个打断；
-                // 其余任何失败仍按原样抛。
-                if (started.Errors.Count == 1 && started.Errors[0].Code == "SystemDefinitionMissing")
+                // 其余任何失败仍按原样抛。2026-11-25：只有连内置最小星系 Def 也缺（例如只拷了
+                // DLL、没拷 1.7/Defs）才走到这里。
+                if (MissingSystem(started))
                 {
-                    Log.Warning("[PFL] 未找到天体系统定义 " + CelestialWorldBootstrap.DefaultSystem
-                        + "（内容包 NFexp 未启用？）—— 本世界不启用天体框架。");
+                    Log.Warning("[PFL] 未找到天体系统定义 " + CelestialWorldBootstrap.DefaultSystem + " / " + CelestialWorldBootstrap.BuiltinSystem
+                        + "（内容包 NFexp 未启用，且内置 Def 缺失）—— 本世界不启用天体框架。");
                     return;
                 }
                 throw Failure(started.Errors);
             }
+            if (builtinFallback)
+                Log.Message("[PFL] 未找到天体系统定义 " + CelestialWorldBootstrap.DefaultSystem
+                    + "（内容包 NFexp 未启用），改用内置最小星系 " + CelestialWorldBootstrap.BuiltinSystem + "（一颗恒星 + 一颗行星）。");
             var scope = started.Value; scope.ManagedByNativeHooks = true;
             if (invocation != null && ReferenceEquals(invocation.Game, game)) invocation.Owned.Add(scope);
         }
@@ -158,6 +171,8 @@ namespace PioneerFramework.Celestial
             if (__state != null && ReferenceEquals(invocation, __state)) invocation = __state.Parent;
             return __exception;
         }
+        private static bool MissingSystem(CelestialResult<CelestialWorldBootstrapScope> result)
+            => result.Errors.Count == 1 && result.Errors[0].Code == "SystemDefinitionMissing";
         private static InvalidOperationException Failure(IReadOnlyList<CelestialError> errors)
             => new("CelestialBootstrap: " + string.Join("; ", errors.Select(error => error.Code + " " + error.Detail)));
     }

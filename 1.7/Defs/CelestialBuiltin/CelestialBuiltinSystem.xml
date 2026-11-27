@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- ════════════════════════════════════════════════════════════════════════
+       2026-11-25：PFL 自带的最小星系（无内容包时的兜底内容）。
+       背景：2026-11-17 天体内容 Def 迁到附属包 NFexp 后，单独启用 PFL 会找不到
+       PF_DefaultCelestialSystem，但原版 Surface 的 layerType 仍由
+       Patches/PlanetLayerDefs_CelestialSurface.xml 指到 CelestialSurfaceLayer，
+       而该层必须有 CelestialSurfaceCreationScope 头才能构造 —— 于是建世界直接抛
+       MissingCelestialConstructionSession。本文件给出「框架自带、内容最小」的
+       兜底，让 PFL 单独启用也能开局（一个恒星 + 一颗可居住行星，无卫星）。
+       命名：全部 PF_Builtin*，与 NFexp 的 Def 名不重叠（两边同时启用也不会撞名）。
+       取舍：这里只放「能开局」的最小集；地月系、赭砂、行星种类等正式内容仍归 NFexp。
+       ════════════════════════════════════════════════════════════════════════ -->
+
+  <!-- ── 星系：恒星 + 根行星（rootSurfaceEntry 必须指向带 surface 的条目）── -->
+  <PioneerFramework.Celestial.CelestialSystemDef>
+    <defName>PF_BuiltinCelestialSystem</defName>
+    <label>内置最小星系</label>
+    <rootSurfaceEntry>root</rootSurfaceEntry>
+    <entries>
+      <li>
+        <key>primary</key><bodyDef>PF_BuiltinStar</bodyDef><count><value>1</value></count>
+        <initializationReferences><li><key>frameOrigin</key><entry>primary</entry><scope>Self</scope></li></initializationReferences>
+      </li>
+      <li>
+        <key>root</key><bodyDef>PF_BuiltinPlanet</bodyDef><count><value>1</value></count><parentEntry>primary</parentEntry>
+        <initializationReferences>
+          <li><key>primaryLight</key><entry>primary</entry><scope>Global</scope></li>
+          <li><key>frameOrigin</key><entry>root</entry><scope>Self</scope></li>
+        </initializationReferences>
+      </li>
+    </entries>
+  </PioneerFramework.Celestial.CelestialSystemDef>
+
+  <!-- ── 恒星 ── -->
+  <PioneerFramework.CelestialBodyDef>
+    <defName>PF_BuiltinStar</defName>
+    <label>内置恒星</label>
+    <category>Star</category>
+    <comps>
+      <li Class="PioneerFramework.Celestial.CompProperties_SphericalBody">
+        <key>shape</key>
+        <radiusMeters><value>139140000</value></radiusMeters>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
+        <key>motion</key>
+        <providerId>PFL.ExistingEphemeris</providerId>
+        <gravitationalParameter><value>2.4369393583e19</value></gravitationalParameter>
+        <motion>
+          <orbitRadiusMeters>0</orbitRadiusMeters>
+          <orbitPeriodSeconds>0</orbitPeriodSeconds>
+          <orbitPhaseRadians>0</orbitPhaseRadians>
+          <bodyType>Star</bodyType>
+          <frameOriginReference>frameOrigin</frameOriginReference>
+          <rotation><periodSeconds>60000</periodSeconds></rotation>
+        </motion>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_LightSource">
+        <key>light</key>
+        <intensity><value>0.25</value></intensity>
+        <red><value>1</value></red>
+        <green><value>0.706</value></green>
+        <blue><value>0.459</value></blue>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
+        <key>visual</key>
+        <profile>PF_BuiltinStellarVisual</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_StellarVisual">
+        <key>stellar</key>
+        <profile>PF_BuiltinStellarVisual</profile>
+      </li>
+    </comps>
+  </PioneerFramework.CelestialBodyDef>
+
+  <!-- ── 根行星（可居住：原版地表生成 + 大气 + 地图配方）── -->
+  <PioneerFramework.CelestialBodyDef>
+    <defName>PF_BuiltinPlanet</defName>
+    <label>内置行星</label>
+    <category>Planet</category>
+    <comps>
+      <li Class="PioneerFramework.Celestial.CompProperties_SphericalBody">
+        <key>shape</key>
+        <radiusMeters><value>5000000</value></radiusMeters>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExternalPhysicsBinding">
+        <key>motion</key>
+        <providerId>PFL.ExistingEphemeris</providerId>
+        <gravitationalParameter><value>2.0e14</value></gravitationalParameter>
+        <motion>
+          <orbitRadiusMeters>20000000000</orbitRadiusMeters>
+          <orbitPeriodSeconds>3600000</orbitPeriodSeconds>
+          <orbitPhaseRadians>0</orbitPhaseRadians>
+          <bodyType>Planet</bodyType>
+          <frameOriginReference>frameOrigin</frameOriginReference>
+          <rotation><periodSeconds>60000</periodSeconds></rotation>
+        </motion>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_Surface">
+        <key>surface</key>
+        <generationMode>OnDemand</generationMode>
+        <subdivisions><value>10</value></subdivisions>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_BiomeGeneration">
+        <key>biomes</key>
+        <profile>PF_BuiltinBiomes</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_MapGeneration">
+        <key>maps</key>
+        <profile>PF_BuiltinMaps</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_ExistingEnvironment">
+        <key>environment</key>
+        <profile>PF_BuiltinEnvironment</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_Atmosphere">
+        <key>air</key>
+        <rho0><value>1.2</value></rho0>
+        <scaleHeight><value>8000</value></scaleHeight>
+        <topAltitude><value>100000</value></topAltitude>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CelestialVisual">
+        <key>visual</key>
+        <profile>PF_BuiltinPlanetVisual</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_AtmosphereVisual">
+        <key>atmosphereVisual</key>
+        <profile>PF_BuiltinAtmosphereVisual</profile>
+      </li>
+      <li Class="PioneerFramework.Celestial.CompProperties_CloudsVisual">
+        <key>clouds</key>
+        <profile>PF_BuiltinCloudsVisual</profile>
+      </li>
+    </comps>
+  </PioneerFramework.CelestialBodyDef>
+
+  <!-- ── 地表档案（原版地表生成，步骤沿用 NFexp 的 PF_EarthBiomes 同一张表）── -->
+  <PioneerFramework.Celestial.CelestialBiomeProfileDef>
+    <defName>PF_BuiltinBiomes</defName>
+    <label>内置行星原版地表</label>
+    <mode>VanillaSurface</mode>
+    <worldGenSteps>
+      <li>Terrain</li><li>Lakes</li><li>Rivers</li><li>Mutators</li>
+      <li MayRequire="Ludeon.RimWorld.Odyssey">Landmarks</li>
+      <li>AncientSites</li>
+      <li>AncientRoads</li>
+      <li MayRequire="Ludeon.RimWorld.Biotech">Pollution</li>
+    </worldGenSteps>
+    <rootOnlySteps><li>Factions</li><li>Roads</li><li>Features</li></rootOnlySteps>
+  </PioneerFramework.Celestial.CelestialBiomeProfileDef>
+
+  <!-- ── 本地地图配方（空配方 = 走原版候选；只为满足地图档案「必须有自然配方」）── -->
+  <PioneerFramework.MapGeneration.LocalMapRecipeDef>
+    <defName>PF_BuiltinLocalMap</defName>
+  </PioneerFramework.MapGeneration.LocalMapRecipeDef>
+  <PioneerFramework.Celestial.CelestialMapProfileDef>
+    <defName>PF_BuiltinMaps</defName><label>内置行星原版地图</label>
+    <localRecipe>PF_BuiltinLocalMap</localRecipe>
+  </PioneerFramework.Celestial.CelestialMapProfileDef>
+
+  <!-- ── 环境档案（日长与主光源绑定；climate 留空 = 沿用原生群落气候）── -->
+  <PioneerFramework.Celestial.CelestialEnvironmentProfileDef>
+    <defName>PF_BuiltinEnvironment</defName><label>内置行星环境</label>
+    <dayLengthTicks>60000</dayLengthTicks><primaryLightReference>primaryLight</primaryLightReference>
+  </PioneerFramework.Celestial.CelestialEnvironmentProfileDef>
+
+  <!-- ── 视觉档案 ── -->
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_BuiltinPlanetVisual</defName><label>内置行星地表表现</label>
+    <color>(0.282, 0.282, 0.408, 1)</color><backgroundBiome>Ocean</backgroundBiome>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_BuiltinAtmosphereVisual</defName><label>内置行星大气表现</label>
+    <color>(0.35, 0.55, 0.85, 1)</color><shellHeightMeters>50000</shellHeightMeters>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_BuiltinCloudsVisual</defName><label>内置行星云层表现</label>
+    <texturePath>World/CloudMap</texturePath><shellHeightMeters>10000</shellHeightMeters>
+    <fadeRangeMeters>5000</fadeRangeMeters><driftPeriodTicks>600000</driftPeriodTicks><distortionPeriodTicks>6000</distortionPeriodTicks>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+  <PioneerFramework.Celestial.CelestialVisualProfileDef>
+    <defName>PF_BuiltinStellarVisual</defName><label>内置恒星表现</label>
+    <color>(1, 0.706, 0.459, 1)</color>
+  </PioneerFramework.Celestial.CelestialVisualProfileDef>
+</Defs>

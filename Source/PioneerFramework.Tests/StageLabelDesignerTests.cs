@@ -14,20 +14,22 @@ namespace PioneerFramework.Tests
     /// </summary>
     public class StageLabelDesignerTests
     {
-        private static ShipPartDef Tank(string name, int stage = 0, float w = 3f, float h = 10f)
+        private static ShipPartDef Tank(string name, int stage = 0, float w = 3f, float h = 10f,
+            float massKg = 2000f, float capacityKg = 20000f)
             => new()
             {
-                defName = name, label = name, category = "tank", massKg = 2000f,
-                tankCapacityKg = 20000f, tankInitialKg = 20000f,
+                defName = name, label = name, category = "tank", massKg = massKg,
+                tankCapacityKg = capacityKg, tankInitialKg = capacityKg,
                 boundsX = w, boundsZ = w, boundsY = h, stackLengthMeters = h,
             };
 
-        private static ShipPartDef Engine(string name, int stage = 0, float w = 2f, float h = 3f)
+        private static ShipPartDef Engine(string name, int stage = 0, float w = 2f, float h = 3f,
+            float massKg = 500f, float ve = 3000f, float mdot = 200f)
             => new()
             {
-                defName = name, label = name, category = "thruster", massKg = 500f,
+                defName = name, label = name, category = "thruster", massKg = massKg,
                 boundsX = w, boundsZ = w, boundsY = h, stackLengthMeters = h,
-                exhaustVelocity = 3000f, massFlowRate = 200f,
+                exhaustVelocity = ve, massFlowRate = mdot,
             };
 
         [Fact]
@@ -167,17 +169,19 @@ namespace PioneerFramework.Tests
         {
             var defs = new Dictionary<string, ShipPartDef>();
             ShipPartDef Add(ShipPartDef d) { defs[d.defName] = d; return d; }
-            Add(Tank("PF_ShipPart_Tank_Kerolox_Medium", w: 3f, h: 8f));
-            Add(Tank("PF_ShipPart_Tank_Kerolox_Heavy", w: 4f, h: 12f));
-            Add(Engine("PF_ShipPart_Engine_Lifter_Small"));
+            Add(Tank("PF_ShipPart_Tank_Kerolox_Medium", w: 3f, h: 8f, massKg: 5000f, capacityKg: 100000f));
+            Add(Tank("PF_ShipPart_Tank_Kerolox_Heavy", w: 4f, h: 12f, massKg: 20000f, capacityKg: 400000f));
+            // 2026-11-26：示范火箭改用 RD-180（3,795 kN）。原来的 Lifter_Small（600 kN）
+            // 不能让满罐 R-7 离地（TWR ≈ 0.21）；数值按 ShipParts_Realistic.xml。
+            Add(Engine("PF_ShipPart_Engine_Lifter_Heavy", w: 4f, h: 4f, massKg: 5500f, ve: 3300f, mdot: 1150f));
             Add(new ShipPartDef
             {
-                defName = "PF_ShipPart_ControlCore_Debug", category = "control", massKg = 100f,
+                defName = "PF_ShipPart_ControlCore_Debug", category = "control", massKg = 300f,
                 boundsX = 2f, boundsY = 2f, boundsZ = 2f,
             });
 
-            var spec = CompRocketAssembler.BuildR7TestDesign(
-                n => defs.TryGetValue(n, out var d) ? d : null, out string reason);
+            Func<string, ShipPartDef?> lookup = n => defs.TryGetValue(n, out var d) ? d : null;
+            var spec = CompRocketAssembler.BuildR7TestDesign(lookup, out string reason);
 
             Assert.NotNull(spec);
             Assert.Equal("", reason);
@@ -194,7 +198,12 @@ namespace PioneerFramework.Tests
                 Assert.True(p.useExplicitPose);
                 blocks.Add(p.blockId);
                 if (p.category == "tank") tanks++;
-                else if (p.category == "thruster") engines++;
+                else if (p.category == "thruster")
+                {
+                    engines++;
+                    // 2026-11-26：助推器必须用 RD-180，否则抬不动满罐（TWR 0.21）。
+                    Assert.Equal("PF_ShipPart_Engine_Lifter_Heavy", p.defName);
+                }
             }
             Assert.Equal(4, tanks);
             Assert.Equal(4, engines);
@@ -203,6 +212,14 @@ namespace PioneerFramework.Tests
             var active = RocketDesignRules.ActiveStages(spec);
             Assert.Contains(0, active);
             Assert.Contains(1, active);
+
+            // 2026-11-26：示范火箭必须**真的能起飞**，不是只有形状对。
+            // 口径与 C+ 窗口一致：Σ ve·ṁ×件数（活动级） ÷ (干重 + 满罐容量) × g（地球 8 m/s²）。
+            float thrust = RocketSchematicBuilder.ThrustN(spec, lookup, active);
+            var schematic = RocketSchematicBuilder.Build(spec, lookup, RocketDesignRules.StageGapMeters);
+            float weight = (schematic.dryMassKg + schematic.capacityKg) * 8f;
+            Assert.True(thrust > weight, $"示范火箭 TWR={thrust / weight:0.00} ≤ 1，点发射必被拒");
+            Assert.True(thrust / weight > 1.2f, $"示范火箭 TWR={thrust / weight:0.00} 余量过低（<1.2）");
         }
 
         [Fact]

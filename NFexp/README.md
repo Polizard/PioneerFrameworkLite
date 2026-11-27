@@ -52,10 +52,16 @@ NFexp/
 Harmony → PioneerFrameworkLite → NFexp
 ```
 
-**NFexp 现在是开局的必需品**：PFL 的 `CelestialWorldBootstrap.DefaultSystem` 仍指向 `PF_DefaultCelestialSystem`，而这个 Def 已经在本包里。
+**PFL 的 `CelestialWorldBootstrap.DefaultSystem` 仍指向 `PF_DefaultCelestialSystem`，而这个 Def 在本包里。**
 
-- 装了 NFexp：建世界时启用天体框架；
-- 只装 PFL：`CelestialWorldBootstrapHooks.BeginFreshWorld` 找不到系统定义，会打一条警告并**跳过天体框架**（不再中断原版建世界）。
+- 装了 NFexp：建世界时启用天体框架，使用本包的地月系（Sun/Earth/Moon/ZheSha）；
+- 只装 PFL（2026-11-25 起）：`CelestialWorldBootstrapHooks.BeginFreshWorld` 找不到默认系统定义时会回退到 PFL 自带的
+  `PF_BuiltinCelestialSystem`（`PioneerFrameworkLite/1.7/Defs/CelestialBuiltin/CelestialBuiltinSystem.xml`：
+  一颗恒星 + 一颗可居住行星），日志会打一条「改用内置最小星系」的 Message。**只装 PFL 现在也能正常建世界并开局**；
+- 两者都缺（例如只拷了 DLL、没拷 `1.7/Defs`）：才打警告并跳过天体框架 —— 这种安装本身是不完整的。
+
+> 历史：2026-11-17 迁移后「只装 PFL」会因原版 `Surface` 的 `layerType` 被 patch 成 `CelestialSurfaceLayer`、
+> 而该层必须有构造会话，导致建世界抛 `MissingCelestialConstructionSession`；内置星系就是为此补的兜底。
 
 ## 6. 部署
 

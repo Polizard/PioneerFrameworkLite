@@ -10,6 +10,12 @@ namespace PioneerFramework.Celestial
     public static class CelestialWorldBootstrap
     {
         public const string DefaultSystem = "PF_DefaultCelestialSystem";
+        /// <summary>
+        /// PFL 自带的最小星系（<c>1.7/Defs/CelestialBuiltin/CelestialBuiltinSystem.xml</c>：一颗恒星 + 一颗可居住行星）。
+        /// 2026-11-25：天体内容 Def 迁到附属包 NFexp 之后，单独启用 PFL 会找不到 <see cref="DefaultSystem"/>；
+        /// 此时用本系统兜底，保证「只装 PFL」也能建世界（此前会因 CelestialSurfaceLayer 缺构造会话而中断建世界）。
+        /// </summary>
+        public const string BuiltinSystem = "PF_BuiltinCelestialSystem";
         public static CelestialWorldBootstrapScope? Current => CelestialWorldGenSessionRegistry.Current;
         public static CelestialResult<CelestialWorldBootstrapScope> Begin(string systemDefName, ulong seed)
         {
