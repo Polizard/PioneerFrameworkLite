@@ -165,6 +165,35 @@ def validate_ship_building_visuals(roots, index):
     return errors
 
 
+def package_texture_roots(xml_path, root_dir, version_dirs):
+    """该 Def 文件所属包可见的贴图根，按 About.xml 的依赖方向取（§7 用）。
+
+    依赖方向（`NFexp/About/About.xml` loadAfter PFL，反向不成立）：
+      · **PFL 的 def 只查 PFL 自己的 Textures** —— 否则 PFL 可以悄悄指向只存在于
+        NFexp 的图，只装 PFL 时才白图，而这个闸门反而放行；
+      · **NFexp 的 def 可查 NFexp + PFL 的贴图**，但**只限 1.7**：NFexp 的
+        `LoadFolders.xml` 只声明 `v1.7`（无 1.6 线），发到 1.7 游戏里时 PFL 的
+        `1.6/Textures` 根本不加载 ⇒ 让它看见 1.6 的图会制造「闸门绿、运行时白图」的错判。
+
+    `version_dirs` 显式传入（不读模块级 `VERSION_DIRS`），测试才能构造临时树。
+    """
+    pfl_roots = [v / "Textures" for v in version_dirs]
+    if xml_path.relative_to(root_dir).parts[0] != "NFexp":
+        return pfl_roots
+    nfexp_roots = [root_dir / "NFexp" / "1.7" / "Textures"]
+    nfexp_roots += [v / "Textures" for v in version_dirs if v.name == "1.7"]
+    return nfexp_roots
+
+
+def resolve_texture(tex_path, texture_roots):
+    """在给定根列表里找 `<root>/<tex_path>.png`；找不到返回 None。"""
+    for root in texture_roots:
+        local = root / f"{tex_path}.png"
+        if local.is_file():
+            return local
+    return None
+
+
 def main():
     # 1. XML well-formed + collect defNames (all existing version package folders)
     defs_dirs = [v / "Defs" for v in VERSION_DIRS if (v / "Defs").exists()]
@@ -276,8 +305,11 @@ def main():
             fail(f"LoadFolders.xml: XML parse error: {e}")
 
     # 7. Rule 2: every graphicData/texPath must resolve to an actual texture.
-    #    Check PFL 1.6/Textures first. Base-game textures are packed in Unity assets
-    #    (no loose file on disk), so valid base references are tracked via an allowlist.
+    #    Base-game textures are packed in Unity assets (no loose file on disk),
+    #    so valid base references are tracked via the allowlist below.
+    #    2026-11-28：贴图按**包**分流（`package_texture_roots` 的 docstring 是唯一口径）。
+    #    历史：`main()` 早把 `NFexp/1.7/Defs` 放进了 `xml_roots`，而这里原先只扫
+    #    `VERSION_DIRS` ⇒ 任何带贴图的 NFexp 内容都被误报 missing texture。
     KNOWN_BASE_TEX = {
         "Things/Building/Misc/TempControl/Cooler",
         # 原版酿造桶贴图（打包在 Unity 资源里，无法用文件系统校验）
@@ -296,22 +328,18 @@ def main():
         "Things/Building/Ship/ShipSensorCluster",
     }
 
-    def texture_file(tex_path):
-        for v in VERSION_DIRS:
-            local = v / "Textures" / f"{tex_path}.png"
-            if local.is_file():
-                return local
-        return None
-
     for xml_path, root in xml_roots:
+        rel_xml = xml_path.relative_to(ROOT)
+        tex_roots = package_texture_roots(xml_path, ROOT, VERSION_DIRS)
+        searched = " + ".join(str(r.relative_to(ROOT)) for r in tex_roots)
         for child in root:
             tex = child.findtext("graphicData/texPath")
             if tex:
                 tex = tex.strip()
-                if texture_file(tex) is None and tex not in KNOWN_BASE_TEX:
+                if resolve_texture(tex, tex_roots) is None and tex not in KNOWN_BASE_TEX:
                     fail(
-                        f"{xml_path.relative_to(ROOT)}: def '{child.findtext('defName')}' "
-                        f"references missing texture '{tex}' (not in 1.6/Textures or "
+                        f"{rel_xml}: def '{child.findtext('defName')}' "
+                        f"references missing texture '{tex}' (not in {searched} or "
                         "known base textures)."
                     )
 
