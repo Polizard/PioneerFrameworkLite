@@ -1,0 +1,294 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Defs>
+
+    <!--民用T1载荷 -->
+
+    <ThingDef ParentName="ResourceBase">
+    <defName>DMSNF_SpaceSurveillancePayload</defName>
+    <label>空间目标监视载荷</label>
+    <description>用于探测轨道天体的任务载荷，装载到运载火箭上来发射到轨道。</description>
+    <graphicData>
+      <texPath>Things/Resource/Payloads/SpaceSurveillancePayload</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+    </graphicData>
+    <soundInteract>Metal_Drop</soundInteract>
+    <soundDrop>Standard_Drop</soundDrop>
+    <stackLimit>5</stackLimit>
+    <healthAffectsPrice>false</healthAffectsPrice>
+    <statBases>
+      <MaxHitPoints>100</MaxHitPoints>
+      <MarketValue>712</MarketValue>
+      <Mass>350</Mass>
+      <Flammability>0.0</Flammability>
+      <DeteriorationRate>2.0</DeteriorationRate>
+    </statBases>
+    <intricate>true</intricate>
+    <thingCategories>
+      <li>Manufactured</li>
+    </thingCategories>
+  </ThingDef>
+
+  <ThingDef ParentName="ResourceBase">
+    <defName>DMSNF_DataRelayPayload</defName>
+    <label>数据中继载荷</label>
+    <description>用于进行数据中继的任务载荷,装载到运载火箭上来发射到轨道。</description>
+    <graphicData>
+      <texPath>Things/Resource/Payloads/DataRelayPayload</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+    </graphicData>
+    <soundInteract>Metal_Drop</soundInteract>
+    <soundDrop>Standard_Drop</soundDrop>
+    <stackLimit>5</stackLimit>
+    <healthAffectsPrice>false</healthAffectsPrice>
+    <statBases>
+      <MaxHitPoints>100</MaxHitPoints>
+      <MarketValue>340</MarketValue>
+      <Mass>300</Mass>
+      <Flammability>0.0</Flammability>
+      <DeteriorationRate>2.0</DeteriorationRate>
+    </statBases>
+    <intricate>true</intricate>
+    <thingCategories>
+      <li>Manufactured</li>
+    </thingCategories>
+  </ThingDef>
+
+  <ThingDef ParentName="ResourceBase">
+    <defName>DMSNF_SpaceStationModulePayload</defName>
+    <label>太空站模块载荷</label>
+    <description>用于进行空间站建设的任务载荷,装载到运载火箭上来发射到轨道。</description>
+    <graphicData>
+      <texPath>Things/Resource/Payloads/SpaceStationModulePayload</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+    </graphicData>
+    <soundInteract>Metal_Drop</soundInteract>
+    <soundDrop>Standard_Drop</soundDrop>
+    <stackLimit>1</stackLimit>
+    <healthAffectsPrice>false</healthAffectsPrice>
+    <statBases>
+      <MaxHitPoints>900</MaxHitPoints>
+      <MarketValue>6000</MarketValue>
+      <Mass>12000</Mass>
+      <Flammability>0.0</Flammability>
+      <DeteriorationRate>2.0</DeteriorationRate>
+    </statBases>
+    <intricate>true</intricate>
+    <thingCategories>
+      <li>Manufactured</li>
+    </thingCategories>
+  </ThingDef>
+
+  <!-- 民用T2载荷 -->
+  
+  <ThingDef ParentName="ResourceBase">
+    <defName>DMSNF_BandNodeModulePayload</defName>
+    <label>处理阵列模块</label>
+    <description>用于处理特定御机使的信号的任务载荷，为御机使的总频宽增加20个频宽。装载到运载火箭上来发射到轨道。</description>
+    <graphicData>
+      <texPath>Things/Resource/Payloads/BandNodeModulePayload</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+    </graphicData>
+    <soundInteract>Metal_Drop</soundInteract>
+    <soundDrop>Standard_Drop</soundDrop>
+    <stackLimit>1</stackLimit>
+    <healthAffectsPrice>false</healthAffectsPrice>
+    <statBases>
+      <MaxHitPoints>200</MaxHitPoints>
+      <MarketValue>4200</MarketValue>
+      <Mass>2000</Mass>
+      <Flammability>0.0</Flammability>
+      <DeteriorationRate>2.0</DeteriorationRate>
+    </statBases>
+    <intricate>true</intricate>
+    <thingCategories>
+      <li>Manufactured</li>
+    </thingCategories>
+  </ThingDef>
+
+
+  <ThingDef ParentName="ResourceBase">
+    <defName>DMSNF_SpaceSolarPowerStationModulePayload</defName>
+    <label>空间太阳能电站模块</label>
+    <description>用于进行轨道太阳能收集，并通过微波将电能传输到地面的任务载荷。装载到运载火箭上来发射到轨道。</description>
+    <graphicData>
+      <texPath>Things/Resource/Payloads/SpaceSolarPowerStationModulePayload</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+    </graphicData>
+    <soundInteract>Metal_Drop</soundInteract>
+    <soundDrop>Standard_Drop</soundDrop>
+    <stackLimit>1</stackLimit>
+    <healthAffectsPrice>false</healthAffectsPrice>
+    <statBases>
+      <MaxHitPoints>400</MaxHitPoints>
+      <MarketValue>9855</MarketValue>
+      <Mass>3000</Mass>
+      <Flammability>0.0</Flammability>
+      <DeteriorationRate>2.0</DeteriorationRate>
+    </statBases>
+    <intricate>true</intricate>
+    <thingCategories>
+      <li>Manufactured</li>
+    </thingCategories>
+  </ThingDef>
+
+
+  <ThingDef ParentName="ResourceBase">
+    <defName>DMSNF_OrbitalAssemblyModulePayload</defName>
+    <label>轨道装配模块</label>
+    <description>用于进行自动化轨道生产设施建设的任务载荷，装载到运载火箭上来发射到轨道。</description>
+    <graphicData>
+      <texPath>Things/Resource/Payloads/OrbitalAssemblyModulePayload</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+    </graphicData>
+    <soundInteract>Metal_Drop</soundInteract>
+    <soundDrop>Standard_Drop</soundDrop>
+    <stackLimit>1</stackLimit>
+    <healthAffectsPrice>false</healthAffectsPrice>
+    <statBases>
+      <MaxHitPoints>600</MaxHitPoints>
+      <MarketValue>15000</MarketValue>
+      <Mass>6000</Mass>
+      <Flammability>0.0</Flammability>
+      <DeteriorationRate>2.0</DeteriorationRate>
+    </statBases>
+    <intricate>true</intricate>
+    <thingCategories>
+      <li>Manufactured</li>
+    </thingCategories>
+  </ThingDef>
+
+  <ThingDef ParentName="ResourceBase">
+    <defName>DMSNF_UpboundCargoModulePayload</defName>
+    <label>上行物资模块</label>
+    <description>用于对接补给轨道设施的任务载荷；补给能够延长指定轨道设施的工作寿命，并完全补充装配设施的原料或打击框架的弹药。装载到运载火箭上来发射到轨道。</description>
+    <graphicData>
+      <texPath>Things/Resource/Payloads/UpboundCargoModulePayload</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+    </graphicData>
+    <soundInteract>Metal_Drop</soundInteract>
+    <soundDrop>Standard_Drop</soundDrop>
+    <stackLimit>5</stackLimit>
+    <healthAffectsPrice>false</healthAffectsPrice>
+    <statBases>
+      <MaxHitPoints>150</MaxHitPoints>
+      <MarketValue>2070</MarketValue>
+      <Mass>1000</Mass>
+      <Flammability>0.0</Flammability>
+      <DeteriorationRate>2.0</DeteriorationRate>
+    </statBases>
+    <intricate>true</intricate>
+    <thingCategories>
+      <li>Manufactured</li>
+    </thingCategories>
+  </ThingDef>
+
+<!-- T1军用载荷-->
+
+  <!-- 弹道导弹电磁脉冲弹头 -->
+  <ThingDef ParentName="ResourceBase">
+    <defName>DMSNF_BMEMP</defName>
+    <label>弹道导弹电磁脉冲弹头</label>
+    <description>一枚重型电磁脉冲弹头，由火箭搭载进入行星近地轨道，在接收指令后发动机点火再入大气层，在目标上空引爆并释放高强度定向电磁脉冲。装载到运载火箭上来发射到轨道。</description>
+    <graphicData>
+      <texPath>Things/Resource/Payloads/BMEMP</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+    </graphicData>
+    <soundInteract>Metal_Drop</soundInteract>
+    <soundDrop>Standard_Drop</soundDrop>
+    <stackLimit>5</stackLimit>
+    <healthAffectsPrice>false</healthAffectsPrice>
+    <statBases>
+      <MaxHitPoints>120</MaxHitPoints>
+      <MarketValue>1680</MarketValue>
+      <Mass>500</Mass>
+      <Flammability>0.0</Flammability>
+      <DeteriorationRate>2.0</DeteriorationRate>
+    </statBases>
+    <intricate>true</intricate>
+    <thingCategories>
+      <li>Manufactured</li>
+    </thingCategories>
+  </ThingDef>
+
+  <!-- 弹道导弹高爆弹头 -->
+  <ThingDef ParentName="ResourceBase">
+    <defName>DMSNF_BMHE</defName>
+    <label>弹道导弹高爆弹头</label>
+    <description>一枚重型高爆弹头，由火箭搭载进入行星近地轨道，在接收指令后发动机点火再入大气层，在目标点地面引爆。装载到运载火箭上来发射到轨道。</description>
+    <graphicData>
+      <texPath>Things/Resource/Payloads/BMHE</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+    </graphicData>
+    <soundInteract>Metal_Drop</soundInteract>
+    <soundDrop>Standard_Drop</soundDrop>
+    <stackLimit>5</stackLimit>
+    <healthAffectsPrice>false</healthAffectsPrice>
+    <statBases>
+      <MaxHitPoints>100</MaxHitPoints>
+      <MarketValue>1165</MarketValue>
+      <Mass>500</Mass>
+      <Flammability>0.0</Flammability>
+      <DeteriorationRate>2.0</DeteriorationRate>
+    </statBases>
+    <intricate>true</intricate>
+    <thingCategories>
+      <li>Manufactured</li>
+    </thingCategories>
+  </ThingDef>
+
+  <!-- 弹道导弹核弹头 -->
+  <ThingDef ParentName="ResourceBase">
+    <defName>DMSNF_BMN</defName>
+    <label>弹道导弹核弹头</label>
+    <description>一枚重型战术核弹头，由火箭搭载进入行星近地轨道，在接收指令后发动机点火再入大气层，在目标点近地空域引爆。装载到运载火箭上来发射到轨道。</description>
+    <graphicData>
+      <texPath>Things/Resource/Payloads/BMN</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+    </graphicData>
+    <soundInteract>Metal_Drop</soundInteract>
+    <soundDrop>Standard_Drop</soundDrop>
+    <stackLimit>5</stackLimit>
+    <healthAffectsPrice>false</healthAffectsPrice>
+    <statBases>
+      <MaxHitPoints>150</MaxHitPoints>
+      <MarketValue>2000</MarketValue>
+      <Mass>500</Mass>
+      <Flammability>0.0</Flammability>
+      <DeteriorationRate>2.0</DeteriorationRate>
+    </statBases>
+    <intricate>true</intricate>
+    <thingCategories>
+      <li>Manufactured</li>
+    </thingCategories>
+  </ThingDef>
+
+<!-- T2军用载荷-->
+ 
+<!-- 无人轨道打击框架 "蛇发妖" -->
+  <ThingDef ParentName="ResourceBase">
+    <defName>DMSNF_UOSF_Payload</defName>
+    <label>无人轨道打击框架 "蛇发妖"</label>
+    <description>一种实验性轨道超重型机兵，能够通过模块化接口换装不同的任务吊舱，执行对地精确打击、轨道拦截或电子战任务。旨在测试"轨道机兵"概念的可行性。</description>
+    <graphicData>
+      <texPath>Things/Resource/Payloads/UOSF_Payload</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>1.5</drawSize>
+    </graphicData>
+    <soundInteract>Metal_Drop</soundInteract>
+    <soundDrop>Standard_Drop</soundDrop>
+    <stackLimit>1</stackLimit>
+    <healthAffectsPrice>false</healthAffectsPrice>
+    <statBases>
+      <MaxHitPoints>1500</MaxHitPoints>
+      <MarketValue>18000</MarketValue>
+      <Mass>5000</Mass>
+      <Flammability>0.0</Flammability>
+      <DeteriorationRate>1.0</DeteriorationRate>
+    </statBases>
+    <intricate>true</intricate>
+    <thingCategories>
+      <li>Manufactured</li>
+    </thingCategories>
+  </ThingDef>
+
+</Defs>

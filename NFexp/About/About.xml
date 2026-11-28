@@ -21,6 +21,19 @@
     <li>NewFrontierTeam.PioneerFrameworkLite</li>
   </loadAfter>
 
+  <!--
+    2026-11-28：NFexp 的 11 款载荷 Def 与 DMS:NF 的同名（DMSNF_ 前缀，刻意如此，便于将来整体回迁）。
+    RimWorld 对重名 Def 的处理**不是拒绝加载**：`Verse.DefDatabase<T>.Add` 会 Log.Error
+    「Adding duplicate …」然后给后加的那个 def 随机改名（defName += 0..999）继续加载 ——
+    结果是启动红字 + 两个物品都在 + 其中一个名字随机。随机后缀意味着同一份 ModConfig
+    两次启动可能不一样，存档里引用被改名那个就会断。
+    ⇒ 声明互斥，让 mod 列表给出提示。注意：这只是**提示**（`ModsConfig.GetModWarnings`
+    渲染 `ModIncompatibleWithTip`），**不阻止加载**，所以工坊说明里仍要写死「二选一」。
+  -->
+  <incompatibleWith>
+    <li>DMS.Submod.NewFrontier</li>
+  </incompatibleWith>
+
   <description>先驱框架 Lite（PFL）的内容附属包。
 
 PFL 只提供机制与骨架，不进具体内容。NFexp 就是那些被判定「不该塞进框架」的填料：可玩的载荷、部件、建筑、研究与配方，以及需要内容侧口径的细节（燃料加注换算、检修口等）。
