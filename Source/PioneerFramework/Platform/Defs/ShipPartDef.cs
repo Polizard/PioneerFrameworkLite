@@ -23,6 +23,25 @@ namespace PioneerFramework
         /// <summary>零件类别（词表，不是类型）：thruster / tank / stage / hull / cabin / sensor / weapon / reactor / radiator / cargo / misc…</summary>
         public string category = "misc";
 
+        /// <summary>总装一件所需的实物材料。省略时采用组装器的兼容报价。</summary>
+        public List<ThingDefCountClass>? assemblyCost;
+
+        public override IEnumerable<string> ConfigErrors()
+        {
+            foreach (string error in base.ConfigErrors()) yield return error;
+            if (assemblyCost == null) yield break;
+            if (assemblyCost.Count == 0) yield return "assemblyCost must contain at least one material.";
+            foreach (var cost in assemblyCost)
+            {
+                if (!IsValidAssemblyMaterial(cost))
+                    yield return "assemblyCost requires a droppable item, a positive count and no stuff override.";
+            }
+        }
+
+        internal static bool IsValidAssemblyMaterial(ThingDefCountClass? cost)
+            => cost?.thingDef is { category: ThingCategory.Item, stackLimit: > 0, destroyOnDrop: false }
+                && !string.IsNullOrEmpty(cost.thingDef.defName) && cost.count > 0 && cost.stuff == null;
+
         /// <summary>结构质量（kg）。≤0 ⇒ 装配器按类别用兜底值。</summary>
         public float massKg = 100f;
 

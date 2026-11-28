@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using PioneerFramework.GroundAssembly;
@@ -9,8 +10,12 @@ namespace PioneerFramework.Tests
     /// **火箭组装器第一步**（2026-10-28）：侧视图几何（纯核）+ 工时口径 + 设计增删。
     /// 只测不依赖 `DefDatabase`/`Thing` 的部分 —— 目录查询一律注入，窗口排版不进测试。
     /// </summary>
-    public class RocketAssemblerTests
+    public class RocketAssemblerTests : IDisposable
     {
+        private readonly RocketAssemblyTestCatalog catalog = new();
+
+        public void Dispose() => catalog.Dispose();
+
         private static ShipPartDef Engine(string name = "E", float mass = 500f, float stack = 3f, float width = 2f,
             float ve = 3000f, float flow = 200f)
             => new() { defName = name, label = name, category = "thruster", massKg = mass,
@@ -159,16 +164,16 @@ namespace PioneerFramework.Tests
         {
             var comp = new CompRocketAssembler();
             comp.AddPart(Tank(), 1);                          // 只有罐
-            Assert.False(comp.StartBuild(out string why1));
+            Assert.False(catalog.StartBuild(comp, out string why1));
             Assert.Contains("推进器", why1);
             Assert.Equal(AssemblerState.Designing, comp.State);
 
             comp.AddPart(Control(), 1);
-            Assert.False(comp.StartBuild(out string whyC));
+            Assert.False(catalog.StartBuild(comp, out string whyC));
             Assert.Contains("推进器", whyC);                 // 有控制核心也还缺引擎
 
             comp.AddPart(Engine(), 1);                        // 引擎最后加 ⇒ 顺序合法（2026-10-29 判据）
-            Assert.True(comp.StartBuild(out string why2));
+            Assert.True(catalog.StartBuild(comp, out string why2));
             Assert.Equal("", why2);
             Assert.Equal(AssemblerState.Building, comp.State);
             Assert.True(comp.WorkRequired > 0f);
@@ -197,7 +202,7 @@ namespace PioneerFramework.Tests
             Assert.Equal(1, comp.ActiveStage);
             Assert.Equal(0, comp.EngineCountInStage(1));
             Assert.False(comp.ActiveStageHasEngine);
-            Assert.False(comp.StartBuild(out string why));
+            Assert.False(catalog.StartBuild(comp, out string why));
             Assert.Contains("不能自己点火", why);
             Assert.Contains("引擎 0", why);
 
@@ -209,7 +214,7 @@ namespace PioneerFramework.Tests
             comp2.SetCurrentStage(1);
             comp2.AddPart(Engine(), 9);
             Assert.False(comp2.ActiveStageReady);
-            Assert.False(comp2.StartBuild(out string why2));
+            Assert.False(catalog.StartBuild(comp2, out string why2));
             Assert.Contains("工质箱 0", why2);
         }
 
@@ -238,7 +243,7 @@ namespace PioneerFramework.Tests
         public void StartBuild_RejectsEmptyDesign()
         {
             var comp = new CompRocketAssembler();
-            Assert.False(comp.StartBuild(out string why));
+            Assert.False(catalog.StartBuild(comp, out string why));
             Assert.False(string.IsNullOrEmpty(why));
         }
 
@@ -255,7 +260,7 @@ namespace PioneerFramework.Tests
             comp.AddPart(Tank(), 1);                      // 顺序：罐 → 控制核心 → 引擎（引擎在级末）
             comp.AddPart(Control(), 1);
             comp.AddPart(Engine(), 1);
-            Assert.True(comp.StartBuild(out _));
+            Assert.True(catalog.StartBuild(comp, out _));
             Assert.False(comp.StartNewRocket());         // 建造中：拒绝
             Assert.Equal(AssemblerState.Building, comp.State);
             Assert.NotEmpty(comp.Design.parts);
@@ -308,7 +313,7 @@ namespace PioneerFramework.Tests
             comp.AddPart(Tank(), 1);
             comp.AddPart(Control(), 1);
             Assert.True(comp.MovePart(0, +2));            // [E, T, C] ⇒ [T, C, E]（引擎在级末）
-            Assert.True(comp.StartBuild(out _));
+            Assert.True(catalog.StartBuild(comp, out _));
             Assert.False(comp.ShiftPartStage(0, -1));
         }
 
@@ -368,39 +373,22 @@ namespace PioneerFramework.Tests
             Assert.False(comp.BeginLaunch(out string why1));   // 还在设计阶段
             Assert.Contains("完成", why1);
 
-            comp.StartBuild(out _);
+            catalog.StartBuild(comp, out _);
             Assert.False(comp.BeginLaunch(out _));             // 建造中也不行
             Assert.Equal(AssemblerState.Building, comp.State);
         }
 
         // ── 完工 → 编辑设计（2026-11-24，C+ UI 转生产） ──────────
 
-        /// <summary>
-        /// 造一台**已经完工**的组装器：罐 → 控制 → 引擎（引擎在级末，顺序合法）。
-        /// `ForceComplete()` 是不建 Thing 就能进 `Complete` 的唯一入口（`BeginLaunch` 要求 `Complete`，
-        /// `CancelLaunch` 要求 `Launching`，两者互为前提，绕不过去）。
-        ///
-        /// **宿主限制**：测试没加载 Core 的 `MessageTypeDef` ⇒ `MessageTypeDefOf.TaskCompletion` 为 null，
-        /// `Messages.Message` 在 `msg.def.sound` 处 NRE。`FinishBuild` 是**先提交状态再弹消息**
-        /// （state / workDone / fuelAmount 都在消息之前），所以只吞"来自 Verse.Messages 的那一个 NRE"，
-        /// 其余异常照抛 —— 不掩盖产品缺陷，也不必为测试给后端开洞。
-        /// </summary>
-        private static CompRocketAssembler CompletedRocket()
+        private CompRocketAssembler CompletedRocket()
         {
             var comp = new CompRocketAssembler();
             comp.AddPart(Tank(), 1);
             comp.AddPart(Control(), 1);
             comp.AddPart(Engine(), 1);
-            Assert.True(comp.StartBuild(out string why), why);
-            try
-            {
-                comp.ForceComplete();
-            }
-            catch (System.NullReferenceException ex) when (ex.StackTrace != null
-                && ex.StackTrace.Contains("Verse.Messages.Message"))
-            {
-                // 见上：只有宿主缺 MessageTypeDef 时才会到这里，状态已提交。
-            }
+            Assert.True(catalog.StartBuild(comp, out string why), why);
+            catalog.DeliverAll(comp);
+            comp.ForceComplete();
             Assert.Equal(AssemblerState.Complete, comp.State);
             return comp;
         }
@@ -414,8 +402,7 @@ namespace PioneerFramework.Tests
             Assert.True(comp.WorkDone > 0f);                   // 完工时 workDone = workRequired
             Assert.False(comp.CanEditDesign);
 
-            // 宿主里查不到 ShipPartDef("E"/"T") ⇒ FinishBuild 加的是 0 t 油，
-            // 这里手工放一个非零值，"回设计态清油"这条才算真的有判据（否则 0→0 是空断言）。
+            // 明确放一个非零值，验证回到设计会清除油量。
             comp.Design.fuelAmount = 5000f;
 
             Assert.True(comp.ReopenDesign());
@@ -432,7 +419,7 @@ namespace PioneerFramework.Tests
             Assert.Equal(before, comp.Design.parts.Select(p => p.defName).ToArray());
 
             // 回到设计态后必须重新建造：Designing 不是可发射态
-            Assert.True(comp.StartBuild(out string why2), why2);
+            Assert.True(catalog.StartBuild(comp, out string why2), why2);
             Assert.Equal(AssemblerState.Building, comp.State);
             Assert.True(comp.WorkRequired > 0f);                // 工时在 StartBuild 里重算
         }
@@ -457,7 +444,7 @@ namespace PioneerFramework.Tests
             building.AddPart(Tank(), 1);
             building.AddPart(Control(), 1);
             building.AddPart(Engine(), 1);
-            Assert.True(building.StartBuild(out string why), why);
+            Assert.True(catalog.StartBuild(building, out string why), why);
             Assert.False(building.ReopenDesign());
             Assert.Equal(AssemblerState.Building, building.State);
             Assert.True(building.WorkRequired > 0f);            // 被拒时不能顺手清工时
@@ -523,7 +510,7 @@ namespace PioneerFramework.Tests
             comp.AddPart(Tank(), 1);
             comp.AddPart(Engine(), 1);
             Assert.Equal(0, comp.ControlCount);
-            Assert.False(comp.StartBuild(out string why));
+            Assert.False(catalog.StartBuild(comp, out string why));
             Assert.Contains("控制核心", why);
 
             // 控制核心必须在引擎**之前**（引擎在级末端）⇒ 另起一份设计验证放行
@@ -532,7 +519,7 @@ namespace PioneerFramework.Tests
             comp2.AddPart(Control(), 1);
             comp2.AddPart(Engine(), 1);
             Assert.Equal(1, comp2.ControlCount);
-            Assert.True(comp2.StartBuild(out _));
+            Assert.True(catalog.StartBuild(comp2, out _));
         }
     }
 }

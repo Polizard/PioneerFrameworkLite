@@ -605,8 +605,7 @@ namespace PioneerFramework.GroundAssembly
             {
                 GUI.color = Muted;
                 Widgets.Label(new Rect(rect.x + 10f, rect.y + 25f, rect.width - 20f, 20f),
-                    $"工时预算 {CompRocketAssembler.WorkFor(comp.Design):F0}"
-                    + $"（建造时需工人在 {comp.Props.workerRadius:F0} 格内）· 第一步不耗材料、无科技门槛");
+                    $"工时预算 {CompRocketAssembler.WorkFor(comp.Design):F0} · 材料送齐后派工");
                 GUI.color = Color.white;
             }
         }
@@ -1016,9 +1015,9 @@ namespace PioneerFramework.GroundAssembly
                         : "先选件。");
             x += bw + gap;
 
-            if (Widgets.ButtonText(new Rect(x, rect.y, bw, 30f), "取消建造",
+            if (Widgets.ButtonText(new Rect(x, rect.y, bw, 30f), "PF_AssemblyCancel".Translate(),
                     drawBackground: true, doMouseoverSound: true, active: comp.State == AssemblerState.Building))
-                comp.CancelBuild();
+                RocketAssemblyMaterialsUi.ConfirmCancellation(comp);
             x += bw + gap;
 
             if (launching)
@@ -1055,20 +1054,17 @@ namespace PioneerFramework.GroundAssembly
                 x += bw + gap;
 
                 // 2026-10-28 用户令："加一个按钮，立即组装一个分级火箭（我点麻烦了）"
-                if (Widgets.ButtonText(new Rect(x, rect.y, bw, 30f), "示范火箭",
+                if (Prefs.DevMode && Widgets.ButtonText(new Rect(x, rect.y, bw, 30f), "示范火箭",
                         drawBackground: true, doMouseoverSound: true, active: canEdit))
                 {
                     if (!comp.QuickAssembleDemoRocket(out string whyDemo))
                         Messages.Message(whyDemo, MessageTypeDefOf.RejectInput, false);
                 }
-                TooltipHandler.TipRegion(new Rect(x, rect.y, bw, 30f),
-                    "一键：R-7 形态测试火箭（芯级 = 控制核心 + 中罐 + 1 机，标并联点火；"
-                    + "4 台助推器 = 重罐 + 小机，径向对称，块 0–3）。"
-                    + "显式位姿行豁免两道堆叠门；立即完工（含满罐加注），直接可发射。");
-                x += bw + gap;
+                if (Prefs.DevMode) x += bw + gap;
             }
 
             if (Prefs.DevMode && comp.State == AssemblerState.Building
+                && comp.HasAssemblyMaterials && !comp.IsBuildPaused && !comp.IsRefundPending
                 && Widgets.ButtonText(new Rect(x, rect.y, bw, 30f), "（调试）完工"))
                 comp.ForceComplete();
         }

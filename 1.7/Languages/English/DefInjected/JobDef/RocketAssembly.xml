@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_DeliverRocketMaterials.reportString>delivering rocket materials to TargetA.</PF_DeliverRocketMaterials.reportString>
+  <PF_AssembleRocket.reportString>assembling a rocket at TargetA.</PF_AssembleRocket.reportString>
+</LanguageData>

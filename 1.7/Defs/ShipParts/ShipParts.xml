@@ -15,6 +15,10 @@
        其它类别（stage/reactor/battery/radiator/cargo/weapon/control/payload-bay）保持 Box。 -->
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Thruster_Debug</defName>
+    <assemblyCost>
+      <Steel>100</Steel>
+      <ComponentIndustrial>4</ComponentIndustrial>
+    </assemblyCost>
     <!-- 2026-10-26 裁定 A：目录显式热源（30 kW）；装配器写进同一个 EngineComponentData -->
     <heatProductionWatts>30000</heatProductionWatts>
     <!-- 2026-10-27：引擎被动散热 10 kW（用散热器组件承载） -->
@@ -36,6 +40,10 @@
 
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Tank_Debug</defName>
+    <assemblyCost>
+      <Steel>80</Steel>
+      <ComponentIndustrial>1</ComponentIndustrial>
+    </assemblyCost>
     <label>调试储罐</label>
     <category>tank</category>
     <massKg>200</massKg>
@@ -52,6 +60,10 @@
 
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Stage_Debug</defName>
+    <assemblyCost>
+      <Steel>35</Steel>
+      <ComponentIndustrial>1</ComponentIndustrial>
+    </assemblyCost>
     <label>调试分离环</label>
     <category>stage</category>
     <massKg>100</massKg>
@@ -70,6 +82,10 @@
 
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Reactor_Debug</defName>
+    <assemblyCost>
+      <Steel>160</Steel>
+      <ComponentIndustrial>8</ComponentIndustrial>
+    </assemblyCost>
     <label>调试反应堆</label>
     <category>reactor</category>
     <massKg>800</massKg>
@@ -92,6 +108,10 @@
 
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Battery_Debug</defName>
+    <assemblyCost>
+      <Steel>65</Steel>
+      <ComponentIndustrial>3</ComponentIndustrial>
+    </assemblyCost>
     <label>调试电池组</label>
     <category>battery</category>
     <massKg>250</massKg>
@@ -115,6 +135,10 @@
 
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Radiator_Debug</defName>
+    <assemblyCost>
+      <Steel>50</Steel>
+      <ComponentIndustrial>2</ComponentIndustrial>
+    </assemblyCost>
     <label>调试散热器</label>
     <category>radiator</category>
     <massKg>150</massKg>
@@ -136,6 +160,10 @@
 
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Cargo_Debug</defName>
+    <assemblyCost>
+      <Steel>70</Steel>
+      <ComponentIndustrial>1</ComponentIndustrial>
+    </assemblyCost>
     <label>调试货舱</label>
     <category>cargo</category>
     <massKg>300</massKg>
@@ -157,6 +185,10 @@
 
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_WeaponMount_Debug</defName>
+    <assemblyCost>
+      <Steel>80</Steel>
+      <ComponentIndustrial>3</ComponentIndustrial>
+    </assemblyCost>
     <label>调试武器挂点</label>
     <category>weapon</category>
     <massKg>400</massKg>
@@ -182,6 +214,10 @@
 
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_ControlCore_Debug</defName>
+    <assemblyCost>
+      <Steel>60</Steel>
+      <ComponentIndustrial>3</ComponentIndustrial>
+    </assemblyCost>
     <label>调试控制核心</label>
     <category>control</category>
     <massKg>300</massKg>
@@ -195,6 +231,10 @@
 
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_RcsThruster_Debug</defName>
+    <assemblyCost>
+      <Steel>25</Steel>
+      <ComponentIndustrial>2</ComponentIndustrial>
+    </assemblyCost>
     <label>调试 RCS 推力器</label>
     <category>rcs</category>
     <massKg>50</massKg>
@@ -209,6 +249,10 @@
 
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_RcsTank_Debug</defName>
+    <assemblyCost>
+      <Steel>30</Steel>
+      <ComponentIndustrial>1</ComponentIndustrial>
+    </assemblyCost>
     <label>调试 RCS 小罐（肼）</label>
     <category>rcs-tank</category>
     <massKg>60</massKg>
@@ -225,6 +269,10 @@
 
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_PayloadBay_Debug</defName>
+    <assemblyCost>
+      <Steel>90</Steel>
+      <ComponentIndustrial>2</ComponentIndustrial>
+    </assemblyCost>
     <label>调试载荷舱</label>
     <category>payload-bay</category>
     <massKg>400</massKg>
@@ -238,6 +286,10 @@
 
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Thruster_Electric_Debug</defName>
+    <assemblyCost>
+      <Steel>130</Steel>
+      <ComponentIndustrial>6</ComponentIndustrial>
+    </assemblyCost>
     <label>调试电推进器（需 100 kW 供电）</label>
     <category>thruster</category>
     <massKg>600</massKg>

@@ -400,7 +400,7 @@ namespace PioneerFramework.GroundAssembly
                             check.Detail, check.Pass));
                         break;
                     default:
-                        checks.Add(new WorkbenchCheck(check.Label, check.Detail, check.Pass));
+                        checks.Add(new WorkbenchCheck(check.Pass ? check.Label : check.Detail, check.Detail, check.Pass));
                         break;
                 }
             }
@@ -542,6 +542,9 @@ namespace PioneerFramework.GroundAssembly
                 Rect clear = new(x - 86f, build.y, 86f, build.height);
                 if (Btn(clear, "清空设计", comp.CanEditDesign)) RequestClearDesign();
                 x = clear.x - 6f;
+                Rect materials = new(x - 100f, build.y, 100f, build.height);
+                if (Btn(materials, "PF_AssemblyMaterials".Translate())) RocketAssemblyMaterialsUi.ShowQuote(comp);
+                x = materials.x - 6f;
             }
             if (x > rect.x + 90f)
             {

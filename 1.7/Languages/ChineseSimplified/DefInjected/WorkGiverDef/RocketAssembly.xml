@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_DeliverRocketMaterials.label>运送火箭材料</PF_DeliverRocketMaterials.label>
+  <PF_DeliverRocketMaterials.verb>送料</PF_DeliverRocketMaterials.verb>
+  <PF_DeliverRocketMaterials.gerund>运送火箭材料至</PF_DeliverRocketMaterials.gerund>
+  <PF_AssembleRocket.label>装配火箭</PF_AssembleRocket.label>
+  <PF_AssembleRocket.verb>装配火箭</PF_AssembleRocket.verb>
+  <PF_AssembleRocket.gerund>装配火箭于</PF_AssembleRocket.gerund>
+</LanguageData>

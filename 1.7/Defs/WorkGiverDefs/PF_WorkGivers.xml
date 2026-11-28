@@ -1,7 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  ⚠ 2026-11-21：回收后重建链已删除（PF_RebuildRocket WorkGiver），本文件内容已清空。
-  文件本身保留。原文备份：Source/已弃置/ChainA-20261121/defs/PF_WorkGivers.xml
--->
 <Defs>
+  <WorkGiverDef>
+    <defName>PF_DeliverRocketMaterials</defName>
+    <label>运送火箭材料</label>
+    <giverClass>PioneerFramework.GroundAssembly.WorkGiver_DeliverRocketMaterials</giverClass>
+    <workType>Hauling</workType>
+    <priorityInType>16</priorityInType>
+    <verb>送料</verb>
+    <gerund>运送火箭材料至</gerund>
+    <directOrderable>true</directOrderable>
+    <requiredCapacities><li>Manipulation</li></requiredCapacities>
+  </WorkGiverDef>
+
+  <WorkGiverDef>
+    <defName>PF_AssembleRocket</defName>
+    <label>装配火箭</label>
+    <giverClass>PioneerFramework.GroundAssembly.WorkGiver_AssembleRocket</giverClass>
+    <workType>Construction</workType>
+    <priorityInType>75</priorityInType>
+    <verb>装配火箭</verb>
+    <gerund>装配火箭于</gerund>
+    <directOrderable>true</directOrderable>
+    <requiredCapacities><li>Manipulation</li></requiredCapacities>
+  </WorkGiverDef>
 </Defs>

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using PioneerFramework;
 using PioneerFramework.GroundAssembly;
@@ -13,8 +14,12 @@ namespace PioneerFramework.Tests
     /// · 装配（`DesignPartAssembler`）：同一站共享 z、横向落在环上、轴向只推进一次；
     /// · 物理（`SpaceEntity.GetEngineTorqueAboutCom`）：对称并联的合力矩为 0（偏心会逼动量轮一直顶）。
     /// </summary>
-    public class RocketAssemblerParallelTests
+    public class RocketAssemblerParallelTests : IDisposable
     {
+        private readonly RocketAssemblyTestCatalog catalog = new();
+
+        public void Dispose() => catalog.Dispose();
+
         private static ShipPartDef Engine(string name = "E", float mass = 500f, float stack = 3f, float width = 2f,
             float ve = 3000f, float flow = 200f)
             => new()
@@ -269,7 +274,7 @@ namespace PioneerFramework.Tests
             comp.EnginePlacementError(offenders);
             Assert.Equal(2, offenders.Count);       // 罐与控制核心都排在引擎之后
 
-            Assert.False(comp.StartBuild(out string why));
+            Assert.False(catalog.StartBuild(comp, out string why));
             Assert.Contains("末端", why);
         }
 
@@ -280,13 +285,13 @@ namespace PioneerFramework.Tests
             comp.AddPart(Engine(), 1);
             comp.AddPart(Tank(), 1);
             comp.AddPart(Control(), 1);
-            Assert.False(comp.StartBuild(out _));
+            Assert.False(catalog.StartBuild(comp, out _));
 
             // ↑/↓ 的语义：把引擎（下标 0）挪到本行末尾
             Assert.True(comp.MovePart(0, +2));
             Assert.Equal("E", comp.Design.parts[2].defName);
             Assert.Equal("", comp.EnginePlacementError());
-            Assert.True(comp.StartBuild(out string why));
+            Assert.True(catalog.StartBuild(comp, out string why));
             Assert.Equal("", why);
         }
 
@@ -304,7 +309,7 @@ namespace PioneerFramework.Tests
             comp.AddPart(Engine(), 1);
 
             Assert.Equal("", comp.EnginePlacementError());
-            Assert.True(comp.StartBuild(out _));
+            Assert.True(catalog.StartBuild(comp, out _));
         }
 
         [Fact]
@@ -401,7 +406,7 @@ namespace PioneerFramework.Tests
             comp.StageContiguityError(offenders);
             Assert.NotEmpty(offenders);
 
-            Assert.False(comp.StartBuild(out string why));
+            Assert.False(catalog.StartBuild(comp, out string why));
             Assert.Contains("连成一段", why);
         }
 
@@ -420,7 +425,7 @@ namespace PioneerFramework.Tests
 
             Assert.True(comp.MovePart(0, +2));                   // [C0, E0, T1, E1]
             Assert.Equal("", comp.StageContiguityError());
-            Assert.True(comp.StartBuild(out string why));
+            Assert.True(catalog.StartBuild(comp, out string why));
             Assert.Equal("", why);
         }
 

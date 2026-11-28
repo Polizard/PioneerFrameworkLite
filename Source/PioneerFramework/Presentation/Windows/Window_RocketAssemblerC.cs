@@ -305,8 +305,13 @@ namespace PioneerFramework.GroundAssembly
 
         private void DrawL0Rail(Rect rail)
         {
-            Panel(rail);
             SurfaceState state = ResolveSurface();
+            if (state == SurfaceState.Building)
+            {
+                DrawAssemblyOrder(rail);
+                return;
+            }
+            Panel(rail);
             Color accent = state switch
             {
                 SurfaceState.LaunchBlocked => Red,
@@ -318,7 +323,6 @@ namespace PioneerFramework.GroundAssembly
                 SurfaceState.IdleEmpty => "空闲",
                 SurfaceState.IdleWithDesign => "空闲",
                 SurfaceState.Designing => "设计中",
-                SurfaceState.Building => "建造中",
                 SurfaceState.LaunchReady => "可发射",
                 SurfaceState.LaunchBlocked => "受阻",
                 _ => "倒计时"
@@ -354,12 +358,6 @@ namespace PioneerFramework.GroundAssembly
                     links.Add("查看全部检查");
                     break;
                 }
-                case SurfaceState.Building:
-                    sentence = $"建造中 {comp.Progress01:P0} · {comp.WorkDone:F0} / {comp.WorkRequired:F0} 工时";
-                    check = comp.WorkDone <= 0.01f ? "等待工人" : "";
-                    primary = "取消建造";
-                    if (Prefs.DevMode) links.Add("立即完工");
-                    break;
                 case SurfaceState.LaunchReady:
                     sentence = $"可以发射。倒计时 {comp.Props.launchDelayGameSeconds:0.#} 游戏秒。";
                     check = "✓ 4 项检查通过";
@@ -418,9 +416,6 @@ namespace PioneerFramework.GroundAssembly
                 case SurfaceState.Designing:
                     editMode = true;
                     break;
-                case SurfaceState.Building:
-                    comp.CancelBuild();
-                    break;
                 case SurfaceState.LaunchReady:
                     if (!comp.BeginLaunch(out string why)) Messages.Message(why, MessageTypeDefOf.RejectInput, false);
                     break;
@@ -437,8 +432,6 @@ namespace PioneerFramework.GroundAssembly
         {
             if (link.StartsWith("编辑设计", StringComparison.Ordinal)) ReopenDesign();
             else if (link == "下一枚") ConfirmNextRocket();
-            else if (link == "立即完工" && Prefs.DevMode && comp.State == AssemblerState.Building)
-                comp.ForceComplete();
             else if (link == "查看全部检查")
             {
                 bool launch = state is SurfaceState.LaunchReady or SurfaceState.LaunchBlocked;
@@ -540,6 +533,9 @@ namespace PioneerFramework.GroundAssembly
             list.Add(new CheckRow("活动级", comp.ActiveStageReady ? "就绪" : comp.StageDiagnosis(), comp.ActiveStageReady, BuildCheckKind.ActiveStage));
             float work = CompRocketAssembler.WorkFor(comp.Design);
             list.Add(new CheckRow("工时", $"{work:F0}", work > 0f, BuildCheckKind.Work));
+            bool materialsValid = comp.TryQuoteAssemblyMaterials(out var materials, out string materialReason);
+            list.Add(new CheckRow("PF_AssemblyMaterials".Translate(), materialsValid
+                ? RocketAssemblyMaterialsUi.QuoteText(comp, materials) : materialReason, materialsValid));
             return list;
         }
 

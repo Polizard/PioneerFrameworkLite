@@ -32,6 +32,10 @@
   <!-- ── 引擎 1/4：小推力液氧煤油（原型 Merlin 1D Vacuum，Isp 311 s → ve 3000）── -->
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Engine_Lifter_Small</defName>
+    <assemblyCost>
+      <Steel>130</Steel>
+      <ComponentIndustrial>5</ComponentIndustrial>
+    </assemblyCost>
     <label>小推力液氧煤油机</label>
     <description>仿 Merlin 1D 真空版：ve 3000 m/s、600 kN。一级多机并联的主力小机。</description>
     <category>thruster</category>
@@ -53,6 +57,10 @@
   <!-- ── 引擎 2/4：大推力液氧煤油双燃烧室（原型 RD-180，Isp 338 s → ve 3300）── -->
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Engine_Lifter_Heavy</defName>
+    <assemblyCost>
+      <Steel>240</Steel>
+      <ComponentIndustrial>8</ComponentIndustrial>
+    </assemblyCost>
     <label>大推力液氧煤油机</label>
     <description>仿 RD-180：ve 3300 m/s、3795 kN。单台顶一级，干重 5.5 t。</description>
     <category>thruster</category>
@@ -74,6 +82,10 @@
   <!-- ── 引擎 3/4：小推力液氧液氢上面级（原型 RL10，Isp 465 s → ve 4500）── -->
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Engine_Upper_Hydrolox</defName>
+    <assemblyCost>
+      <Steel>120</Steel>
+      <ComponentIndustrial>5</ComponentIndustrial>
+    </assemblyCost>
     <label>液氧液氢上面级机</label>
     <description>仿 RL10：ve 4500 m/s、108 kN。干重仅 300 kg，半人马座类上面级用。</description>
     <category>thruster</category>
@@ -95,6 +107,10 @@
   <!-- ── 引擎 4/4：大推力液氧液氢持续机（原型 RS-25/SSME，Isp 452 s → ve 4400）── -->
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Engine_Sustainer_Hydrolox</defName>
+    <assemblyCost>
+      <Steel>190</Steel>
+      <ComponentIndustrial>7</ComponentIndustrial>
+    </assemblyCost>
     <label>液氧液氢持续机</label>
     <description>仿 RS-25：ve 4400 m/s、2288 kN。高压补燃，干重 3.2 t。</description>
     <category>thruster</category>
@@ -116,6 +132,10 @@
   <!-- ── 工质箱 1/4：一级液氧煤油大罐（原型 Falcon 9 一级，推进剂 400 t）── -->
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Tank_Kerolox_Heavy</defName>
+    <assemblyCost>
+      <Steel>450</Steel>
+      <ComponentIndustrial>6</ComponentIndustrial>
+    </assemblyCost>
     <label>一级液氧煤油大罐</label>
     <description>仿猎鹰一级：容量 400 t、干重 20 t（干质比 20:1）。满罐入轨前是 420 t 的死重。</description>
     <category>tank</category>
@@ -135,6 +155,10 @@
   <!-- ── 工质箱 2/4：二级液氧煤油罐（原型 Falcon 9 二级，推进剂 100 t）── -->
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Tank_Kerolox_Medium</defName>
+    <assemblyCost>
+      <Steel>220</Steel>
+      <ComponentIndustrial>3</ComponentIndustrial>
+    </assemblyCost>
     <label>二级液氧煤油罐</label>
     <description>仿猎鹰二级：容量 100 t、干重 5 t（干质比 20:1）。</description>
     <category>tank</category>
@@ -154,6 +178,10 @@
   <!-- ── 工质箱 3/4：液氧液氢上面级罐（原型半人马座，推进剂 20 t）── -->
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Tank_Hydrolox_Centaur</defName>
+    <assemblyCost>
+      <Steel>155</Steel>
+      <ComponentIndustrial>3</ComponentIndustrial>
+    </assemblyCost>
     <label>液氧液氢上面级罐</label>
     <description>仿半人马座：容量 20 t、干重 2 t（干质比 10:1）。液氢密度低 ⇒ 同容量罐体更大更轻。</description>
     <category>tank</category>
@@ -173,6 +201,10 @@
   <!-- ── 工质箱 4/4：氙罐（电推用，容量 5 t）── -->
   <ShipPartDef Class="PioneerFramework.ShipPartDef">
     <defName>PF_ShipPart_Tank_Xenon_Small</defName>
+    <assemblyCost>
+      <Steel>60</Steel>
+      <ComponentIndustrial>2</ComponentIndustrial>
+    </assemblyCost>
     <label>氙罐</label>
     <description>电推进工质罐：容量 5 t、干重 500 kg（高压复合材料罐，干质比 10:1）。</description>
     <category>tank</category>

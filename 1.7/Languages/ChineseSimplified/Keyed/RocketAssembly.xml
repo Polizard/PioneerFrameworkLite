@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_AssemblyTooManyParts>设计超过零件上限，最多</PF_AssemblyTooManyParts>
+  <PF_AssemblyUnknownPart>找不到零件定义</PF_AssemblyUnknownPart>
+  <PF_AssemblyInvalidCost>零件的材料配方无效</PF_AssemblyInvalidCost>
+  <PF_AssemblyCostOverflow>材料数量超出上限</PF_AssemblyCostOverflow>
+  <PF_AssemblyOrderMissing>工单缺少用料清单，请取消后重新提交。</PF_AssemblyOrderMissing>
+  <PF_AssemblyOrderMissingMaterial>工单的材料定义无效</PF_AssemblyOrderMissingMaterial>
+  <PF_AssemblyUnsupportedOrder>暂时无法读取这一版的材料工单，可以取消后重新提交。</PF_AssemblyUnsupportedOrder>
+  <PF_AssemblyOrderUnavailable>当前状态无法开始装配。</PF_AssemblyOrderUnavailable>
+  <PF_AssemblySettlingMaterials>正在结算材料。</PF_AssemblySettlingMaterials>
+  <PF_AssemblyRefunding>正在退回材料。</PF_AssemblyRefunding>
+  <PF_AssemblyPaused>已暂停施工。</PF_AssemblyPaused>
+  <PF_AssemblyBringing>{0}正在运送材料</PF_AssemblyBringing>
+  <PF_AssemblyWaitMaterials>等待材料送达</PF_AssemblyWaitMaterials>
+  <PF_AssemblyWaitWorker>等待建造工人</PF_AssemblyWaitWorker>
+  <PF_AssemblyWalking>{0}正前往组装台</PF_AssemblyWalking>
+  <PF_AssemblyWorking>{0}正在装配</PF_AssemblyWorking>
+  <PF_AssemblyWorkerUnavailable>工人需要启用对应工作并能在组装台作业。</PF_AssemblyWorkerUnavailable>
+  <PF_AssemblyReserved>组装台正在使用。</PF_AssemblyReserved>
+  <PF_AssemblyNoMaterialsToHaul>找不到可搬运的所需材料。</PF_AssemblyNoMaterialsToHaul>
+  <PF_AssemblyMaterials>用料清单</PF_AssemblyMaterials>
+  <PF_AssemblyCostLine>{0} ×{1}</PF_AssemblyCostLine>
+  <PF_AssemblyDeliveryLine>{0}　{1} / {2}　待送 {3}</PF_AssemblyDeliveryLine>
+  <PF_AssemblyDefaultCost>按通用配方计价的零件</PF_AssemblyDefaultCost>
+  <PF_AssemblyProgress>{0}　{1} / {2} 工时</PF_AssemblyProgress>
+  <PF_AssemblyPause>暂停施工</PF_AssemblyPause>
+  <PF_AssemblyResume>恢复施工</PF_AssemblyResume>
+  <PF_AssemblyCancel>取消施工</PF_AssemblyCancel>
+  <PF_AssemblyCancelConfirm>取消会清除已完成的 {0} 工时，保留图纸。</PF_AssemblyCancelConfirm>
+  <PF_AssemblyReturnMaterials>将退回的材料</PF_AssemblyReturnMaterials>
+  <PF_AssemblyRetryRefund>重试退料</PF_AssemblyRetryRefund>
+  <PF_AssemblyCompleteNow>立即完工</PF_AssemblyCompleteNow>
+  <PF_AssemblyDevOnly>只有开发者模式可以直接生成已完工的示范火箭。</PF_AssemblyDevOnly>
+</LanguageData>

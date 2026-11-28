@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_AssemblyTooManyParts>Design exceeds the part limit of</PF_AssemblyTooManyParts>
+  <PF_AssemblyUnknownPart>Missing part definition</PF_AssemblyUnknownPart>
+  <PF_AssemblyInvalidCost>Invalid material recipe for</PF_AssemblyInvalidCost>
+  <PF_AssemblyCostOverflow>Material count exceeds the limit for</PF_AssemblyCostOverflow>
+  <PF_AssemblyOrderMissing>Assembly order is missing its material list. Cancel it and start a new order.</PF_AssemblyOrderMissing>
+  <PF_AssemblyOrderMissingMaterial>Invalid material definition in order</PF_AssemblyOrderMissingMaterial>
+  <PF_AssemblyUnsupportedOrder>This material order version cannot be loaded. Cancel it and start a new order.</PF_AssemblyUnsupportedOrder>
+  <PF_AssemblyOrderUnavailable>Assembly cannot start in the current state.</PF_AssemblyOrderUnavailable>
+  <PF_AssemblySettlingMaterials>Finalizing material consumption.</PF_AssemblySettlingMaterials>
+  <PF_AssemblyRefunding>Returning materials.</PF_AssemblyRefunding>
+  <PF_AssemblyPaused>Assembly paused.</PF_AssemblyPaused>
+  <PF_AssemblyBringing>{0} is delivering materials</PF_AssemblyBringing>
+  <PF_AssemblyWaitMaterials>Waiting for materials</PF_AssemblyWaitMaterials>
+  <PF_AssemblyWaitWorker>Waiting for a builder</PF_AssemblyWaitWorker>
+  <PF_AssemblyWalking>{0} is walking to the assembler</PF_AssemblyWalking>
+  <PF_AssemblyWorking>{0} is assembling the rocket</PF_AssemblyWorking>
+  <PF_AssemblyWorkerUnavailable>The colonist needs the relevant work enabled and must be able to work at the assembler.</PF_AssemblyWorkerUnavailable>
+  <PF_AssemblyReserved>The assembler is occupied.</PF_AssemblyReserved>
+  <PF_AssemblyNoMaterialsToHaul>No required materials are available to haul.</PF_AssemblyNoMaterialsToHaul>
+  <PF_AssemblyMaterials>Materials</PF_AssemblyMaterials>
+  <PF_AssemblyCostLine>{0} ×{1}</PF_AssemblyCostLine>
+  <PF_AssemblyDeliveryLine>{0}  {1} / {2}  still needed {3}</PF_AssemblyDeliveryLine>
+  <PF_AssemblyDefaultCost>Parts using the default recipe</PF_AssemblyDefaultCost>
+  <PF_AssemblyProgress>{0}  {1} / {2} work</PF_AssemblyProgress>
+  <PF_AssemblyPause>Pause assembly</PF_AssemblyPause>
+  <PF_AssemblyResume>Resume assembly</PF_AssemblyResume>
+  <PF_AssemblyCancel>Cancel assembly</PF_AssemblyCancel>
+  <PF_AssemblyCancelConfirm>Cancel the order and lose {0} completed work. The design will be kept.</PF_AssemblyCancelConfirm>
+  <PF_AssemblyReturnMaterials>Materials to be returned</PF_AssemblyReturnMaterials>
+  <PF_AssemblyRetryRefund>Retry return</PF_AssemblyRetryRefund>
+  <PF_AssemblyCompleteNow>Finish immediately</PF_AssemblyCompleteNow>
+  <PF_AssemblyDevOnly>Developer mode is required to generate a completed demo rocket.</PF_AssemblyDevOnly>
+</LanguageData>

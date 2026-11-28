@@ -31,6 +31,7 @@
 
   <ItemGroup>
     <None Include="..\..\1.7\Defs\Combat\ProjectileVisualDefs.xml.pending" Link="Defs\Combat\ProjectileVisualDefs.xml" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\1.7\Defs\Combat\ProjectileVisualDefs.xml.pending')" />
+    <None Include="..\..\1.7\Defs\ShipParts\ShipParts*.xml" Link="Defs\ShipParts\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\1.7\Patches\PFViewProjectileVisualBindings.xml.pending" Link="Patches\PFViewProjectileVisualBindings.xml" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\1.7\Patches\PFViewProjectileVisualBindings.xml.pending')" />
     <None Include="..\PioneerFramework\Presentation\PFView\MainTabWindow_PFView.ProjectileVisuals.cs" Link="Source\PioneerFramework\Presentation\PFView\MainTabWindow_PFView.ProjectileVisuals.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\PioneerFramework\Presentation\PFView\MainTabWindow_PFView.ImpactVisuals.cs" Link="Source\PioneerFramework\Presentation\PFView\MainTabWindow_PFView.ImpactVisuals.cs" CopyToOutputDirectory="PreserveNewest" />

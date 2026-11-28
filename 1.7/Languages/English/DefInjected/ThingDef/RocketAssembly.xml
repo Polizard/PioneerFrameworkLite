@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <PF_Building_RocketAssembler.label>rocket assembler</PF_Building_RocketAssembler.label>
+  <PF_Building_RocketAssembler.description>A worksite that builds a rocket from a design. Haulers deliver the materials, builders assemble the rocket, and the materials are consumed at completion.</PF_Building_RocketAssembler.description>
+</LanguageData>

@@ -10,7 +10,7 @@
   <ThingDef ParentName="BuildingBase">
     <defName>PF_Building_RocketAssembler</defName>
     <label>火箭组装器</label>
-    <description>把零件按设计装配成整支火箭的车间。设计、建造、进度都在这一台机器上；第一步不消耗材料、无科技门槛。</description>
+    <description>按图纸装配整枚火箭的工作台。搬运工把材料送到台上，材料齐备后由建造工装配，完工时扣除用料。</description>
     <thingClass>Building</thingClass>
     <tickerType>Normal</tickerType>
     <graphicData>

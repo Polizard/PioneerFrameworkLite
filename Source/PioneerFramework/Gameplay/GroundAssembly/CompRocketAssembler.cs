@@ -22,7 +22,7 @@ namespace PioneerFramework.GroundAssembly
         /// <summary>建造速率（每秒推进的工时；默认 1 ⇒ 1 工时 = 1 秒）。</summary>
         public float workPerSecond = 1f;
 
-        /// <summary>工人必须在这个距离内（格）才算在施工。</summary>
+        /// <summary>旧版范围施工配置，保留字段供已有 Def 读取。</summary>
         public float workerRadius = 12f;
 
         /// <summary>
@@ -46,18 +46,17 @@ namespace PioneerFramework.GroundAssembly
     /// · 本类**只有一个所有者**：设计规格、建造进度、完工状态都在这里，且都随本体存档；
     ///   建完的火箭"就是这台机器里的这份规格"，不生成蓝图/框架中间物（第一步刻意如此）。
     ///
-    /// 建造语义（第一步）：需要 `workerRadius` 内**有殖民者**；每秒推进 `workPerSecond` 工时；
+    /// 建造工单锁定材料与工时。搬运任务交付实物，收齐后由建造任务推进工时。
     /// 工时 = Σ 件数 ×（40 + 干重/100 + 罐容/1000），夹在 60…12000。
-    /// 不消耗材料（材料/科技留到接资源层时再定）——这一点写进窗口提示，免得玩家以为白送是 bug。
     /// </summary>
-    public class CompRocketAssembler : ThingComp
+    public partial class CompRocketAssembler : ThingComp, IThingHolder
     {
         private const int MaxStationsPerRow = 64;
 
         // 第一步刻意无舱内地图（CabinType.None）：舱室需要脐带塔/登船流程，那是另一条线。
         private RocketDesignSpec design = new() { CabinType = RocketCabinType.None };
         private AssemblerState state = AssemblerState.Idle;
-        private float workDone;
+        private double workDone;
         private float workRequired;
         private int launchTicksLeft;
         private int currentStage;
@@ -67,11 +66,11 @@ namespace PioneerFramework.GroundAssembly
 
         public AssemblerState State => state;
 
-        public float WorkDone => workDone;
+        public float WorkDone => (float)workDone;
 
         public float WorkRequired => workRequired;
 
-        public float Progress01 => workRequired > 1e-4f ? Mathf.Clamp01(workDone / workRequired) : 0f;
+        public float Progress01 => workRequired > 1e-4f ? Mathf.Clamp01((float)(workDone / workRequired)) : 0f;
 
         /// <summary>可以改设计（空闲/设计中）。建造中、已完工都不许改。</summary>
         public bool CanEditDesign => state == AssemblerState.Idle || state == AssemblerState.Designing;
@@ -804,7 +803,7 @@ namespace PioneerFramework.GroundAssembly
         /// </summary>
         public bool StartNewRocket()
         {
-            if (state == AssemblerState.Building || state == AssemblerState.Launching) return false;
+            if (state == AssemblerState.Building || state == AssemblerState.Launching || HasHeldMaterials) return false;
             ResetToIdle();
             return true;
         }
@@ -819,17 +818,19 @@ namespace PioneerFramework.GroundAssembly
         /// </summary>
         public bool ReopenDesign()
         {
-            if (state != AssemblerState.Complete) return false;
+            if (state != AssemblerState.Complete || HasHeldMaterials) return false;
             state = AssemblerState.Designing;
             workDone = 0f;
             workRequired = 0f;          // StartBuild 会重算工时，置 0 只表示"还没开工"
             launchTicksLeft = 0;
             Design.fuelAmount = 0f;     // FinishBuild 完工时加过油，回设计态必须清掉
+            ResetMaterialOrder();
             return true;
         }
 
         private void ResetToIdle()
         {
+            ResetMaterialOrder();
             design = new RocketDesignSpec { CabinType = RocketCabinType.None };
             workDone = 0f;
             workRequired = 0f;
@@ -873,6 +874,7 @@ namespace PioneerFramework.GroundAssembly
             reason = "";
             if (state == AssemblerState.Building) { reason = "已经在建造中。"; return false; }
             if (state == AssemblerState.Complete) { reason = "这枚火箭已经组装完成。"; return false; }
+            if (!CanEditDesign || HasHeldMaterials) { reason = "PF_AssemblyOrderUnavailable".Translate(); return false; }
             if (!Design.IsValid(out string fail)) { reason = fail; return false; }
 
             // 2026-10-28 用户令：纯零件火箭必须带控制核心（KSP 命令舱语义）。
@@ -899,11 +901,13 @@ namespace PioneerFramework.GroundAssembly
                 return false;
             }
 
+            if (!TryQuoteAssemblyMaterials(out var quote, out reason)) return false;
             float need = WorkFor(Design);
             if (need <= 0f) { reason = "没有可建造的内容。"; return false; }
 
             workRequired = need;
             workDone = 0f;
+            SetMaterialOrder(quote);
             state = AssemblerState.Building;
             return true;
         }
@@ -911,9 +915,7 @@ namespace PioneerFramework.GroundAssembly
         public void CancelBuild()
         {
             if (state != AssemblerState.Building) return;
-            state = AssemblerState.Designing;
-            workDone = 0f;
-            workRequired = 0f;
+            CancelMaterialOrder();
         }
 
         // ── 发射（2026-10-28 第二步）────────────────────────────────
@@ -939,6 +941,7 @@ namespace PioneerFramework.GroundAssembly
             reason = "";
             if (state == AssemblerState.Launching) { reason = "已经在倒计时。"; return false; }
             if (state != AssemblerState.Complete) { reason = "火箭还没组装完成。"; return false; }
+            if (HasHeldMaterials) { reason = "PF_AssemblySettlingMaterials".Translate(); return false; }
             if (parent?.Map == null) { reason = "建筑不在任何地图上。"; return false; }
             if (ControlCount <= 0)
             {
@@ -1027,6 +1030,7 @@ namespace PioneerFramework.GroundAssembly
             }
 
             state = AssemblerState.Idle;                        // 火箭飞走，台子空出来（设计保留）
+            ResetMaterialOrder();
             Messages.Message($"{parent?.LabelShort ?? "组装器"}：已发射。", MessageTypeDefOf.TaskCompletion, false);
         }
 
@@ -1049,7 +1053,8 @@ namespace PioneerFramework.GroundAssembly
         public bool QuickAssembleDemoRocket(out string reason)
         {
             reason = "";
-            if (state == AssemblerState.Building || state == AssemblerState.Launching)
+            if (!Prefs.DevMode) { reason = "PF_AssemblyDevOnly".Translate(); return false; }
+            if (HasHeldMaterials || state == AssemblerState.Building || state == AssemblerState.Launching)
             {
                 reason = "建造/发射中不能重来。";
                 return false;
@@ -1065,7 +1070,6 @@ namespace PioneerFramework.GroundAssembly
             if (!StartBuild(out reason)) return false;
 
             // "立即组装"：跳过工时直接完工（与 DevMode 的「完工」同一条路，但不要求 DevMode）。
-            workDone = workRequired;
             FinishBuild();
             return true;
         }
@@ -1210,40 +1214,27 @@ namespace PioneerFramework.GroundAssembly
         }
 
         /// <summary>调试用：跳过工时直接完工（只在 DevMode 的窗口按钮上调）。</summary>
-        public void ForceComplete()        {
-            if (state == AssemblerState.Building)
-            {
-                workDone = workRequired;
-                FinishBuild();
-            }
+        public void ForceComplete()
+        {
+            if (IsOpenBuildOrder(buildOrderVersion) && HasAssemblyMaterials) FinishBuild();
         }
 
         private void FinishBuild()
         {
-            state = AssemblerState.Complete;
+            float fuel = FuelForLaunch(Design);
             workDone = workRequired;
             // 2026-10-28：**完工即加注**（满罐 = Σ 罐容量）。发射直接用这个值；
             // 窗口/检视条显示"加注 X t"，避免"到底加没加油"要靠猜。
-            Design.fuelAmount = FuelForLaunch(Design);
-            Messages.Message($"{parent?.LabelShort ?? "组装器"}：火箭组装完成"
-                + $"（{Design.parts.Count} 行 / {StageCount} 级，加注 {Design.fuelAmount / 1000.0:F1} t）。",
-                MessageTypeDefOf.TaskCompletion, false);
-        }
-
-        private bool HasWorkerNearby()
-        {
-            Map? map = parent?.Map;
-            if (map == null) return false;
-            var pawns = map.mapPawns?.FreeColonistsSpawned;
-            if (pawns == null) return false;
-            float radius = Props.workerRadius;
-            for (int i = 0; i < pawns.Count; i++)
+            Design.fuelAmount = fuel;
+            state = AssemblerState.Complete;
+            AdvanceOrder();
+            ClearSettledMaterials();
+            if (parent?.Spawned == true)
             {
-                Pawn p = pawns[i];
-                if (p == null || p.Dead || !p.Spawned) continue;
-                if (p.Position.DistanceTo(parent!.Position) <= radius) return true;
+                Messages.Message($"{parent.LabelShort}：火箭组装完成"
+                    + $"（{Design.parts.Count} 行 / {StageCount} 级，加注 {fuel / 1000.0:F1} t）。",
+                    MessageTypeDefOf.TaskCompletion, false);
             }
-            return false;
         }
 
         public override void CompTick()
@@ -1259,13 +1250,12 @@ namespace PioneerFramework.GroundAssembly
                 return;
             }
 
-            if (state != AssemblerState.Building) return;
-            if (!parent.IsHashIntervalTick(60)) return;
-
-            if (!HasWorkerNearby()) return;   // 没人在旁边 ⇒ 停工（窗口里会提示）
-
-            workDone += Math.Max(0.1f, Props.workPerSecond);
-            if (workDone >= workRequired) FinishBuild();
+            if ((refundPending || (state == AssemblerState.Complete && HasHeldMaterials))
+                && parent.Spawned && parent.IsHashIntervalTick(60))
+            {
+                if (state == AssemblerState.Building && refundPending) TryRefundMaterials();
+                else if (state == AssemblerState.Complete && HasHeldMaterials) ClearSettledMaterials();
+            }
         }
 
         // ── 读数 / 存档 ──────────────────────────────────────────
@@ -1292,7 +1282,9 @@ namespace PioneerFramework.GroundAssembly
             else if (state == AssemblerState.Building)
             {
                 head += $"（{Progress01:P0}，{workDone:F0}/{workRequired:F0} 工时";
-                head += HasWorkerNearby() ? "，有工人）" : "，等待工人）";
+                head += $"，{AssemblyStatusText}）";
+                foreach (AssemblyMaterialRow row in MaterialRows())
+                    head += $"\n{row.Label} {row.Delivered:N0}/{row.Required:N0}";
             }
             return head + $"\n总高 {s.totalHeightM:F1} m · 最大直径 {s.maxWidthM:F1} m"
                 + $" · 干重 {s.dryMassKg / 1000.0:F2} t · 推进剂 {s.propellantKg / 1000.0:F2} t"
@@ -1321,12 +1313,13 @@ namespace PioneerFramework.GroundAssembly
             base.PostExposeData();
             Scribe_Deep.Look(ref design, "design");
             Scribe_Values.Look(ref state, "assemblerState", AssemblerState.Idle);
-            Scribe_Values.Look(ref workDone, "assemblerWorkDone", 0f);
+            Scribe_Values.Look(ref workDone, "assemblerWorkDone", 0d);
             Scribe_Values.Look(ref workRequired, "assemblerWorkRequired", 0f);
             Scribe_Values.Look(ref currentStage, "assemblerCurrentStage", 0);
             Scribe_Values.Look(ref currentParallel, "assemblerCurrentParallel", 1);
             currentParallel = ParallelLayout.Clamp(currentParallel);
             if (design == null) design = new RocketDesignSpec();
+            ExposeMaterialOrder();
         }
     }
 }

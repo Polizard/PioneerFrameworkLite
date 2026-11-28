@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  ⚠ 2026-11-21：回收后重建链已删除（PF_RebuildRocket Job），本文件内容已清空。
-  文件本身保留。原文备份：Source/已弃置/ChainA-20261121/defs/PF_Jobs.xml
--->
 <Defs>
+  <JobDef>
+    <defName>PF_DeliverRocketMaterials</defName>
+    <driverClass>PioneerFramework.GroundAssembly.JobDriver_DeliverRocketMaterials</driverClass>
+    <reportString>正在向 TargetA 送料。</reportString>
+  </JobDef>
+
+  <JobDef>
+    <defName>PF_AssembleRocket</defName>
+    <driverClass>PioneerFramework.GroundAssembly.JobDriver_AssembleRocket</driverClass>
+    <reportString>正在 TargetA 装配火箭。</reportString>
+  </JobDef>
 </Defs>
